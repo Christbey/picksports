@@ -294,6 +294,7 @@ const mapV2Prediction = (prediction: ApiV2Prediction): PredictionListItem => {
                 : undefined,
         created_at: prediction.created_at,
         updated_at: prediction.updated_at,
+        model_bet_context: prediction.model_bet_context,
         value_signal:
             prediction.value_signal &&
             typeof prediction.value_signal === 'object'

@@ -1551,12 +1551,6 @@ function saveOptions(): SavePickOption[] {
                     :class="{ 'rotate-180': expanded }"
                 />
             </button>
-            <p
-                v-if="valueSignal()?.decision_summary"
-                class="col-span-full text-xs text-muted-foreground"
-            >
-                {{ valueSignal()?.decision_summary }}
-            </p>
         </div>
         <div
             v-if="!compact || expanded"

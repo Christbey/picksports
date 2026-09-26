@@ -13,8 +13,32 @@ const games = [
 const rows = games.map(([away, home, margin, total], i) => ({
     id: i + 1,
     game_id: i + 1,
-    recommendation: i === 0 ? { is_bet: true, recommendation_type: 'bet', market_type: 'moneyline', pick_side: 'home', prediction_phase: 'pregame' } : null,
-    value_signal: i < 2 ? { has_playable_value: true, decision_status: 'validated', best: i === 0 ? {type:'spread', side:'away', market_line:5.5} : {type:'total', side:'under', market_line:55.5} } : null,
+    recommendation:
+        i === 0
+            ? {
+                  is_bet: true,
+                  recommendation_type: 'bet',
+                  market_type: 'moneyline',
+                  pick_side: 'home',
+                  prediction_phase: 'pregame',
+              }
+            : null,
+    value_signal:
+        i < 2
+            ? {
+                  has_playable_value: true,
+                  decision_status: 'validated',
+                  best:
+                      i === 0
+                          ? { type: 'spread', side: 'away', market_line: 5.5 }
+                          : { type: 'total', side: 'under', market_line: 55.5 },
+              }
+            : null,
+    model_bet_context: {
+        model_home_spread: -Number(margin),
+        home_spread: [-5.5, -3.5, -13, 10.5][i],
+        total: [44, 55.5, 54.5, 48.5][i],
+    },
     projection: {
         predicted_spread: margin,
         predicted_total: total,

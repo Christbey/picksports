@@ -1,57 +1,74 @@
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row =>
     value && typeof value === 'object' ? (value as Row) : {};
-const lineNumber = (value: unknown): number | null =>
-    typeof value === 'number' && Number.isFinite(value) ? value : null;
+const number = (value: unknown): number | null =>
+    value !== null &&
+    value !== undefined &&
+    value !== '' &&
+    Number.isFinite(Number(value))
+        ? Number(value)
+        : null;
 
-/** Render approved public selections; never promote a model forecast or candidate. */
+/** Display model directions. Bet approval is deliberately not a display gate. */
 export function pregameBetCalls(
     prediction: unknown,
     home: string,
     away: string,
 ) {
     const data = record(prediction);
-    const calls = { winner: 'No bet', spread: 'No bet', total: 'No bet' };
-    const recommendation = record(data.recommendation);
-    const publicPick = record(recommendation.public ?? recommendation);
-    const promotion = record(recommendation.promotion);
-    const apply = (pick: Row) => {
-        const market = String(pick.market_type ?? pick.type ?? '');
-        const side = pick.pick_side ?? pick.side;
-        const team = side === 'home' ? home : side === 'away' ? away : null;
-        const line = lineNumber(pick.market_line ?? pick.line);
-        if (market === 'moneyline' && team) calls.winner = `Bet ${team} to win`;
-        if (market === 'spread' && team && line !== null)
-            calls.spread = `Bet ${team} ${line > 0 ? '+' : ''}${line} to cover`;
-        if (
-            market === 'total' &&
-            (side === 'over' || side === 'under') &&
-            line !== null
-        )
-            calls.total = `Bet ${side === 'over' ? 'Over' : 'Under'} ${line}`;
+    const context = record(data.model_bet_context);
+    const best = record(record(data.value_signal).best);
+    const assessment = record(record(data.value_signal).spread_assessment);
+    const probability = number(
+        data.home_win_probability ?? data.win_probability,
+    );
+    const modelLine = number(context.model_home_spread);
+    const margin =
+        modelLine !== null ? -modelLine : number(assessment.model_home_margin);
+    const marketLine = number(
+        context.home_spread ??
+            best.market_home_line ??
+            assessment.market_home_line,
+    );
+    const projectedTotal = number(data.predicted_total);
+    const marketTotal = number(context.total);
+    const calls = {
+        winner: 'Model unavailable',
+        spread: 'Line unavailable',
+        total: 'Line unavailable',
     };
-    if (
-        publicPick.is_bet === true &&
-        publicPick.recommendation_type === 'bet' &&
-        publicPick.prediction_phase !== 'live' &&
-        publicPick.odds_fresh !== false
+    const direction = probability !== null ? probability - 0.5 : margin;
+    if (direction !== null)
+        calls.winner =
+            direction === 0
+                ? 'Even matchup'
+                : `Bet ${direction > 0 ? home : away} to win`;
+    if (margin !== null && marketLine !== null) {
+        const edge = margin + marketLine;
+        const team = edge > 0 ? home : away;
+        const line = edge > 0 ? marketLine : -marketLine;
+        calls.spread =
+            Math.abs(edge) < 0.0001
+                ? 'Model projects a push'
+                : `Bet ${team} ${line > 0 ? '+' : ''}${line} to cover`;
+    } else if (
+        best.type === 'spread' &&
+        ['home', 'away'].includes(String(best.side)) &&
+        number(best.market_line) !== null
     ) {
-        // Approval belongs to the public recommendation, never its candidate list.
-        if (
-            promotion.status !== 'blocked' &&
-            !(
-                Array.isArray(publicPick.block_reasons) &&
-                publicPick.block_reasons.length
-            )
-        )
-            apply(publicPick);
+        const line = number(best.market_line)!;
+        calls.spread = `Bet ${best.side === 'home' ? home : away} ${line > 0 ? '+' : ''}${line} to cover`;
     }
-    const signal = record(data.value_signal);
-    if (
-        signal.has_playable_value === true &&
-        signal.decision_status !== 'blocked' &&
-        signal.decision_status !== 'unavailable'
+    if (projectedTotal !== null && marketTotal !== null)
+        calls.total =
+            Math.abs(projectedTotal - marketTotal) < 0.0001
+                ? 'Model projects a push'
+                : `Bet ${projectedTotal > marketTotal ? 'Over' : 'Under'} ${marketTotal}`;
+    else if (
+        best.type === 'total' &&
+        ['over', 'under'].includes(String(best.side)) &&
+        number(best.market_line) !== null
     )
-        apply(record(signal.best));
+        calls.total = `Bet ${best.side === 'over' ? 'Over' : 'Under'} ${number(best.market_line)}`;
     return calls;
 }

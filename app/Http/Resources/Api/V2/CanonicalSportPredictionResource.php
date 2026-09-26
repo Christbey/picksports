@@ -6,6 +6,7 @@ use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game;
 use App\Models\PredictionMarket;
 use App\Services\Api\V2\CanonicalPredictionPresentationData;
+use App\Services\Api\V2\PredictionModelBetContext;
 use App\Services\Api\V2\SportContext;
 use App\Services\CFB\Live\LiveBoardPresentation;
 use App\Support\Sports\GameDateTimePresenter;
@@ -71,6 +72,10 @@ class CanonicalSportPredictionResource extends JsonResource
                 'away' => data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'away.evidence_windows'),
             ] : null,
             'public_recommendation' => null,
+            'model_bet_context' => [
+                'model_home_spread' => $this->number($homeSpread?->projected_line),
+                ...app(PredictionModelBetContext::class)->forPrediction($prediction, $game),
+            ],
             'value_signal' => $valueSignal,
             'market_aware_projection' => null,
             'recommendation' => null,

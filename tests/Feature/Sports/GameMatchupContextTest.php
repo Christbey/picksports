@@ -10,7 +10,9 @@ use App\Models\NFL\Game as NflGame;
 use App\Models\NFL\Player as NflPlayer;
 use App\Models\NFL\PlayerStat as NflPlayerStat;
 use App\Models\NFL\Team as NflTeam;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Sanctum\Sanctum;
 
 uses(RefreshDatabase::class);
 
@@ -113,7 +115,7 @@ it('returns matchup context rows for mlb game detail', function () {
         'probable_away_pitcher_espn_id' => $awayPitcher->espn_id,
     ]);
 
-    $response = $this->getJson("/api/v1/mlb/games/{$currentGame->id}");
+    $response = $this->getJson("/api/v2/sports/mlb/games/{$currentGame->id}");
 
     $response->assertOk();
     expect($response->json('data.probable_home_pitcher_espn_id'))->toBe('5001')
@@ -207,7 +209,7 @@ it('returns matchup context rows for nfl game detail', function () {
         'away_team_id' => $awayTeam->id,
     ]);
 
-    $response = $this->getJson("/api/v1/nfl/games/{$currentGame->id}");
+    $response = $this->getJson("/api/v2/sports/nfl/games/{$currentGame->id}");
 
     $response->assertOk();
     $rows = collect($response->json('data.matchup_context.rows'));
@@ -305,7 +307,7 @@ it('treats equivalent nba season type values as the same matchup bucket', functi
         'away_team_id' => $awayTeam->id,
     ]);
 
-    $response = $this->getJson("/api/v1/nba/games/{$currentGame->id}");
+    $response = $this->getJson("/api/v2/sports/nba/games/{$currentGame->id}");
 
     $response->assertOk();
     $rows = collect($response->json('data.matchup_context.rows'));
@@ -406,7 +408,7 @@ it('includes regular season matchup records when the nba game is postseason', fu
         'away_team_id' => $awayTeam->id,
     ]);
 
-    $response = $this->getJson("/api/v1/nba/games/{$currentGame->id}");
+    $response = $this->getJson("/api/v2/sports/nba/games/{$currentGame->id}");
 
     $response->assertOk();
     $rows = collect($response->json('data.matchup_context.rows'));
@@ -420,4 +422,8 @@ it('includes regular season matchup records when the nba game is postseason', fu
     expect($overall['subtitle'])->toBe('Regular + postseason before game')
         ->and($overall['away']['display'])->toBe('2-1')
         ->and($overall['home']['display'])->toBe('1-2');
+});
+
+beforeEach(function () {
+    Sanctum::actingAs(User::factory()->create());
 });

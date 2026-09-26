@@ -58,7 +58,7 @@ it('returns a single wcbb prediction object for the game endpoint', function () 
         'away_def_eff' => 99.4,
     ]);
 
-    $response = $this->getJson("/api/v1/wcbb/games/{$game->id}/prediction");
+    $response = $this->getJson("/api/v2/sports/wcbb/games/{$game->id}/prediction");
 
     $response->assertOk()
         ->assertJsonMissingPath('data.0')

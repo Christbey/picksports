@@ -2,8 +2,10 @@
 
 use App\Models\CBB\Player;
 use App\Models\CBB\PlayerStat;
+use App\Models\User;
 use Database\Factories\CbbGameFactory;
 use Database\Factories\CbbTeamFactory;
+use Laravel\Sanctum\Sanctum;
 
 test('cbb leaderboard endpoint includes estimated epa fields', function () {
     $team = CbbTeamFactory::new()->create();
@@ -40,7 +42,7 @@ test('cbb leaderboard endpoint includes estimated epa fields', function () {
         ]);
     }
 
-    $response = $this->getJson('/api/v1/cbb/player-stats/leaderboard');
+    $response = $this->getJson('/api/v2/sports/cbb/leaderboards/players');
 
     $response->assertOk()
         ->assertJsonStructure([
@@ -58,4 +60,8 @@ test('cbb leaderboard endpoint includes estimated epa fields', function () {
     expect($entry)->not->toBeNull();
     expect((float) $entry['estimated_epa_per_game'])->toBe(14.17)
         ->and((float) $entry['estimated_epa_per_36'])->toBe(17.0);
+});
+
+beforeEach(function () {
+    Sanctum::actingAs(User::factory()->create());
 });

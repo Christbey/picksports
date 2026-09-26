@@ -16,6 +16,8 @@ class CanonicalSportPredictionQuery
 
     private const SUPPORTED_SPORTS = ['cbb', 'cfb', 'mlb', 'nba', 'nfl', 'wcbb', 'wnba'];
 
+    public function __construct(private readonly SportGameQuery $games) {}
+
     public function supports(SportContext $context): bool
     {
         return in_array($context->slug, self::SUPPORTED_SPORTS, true)
@@ -53,7 +55,9 @@ class CanonicalSportPredictionQuery
     ): CanonicalPrediction {
         $this->requireSupport($context);
 
-        return $this->queryForSport($context->slug, ['game_id' => (int) $game])->firstOrFail();
+        $resolvedGame = $this->games->find($context, $game, $user, 'identity');
+
+        return $this->queryForSport($context->slug, ['game_id' => $resolvedGame->getKey()])->firstOrFail();
     }
 
     /** @return Collection<int, int> */
@@ -130,7 +134,7 @@ class CanonicalSportPredictionQuery
             ->when($filters['season'] ?? null, fn (Builder $query, int $season): Builder => $query->where("{$gameTable}.season", $season))
             ->when($filters['season_type'] ?? null, fn (Builder $query, string $seasonType): Builder => $query->where("{$gameTable}.season_type", $seasonType))
             ->when(array_key_exists('week', $filters), fn (Builder $query): Builder => $query->where("{$gameTable}.week", $filters['week']))
-            ->when($filters['game_id'] ?? null, fn (Builder $query, int $gameId): Builder => $query->where("{$gameTable}.id", $gameId))
+            ->when(array_key_exists('game_id', $filters), fn (Builder $query): Builder => $query->where("{$gameTable}.id", $filters['game_id']))
             ->when($filters['team_id'] ?? null, function (Builder $query, int $teamId) use ($gameTable): Builder {
                 return $query->where(function (Builder $query) use ($teamId, $gameTable): void {
                     $query->where("{$gameTable}.home_team_id", $teamId)

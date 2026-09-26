@@ -189,3 +189,23 @@ test('api v2 openapi maps every success response and request body to a named con
         ->and($spec['paths']['/api/v2/user-bets/export']['get']['responses']['200']['content'])
         ->toHaveKey('text/csv');
 });
+
+test('checked in v2 openapi matches the current generated contract', function () {
+    Artisan::call('api:v2-openapi-generate', ['--stdout' => true]);
+    expect(json_decode(File::get(base_path('docs/openapi-v2.json')), true, flags: JSON_THROW_ON_ERROR))
+        ->toBe(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR));
+});
+
+test('specialized game contracts describe their actual sports filters and response envelopes', function () {
+    Artisan::call('api:v2-openapi-generate', ['--stdout' => true]);
+    $spec = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    $paths = $spec['paths'];
+    $base = '/api/v2/sports/{sport}/games/{game}/';
+    foreach (['live-betting' => 'cfb', 'live-snapshot' => 'nfl'] as $endpoint => $sport) {
+        $operation = $paths[$base.$endpoint]['get'];
+        expect(collect($operation['parameters'])->firstWhere('name', 'sport')['schema']['enum'])->toBe([$sport]);
+    }
+    expect(collect($paths[$base.'live-snapshot']['get']['parameters'])->where('in', 'query'))->toHaveCount(0)
+        ->and($spec['components']['schemas']['NflLiveSnapshotResponse']['required'])->toBe(['data'])
+        ->and($spec['components']['schemas']['CfbLiveBettingResponse']['required'])->toBe(['data', 'history', 'meta']);
+});

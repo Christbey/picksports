@@ -58,7 +58,7 @@ it('returns a single mlb prediction object for the game endpoint', function () {
         'confidence_score' => 61,
     ]);
 
-    $response = $this->getJson("/api/v1/mlb/games/{$game->id}/prediction");
+    $response = $this->getJson("/api/v2/sports/mlb/games/{$game->id}/prediction");
 
     $response->assertOk()
         ->assertJsonMissingPath('data.0')

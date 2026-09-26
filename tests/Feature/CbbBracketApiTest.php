@@ -26,7 +26,7 @@ test('authenticated user can fetch current cbb bracket for a season', function (
     ]);
 
     $this->actingAs($user)
-        ->getJson('/api/v1/cbb-brackets/current?season=2026')
+        ->getJson('/api/v2/cbb-brackets/current?season=2026')
         ->assertOk()
         ->assertJsonPath('data.id', $bracket->id)
         ->assertJsonPath('data.public_id', $bracket->public_id)
@@ -41,7 +41,7 @@ test('authenticated user can upsert current cbb bracket for a season', function 
     $user = User::factory()->create();
 
     $this->actingAs($user)
-        ->putJson('/api/v1/cbb-brackets/current', [
+        ->putJson('/api/v2/cbb-brackets/current', [
             'season' => 2026,
             'picks' => [
                 'game:1' => 'team:10',
@@ -62,7 +62,7 @@ test('authenticated user can upsert current cbb bracket for a season', function 
     ]);
 
     $this->actingAs($user)
-        ->putJson('/api/v1/cbb-brackets/current', [
+        ->putJson('/api/v2/cbb-brackets/current', [
             'season' => 2026,
             'picks' => [
                 'game:1' => 'team:99',
@@ -86,7 +86,7 @@ test('authenticated user can manage multiple brackets for the same season', func
     $group->users()->attach($user->id, ['role' => 'owner', 'joined_at' => now()]);
 
     $firstResponse = $this->actingAs($user)
-        ->postJson('/api/v1/cbb-brackets', [
+        ->postJson('/api/v2/cbb-brackets', [
             'season' => 2026,
             'name' => 'Bracket A',
             'group_id' => $group->id,
@@ -100,7 +100,7 @@ test('authenticated user can manage multiple brackets for the same season', func
         ->assertJsonPath('data.group.name', 'Office Pool');
 
     $secondResponse = $this->actingAs($user)
-        ->postJson('/api/v1/cbb-brackets', [
+        ->postJson('/api/v2/cbb-brackets', [
             'season' => 2026,
             'name' => 'Bracket B',
             'picks' => [
@@ -116,12 +116,12 @@ test('authenticated user can manage multiple brackets for the same season', func
     expect($firstPublicId)->not->toBe($secondPublicId);
 
     $this->actingAs($user)
-        ->getJson('/api/v1/cbb-brackets?season=2026')
+        ->getJson('/api/v2/cbb-brackets?season=2026')
         ->assertOk()
         ->assertJsonCount(2, 'data');
 
     $this->actingAs($user)
-        ->patchJson("/api/v1/cbb-brackets/{$firstPublicId}", [
+        ->patchJson("/api/v2/cbb-brackets/{$firstPublicId}", [
             'name' => 'Bracket A Updated',
             'group_id' => $group->id,
             'picks' => [
@@ -134,7 +134,7 @@ test('authenticated user can manage multiple brackets for the same season', func
         ->assertJsonPath('data.picks.game:1', 'team:99');
 
     $this->actingAs($user)
-        ->getJson("/api/v1/cbb-brackets/{$secondPublicId}")
+        ->getJson("/api/v2/cbb-brackets/{$secondPublicId}")
         ->assertOk()
         ->assertJsonPath('data.name', 'Bracket B')
         ->assertJsonPath('data.picks.game:1', 'team:11');
@@ -207,8 +207,8 @@ test('authenticated user can manage multiple brackets for the same season via AP
 });
 
 test('cbb bracket api requires authentication', function () {
-    $this->getJson('/api/v1/cbb-brackets/current?season=2026')->assertUnauthorized();
-    $this->putJson('/api/v1/cbb-brackets/current', [
+    $this->getJson('/api/v2/cbb-brackets/current?season=2026')->assertUnauthorized();
+    $this->putJson('/api/v2/cbb-brackets/current', [
         'season' => 2026,
         'picks' => [],
     ])->assertUnauthorized();
@@ -228,7 +228,7 @@ test('authenticated user cannot update a bracket after the lock time', function 
     $user = User::factory()->create();
 
     $this->actingAs($user)
-        ->putJson('/api/v1/cbb-brackets/current', [
+        ->putJson('/api/v2/cbb-brackets/current', [
             'season' => 2026,
             'picks' => [
                 'game:1' => 'team:10',

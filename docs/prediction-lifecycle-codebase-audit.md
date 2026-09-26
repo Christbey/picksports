@@ -1,5 +1,11 @@
 # Prediction lifecycle codebase audit and migration plan
 
+> V1 status update (2026-09-25): V1 has been removed with owner authorization
+> after confirmation that it had only application callers. Earlier migration
+> and usage-log retirement requirements below are historical. See
+> [the retirement record](api-v2-contracts-and-retirement.md).
+
+
 Last reviewed: September 3, 2026.
 
 Status: canonical lifecycle implementation complete for all seven sports. CBB, CFB, MLB, NBA, NFL, WCBB, and WNBA now have generation, evaluation, readiness reporting, and feature-gated API reads; production observation, backfill, cutover, and measured legacy removal remain operational work. No legacy code or production data has been removed.

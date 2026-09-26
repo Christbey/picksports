@@ -2,7 +2,6 @@
 
 use App\Http\Middleware\AddSecurityHeaders;
 use App\Http\Middleware\AddServerTiming;
-use App\Http\Middleware\AddV1ApiDeprecationHeaders;
 use App\Http\Middleware\AuthenticateApiV2Client;
 use App\Http\Middleware\EnforceDeveloperApiEntitlement;
 use App\Http\Middleware\EnsureIdempotentApiRequest;
@@ -14,8 +13,6 @@ use App\Http\Middleware\EnsureV2SportApiAccess;
 use App\Http\Middleware\HandleApiV2Transport;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
-use App\Http\Middleware\LogV1ApiUsage;
-use App\Http\Middleware\LogV1AuthApiUsage;
 use App\Http\Middleware\UpdateUserLastActive;
 use App\Support\Api\ApiV2ErrorResponse;
 use Illuminate\Foundation\Application;
@@ -39,8 +36,8 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
         $middleware->validateCsrfTokens(except: [
-            'api/v1/security/reports/csp',
-            'api/v1/security/reports/integrity',
+            'api/v2/security/reports/csp',
+            'api/v2/security/reports/integrity',
         ]);
 
         $middleware->web(append: [
@@ -73,9 +70,6 @@ return Application::configure(basePath: dirname(__DIR__))
             'v2.auth' => AuthenticateApiV2Client::class,
             'v2.idempotent' => EnsureIdempotentApiRequest::class,
             'developer.entitlement' => EnforceDeveloperApiEntitlement::class,
-            'v1.api-deprecation' => AddV1ApiDeprecationHeaders::class,
-            'v1.auth-api-usage' => LogV1AuthApiUsage::class,
-            'v1.api-usage' => LogV1ApiUsage::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

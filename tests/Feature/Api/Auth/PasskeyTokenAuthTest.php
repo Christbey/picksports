@@ -50,7 +50,7 @@ it('issues sanctum token from passkey verification via api auth endpoints', func
         'sign_count' => 1,
     ]);
 
-    $options = $this->postJson('/api/v1/auth/passkeys/options', [
+    $options = $this->postJson('/api/v2/auth/passkeys/options', [
         'email' => $user->email,
     ]);
 
@@ -72,7 +72,7 @@ it('issues sanctum token from passkey verification via api auth endpoints', func
 
     openssl_sign($signaturePayload, $signature, $privatePem, OPENSSL_ALGO_SHA256);
 
-    $verify = $this->postJson('/api/v1/auth/passkeys/verify', [
+    $verify = $this->postJson('/api/v2/auth/passkeys/verify', [
         'challenge_id' => $challengeId,
         'credential_id' => $credentialId,
         'client_data_json' => apiB64urlEncode($clientDataJson ?: ''),

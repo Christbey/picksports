@@ -48,10 +48,10 @@ it('filters mlb team trends by season type when requested', function () {
     ]);
 
     $response = $this->getJson(
-        "/api/v1/mlb/teams/{$team->id}/trends?games=season&season=2026&season_type=Regular%20Season&before_date=2026-03-25"
+        "/api/v2/sports/mlb/teams/{$team->id}/trends?games=season&season=2026&season_type=Regular%20Season&before_date=2026-03-25"
     );
 
     $response->assertOk()
-        ->assertJsonPath('team_id', $team->id)
-        ->assertJsonPath('sample_size', 2);
+        ->assertJsonPath('data.team_id', $team->id)
+        ->assertJsonPath('data.sample_size', 2);
 });

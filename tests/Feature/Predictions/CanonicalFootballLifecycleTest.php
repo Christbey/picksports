@@ -2,6 +2,7 @@
 
 use App\Actions\CFB\CalculateElo;
 use App\Actions\CFB\GenerateCanonicalPrediction;
+use App\Http\Resources\Api\V2\CanonicalSportPredictionResource;
 use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\FpiRating;
@@ -17,9 +18,13 @@ use App\Models\PredictionMarket;
 use App\Models\SportEvent;
 use App\Models\SportEventResult;
 use App\Models\User;
+use App\Services\Api\V2\CanonicalPredictionPresentationService;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
+use App\Services\Api\V2\SportContextResolver;
 use App\Services\CFB\CfbPlayerEvidenceService;
 use App\Services\CFB\Predictions\CfbCalculationReleaseRegistrar;
 use App\Services\CFB\Predictions\CfbCanonicalCutoverReadinessService;
+use App\Services\CFB\Predictions\CfbCanonicalSpreadValueSignalService;
 use App\Services\NFL\NflPredictionDispositionRecorder;
 use App\Services\NFL\Predictions\NflCalculationReleaseRegistrar;
 use App\Services\NFL\Predictions\NflCanonicalCutoverReadinessService;
@@ -616,4 +621,49 @@ it('serves strict football reads only after readiness passes', function (array $
     $this->getJson("/api/v2/sports/{$definition['sport']}/predictions?season=2026")->assertOk()->assertJsonCount(1, 'data')
         ->assertJsonPath('meta.prediction_source', 'canonical')->assertJsonPath('data.0.id', $prediction->public_id)
         ->assertJsonPath('data.0.game_id', $fixture['game']->getKey())->assertJsonPath('data.0.value_signal', null);
+})->with('canonical football sports');
+
+it('resolves canonical game predictions by numeric or public ID and rejects unrelated identifiers', function (array $definition) {
+    $fixture = canonicalFootballFixture($definition);
+    app($definition['registrar'])->register(effectiveAt: now()->subMinute()->toImmutable());
+    $prediction = app($definition['generator'])->execute($fixture['game']);
+    $user = User::factory()->create();
+    config()->set('subscriptions.enforce_tiers', true);
+    config()->set('subscriptions.tier_bypass_user_ids', [$user->id]);
+    config()->set("prediction_lifecycle.canonical_reads.{$definition['sport']}", true);
+    Sanctum::actingAs($user);
+    $base = "/api/v2/sports/{$definition['sport']}/games/";
+    $event = $fixture['game']->fresh()->sportEvent;
+
+    foreach ([$fixture['game']->getKey(), $event->public_id] as $id) {
+        $this->getJson($base.$id.'/prediction')->assertOk()
+            ->assertJsonPath('data.id', $prediction->public_id)
+            ->assertJsonPath('meta.game_id', $fixture['game']->getKey());
+    }
+    $otherSport = $definition['sport'] === 'nfl' ? 'cfb' : 'nfl';
+    $otherEvent = SportEvent::factory()->create(['sport' => $otherSport]);
+    foreach (['abc', '0', '999999999', $fixture['game']->getKey().'garbage', $otherEvent->public_id] as $id) {
+        $this->getJson($base.$id.'/prediction')->assertNotFound();
+    }
+    $context = app(SportContextResolver::class)->resolve($definition['sport']);
+    expect(app(CanonicalSportPredictionQuery::class)->queryForSport($context->slug, ['game_id' => 0])->count())->toBe(0);
+})->with('canonical football sports');
+
+it('serializes prepared canonical predictions without database access or recalculating value signals', function (array $definition) {
+    $fixture = canonicalFootballFixture($definition);
+    app($definition['registrar'])->register(effectiveAt: now()->subMinute()->toImmutable());
+    $prediction = app($definition['generator'])->execute($fixture['game']);
+    config()->set("prediction_lifecycle.canonical_reads.{$definition['sport']}", true);
+    $context = app(SportContextResolver::class)->resolve($definition['sport']);
+    $loaded = app(CanonicalSportPredictionQuery::class)->find($context, $prediction->public_id);
+    $presentation = app(CanonicalPredictionPresentationService::class)->forPrediction($loaded);
+    $this->mock(CfbCanonicalSpreadValueSignalService::class)->shouldNotReceive('forPrediction');
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    $resource = new CanonicalSportPredictionResource($loaded, $context, $presentation);
+    $payload = $resource->resolve(request());
+    expect($payload['id'])->toBe($prediction->public_id)
+        ->and($payload['value_signal'])->toBe($presentation->valueSignal)
+        ->and(DB::getQueryLog())->toBeEmpty();
+    DB::disableQueryLog();
 })->with('canonical football sports');

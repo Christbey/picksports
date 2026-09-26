@@ -74,9 +74,9 @@ it('uses default tier slug for trends when authenticated user has no tier role',
     $user->givePermissionTo('view-nba-predictions');
     Sanctum::actingAs($user);
 
-    $this->getJson("/api/v1/nba/teams/{$team->id}/trends")
+    $this->getJson("/api/v2/sports/nba/teams/{$team->id}/trends")
         ->assertOk()
-        ->assertJsonPath('user_tier', 'free');
+        ->assertJsonPath('data.user_tier', 'free');
 });
 
 it('uses synced tier role as effective trends tier for authenticated users', function () {
@@ -90,9 +90,9 @@ it('uses synced tier role as effective trends tier for authenticated users', fun
     $user->givePermissionTo('view-nba-predictions');
     Sanctum::actingAs($user);
 
-    $this->getJson("/api/v1/nba/teams/{$team->id}/trends")
+    $this->getJson("/api/v2/sports/nba/teams/{$team->id}/trends")
         ->assertOk()
-        ->assertJsonPath('user_tier', 'basic');
+        ->assertJsonPath('data.user_tier', 'basic');
 });
 
 it('returns all trend categories without pro or premium locks', function () {
@@ -131,18 +131,18 @@ it('returns all trend categories without pro or premium locks', function () {
     }
 
     $response = $this->getJson(
-        "/api/v1/nba/teams/{$team->id}/trends?games=season&season=2026&season_type=3"
+        "/api/v2/sports/nba/teams/{$team->id}/trends?games=season&season=2026&season_type=3"
     );
 
     $response->assertOk()
-        ->assertJsonPath('user_tier', 'free')
-        ->assertJsonPath('locked_trends', []);
+        ->assertJsonPath('data.user_tier', 'free')
+        ->assertJsonPath('data.locked_trends', []);
 
-    expect($response->json('trends.quarters'))->not->toBeEmpty()
-        ->and($response->json('scored_signals'))->not->toBeEmpty()
-        ->and($response->json('trend_signal_summary.counts.contextual'))->toBeGreaterThan(0)
-        ->and($response->json('locked_trends.advanced'))->toBeNull()
-        ->and($response->json('locked_trends.momentum'))->toBeNull();
+    expect($response->json('data.trends.quarters'))->not->toBeEmpty()
+        ->and($response->json('data.scored_signals'))->not->toBeEmpty()
+        ->and($response->json('data.trend_signal_summary.counts.contextual'))->toBeGreaterThan(0)
+        ->and($response->json('data.locked_trends.advanced'))->toBeNull()
+        ->and($response->json('data.locked_trends.momentum'))->toBeNull();
 });
 
 it('labels spread and totals trends as model-based', function () {
@@ -177,13 +177,13 @@ it('labels spread and totals trends as model-based', function () {
     }
 
     $response = $this->getJson(
-        "/api/v1/nba/teams/{$team->id}/trends?games=season&season=2026&season_type=3"
+        "/api/v2/sports/nba/teams/{$team->id}/trends?games=season&season=2026&season_type=3"
     );
 
     $response->assertOk();
 
-    $advanced = implode(' ', $response->json('trends.advanced') ?? []);
-    $totals = implode(' ', $response->json('trends.totals') ?? []);
+    $advanced = implode(' ', $response->json('data.trends.advanced') ?? []);
+    $totals = implode(' ', $response->json('data.trends.totals') ?? []);
 
     expect($advanced)->toContain('against the model spread')
         ->and($advanced)->not->toContain('against the spread')

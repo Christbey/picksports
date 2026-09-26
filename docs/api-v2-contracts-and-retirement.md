@@ -2,7 +2,7 @@
 
 This document is the operating companion to `docs/api-v2-modernization-plan.md`.
 It lists the Vue-facing contracts that have moved to `/api/v2`, where to change
-them, and how to validate the remaining `/api/v1` usage before retirement.
+them, and records the completed removal of the application-only V1 API.
 
 For the full current route matrix, supported filters, authentication rules, and
 contract-test ownership, see `docs/api-v2-reference.md`. The generated
@@ -126,75 +126,52 @@ The payload should include:
 - freshness metadata
 - warnings or missing-field findings when data is stale or incomplete
 
-## V1 Retirement Logging
+## V1 removed (2026-09-25)
 
-Legacy product `/api/v1` routes now pass through `v1.api-usage`. This excludes
-v1 auth and security report routes.
+The owner confirmed V1 was used only by this application and authorized its
+removal. All 337 V1 route entries are removed, including auth and security
+reports. `/api/v1/*` now returns 404; there are no compatibility redirects.
+The V1 usage/deprecation middleware, configuration, report commands, replacement
+resolver and route files are removed. Production log collection is no longer a
+retirement prerequisite for this application-only surface.
 
-Enable production usage logging with:
+The remaining callers moved to V2:
 
-```env
-API_V1_USAGE_LOGGING_ENABLED=true
-```
+- The NFL research panel uses `GET /api/v2/sports/nfl/games/{game}/research`.
+  It requires V2 authentication, API/sport access and the existing spread,
+  win-probability and betting-value permissions. The payload is under `data`.
+- Browser CSP/integrity reporting uses `POST /api/v2/security/reports/{csp|integrity}`.
+  Reporting remains public, throttled and CSRF exempt. The Reporting-Endpoints
+  header now advertises the V2 URLs.
+- Public sport pages retrieve leaderboards from `SportPlayerLeaderboardQuery`,
+  removing the last direct dependency on the old sport API controllers.
 
-Deprecation headers are enabled by default:
+92 obsolete sport API controllers were removed. Shared sport resources,
+models, actions and services remain because web pages and V2 still use them.
+Existing auth tokens and application data are unchanged; token/passkey routes
+are under `/api/v2/auth`. No database migration is needed.
 
-```env
-API_V1_DEPRECATION_HEADERS_ENABLED=true
-```
+V1 contract-only capability, numeric-route and bullpen endpoint tests were
+retired with their routes. Relevant domain tests now exercise V2. Player-futures
+projection and prediction-access inspection tests exercise their retained
+services directly. Retirement tests enforce that no V1 routes or commands
+remain, and current frontend code contains no V1 calls.
 
-Legacy product responses include `X-API-Deprecated: true` and an
-`X-API-Replacement` header. App-level migrated routes point at their exact v2
-prefix, such as `/api/v2/user-bets`; sport routes point at
-`/api/v2/sports/{sport}/...`.
+Deploy backend and compiled frontend together using the normal deployment
+process, including rebuilding the route cache. No deployment was performed as
+part of this source change. Browsers running an old bundle may need a reload.
 
-When logging is enabled, the app writes `api.v1.usage` records containing:
+## Browser request behavior
 
-- method
-- path
-- route name
-- user id when authenticated
-- IP address
-- user agent
+`useApiV2Client` sends CSRF tokens on browser mutations and an `Idempotency-Key`
+on supported product writes. One automatic retry of a network failure reuses
+the exact key and body. Pass `idempotencyKey` in request options to retain an
+operation identity across explicit retries; do not reuse it for a new action.
+Completed HTTP errors and aborted requests are not automatically retried.
 
-Use this to prove no external or internal clients still depend on legacy
-product routes before removal.
+Reads and writes reject with `ApiError`, preserving `status`, `data`, `code`,
+`requestId`, and `retryAfter`. Consumers should catch errors rather than treating
+all failures as empty data.
 
-Summarize logged usage with:
-
-```bash
-php artisan api:v1-usage-report
-```
-
-Useful variants:
-
-```bash
-php artisan api:v1-usage-report --limit=50
-php artisan api:v1-usage-report --path=storage/logs/laravel.log
-php artisan api:v1-usage-report --json
-```
-
-The report includes a `replacement_path` column/value that mirrors the
-`X-API-Replacement` response header.
-
-## Retirement Checklist
-
-1. Run production with `API_V1_USAGE_LOGGING_ENABLED=true`.
-2. Run `php artisan api:v1-usage-report` and review usage grouped by `path`
-   and `route_name`.
-3. Confirm Vue scans have no product-data `/api/v1` calls:
-
-```bash
-rg -n "api/v1|axios\\.|fetch\\(" resources/js --glob '!routes/**' --glob '!actions/**'
-```
-
-4. Keep v1 auth routes until token/passkey API clients have a separate v2 auth
-   migration plan. See
-   `docs/api-v2-auth-migration-plan.md`.
-5. Remove only v1 product routes with zero observed usage.
-6. Re-run:
-
-```bash
-php artisan test tests/Feature/Api/V2
-npm run build
-```
+Regenerate `docs/openapi-v2.json` with `php artisan api:v2-openapi-generate`
+whenever routes or contracts change. The OpenAPI tests enforce artifact parity.

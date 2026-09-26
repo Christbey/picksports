@@ -47,7 +47,7 @@ it('returns nfl playoff forecasts through the api route', function () {
         ]);
     }
 
-    $response = $this->getJson('/api/v1/nfl/playoff-forecasts?season=2026&as_of_date=2026-04-03T18:00:00Z&require_historical_metrics=1');
+    $response = $this->getJson('/api/v2/sports/nfl/forecasts?season=2026&as_of_date=2026-04-03T18:00:00Z&require_historical_metrics=1');
 
     $response->assertOk();
     $response->assertJsonPath('meta.season', 2026);

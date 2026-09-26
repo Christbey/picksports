@@ -84,7 +84,7 @@ test('bulk preparation fetches ai analyses once and serialization performs no qu
 
     expect($analysisQueries)->toHaveCount(1);
 
-    $request = Request::create('/api/v1/nba/predictions');
+    $request = Request::create('/api/v2/sports/nba/predictions');
     $request->setUserResolver(fn () => $user);
 
     DB::flushQueryLog();
@@ -103,7 +103,7 @@ test('bulk preparation fetches ai analyses once and serialization performs no qu
         ->and($payload[0]['narrative'])->toBeArray();
 });
 
-test('game endpoints preserve their nested prepared prediction contract', function () {
+test('game predictions are retrieved through the dedicated v2 endpoint', function () {
     config()->set('subscriptions.enforce_tiers', false);
 
     $user = User::factory()->create();
@@ -126,11 +126,11 @@ test('game endpoints preserve their nested prepared prediction contract', functi
         'confidence_score' => 78,
     ]);
 
-    $this->getJson("/api/v1/nba/games/{$game->id}")
+    $this->getJson("/api/v2/sports/nba/games/{$game->id}/prediction")
         ->assertOk()
-        ->assertJsonPath('data.prediction.predicted_spread', 6.5)
-        ->assertJsonPath('data.prediction.home_win_probability', 0.66)
-        ->assertJsonMissingPath('data.prediction.game');
+        ->assertJsonPath('data.predicted_spread', 6.5)
+        ->assertJsonPath('data.home_win_probability', 0.66)
+        ->assertJsonPath('data.game.id', $game->id);
 });
 
 test('prediction detail endpoints resolve prepared fields before returning the response', function () {
@@ -156,7 +156,7 @@ test('prediction detail endpoints resolve prepared fields before returning the r
         'confidence_score' => 69,
     ]);
 
-    $this->getJson("/api/v1/nba/predictions/{$prediction->id}")
+    $this->getJson("/api/v2/sports/nba/predictions/{$prediction->id}")
         ->assertOk()
         ->assertJsonPath('data.predicted_spread', 3.5)
         ->assertJsonPath('data.home_win_probability', 0.59)

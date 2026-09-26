@@ -50,7 +50,7 @@ it('returns wcbb tournament forecasts for authenticated users', function () {
         'updated_at' => now(),
     ]);
 
-    $response = $this->getJson('/api/v1/wcbb/tournament-forecasts?season=2026');
+    $response = $this->getJson('/api/v2/sports/wcbb/forecasts?season=2026');
 
     $response->assertOk()
         ->assertJsonStructure([
@@ -143,7 +143,7 @@ it('regenerates stale or partial wcbb forecasts before responding', function () 
         'updated_at' => now()->subDay(),
     ]);
 
-    $response = $this->getJson('/api/v1/wcbb/tournament-forecasts?season=2026');
+    $response = $this->getJson('/api/v2/sports/wcbb/forecasts?season=2026');
 
     $response->assertOk();
 

@@ -256,16 +256,16 @@ test('public sport pages advertise only configured destinations', function (stri
         ->where('links', $links)
     );
 })->with([
-    'cfb omits unavailable team metrics and props' => [
+    'cfb exposes props but omits unavailable team metrics' => [
         'cfb',
         [
             'predictions' => '/cfb/predictions',
             'injuries' => '/cfb/injuries',
             'teamMetrics' => null,
             'playerStats' => '/cfb/player-stats',
-            'playerProps' => null,
+            'playerProps' => '/cfb/player-props',
         ],
-        false,
+        true,
     ],
     'wcbb omits unavailable player pages and props' => [
         'wcbb',

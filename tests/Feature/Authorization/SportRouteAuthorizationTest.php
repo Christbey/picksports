@@ -113,47 +113,48 @@ it('allows player props routes with sport permission', function () {
         ->assertOk();
 });
 
-dataset('public_sport_api_paths', [
-    ['nba', '/api/v1/nba/teams'],
-    ['cbb', '/api/v1/cbb/teams'],
-    ['wcbb', '/api/v1/wcbb/teams'],
-    ['nfl', '/api/v1/nfl/teams'],
-    ['mlb', '/api/v1/mlb/teams'],
-    ['cfb', '/api/v1/cfb/teams'],
-    ['wnba', '/api/v1/wnba/teams'],
+dataset('core_sport_api_paths', [
+    ['nba', '/api/v2/sports/nba/teams'],
+    ['cbb', '/api/v2/sports/cbb/teams'],
+    ['wcbb', '/api/v2/sports/wcbb/teams'],
+    ['nfl', '/api/v2/sports/nfl/teams'],
+    ['mlb', '/api/v2/sports/mlb/teams'],
+    ['cfb', '/api/v2/sports/cfb/teams'],
+    ['wnba', '/api/v2/sports/wnba/teams'],
 ]);
 
 dataset('protected_sport_api_paths', [
-    ['nba', '/api/v1/nba/predictions'],
-    ['cbb', '/api/v1/cbb/predictions'],
-    ['wcbb', '/api/v1/wcbb/predictions'],
-    ['nfl', '/api/v1/nfl/predictions'],
-    ['mlb', '/api/v1/mlb/predictions'],
-    ['cfb', '/api/v1/cfb/predictions'],
-    ['wnba', '/api/v1/wnba/predictions'],
+    ['nba', '/api/v2/sports/nba/predictions'],
+    ['cbb', '/api/v2/sports/cbb/predictions'],
+    ['wcbb', '/api/v2/sports/wcbb/predictions'],
+    ['nfl', '/api/v2/sports/nfl/predictions'],
+    ['mlb', '/api/v2/sports/mlb/predictions'],
+    ['cfb', '/api/v2/sports/cfb/predictions'],
+    ['wnba', '/api/v2/sports/wnba/predictions'],
 ]);
 
-it('allows public access to core sports api routes', function (string $sport, string $path) {
+it('requires authentication for core sports api routes', function (string $sport, string $path) {
     $this->getJson($path)
-        ->assertOk();
-})->with('public_sport_api_paths');
+        ->assertUnauthorized();
+})->with('core_sport_api_paths');
 
 it('requires auth on protected sports api routes', function (string $sport, string $path) {
     $this->getJson($path)
         ->assertUnauthorized();
 })->with('protected_sport_api_paths');
 
-it('allows authenticated users to access protected sports api routes', function (string $sport, string $path) {
+it('denies authenticated users without API entitlement', function (string $sport, string $path) {
     $user = User::factory()->create();
     Sanctum::actingAs($user);
 
     $this->getJson($path)
-        ->assertOk();
+        ->assertForbidden();
 })->with('protected_sport_api_paths');
 
 it('also allows authenticated users with sport api permission', function (string $sport, string $path) {
     $user = User::factory()->create();
     grantPermission($user, "view-{$sport}-predictions");
+    grantPermission($user, 'access-api');
     Sanctum::actingAs($user);
 
     $this->getJson($path)

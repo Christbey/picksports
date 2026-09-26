@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\Auth\PasskeyTokenAuthController;
 use App\Http\Controllers\Api\Auth\TokenAuthController;
 use App\Http\Controllers\Api\CBB\BracketController as CbbBracketController;
 use App\Http\Controllers\Api\GroupController;
+use App\Http\Controllers\Api\SecurityReportController;
 use App\Http\Controllers\Api\V2\Admin\PayloadInspectorController;
 use App\Http\Controllers\Api\V2\CfbLiveBettingController;
 use App\Http\Controllers\Api\V2\DeveloperSandboxController;
@@ -12,6 +13,7 @@ use App\Http\Controllers\Api\V2\LiveScoreboardController;
 use App\Http\Controllers\Api\V2\MlbDailyPickController;
 use App\Http\Controllers\Api\V2\NativeDeviceSessionController;
 use App\Http\Controllers\Api\V2\NflLiveSnapshotController;
+use App\Http\Controllers\Api\V2\NflResearchController;
 use App\Http\Controllers\Api\V2\SportController;
 use App\Http\Controllers\Api\V2\SportDepthChartController;
 use App\Http\Controllers\Api\V2\SportForecastController;
@@ -34,6 +36,14 @@ use App\Http\Controllers\BetTrackerController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v2')->name('v2.')->group(function (): void {
+    $securityReportThrottle = app()->environment(['local', 'testing'])
+        ? 'throttle:10000,1'
+        : 'throttle:1000,1';
+    Route::post('/security/reports/csp', [SecurityReportController::class, 'csp'])
+        ->middleware($securityReportThrottle)->name('security.reports.csp');
+    Route::post('/security/reports/integrity', [SecurityReportController::class, 'integrity'])
+        ->middleware($securityReportThrottle)->name('security.reports.integrity');
+
     Route::get('/developer/sandbox', DeveloperSandboxController::class)
         ->middleware([
             'auth:developer-api',
@@ -50,7 +60,7 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
             Route::post('/login', [TokenAuthController::class, 'login'])
                 ->middleware('throttle:api-v2-auth-login')
                 ->name('login');
-            Route::post('/passkeys/options', [PasskeyTokenAuthController::class, 'options'])
+            Route::post('/passkeys/options', [PasskeyTokenAuthController::class, 'createOptions'])
                 ->middleware('throttle:api-v2-auth-passkey-options')
                 ->name('passkeys.createOptions');
             Route::post('/passkeys/verify', [PasskeyTokenAuthController::class, 'verify'])
@@ -164,6 +174,9 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
         ->name('sports.')
         ->group(function (): void {
             Route::get('/games', [SportGameController::class, 'index'])->name('games.index');
+            Route::get('/games/{game}/research', NflResearchController::class)
+                ->middleware(['permission:view-nfl-predictions', 'permission:view-prediction-spread', 'permission:view-prediction-win-probability', 'permission:view-prediction-betting-value'])
+                ->name('games.research.show');
             Route::get('/games/{game}/page', SportGamePageController::class)->name('games.page.show');
             Route::get('/games/{game}/live-snapshot', NflLiveSnapshotController::class)->name('games.live-snapshot.show');
             Route::get('/games/{game}/trends', SportGameTrendController::class)->name('games.trends.show');

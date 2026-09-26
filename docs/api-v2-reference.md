@@ -441,3 +441,38 @@ Admin payload inspector examples:
   and futures/player-prop markets.
 - The documentation does not replace production payload inspection. Use the
   payload inspector and contract tests when debugging frontend/API mismatches.
+
+
+## Specialized game endpoints (updated 2026-09-23)
+
+These routes require V2 authentication and the sport API entitlement checks.
+Unsupported sports return 404. All paths are relative to `/api/v2`.
+
+| GET path | Sport | Query parameters | Response |
+| --- | --- | --- | --- |
+| `/sports/{sport}/games/{game}/live-betting` | CFB | None | Nullable latest snapshot in `data`, up to 25 snapshots in `history`, and `meta` |
+| `/sports/{sport}/games/{game}/live-snapshot` | NFL | None | `data` with game state, nullable provisional projection, timestamps and limitations; no `meta`; private/no-store |
+
+CFB live betting requires a numeric game ID. The three NFL endpoints accept a
+numeric game ID or a sport-event public ID belonging to NFL. Canonical
+`/sports/{sport}/games/{game}/prediction` lookup also resolves the game before
+reading its prediction; malformed, nonexistent, and wrong-sport IDs return 404.
+
+The generated OpenAPI artifact includes named contracts for these endpoints.
+Run `php artisan api:v2-openapi-generate` after changing their routes or schemas.
+
+
+## V1 retirement and final application migrations (2026-09-25)
+
+V1 is removed; there are 82 V2 route entries and no V1 routes. The final
+application callers use:
+
+- `GET /api/v2/sports/nfl/games/{game}/research`: numeric game ID or NFL
+  sport-event public ID; latest 20 research revisions in `data.revisions`, with
+  `data.game_id` and `meta`. V2 authentication, API/sport entitlement and existing
+  spread, win-probability and betting-value permission checks apply.
+- `POST /api/v2/security/reports/csp` and `/api/v2/security/reports/integrity`:
+  public, throttled, CSRF-exempt browser-report ingestion; returns `{"ok":true}`.
+
+The application Reporting-Endpoints header points to the new report URLs.
+No compatibility redirects or V1 logging commands remain.

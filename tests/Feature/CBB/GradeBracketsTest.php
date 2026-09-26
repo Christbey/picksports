@@ -94,7 +94,7 @@ test('bracket leaderboard returns ranked bracket rows', function () {
     ]);
 
     $this->actingAs($first)
-        ->getJson('/api/v1/cbb-brackets/leaderboard?season=2026')
+        ->getJson('/api/v2/cbb-brackets/leaderboard?season=2026')
         ->assertOk()
         ->assertJsonPath('data.0.bracket_name', 'Alpha Entry')
         ->assertJsonPath('data.0.rank', 1)
@@ -182,7 +182,7 @@ test('bracket leaderboard can be filtered by group', function () {
     ]);
 
     $this->actingAs($owner)
-        ->getJson("/api/v1/cbb-brackets/leaderboard?season=2026&group_id={$group->id}")
+        ->getJson("/api/v2/cbb-brackets/leaderboard?season=2026&group_id={$group->id}")
         ->assertOk()
         ->assertJsonCount(2, 'data')
         ->assertJsonPath('data.0.bracket_name', 'Owner Entry')

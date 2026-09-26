@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { useApiV2Client } from '@/composables/useApiV2Client';
 import { decisionLabel, researchReason } from '@/lib/researchDecision';
 
 type Argument = {
@@ -28,6 +29,7 @@ const props = defineProps<{
     mobileCompact?: boolean;
     gameStatus?: string;
 }>();
+const api = useApiV2Client();
 const revisions = ref<Revision[]>([]);
 const error = ref('');
 const loading = ref(true);
@@ -42,15 +44,11 @@ const sourceUrl = (url: string | null) =>
     url && /^https:\/\//i.test(url) ? url : undefined;
 onMounted(async () => {
     try {
-        const response = await fetch(
-            `/api/v1/nfl/games/${props.gameId}/research`,
-            {
-                credentials: 'same-origin',
-                headers: { Accept: 'application/json' },
-            },
-        );
-        if (!response.ok) throw new Error('Research is unavailable.');
-        revisions.value = (await response.json()).revisions;
+        const response = await api.games.research<{
+            game_id: number;
+            revisions: Revision[];
+        }>('nfl', props.gameId);
+        revisions.value = response?.data.revisions ?? [];
     } catch {
         error.value = 'Research is unavailable right now.';
     } finally {

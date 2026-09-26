@@ -3,6 +3,7 @@
 use App\Models\NBA\Game;
 use App\Models\NBA\Team;
 use App\Models\NBA\TeamMetric;
+use App\Models\User;
 use App\Models\ValidationFinding;
 
 function createNbaPlayoffGame(Team $home, Team $away, array $overrides = []): Game
@@ -107,7 +108,7 @@ it('does not pass ended-series placeholders through the NBA games API index', fu
         'away_score' => 0,
     ]);
 
-    $this->getJson('/api/v1/nba/games?season=2026&per_page=100')
+    $this->actingAs(User::factory()->create())->getJson('/api/v2/sports/nba/games?season=2026&per_page=100')
         ->assertOk()
         ->assertJsonMissing(['id' => $deadPlaceholder->id]);
 });
@@ -131,7 +132,7 @@ it('does not pass ended-series placeholders through the NBA game detail API', fu
         'away_score' => 0,
     ]);
 
-    $this->getJson("/api/v1/nba/games/{$deadPlaceholder->id}")
+    $this->actingAs(User::factory()->create())->getJson("/api/v2/sports/nba/games/{$deadPlaceholder->id}")
         ->assertNotFound();
 });
 

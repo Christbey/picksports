@@ -14,17 +14,17 @@ beforeEach(function () {
 it('requires sanctum auth for team trends endpoint', function () {
     $team = Team::factory()->create();
 
-    $this->getJson("/api/v1/nba/teams/{$team->id}/trends")
+    $this->getJson("/api/v2/sports/nba/teams/{$team->id}/trends")
         ->assertUnauthorized();
 });
 
-it('allows authenticated users without sport permission on team trends endpoint while sports are free', function () {
+it('denies authenticated users without sport API entitlement', function () {
     $team = Team::factory()->create();
     $user = User::factory()->create();
     Sanctum::actingAs($user);
 
-    $this->getJson("/api/v1/nba/teams/{$team->id}/trends")
-        ->assertOk();
+    $this->getJson("/api/v2/sports/nba/teams/{$team->id}/trends")
+        ->assertForbidden();
 });
 
 it('allows authenticated users with sport permission on team trends endpoint', function () {
@@ -32,9 +32,10 @@ it('allows authenticated users with sport permission on team trends endpoint', f
 
     $team = Team::factory()->create();
     $user = User::factory()->create();
-    $user->givePermissionTo('view-nba-predictions');
+    Permission::findOrCreate('access-api', 'web');
+    $user->givePermissionTo(['view-nba-predictions', 'access-api']);
     Sanctum::actingAs($user);
 
-    $this->getJson("/api/v1/nba/teams/{$team->id}/trends")
+    $this->getJson("/api/v2/sports/nba/teams/{$team->id}/trends")
         ->assertOk();
 });

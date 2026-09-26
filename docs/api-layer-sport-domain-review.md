@@ -1,6 +1,6 @@
 # API Layer Sport-Domain Review
 
-Last reviewed: 2026-08-03.
+API transport and route inventory updated: 2026-09-25. Other domain findings retain their 2026-08-03 review scope.
 
 ## Scope And Invariants
 
@@ -18,7 +18,7 @@ cycle.
 ```text
 Vue useApiV2Client
   -> /api/v2/sports/{sport}/...
-  -> auth:sanctum + v2.sport-api-access
+  -> v2.auth (session / Sanctum / Passport) + v2.sport-api-access
   -> V2 Form Request
   -> SportContextResolver / SportContext
   -> sport-family query or presentation service
@@ -34,17 +34,34 @@ wire format. This is the correct long-term boundary.
 
 | Surface | Registered routes | Status |
 | --- | ---: | --- |
-| `/api/v1` | 334 | Compatibility surface; deprecated and usage-logged. |
-| `/api/v2` | 69 | Canonical application API. |
+| `/api/v1` | 0 | Removed; former URLs return 404. |
+| `/api/v2` | 82 | Sole versioned application API. |
 
-The frontend contains no direct `/api/v1` calls and uses
-`resources/js/composables/useApiV2Client.ts`. V1 still has compatibility tests
-and must not be removed until production usage logs show no callers for a full
-retirement window.
+The frontend uses `resources/js/composables/useApiV2Client.ts`. NFL research
+and browser security reporting have moved to V2. Public sport pages now use
+the V2 leaderboard query directly. The 92 unused sport API controllers were
+removed; shared sport resources and domain services remain in use.
 
-The legacy sport layer currently contains 78 sport controllers plus shared
-abstract controllers and roughly 70 sport resources. This is the largest
-verified bloat candidate, but it is not yet verified dead code.
+## September API Hardening
+
+- Canonical game-prediction lookup resolves the numeric game ID or sport-event
+  public ID before querying predictions. Invalid and wrong-sport IDs return 404;
+  a zero game filter cannot broaden the query to all games.
+- Canonical prediction resources receive prepared confidence and CFB value-signal
+  data from `CanonicalPredictionPresentationService`. Serialization performs no
+  domain calculation or service resolution.
+- The shared browser mutation client sends CSRF headers, initializing the Sanctum
+  cookie when needed. It creates an idempotency key per operation and reuses it
+  for one automatic network-failure retry. Callers may retain `idempotencyKey`
+  for retries across calls; separate operations must use separate keys. HTTP
+  errors and cancelled requests are not automatically retried.
+- Reads and writes throw `ApiError` with status, payload, server error code,
+  request ID and Retry-After information. Callers must handle rejected reads.
+- OpenAPI includes CFB live betting and NFL live snapshot, market history and
+  matchup signals. A test compares the checked-in artifact to generated output.
+
+V1 was removed on 2026-09-25 after the owner confirmed it had only application
+callers. No compatibility window is needed. See [the retirement record](api-v2-contracts-and-retirement.md).
 
 ## Findings And Actions
 
@@ -109,19 +126,12 @@ symmetry. Add one only when there is a validated modeling need, a versioned
 feature contract, chronological evaluation, artifact lineage, and a shadow
 deployment path.
 
-## Removal Gate
+## V1 Removal Complete
 
-Code is removable only when all of the following are true:
-
-1. No Vue, mobile, integration, webhook, scheduled command, or documented
-   external consumer references it.
-2. V1 usage logging reports zero calls for the agreed production window.
-3. A V2 replacement contract exists and has feature coverage.
-4. Contract, authorization, and route tests remain green after removal.
-5. OpenAPI and API reference artifacts are regenerated.
-
-Until this gate is met, legacy code is a retirement candidate rather than dead
-code.
+The owner-authorized removal supersedes the previous production-usage-log gate.
+Regression tests enforce V1 route removal, V2 research permissions and browser
+security reporting. Existing domain scenarios were migrated to V2, including
+NBA completed-playoff-series filtering and MLB derived team records.
 
 ## Next Execution Order
 
@@ -130,8 +140,7 @@ code.
    controllers.
 3. Complete V2 capability metadata and make the admin inspector consume it.
 4. Extract CFB and MLB prediction serializers from the common resource.
-5. Review production V1 usage logs and remove routes/controllers/resources in
-   sport-sized batches with replacement and rollback notes.
+5. Keep the V1 retirement and frontend-consumer checks green as V2 evolves.
 
 Standards references:
 

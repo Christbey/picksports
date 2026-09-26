@@ -7,13 +7,12 @@ use App\Http\Resources\BettingRecommendationResource;
 use App\Services\Api\V2\SportContext;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportGameQuery;
+use App\Services\Api\V2\SportPlayerLeaderboardQuery;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use App\Support\InjuryImpactScorer;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -28,6 +27,7 @@ class PublicSportPageController extends Controller
         private readonly PublicGameSummaryPresenter $gameSummaries,
         private readonly SportContextResolver $sports,
         private readonly SportGameQuery $games,
+        private readonly SportPlayerLeaderboardQuery $leaderboards,
     ) {}
 
     public function __invoke(Request $request, string $sport): Response
@@ -50,7 +50,7 @@ class PublicSportPageController extends Controller
         $latestSeason = $this->latestSeason($gameModel);
         $injuries = $this->injurySummaries($sport);
         $topTeams = $this->topTeams($sport, $namespace, $latestSeason);
-        $topPlayers = $this->topPlayers($sport, $namespace, $latestSeason);
+        $topPlayers = $this->topPlayers($sport, $latestSeason);
         $featuredPredictions = $this->featuredPredictions($context, $this->games);
         $featuredProps = $this->featuredProps($sport, $definition);
         $conferencePlayoffTeams = $sport === 'nba' ? $this->nbaConferencePlayoffTeams() : null;
@@ -215,21 +215,16 @@ class PublicSportPageController extends Controller
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function topPlayers(string $sport, string $namespace, ?int $latestSeason): array
+    private function topPlayers(string $sport, ?int $latestSeason): array
     {
-        $controllerClass = "App\\Http\\Controllers\\Api\\{$namespace}\\PlayerStatController";
-        if (! class_exists($controllerClass)) {
+        $context = $this->sports->resolve($sport);
+        if (! $context->supports('player_stats_leaderboard')) {
             return [];
         }
-
-        $request = Request::create('/', 'GET', array_filter([
+        $rows = $this->leaderboards->get($context, array_filter([
             'min_games' => in_array($sport, ['nfl', 'cfb'], true) ? 2 : 5,
             'season' => $latestSeason,
         ], fn ($value) => $value !== null));
-
-        $response = app($controllerClass)->leaderboard($request);
-        $payload = $this->extractResourcePayload($response, $request);
-        $rows = collect($payload['data'] ?? []);
 
         return $rows
             ->sortByDesc(fn (array $row) => (float) (data_get($row, 'points_per_game') ?? 0))
@@ -493,19 +488,6 @@ class PublicSportPageController extends Controller
         }
 
         return Carbon::parse($value)->toIso8601String();
-    }
-
-    private function extractResourcePayload(mixed $response, Request $request): array
-    {
-        if ($response instanceof JsonResponse) {
-            return $response->getData(true);
-        }
-
-        if ($response instanceof AnonymousResourceCollection) {
-            return $response->response($request)->getData(true);
-        }
-
-        return [];
     }
 
     private function defaultPropsDate(string $sportCode): ?string

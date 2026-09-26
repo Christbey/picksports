@@ -6,7 +6,7 @@ use App\Models\UserBet;
 test('authenticated users can view their bets via API', function () {
     $user = User::factory()->create();
 
-    $response = $this->actingAs($user)->get('/api/v1/user-bets');
+    $response = $this->actingAs($user)->get('/api/v2/user-bets');
 
     $response->assertOk();
     $response->assertJsonStructure([
@@ -48,9 +48,9 @@ test('authenticated users can view their bets via API v2', function () {
 });
 
 test('guests cannot access bet tracker API', function () {
-    $response = $this->get('/api/v1/user-bets');
+    $response = $this->get('/api/v2/user-bets');
 
-    $response->assertRedirect();
+    $response->assertUnauthorized();
 });
 
 test('guests cannot access bet tracker API v2', function () {
@@ -62,7 +62,7 @@ test('guests cannot access bet tracker API v2', function () {
 test('users can log a new bet via API', function () {
     $user = User::factory()->create();
 
-    $response = $this->actingAs($user)->post('/api/v1/user-bets', [
+    $response = $this->actingAs($user)->post('/api/v2/user-bets', [
         'prediction_id' => 1,
         'prediction_sport' => 'nba',
         'bet_amount' => 100.00,
@@ -148,7 +148,7 @@ test('users can update bet results via API', function () {
         'result' => 'pending',
     ]);
 
-    $response = $this->actingAs($user)->put("/api/v1/user-bets/{$bet->id}", [
+    $response = $this->actingAs($user)->put("/api/v2/user-bets/{$bet->id}", [
         'result' => 'won',
     ]);
 
@@ -184,7 +184,7 @@ test('users cannot update other users bets via API', function () {
         'user_id' => $otherUser->id,
     ]);
 
-    $response = $this->actingAs($user)->put("/api/v1/user-bets/{$bet->id}", [
+    $response = $this->actingAs($user)->put("/api/v2/user-bets/{$bet->id}", [
         'result' => 'won',
     ]);
 
@@ -197,7 +197,7 @@ test('users can delete their bets via API', function () {
         'user_id' => $user->id,
     ]);
 
-    $response = $this->actingAs($user)->delete("/api/v1/user-bets/{$bet->id}");
+    $response = $this->actingAs($user)->delete("/api/v2/user-bets/{$bet->id}");
 
     $response->assertNoContent();
     $this->assertDatabaseMissing('user_bets', [
@@ -226,7 +226,7 @@ test('users cannot delete other users bets via API', function () {
         'user_id' => $otherUser->id,
     ]);
 
-    $response = $this->actingAs($user)->delete("/api/v1/user-bets/{$bet->id}");
+    $response = $this->actingAs($user)->delete("/api/v2/user-bets/{$bet->id}");
 
     $response->assertForbidden();
 });
@@ -256,7 +256,7 @@ test('statistics are calculated correctly via API', function () {
         'profit_loss' => null,
     ]);
 
-    $response = $this->actingAs($user)->get('/api/v1/user-bets');
+    $response = $this->actingAs($user)->get('/api/v2/user-bets');
 
     $response->assertOk();
     $response->assertJson([
@@ -279,7 +279,7 @@ test('users can export their bets to csv', function () {
         'odds' => '-110',
     ]);
 
-    $response = $this->actingAs($user)->get('/api/v1/user-bets/export');
+    $response = $this->actingAs($user)->get('/api/v2/user-bets/export');
 
     $response->assertOk();
     $response->assertHeader('content-type', 'text/csv; charset=UTF-8');
@@ -310,7 +310,7 @@ test('bet result updates set settled_at timestamp', function () {
         'settled_at' => null,
     ]);
 
-    $this->actingAs($user)->put("/api/v1/user-bets/{$bet->id}", [
+    $this->actingAs($user)->put("/api/v2/user-bets/{$bet->id}", [
         'result' => 'won',
     ]);
 
@@ -323,7 +323,7 @@ test('bet result updates set settled_at timestamp', function () {
 test('selection side must match bet type', function () {
     $user = User::factory()->create();
 
-    $response = $this->actingAs($user)->post('/api/v1/user-bets', [
+    $response = $this->actingAs($user)->post('/api/v2/user-bets', [
         'prediction_id' => 1,
         'prediction_sport' => 'nba',
         'bet_amount' => 100.00,
@@ -333,5 +333,5 @@ test('selection side must match bet type', function () {
         'selection_label' => 'Over ML',
     ]);
 
-    $response->assertSessionHasErrors('selection_side');
+    $response->assertUnprocessable()->assertJsonValidationErrors('selection_side');
 });

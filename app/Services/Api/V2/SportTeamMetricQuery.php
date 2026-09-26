@@ -46,7 +46,7 @@ class SportTeamMetricQuery
                 (int) $metric->getAttribute('season'),
                 (string) ($metric->getAttribute('season_type') ?? config('mlb.season.default_team_metrics_type')),
             ]))
-            ->flatMap(fn (Collection $group): array => $this->preparedRecordsForSeason($group))
+            ->mapWithKeys(fn (Collection $group): array => $this->preparedRecordsForSeason($group))
             ->all();
     }
 

@@ -1,4 +1,8 @@
-import { fetchJson } from '@/composables/useApiClient';
+import {
+    fetchJson,
+    mutateJson,
+    type ApiMutationOptions,
+} from '@/composables/useApiClient';
 import v2 from '@/routes/v2';
 import type { RouteQueryOptions } from '@/wayfinder';
 import type {
@@ -31,14 +35,8 @@ type ApiV2LiveScoreboardPayload = {
 
 type ApiV2JsonPayload = Record<string, unknown>;
 
-type RequestOptions = {
-    init?: RequestInit;
+type RequestOptions = ApiMutationOptions & {
     query?: ApiV2Query;
-};
-
-type ApiV2MutationError = Error & {
-    data?: unknown;
-    status: number;
 };
 
 const routeOptions = (query?: ApiV2Query): RouteQueryOptions | undefined =>
@@ -57,49 +55,7 @@ export function useApiV2Client() {
     const item = <T>(url: string, options: RequestOptions = {}) =>
         get<ApiV2ItemResponse<T>>(url, options);
 
-    const mutate = async <T>(
-        url: string,
-        method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
-        payload?: ApiV2JsonPayload,
-        options: RequestOptions = {},
-    ): Promise<T | null> => {
-        const headers = new Headers(options.init?.headers ?? {});
-        headers.set('Content-Type', 'application/json');
-
-        const response = await fetch(url, {
-            credentials: 'same-origin',
-            ...options.init,
-            method,
-            headers,
-            body: payload === undefined ? undefined : JSON.stringify(payload),
-        });
-
-        if (!response.ok) {
-            const error = new Error(
-                'API v2 request failed',
-            ) as ApiV2MutationError;
-            error.status = response.status;
-
-            try {
-                error.data = await response.json();
-            } catch {
-                error.data = null;
-            }
-
-            throw error;
-        }
-
-        if (response.status === 204) {
-            return null;
-        }
-
-        const contentType = response.headers.get('content-type') ?? '';
-        if (!contentType.includes('application/json')) {
-            return null;
-        }
-
-        return (await response.json()) as T;
-    };
+    const mutate = mutateJson;
 
     return {
         get,
@@ -304,6 +260,15 @@ export function useApiV2Client() {
         },
 
         games: {
+            research: <T = ApiV2Record>(
+                sport: ApiV2SportSlug,
+                game: ApiV2Id,
+                options: RequestOptions = {},
+            ) =>
+                item<T>(
+                    v2.sports.games.research.show.url({ sport, game }),
+                    options,
+                ),
             liveSnapshot: <T = ApiV2Record>(
                 sport: ApiV2SportSlug,
                 game: ApiV2Id,

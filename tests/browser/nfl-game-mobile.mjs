@@ -69,9 +69,9 @@ try {
         console.error(error.message);
     });
     let researchRequests = 0;
-    await page.route('**/api/v1/nfl/games/1722/research', (route) => {
+    await page.route('**/api/v2/sports/nfl/games/1722/research', (route) => {
         researchRequests++;
-        return route.fulfill({ json: { revisions: [revision] } });
+        return route.fulfill({ json: { data: { game_id: 1722, revisions: [revision] } } });
     });
     const assertVisible = async (locator, expected = true) =>
         assert.equal(await locator.isVisible(), expected);

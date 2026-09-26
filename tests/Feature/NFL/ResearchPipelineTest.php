@@ -667,13 +667,13 @@ it('keeps reserve observations separate from injury onset to avoid inventing vac
 it('protects researched prediction details behind existing prediction permissions', function () {
     config(['subscriptions.enforce_tiers' => true, 'subscriptions.tier_bypass_user_ids' => []]);
     $game = researchGame();
-    $this->getJson('/api/v1/nfl/games/'.$game->id.'/research')->assertUnauthorized();
+    $this->getJson('/api/v2/sports/nfl/games/'.$game->id.'/research')->assertUnauthorized();
     $user = User::factory()->create();
     Sanctum::actingAs($user);
-    $this->getJson('/api/v1/nfl/games/'.$game->id.'/research')->assertForbidden();
-    foreach (['view-nfl-predictions', 'view-prediction-spread', 'view-prediction-win-probability', 'view-prediction-betting-value'] as $permission) {
+    $this->getJson('/api/v2/sports/nfl/games/'.$game->id.'/research')->assertForbidden();
+    foreach (['access-api', 'view-nfl-predictions', 'view-prediction-spread', 'view-prediction-win-probability', 'view-prediction-betting-value'] as $permission) {
         Permission::findOrCreate($permission, 'web');
         $user->givePermissionTo($permission);
     }
-    $this->getJson('/api/v1/nfl/games/'.$game->id.'/research')->assertOk()->assertJsonPath('game_id', $game->id);
+    $this->getJson('/api/v2/sports/nfl/games/'.$game->id.'/research')->assertOk()->assertJsonPath('data.game_id', $game->id);
 });

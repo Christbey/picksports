@@ -161,7 +161,7 @@ it('treats mlb as moneyline ready when h2h exists without run line or totals', f
         ],
     ]);
 
-    $response = $this->getJson('/api/v1/mlb/signals?season=2026&as_of_date=2026-05-23');
+    $response = $this->getJson('/api/v2/sports/mlb/signals?season=2026&as_of_date=2026-05-23');
 
     $response->assertOk()
         ->assertJsonPath('data.odds_health.status', 'moneyline_ready')

@@ -3,11 +3,9 @@
 namespace App\Http\Resources\Api\V2;
 
 use App\Models\CanonicalPrediction;
-use App\Models\CFB\Game as CfbGame;
 use App\Models\PredictionMarket;
+use App\Services\Api\V2\CanonicalPredictionPresentationData;
 use App\Services\Api\V2\SportContext;
-use App\Services\CFB\Predictions\CfbCanonicalSpreadValueSignalService;
-use App\Services\CFB\Predictions\CfbPredictionInputQuality;
 use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -15,7 +13,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class CanonicalSportPredictionResource extends JsonResource
 {
-    public function __construct(mixed $resource, private readonly SportContext $context)
+    public function __construct(mixed $resource, private readonly SportContext $context, private readonly CanonicalPredictionPresentationData $presentation)
     {
         parent::__construct($resource);
     }
@@ -34,10 +32,8 @@ class CanonicalSportPredictionResource extends JsonResource
         $awayProbability = $this->number($awayMoneyline?->probability);
         $confidence = $this->number($homeMoneyline?->confidence_score);
         $evaluation = $prediction->latestEvaluation;
-        $confidenceContext = $this->confidenceContext($prediction, $confidence);
-        $valueSignal = $prediction->sport === 'cfb' && $game instanceof CfbGame
-            ? app(CfbCanonicalSpreadValueSignalService::class)->forPrediction($prediction, $game)
-            : null;
+        $confidenceContext = $this->presentation->confidenceContext;
+        $valueSignal = $this->presentation->valueSignal;
 
         return [
             'id' => $prediction->public_id,
@@ -196,42 +192,6 @@ class CanonicalSportPredictionResource extends JsonResource
             ]))),
             'logo_url' => $team->logo_url,
         ];
-    }
-
-    /** @return array<string, mixed> */
-    private function confidenceContext(CanonicalPrediction $prediction, ?float $confidence): array
-    {
-        $level = $this->confidenceLevel($confidence);
-        if ($prediction->sport === 'cfb') {
-            $quality = CfbPredictionInputQuality::assess((array) ($prediction->calculationRun?->inputSnapshot?->inputs ?? []));
-            if (! $quality['qualified']) {
-                return [
-                    'label' => 'Incomplete inputs', 'tier' => 'unavailable', 'model_level' => $level,
-                    'reason_codes' => $quality['risk_flags'], 'sample_games' => min($quality['sample_games']),
-                    'team_sample_games' => $quality['sample_games'],
-                    'probability_status' => $quality['probability_status'],
-                ];
-            }
-        }
-
-        return [
-            'label' => ucfirst($level),
-            'tier' => $level,
-            'model_level' => $level,
-            'reason_codes' => array_values((array) data_get($prediction->output_metadata, 'reason_codes', [])),
-            'sample_games' => isset($quality) ? min($quality['sample_games']) : null,
-            ...($prediction->sport === 'cfb' ? ['probability_status' => 'uncalibrated_model_estimate'] : []),
-        ];
-    }
-
-    private function confidenceLevel(?float $confidence): string
-    {
-        return match (true) {
-            $confidence === null => 'unavailable',
-            $confidence >= 75 => 'high',
-            $confidence >= 60 => 'medium',
-            default => 'low',
-        };
     }
 
     /** @return array<string, mixed> */

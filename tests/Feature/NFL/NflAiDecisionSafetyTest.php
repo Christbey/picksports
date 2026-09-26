@@ -255,7 +255,7 @@ test('nfl resources withhold ai analysis when its input hash is stale', function
         'summary' => 'This analysis no longer matches the current inputs.',
     ]);
 
-    $request = Request::create('/api/v1/nfl/predictions');
+    $request = Request::create('/api/v2/sports/nfl/predictions');
     $request->setUserResolver(fn () => $user);
     $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'nfl', $request);
 

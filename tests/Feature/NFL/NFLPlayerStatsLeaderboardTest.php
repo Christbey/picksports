@@ -4,6 +4,8 @@ use App\Models\NFL\Game;
 use App\Models\NFL\Player;
 use App\Models\NFL\PlayerStat;
 use App\Models\NFL\Team;
+use App\Models\User;
+use Laravel\Sanctum\Sanctum;
 
 uses()->group('nfl', 'player-stats');
 
@@ -78,7 +80,7 @@ it('returns extended nfl leaderboard stats and limits qbr to qbs', function () {
         'punt_return_fair_catches' => 0,
     ]);
 
-    $response = $this->getJson('/api/v1/nfl/player-stats/leaderboard?season=2025&min_games=1');
+    $response = $this->getJson('/api/v2/sports/nfl/leaderboards/players?season=2025&min_games=1');
 
     $response->assertOk();
 
@@ -112,4 +114,8 @@ it('returns extended nfl leaderboard stats and limits qbr to qbs', function () {
     expect($wrEntry['receiving_two_point_conversions_total'])->toBe(1);
     expect($wrEntry['kickoff_returns_total'])->toBe(2);
     expect($wrEntry['punt_returns_total'])->toBe(1);
+});
+
+beforeEach(function () {
+    Sanctum::actingAs(User::factory()->create());
 });

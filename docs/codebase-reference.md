@@ -25,40 +25,29 @@ Core backend layers:
 - `app/Actions/{Sport}`: prediction, Elo, team metrics, trends, grading
 - `app/Actions/ESPN/{Sport}`: ESPN ingest/sync actions
 - `app/Actions/OddsApi/{Sport}`: odds and player-prop ingest
-- `app/Http/Controllers/Api/{Sport}`: sport API controllers
-- `app/Http/Controllers/Api/Sports`: shared abstract API controllers
+- `app/Http/Controllers/Api/V2`: shared sport API controllers
+- `app/Services/Api/V2`: sport context and query services
 - `app/Http/Resources/{Sport}`: API resource serializers
 - `app/Console/Commands/{Sport}`: operational commands
 - `resources/js/composables`: shared and sport-specific game-page/prediction-page data hooks
 - `resources/js/components/game-page`: shared game-page UI
 
-Shared route registration lives in [routes/api/sports.php](/Users/bey/Herd/github/picksports/routes/api/sports.php).
+Shared route registration lives in [routes/api-v2.php](/Users/bey/Herd/github/picksports/routes/api-v2.php).
 
 ## Shared API Patterns
 
-The shared API abstractions matter a lot:
-
-- [AbstractGameController.php](/Users/bey/Herd/github/picksports/app/Http/Controllers/Api/Sports/AbstractGameController.php)
-  Handles `games`, `games/{id}`, `teams/{team}/games`, season and week lookups.
-
-- [AbstractPredictionController.php](/Users/bey/Herd/github/picksports/app/Http/Controllers/Api/Sports/AbstractPredictionController.php)
-  Handles prediction index/show/by-game plus season/date/week filters.
-  Important: prediction filtering is usually done through related `game` rows.
-
-- [AbstractTeamController.php](/Users/bey/Herd/github/picksports/app/Http/Controllers/Api/Sports/AbstractTeamController.php)
-  Handles team show and `teams/{team}/trends`.
-  Important: trends now support `season`, `season_type`, and `before_date`.
-
-- [AbstractTeamMetricController.php](/Users/bey/Herd/github/picksports/app/Http/Controllers/Api/Sports/AbstractTeamMetricController.php)
-  Handles team metric index/show/by-team.
-  Important: if a metrics table actually has a `season_type` column, filtering is done directly on the stored rows.
+`SportContextResolver` selects sport models and capabilities. V2 controllers
+validate requests and use shared query services such as `SportGameQuery`,
+`SportPredictionQuery`, `SportTeamTrendQuery`, and `SportTeamMetricQuery`.
+Resources serialize the prepared data. The old abstract API controller layer
+was removed with V1 on 2026-09-25.
 
 ## Internal API
 
 The primary Vue-facing internal API is the Laravel JSON API mounted under
-`/api/v2`. Legacy product routes remain mounted under `/api/v1` for external
-or not-yet-retired clients, with usage logging documented in
-[api-v2-contracts-and-retirement.md](/Users/bey/Herd/github/picksports/docs/api-v2-contracts-and-retirement.md).
+`/api/v2`. V1 was removed on 2026-09-25 after the owner confirmed it was used
+only by the application. Former V1 URLs return 404. See
+[the retirement record](api-v2-contracts-and-retirement.md).
 The current v2 route matrix, filters, frontend owners, and contract-test
 coverage are documented in
 [api-v2-reference.md](/Users/bey/Herd/github/picksports/docs/api-v2-reference.md).
@@ -68,26 +57,23 @@ The generated route-level OpenAPI artifact is
 Route bootstrap:
 - [routes/api.php](/Users/bey/Herd/github/picksports/routes/api.php)
 - [routes/api-v2.php](/Users/bey/Herd/github/picksports/routes/api-v2.php)
-- [routes/api/sports.php](/Users/bey/Herd/github/picksports/routes/api/sports.php)
 
 Important pattern:
 - `routes/api-v2.php` defines the current sport contract under `/api/v2/sports/{sport}`
 - sport capability and model resolution should happen through the v2 context layer
-- `routes/api.php` still loads `config('sports.domains')` for legacy `/api/v1/{sport}` route groups
-- most legacy v1 sport routes are generated from the shared route definer in `routes/api/sports.php`
 
 ### Auth and Access Model
 
 Auth endpoints:
-- `POST /api/v1/auth/login`
-- `POST /api/v1/auth/passkeys/options`
-- `POST /api/v1/auth/passkeys/verify`
-- `GET /api/v1/auth/me`
-- `POST /api/v1/auth/logout`
-- `POST /api/v1/auth/logout-all`
+- `POST /api/v2/auth/login`
+- `POST /api/v2/auth/passkeys/options`
+- `POST /api/v2/auth/passkeys/verify`
+- `GET /api/v2/auth/me`
+- `POST /api/v2/auth/logout`
+- `POST /api/v2/auth/logout-all`
 
 Sports data access model:
-- many public-looking endpoints are actually protected by `auth:sanctum`
+- sport data endpoints require `v2.auth` and `v2.sport-api-access`
 - prediction, team-metric, injury, and trends access often also depends on permissions such as `view-{sport}-predictions`
 - prediction resources are field-gated by subscription tier / permission, not just endpoint access
 
@@ -138,30 +124,31 @@ Stats, injuries, and markets:
 - `GET /api/v2/sports/{sport}/markets/futures`
 
 Capability-specific additions:
-- CFB `fpi-ratings`
+- NFL research, live snapshots, matchup signals and market history
+- CFB live betting
 - CBB/WCBB tournament forecasts
 - NBA/MLB playoff forecasts
 - odds-backed player props for enabled sports
 
 ### Internal API Filtering Rules
 
-Prediction index filtering in [AbstractPredictionController.php](/Users/bey/Herd/github/picksports/app/Http/Controllers/Api/Sports/AbstractPredictionController.php):
+Prediction index filtering in [SportPredictionQuery.php](/Users/bey/Herd/github/picksports/app/Services/Api/V2/SportPredictionQuery.php):
 - `season`
 - `season_type`
 - `week`
 - `from_date`
 - `to_date`
 
-Team trends filtering in [AbstractTeamController.php](/Users/bey/Herd/github/picksports/app/Http/Controllers/Api/Sports/AbstractTeamController.php):
+Team trends filtering in [SportTeamTrendQuery.php](/Users/bey/Herd/github/picksports/app/Services/Api/V2/SportTeamTrendQuery.php):
 - `games`
 - `season`
 - `season_type`
 - `before_date`
 
-Team metrics filtering in [AbstractTeamMetricController.php](/Users/bey/Herd/github/picksports/app/Http/Controllers/Api/Sports/AbstractTeamMetricController.php):
+Team metrics filtering in [SportTeamMetricQuery.php](/Users/bey/Herd/github/picksports/app/Services/Api/V2/SportTeamMetricQuery.php):
 - `season`
 - `season_type`
-- plus sport-specific query modifications in concrete controllers
+- sport-specific query preparation in the shared query service
 
 ### Resource Serialization Pattern
 
@@ -767,12 +754,11 @@ The new matchup-context work should be treated with these rules:
 
 Shared:
 - [routes/api-v2.php](/Users/bey/Herd/github/picksports/routes/api-v2.php)
-- [routes/api/sports.php](/Users/bey/Herd/github/picksports/routes/api/sports.php)
 - [useApiV2Client.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useApiV2Client.ts)
-- [AbstractGameController.php](/Users/bey/Herd/github/picksports/app/Http/Controllers/Api/Sports/AbstractGameController.php)
-- [AbstractPredictionController.php](/Users/bey/Herd/github/picksports/app/Http/Controllers/Api/Sports/AbstractPredictionController.php)
-- [AbstractTeamController.php](/Users/bey/Herd/github/picksports/app/Http/Controllers/Api/Sports/AbstractTeamController.php)
-- [AbstractTeamMetricController.php](/Users/bey/Herd/github/picksports/app/Http/Controllers/Api/Sports/AbstractTeamMetricController.php)
+- [SportGameQuery.php](/Users/bey/Herd/github/picksports/app/Services/Api/V2/SportGameQuery.php)
+- [SportPredictionQuery.php](/Users/bey/Herd/github/picksports/app/Services/Api/V2/SportPredictionQuery.php)
+- [SportTeamTrendQuery.php](/Users/bey/Herd/github/picksports/app/Services/Api/V2/SportTeamTrendQuery.php)
+- [SportTeamMetricQuery.php](/Users/bey/Herd/github/picksports/app/Services/Api/V2/SportTeamMetricQuery.php)
 - [useDetailedGameData.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useDetailedGameData.ts)
 - [SportDetailedGamePage.vue](/Users/bey/Herd/github/picksports/resources/js/components/game-page/SportDetailedGamePage.vue)
 

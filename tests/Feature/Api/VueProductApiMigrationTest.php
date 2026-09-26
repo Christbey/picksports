@@ -32,7 +32,7 @@ test('vue product data consumers do not call legacy api v1 endpoints directly', 
         }
 
         $contents = file_get_contents($path);
-        if ($contents === false || ! str_contains($contents, '/api/v1/')) {
+        if ($contents === false || ! preg_match('#/api/v1(?:/|[\'"])|@/routes/v1(?:/|[\'"])#', $contents)) {
             continue;
         }
 

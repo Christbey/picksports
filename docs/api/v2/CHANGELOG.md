@@ -2,6 +2,15 @@
 
 All notable public API v2 contract changes are recorded here. Dates use UTC. Additive changes remain within v2; incompatible changes require the process in the [deprecation policy](deprecation-policy.md).
 
+## 2026-09-25
+
+- Removed the application-only V1 API with owner authorization. All former V1
+  URLs return 404.
+- Migrated NFL research to `/api/v2/sports/nfl/games/{game}/research`, preserving
+  field permission checks and returning a `data`/`meta` envelope.
+- Migrated browser CSP/integrity report endpoints and reporting headers to V2.
+- Public sport leaderboards now query the shared service directly.
+
 ## 2026-08-12
 
 ### Added

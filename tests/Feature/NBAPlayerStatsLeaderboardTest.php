@@ -5,6 +5,7 @@ use App\Models\NBA\Player;
 use App\Models\NBA\PlayerStat;
 use App\Models\NBA\Team;
 use App\Models\User;
+use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -47,7 +48,8 @@ test('leaderboard endpoint returns player season averages', function () {
         ]);
     }
 
-    $response = $this->getJson('/api/v1/nba/player-stats/leaderboard');
+    Sanctum::actingAs(User::factory()->create());
+    $response = $this->getJson('/api/v2/sports/nba/leaderboards/players');
 
     $response->assertOk()
         ->assertJsonStructure([
@@ -115,7 +117,8 @@ test('leaderboard excludes players with fewer than 10 games', function () {
         ]);
     }
 
-    $response = $this->getJson('/api/v1/nba/player-stats/leaderboard');
+    Sanctum::actingAs(User::factory()->create());
+    $response = $this->getJson('/api/v2/sports/nba/leaderboards/players');
 
     $response->assertOk();
     $playerIds = collect($response->json('data'))->pluck('player_id');

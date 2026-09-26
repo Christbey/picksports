@@ -268,8 +268,17 @@ class V2OpenApiGenerateCommand extends Command
         if ($parameter === 'sport') {
             return [
                 'type' => 'string',
-                'enum' => ['nba', 'wnba', 'mlb', 'nfl', 'cbb', 'wcbb', 'cfb'],
+                'enum' => match ($route->getName()) {
+                    'v2.sports.games.live-betting.show' => ['cfb'],
+                    'v2.sports.games.live-snapshot.show',
+                    'v2.sports.games.research.show' => ['nfl'],
+                    default => ['nba', 'wnba', 'mlb', 'nfl', 'cbb', 'wcbb', 'cfb'],
+                },
             ];
+        }
+
+        if ($parameter === 'game' && $route->getName() === 'v2.sports.games.live-betting.show') {
+            return ['type' => 'integer', 'minimum' => 1];
         }
 
         if ($parameter === 'game' && $this->supportsCanonicalGameLookup($route)) {
@@ -326,6 +335,8 @@ class V2OpenApiGenerateCommand extends Command
             'v2.sports.games.show',
             'v2.sports.games.page.show',
             'v2.sports.games.trends.show',
+            'v2.sports.games.live-snapshot.show',
+            'v2.sports.games.research.show',
         ], true);
     }
 
@@ -350,6 +361,9 @@ class V2OpenApiGenerateCommand extends Command
      */
     private function queryParameterNames(string $routeName): array
     {
+        if (in_array($routeName, ['v2.sports.games.live-betting.show', 'v2.sports.games.live-snapshot.show', 'v2.sports.games.research.show'], true)) {
+            return [];
+        }
         if (str_contains($routeName, 'stats.team.season-averages') || str_contains($routeName, 'teams.stats.season-averages')) {
             return $this->queryParametersByFamily['season-averages'];
         }
@@ -606,6 +620,7 @@ class V2OpenApiGenerateCommand extends Command
             'v2.cbb-brackets.current.upsert',
             'v2.groups.store',
             'v2.alert-preferences.store' => true,
+            'v2.security.reports.csp', 'v2.security.reports.integrity',
             'v2.auth.passkeys.createOptions',
             'v2.user-bets.update',
             'v2.cbb-brackets.update',
@@ -677,6 +692,10 @@ class V2OpenApiGenerateCommand extends Command
             'v2.sports.teams.games.index' => 'SportGameCollectionResponse',
             'v2.sports.games.show' => 'SportGameResponse',
             'v2.sports.games.page.show' => 'SportGamePageResponse',
+            'v2.sports.games.research.show' => 'NflResearchResponse',
+            'v2.security.reports.csp', 'v2.security.reports.integrity' => 'SecurityReportResponse',
+            'v2.sports.games.live-betting.show' => 'CfbLiveBettingResponse',
+            'v2.sports.games.live-snapshot.show' => 'NflLiveSnapshotResponse',
             'v2.sports.games.depth-charts.show',
             'v2.sports.teams.depth-charts.show' => 'SportDepthChartResponse',
             'v2.sports.games.trends.show' => 'SportGameTrendsResponse',
@@ -725,6 +744,7 @@ class V2OpenApiGenerateCommand extends Command
     private function requestSchemaReference(Route $route): string
     {
         return match ($route->getName()) {
+            'v2.security.reports.csp', 'v2.security.reports.integrity' => '#/components/schemas/SecurityReportRequest',
             'v2.user-bets.store' => '#/components/schemas/UserBetStoreRequest',
             'v2.user-bets.update' => '#/components/schemas/UserBetUpdateRequest',
             'v2.alert-preferences.store' => '#/components/schemas/AlertPreferenceStoreRequest',
@@ -1077,6 +1097,39 @@ class V2OpenApiGenerateCommand extends Command
             'SportGameTrendsData' => $this->fixedObjectSchema(['home', 'away'], [
                 'home' => $openObject,
                 'away' => $openObject,
+            ]),
+            'SecurityReportRequest' => ['oneOf' => [$openObject, ['type' => 'array', 'items' => $openObject]]],
+            'SecurityReportResponse' => $this->fixedObjectSchema(['ok'], ['ok' => ['const' => true]]),
+            'NflResearchResponse' => $this->sportCustomEnvelope('NflResearchData'),
+            'NflResearchData' => $this->fixedObjectSchema(['game_id', 'revisions'], [
+                'game_id' => ['type' => 'integer'],
+                'revisions' => ['type' => 'array', 'maxItems' => 20, 'items' => ['$ref' => '#/components/schemas/NflResearchRevision']],
+            ]),
+            'NflResearchRevision' => $this->fixedObjectSchema(['id', 'created_at', 'baseline', 'revised', 'brief', 'market', 'evaluation'], [
+                'id' => ['type' => 'integer'], 'created_at' => $nullableDateTime,
+                'baseline' => $nullableOpenObject, 'revised' => $nullableOpenObject,
+                'brief' => $nullableOpenObject, 'market' => $nullableOpenObject, 'evaluation' => $nullableOpenObject,
+            ]),
+            'CfbLiveBettingResponse' => $this->fixedObjectSchema(['data', 'history', 'meta'], [
+                'data' => ['oneOf' => [['$ref' => '#/components/schemas/CfbLiveBettingSnapshot'], ['type' => 'null']]],
+                'history' => ['type' => 'array', 'maxItems' => 25, 'items' => ['$ref' => '#/components/schemas/CfbLiveBettingSnapshot']],
+                'meta' => $openObject,
+            ]),
+            'CfbLiveBettingSnapshot' => $this->fixedObjectSchema(['id', 'source', 'observed_at', 'status', 'stale', 'pregame', 'state', 'projection', 'markets', 'props'], [
+                'id' => ['type' => 'integer'], 'source' => ['type' => 'string'],
+                'observed_at' => ['type' => 'string', 'format' => 'date-time'],
+                'status' => ['type' => 'string'], 'stale' => ['type' => 'boolean'],
+                'pregame' => $openObject, 'state' => $openObject, 'projection' => $nullableOpenObject,
+                'markets' => ['type' => 'array', 'items' => $openObject],
+                'props' => ['type' => 'array', 'items' => $openObject],
+            ]),
+            'NflLiveSnapshotResponse' => $this->itemEnvelope('NflLiveSnapshotData', false),
+            'NflLiveSnapshotData' => $this->fixedObjectSchema(['game', 'projection', 'source_updated_at', 'generated_at', 'provisional', 'model_kind', 'calibrated', 'clock_scope', 'warning'], [
+                'game' => $openObject, 'projection' => $nullableOpenObject,
+                'source_updated_at' => $nullableDateTime, 'generated_at' => ['type' => 'string', 'format' => 'date-time'],
+                'provisional' => ['const' => true], 'calibrated' => ['const' => false],
+                'model_kind' => ['const' => 'score_clock_heuristic'],
+                'clock_scope' => ['enum' => ['current_overtime_period', 'regulation']], 'warning' => ['type' => 'string'],
             ]),
             'SportGamePageResponse' => $this->sportCustomEnvelope('SportGamePageData'),
             'SportGamePageData' => $this->fixedObjectSchema([

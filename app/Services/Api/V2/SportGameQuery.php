@@ -145,6 +145,7 @@ class SportGameQuery
         $gameModel = $this->gameModel($context);
 
         return $gameModel::query()
+            ->when($context->slug === 'nba', fn (Builder $query): Builder => $query->withoutCompletedPlayoffSeriesPlaceholders())
             ->with($this->relationsFor($gameModel, $relationProfile))
             ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
             ->when($filters['season'] ?? null, fn (Builder $query, int $season): Builder => $query->where('season', $season))

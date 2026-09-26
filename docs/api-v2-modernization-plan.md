@@ -1,5 +1,11 @@
 # PickSports API V2 Modernization Plan
 
+> V1 status update (2026-09-25): V1 has been removed with owner authorization
+> after confirmation that it had only application callers. Earlier migration
+> and usage-log retirement requirements below are historical. See
+> [the retirement record](api-v2-contracts-and-retirement.md).
+
+
 ## Objective
 
 Build a new Laravel-first API layer under `/api/v2` that supports:

@@ -17,7 +17,7 @@ class AddSecurityHeaders
         $response->headers->set('Referrer-Policy', 'strict-origin-when-cross-origin');
         $response->headers->set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
 
-        $reportingEndpoints = 'csp="/api/v1/security/reports/csp", integrity="/api/v1/security/reports/integrity"';
+        $reportingEndpoints = 'csp="/api/v2/security/reports/csp", integrity="/api/v2/security/reports/integrity"';
         $response->headers->set('Reporting-Endpoints', $reportingEndpoints);
 
         $cspDirectives = [

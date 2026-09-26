@@ -15,6 +15,8 @@ use App\Models\NFL\Game as NflGame;
 use App\Models\NFL\Player as NflPlayer;
 use App\Models\NFL\PlayerStat as NflPlayerStat;
 use App\Models\NFL\Team as NflTeam;
+use App\Models\User;
+use Laravel\Sanctum\Sanctum;
 
 uses()->group('sports');
 
@@ -73,7 +75,7 @@ it('returns nfl game depth charts with position-aware stat summaries', function 
         'away_team_id' => $awayTeam->id,
     ]);
 
-    $response = $this->getJson("/api/v1/nfl/games/{$targetGame->id}/depth-charts");
+    $response = $this->getJson("/api/v2/sports/nfl/games/{$targetGame->id}/depth-charts");
 
     $response->assertOk()
         ->assertJsonPath('data.home_team.entries.0.full_name', 'Caleb Example')
@@ -196,7 +198,7 @@ it('returns nba game depth charts with per-game stat summaries', function () {
         'away_team_id' => $awayTeam->id,
     ]);
 
-    $response = $this->getJson("/api/v1/nba/games/{$targetGame->id}/depth-charts");
+    $response = $this->getJson("/api/v2/sports/nba/games/{$targetGame->id}/depth-charts");
 
     $response->assertOk()
         ->assertJsonCount(1, 'data.away_team.entries')
@@ -259,11 +261,15 @@ it('returns mlb game depth charts with pitcher stat summaries', function () {
         'away_team_id' => $awayTeam->id,
     ]);
 
-    $response = $this->getJson("/api/v1/mlb/games/{$targetGame->id}/depth-charts");
+    $response = $this->getJson("/api/v2/sports/mlb/games/{$targetGame->id}/depth-charts");
 
     $response->assertOk()
         ->assertJsonPath('data.away_team.entries.0.full_name', 'Miles Example')
         ->assertJsonPath('data.away_team.entries.0.stats.metrics.0.label', 'IP')
         ->assertJsonPath('data.away_team.entries.0.stats.metrics.1.label', 'ERA')
         ->assertJsonPath('data.away_team.entries.0.stats.metrics.2.value', '8');
+});
+
+beforeEach(function () {
+    Sanctum::actingAs(User::factory()->create());
 });

@@ -17,7 +17,7 @@ class PasskeyTokenAuthController extends Controller
         private readonly TokenAuthService $tokenAuthService,
     ) {}
 
-    public function options(PasskeyAuthenticationOptionsRequest $request): JsonResponse
+    public function createOptions(PasskeyAuthenticationOptionsRequest $request): JsonResponse
     {
         $this->ensurePasskeysEnabled();
 

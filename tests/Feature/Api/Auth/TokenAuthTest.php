@@ -10,7 +10,7 @@ it('issues a sanctum token for valid api login credentials', function () {
         'password' => Hash::make('secret-pass'),
     ]);
 
-    $response = $this->postJson('/api/v1/auth/login', [
+    $response = $this->postJson('/api/v2/auth/login', [
         'email' => 'mobile@example.com',
         'password' => 'secret-pass',
         'device_name' => 'ios-iphone',
@@ -43,7 +43,7 @@ it('rejects invalid api login credentials', function () {
         'password' => Hash::make('correct-password'),
     ]);
 
-    $response = $this->postJson('/api/v1/auth/login', [
+    $response = $this->postJson('/api/v2/auth/login', [
         'email' => 'mobile@example.com',
         'password' => 'wrong-password',
     ]);
@@ -59,7 +59,7 @@ it('returns current user payload for authenticated token request', function () {
 
     $response = $this
         ->withHeader('Authorization', 'Bearer '.$token->plainTextToken)
-        ->getJson('/api/v1/auth/me');
+        ->getJson('/api/v2/auth/me');
 
     $response
         ->assertOk()
@@ -68,7 +68,7 @@ it('returns current user payload for authenticated token request', function () {
 });
 
 it('requires auth for me endpoint', function () {
-    $this->getJson('/api/v1/auth/me')->assertUnauthorized();
+    $this->getJson('/api/v2/auth/me')->assertUnauthorized();
 });
 
 it('revokes only current access token on logout', function () {
@@ -78,7 +78,7 @@ it('revokes only current access token on logout', function () {
 
     $this
         ->withHeader('Authorization', 'Bearer '.$firstToken->plainTextToken)
-        ->postJson('/api/v1/auth/logout')
+        ->postJson('/api/v2/auth/logout')
         ->assertNoContent();
 
     expect(PersonalAccessToken::find($firstToken->accessToken->id))->toBeNull();
@@ -92,7 +92,7 @@ it('revokes all access tokens on logout-all', function () {
 
     $this
         ->withHeader('Authorization', 'Bearer '.$firstToken->plainTextToken)
-        ->postJson('/api/v1/auth/logout-all')
+        ->postJson('/api/v2/auth/logout-all')
         ->assertNoContent();
 
     expect($user->fresh()->tokens()->count())->toBe(0);

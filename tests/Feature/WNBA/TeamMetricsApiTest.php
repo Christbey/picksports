@@ -26,14 +26,14 @@ it('returns the shared pro basketball team metrics contract for wnba', function 
         'rest_travel_fatigue' => 1.75,
     ]);
 
-    $this->getJson('/api/v1/wnba/team-metrics?season=2026')
+    $this->getJson('/api/v2/sports/wnba/metrics/teams?season=2026')
         ->assertOk()
         ->assertJsonCount(1, 'data')
-        ->assertJsonPath('data.0.offensive_efficiency', '103.4')
-        ->assertJsonPath('data.0.defensive_efficiency', '99.2')
-        ->assertJsonPath('data.0.offensive_rating', '103.4')
-        ->assertJsonPath('data.0.defensive_rating', '99.2')
-        ->assertJsonPath('data.0.tempo', '78.6')
-        ->assertJsonPath('data.0.pace', '78.6')
-        ->assertJsonPath('data.0.strength_of_schedule', '1512.345');
+        ->assertJsonPath('data.0.offensive_efficiency', 103.4)
+        ->assertJsonPath('data.0.defensive_efficiency', 99.2)
+        ->assertJsonPath('data.0.offensive_rating', 103.4)
+        ->assertJsonPath('data.0.defensive_rating', 99.2)
+        ->assertJsonPath('data.0.tempo', 78.6)
+        ->assertJsonPath('data.0.pace', 78.6)
+        ->assertJsonPath('data.0.strength_of_schedule', 1512.345);
 });

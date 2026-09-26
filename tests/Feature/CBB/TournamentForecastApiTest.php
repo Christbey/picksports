@@ -35,7 +35,7 @@ it('returns cbb tournament forecasts for authenticated users', function () {
         'bid_thief_probability' => 0.07,
     ]);
 
-    $response = $this->getJson('/api/v1/cbb/tournament-forecasts?season=2026');
+    $response = $this->getJson('/api/v2/sports/cbb/forecasts?season=2026');
 
     $response->assertOk()
         ->assertJsonStructure([
@@ -112,7 +112,7 @@ it('uses the latest live snapshot rows when available', function () {
         'simulation_runs' => 0,
     ]);
 
-    $response = $this->getJson('/api/v1/cbb/tournament-forecasts?season=2027');
+    $response = $this->getJson('/api/v2/sports/cbb/forecasts?season=2027');
 
     $response->assertOk()
         ->assertJsonPath('meta.mode', 'live_snapshot')
@@ -178,7 +178,7 @@ it('returns placeholder teams from live snapshots when no team mapping exists', 
         'simulation_runs' => 0,
     ]);
 
-    $response = $this->getJson('/api/v1/cbb/tournament-forecasts?season=2028');
+    $response = $this->getJson('/api/v2/sports/cbb/forecasts?season=2028');
 
     $response->assertOk()
         ->assertJsonPath('meta.mode', 'live_snapshot')

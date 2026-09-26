@@ -28,6 +28,7 @@ dataset('contractSports', [
 ]);
 
 it('returns consistent team and game core payloads for supported sports', function (string $slug, string $teamModel, string $gameModel) {
+    Sanctum::actingAs(User::factory()->create());
     $homeTeam = $teamModel::factory()->create();
     $awayTeam = $teamModel::factory()->create();
 
@@ -37,7 +38,7 @@ it('returns consistent team and game core payloads for supported sports', functi
         'status' => 'STATUS_SCHEDULED',
     ]);
 
-    $this->getJson("/api/v1/{$slug}/teams/{$homeTeam->id}")
+    $this->getJson("/api/v2/sports/{$slug}/teams/{$homeTeam->id}")
         ->assertOk()
         ->assertJsonStructure([
             'data' => [
@@ -48,7 +49,7 @@ it('returns consistent team and game core payloads for supported sports', functi
         ])
         ->assertJsonPath('data.id', $homeTeam->id);
 
-    $this->getJson("/api/v1/{$slug}/games/{$game->id}")
+    $this->getJson("/api/v2/sports/{$slug}/games/{$game->id}")
         ->assertOk()
         ->assertJsonStructure([
             'data' => [
@@ -67,18 +68,18 @@ it('returns consistent team and game core payloads for supported sports', functi
 })->with('contractSports');
 
 it('enforces sanctum auth for protected sport endpoints', function (string $slug, string $teamModel, string $gameModel) {
-    $this->getJson("/api/v1/{$slug}/predictions")->assertUnauthorized();
-    $this->getJson("/api/v1/{$slug}/team-metrics")->assertUnauthorized();
+    $this->getJson("/api/v2/sports/{$slug}/predictions")->assertUnauthorized();
+    $this->getJson("/api/v2/sports/{$slug}/metrics/teams")->assertUnauthorized();
 })->with('contractSports');
 
 it('allows sanctum-authenticated access to protected sport endpoints', function (string $slug, string $teamModel, string $gameModel) {
     Sanctum::actingAs(User::factory()->create());
 
-    $this->getJson("/api/v1/{$slug}/predictions")
+    $this->getJson("/api/v2/sports/{$slug}/predictions")
         ->assertOk()
         ->assertJsonStructure(['data']);
 
-    $this->getJson("/api/v1/{$slug}/team-metrics")
+    $this->getJson("/api/v2/sports/{$slug}/metrics/teams")
         ->assertOk()
         ->assertJsonStructure(['data']);
 })->with('contractSports');

@@ -4,6 +4,8 @@ use App\Models\MLB\Game;
 use App\Models\MLB\Player;
 use App\Models\MLB\PlayerStat;
 use App\Models\MLB\Team;
+use App\Models\User;
+use Laravel\Sanctum\Sanctum;
 
 uses()->group('mlb', 'player-stats');
 
@@ -55,13 +57,13 @@ it('returns filtered mlb player game logs with matchup teams', function () {
         'at_bats' => 5,
     ]);
 
-    $response = $this->getJson("/api/v1/mlb/players/{$player->id}/stats?season=2026&season_type=2&stat_type=batting&per_page=200");
+    $response = $this->getJson("/api/v2/sports/mlb/stats/player?player_id={$player->id}&season=2026&season_type=2&stat_type=batting&per_page=100");
 
     $response->assertOk()
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.player_id', $player->id)
         ->assertJsonPath('data.0.stat_type', 'batting')
-        ->assertJsonPath('data.0.hits', 2)
+        ->assertJsonPath('data.0.stats.hits', 2)
         ->assertJsonPath('data.0.game.home_team.abbreviation', 'STL')
         ->assertJsonPath('data.0.game.away_team.abbreviation', 'CHC');
 });
@@ -105,11 +107,11 @@ it('orders filtered mlb player game logs by game date instead of stat id', funct
         'hits' => 2,
     ]);
 
-    $response = $this->getJson("/api/v1/mlb/players/{$player->id}/stats?season=2026&season_type=2&stat_type=batting&per_page=200");
+    $response = $this->getJson("/api/v2/sports/mlb/stats/player?player_id={$player->id}&season=2026&season_type=2&stat_type=batting&per_page=100");
 
     $response->assertOk()
-        ->assertJsonPath('data.0.game.game_date', '2026-05-23')
-        ->assertJsonPath('data.1.game.game_date', '2026-05-12');
+        ->assertJsonPath('data.0.game.game_date', fn ($date) => str_starts_with($date, '2026-05-23'))
+        ->assertJsonPath('data.1.game.game_date', fn ($date) => str_starts_with($date, '2026-05-12'));
 });
 
 it('filters mlb leaderboard by stat type', function () {
@@ -140,10 +142,14 @@ it('filters mlb leaderboard by stat type', function () {
         'strikeouts_pitched' => 9,
     ]);
 
-    $response = $this->getJson('/api/v1/mlb/player-stats/leaderboard?season=2026&season_type=2&stat_type=batting&min_games=1');
+    $response = $this->getJson('/api/v2/sports/mlb/leaderboards/players?season=2026&season_type=2&stat_type=batting&min_games=1');
 
     $response->assertOk()
         ->assertJsonPath('data.0.player_id', $player->id)
         ->assertJsonPath('data.0.games_played', 1)
         ->assertJsonPath('data.0.points_per_game', 3);
+});
+
+beforeEach(function () {
+    Sanctum::actingAs(User::factory()->create());
 });

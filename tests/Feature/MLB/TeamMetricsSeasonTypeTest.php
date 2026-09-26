@@ -98,7 +98,7 @@ it('filters mlb team metrics index by stored season type rows', function () {
         'offensive_rating' => 140,
     ]);
 
-    $response = $this->getJson('/api/v1/mlb/team-metrics?season=2026&season_type=1');
+    $response = $this->getJson('/api/v2/sports/mlb/metrics/teams?season=2026&season_type=1');
 
     $response->assertOk()
         ->assertJsonCount(1, 'data')
@@ -163,7 +163,7 @@ it('applies season-type-aware records on the mlb team metrics index', function (
         'offensive_rating' => 140,
     ]);
 
-    $response = $this->getJson('/api/v1/mlb/team-metrics?season=2026&season_type=2');
+    $response = $this->getJson('/api/v2/sports/mlb/metrics/teams?season=2026&season_type=2');
 
     $response->assertOk()
         ->assertJsonCount(1, 'data')

@@ -13,6 +13,7 @@ use App\Models\SportEvent;
 use App\Services\CFB\CfbPlayerEvidenceService;
 use App\Services\CFB\CfbTeamEvidenceService;
 use App\Services\CFB\Ratings\ResultRatingEvidence;
+use App\Services\CFB\Scoring\CfbScoringChallenger;
 use App\Services\CFB\Signals\CfbFootballSignalEvidence;
 use App\Services\Predictions\CanonicalPayloadHasher;
 use App\Services\Predictions\Football\FootballInputSnapshotBuilder;
@@ -161,6 +162,12 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
             }
             $inputs['football_signal_evidence'] = $evidence;
             $sourceTimestamps['football_signal_evidence'] = $inputs['football_signal_evidence']['latest_source_observed_at'];
+        }
+
+        if (! empty($release->configuration['scoring_challenger']['artifact_id'])) {
+            $inputs['scoring_challenger'] = app(CfbScoringChallenger::class)->capture(
+                $event->cfbGame, $snapshot, $inputs, $release->configuration['scoring_challenger']);
+            $sourceTimestamps['scoring_artifact'] = $inputs['scoring_challenger']['artifact_available_at'] ?? null;
         }
 
         return new EventInputSnapshotData(

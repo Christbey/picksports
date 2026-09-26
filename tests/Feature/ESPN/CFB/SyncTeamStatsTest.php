@@ -5,6 +5,8 @@ use App\Models\CFB\Game;
 use App\Models\CFB\Team;
 use App\Models\CFB\TeamStat;
 
+require_once __DIR__.'/../../../Fixtures/cfb_complete_box.php';
+
 beforeEach(function () {
     $this->home = Team::factory()->create(['espn_id' => '2390']);
     $this->away = Team::factory()->create(['espn_id' => '50']);
@@ -23,6 +25,12 @@ beforeEach(function () {
             ]],
         ],
     ]];
+    $complete = cfbCompleteBox($this->game);
+    $this->payload['boxscore']['teams'] = array_reverse($complete['boxscore']['teams']);
+    foreach ($this->payload['boxscore']['players'] as $index => &$teamBox) {
+        $teamBox['statistics'] = [...$teamBox['statistics'], ...$complete['boxscore']['players'][$index]['statistics']];
+    }
+    unset($teamBox);
 });
 
 it('stores opponent aggregate defensive sacks as sacks allowed including explicit zero', function () {

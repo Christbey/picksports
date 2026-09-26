@@ -649,7 +649,20 @@ export interface SportGamePageConfig {
 
 export type NflPageTeam = GamePageTeam;
 
+export interface CfbScoringModel {
+    state: string;
+    promoted: boolean;
+    home_points: number | null;
+    away_points: number | null;
+    total: number | null;
+    home_margin: number | null;
+    generated_at: string | null;
+    probability_status: string | null;
+    recommendation_status: string;
+}
+
 export interface NflPagePrediction {
+    scoring_model?: CfbScoringModel | null;
     sport?: string;
     confidence_context?: PredictionSummary['confidence_context'];
     id: number;

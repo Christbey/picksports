@@ -25,6 +25,7 @@ class StateBaselineService
         $map = EpaStateBaseline::query()
             ->where('sport', $sport)
             ->where('season', $season)
+            ->when($sport === 'cfb', fn ($q) => $q->where('source_season', '<', $season))
             ->pluck('expected_points', 'state_key')
             ->map(fn ($value) => (float) $value)
             ->all();

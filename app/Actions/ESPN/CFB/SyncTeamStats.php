@@ -3,8 +3,10 @@
 namespace App\Actions\ESPN\CFB;
 
 use App\Actions\ESPN\AbstractFootballSyncTeamStats;
+use App\Models\CFB\Game;
 use App\Models\CFB\Team;
 use App\Models\CFB\TeamStat;
+use App\Services\CFB\Data\CfbGameDataValidator;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 
@@ -16,11 +18,13 @@ class SyncTeamStats extends AbstractFootballSyncTeamStats
 
     public function execute(array $gameData, Model $game): int
     {
-        if (! isset($gameData['boxscore']['teams'])) {
+        $validation = app(CfbGameDataValidator::class)->boxscore($gameData, $game);
+        if ($validation['state'] !== 'complete') {
             return 0;
         }
 
-        return DB::transaction(function () use ($gameData, $game): int {
+        return DB::transaction(function () use ($gameData, $game, $validation): int {
+            Game::whereKey($game->id)->lockForUpdate()->firstOrFail();
             $synced = parent::execute($gameData, $game);
             $defensiveSacks = [];
             foreach ($gameData['boxscore']['players'] ?? [] as $teamBoxscore) {
@@ -47,8 +51,20 @@ class SyncTeamStats extends AbstractFootballSyncTeamStats
                 }
             }
 
+            foreach ([$game->homeTeam, $game->awayTeam] as $team) {
+                TeamStat::where('game_id', $game->id)->where('team_id', $team->id)
+                    ->update(['team_attributed_stats' => json_encode($validation['evidence']['team_attributed_stats'][$team->espn_id] ?? [])]);
+            }
+
             return $synced;
         });
+    }
+
+    protected function clearExisting(Model $game): void {}
+
+    protected function storeStat(array $attributes): void
+    {
+        TeamStat::updateOrCreate(['game_id' => $attributes['game_id'], 'team_id' => $attributes['team_id']], $attributes);
     }
 
     protected function parseTeamStats(array $statistics): array

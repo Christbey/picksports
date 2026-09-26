@@ -337,8 +337,8 @@ class SettleBetDecisionsCommand extends Command
         if ($decision->sport === 'cfb') {
             $game = \App\Models\CFB\Game::query()->with('sportEvent')->find($decision->game_id);
             $kickoff = $game?->sportEvent?->starts_at ?? $decision->game_start_at;
-            $quote = $kickoff ? app(CfbStoredPregameQuote::class)
-                ->latest((int) $decision->game_id, $marketKey, (string) $decision->side, $kickoff) : null;
+            $quote = $kickoff && filled($decision->bookmaker) ? app(CfbStoredPregameQuote::class)
+                ->forDecision($decision, $kickoff) : null;
 
             return ['quote' => $quote, 'selection' => $quote ? 'last_stored_pregame_quote' : null,
                 'bookmaker_count' => $quote ? 1 : 0];

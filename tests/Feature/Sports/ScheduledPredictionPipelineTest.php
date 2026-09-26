@@ -12,8 +12,9 @@ it('registers every configured sport prediction pipeline stage', function () {
 
     foreach (['nba', 'nfl', 'mlb', 'cbb', 'wcbb', 'wnba', 'cfb'] as $sport) {
         foreach (['grade-predictions', 'calculate-elo', 'calculate-team-metrics', 'generate-predictions'] as $stage) {
+            $scheduledStage = $sport === 'nfl' && $stage === 'generate-predictions' ? 'run-pregame-pipeline' : $stage;
             expect($commands->contains(
-                fn (string $command): bool => str_contains($command, "{$sport}:{$stage} --season=")
+                fn (string $command): bool => str_contains($command, "{$sport}:{$scheduledStage} --season=")
             ))->toBeTrue("Missing scheduled command for {$sport}:{$stage}");
         }
     }

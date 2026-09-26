@@ -11,12 +11,13 @@ class CfbCalculationReleaseDefinition extends FootballCalculationReleaseDefiniti
 
     public const INPUT_SCHEMA_VERSION = 'cfb-pregame-v1';
 
-    public const SEMANTIC_VERSION = '1.6.3';
+    public const SEMANTIC_VERSION = '1.7.0';
 
     /** @return array<string, mixed> */
     public function configuration(): array
     {
         $configuration = parent::configuration();
+        $configuration['scoring_challenger'] = ['artifact_id' => config('cfb.scoring.artifact_id'), 'mode' => 'shadow_until_promoted'];
         $configuration['inputs']['sample_aware_context'] = true;
         $configuration['inputs']['point_in_time_elo'] = true;
         $configuration['inputs']['auditable_feature_coverage'] = true;

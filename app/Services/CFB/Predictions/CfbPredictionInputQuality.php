@@ -9,7 +9,7 @@ class CfbPredictionInputQuality
     /** @param array<string, mixed> $inputs @return array<string, mixed> */
     public static function assess(array $inputs): array
     {
-        $flags = [];
+        $flags = data_get($inputs, 'scoring_challenger.promoted', false) ? ['challenger_market_validation_required'] : [];
         $samples = [];
         foreach (['home', 'away'] as $side) {
             if (data_get($inputs, 'require_versioned_elo', false)

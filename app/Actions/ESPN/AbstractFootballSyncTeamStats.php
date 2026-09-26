@@ -17,7 +17,7 @@ abstract class AbstractFootballSyncTeamStats
         }
 
         $teamStatModel = $this->teamStatModelClass();
-        $teamStatModel::query()->where('game_id', $game->id)->delete();
+        $this->clearExisting($game);
 
         $synced = 0;
         $teamModel = $this->teamModelClass();
@@ -48,12 +48,24 @@ abstract class AbstractFootballSyncTeamStats
                 $attributes['team_type'] = $teamType;
             }
 
-            $teamStatModel::create($attributes);
+            $this->storeStat($attributes);
 
             $synced++;
         }
 
         return $synced;
+    }
+
+    protected function clearExisting(Model $game): void
+    {
+        $model = $this->teamStatModelClass();
+        $model::where('game_id', $game->id)->delete();
+    }
+
+    protected function storeStat(array $attributes): void
+    {
+        $model = $this->teamStatModelClass();
+        $model::create($attributes);
     }
 
     protected function baseAttributes(array $stats): array

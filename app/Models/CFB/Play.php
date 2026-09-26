@@ -15,6 +15,8 @@ class Play extends Model
     protected $table = 'cfb_plays';
 
     protected $fillable = [
+        'source_revision',
+        'source_state',
         'game_id',
         'possession_team_id',
         'espn_play_id',
@@ -42,6 +44,7 @@ class Play extends Model
     protected function casts(): array
     {
         return [
+            'source_state' => 'array',
             'is_scoring_play' => 'boolean',
             'is_turnover' => 'boolean',
             'is_penalty' => 'boolean',

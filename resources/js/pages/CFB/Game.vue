@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CfbScoringModelCard from '@/components/game-page/CfbScoringModelCard.vue';
 import GamePlayerPropsCard from '@/components/game-page/GamePlayerPropsCard.vue';
 import CfbLiveBettingCard from '@/components/game-page/CfbLiveBettingCard.vue';
 import BettingPlanCard from '@/components/game-page/BettingPlanCard.vue';
@@ -25,6 +26,9 @@ const {
         </template>
 
         <template #afterLinescore>
+            <CfbScoringModelCard
+                :model="predictionSectionProps.prediction?.scoring_model"
+            />
             <CfbLiveBettingCard :game-id="gameId" />
             <BettingPlanCard
                 :betting-plan="pageProps.prediction?.narrative?.betting_plan"

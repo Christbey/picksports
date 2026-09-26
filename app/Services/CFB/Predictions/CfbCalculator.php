@@ -7,6 +7,7 @@ use App\Application\Predictions\Data\EventInputSnapshotData;
 use App\Application\Predictions\Data\PredictionMarketOutput;
 use App\Application\Predictions\Data\PredictionOutput;
 use App\Services\CFB\Ratings\ResultRatingModel;
+use App\Services\CFB\Scoring\CfbScoringChallenger;
 use App\Services\CFB\Signals\CfbFootballSignalModel;
 use App\Services\Predictions\Football\CanonicalFootballCalculator;
 use Carbon\CarbonImmutable;
@@ -14,6 +15,16 @@ use Carbon\CarbonImmutable;
 class CfbCalculator extends CanonicalFootballCalculator
 {
     public function calculate(EventInputSnapshotData $snapshot, CalculationReleaseData $release): PredictionOutput
+    {
+        $baseline = $this->calculateBaseline($snapshot, $release);
+        if (! isset($snapshot->inputs['scoring_challenger'])) {
+            return $baseline;
+        }
+
+        return app(CfbScoringChallenger::class)->apply($baseline, $snapshot->inputs['scoring_challenger']);
+    }
+
+    private function calculateBaseline(EventInputSnapshotData $snapshot, CalculationReleaseData $release): PredictionOutput
     {
         if (! data_get($release->configuration, 'inputs.sample_aware_context', false)) {
             return parent::calculate($snapshot, $release);

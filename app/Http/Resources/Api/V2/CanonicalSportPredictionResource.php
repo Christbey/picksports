@@ -79,6 +79,7 @@ class CanonicalSportPredictionResource extends JsonResource
             'pro_signal_layer' => null,
             'period_insights' => [],
             'cfb_signal_context' => null,
+            ...($prediction->sport === 'cfb' ? ['scoring_model' => $this->cfbScoringModel($prediction)] : []),
             'home_elo' => null,
             'away_elo' => null,
             'home_team_elo' => null,
@@ -120,6 +121,24 @@ class CanonicalSportPredictionResource extends JsonResource
             'created_at' => $prediction->created_at?->toIso8601String(),
             'updated_at' => $prediction->updated_at?->toIso8601String(),
         ];
+    }
+
+    private function cfbScoringModel(CanonicalPrediction $prediction): ?array
+    {
+        $model = data_get($prediction->output_metadata, 'scoring_challenger');
+        if (! is_array($model) || ($model['state'] ?? '') === 'disabled') {
+            return null;
+        }
+        $summary = $model['summary'] ?? [];
+
+        return ['state' => $model['state'] ?? 'unavailable', 'promoted' => (bool) ($model['promoted'] ?? false),
+            'home_points' => $this->number($summary['home_points'] ?? null),
+            'away_points' => $this->number($summary['away_points'] ?? null),
+            'total' => $this->number($summary['total'] ?? null), 'home_margin' => $this->number($summary['home_margin'] ?? null),
+            'probability_status' => $summary['status'] ?? null,
+            'generated_at' => $prediction->generated_at?->toIso8601String(),
+            'artifact_id' => $model['artifact_id'] ?? null,
+            'recommendation_status' => 'requires_market_validation'];
     }
 
     private function market(CanonicalPrediction $prediction, string $type, string $selection): ?PredictionMarket

@@ -27,8 +27,6 @@ class TrueEpaCalculator
         }
 
         $rows = $plays->values()->all();
-        $realizedFuturePoints = $this->buildRealizedFuturePoints($rows, $homeTeamId, $awayTeamId);
-        $stateMap = $this->buildExpectedPointsStateMap($rows, $realizedFuturePoints);
         $baselineMap = $this->resolveBaselineMap($season);
 
         $results = [];
@@ -51,19 +49,41 @@ class TrueEpaCalculator
 
             $offenseTeamId = (int) $play->possession_team_id;
             $stateKey = $this->stateKeyForPlay($play);
-            $epBefore = $baselineMap[$stateKey] ?? $stateMap[$stateKey] ?? 0.0;
+            $epBefore = $baselineMap[$stateKey] ?? null;
 
-            $nextEligible = $this->findNextEligiblePlay($rows, $i + 1);
-            if ($nextEligible === null) {
+            $period = (int) ($play->period ?? 0);
+            $end = data_get($play->source_state ?? [], 'end');
+            $terminal = (bool) ($play->is_scoring_play ?? false)
+                || (in_array($period, [2, 4], true) && ($play->clock ?? null) === '0:00');
+            if ($terminal) {
                 $epAfter = 0.0;
+            } elseif (is_array($end) && isset($end['down'], $end['distance'], $end['yardsToEndzone']) && $end['down'] >= 1 && $end['down'] <= 4) {
+                $state = (object) ['down' => $end['down'], 'distance' => $end['distance'], 'yards_to_endzone' => $end['yardsToEndzone']];
+                $value = $baselineMap[$this->stateKeyForPlay($state)] ?? null;
+                $startTeam = data_get($play->source_state, 'start.team.id') ?? data_get($play->source_state, 'start.team.$ref');
+                $endTeam = data_get($play->source_state, 'end.team.id') ?? data_get($play->source_state, 'end.team.$ref');
+                $same = $startTeam !== null && $endTeam !== null ? $startTeam === $endTeam : null;
+                $epAfter = $value === null || $same === null ? null : ($same ? $value : -$value);
             } else {
-                $nextStateKey = $this->stateKeyForPlay($nextEligible);
-                $nextEp = $baselineMap[$nextStateKey] ?? $stateMap[$nextStateKey] ?? 0.0;
-                $nextOffenseTeamId = (int) $nextEligible->possession_team_id;
-                $epAfter = $nextOffenseTeamId === $offenseTeamId ? $nextEp : -$nextEp;
+                // Never jump over a punt, field goal, penalty, score or possession to find a convenient state.
+                $next = $rows[$i + 1] ?? null;
+                $nextPeriod = (int) ($next->period ?? 0);
+                $sameHalf = $period > 0 && $nextPeriod > 0
+                    && ($period <= 2 ? 1 : ($period <= 4 ? 2 : $period)) === ($nextPeriod <= 2 ? 1 : ($nextPeriod <= 4 ? 2 : $nextPeriod));
+                if ($next && $sameHalf && $this->playDataService->isEpaEligiblePlay($next) && is_numeric($next->possession_team_id)) {
+                    $value = $baselineMap[$this->stateKeyForPlay($next)] ?? null;
+                    $epAfter = $value === null ? null : ((int) $next->possession_team_id === $offenseTeamId ? $value : -$value);
+                } else {
+                    $epAfter = null;
+                }
             }
 
             $scoreDelta = $this->scoreDeltaForOffense($rows, $i, $offenseTeamId, $homeTeamId, $awayTeamId);
+            if ($epBefore === null || $epAfter === null) {
+                $results[$playId] = ['eligible' => true, 'ep_before' => $epBefore, 'ep_after' => $epAfter, 'epa' => null];
+
+                continue;
+            }
             $epa = $scoreDelta + ($epAfter - $epBefore);
 
             $results[$playId] = [
@@ -79,96 +99,11 @@ class TrueEpaCalculator
 
     /**
      * @param  array<int,object>  $rows
-     * @return array<int,float>
-     */
-    private function buildRealizedFuturePoints(array $rows, int $homeTeamId, int $awayTeamId): array
-    {
-        $results = [];
-        $count = count($rows);
-
-        for ($i = 0; $i < $count; $i++) {
-            $play = $rows[$i];
-            $playId = (int) $play->id;
-
-            if (! is_numeric($play->possession_team_id ?? null)) {
-                $results[$playId] = 0.0;
-
-                continue;
-            }
-
-            $offenseTeamId = (int) $play->possession_team_id;
-            $nextScore = 0.0;
-
-            for ($j = $i + 1; $j < $count; $j++) {
-                $delta = $this->scoreDeltaBetween($rows[$j - 1], $rows[$j], $offenseTeamId, $homeTeamId, $awayTeamId);
-                if (abs($delta) > 0.0001) {
-                    $nextScore = $delta;
-                    break;
-                }
-            }
-
-            $results[$playId] = $nextScore;
-        }
-
-        return $results;
-    }
-
-    /**
-     * @param  array<int,object>  $rows
-     * @param  array<int,float>  $realizedFuturePoints
-     * @return array<string,float>
-     */
-    private function buildExpectedPointsStateMap(array $rows, array $realizedFuturePoints): array
-    {
-        $stateBuckets = [];
-
-        foreach ($rows as $play) {
-            if (! $this->playDataService->isEpaEligiblePlay($play) || ! is_numeric($play->possession_team_id ?? null)) {
-                continue;
-            }
-
-            $key = $this->stateKeyForPlay($play);
-            $value = (float) ($realizedFuturePoints[(int) $play->id] ?? 0.0);
-            if (! isset($stateBuckets[$key])) {
-                $stateBuckets[$key] = ['sum' => 0.0, 'count' => 0];
-            }
-
-            $stateBuckets[$key]['sum'] += $value;
-            $stateBuckets[$key]['count']++;
-        }
-
-        $stateMap = [];
-        foreach ($stateBuckets as $key => $bucket) {
-            $count = max(1, (int) $bucket['count']);
-            $stateMap[$key] = $bucket['sum'] / $count;
-        }
-
-        return $stateMap;
-    }
-
-    /**
-     * @param  array<int,object>  $rows
-     */
-    private function findNextEligiblePlay(array $rows, int $startIndex): ?object
-    {
-        $count = count($rows);
-        for ($i = $startIndex; $i < $count; $i++) {
-            $play = $rows[$i];
-            if ($this->playDataService->isEpaEligiblePlay($play) && is_numeric($play->possession_team_id ?? null)) {
-                return $play;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * @param  array<int,object>  $rows
      */
     private function scoreDeltaForOffense(array $rows, int $index, int $offenseTeamId, int $homeTeamId, int $awayTeamId): float
     {
         if ($index <= 0) {
-            return 0.0;
+            return $this->scoreDeltaBetween((object) ['home_score' => 0, 'away_score' => 0], $rows[$index], $offenseTeamId, $homeTeamId, $awayTeamId);
         }
 
         return $this->scoreDeltaBetween($rows[$index - 1], $rows[$index], $offenseTeamId, $homeTeamId, $awayTeamId);
@@ -248,7 +183,7 @@ class TrueEpaCalculator
         }
 
         try {
-            $enabled = (bool) config('epa.state_baseline.enabled', false);
+            $enabled = (bool) config('cfb.scoring.past_epa_baseline', true);
         } catch (\Throwable) {
             return [];
         }

@@ -16,6 +16,30 @@ class EspnService extends BaseEspnService
 
     protected const SCOREBOARD_EVENT_GROUPS = 80;
 
+    public function getPlays(string $eventId, string $competitionId): ?array
+    {
+        $response = parent::getPlays($eventId, $competitionId);
+        if (! $response) {
+            return null;
+        }
+        $pages = (int) ($response['pageCount'] ?? 1);
+        if ($pages < 1 || $pages > 100) {
+            return null;
+        }
+        $items = $response['items'] ?? [];
+        for ($page = 2; $page <= $pages; $page++) {
+            $url = $this->buildUrl('core', 'plays', ['eventId' => $eventId, 'competitionId' => $competitionId]);
+            $next = $this->getByRef($url.(str_contains($url, '?') ? '&' : '?').'page='.$page, false);
+            if (! is_array($next['items'] ?? null) || (int) ($next['pageIndex'] ?? $page) !== $page
+                || ($next['count'] ?? null) !== ($response['count'] ?? null)) {
+                return null;
+            }
+            $items = [...$items, ...$next['items']];
+        }
+
+        return [...$response, 'items' => $items];
+    }
+
     public function getLiveGame(string $eventId): ?array
     {
         return $this->get($this->buildUrl('site', 'summary', ['eventId' => $eventId]), false);

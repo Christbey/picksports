@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'scoring' => ['artifact_id' => env('CFB_SCORING_ARTIFACT_ID'), 'python' => env('CFB_TRAINING_PYTHON', 'python3'), 'artifact_disk' => env('CFB_MODEL_DISK', 'local')],
+    'data' => ['source_disk' => env('CFB_SOURCE_DISK', 'local')],
     'odds' => ['bookmakers' => ['draftkings', 'fanduel', 'betmgm']],
 
     /*

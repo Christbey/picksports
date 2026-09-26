@@ -2,12 +2,14 @@
 
 use App\Actions\ESPN\CFB\SyncPlayerInjuries;
 use App\Actions\ESPN\CFB\SyncPlayers;
+use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game;
 use App\Models\CFB\Team;
 use App\Models\SportEvent;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 beforeEach(function () {
     $this->travelTo(now()->setDate(2026, 9, 18)->startOfDay());
@@ -49,8 +51,12 @@ beforeEach(function () {
         return 0;
     });
     Artisan::command('cfb:sync-game-weather {--season=} {--from-date=} {--days-forward=} {--force}', fn () => 0);
-    Artisan::command('cfb:generate-canonical-predictions {--season=} {--days-forward=}', function () use ($steps) {
+    Artisan::command('cfb:generate-canonical-predictions {--season=} {--days-forward=} {--game=}', function () use ($steps) {
         $steps[] = 'generation';
+        $game = Game::findOrFail($this->option('game'));
+        $prediction = CanonicalPrediction::factory()->create(['sport' => 'cfb', 'sport_event_id' => $game->sport_event_id,
+            'phase' => 'pregame', 'publication_state' => 'published', 'published_at' => now(), 'generated_at' => now(), 'revision' => 1]);
+        $prediction->markets()->create(['market_type' => 'spread', 'selection' => 'home', 'projected_line' => -7]);
 
         return 0;
     });
@@ -64,18 +70,18 @@ it('completes synchronous injury and odds work before generation', function () {
         return 0;
     });
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertSuccessful();
-    expect($steps->getArrayCopy())->toBe(['membership', 'ratings', 'elo', 'personnel', 'roster', 'injury', 'roster', 'injury', 'metrics', 'odds', 'generation']);
+    expect($steps->getArrayCopy())->toBe(['membership', 'ratings', 'personnel', 'roster', 'injury', 'roster', 'injury', 'elo', 'metrics', 'odds', 'generation']);
 });
 
-it('stops after failed odds and releases its application lock', function () {
+it('continues forecasts after failed odds and releases its application lock', function () {
     $steps = $this->steps;
     Artisan::command('cfb:sync-odds {--days=}', function () use ($steps) {
         $steps[] = 'odds';
 
         return 1;
     });
-    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertFailed();
-    expect($steps->getArrayCopy())->toBe(['membership', 'ratings', 'elo', 'personnel', 'roster', 'injury', 'roster', 'injury', 'metrics', 'odds']);
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertSuccessful();
+    expect($steps->getArrayCopy())->toBe(['membership', 'ratings', 'personnel', 'roster', 'injury', 'roster', 'injury', 'elo', 'metrics', 'odds', 'generation']);
     $lock = Cache::lock('cfb:pregame-pipeline');
     expect($lock->get())->toBeTrue();
     $lock->release();
@@ -92,7 +98,7 @@ it('refuses concurrent runs and invalid horizons without doing work', function (
 
 it('registers the guarded hourly refresh during the college football season', function () {
     $event = collect(app(Schedule::class)->events())
-        ->first(fn ($e) => str_contains((string) $e->command, 'cfb:run-pregame-pipeline'));
+        ->first(fn ($e) => str_contains((string) $e->command, 'cfb:run-pregame-pipeline') && str_contains((string) $e->command, '--days-forward=2'));
     expect($event)->not->toBeNull()->and($event->expression)->toBe('45 * * * *')
         ->and($event->withoutOverlapping)->toBeTrue()->and($event->onOneServer)->toBeTrue();
 });
@@ -122,7 +128,7 @@ it('stops before forecasts when Elo integrity fails', function () {
         return 1;
     });
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertFailed();
-    expect($steps->getArrayCopy())->toBe(['membership', 'ratings', 'failed-elo']);
+    expect($steps->getArrayCopy())->toBe(['membership', 'ratings', 'personnel', 'roster', 'injury', 'roster', 'injury', 'failed-elo']);
 });
 
 it('refreshes Elo and metrics even after the daily FPI refresh is cached', function () {
@@ -134,13 +140,15 @@ it('refreshes Elo and metrics even after the daily FPI refresh is cached', funct
         return 0;
     });
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertSuccessful();
-    expect($steps->getArrayCopy())->toBe(['elo', 'personnel', 'roster', 'injury', 'roster', 'injury', 'metrics', 'odds', 'generation']);
+    expect($steps->getArrayCopy())->toBe(['personnel', 'roster', 'injury', 'roster', 'injury', 'elo', 'metrics', 'odds', 'generation']);
 });
 
-it('stops when zero injuries actually means an unavailable feed', function () {
+it('records affected games when the injury feed is unavailable', function () {
     app(SyncPlayerInjuries::class)->shouldReceive('lastSyncReliable')->andReturn(false);
-    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertFailed();
-    expect($this->steps->getArrayCopy())->toBe(['membership', 'ratings', 'elo', 'personnel', 'roster', 'injury']);
+    Artisan::command('cfb:sync-odds {--days=}', fn () => 0);
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertExitCode(2);
+    expect($this->steps->getArrayCopy())->not->toContain('generation');
+    expect(DB::table('cfb_pipeline_steps')->value('state'))->toBe('blocked');
 });
 
 it('requires personnel data and retries an empty refresh without caching success', function () {
@@ -163,4 +171,17 @@ it('continues generation after an unavailable optional weather refresh', functio
     Artisan::command('cfb:sync-game-weather {--season=} {--from-date=} {--days-forward=} {--force}', fn () => 1);
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->expectsOutput('Weather refresh unavailable; missing weather remains unknown.')->assertSuccessful();
     expect($this->steps->getArrayCopy())->toContain('generation');
+});
+
+it('does not mark a skipped forecast complete merely because the command exits successfully', function () {
+    Artisan::command('cfb:sync-odds {--days=}', fn () => 0);
+    Artisan::command('cfb:generate-canonical-predictions {--game=}', fn () => 0);
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertExitCode(2);
+    expect(json_decode(DB::table('cfb_pipeline_steps')->where('stage', 'forecast')->value('result'), true)['reason'])->toBe('no_fresh_published_forecast');
+});
+
+it('shows stage evidence and routes daily canonical generation through validation', function () {
+    $this->artisan('cfb:pipeline-status')->assertSuccessful();
+    $daily = collect(app(Schedule::class)->events())->first(fn ($e) => $e->description === 'CFB: Generate Canonical Predictions');
+    expect($daily->command)->toContain('cfb:run-pregame-pipeline');
 });

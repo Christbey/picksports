@@ -15,7 +15,7 @@ class PredictionMarket extends Model
     /** @use HasFactory<PredictionMarketFactory> */
     use HasFactory, HasUlids;
 
-    public const MARKET_TYPES = ['moneyline', 'spread', 'total'];
+    public const MARKET_TYPES = ['moneyline', 'spread', 'total', 'team_total'];
 
     public const SELECTIONS = ['home', 'away', 'combined'];
 

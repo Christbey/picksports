@@ -16,6 +16,8 @@ use App\Services\OddsApi\OddsApiService;
 use Carbon\Carbon;
 use Laravel\Sanctum\Sanctum;
 
+require_once __DIR__.'/../../Fixtures/cfb_complete_box.php';
+
 beforeEach(function () {
     $this->travelTo(Carbon::parse('2026-09-12 14:00:00', 'UTC'));
     $this->team = Team::factory()->create();
@@ -160,16 +162,22 @@ test('preparation imports roster before box scores and links previously unknown 
     for ($i = 1; $i <= 3; $i++) {
         $history = Game::factory()->create(['home_team_id' => $this->team->id, 'away_team_id' => $this->away->id,
             'status' => 'STATUS_FINAL', 'season' => 2026, 'season_type' => 2, 'game_date' => "2026-08-0{$i}"]);
-        $espn->shouldReceive('getGame')->with((string) $history->espn_event_id)->once()->andReturn(['boxscore' => ['players' => [[
-            'team' => ['id' => (string) $this->team->espn_id], 'statistics' => [[
-                'name' => 'passing', 'labels' => ['C/ATT', 'YDS', 'TD', 'INT'],
-                'athletes' => [['athlete' => ['id' => '123456'], 'stats' => ['20/30', '300', '2', '0']]],
-            ]],
-        ]]]]);
+        $payload = cfbCompleteBox($history);
+        foreach ($payload['boxscore']['players'] as $index => &$teamBox) {
+            foreach ($teamBox['statistics'] as &$category) {
+                foreach ($category['athletes'] as &$athlete) {
+                    if ((int) $athlete['athlete']['id'] > 0) {
+                        $athlete['athlete'] = ['id' => $index === 0 ? '123456' : '654321', 'displayName' => $index === 0 ? 'Dante Moore' : 'Other Player'];
+                    }
+                }
+            }
+        }
+        unset($teamBox, $category, $athlete);
+        $espn->shouldReceive('getGame')->with((string) $history->espn_event_id)->once()->andReturn($payload);
     }
     app()->instance(EspnService::class, $espn);
     $this->artisan('cfb:prepare-player-props', ['--date' => '2026-09-12'])->assertSuccessful();
-    expect(PlayerStat::count())->toBe(3)->and($prop->fresh()->player_id)->not->toBeNull();
+    expect(PlayerStat::count())->toBe(6)->and($prop->fresh()->player_id)->not->toBeNull();
     expect((float) data_get($prop->fresh()->confidence_decomposition, 'stat_summary.season_avg'))->toBe(300.0);
 });
 
@@ -189,7 +197,7 @@ test('grades college props immediately after final game details ingest player st
     $prop = ($this->prop)('player_pass_yds', 200.5);
     PlayerStat::factory()->create(['game_id' => $this->game->id, 'player_id' => $this->player->id, 'team_id' => $this->team->id, 'passing_yards' => 250]);
     $service = Mockery::mock(EspnService::class);
-    $service->shouldReceive('getGame')->with($this->game->espn_event_id)->andReturn(['boxscore' => [], 'header' => ['competitions' => [[
+    $service->shouldReceive('getGame')->with($this->game->espn_event_id)->andReturn([...cfbCompleteBox($this->game), 'header' => ['competitions' => [[
         'status' => ['type' => ['name' => 'STATUS_FINAL']],
         'competitors' => [['homeAway' => 'home', 'score' => '24'], ['homeAway' => 'away', 'score' => '17']],
     ]]]]);

@@ -17,6 +17,7 @@ function observedCfbHistoryGame(Team $home, Team $away, string $day, int $homeSc
         'away_team_id' => $away->id, 'season' => 2026, 'game_date' => $day, 'game_time' => '12:00:00',
         'status' => 'STATUS_FINAL', 'home_score' => $homeScore, 'away_score' => $awayScore, 'neutral_site' => false,
         'conference_game' => true]);
+    DB::table('sport_events')->where('id', $event->id)->update(['created_at' => $day, 'updated_at' => $day.' 18:00:00']);
     DB::table('cfb_games')->where('id', $game->id)->update(['created_at' => $day, 'updated_at' => $day.' 18:00:00']);
 
     return $game;

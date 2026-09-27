@@ -88,7 +88,7 @@ export function nflBoardPresentation(prediction: ApiV2Prediction) {
             spreadSide && smallSpreadEdge
                 ? 'Pass — small edge'
                 : spreadSide && homeLine !== null
-                  ? `${team(spreadSide)} ${signed(spreadSide === 'home' ? homeLine : -homeLine)}`
+                  ? `${team(spreadSide)} ${signed(spreadSide === 'home' ? homeLine : -homeLine)}${market.spread_stale === true ? ' (stale line)' : ''}`
                   : homeLine === null
                     ? 'Line unavailable'
                     : margin === null
@@ -98,14 +98,15 @@ export function nflBoardPresentation(prediction: ApiV2Prediction) {
         marketSpread:
             homeLine === null
                 ? 'Unavailable'
-                : `${team('home')} ${signed(homeLine)}`,
+                : `${team('home')} ${signed(homeLine)}${market.spread_stale === true ? ' (stale)' : ''}`,
         marketTotal,
+        marketStale: market.spread_stale === true,
         totalLean:
             total === null || marketTotal === null
                 ? 'Unavailable'
                 : Math.abs(total - marketTotal) < 0.05
                   ? 'No edge'
-                  : `${total > marketTotal ? 'Over' : 'Under'} ${marketTotal}`,
+                  : `${total > marketTotal ? 'Over' : 'Under'} ${marketTotal}${market.total_stale === true ? ' (stale line)' : ''}`,
         totalEdge:
             total === null || marketTotal === null
                 ? null

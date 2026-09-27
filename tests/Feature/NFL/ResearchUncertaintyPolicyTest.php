@@ -78,7 +78,7 @@ it('supplies fresh paired totals and moneylines alongside spreads in the actual 
         ->and($input['synced_market']['moneyline_quotes'])->toHaveCount(2);
     $data = $game->odds_data;
     $data['bookmakers'][0]['markets'][0]['outcomes'][1]['point'] = 46.5;
-    $data['bookmakers'][0]['markets'][1]['last_update'] = now()->subHours(2)->toIso8601String();
+    $data['bookmakers'][0]['markets'][1]['last_update'] = now()->subHours(37)->toIso8601String();
     $game->odds_data = $data;
     expect(app(ResearchPipeline::class)->additionalMarketQuotes($game, 'totals'))->toBe([])
         ->and(app(ResearchPipeline::class)->additionalMarketQuotes($game, 'h2h'))->toBe([]);

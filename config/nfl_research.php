@@ -21,7 +21,7 @@ return [
     'max_articles_per_source' => 12,
     'lookback_days' => 14,
     'source_freshness_minutes' => env('NFL_RESEARCH_SOURCE_FRESHNESS_MINUTES', 90),
-    'market_freshness_minutes' => env('NFL_RESEARCH_MARKET_FRESHNESS_MINUTES', 60),
+    'market_freshness_minutes' => env('NFL_RESEARCH_MARKET_FRESHNESS_MINUTES', 2160),
     'review_rotation_ttl_minutes' => env('NFL_RESEARCH_REVIEW_ROTATION_TTL_MINUTES', 10080),
     'grading' => [
         'batch_size' => env('NFL_RESEARCH_GRADING_BATCH_SIZE', 50),

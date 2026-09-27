@@ -260,3 +260,33 @@ test('board leads with games, collapses season insights, and labels filter contr
     assert.doesNotMatch(html, /Super Bowl|One card per game|Visible 1/);
     assert.ok(html.indexOf('Model winner') < html.indexOf('More insights'));
 });
+
+test('stored stale lines remain visible with freshness labels despite blocked research', async () => {
+    const p = prediction(0.73, 10, -7);
+    p.predicted_total = 42.4;
+    p.nfl_board.market = {
+        home_spread: -7,
+        total: 50.5,
+        spread_stale: true,
+        total_stale: true,
+        bookmaker: 'draftkings',
+        observed_at: '2026-09-26T16:10:06Z',
+    };
+    p.nfl_board.research = { status: 'refresh_blocked', decision: 'hold' };
+    const v = nflBoardPresentation(p);
+    assert.equal(v.spreadLean, 'HOME -7 (stale line)');
+    assert.equal(v.marketSpread, 'HOME -7 (stale)');
+    assert.equal(v.totalLean, 'Under 50.5 (stale line)');
+    assert.equal(v.marketAt, '2026-09-26T16:10:06Z');
+    assert.equal(v.researchLabel, 'Refresh blocked');
+    assert.equal(v.researchDecision, 'hold');
+    const { default: component } = await server.ssrLoadModule(
+        '/resources/js/components/nfl/NflMatchupCard.vue',
+    );
+    const html = await renderToString(
+        createSSRApp(component, { prediction: p }),
+    );
+    assert.match(html, /HOME -7 \(stale line\)/);
+    assert.match(html, /Refresh blocked/);
+    assert.doesNotMatch(html, /Line unavailable/);
+});

@@ -293,7 +293,8 @@ class ResearchPipeline
         return collect($values)->filter(fn ($value) => is_string($value) && $value !== '')->unique()->sort()->values()->all();
     }
 
-    public function quotes(Game $game): array
+    /** Set requireFresh=false only for displaying timestamped stored quotes, never approval. */
+    public function quotes(Game $game, bool $requireFresh = true): array
     {
         $books = data_get($game->odds_data, 'bookmakers', []);
         $home = $game->odds_data['home_team'] ?? null;
@@ -312,17 +313,17 @@ class ResearchPipeline
             }
         }
 
-        return $this->freshPairedSpreadQuotes($quotes);
+        return $this->freshPairedSpreadQuotes($quotes, $requireFresh);
     }
 
     /** Fresh, same-book paired prices; never substitute web lines for the feed. */
-    public function additionalMarketQuotes(Game $game, string $key): array
+    public function additionalMarketQuotes(Game $game, string $key, bool $requireFresh = true): array
     {
         if (! in_array($key, ['totals', 'h2h'], true)) {
             return [];
         }
         $result = [];
-        $freshAfter = now()->subMinutes(max(1, (int) config('nfl_research.market_freshness_minutes', 60)));
+        $freshAfter = now()->subMinutes(max(1, (int) config('nfl_research.market_freshness_minutes', 2160)));
         foreach (data_get($game->odds_data, 'bookmakers', []) as $book) {
             if (empty($book['key'])) {
                 continue;
@@ -333,7 +334,9 @@ class ResearchPipeline
                 }
                 $observedAt = $market['last_update'] ?? $book['last_update'] ?? $game->odds_updated_at?->toIso8601String();
                 try {
-                    if (! is_string($observedAt) || ! Carbon::parse($observedAt)->betweenIncluded($freshAfter, now())) {
+                    if (! is_string($observedAt) || trim($observedAt) === ''
+                        || Carbon::parse($observedAt)->isFuture()
+                        || ($requireFresh && Carbon::parse($observedAt)->lt($freshAfter))) {
                         continue;
                     }
                 } catch (Throwable) {
@@ -372,10 +375,10 @@ class ResearchPipeline
      * @param  array<int, array<string, mixed>>  $quotes
      * @return array<int, array<string, mixed>>
      */
-    private function freshPairedSpreadQuotes(array $quotes): array
+    private function freshPairedSpreadQuotes(array $quotes, bool $requireFresh = true): array
     {
-        $freshAfter = now()->subMinutes(max(1, (int) config('nfl_research.market_freshness_minutes', 60)));
-        $fresh = collect($quotes)->filter(function (array $quote) use ($freshAfter): bool {
+        $freshAfter = now()->subMinutes(max(1, (int) config('nfl_research.market_freshness_minutes', 2160)));
+        $fresh = collect($quotes)->filter(function (array $quote) use ($freshAfter, $requireFresh): bool {
             if (! in_array($quote['side'] ?? null, ['home', 'away'], true)
                 || ! filled($quote['bookmaker'] ?? null)
                 || ! is_numeric($quote['line'] ?? null)
@@ -386,7 +389,8 @@ class ResearchPipeline
             }
 
             try {
-                return Carbon::parse((string) $quote['observed_at'])->betweenIncluded($freshAfter, now());
+                return ! Carbon::parse((string) $quote['observed_at'])->isFuture()
+                    && (! $requireFresh || Carbon::parse((string) $quote['observed_at'])->gte($freshAfter));
             } catch (Throwable) {
                 return false;
             }

@@ -74,11 +74,14 @@ class NflPredictionBoardContext
                 default => 'hold',
             };
             // A final/live card must not borrow a live line to describe a pregame forecast.
-            $quotes = $pregame ? $pipeline->quotes($game) : ($revision?->market ?? []);
+            // Prefer a fresh book; retain valid stored quotes for display when all books are stale.
+            $quotes = $pregame
+                ? ($pipeline->quotes($game) ?: $pipeline->quotes($game, requireFresh: false))
+                : ($revision?->market ?? []);
             $home = collect($quotes)->where('side', 'home')->sortBy(fn ($q) => match ($q['bookmaker'] ?? '') {
                 'draftkings' => 0, 'fanduel' => 1, default => 2,
             })->first();
-            $total = $pregame && $home ? collect($pipeline->additionalMarketQuotes($game, 'totals'))
+            $total = $pregame && $home ? collect($pipeline->additionalMarketQuotes($game, 'totals', requireFresh: false))
                 ->first(fn ($q) => $q['bookmaker'] === $home['bookmaker'] && $q['side'] === 'over') : null;
             $forecast = ! $final && $revision && ! $changed && ! $comparisonMissing && ! $expired && ! $unlinked ? $revision->revised : null;
 
@@ -103,6 +106,9 @@ class NflPredictionBoardContext
                     'bookmaker' => $home['bookmaker'] ?? null,
                     'observed_at' => $home['observed_at'] ?? null,
                     'historical' => ! $pregame,
+                    'spread_stale' => $pregame && $home && ! $pipeline->marketIsFresh($game, collect($quotes)->where('bookmaker', $home['bookmaker'])->values()->all()),
+                    'total_stale' => $pregame && $total && ! collect($pipeline->additionalMarketQuotes($game, 'totals'))->contains(fn ($q) => $q['bookmaker'] === $total['bookmaker'] && $q['side'] === 'over'),
+                    'total_observed_at' => $total['observed_at'] ?? null,
                 ],
             ]];
         });

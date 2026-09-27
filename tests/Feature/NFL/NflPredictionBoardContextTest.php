@@ -86,15 +86,23 @@ it('does not reuse current odds to describe a final pregame prediction', functio
         ->and($v['market']['historical'])->toBeTrue()->and($v['market']['home_spread'])->toBeNull();
 });
 
-it('returns missing research and missing stale lines honestly', function () {
+it('displays stored stale lines without making them eligible for research approval', function () {
     [$prediction, $report, $revision] = boardFixture();
     $revision->delete();
     $report->delete();
     $odds = $prediction->game->odds_data;
-    $odds['bookmakers'][0]['last_update'] = now()->subHours(2)->toIso8601String();
+    $odds['bookmakers'][0]['last_update'] = now()->subHours(37)->toIso8601String();
     $prediction->game->odds_data = $odds;
     $v = app(NflPredictionBoardContext::class)->forPredictions(collect([$prediction]))->get($prediction->id);
-    expect($v['research']['status'])->toBe('missing')->and($v['forecast'])->toBeNull()->and($v['market']['home_spread'])->toBeNull();
+    expect($v['research']['status'])->toBe('missing')->and($v['forecast'])->toBeNull()
+        ->and($v['market']['home_spread'])->toBe(-8.5)
+        ->and($v['market']['total'])->toBe(42.5)
+        ->and($v['market']['spread_stale'])->toBeTrue()
+        ->and($v['market']['total_stale'])->toBeTrue()
+        ->and($v['market']['observed_at'])->toBe($odds['bookmakers'][0]['last_update'])
+        ->and(app(ResearchPipeline::class)->quotes($prediction->game))->toBe([])
+        ->and(app(ResearchPipeline::class)->additionalMarketQuotes($prediction->game, 'totals'))->toBe([])
+        ->and(app(ResearchPipeline::class)->marketIsFresh($prediction->game))->toBeFalse();
 });
 
 it('loads slate research in two batched queries, without per-game lookups or provider calls', function () {
@@ -120,3 +128,53 @@ it('publishes compact board context and absolute kickoff through the prediction 
         ->assertJsonPath('data.nfl_board.market.home_spread', -8.5)
         ->assertJsonPath('data.game.kickoff_at', app(SportsDateWindowService::class)->gameDateTimeUtc($prediction->game->game_date, $prediction->game->game_time)->toIso8601String());
 });
+
+it('still rejects invalid stored market evidence on the board', function (string $failure) {
+    [$prediction] = boardFixture();
+    $odds = $prediction->game->odds_data;
+    $odds['bookmakers'][0]['last_update'] = match ($failure) {
+        'future' => now()->addHour()->toIso8601String(),
+        'invalid timestamp' => 'not-a-date',
+        default => now()->subHours(37)->toIso8601String(),
+    };
+    if ($failure === 'unpaired') {
+        $odds['bookmakers'][0]['markets'][0]['outcomes'][1]['point'] = 7;
+    }
+    $prediction->game->odds_data = $odds;
+    $v = app(NflPredictionBoardContext::class)->forPredictions(collect([$prediction]))->get($prediction->id);
+    expect($v['market']['home_spread'])->toBeNull();
+})->with(['future', 'invalid timestamp', 'unpaired']);
+
+it('prefers fresh market evidence to a stale preferred bookmaker', function () {
+    [$prediction] = boardFixture();
+    $odds = $prediction->game->odds_data;
+    $odds['bookmakers'][1] = $odds['bookmakers'][0];
+    $odds['bookmakers'][1]['key'] = 'fanduel';
+    $odds['bookmakers'][0]['last_update'] = now()->subHours(37)->toIso8601String();
+    $prediction->game->odds_data = $odds;
+    $v = app(NflPredictionBoardContext::class)->forPredictions(collect([$prediction]))->get($prediction->id);
+    expect($v['market']['bookmaker'])->toBe('fanduel')
+        ->and($v['market']['spread_stale'])->toBeFalse()
+        ->and($v['market']['total_stale'])->toBeFalse();
+});
+
+it('marks lines stale only when older than 36 hours', function (int $ageSeconds, bool $stale) {
+    $this->travelTo(now()->startOfSecond());
+    [$prediction] = boardFixture();
+    $odds = $prediction->game->odds_data;
+    $odds['bookmakers'][0]['last_update'] = now()->subSeconds($ageSeconds)->toIso8601String();
+    $prediction->game->odds_data = $odds;
+    $pipeline = app(ResearchPipeline::class);
+    $v = app(NflPredictionBoardContext::class)->forPredictions(collect([$prediction]))->get($prediction->id);
+    expect($v['market']['home_spread'])->toBe(-8.5)
+        ->and($v['market']['total'])->toBe(42.5)
+        ->and($v['market']['spread_stale'])->toBe($stale)
+        ->and($v['market']['total_stale'])->toBe($stale)
+        ->and($pipeline->marketIsFresh($prediction->game))->toBe(! $stale)
+        ->and(count($pipeline->additionalMarketQuotes($prediction->game, 'totals')))->toBe($stale ? 0 : 2);
+})->with([
+    'two hours is fresh' => [7200, false],
+    'just under 36 hours' => [129599, false],
+    'exactly 36 hours' => [129600, false],
+    'older than 36 hours' => [129601, true],
+]);

@@ -1,13 +1,13 @@
 # API V2 Reference
 
-Last reviewed: 2026-06-14.
+Last reviewed: 2026-09-26. Route inventory verified against all 84 registered V2 routes (GET includes HEAD).
 
 This is the current human and agent reference for `/api/v2`. It complements
 `docs/api-v2-modernization-plan.md` and
 `docs/api-v2-contracts-and-retirement.md` by listing the actual route surface,
 expected filters, frontend client ownership, and contract-test coverage.
 
-The generated OpenAPI artifact lives in `docs/openapi-v2.json`. This reference
+The generated [OpenAPI artifact](openapi-v2.json) contains named request and response schemas. The [endpoint contract index](api-v2-endpoint-contracts.md) maps every method and path to those schemas. This reference
 adds the operational context that a route-level schema cannot fully express.
 
 ## Global Conventions
@@ -22,28 +22,153 @@ adds the operational context that a route-level schema cannot fully express.
   `meta.contract` name, selected filters, freshness context, and warnings when
   data is stale or incomplete.
 - Collection endpoints should paginate or return bounded datasets. Request
-  classes cap `per_page` at 100 unless a route intentionally returns a custom
-  board or availability payload.
+  classes generally cap `per_page` at 100; games and team metrics allow 500.
+  Boards, injuries and availability routes use their own limits.
 - Date filters must use the shared backend date-window helpers. Do not compare
   user-selected dates directly against raw UTC timestamps in controllers or
   Vue.
 
 ## Authentication And Access
 
-| Route family | Middleware | Notes |
+| Route family | Authentication and access | Rate limits |
 | --- | --- | --- |
-| `GET /api/v2/sports` and `GET /api/v2/sports/{sport}` | none | Public sport metadata. |
-| `POST /api/v2/auth/login` | `throttle:10,1` | Token login. |
-| `POST /api/v2/auth/passkeys/options` | `throttle:20,1` | Passkey challenge options. |
-| `POST /api/v2/auth/passkeys/verify` | `throttle:10,1` | Passkey verification. |
-| `GET/POST /api/v2/auth/me|logout|logout-all` | `auth:sanctum` | Token session management. |
-| App-level product routes | `auth:sanctum` | Live scoreboard, user bets, brackets, groups, alert preferences. |
-| Admin inspector | `auth:sanctum`, `admin` | Production payload debugging. |
-| Sport data routes | `auth:sanctum`, `v2.sport-api-access` | Games, teams, players, predictions, stats, markets, signals, and forecasts. |
+| `GET /sports`, `GET /sports/{sport}` | Public metadata | No route-specific limiter |
+| `POST /auth/login`, `POST /auth/device-sessions/refresh` | Public; password or refresh-token validation | `api-v2-auth-login`: default 10/minute/IP, shared bucket |
+| `POST /auth/passkeys/options` | Public challenge creation | `api-v2-auth-passkey-options`: default 20/minute/IP |
+| `POST /auth/passkeys/verify` | Public credential verification | `api-v2-auth-passkey-verify`: default 10/minute/IP |
+| Auth session management and app product routes | `v2.auth` | Mutations marked in the contract index use `api-v2-writes`: default 60/minute/user |
+| Admin inspector | `v2.auth`, `admin` | No route-specific limiter |
+| Sport data | `v2.auth`, `v2.sport-api-access`; research also requires four prediction permissions | No route-specific limiter |
+| `GET /developer/sandbox` | `auth:developer-api`, developer product `developer-sandbox`, scope `sandbox:read`, entitlement policy | Developer entitlement policy applies |
+| `POST /security/reports/csp`, `POST /security/reports/integrity` | Public, CSRF exempt | 1,000/minute in production; 10,000/minute in local/testing |
+
+Paths above are relative to `/api/v2`. `v2.auth` accepts the application session,
+Sanctum tokens, or Passport OAuth bearer tokens. OAuth reads require
+`mobile:read`; mutations require `mobile:write`. Sport entitlement and resource
+ownership checks still apply after authentication. Developer credentials use the
+separate sandbox guard; they do not grant application API access.
+
+Send `Accept: application/json`; send `Content-Type: application/json` for JSON
+bodies. Browser session mutations require CSRF state: the shared client reads
+`XSRF-TOKEN` into `X-XSRF-TOKEN`, falls back to the page's CSRF meta token, or
+initializes cookies through `/sanctum/csrf-cookie`. That bootstrap URL is outside
+V2. Authenticated bearer clients use `Authorization: Bearer <token>`.
+
+Limits are configurable in `config/api.php`. A 429 response includes
+`Retry-After`; clients should respect it.
 
 Access rules should stay in middleware, policies, request classes, and
 dedicated access services. Controllers and resources should not duplicate tier
 or permission checks.
+
+## Authentication flows and request examples
+
+Examples use placeholders. Set `API_BASE` to your deployment's `/api/v2` URL and
+`API_TOKEN` to a token issued to your account. These calls do not run as part of
+documentation verification.
+
+```bash
+API_BASE='https://your-host.example/api/v2'
+API_TOKEN='<your-access-token>'
+
+# Public capability metadata.
+curl --fail-with-body "$API_BASE/sports/nfl" -H 'Accept: application/json'
+
+# Authenticated game listing. Dates use the configured sports business timezone.
+curl --fail-with-body --get "$API_BASE/sports/nfl/games" \
+  -H 'Accept: application/json' -H "Authorization: Bearer $API_TOKEN" \
+  --data-urlencode 'season=2026' --data-urlencode 'per_page=25'
+
+# Research requires all four prediction permissions in addition to sport access.
+curl --fail-with-body "$API_BASE/sports/nfl/games/<game-id>/research" \
+  -H 'Accept: application/json' -H "Authorization: Bearer $API_TOKEN"
+```
+
+Password login accepts `email`, `password` and optional `device_name`; success
+returns `token_type`, `access_token` and `user`. `GET /auth/me` returns the
+current user resource. `POST /auth/logout` revokes the current token/device
+session; `POST /auth/logout-all` revokes all of the user's tokens/device
+sessions. Both return 204 with no body.
+
+Passkey login first calls `POST /auth/passkeys/options` with optional `email`.
+Use the returned challenge in the platform WebAuthn flow, then send
+`challenge_id`, `credential_id`, `client_data_json`, `authenticator_data` and
+`signature` to `POST /auth/passkeys/verify`; `device_name` is optional. The
+verification response has the same token envelope as password login.
+
+For native applications:
+
+1. Authenticate, then `POST /auth/device-sessions` with `device_name` (max 120),
+   `platform` (`ios` or `android`) and optional `device_identifier` (max 255).
+   A 201 response contains `access_token`, `refresh_token`, both expiry
+   timestamps, `token_type` and `device_session` (`id`, `device_name`, `platform`).
+2. Rotate credentials through `POST /auth/device-sessions/refresh` with
+   `refresh_token` (max 512). Store the newly returned pair. This endpoint
+   validates the refresh token without requiring an access token; an invalid
+   token returns 401 with code `invalid_refresh_token`.
+3. Register push delivery at
+   `POST /auth/device-sessions/{deviceSession}/push-registrations`: `provider`
+   is `apns` or `fcm`, `device_token` is required (max 4096), and optional
+   `environment` is `sandbox` or `production`. It returns `data` containing
+   `device_session_id`, `provider`, `environment`, `last_registered_at`.
+   New registrations return 201; existing registrations return 200.
+4. Delete push registrations with the matching `DELETE` route and provider,
+   or revoke the device session with `DELETE /auth/device-sessions/{deviceSession}`.
+   Both return 204. `{deviceSession}` is the returned public session ID, and
+   must belong to the authenticated user.
+
+## Mutation retries, errors and request IDs
+
+The [endpoint contract index](api-v2-endpoint-contracts.md) marks the mutations
+that support `Idempotency-Key`. It is optional server-side; send it when a
+mutation may be retried. Keys contain 1–255 visible ASCII characters without
+spaces and are scoped to the authenticated principal and named route. Reuse a
+key only for the same method, route parameters and payload. The default lifetime
+is 24 hours (`API_V2_IDEMPOTENCY_TTL_HOURS`).
+
+A completed replay returns the original status/body with
+`Idempotency-Replayed: true`. Initial responses use `false`; both include
+`Idempotency-Key-Expires-At`. A changed payload returns 409
+`idempotency_key_reused`; a still-running request returns 409
+`idempotency_request_in_progress`. Invalid key syntax returns 400
+`invalid_idempotency_key`. Exceptions and 5xx responses are not cached.
+
+The Vue client supplies CSRF and idempotency headers, retries a network failure
+once with the same key/body, and exposes `ApiError` with `status`, `data`, `code`,
+`requestId`, and `retryAfter`. It does not automatically retry HTTP errors or
+aborted requests. Explicit retries can pass a stable `idempotencyKey` option.
+
+V2 responses include `X-Request-ID`. Errors use this shape (validation errors
+also include `error.fields` and the compatibility `errors` field):
+
+```json
+{
+  "error": {
+    "code": "unauthenticated",
+    "message": "Unauthenticated.",
+    "request_id": "example-request-id"
+  },
+  "request_id": "example-request-id",
+  "message": "Unauthenticated."
+}
+```
+
+| Status | Meaning and client action |
+| --- | --- |
+| 400 | Invalid request/header; correct it before retrying. |
+| 401 | Missing, expired or invalid authentication; authenticate or refresh. |
+| 403 | Missing scope, entitlement, permission or ownership authorization. |
+| 404 | Missing resource, wrong-sport identifier, or unsupported sport endpoint. |
+| 409 | Idempotency conflict; inspect the specific error code. |
+| 419 | Browser CSRF/session mismatch; refresh CSRF/session state. |
+| 422 | Validation failure; inspect field errors. |
+| 429 | Rate limit reached; respect `Retry-After`. |
+| 5xx | Server failure; retain the request ID for diagnosis. |
+
+Successful empty collections are different from errors. Do not convert rejected
+requests to an empty dataset. Response wrappers also differ: sport resources
+usually have `data`/`meta`, login/device credentials are top-level, security
+reports return `ok`, CSV export uses `text/csv`, and 204 responses have no JSON.
 
 ## Supported Sport Slugs
 
@@ -90,11 +215,20 @@ warning-bearing contract instead of throwing provider-specific errors to Vue.
 | `POST` | `/api/v2/alert-preferences` | `v2.alert-preferences.store` | `alertPreferences.store()` | `tests/Feature/Api/V2/AlertPreferenceApiTest.php` |
 | `PUT` | `/api/v2/alert-preferences` | `v2.alert-preferences.update` | `alertPreferences.update()` | `tests/Feature/Api/V2/AlertPreferenceApiTest.php` |
 | `GET` | `/api/v2/admin/payload-inspector` | `v2.admin.payload-inspector` | `admin.payloadInspector()` | `tests/Feature/Api/V2/Admin/PayloadInspectorTest.php` |
+| `POST` | `/api/v2/auth/device-sessions` | `v2.auth.device-sessions.store` | native clients | `tests/Feature/Auth/NativeDeviceSessionApiTest.php` |
+| `POST` | `/api/v2/auth/device-sessions/refresh` | `v2.auth.device-sessions.refresh` | native clients | `tests/Feature/Auth/NativeDeviceSessionApiTest.php` |
+| `DELETE` | `/api/v2/auth/device-sessions/{deviceSession}` | `v2.auth.device-sessions.destroy` | native clients | `tests/Feature/Auth/NativeDeviceSessionApiTest.php` |
+| `POST` | `/api/v2/auth/device-sessions/{deviceSession}/push-registrations` | `v2.auth.device-sessions.push-registrations.store` | native clients | `tests/Feature/Auth/NativeDeviceSessionApiTest.php` |
+| `DELETE` | `/api/v2/auth/device-sessions/{deviceSession}/push-registrations/{provider}` | `v2.auth.device-sessions.push-registrations.destroy` | native clients | `tests/Feature/Auth/NativeDeviceSessionApiTest.php` |
+| `GET` | `/api/v2/developer/sandbox` | `v2.developer.sandbox.show` | developer clients | `tests/Feature/DeveloperPlatform/DeveloperApiEnforcementTest.php` |
+| `POST` | `/api/v2/security/reports/csp` | `v2.security.reports.csp` | browser Reporting API | `tests/Feature/Api/V2/SecurityReportEndpointTest.php` |
+| `POST` | `/api/v2/security/reports/integrity` | `v2.security.reports.integrity` | browser Reporting API | `tests/Feature/Api/V2/SecurityReportEndpointTest.php` |
 
 ## Sport Routes
 
 All routes in this section live under `/api/v2/sports/{sport}` and require
-`auth:sanctum` plus `v2.sport-api-access`.
+`v2.auth` plus `v2.sport-api-access`. Capability and sport-specific restrictions
+are described below; registration does not imply support for every sport.
 
 | Method | Path | Route name | Frontend client | Contract tests |
 | --- | --- | --- | --- | --- |
@@ -137,12 +271,20 @@ All routes in this section live under `/api/v2/sports/{sport}` and require
 | `GET` | `/stats/team/available-dates` | `v2.sports.stats.team.available-dates` | `stats.teamAvailableDates()` | `tests/Feature/Api/V2/SportStatsEndpointContractTest.php` |
 | `GET` | `/stats/team/season-averages` | `v2.sports.stats.team.season-averages.index` | `stats.teamSeasonAverages()` | `tests/Feature/Api/V2/SportStatsEndpointContractTest.php` |
 | `GET` | `/stats/team` | `v2.sports.stats.team.index` | `stats.teams()` | `tests/Feature/Api/V2/SportStatsEndpointContractTest.php` |
+| `GET` | `/games/{game}/page` | `v2.sports.games.page.show` | `games.page()` | `tests/Feature/Api/V2/SportDepthChartEndpointContractTest.php` |
+| `GET` | `/games/{game}/trends` | `v2.sports.games.trends.show` | `games.trends()` | `tests/Feature/Api/V2/SportTeamTrendEndpointContractTest.php` |
+| `GET` | `/games/{game}/research` | `v2.sports.games.research.show` | `games.research()` | `tests/Feature/Api/V2/NflResearchEndpointTest.php` |
+| `GET` | `/games/{game}/live-snapshot` | `v2.sports.games.live-snapshot.show` | `games.liveSnapshot()` | `tests/Feature/Api/V2/NflLiveSnapshotTest.php` |
+| `GET` | `/games/{game}/market-history` | `v2.sports.games.market-history.show` | NFL game component | `tests/Feature/NFL/NflHistoricalMarketEvidenceTest.php` |
+| `GET` | `/games/{game}/matchup-signals` | `v2.sports.games.matchup-signals.show` | NFL game component | `tests/Feature/Api/V2/NflMatchupSignalEndpointTest.php` |
+| `GET` | `/games/{game}/live-betting` | `v2.sports.games.live-betting.show` | CFB game component | `tests/Feature/CFB/LiveBettingTest.php` |
+| `GET` | `/daily-picks` | `v2.sports.daily-picks.index` | `dailyPicks.index()` | `tests/Feature/MLB/MlbDailyPickEngineTest.php` |
 
 ## Common Filters
 
 | Endpoint family | Supported query filters |
 | --- | --- |
-| Games | `status`, `season`, `from_date`, `to_date`, `per_page` |
+| Games | `status`, `season`, `season_type`, `from_date`, `to_date`, `before_game_at`, `exclude_game_id`, `per_page` |
 | Predictions | `season`, `season_type`, `week`, `from_date`, `to_date`, `status`, `team_id`, `game_id`, `include`, `market`, `per_page` |
 | Teams | `conference`, `division`, `league`, `search`, `per_page` |
 | Players | `team_id`, `position`, `status`, `search`, `per_page` |
@@ -152,10 +294,20 @@ All routes in this section live under `/api/v2/sports/{sport}` and require
 | Team trends | `games`, `season`, `season_type`, `before_date` |
 | Player props | `date`, `from_date`, `to_date`, `game_id`, `player_id`, `market`, `bookmaker`, `recommended_side`, `per_page` |
 | Futures odds | `season`, `market_key`, `bookmaker`, `team_id`, `player_id`, `event_id`, `outcome_name`, `per_page` |
-| Forecasts | `season`, `as_of_date` |
+| Forecasts | `season`, `as_of_date`, `require_historical_metrics`, `sort_by`, `sort_direction` |
 | Signals | `season`, `as_of_date` |
-| Injuries | `active`, `team_id`, `status` |
-| Player leaderboards | `season`, `season_type`, `stat_type`, `min_games` |
+| Injuries | `active`, `team_id`, `status`, `limit` (1–500) |
+| Player leaderboards | `season`, `season_type`, `stat_type`, `min_games`, `focus_player_id` |
+| MLB daily picks | `date`, `season`, `game_id`, `compact`, `limit` |
+
+Use `page` for Laravel-paginated collections. Date ranges use `YYYY-MM-DD`
+and require `to_date >= from_date`. Business date windows use
+`config(sports.business_timezone)`; timestamps in responses retain their stated
+offset. `/daily-picks` is MLB-only and returns a custom board rather than a
+paginated collection. Availability routes return available dates/seasons rather
+than the full resources. Numeric IDs are required unless an endpoint explicitly
+supports a sport-event public ID; do not assume public-ID support for every
+`{team}`, `{player}`, `{prediction}` or game subresource.
 
 Filter validation belongs in `app/Http/Requests/Api/V2`. If a new filter is
 added to a query class, add it to the request class, this document, and the
@@ -229,7 +381,7 @@ NFL supports these shared v2 surfaces:
 
 | Surface | Endpoint family | Notes |
 | --- | --- | --- |
-| Games | `/api/v2/sports/nfl/games` | Filter by `season`, `season_type`, `week`, status, team, and date windows. |
+| Games | `/api/v2/sports/nfl/games` | Filter by `season`, `season_type`, status and date windows; use `/teams/{team}/games` for a team. |
 | Teams | `/api/v2/sports/nfl/teams` | Conference and division filters should map to NFL alignment. |
 | Players | `/api/v2/sports/nfl/players` | Supports team, position, status, search, and pagination. |
 | Predictions | `/api/v2/sports/nfl/predictions` | Includes confidence context, prediction outputs, market summary, grading fields, and live fields when present. |
@@ -432,10 +584,13 @@ Admin payload inspector examples:
 - Keep date and timezone behavior centralized.
 - Keep provider gaps explicit in `meta.warnings` or validation findings.
 
-## Known Gaps
+## Contract Limits
 
-- `docs/openapi-v2.json` is route-level. Detailed payload fields still live in
-  API resources and contract tests.
+- The OpenAPI artifact includes named payload schemas, but sport-dependent
+  aggregates remain extensible. Resources and contract tests define those fields.
+- Some generated query schemas are broader or less specific than request
+  validation. For example, games and team metrics accept `per_page` up to 500.
+  Use the filters and sport restrictions in this reference with the request classes.
 - Some app-level routes are v2 aliases over legacy-compatible payload shapes.
 - Provider coverage differs by sport and market, especially for college sports
   and futures/player-prop markets.
@@ -443,20 +598,23 @@ Admin payload inspector examples:
   payload inspector and contract tests when debugging frontend/API mismatches.
 
 
-## Specialized game endpoints (updated 2026-09-23)
+## Specialized game endpoints (updated 2026-09-26)
 
 These routes require V2 authentication and the sport API entitlement checks.
 Unsupported sports return 404. All paths are relative to `/api/v2`.
 
 | GET path | Sport | Query parameters | Response |
 | --- | --- | --- | --- |
+| `/sports/{sport}/games/{game}/page` | MLB | None | Composite `data` with game, prediction, recent games, metrics and matchup context; `meta` |
+| `/sports/{sport}/games/{game}/trends` | MLB | `games` (defaults to `season`); season, season type and cutoff are derived from the game | `data.home`, `data.away`, and `meta` |
+| `/sports/{sport}/games/{game}/research` | NFL | None | Latest 20 revisions in `data.revisions`, `data.game_id`, and `meta`; requires NFL, spread, win-probability and betting-value permissions |
 | `/sports/{sport}/games/{game}/live-betting` | CFB | None | Nullable latest snapshot in `data`, up to 25 snapshots in `history`, and `meta` |
 | `/sports/{sport}/games/{game}/live-snapshot` | NFL | None | `data` with game state, nullable provisional projection, timestamps and limitations; no `meta`; private/no-store |
 | `/sports/{sport}/games/{game}/market-history` | NFL | `since` (2009 through game season), optional `home_line` (-60 to 60 in half-point increments) | Historical market evidence in `data`, plus `meta` |
 | `/sports/{sport}/games/{game}/matchup-signals` | NFL | `window`: `season_to_date` (default) or `previous_season` | Independent matchup and situational evidence in `data`, plus `meta` |
 
-CFB live betting requires a numeric game ID. The three NFL endpoints accept a
-numeric game ID or a sport-event public ID belonging to NFL. Canonical
+CFB live betting requires a numeric game ID. The four NFL endpoints and MLB page/trends endpoints accept a
+numeric game ID or a sport-event public ID belonging to the selected sport. Canonical
 `/sports/{sport}/games/{game}/prediction` lookup also resolves the game before
 reading its prediction; malformed, nonexistent, and wrong-sport IDs return 404.
 

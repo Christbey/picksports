@@ -147,7 +147,7 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 - Daily current-week sync at `08:00`
 - Live scoreboard sync every 5 minutes between `17:00` and `02:00`
 - Game details sync every 30 minutes between `06:00` and `02:00`, checking a 14-day lookback for missing details or plays that have not reached the final score.
-- The ordered NFL pregame pipeline continues generation after an odds-provider failure using stored markets, retains the failure status, and verifies fresh prediction snapshots for eligible games. NFL odds monitoring uses the research market expiry (36 hours by default).
+- The ordered NFL pregame pipeline uses stored markets without fetching odds and verifies fresh prediction snapshots for eligible games. NFL odds monitoring uses the research market expiry (36 hours by default).
 - Grade predictions at `08:30`
 - Evaluate immutable canonical predictions at `08:35` when `PREDICTION_LIFECYCLE_NFL_CANONICAL_PIPELINE=true`
 - Calculate Elo at `09:00`
@@ -158,7 +158,7 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 - Record private shadow decisions at `10:15`
 - Train and register a weekly challenger Tuesday at `12:40` Central Time,
   after the `11:35` readiness pass
-- Sync odds every 4 hours between `08:00` and `23:00`
+- Sync game odds only at `06:10`, `10:10`, `14:10`, `18:10`, and `22:10` Central. NFL responses are reused for four hours, with a per-request lock to coalesce concurrent callers. Confirmed provider credit exhaustion pauses uncached requests across the account for 24 hours; cached data remains usable.
 - Sync player props twice daily at `10:00` and `15:00`
 - Sync injuries every 30 minutes between `08:00` and `23:00`
 - Sync futures odds every 4 hours between `08:00` and `23:00`

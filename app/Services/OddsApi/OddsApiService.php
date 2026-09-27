@@ -90,7 +90,9 @@ class OddsApiService
             $params['eventIds'] = $eventId;
         }
 
-        return $this->get($url, $params);
+        return $this->get($url, $params, cacheMinutes: in_array($sport, ['americanfootball_nfl', 'americanfootball_nfl_preseason'], true)
+            ? max(1, (int) config('services.odds_api.nfl_cache_minutes', 240))
+            : null);
     }
 
     /**
@@ -250,16 +252,20 @@ class OddsApiService
         return $this->get($url, $params, false);
     }
 
-    protected function get(string $url, array $params = [], bool $useCache = true): ?array
+    protected function get(string $url, array $params = [], bool $useCache = true, ?int $cacheMinutes = null): ?array
     {
         $cacheKey = 'odds_api.'.md5($url.json_encode($params));
 
         if ($useCache) {
-            return Cache::remember(
+            if (($cached = Cache::get($cacheKey)) !== null) {
+                return $cached;
+            }
+
+            return Cache::lock($cacheKey.':fetch', 65)->block(5, fn () => Cache::remember(
                 $cacheKey,
-                now()->addMinutes($this->cacheMinutes),
-                fn () => $this->fetchFromApi($url, $params)
-            );
+                now()->addMinutes($cacheMinutes ?? $this->cacheMinutes),
+                fn () => $this->fetchFromApi($url, $params),
+            ));
         }
 
         return $this->fetchFromApi($url, $params);
@@ -284,6 +290,10 @@ class OddsApiService
             );
         }
 
+        if ($until = Cache::get($this->quotaCooldownKey())) {
+            throw new OddsApiException('Odds API requests paused until '.$until.' after OUT_OF_USAGE_CREDITS. Stored data remains available.');
+        }
+
         $response = Http::timeout(30)
             ->connectTimeout(30)
             ->get($url, $params);
@@ -298,6 +308,10 @@ class OddsApiService
             : 'The Odds API request failed.';
         $errorCode = is_array($payload) ? ($payload['error_code'] ?? null) : null;
 
+        if ($errorCode === 'OUT_OF_USAGE_CREDITS') {
+            $this->pauseForQuotaExhaustion();
+        }
+
         if (is_string($errorCode) && $errorCode !== '') {
             $message .= " [{$errorCode}]";
         }
@@ -305,6 +319,17 @@ class OddsApiService
         throw new OddsApiException(
             sprintf('The Odds API returned HTTP %d: %s', $response->status(), $message)
         );
+    }
+
+    public function pauseForQuotaExhaustion(): void
+    {
+        $until = now()->addHours(max(1, (int) config('services.odds_api.quota_cooldown_hours', 24)));
+        Cache::put($this->quotaCooldownKey(), $until->toIso8601String(), $until);
+    }
+
+    private function quotaCooldownKey(): string
+    {
+        return 'odds_api:quota:'.hash('sha256', $this->baseUrl.'|'.$this->apiKey);
     }
 
     public function clearCache(): void

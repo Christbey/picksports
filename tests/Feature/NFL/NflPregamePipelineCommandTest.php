@@ -16,7 +16,7 @@ it('fails visibly before any pregame work when the canonical pipeline is disable
         ->assertFailed();
 });
 
-it('wires one bounded horizon through odds legacy and verified canonical generation', function () {
+it('uses one bounded horizon and never fetches odds during prediction generation', function () {
     config()->set('prediction_lifecycle.canonical_pipeline.nfl', true);
     $this->travelTo('2026-09-15 09:50:00');
     $runner = Mockery::mock(NflPregamePipelineRunner::class);
@@ -24,12 +24,6 @@ it('wires one bounded horizon through odds legacy and verified canonical generat
         ->once()
         ->withArgs(function (array $steps, callable $afterStep): bool {
             expect($steps)->toBe([
-                [
-                    'name' => 'odds_sync',
-                    'command' => 'nfl:sync-odds',
-                    'arguments' => ['--days' => 8],
-                    'continue_on_failure' => true,
-                ],
                 [
                     'name' => 'legacy_generation',
                     'command' => 'nfl:generate-predictions',

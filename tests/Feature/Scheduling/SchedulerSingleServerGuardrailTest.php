@@ -24,7 +24,7 @@ it('refreshes NFL research markets within their freshness window independently o
     $events = collect(app(Schedule::class)->events())->keyBy('description');
     $odds = $events->get('NFL: Research Market Refresh');
     expect($odds)->not->toBeNull()
-        ->and($odds->expression)->toBe('10,40 * * * *')
+        ->and($odds->expression)->toBe('10 6,10,14,18,22 * * *')
         ->and((string) $odds->command)->toContain('nfl:sync-odds --days=8')
         ->and($odds->expiresAt)->toBe(10)
         ->and($odds->onOneServer)->toBeTrue();
@@ -201,7 +201,7 @@ it('staggers provider syncs instead of starting every sport together', function 
         ->and($events->get('MLB: Refresh Probable Pitchers')?->expression)->toBe('17,47 * * * *')
         ->and($events->get('NFL: Sync Game Details')?->expression)->toBe('19,49 * * * *')
         ->and((string) $events->get('NFL: Sync Game Details')?->command)
-        ->toContain('--lookback-days=7', '--days-forward=1', '--limit=50', '--latest')
+        ->toContain('--lookback-days=14', '--days-forward=1', '--limit=50', '--latest')
         ->and($events->get('NFL: Sync Injuries')?->expression)->toBe('23,53 * * * *');
 });
 

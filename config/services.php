@@ -67,6 +67,8 @@ return [
     'odds_api' => [
         'key' => env('ODDS_API_KEY'),
         'base_url' => 'https://api.the-odds-api.com/v4',
+        'nfl_cache_minutes' => 240,
+        'quota_cooldown_hours' => 24,
     ],
 
     'scores_and_odds' => [

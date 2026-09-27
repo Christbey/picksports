@@ -15,7 +15,7 @@ class RunPregamePipelineCommand extends Command
         {--date= : Start the eight-day pregame horizon on this business date}
         {--days-forward=8 : Number of days covered by every pipeline step}';
 
-    protected $description = 'Run NFL odds, legacy prediction, canonical prediction, and readiness steps sequentially';
+    protected $description = 'Run NFL legacy prediction, canonical prediction, and readiness steps using stored odds';
 
     public function handle(NflPregamePipelineRunner $runner, NflPregameHorizon $horizons): int
     {
@@ -46,14 +46,6 @@ class RunPregamePipelineCommand extends Command
             ->whereHas('sportEvent', fn ($query) => $query->whereBetween('starts_at', [$horizon['start'], $horizon['end']]))
             ->pluck('id');
         $steps = [
-            [
-                'name' => 'odds_sync',
-                'command' => 'nfl:sync-odds',
-                'arguments' => ['--days' => $daysForward],
-                // A provider outage must not prevent generation from valid stored
-                // markets. Retain the failure in the final pipeline result.
-                'continue_on_failure' => true,
-            ],
             [
                 'name' => 'legacy_generation',
                 'command' => 'nfl:generate-predictions',

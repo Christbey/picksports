@@ -1050,11 +1050,11 @@ $nflPlayerPropsEvent = Schedule::command($nflPlayerPropsCommand)
     ->runInBackground();
 $attachCommandHeartbeat($nflPlayerPropsEvent, $nflPlayerPropsCommand, 'NFL: Sync Player Props');
 $nflPregamePipelineCommand = "nfl:run-pregame-pipeline --season={$fallSeasonYear} --days-forward=8";
-// NFL markets expire after 36 hours; refresh prices independently
-// of expensive generation and regardless of the next model-run window.
+// One owner for NFL prices: five checks daily, independent of model generation.
+// The provider cache coalesces other callers; stored lines expire after 36 hours.
 $nflResearchOddsCommand = 'nfl:sync-odds --days=8';
 $nflResearchOddsEvent = Schedule::command($nflResearchOddsCommand)
-    ->cron('10,40 * * * *')
+    ->cron('10 6,10,14,18,22 * * *')
     ->when($nflInSeason)
     ->name('NFL: Research Market Refresh')
     ->onOneServer()

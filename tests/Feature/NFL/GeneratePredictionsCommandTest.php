@@ -258,3 +258,26 @@ it('fails generation and persists a no-bet hold when an official candidate lacks
         ->and(data_get($hold->explanation, 'hold_reason'))->toBe('exact_fresh_paired_quote_missing')
         ->and(PredictionFeatureSnapshot::query()->count())->toBe(1);
 });
+
+it('does not report missing custom EPA when the model explicitly quarantines it', function () {
+    config()->set('nfl.predictions.true_epa.enabled', true);
+    config()->set('nfl.predictions.true_epa.custom_epa_quarantined', true);
+    $game = Game::factory()->create([
+        'home_team_id' => Team::factory()->create()->id, 'away_team_id' => Team::factory()->create()->id,
+        'season' => 2026, 'season_type' => '2', 'game_date' => now()->addDay(), 'status' => 'STATUS_SCHEDULED',
+    ]);
+    $generator = m::mock(GeneratePredictionFromHistoricalElo::class);
+    $generator->shouldReceive('execute')->once()->andReturnUsing(function () use ($game) {
+        Prediction::factory()->create([
+            'game_id' => $game->id,
+            'model_metadata' => [
+                'true_epa' => ['enabled' => false, 'applied' => false, 'quarantined' => true, 'requested_enabled' => true],
+                'analysis_layer' => ['eligibility' => ['eligible' => false, 'status' => 'pass', 'data_reasons' => []]],
+            ],
+        ]);
+
+        return 'created';
+    });
+    app()->instance(GeneratePredictionFromHistoricalElo::class, $generator);
+    $this->artisan('nfl:generate-predictions', ['--season' => 2026])->assertSuccessful();
+});

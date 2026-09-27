@@ -1022,7 +1022,7 @@ $scheduleSportPipeline(
     '06:00',
     '02:00',
     'NFL: Live Scoreboard Sync',
-    'espn:sync-nfl-game-details --lookback-days=7 --days-forward=1 --limit=50 --latest',
+    'espn:sync-nfl-game-details --lookback-days=14 --days-forward=1 --limit=50 --latest',
     '06:00',
     '02:00',
     'NFL: Sync Game Details',
@@ -1050,7 +1050,7 @@ $nflPlayerPropsEvent = Schedule::command($nflPlayerPropsCommand)
     ->runInBackground();
 $attachCommandHeartbeat($nflPlayerPropsEvent, $nflPlayerPropsCommand, 'NFL: Sync Player Props');
 $nflPregamePipelineCommand = "nfl:run-pregame-pipeline --season={$fallSeasonYear} --days-forward=8";
-// Research rejects quotes older than 60 minutes; refresh prices independently
+// NFL markets expire after 36 hours; refresh prices independently
 // of expensive generation and regardless of the next model-run window.
 $nflResearchOddsCommand = 'nfl:sync-odds --days=8';
 $nflResearchOddsEvent = Schedule::command($nflResearchOddsCommand)

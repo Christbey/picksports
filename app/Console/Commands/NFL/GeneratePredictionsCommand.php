@@ -124,7 +124,8 @@ class GeneratePredictionsCommand extends Command
                     if (is_string($metadata)) {
                         $metadata = json_decode($metadata, true);
                     }
-                    if (is_array($metadata) && data_get($metadata, 'true_epa.applied') !== true) {
+                    if (is_array($metadata) && data_get($metadata, 'true_epa.enabled') !== false
+                        && data_get($metadata, 'true_epa.applied') !== true) {
                         $trueEpaHolds++;
                         $trueEpaHeldGameIds[] = (int) $game->getKey();
 

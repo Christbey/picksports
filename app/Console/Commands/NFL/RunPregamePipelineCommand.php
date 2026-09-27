@@ -2,6 +2,8 @@
 
 namespace App\Console\Commands\NFL;
 
+use App\Models\NFL\Game;
+use App\Models\PredictionFeatureSnapshot;
 use App\Services\NFL\NflPregamePipelineRunner;
 use App\Services\NFL\Predictions\NflPregameHorizon;
 use Illuminate\Console\Command;
@@ -36,11 +38,21 @@ class RunPregamePipelineCommand extends Command
             '--date' => $horizon['date'],
             '--days-forward' => $daysForward,
         ];
+        $startedAt = now()->startOfSecond();
+        $expectedGameIds = Game::query()
+            ->where('season', $season)
+            ->whereIn('season_type', NflPregameHorizon::seasonTypes())
+            ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_DELAYED'])
+            ->whereHas('sportEvent', fn ($query) => $query->whereBetween('starts_at', [$horizon['start'], $horizon['end']]))
+            ->pluck('id');
         $steps = [
             [
                 'name' => 'odds_sync',
                 'command' => 'nfl:sync-odds',
                 'arguments' => ['--days' => $daysForward],
+                // A provider outage must not prevent generation from valid stored
+                // markets. Retain the failure in the final pipeline result.
+                'continue_on_failure' => true,
             ],
             [
                 'name' => 'legacy_generation',
@@ -75,6 +87,19 @@ class RunPregamePipelineCommand extends Command
             }
             $this->line("NFL pregame step {$name} exited {$exitCode}.");
         });
+
+        $generatedGameIds = PredictionFeatureSnapshot::query()
+            ->where('sport', 'nfl')
+            ->where('prediction_table', 'nfl_predictions')
+            ->whereIn('game_id', $expectedGameIds)
+            ->where('generated_at', '>=', $startedAt)
+            ->pluck('game_id');
+        $missingGameIds = $expectedGameIds->diff($generatedGameIds);
+        if ($missingGameIds->isNotEmpty()) {
+            $this->error('NFL pregame pipeline has no new prediction snapshots for game IDs: '.$missingGameIds->implode(', ').'.');
+
+            return self::FAILURE;
+        }
 
         if (! $result['successful']) {
             $this->error("NFL pregame pipeline failed at {$result['failed_step']}; review the step output and readiness report.");

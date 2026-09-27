@@ -146,7 +146,8 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 
 - Daily current-week sync at `08:00`
 - Live scoreboard sync every 5 minutes between `17:00` and `02:00`
-- Game details sync every 30 minutes between `17:00` and `02:00`
+- Game details sync every 30 minutes between `06:00` and `02:00`, checking a 14-day lookback for missing details or plays that have not reached the final score.
+- The ordered NFL pregame pipeline continues generation after an odds-provider failure using stored markets, retains the failure status, and verifies fresh prediction snapshots for eligible games. NFL odds monitoring uses the research market expiry (36 hours by default).
 - Grade predictions at `08:30`
 - Evaluate immutable canonical predictions at `08:35` when `PREDICTION_LIFECYCLE_NFL_CANONICAL_PIPELINE=true`
 - Calculate Elo at `09:00`

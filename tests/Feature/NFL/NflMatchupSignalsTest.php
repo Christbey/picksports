@@ -251,3 +251,39 @@ it('rejects negative scoring and incomplete per-game play coverage', function ()
         ->and(matchupSignal($result, 1, $target->home_team_id)['status'])->toBe('insufficient_data')
         ->and(matchupSignal($result, 1, $target->home_team_id)['evidence']['offense']['games'])->toBe(2);
 });
+
+it('pools rare opportunities without treating absent opportunities as missing data', function () {
+    [$target, $teams, $games] = matchupSignalLeague();
+    DB::table('nflverse_pbp_plays')->update(['down' => 2, 'yardline_100' => 50, 'yards_to_go' => 10]);
+    $laterGames = collect($games)->filter(fn ($game) => $game->week > 1)->pluck('id');
+    DB::table('nflverse_pbp_plays')->whereIn('nfl_game_id', $laterGames)->where('play_type', 'pass')
+        ->update(['down' => 3, 'yardline_100' => 10, 'yards_to_go' => 2]);
+    $service = app(NflMatchupSignalService::class);
+    $result = $service->build($target);
+    foreach ([78, 79, 80, 127, 128] as $id) {
+        $signal = matchupSignal($result, $id, $target->home_team_id);
+        expect($signal['status'])->not->toBe('insufficient_data')
+            ->and($signal['evidence']['offense']['games'])->toBe(3)
+            ->and($signal['evidence']['league_teams'])->toBe(32);
+    }
+    $firstGame = collect($games)->first(fn ($game) => $game->home_team_id === $teams[0]->id);
+    DB::table('nflverse_pbp_plays')->where('nfl_game_id', $firstGame->id)->where('play_type', 'pass')
+        ->update(['yardline_100' => null]);
+    expect(matchupSignal($service->build($target), 80, $target->home_team_id)['status'])->toBe('insufficient_data');
+});
+
+it('does not rank pooled situations with too few season opportunities', function () {
+    [$target, , $games] = matchupSignalLeague();
+    DB::table('nflverse_pbp_plays')->update(['down' => 2, 'yardline_100' => 50, 'yards_to_go' => 10]);
+    foreach ($games as $game) {
+        foreach ([$game->home_team_id, $game->away_team_id] as $teamId) {
+            $id = DB::table('nflverse_pbp_plays')->where('nfl_game_id', $game->id)
+                ->where('possession_team_id', $teamId)->where('play_type', 'pass')->value('id');
+            DB::table('nflverse_pbp_plays')->where('id', $id)->update(['down' => 3]);
+        }
+    }
+    $signal = matchupSignal(app(NflMatchupSignalService::class)->build($target), 78, $target->home_team_id);
+    expect($signal['status'])->toBe('insufficient_data')
+        ->and($signal['evidence']['offense']['plays'])->toBe(3)
+        ->and($signal['evidence']['offense']['minimum_plays'])->toBe(6);
+});

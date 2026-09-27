@@ -24,7 +24,9 @@ class OddsCompletenessCheck implements ValidationCheck
 
         /** @var class-string<Model> $gameModel */
         $windowDays = (int) ($profile['window_days'] ?? config('validation.window_days', 7));
-        $staleHours = (int) config('validation.thresholds.odds_completeness.stale_after_hours', 8);
+        $staleMinutes = $sport === 'nfl'
+            ? (int) config('nfl_research.market_freshness_minutes', 2160)
+            : (int) config('validation.thresholds.odds_completeness.stale_after_hours', 8) * 60;
         $softAvailabilityHours = (int) config('validation.thresholds.odds_completeness.soft_availability_hours', 24);
         $expectedAvailabilityHours = (int) config('validation.thresholds.odds_completeness.expected_availability_hours', 6);
         $stageContext = app(SeasonStageService::class)->context($sport, null, null, $windowDays);
@@ -101,7 +103,7 @@ class OddsCompletenessCheck implements ValidationCheck
                 }
             }
 
-            if ($game->odds_updated_at !== null && $game->odds_updated_at->lt(now()->subHours($staleHours))) {
+            if ($game->odds_updated_at !== null && $game->odds_updated_at->lt(now()->subMinutes($staleMinutes))) {
                 $staleOddsCount++;
                 $flagged = true;
                 $staleOddsGameIds[] = (int) $game->getKey();

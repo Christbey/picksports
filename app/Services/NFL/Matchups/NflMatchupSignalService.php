@@ -53,7 +53,7 @@ final class NflMatchupSignalService
                 'Only final regular-season games from the explicitly selected season and a prior UTC calendar date are included. Same-day results are excluded because the games table has no reliable completion timestamp.',
                 'Previous-season context is a separate selected sample, never a silent fallback or blended forecast input. Rosters, quarterbacks and coaches may have changed.',
                 'Rankings require all 32 teams with at least two qualifying games. Ties crossing a top/bottom boundary do not qualify.',
-                'Each prior game must meet volume floors: 30 overall; 15 passing or early-down; 8 rushing or first-down passing; 5 late-down; 4 first-down rushing; 3 third-down passing, red-zone passing or short-yardage plays. Require 90% metric/context coverage. These checks cannot independently prove that a provider import contains every play.',
+                'Each prior game must meet volume floors: 30 overall; 15 passing or early-down; 8 rushing; 5 late-down; 4 first-down rushing. First-down passing requires 16 pooled opportunities; third-down passing, red-zone passing and short-yardage require 6 pooled opportunities across at least two complete games. Require 90% metric/context coverage in every game, including games with zero situational opportunities. These checks cannot independently prove that a provider import contains every play.',
                 'EPA and success use nflverse pass/run plays including sacks, excluding no-play and special-teams rows. Success means EPA greater than zero; rushing includes scrambles classified as runs.',
                 'Scoring uses team points scored/allowed, including defensive and special-teams scores, not isolated offensive scoring.',
                 'Overlapping rules are correlated descriptions, not independent votes, calibrated probabilities, or approved bets.',
@@ -190,9 +190,23 @@ final class NflMatchupSignalService
                         'third_down_pass_epa', 'red_zone_pass_epa', 'short_yardage_success_rate' => 3,
                         default => 30
                     };
-                    $validGames = array_filter($bucket['games'], fn (array $sample): bool => $sample['count'] >= $minimumPerGame && $sample['count'] >= $sample['candidate'] * .9);
+                    $pooledSituation = in_array($metric, ['first_down_pass_epa', 'third_down_pass_epa', 'red_zone_pass_epa', 'short_yardage_success_rate'], true);
+                    $validGames = array_filter($bucket['games'], function (array $sample, int $gameId) use ($minimumPerGame, $pooledSituation, $buckets, $side, $team): bool {
+                        if (! $pooledSituation) {
+                            return $sample['count'] >= $minimumPerGame && $sample['count'] >= $sample['candidate'] * .9;
+                        }
+
+                        // Zero situational opportunities are valid only when the
+                        // underlying game is complete; unknown values remain gaps.
+                        $base = $buckets['epa'][$side][$team]['games'][$gameId] ?? null;
+
+                        return $base !== null && $base['count'] >= 30
+                            && $base['count'] >= $base['candidate'] * .9
+                            && $sample['count'] >= $sample['candidate'] * .9;
+                    }, ARRAY_FILTER_USE_BOTH);
                     $count = array_sum(array_column($validGames, 'count'));
-                    $eligible = count($validGames) >= self::MIN_GAMES && count($validGames) === ($scheduled[$team] ?? 0);
+                    $eligible = count($validGames) >= self::MIN_GAMES && count($validGames) === ($scheduled[$team] ?? 0)
+                        && (! $pooledSituation || $count >= $minimumPerGame * self::MIN_GAMES);
                     $metrics[$metric][$side][$team] = [
                         'value' => $count > 0 ? array_sum(array_column($validGames, 'sum')) / $count : null,
                         'games' => count($validGames),
@@ -200,6 +214,8 @@ final class NflMatchupSignalService
                         'plays' => $metric === 'points_per_game' ? null : $count,
                         'scheduled_games' => $scheduled[$team] ?? 0,
                         'eligible' => $eligible,
+                        'volume_policy' => $pooledSituation ? 'pooled_situational_opportunities' : 'per_game',
+                        'minimum_plays' => $pooledSituation ? $minimumPerGame * self::MIN_GAMES : $minimumPerGame,
                         'rank' => null,
                     ];
                 }

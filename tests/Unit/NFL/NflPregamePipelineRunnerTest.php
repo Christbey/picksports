@@ -55,3 +55,16 @@ it('records canonical observations after explicit legacy holds but never reports
     expect($completed)->toBe(['legacy', 'canonical'])
         ->and($result)->toBe(['successful' => false, 'failed_step' => 'legacy', 'exit_code' => 1]);
 });
+
+it('continues generation during an odds outage but retains a failing overall result', function () {
+    $kernel = Mockery::mock(Kernel::class);
+    $kernel->shouldReceive('call')->once()->ordered()->with('odds', [])->andReturn(1);
+    $kernel->shouldReceive('output')->once()->ordered()->andReturn('quota exhausted');
+    $kernel->shouldReceive('call')->once()->ordered()->with('generation', [])->andReturn(0);
+    $kernel->shouldReceive('output')->once()->ordered()->andReturn('generated from stored prices');
+    $result = (new NflPregamePipelineRunner($kernel))->run([
+        ['name' => 'odds', 'command' => 'odds', 'arguments' => [], 'continue_on_failure' => true],
+        ['name' => 'generation', 'command' => 'generation', 'arguments' => []],
+    ], fn () => null);
+    expect($result)->toBe(['successful' => false, 'failed_step' => 'odds', 'exit_code' => 1]);
+});

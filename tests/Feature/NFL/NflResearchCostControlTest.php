@@ -87,7 +87,8 @@ it('keeps research fresh for 36 hours at every pregame stage and caps expiry at 
     $game->game_date = '2026-09-18';
     expect($policy->freshnessMinutes($game))->toBe(2160);
     $game->game_time = '15:30:00';
-    expect($policy->expiresAt($game)->utc()->toDateTimeString())->toBe('2026-09-18 15:30:00');
+    expect($policy->expiresAt($game)->getTimezone()->getName())->toBe(now()->getTimezone()->getName())
+        ->and($policy->expiresAt($game)->utc()->toDateTimeString())->toBe('2026-09-18 15:30:00');
 });
 
 it('reuses matching research until the 36-hour boundary', function () {

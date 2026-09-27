@@ -25,7 +25,7 @@ class ResearchRefreshPolicy
         $expiry = now()->addMinutes($this->freshnessMinutes($game));
         $kickoff = app(SportsDateWindowService::class)->gameDateTimeUtc($game->game_date, $game->game_time);
 
-        return $kickoff && $kickoff->lt($expiry) ? $kickoff : $expiry;
+        return $kickoff && $kickoff->lt($expiry) ? $kickoff->setTimezone($expiry->getTimezone()) : $expiry;
     }
 
     public function current(?SportsGameContextReport $report, Game $game, string $fingerprint, ?string $candidateHash = null): bool

@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 /** Reconstructed, cutoff-safe descriptions, not a fitted predictor or wager gate. */
 final class NflMatchupSignalService
 {
-    private const MIN_GAMES = 3;
+    private const MIN_GAMES = 2;
 
     private const LEAGUE_TEAMS = 32;
 
@@ -52,7 +52,7 @@ final class NflMatchupSignalService
                 'Reconstructed from currently stored historical results and provider plays, not an immutable as-known-at-kickoff snapshot. Later corrections may change these descriptions.',
                 'Only final regular-season games from the explicitly selected season and a prior UTC calendar date are included. Same-day results are excluded because the games table has no reliable completion timestamp.',
                 'Previous-season context is a separate selected sample, never a silent fallback or blended forecast input. Rosters, quarterbacks and coaches may have changed.',
-                'Rankings require all 32 teams with at least three qualifying games. Ties crossing a top/bottom boundary do not qualify.',
+                'Rankings require all 32 teams with at least two qualifying games. Ties crossing a top/bottom boundary do not qualify.',
                 'Each prior game must meet volume floors: 30 overall; 15 passing or early-down; 8 rushing or first-down passing; 5 late-down; 4 first-down rushing; 3 third-down passing, red-zone passing or short-yardage plays. Require 90% metric/context coverage. These checks cannot independently prove that a provider import contains every play.',
                 'EPA and success use nflverse pass/run plays including sacks, excluding no-play and special-teams rows. Success means EPA greater than zero; rushing includes scrambles classified as runs.',
                 'Scoring uses team points scored/allowed, including defensive and special-teams scores, not isolated offensive scoring.',
@@ -235,7 +235,7 @@ final class NflMatchupSignalService
         $reason = match (true) {
             $scopeReason !== null => $scopeReason,
             $cutoff === null => 'Kickoff cutoff is unavailable.',
-            ! $offense['eligible'] || ! $defense['eligible'] => 'At least three qualifying games per team are required, with volume and non-null coverage checks for every preceding game; missing values are not treated as zero.',
+            ! $offense['eligible'] || ! $defense['eligible'] => 'At least two qualifying games per team are required, with volume and non-null coverage checks for every preceding game; missing values are not treated as zero.',
             $league !== self::LEAGUE_TEAMS => 'League rankings require qualified data for all 32 teams.',
             default => null,
         };

@@ -162,7 +162,26 @@ it('keeps real zero EPA and zero points but does not turn missing EPA into zero'
         ->and($signal['evidence']['offense']['games'])->toBe(0);
 });
 
-it('withholds league rank signals when the league is incomplete or a team has only two games', function () {
+it('evaluates two complete games per team but still rejects a one-game sample', function () {
+    [$target] = matchupSignalLeague();
+    Game::query()->where('season', 2026)->where('week', 3)->where('status', 'STATUS_FINAL')
+        ->update(['status' => 'STATUS_SCHEDULED']);
+    $service = app(NflMatchupSignalService::class);
+    $result = $service->build($target);
+    $signal = matchupSignal($result, 1, $target->home_team_id);
+    expect($result['minimum_games'])->toBe(2)
+        ->and($signal['evidence']['offense']['games'])->toBe(2)
+        ->and($signal['evidence']['league_teams'])->toBe(32)
+        ->and($signal['status'])->toBe('matched');
+    Game::query()->where('season', 2026)->where('week', 2)->where('status', 'STATUS_FINAL')
+        ->update(['status' => 'STATUS_SCHEDULED']);
+    $signal = matchupSignal($service->build($target), 1, $target->home_team_id);
+    expect($signal['evidence']['offense']['games'])->toBe(1)
+        ->and($signal['status'])->toBe('insufficient_data')
+        ->and($signal['reason'])->toContain('two qualifying games');
+});
+
+it('withholds league rank signals when the league or a team’s historical play coverage is incomplete', function () {
     [$target, $teams, $games] = matchupSignalLeague(30);
     $result = app(NflMatchupSignalService::class)->build($target);
     expect(matchupSignal($result, 1, $target->home_team_id)['status'])->toBe('insufficient_data')

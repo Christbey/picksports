@@ -56,7 +56,7 @@ Definitions, game IDs, dates, sample size, wins, losses and ties accompany each 
 
 ## Data and cutoff contract
 
-Current-season play imports can link an ESPN-origin game without a nflverse ID only when its regular-season phase, season, week, date, home team and away team match exactly one stored game. Ambiguous matches remain unlinked; the importer does not rewrite game identities. Importing plays does not waive the three-game minimum or the complete-league ranking requirement.
+Current-season play imports can link an ESPN-origin game without a nflverse ID only when its regular-season phase, season, week, date, home team and away team match exactly one stored game. Ambiguous matches remain unlinked; the importer does not rewrite game identities. Importing plays does not waive the two-game minimum or the complete-league ranking requirement.
 
 Matchup metrics use mapped `nflverse_pbp_plays` and final `nfl_games`, not mutable
 current-season team metric rows. No nfl_plays/provider EPA fallback is silently
@@ -68,7 +68,7 @@ kickoff times and nonregular target phases cannot produce matchup matches.
 Every team's preceding final game must meet metric qualification; a missing game
 is not silently dropped while calling the remainder a season average. Require:
 
-- At least three qualifying games per team and 32 qualified teams in both units.
+- At least two qualifying games per team and 32 qualified teams in both units.
 - At least 30 eligible plays/game overall, 15 passing or 8 rushing for splits.
 - Context floors: 15 early-down, 5 late-down, 8 first-down passing,
   4 first-down rushing, 3 third-down passing/red-zone passing/short-yardage.

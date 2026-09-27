@@ -116,7 +116,7 @@ class NflPregameMarketSnapshot
 
     private function maximumQuoteAgeMinutes(): int
     {
-        return max(1, (int) config('nfl.predictions.pregame_market.maximum_quote_age_minutes', 60));
+        return max(1, (int) config('nfl_research.market_freshness_minutes', 2160));
     }
 
     /**

@@ -76,6 +76,9 @@ class NflCanonicalCutoverReadinessService
         if ((int) $slateCoverage['true_epa_disposition_event_count'] < $slateEventCount) {
             $coverageBlockers[] = 'missing_true_epa_disposition';
         }
+        if ((int) $slateCoverage['true_epa_quarantined_event_count'] > 0) {
+            $coverageBlockers[] = 'custom_epa_quarantined';
+        }
         if ((int) $slateCoverage['true_epa_explicit_hold_event_count'] > 0) {
             $coverageBlockers[] = 'true_epa_holds_present';
         }
@@ -135,6 +138,7 @@ class NflCanonicalCutoverReadinessService
             in_array('no_eligible_regular_season_events', $blockers, true) => 'Verify regular-season NFL event identity and register a non-backdated release before the next kickoff.',
             in_array('no_upcoming_regular_season_slate', $blockers, true) => 'Verify the upcoming regular-season slate, canonical event identity, and kickoff timestamps.',
             in_array('zero_safe_canonical_predictions', $blockers, true) => 'Generate safe canonical predictions for every eligible upcoming regular-season event, then rerun readiness.',
+            in_array('custom_epa_quarantined', $blockers, true) => 'Keep canonical reader cutover disabled while custom EPA is quarantined; this is an intentional model exclusion, not missing play data.',
             in_array('missing_true_epa_disposition', $blockers, true) => 'Run legacy NFL prediction generation and require true EPA to be applied or explicitly held with missing_true_epa for every slate game.',
             in_array('true_epa_holds_present', $blockers, true) => 'Backfill true EPA for every explicitly held slate game, rerun legacy predictions, and require zero missing_true_epa holds before cutover.',
             in_array('missing_immutable_pregame_market', $blockers, true) => 'Refresh odds and regenerate canonical NFL predictions so every slate game freezes a fresh immutable pregame spread and total.',
@@ -156,7 +160,7 @@ class NflCanonicalCutoverReadinessService
     ): array {
         $maximumQuoteAgeMinutes = max(
             1,
-            (int) config('nfl.predictions.pregame_market.maximum_quote_age_minutes', 60),
+            (int) config('nfl_research.market_freshness_minutes', 2160),
         );
         $cutover = is_string($cutoverStartedAt) && $cutoverStartedAt !== ''
             ? CarbonImmutable::parse($cutoverStartedAt)
@@ -193,6 +197,7 @@ class NflCanonicalCutoverReadinessService
 
         $epaApplied = [];
         $epaHeld = [];
+        $epaQuarantined = [];
         $epaMissing = [];
         $immutableMarket = [];
         $spreadCoverage = [];
@@ -242,6 +247,8 @@ class NflCanonicalCutoverReadinessService
             $metadata = $legacy instanceof Prediction ? (array) $legacy->model_metadata : [];
             if (data_get($metadata, 'true_epa.applied') === true) {
                 $epaApplied[] = (int) $game->getKey();
+            } elseif (data_get($metadata, 'true_epa.enabled') === false && data_get($metadata, 'true_epa.quarantined') === true) {
+                $epaQuarantined[] = (int) $game->getKey();
             } elseif ($this->hasExplicitTrueEpaHold($metadata)) {
                 $epaHeld[] = (int) $game->getKey();
             } else {
@@ -333,7 +340,8 @@ class NflCanonicalCutoverReadinessService
             'missing_disposition_game_ids' => $missingDispositionGameIds,
             'true_epa_applied_event_count' => count($epaApplied),
             'true_epa_explicit_hold_event_count' => count($epaHeld),
-            'true_epa_disposition_event_count' => count($epaApplied) + count($epaHeld),
+            'true_epa_quarantined_event_count' => count($epaQuarantined),
+            'true_epa_disposition_event_count' => count($epaApplied) + count($epaHeld) + count($epaQuarantined),
             'missing_true_epa_disposition_game_ids' => $epaMissing,
             'immutable_pregame_market_event_count' => count($immutableMarket),
             'missing_immutable_pregame_market_game_ids' => collect($gameIds)->diff($immutableMarket)->values()->all(),

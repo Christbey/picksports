@@ -352,9 +352,7 @@ return [
         ],
 
         'pregame_market' => [
-            // Canonical inputs and released decisions must not freeze an old
-            // quote merely because it was observed before kickoff.
-            'maximum_quote_age_minutes' => env('NFL_PREGAME_MARKET_MAXIMUM_QUOTE_AGE_MINUTES', 60),
+            // Quote expiry is shared with research via nfl_research.market_freshness_minutes.
             'maximum_prediction_age_minutes' => env('NFL_PREGAME_MAXIMUM_PREDICTION_AGE_MINUTES', 360),
         ],
 

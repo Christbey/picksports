@@ -19,6 +19,7 @@ use App\Services\NFL\NflPredictionDispositionRecorder;
 use App\Services\NFL\NflReleasedBetDecisionRecorder;
 use App\Services\NFL\Predictions\NflCalculationReleaseRegistrar;
 use App\Services\NFL\Predictions\NflCanonicalCutoverReadinessService;
+use App\Services\NFL\Predictions\NflPregameMarketSnapshot;
 use App\Services\OddsApi\GameOddsSnapshotRecorder;
 use App\Services\Predictions\CanonicalSportCutoverReadinessService;
 use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
@@ -423,7 +424,7 @@ it('keeps a valid immutable market fresh relative to canonical capture time', fu
     config()->set('prediction_lifecycle.canonical_pipeline.nfl', true);
     config()->set('nfl.predictions.true_epa.enabled', true);
     config()->set('nfl.predictions.true_epa.backfill_before_generation', true);
-    config()->set('nfl.predictions.pregame_market.maximum_quote_age_minutes', 30);
+    config()->set('nfl_research.market_freshness_minutes', 30);
     config()->set('nfl_research.enabled', true);
     $fixture = nflCanonicalMarketFixture();
     recordNflMarketSnapshot($fixture);
@@ -441,7 +442,7 @@ it('keeps a valid immutable market fresh relative to canonical capture time', fu
 });
 
 it('prefers provider market observation time over a fresh ingestion timestamp', function () {
-    config()->set('nfl.predictions.pregame_market.maximum_quote_age_minutes', 30);
+    config()->set('nfl_research.market_freshness_minutes', 30);
     $fixture = nflCanonicalMarketFixture();
     recordNflMarketSnapshot(
         $fixture,
@@ -456,7 +457,7 @@ it('prefers provider market observation time over a fresh ingestion timestamp', 
 });
 
 it('fails canonical generation and released decisions for stale or one-sided market coverage', function () {
-    config()->set('nfl.predictions.pregame_market.maximum_quote_age_minutes', 30);
+    config()->set('nfl_research.market_freshness_minutes', 30);
     $fixture = nflCanonicalMarketFixture();
     recordNflMarketSnapshot($fixture);
     MarketQuote::query()
@@ -883,3 +884,33 @@ it('creates no NFL bet decision for a lean or for an unmatched market line', fun
     'lean is not a wager' => ['lean', -3.0],
     'released line has no exact quote' => ['bet', -4.0],
 ]);
+
+it('uses the same 36 hour provider quote expiry for canonical inputs', function (int $hoursOld, bool $available) {
+    config()->set('nfl_research.market_freshness_minutes', 2160);
+    $fixture = nflCanonicalMarketFixture();
+    recordNflMarketSnapshot($fixture, providerObservedAt: now()->subHours($hoursOld)->toIso8601String());
+    $market = app(NflPregameMarketSnapshot::class)->capture(
+        $fixture['game']->fresh(), now()->toImmutable(), $fixture['event']->starts_at->toImmutable(),
+    );
+    expect($market['available'])->toBe($available)->and($market['maximum_quote_age_minutes'])->toBe(2160);
+})->with([[24, true], [37, false]]);
+
+it('identifies quarantined custom EPA without mislabeling it missing or permitting cutover', function () {
+    config()->set('prediction_lifecycle.canonical_pipeline.nfl', true);
+    config()->set('nfl.predictions.true_epa.enabled', true);
+    config()->set('nfl.predictions.true_epa.backfill_before_generation', true);
+    config()->set('nfl_research.enabled', true);
+    $fixture = nflCanonicalMarketFixture();
+    recordNflMarketSnapshot($fixture);
+    $prediction = recordNflLegacyEpaDisposition($fixture);
+    $metadata = $prediction->model_metadata;
+    $metadata['true_epa'] = ['enabled' => false, 'applied' => false, 'quarantined' => true];
+    $prediction->update(['model_metadata' => $metadata]);
+    app(NflCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
+    app(GenerateCanonicalPrediction::class)->execute($fixture['game']->fresh());
+    $report = app(NflCanonicalCutoverReadinessService::class)->report(2026);
+    expect($report['true_epa_quarantined_event_count'])->toBe(1)
+        ->and($report['missing_true_epa_disposition_game_ids'])->toBe([])
+        ->and($report['coverage_blockers'])->toContain('custom_epa_quarantined')
+        ->and($report['ready_for_cutover'])->toBeFalse();
+});

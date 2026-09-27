@@ -287,3 +287,24 @@ it('does not rank pooled situations with too few season opportunities', function
         ->and($signal['evidence']['offense']['plays'])->toBe(3)
         ->and($signal['evidence']['offense']['minimum_plays'])->toBe(6);
 });
+
+it('excludes two point tries rather than treating their absent down as missing scrimmage data', function () {
+    [$target, , $games] = matchupSignalLeague();
+    DB::table('nflverse_pbp_plays')->update(['down' => 3, 'yardline_100' => 10, 'yards_to_go' => 2]);
+    $service = app(NflMatchupSignalService::class);
+    $before = matchupSignal($service->build($target), 78, $target->home_team_id);
+    $game = collect($games)->first(fn ($game) => $game->away_team_id === $target->home_team_id);
+    $row = (array) DB::table('nflverse_pbp_plays')->where('nfl_game_id', $game->id)
+        ->where('possession_team_id', $target->home_team_id)->where('play_type', 'pass')->first();
+    unset($row['id']);
+    $row['description'] = 'TWO-POINT CONVERSION ATTEMPT. Pass incomplete. ATTEMPT FAILS.';
+    $row['down'] = null;
+    $row['yards_to_go'] = 0;
+    $row['epa'] = -100;
+    foreach (range(1, 5) as $i) {
+        $row['nflverse_play_key'] = 'conversion-'.$i;
+        DB::table('nflverse_pbp_plays')->insert($row);
+    }
+    $after = matchupSignal($service->build($target), 78, $target->home_team_id);
+    expect($after)->toBe($before);
+});

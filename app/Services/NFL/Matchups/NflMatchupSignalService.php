@@ -54,7 +54,7 @@ final class NflMatchupSignalService
                 'Previous-season context is a separate selected sample, never a silent fallback or blended forecast input. Rosters, quarterbacks and coaches may have changed.',
                 'Rankings require all 32 teams with at least two qualifying games. Ties crossing a top/bottom boundary do not qualify.',
                 'Each prior game must meet volume floors: 30 overall; 15 passing or early-down; 8 rushing; 5 late-down; 4 first-down rushing. First-down passing requires 16 pooled opportunities; third-down passing, red-zone passing and short-yardage require 6 pooled opportunities across at least two complete games. Require 90% metric/context coverage in every game, including games with zero situational opportunities. These checks cannot independently prove that a provider import contains every play.',
-                'EPA and success use nflverse pass/run plays including sacks, excluding no-play and special-teams rows. Success means EPA greater than zero; rushing includes scrambles classified as runs.',
+                'EPA and success use nflverse pass/run plays including sacks, excluding no-play, conversion-attempt and special-teams rows. Success means EPA greater than zero; rushing includes scrambles classified as runs.',
                 'Scoring uses team points scored/allowed, including defensive and special-teams scores, not isolated offensive scoring.',
                 'Overlapping rules are correlated descriptions, not independent votes, calibrated probabilities, or approved bets.',
             ],
@@ -123,6 +123,7 @@ final class NflMatchupSignalService
             $query = DB::table('nflverse_pbp_plays')->whereIn('nfl_game_id', $games->keys())
                 ->whereIn('play_type', ['pass', 'run'])
                 ->where(fn ($query) => $query->whereNull('description')->orWhereRaw('LOWER(description) NOT LIKE ?', ['%no play%']))
+                ->where(fn ($query) => $query->whereNull('description')->orWhereRaw('LOWER(description) NOT LIKE ?', ['%two-point conversion attempt%']))
                 ->select(['nfl_game_id', 'possession_team_id', 'defense_team_id', 'play_type', 'is_sack'])
                 ->selectRaw('COUNT(*) AS candidate_plays, COUNT(epa) AS epa_plays, SUM(epa) AS epa_sum, SUM(CASE WHEN epa > 0 THEN 1 ELSE 0 END) AS successes, COUNT(yards_gained) AS yard_plays, SUM(yards_gained) AS yards_sum')
                 ->selectRaw("SUM(CASE WHEN yards_gained >= CASE WHEN play_type = 'pass' OR is_sack = 1 THEN 20 ELSE 10 END THEN 1 ELSE 0 END) AS explosives")

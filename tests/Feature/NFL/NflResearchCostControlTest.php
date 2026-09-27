@@ -7,6 +7,7 @@ use App\Models\NFL\Prediction;
 use App\Models\NFL\Team;
 use App\Models\SportsGameContextReport;
 use App\Services\AI\AiGenerationRecorder;
+use App\Services\AI\AiProviderRateLimitCircuitBreaker;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use App\Services\NFL\NflWebContextResearchService;
 use App\Services\NFL\Research\ResearchDeferred;
@@ -328,7 +329,7 @@ it('revalidates a material forecast change after the minimum interval without by
     Http::assertSentCount(2);
 });
 
-it('persists a new explicit hold instead of losing the entire revision on provider failure', function () {
+it('persists a specific hold instead of losing the revision on provider failure', function (string $message, string $reason) {
     $game = costControlGame();
     Prediction::factory()->create(['game_id' => $game->id]);
     $this->mock(GeneratePredictionFromHistoricalElo::class, fn ($m) => $m->shouldReceive('preview')->andReturn([
@@ -336,12 +337,16 @@ it('persists a new explicit hold instead of losing the entire revision on provid
         'model_metadata' => [], 'model_version' => 'failure-test',
     ]));
     $this->mock(PlayerPropAnalyzer::class, fn ($m) => $m->shouldReceive('previewNflGame')->andReturn([]));
-    $this->mock(NflWebContextResearchService::class, fn ($m) => $m->shouldReceive('research')->andThrow(new ConnectionException('Timed out')));
+    $this->mock(NflWebContextResearchService::class, fn ($m) => $m->shouldReceive('research')->andThrow(new ConnectionException($message)));
     $revision = app(ResearchPipeline::class)->review($game);
     expect($revision->exists)->toBeTrue()
         ->and($revision->brief['eligibility']['status'])->toBe('hold')
-        ->and($revision->brief['eligibility']['data_reasons'])->toContain('research_refresh_failed');
-});
+        ->and($revision->brief['eligibility']['data_reasons'])->toContain($reason);
+})->with([
+    ['Timed out', 'research_refresh_failed'],
+    ['OpenAI status 429 [insufficient_quota]', 'research_provider_quota_exhausted'],
+    ['OpenAI status 429: too many requests', 'research_provider_rate_limited'],
+]);
 
 it('persists all scoped uncertainty records without array-to-string exceptions or dropping distinct blockers', function () {
     $game = costControlGame();
@@ -400,4 +405,20 @@ it('allows a manual retry during cooldown while preserving the spend cap', funct
     config(['nfl_research.cost_control.daily_budget_usd' => 0]);
     expect(fn () => $service->research($game, force: true))->toThrow(ResearchDeferred::class, 'research_daily_budget_reached');
     Http::assertSentCount(2);
+});
+
+it('lets a forced retry probe provider recovery without clearing the automatic circuit or bypassing budgets', function () {
+    Http::fake(['*' => Http::response(costControlResponse('partial'))]);
+    $game = costControlGame();
+    $service = app(NflWebContextResearchService::class);
+    $circuit = app(AiProviderRateLimitCircuitBreaker::class);
+    $circuit->trip('openai', true);
+    expect(fn () => $service->research($game))->toThrow(ResearchDeferred::class, 'research_provider_cooldown');
+    Http::assertNothingSent();
+    $service->research($game, force: true);
+    Http::assertSentCount(1);
+    expect($circuit->retryAfterSeconds('openai'))->toBeGreaterThan(0);
+    config(['nfl_research.cost_control.daily_budget_usd' => 0]);
+    expect(fn () => $service->research($game, force: true))->toThrow(ResearchDeferred::class, 'research_daily_budget_reached');
+    Http::assertSentCount(1);
 });

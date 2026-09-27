@@ -11,6 +11,12 @@ import {
 } from '../../resources/js/lib/nflBoardPresentation.ts';
 import { researchReason } from '../../resources/js/lib/researchDecision.ts';
 
+test('provider failures explain the recovery action', () => {
+    assert.match(researchReason('research_provider_cooldown'), /admin can rerun/);
+    assert.match(researchReason('research_provider_quota_exhausted'), /billing and usage limits/);
+    assert.match(researchReason('research_provider_rate_limited'), /Wait briefly/);
+});
+
 test('research labels separate expiry changes and blocked refresh without hiding simultaneous reasons', () => {
     assert.match(
         researchReason('research_incomplete_or_stale'),

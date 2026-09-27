@@ -8,6 +8,7 @@ use App\Models\NFL\Game;
 use App\Models\NFL\PlayerProp;
 use App\Models\NFL\ResearchRevision;
 use App\Models\SportsGameContextReport;
+use App\Services\AI\AiProviderRateLimitCircuitBreaker;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use App\Services\NFL\NflWebContextResearchService;
 use App\Services\Sports\SportsDateWindowService;
@@ -53,6 +54,12 @@ class ResearchPipeline
                     // Preserve an honest current assessment even when the provider fails.
                     // Do not leave yesterday's revision as the apparent latest result.
                     $deferred = 'research_refresh_failed';
+                    $circuitBreaker = app(AiProviderRateLimitCircuitBreaker::class);
+                    if ($circuitBreaker->isQuotaExhausted($exception->getMessage())) {
+                        $deferred = 'research_provider_quota_exhausted';
+                    } elseif ($circuitBreaker->isRateLimitFailure($exception->getMessage())) {
+                        $deferred = 'research_provider_rate_limited';
+                    }
                     report($exception);
                     Log::warning('NFL research refresh failed', ['game_id' => $game->id, 'exception' => $exception::class]);
                 }

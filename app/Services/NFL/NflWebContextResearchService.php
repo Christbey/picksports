@@ -67,8 +67,8 @@ class NflWebContextResearchService
         if (! $force && $policy->current($existing, $game, $fingerprint, $candidateHash)) {
             return ['report' => $existing, 'payload' => $existing->raw_payload, 'generation' => null, 'reused' => true];
         }
-        if ($retryAfter > 0) {
-            throw new RuntimeException("AI provider [{$provider}] rate-limit cooldown is active for {$retryAfter} second(s).");
+        if ($retryAfter > 0 && ! $force) {
+            throw new ResearchDeferred('research_provider_cooldown');
         }
         $input = $this->input($game);
         $input['official_documents'] = app(EvidencePacket::class)->researchDocuments($packet);

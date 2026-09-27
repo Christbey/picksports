@@ -26,6 +26,12 @@ export const researchReason = (reason: string): string => {
         return 'Refresh deferred until the retry interval passes; existing evidence has not been renewed.';
     if (reason === 'research_refresh_failed')
         return 'The last refresh failed. No fresh evidence was saved.';
+    if (reason === 'research_provider_cooldown')
+        return 'Automatic research is paused after a provider limit. An admin can rerun research to check whether service has recovered.';
+    if (reason === 'research_provider_quota_exhausted')
+        return 'The research provider reports exhausted quota. Check its billing and usage limits, then rerun research.';
+    if (reason === 'research_provider_rate_limited')
+        return 'The research provider is rate limiting requests. Wait briefly, then rerun research.';
     if (/specialist.*tier.*does_not_approve/.test(reason))
         return 'The spread did not meet the required approval threshold.';
     if (/research_.*budget/.test(reason))

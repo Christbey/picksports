@@ -49,13 +49,16 @@ it('maps current season plays only to a unique matching regular season game', fu
     $home = Team::factory()->create(['abbreviation' => 'KC']);
     $away = Team::factory()->create(['abbreviation' => 'DEN']);
     $attributes = ['nflverse_game_id' => null, 'home_team_id' => $home->id, 'away_team_id' => $away->id,
-        'season' => 2026, 'week' => 1, 'season_type' => '2', 'game_date' => '2026-09-13'];
+        'season' => 2026, 'week' => 1, 'season_type' => '2', 'game_date' => '2026-09-13', 'game_time' => '17:00:00'];
     $game = Game::factory()->create($attributes);
     if ($case === 'ambiguous') {
         Game::factory()->create($attributes);
     }
     if ($case === 'wrong_date') {
         $game->update(['game_date' => '2026-09-14']);
+    }
+    if ($case === 'overnight_utc') {
+        $game->update(['game_date' => '2026-09-14', 'game_time' => '00:20:00']);
     }
     if ($case === 'preseason') {
         $game->update(['season_type' => '1']);
@@ -65,7 +68,7 @@ it('maps current season plays only to a unique matching regular season game', fu
     artisan('nfl:import-nflverse-layer', ['dataset' => 'pbp', 'file' => $path])->assertExitCode(0);
     expect(DB::table('nflverse_pbp_plays')->first()->nfl_game_id)->toBe($linked ? $game->id : null)
         ->and($game->fresh()->nflverse_game_id)->toBeNull();
-})->with([['unique', true], ['ambiguous', false], ['wrong_date', false], ['preseason', false]]);
+})->with([['unique', true], ['overnight_utc', true], ['ambiguous', false], ['wrong_date', false], ['preseason', false]]);
 
 it('imports nflverse roster rows with team and player identifiers', function () {
     Team::factory()->create(['abbreviation' => 'JAX']);

@@ -5,6 +5,7 @@ namespace App\Console\Commands\NFL;
 use App\Models\NFL\Game;
 use App\Models\NFL\Team;
 use App\Services\ProviderData\ProviderSourceStorage;
+use App\Services\Sports\SportsDateWindowService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -519,14 +520,21 @@ class ImportNflverseLayerCommand extends Command
             $homeId = $this->teamId($row, 'home_team');
             $awayId = $this->teamId($row, 'away_team');
             if ($homeId && $awayId && $homeId !== $awayId) {
+                $sourceDate = $row['game_date'] ?? $row['gameday'];
                 $matches = Game::query()->whereNull('nflverse_game_id')
                     ->where('season', $this->intValue($row, 'season'))
                     ->where('week', $this->intValue($row, 'week'))
                     ->where('season_type', '2')
                     ->where('home_team_id', $homeId)->where('away_team_id', $awayId)
-                    ->whereDate('game_date', $row['game_date'] ?? $row['gameday'])
-                    ->limit(2)->pluck('id');
-                $id = $matches->count() === 1 ? $matches->first() : null;
+                    ->whereDate('game_date', '>=', $sourceDate)
+                    ->whereDate('game_date', '<=', Carbon::parse($sourceDate)->addDay()->toDateString())
+                    ->get(['id', 'game_date', 'game_time'])
+                    ->filter(fn (Game $game): bool => is_string($game->game_time)
+                        && preg_match('/^\d{2}:\d{2}/', $game->game_time) === 1
+                        && app(SportsDateWindowService::class)
+                            ->gameDateTimeUtc($game->getRawOriginal('game_date'), $game->game_time)
+                            ?->setTimezone('America/New_York')->toDateString() === $sourceDate);
+                $id = $matches->count() === 1 ? $matches->first()->id : null;
             }
         }
 

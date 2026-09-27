@@ -501,7 +501,7 @@ const displayTitle = computed(() =>
                         </Badge>
                     </div>
                     <div class="mt-3 grid gap-2 lg:grid-cols-2">
-                        <article
+                        <div
                             v-for="row in matchupRows"
                             :key="row.key"
                             class="rounded-lg border border-border/60 bg-background/55 p-3"
@@ -569,7 +569,7 @@ const displayTitle = computed(() =>
                                     'Home'
                                 }}
                             </p>
-                        </article>
+                        </div>
                     </div>
                 </div>
 

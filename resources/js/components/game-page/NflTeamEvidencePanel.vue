@@ -99,7 +99,7 @@ const date = (value: string | null | undefined) =>
             and patterns below cover both teams.
         </p>
         <div class="grid gap-4 md:grid-cols-2">
-            <article
+            <div
                 v-for="side in sides"
                 :key="side.key"
                 class="min-w-0 space-y-2"
@@ -184,7 +184,7 @@ const date = (value: string | null | undefined) =>
                     Could not load this team's evidence. No comparison is
                     inferred.
                 </p>
-            </article>
+            </div>
         </div>
         <details>
             <summary

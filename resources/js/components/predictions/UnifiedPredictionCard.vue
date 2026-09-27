@@ -1471,7 +1471,7 @@ function saveOptions(): SavePickOption[] {
 </script>
 
 <template>
-    <article :class="compact ? 'bg-card' : ''">
+    <div :class="compact ? 'bg-card' : ''">
         <div
             v-if="compact"
             class="grid grid-cols-[1fr_auto] items-center gap-x-5 gap-y-3 px-4 py-5 sm:grid-cols-[minmax(0,1fr)_minmax(15rem,1fr)_auto] sm:px-6"
@@ -2126,5 +2126,5 @@ function saveOptions(): SavePickOption[] {
                 @saved="handleSaved"
             />
         </div>
-    </article>
+    </div>
 </template>

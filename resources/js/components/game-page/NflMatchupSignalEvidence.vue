@@ -51,7 +51,7 @@ const unavailable = computed(() =>
             blended into your prediction.
         </p>
         <div v-if="highlights.length" class="grid gap-3 md:grid-cols-2">
-            <article
+            <div
                 v-for="signal in highlights"
                 :key="`${signal.id}:${signal.offense_team_id}`"
                 class="min-w-0 rounded-lg border p-3"
@@ -69,7 +69,7 @@ const unavailable = computed(() =>
                     {{ signal.evidence.defense.rank ?? '—' }} ·
                     {{ signal.evidence.defense.games }} games
                 </p>
-            </article>
+            </div>
         </div>
         <p v-else class="rounded-lg border p-3 text-sm">
             No supported matchup conditions are confirmed for this sample.

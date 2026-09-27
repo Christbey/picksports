@@ -112,7 +112,7 @@ function updated(metric: any): string {
         >
             No teams match this season, season type or search.
         </p>
-        <article
+        <div
             v-for="metric in metrics"
             :key="metric.id"
             class="min-w-0 rounded-xl border bg-card p-4"
@@ -242,6 +242,6 @@ function updated(metric: any): string {
                     </section>
                 </details>
             </template>
-        </article>
+        </div>
     </section>
 </template>

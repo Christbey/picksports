@@ -71,7 +71,7 @@ const result = computed(() => {
 </script>
 
 <template>
-    <article
+    <div
         class="min-w-0 rounded-xl border bg-card text-card-foreground"
         :aria-labelledby="`prop-${rec.id}`"
     >
@@ -378,5 +378,5 @@ const result = computed(() => {
                 </p>
             </div>
         </details>
-    </article>
+    </div>
 </template>

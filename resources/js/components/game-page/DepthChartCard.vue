@@ -30,7 +30,7 @@ const metricKey = (entry: TeamDepthChartEntry, index: number): string =>
         </div>
 
         <div class="grid gap-6 p-6 lg:grid-cols-2">
-            <article
+            <div
                 v-for="team in [awayTeam, homeTeam]"
                 :key="team?.team?.id ?? Math.random()"
                 class="space-y-4"
@@ -150,7 +150,7 @@ const metricKey = (entry: TeamDepthChartEntry, index: number): string =>
                 >
                     No depth chart data available.
                 </div>
-            </article>
+            </div>
         </div>
     </section>
 </template>

@@ -64,12 +64,12 @@ it('ignores timestamp only saves but detects changed model outputs and distingui
         ->and($result['forecast'])->toBeNull();
 });
 
-it('shows blocked refresh and expired evidence independently including the tightened pregame window', function () {
+it('shows blocked refresh and evidence older than 36 hours independently near kickoff', function () {
     [$prediction, $report, $revision] = boardFixture();
     $kickoff = now()->utc()->addHours(4);
     $prediction->game->game_date = $kickoff->toDateString();
     $prediction->game->game_time = $kickoff->format('H:i:s');
-    $report->update(['researched_at' => now()->subHours(2), 'expires_at' => now()->addHour()]);
+    $report->update(['researched_at' => now()->subHours(37), 'expires_at' => now()->addHour()]);
     $revision->update(['brief' => [...$revision->brief, 'research_refresh' => ['deferred_reason' => 'research_game_attempt_limit_reached']]]);
     $result = app(NflPredictionBoardContext::class)->forPredictions(collect([$prediction]))->get($prediction->id);
     expect($result['research']['status'])->toBe('refresh_blocked')

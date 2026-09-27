@@ -17,7 +17,7 @@ class ResearchRefreshPolicy
         $hours = $kickoff ? now()->diffInHours($kickoff, false) : 0;
         $key = $hours > 48 ? 'early_minutes' : ($hours > 6 ? 'standard_minutes' : 'pregame_minutes');
 
-        return max(1, (int) config('nfl_research.cost_control.'.$key, 360));
+        return max(1, (int) config('nfl_research.cost_control.'.$key, 2160));
     }
 
     public function expiresAt(Game $game): CarbonInterface

@@ -77,16 +77,32 @@ it('reuses the same sourced report for unchanged forecasts and market-only updat
     Http::assertSentCount(1);
 });
 
-it('uses kickoff-aware expiry without extending an existing report', function () {
+it('keeps research fresh for 36 hours at every pregame stage and caps expiry at kickoff', function () {
     $game = costControlGame();
     $policy = app(ResearchRefreshPolicy::class);
-    expect($policy->freshnessMinutes($game))->toBe(1440);
+    expect($policy->freshnessMinutes($game))->toBe(2160)
+        ->and($policy->expiresAt($game)->equalTo(now()->addHours(36)))->toBeTrue();
     $game->game_date = '2026-09-19';
-    expect($policy->freshnessMinutes($game))->toBe(360);
+    expect($policy->freshnessMinutes($game))->toBe(2160);
     $game->game_date = '2026-09-18';
-    expect($policy->freshnessMinutes($game))->toBe(90);
+    expect($policy->freshnessMinutes($game))->toBe(2160);
     $game->game_time = '15:30:00';
     expect($policy->expiresAt($game)->utc()->toDateTimeString())->toBe('2026-09-18 15:30:00');
+});
+
+it('reuses matching research until the 36-hour boundary', function () {
+    $game = costControlGame();
+    $policy = app(ResearchRefreshPolicy::class);
+    $report = new SportsGameContextReport([
+        'status' => 'ready',
+        'researched_at' => now()->subHours(35),
+        'expires_at' => now()->addHour(),
+        'raw_payload' => ['research_fingerprint' => 'same', 'candidate_hash' => 'same'],
+    ]);
+    expect($policy->current($report, $game, 'same', 'same'))->toBeTrue()
+        ->and($policy->current($report, $game, 'changed', 'same'))->toBeFalse();
+    $this->travel(1)->hours();
+    expect($policy->current($report, $game, 'same', 'same'))->toBeFalse();
 });
 
 it('ignores reordered evidence and source timestamps but notices changed facts', function () {

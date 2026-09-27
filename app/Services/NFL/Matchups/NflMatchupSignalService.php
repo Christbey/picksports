@@ -153,6 +153,10 @@ final class NflMatchupSignalService
                 $split = $row->play_type === 'pass' || $row->is_sack ? 'pass_epa' : 'rush_epa';
                 $pass = $split === 'pass_epa';
                 foreach ([['offense', $offense], ['defense', $defense]] as [$side, $team]) {
+                    if ($row->play_type === 'pass' && $row->is_sack !== null && ! $row->is_sack) {
+                        $this->add($buckets, 'pass_yards_per_attempt', $side, $team, (int) $row->nfl_game_id,
+                            (float) $row->yards_sum, (int) $row->yard_plays, (int) $row->candidate_plays);
+                    }
                     foreach ([['epa', $row->epa_sum, $row->epa_plays], [$split, $row->epa_sum, $row->epa_plays], ['success_rate', $row->successes, $row->epa_plays],
                         [$pass ? 'pass_success_rate' : 'rush_success_rate', $row->successes, $row->epa_plays],
                         ['explosive_rate', $row->explosives, $row->yard_plays],
@@ -179,7 +183,7 @@ final class NflMatchupSignalService
                 foreach ($teams as $team => $bucket) {
                     $minimumPerGame = match ($metric) {
                         'points_per_game' => 1,
-                        'pass_epa', 'pass_success_rate', 'pass_explosive_rate', 'early_epa' => 15,
+                        'pass_epa', 'pass_success_rate', 'pass_explosive_rate', 'pass_yards_per_attempt', 'early_epa' => 15,
                         'rush_epa', 'rush_success_rate', 'rush_explosive_rate', 'first_down_pass_epa' => 8,
                         'late_epa' => 5,
                         'first_down_rush_epa' => 4,
@@ -245,7 +249,11 @@ final class NflMatchupSignalService
             'evidence' => [
                 'metric' => $rule['metric'],
                 'definition' => $this->catalog->definition($rule['metric']),
-                'source' => $rule['metric'] === 'points_per_game' ? 'nfl_games: final team scores' : 'nflverse_pbp_plays: pass/run plays (sacks included)',
+                'source' => match ($rule['metric']) {
+                    'points_per_game' => 'nfl_games: final team scores',
+                    'pass_yards_per_attempt' => 'nflverse_pbp_plays: pass attempts (sacks excluded)',
+                    default => 'nflverse_pbp_plays: pass/run plays (sacks included)',
+                },
                 'offense' => $offense, 'defense' => $defense, 'league_teams' => $league,
                 'cutoff_at' => $cutoff?->toIso8601String(),
             ],

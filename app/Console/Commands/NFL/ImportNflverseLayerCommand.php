@@ -167,7 +167,7 @@ class ImportNflverseLayerCommand extends Command
 
         return [
             'nflverse_play_key' => $this->key($key),
-            'nfl_game_id' => $this->gameId($nflverseGameId),
+            'nfl_game_id' => $this->gameId($nflverseGameId, $row),
             'nflverse_game_id' => $nflverseGameId,
             'play_id' => $playId,
             'season' => $this->intValue($row, 'season'),
@@ -367,7 +367,7 @@ class ImportNflverseLayerCommand extends Command
                 $team,
                 $playerId,
             ])),
-            'nfl_game_id' => $this->gameId($nflverseGameId),
+            'nfl_game_id' => $this->gameId($nflverseGameId, $row),
             'nflverse_game_id' => $nflverseGameId,
             'season' => $season,
             'week' => $week,
@@ -500,7 +500,7 @@ class ImportNflverseLayerCommand extends Command
         fclose($reader['resource']);
     }
 
-    private function gameId(?string $nflverseGameId): ?int
+    private function gameId(?string $nflverseGameId, array $row): ?int
     {
         if ($nflverseGameId === null) {
             return null;
@@ -513,6 +513,22 @@ class ImportNflverseLayerCommand extends Command
         $id = Game::query()
             ->where('nflverse_game_id', $nflverseGameId)
             ->value('id');
+
+        if (! $id && ($row['season_type'] ?? null) === 'REG'
+            && preg_match('/^\d{4}-\d{2}-\d{2}$/', $row['game_date'] ?? $row['gameday'] ?? '') === 1) {
+            $homeId = $this->teamId($row, 'home_team');
+            $awayId = $this->teamId($row, 'away_team');
+            if ($homeId && $awayId && $homeId !== $awayId) {
+                $matches = Game::query()->whereNull('nflverse_game_id')
+                    ->where('season', $this->intValue($row, 'season'))
+                    ->where('week', $this->intValue($row, 'week'))
+                    ->where('season_type', '2')
+                    ->where('home_team_id', $homeId)->where('away_team_id', $awayId)
+                    ->whereDate('game_date', $row['game_date'] ?? $row['gameday'])
+                    ->limit(2)->pluck('id');
+                $id = $matches->count() === 1 ? $matches->first() : null;
+            }
+        }
 
         $this->gameIdsByNflverseId[$nflverseGameId] = $id ? (int) $id : null;
 

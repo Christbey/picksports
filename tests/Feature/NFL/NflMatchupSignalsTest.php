@@ -65,8 +65,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(52)
-        ->and($result['signals'])->toHaveCount(104)
+    expect($result['summary']['supported_rules'])->toBe(54)
+        ->and($result['signals'])->toHaveCount(108)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -83,6 +83,28 @@ it('computes split success explosives and situational EPA without guessing missi
         ->and(matchupSignal($result, 77, $target->home_team_id)['status'])->toBe('insufficient_data')
         ->and(matchupSignal($result, 80, $target->home_team_id)['status'])->toBe('insufficient_data')
         ->and(matchupSignal($result, 26, $target->home_team_id)['status'])->toBe('insufficient_data');
+});
+
+it('evaluates passing yards per attempt without including sacks runs or missing yardage as zeros', function () {
+    [$target] = matchupSignalLeague();
+    DB::table('nflverse_pbp_plays')->where('is_sack', true)->update(['yards_gained' => -99]);
+    DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 99]);
+    $service = app(NflMatchupSignalService::class);
+    $signal = matchupSignal($service->build($target), 63, $target->home_team_id);
+    expect($signal['evidence']['offense']['value'])->toBe(15.5)
+        ->and($signal['evidence']['offense']['plays'])->toBe(57)
+        ->and($signal['evidence']['league_teams'])->toBe(32)
+        ->and($signal['status'])->toBe('not_matched');
+    DB::table('nflverse_pbp_plays')->where('possession_team_id', $target->home_team_id)
+        ->where('play_type', 'pass')->where('is_sack', false)->update(['yards_gained' => 0]);
+    $signal = matchupSignal($service->build($target), 64, $target->home_team_id);
+    expect($signal['evidence']['offense']['value'])->toBe(0.0)
+        ->and($signal['evidence']['offense']['eligible'])->toBeTrue();
+    DB::table('nflverse_pbp_plays')->where('possession_team_id', $target->home_team_id)
+        ->where('play_type', 'pass')->where('is_sack', false)->update(['yards_gained' => null]);
+    $signal = matchupSignal($service->build($target), 64, $target->home_team_id);
+    expect($signal['status'])->toBe('insufficient_data')
+        ->and($signal['evidence']['offense']['value'])->toBeNull();
 });
 
 it('uses previous season only when explicitly requested and never blends seasons', function () {

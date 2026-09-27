@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-09-20.2';
+    public const VERSION = '2026-09-26.1';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -29,6 +29,8 @@ final class NflMatchupSignalCatalog
             $rules[$id] = ['metric' => $metric, 'size' => 10, 'offense' => 'top', 'defense' => 'bottom'];
         }
         $rules[79] = ['metric' => 'third_down_pass_epa', 'size' => 10, 'offense' => 'bottom', 'defense' => 'top'];
+        $rules[63] = ['metric' => 'pass_yards_per_attempt', 'size' => 10, 'offense' => 'top', 'defense' => 'bottom'];
+        $rules[64] = ['metric' => 'pass_yards_per_attempt', 'size' => 10, 'offense' => 'bottom', 'defense' => 'top'];
         ksort($rules);
 
         return $rules;
@@ -81,6 +83,7 @@ final class NflMatchupSignalCatalog
             'first_down_rush_epa' => 'Rushing EPA on first down; provider-classified runs, excluding sacks.',
             'short_yardage_success_rate' => 'Share of eligible pass/run plays with 1–2 yards to go that gain at least the required yards. Not a charted blocking grade.',
             'yards_per_play' => 'Play-weighted yards gained on eligible pass/run plays, including sacks.',
+            'pass_yards_per_attempt' => 'Passing yards gained per provider-classified pass with a known false sack flag. Includes incomplete passes as zero yards; excludes sacks, runs, no-play rows and unknown sack classifications. Requires at least 15 attempts per game and 90% yardage coverage.',
             'points_per_game' => 'Team points scored/allowed per final game, including defensive and special-teams scoring.',
         }.' High/elite/strong means top 10 and low/weak/poor means bottom 10 where the supplied label has no numeric band; explicit top-5/top-10 bands take precedence. Thresholds describe this catalog, not validated betting edges.';
     }

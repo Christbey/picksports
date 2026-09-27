@@ -45,6 +45,28 @@ it('imports nflverse play by play rows and links them to nfl games', function ()
         ->and((float) $row->epa)->toBe(0.42);
 });
 
+it('maps current season plays only to a unique matching regular season game', function (string $case, bool $linked) {
+    $home = Team::factory()->create(['abbreviation' => 'KC']);
+    $away = Team::factory()->create(['abbreviation' => 'DEN']);
+    $attributes = ['nflverse_game_id' => null, 'home_team_id' => $home->id, 'away_team_id' => $away->id,
+        'season' => 2026, 'week' => 1, 'season_type' => '2', 'game_date' => '2026-09-13'];
+    $game = Game::factory()->create($attributes);
+    if ($case === 'ambiguous') {
+        Game::factory()->create($attributes);
+    }
+    if ($case === 'wrong_date') {
+        $game->update(['game_date' => '2026-09-14']);
+    }
+    if ($case === 'preseason') {
+        $game->update(['season_type' => '1']);
+    }
+    $path = sys_get_temp_dir().'/nflverse-current-mapping.csv';
+    File::put($path, "game_id,play_id,season,week,season_type,game_date,home_team,away_team,posteam,defteam,play_type,epa\n2026_01_DEN_KC,1,2026,1,REG,2026-09-13,KC,DEN,DEN,KC,pass,0.5\n");
+    artisan('nfl:import-nflverse-layer', ['dataset' => 'pbp', 'file' => $path])->assertExitCode(0);
+    expect(DB::table('nflverse_pbp_plays')->first()->nfl_game_id)->toBe($linked ? $game->id : null)
+        ->and($game->fresh()->nflverse_game_id)->toBeNull();
+})->with([['unique', true], ['ambiguous', false], ['wrong_date', false], ['preseason', false]]);
+
 it('imports nflverse roster rows with team and player identifiers', function () {
     Team::factory()->create(['abbreviation' => 'JAX']);
 

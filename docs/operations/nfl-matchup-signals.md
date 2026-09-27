@@ -23,10 +23,10 @@ implemented just because a situational section exists.
 
 ## Implemented definitions
 
-The 52 matchup rules are IDs 1–14, 19–22, 26–29, 32–33, 38–39, 51–62,
+The 54 matchup rules are IDs 1–14, 19–22, 26–29, 32–33, 38–39, 51–64,
 77–80, 101–106, 110, 127–128, and 132.
 Each is evaluated once for each team's offense against the opposing defense,
-yielding 104 evaluations, not 104 independent confirmations.
+yielding 108 evaluations, not 108 independent confirmations.
 
 - EPA/play: overall, passing (including sacks), and rushing.
 - Success rate: fraction of eligible plays with EPA strictly greater than zero.
@@ -40,6 +40,7 @@ yielding 104 evaluations, not 104 independent confirmations.
   band, this catalog explicitly uses top/bottom ten; these are descriptive
   definitions, not empirically validated predictive thresholds.
 - Yards/play: play-weighted eligible pass/run yardage.
+- Passing yards/attempt: provider-classified passes with known false sack flags; sacks and unknown sack classifications are excluded. Requires 15 attempts per game and 90% non-null yardage coverage.
 - Team scoring/game and team points allowed/game. These include defensive and
   special-teams scoring; they are not isolated offensive scoring efficiency.
 - Higher offensive values rank better; lower allowed defensive values rank better.
@@ -54,6 +55,8 @@ the UI does not claim that every subset applies to the selected upcoming game.
 Definitions, game IDs, dates, sample size, wins, losses and ties accompany each row.
 
 ## Data and cutoff contract
+
+Current-season play imports can link an ESPN-origin game without a nflverse ID only when its regular-season phase, season, week, date, home team and away team match exactly one stored game. Ambiguous matches remain unlinked; the importer does not rewrite game identities. Importing plays does not waive the three-game minimum or the complete-league ranking requirement.
 
 Matchup metrics use mapped `nflverse_pbp_plays` and final `nfl_games`, not mutable
 current-season team metric rows. No nfl_plays/provider EPA fallback is silently

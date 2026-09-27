@@ -388,3 +388,16 @@ it('reports measured and unknown reserved costs separately without calling a pro
         ->and($report['totals']['budget_accounted_usd'])->toEqual(0.20);
     $this->artisan('nfl:research-costs', ['--hours' => 0])->assertFailed();
 });
+
+it('allows a manual retry during cooldown while preserving the spend cap', function () {
+    Http::fake(['*' => Http::response(costControlResponse('partial'))]);
+    $game = costControlGame();
+    $service = app(NflWebContextResearchService::class);
+    $service->research($game);
+    expect(fn () => $service->research($game))->toThrow(ResearchDeferred::class, 'research_retry_not_due');
+    $service->research($game, force: true);
+    Http::assertSentCount(2);
+    config(['nfl_research.cost_control.daily_budget_usd' => 0]);
+    expect(fn () => $service->research($game, force: true))->toThrow(ResearchDeferred::class, 'research_daily_budget_reached');
+    Http::assertSentCount(2);
+});

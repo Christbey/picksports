@@ -178,3 +178,15 @@ it('marks lines stale only when older than 36 hours', function (int $ageSeconds,
     'exactly 36 hours' => [129600, false],
     'older than 36 hours' => [129601, true],
 ]);
+
+it('exposes the retry action only to admins for pregame predictions', function (bool $admin, bool $started, bool $allowed) {
+    [$prediction] = boardFixture();
+    $user = User::factory()->create(['is_admin' => $admin]);
+    config(['subscriptions.tier_bypass_user_ids' => [$user->id]]);
+    Sanctum::actingAs($user);
+    if ($started) {
+        $prediction->game->update(['status' => 'STATUS_IN_PROGRESS']);
+    }
+    $this->getJson('/api/v2/sports/nfl/predictions/'.$prediction->id)
+        ->assertOk()->assertJsonPath('data.nfl_board.can_retry_research', $allowed);
+})->with([[false, false, false], [true, false, true], [true, true, false]]);

@@ -1,6 +1,6 @@
 # API V2 Reference
 
-Last reviewed: 2026-09-26. Route inventory verified against all 84 registered V2 routes (GET includes HEAD).
+Last reviewed: 2026-09-26. Route inventory verified against all 86 registered V2 routes (GET includes HEAD).
 
 This is the current human and agent reference for `/api/v2`. It complements
 `docs/api-v2-modernization-plan.md` and

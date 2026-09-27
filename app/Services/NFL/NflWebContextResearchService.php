@@ -117,7 +117,7 @@ class NflWebContextResearchService
                                 : ($existing->status !== 'ready' ? 'incomplete_retry' : 'freshness_expired')))),
                     'search_cap' => max(1, (int) config('ai.features.nfl_game_context_research.max_searches', 5)),
                 ],
-            ));
+            ), ignoreCooldown: $force);
         $startedAt = microtime(true);
         $telemetry = null;
 

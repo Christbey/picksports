@@ -1,6 +1,6 @@
 # API V2 Endpoint Contracts
 
-Last reviewed: 2026-09-26. All 84 registered route entries are listed below; GET also supports HEAD.
+Last reviewed: 2026-09-26. All 86 registered route entries are listed below; GET also supports HEAD.
 
 Read the [API reference](api-v2-reference.md) for authentication, supported sports, filters, examples and errors. Schema names resolve under `components.schemas` in [OpenAPI](openapi-v2.json). These are schema identifiers, not literal JSON wrapper names. Extensible sport fields are defined in the resources and contract tests.
 
@@ -29,6 +29,8 @@ This inventory is based on `php artisan route:list --path=api/v2 --json` and `ph
 | Method | Full path | JSON request schema | Success response schema | Write behavior |
 | --- | --- | --- | --- | --- |
 | `GET` | `/api/v2/admin/payload-inspector` | — | 200 `PayloadInspectorResponse` | — |
+| `GET` | `/api/v2/admin/nfl/games/{game}/research-retry` | — | 200 `NflResearchRetryResponse` | Admin only |
+| `POST` | `/api/v2/admin/nfl/games/{game}/research-retry` | — | 202 `NflResearchRetryResponse` | Admin only, Write limit, per-game deduplication |
 | `GET` | `/api/v2/alert-preferences` | — | 200 `AlertPreferenceResponse` | — |
 | `POST` | `/api/v2/alert-preferences` | `AlertPreferenceStoreRequest` | 200 `AlertPreferenceResponse`; 201 `AlertPreferenceResponse` | Key, Write limit |
 | `PUT` | `/api/v2/alert-preferences` | `AlertPreferenceUpdateRequest` | 200 `AlertPreferenceResponse` | Key, Write limit |

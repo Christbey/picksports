@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Auth\TokenAuthController;
 use App\Http\Controllers\Api\CBB\BracketController as CbbBracketController;
 use App\Http\Controllers\Api\GroupController;
 use App\Http\Controllers\Api\SecurityReportController;
+use App\Http\Controllers\Api\V2\Admin\NflResearchRetryController;
 use App\Http\Controllers\Api\V2\Admin\PayloadInspectorController;
 use App\Http\Controllers\Api\V2\CfbLiveBettingController;
 use App\Http\Controllers\Api\V2\DeveloperSandboxController;
@@ -169,6 +170,9 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
         ->name('admin.')
         ->group(function (): void {
             Route::get('/payload-inspector', PayloadInspectorController::class)->name('payload-inspector');
+            Route::get('/nfl/games/{game}/research-retry', [NflResearchRetryController::class, 'show'])->name('nfl.research-retry.show');
+            Route::post('/nfl/games/{game}/research-retry', [NflResearchRetryController::class, 'store'])
+                ->middleware('throttle:api-v2-writes')->name('nfl.research-retry.store');
         });
 
     Route::middleware(['v2.auth', 'v2.sport-api-access'])

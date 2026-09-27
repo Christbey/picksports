@@ -577,6 +577,7 @@ onMounted(async () => {
             <NflMatchupDetailDrawer
                 v-model:open="detailOpen"
                 :prediction="selectedPrediction"
+                @research-updated="loadBoard"
             />
         </template>
     </section>

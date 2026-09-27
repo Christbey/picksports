@@ -20,9 +20,9 @@ use Throwable;
 
 class ResearchPipeline
 {
-    public function review(Game $game, bool $research = true): ?ResearchRevision
+    public function review(Game $game, bool $research = true, bool $forceResearch = false, ?int $requestedBy = null): ?ResearchRevision
     {
-        $revision = Cache::lock('nfl-research-game:'.$game->id, 300)->get(function () use ($game, $research) {
+        $revision = Cache::lock('nfl-research-game:'.$game->id, 300)->get(function () use ($game, $research, $forceResearch, $requestedBy) {
             $game->loadMissing(['homeTeam', 'awayTeam', 'prediction']);
             $kickoff = app(SportsDateWindowService::class)->gameDateTimeUtc($game->game_date, $game->game_time);
             if (! $kickoff
@@ -44,9 +44,9 @@ class ResearchPipeline
             $policy = app(ResearchRefreshPolicy::class);
             $fingerprint = $policy->fingerprint($game, $packet);
             $deferred = null;
-            if ($research && ! $policy->current($report, $game, $fingerprint, $candidateHash)) {
+            if ($research && ($forceResearch || ! $policy->current($report, $game, $fingerprint, $candidateHash))) {
                 try {
-                    $report = app(NflWebContextResearchService::class)->research($game)['report'];
+                    $report = app(NflWebContextResearchService::class)->research($game, force: $forceResearch)['report'];
                 } catch (ResearchDeferred $exception) {
                     $deferred = $exception->getMessage();
                 } catch (Throwable $exception) {
@@ -97,6 +97,7 @@ class ResearchPipeline
             }
             $previous = ResearchRevision::where('game_id', $game->id)->latest('id')->first();
             $brief = [
+                'requested_by' => $requestedBy,
                 'stored_prediction_hash' => $game->prediction ? $this->storedPredictionHash($game->prediction->toArray()) : null,
                 'game' => $game->short_name ?: $game->name,
                 'kickoff_at' => $kickoff->toIso8601String(),

@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Schema;
 class ResearchSpendGuard
 {
     /** Atomically reserve estimated spend before creating a potentially paid request. */
-    public function reserve(Game $game, string $fingerprint, string $provider, string $model, callable $start): AiGeneration
+    public function reserve(Game $game, string $fingerprint, string $provider, string $model, callable $start, bool $ignoreCooldown = false): AiGeneration
     {
         if (! Schema::hasTable('ai_generations')) {
             throw new ResearchDeferred('research_usage_ledger_missing');
@@ -22,7 +22,7 @@ class ResearchSpendGuard
         }
 
         try {
-            return Cache::lock('nfl-research-spend-reservation', 15)->block(3, function () use ($game, $fingerprint, $start) {
+            return Cache::lock('nfl-research-spend-reservation', 15)->block(3, function () use ($game, $fingerprint, $start, $ignoreCooldown) {
                 $rows = AiGeneration::query()->where('purpose', 'nfl_game_context_research')
                     ->where('started_at', '>=', now()->subDay())
                     ->get(['id', 'context_id', 'cost_usd', 'metadata', 'started_at']);
@@ -47,7 +47,7 @@ class ResearchSpendGuard
                 if ($gameRows->count() >= $limit) {
                     throw new ResearchDeferred('research_game_attempt_limit_reached');
                 }
-                if ($latest) {
+                if ($latest && ! $ignoreCooldown) {
                     $sameEvidence = data_get($latest->metadata, 'research_fingerprint') === $fingerprint;
                     $minutes = max(1, (int) config('nfl_research.cost_control.minimum_interval_minutes', 15));
                     if ($sameEvidence) {

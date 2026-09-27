@@ -55,7 +55,12 @@ class SportPredictionResource extends JsonResource
             'market_aware_projection' => $this->marketAwareProjection(),
             'recommendation' => $this->recommendation(),
             'pro_signal_layer' => $this->proSignalLayer(),
-            'nfl_board' => $this->presentation->nflBoard,
+            'nfl_board' => $this->presentation->nflBoard === null ? null : [
+                ...$this->presentation->nflBoard,
+                'can_retry_research' => (bool) $request->user()?->isAdmin()
+                    && in_array($this->gameAttribute('status'), ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true)
+                    && app(SportsDateWindowService::class)->gameDateTimeUtc($this->gameAttribute('game_date'), $this->gameAttribute('game_time'))?->isFuture(),
+            ],
             'period_insights' => $this->context->slug === 'mlb' ? $this->presentation->periodInsights : [],
             'cfb_signal_context' => $this->cfbSignalContext(),
             'home_elo' => $this->floatAttribute('home_elo'),

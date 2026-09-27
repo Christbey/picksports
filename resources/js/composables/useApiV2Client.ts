@@ -259,6 +259,20 @@ export function useApiV2Client() {
                 ),
         },
 
+        nflResearchRetry: {
+            show: (game: ApiV2Id, options: RequestOptions = {}) =>
+                item<ApiV2Record>(
+                    v2.admin.nfl.researchRetry.show.url({ game }),
+                    options,
+                ),
+            store: (game: ApiV2Id) =>
+                mutate<ApiV2ItemResponse<ApiV2Record>>(
+                    v2.admin.nfl.researchRetry.store.url({ game }),
+                    'POST',
+                    {},
+                ),
+        },
+
         games: {
             research: <T = ApiV2Record>(
                 sport: ApiV2SportSlug,

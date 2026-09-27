@@ -290,3 +290,63 @@ test('stored stale lines remain visible with freshness labels despite blocked re
     assert.match(html, /Refresh blocked/);
     assert.doesNotMatch(html, /Line unavailable/);
 });
+
+test('admin drawer retries research and refreshes the board after completion', async () => {
+    const { default: component } = await server.ssrLoadModule(
+        '/resources/js/components/nfl/NflMatchupDetailDrawer.vue',
+    );
+    const p = prediction(0.73, 10, -7);
+    p.nfl_board.can_retry_research = true;
+    let bindings;
+    let updates = 0;
+    const wrapper = {
+        ...component,
+        setup(props, context) {
+            bindings = component.setup(props, context);
+            return () => null;
+        },
+    };
+    await renderToString(
+        createSSRApp(wrapper, {
+            prediction: p,
+            open: false,
+            onResearchUpdated: () => updates++,
+        }),
+    );
+    const oldFetch = globalThis.fetch;
+    const calls = [];
+    globalThis.fetch = async (url, init = {}) => {
+        calls.push([String(url), init.method ?? 'GET']);
+        return new Response(
+            JSON.stringify({
+                data: {
+                    run_id: 'test-run',
+                    status: init.method === 'POST' ? 'queued' : 'completed',
+                    message: 'Research rerun completed.',
+                },
+            }),
+            {
+                status: init.method === 'POST' ? 202 : 200,
+                headers: { 'Content-Type': 'application/json' },
+            },
+        );
+    };
+    try {
+        assert.equal(bindings.canRetry.value, true);
+        await bindings.retryResearch();
+        assert.equal(bindings.retryStatus.value, 'completed');
+        assert.equal(bindings.retryBusy.value, false);
+        assert.equal(updates, 1);
+        assert.ok(
+            calls.some(
+                ([url, method]) =>
+                    url === '/api/v2/admin/nfl/games/1/research-retry' &&
+                    method === 'POST',
+            ),
+        );
+        p.nfl_board.can_retry_research = false;
+    } finally {
+        bindings.stopRetryPolling();
+        globalThis.fetch = oldFetch;
+    }
+});

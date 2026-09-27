@@ -603,6 +603,7 @@ class V2OpenApiGenerateCommand extends Command
     private function successStatuses(Route $route): array
     {
         return match ($route->getName()) {
+            'v2.admin.nfl.research-retry.store' => ['202'],
             'v2.auth.logout',
             'v2.auth.logout-all',
             'v2.auth.device-sessions.destroy',
@@ -677,6 +678,7 @@ class V2OpenApiGenerateCommand extends Command
 
         $schema = match ($name) {
             'v2.admin.payload-inspector' => 'PayloadInspectorResponse',
+            'v2.admin.nfl.research-retry.show', 'v2.admin.nfl.research-retry.store' => 'NflResearchRetryResponse',
             'v2.alert-preferences.show',
             'v2.alert-preferences.store',
             'v2.alert-preferences.update' => 'AlertPreferenceResponse',
@@ -1115,6 +1117,16 @@ class V2OpenApiGenerateCommand extends Command
             ]),
             'SecurityReportRequest' => ['oneOf' => [$openObject, ['type' => 'array', 'items' => $openObject]]],
             'SecurityReportResponse' => $this->fixedObjectSchema(['ok'], ['ok' => ['const' => true]]),
+            'NflResearchRetryResponse' => $this->fixedObjectSchema(['data'], [
+                'data' => $this->fixedObjectSchema(['status'], [
+                    'status' => ['type' => 'string', 'enum' => ['idle', 'queued', 'running', 'completed', 'blocked', 'failed']],
+                    'run_id' => ['type' => 'string'],
+                    'message' => ['type' => 'string'],
+                    'requested_by' => ['type' => 'integer'],
+                    'updated_at' => ['type' => 'string', 'format' => 'date-time'],
+                ]),
+                'message' => ['type' => 'string'],
+            ]),
             'NflResearchResponse' => $this->sportCustomEnvelope('NflResearchData'),
             'NflResearchData' => $this->fixedObjectSchema(['game_id', 'revisions'], [
                 'game_id' => ['type' => 'integer'],

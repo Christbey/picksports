@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
+import { useApiV2Client } from '@/composables/useApiV2Client';
+import { Button } from '@/components/ui/button';
 import NflMatchupSignals from '@/components/game-page/NflMatchupSignals.vue';
 import NflMarketHistory from '@/components/game-page/NflMarketHistory.vue';
 import {
@@ -22,6 +24,98 @@ import type { ApiV2Prediction } from '@/types';
 
 const props = defineProps<{ prediction: ApiV2Prediction | null }>();
 const open = defineModel<boolean>('open', { default: false });
+const emit = defineEmits<{ researchUpdated: [] }>();
+const api = useApiV2Client();
+const retryStatus = ref('idle');
+const retryMessage = ref('');
+const retrySubmitting = ref(false);
+const retryBusy = computed(
+    () =>
+        retrySubmitting.value ||
+        ['queued', 'running'].includes(retryStatus.value),
+);
+const canRetry = computed(
+    () => record(props.prediction?.nfl_board).can_retry_research === true,
+);
+let retryTimer: ReturnType<typeof setTimeout> | undefined;
+let retryVersion = 0;
+let lastFinishedRun = '';
+function stopRetryPolling() {
+    clearTimeout(retryTimer);
+    retryVersion++;
+}
+async function readRetryStatus(game: number, version: number) {
+    try {
+        const response = await api.nflResearchRetry.show(game);
+        if (version !== retryVersion) return;
+        const previous = retryStatus.value;
+        retryStatus.value = String(response?.data?.status ?? 'idle');
+        retryMessage.value = String(response?.data?.message ?? '');
+        if (['queued', 'running'].includes(retryStatus.value)) {
+            retryTimer = setTimeout(() => readRetryStatus(game, version), 3000);
+        } else if (
+            ['completed', 'blocked', 'failed'].includes(retryStatus.value) &&
+            response?.data?.run_id &&
+            lastFinishedRun !== String(response.data.run_id)
+        ) {
+            lastFinishedRun = String(response.data.run_id);
+            emit('researchUpdated');
+        } else if (['queued', 'running'].includes(previous)) {
+            if (retryStatus.value === 'idle')
+                retryMessage.value =
+                    'Retry status expired. Refresh the assessment or try again.';
+            emit('researchUpdated');
+        }
+    } catch (error) {
+        if (version !== retryVersion) return;
+        retryStatus.value = 'failed';
+        retryMessage.value =
+            error instanceof Error
+                ? error.message
+                : 'Unable to check research status.';
+    }
+}
+async function retryResearch() {
+    const game = Number(props.prediction?.game_id);
+    if (!canRetry.value || retryBusy.value || !game) return;
+    stopRetryPolling();
+    const version = retryVersion;
+    retrySubmitting.value = true;
+    retryMessage.value = '';
+    try {
+        const response = await api.nflResearchRetry.store(game);
+        if (version !== retryVersion) return;
+        retryStatus.value = String(response?.data?.status ?? 'queued');
+        retryMessage.value = String(
+            response?.data?.message ?? 'Research retry queued.',
+        );
+        if (['queued', 'running'].includes(retryStatus.value))
+            await readRetryStatus(game, version);
+        else emit('researchUpdated');
+    } catch (error) {
+        if (version !== retryVersion) return;
+        retryMessage.value =
+            error instanceof Error
+                ? error.message
+                : 'Unable to queue research.';
+    } finally {
+        if (version === retryVersion) retrySubmitting.value = false;
+    }
+}
+watch(
+    () => [open.value, props.prediction?.game_id, canRetry.value],
+    () => {
+        stopRetryPolling();
+        retryStatus.value = 'idle';
+        retryMessage.value = '';
+        retrySubmitting.value = false;
+        const game = Number(props.prediction?.game_id);
+        if (open.value && canRetry.value && game)
+            void readRetryStatus(game, retryVersion);
+    },
+    { immediate: true },
+);
+onUnmounted(stopRetryPolling);
 const view = computed(() =>
     props.prediction ? nflBoardPresentation(props.prediction) : null,
 );
@@ -181,6 +275,30 @@ const timestamp = (value: string | null | undefined) =>
                     <h3 class="text-sm font-semibold">
                         {{ view.researchLabel }}
                     </h3>
+                    <Button
+                        v-if="canRetry"
+                        variant="outline"
+                        size="sm"
+                        :disabled="retryBusy"
+                        @click="retryResearch"
+                    >
+                        {{
+                            retryBusy
+                                ? 'Research queued / running…'
+                                : 'Rerun research'
+                        }}
+                    </Button>
+                    <p
+                        v-if="canRetry && retryMessage"
+                        role="status"
+                        aria-live="polite"
+                    >
+                        {{
+                            retryMessage.startsWith('research_')
+                                ? researchReason(retryMessage)
+                                : retryMessage
+                        }}
+                    </p>
                     <p class="mt-1 text-sm text-muted-foreground">
                         {{ decisionLabel(view.researchDecision) }}
                     </p>

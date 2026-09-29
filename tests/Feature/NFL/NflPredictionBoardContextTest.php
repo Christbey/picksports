@@ -190,3 +190,54 @@ it('exposes the retry action only to admins for pregame predictions', function (
     $this->getJson('/api/v2/sports/nfl/predictions/'.$prediction->id)
         ->assertOk()->assertJsonPath('data.nfl_board.can_retry_research', $allowed);
 })->with([[false, false, false], [true, false, true], [true, true, false]]);
+
+it('passes stored pregame lines through live and final APIs when research has no market', function (string $status) {
+    $this->travelTo(now()->startOfSecond());
+    [$prediction] = boardFixture();
+    $kickoff = now()->utc()->subHour();
+    $observed = now()->subHours(57)->toIso8601String();
+    $odds = $prediction->game->odds_data;
+    $odds['bookmakers'][0]['last_update'] = $observed;
+    $prediction->game->update(['status' => $status, 'game_date' => $kickoff->toDateString(), 'game_time' => $kickoff->format('H:i:s'), 'odds_updated_at' => now()->subHours(57), 'odds_data' => $odds]);
+    config(['subscriptions.enforce_tiers' => false]);
+    Sanctum::actingAs(User::factory()->create());
+    foreach (["/api/v2/sports/nfl/predictions/{$prediction->id}", "/api/v2/sports/nfl/games/{$prediction->game_id}/page"] as $url) {
+        $prefix = str_ends_with($url, '/page') ? 'data.prediction.nfl_board.market' : 'data.nfl_board.market';
+        $this->getJson($url)->assertOk()
+            ->assertJsonPath("{$prefix}.home_spread", -8.5)
+            ->assertJsonPath("{$prefix}.total", 42.5)
+            ->assertJsonPath("{$prefix}.historical", true)
+            ->assertJsonPath("{$prefix}.spread_stale", true)
+            ->assertJsonPath("{$prefix}.total_stale", true)
+            ->assertJsonPath("{$prefix}.observed_at", $observed);
+    }
+    expect(app(ResearchPipeline::class)->quotes($prediction->game))->toBe([]);
+})->with(['STATUS_IN_PROGRESS', 'STATUS_FINAL']);
+
+it('rejects fallback odds without reliable pregame capture and quote timestamps', function (string $failure) {
+    [$prediction] = boardFixture();
+    $kickoff = now()->utc()->subHour();
+    $odds = $prediction->game->odds_data;
+    $odds['bookmakers'][0]['last_update'] = $failure === 'live quote' ? now()->toIso8601String() : now()->subHours(2)->toIso8601String();
+    $prediction->game->fill(['status' => 'STATUS_IN_PROGRESS', 'game_date' => $kickoff->toDateString(), 'game_time' => $kickoff->format('H:i:s'), 'odds_updated_at' => match ($failure) {
+        'missing capture' => null,
+        'live capture' => now(),
+        default => now()->subHours(2),
+    }, 'odds_data' => $odds]);
+    $market = app(NflPredictionBoardContext::class)->forPredictions(collect([$prediction]))->get($prediction->id)['market'];
+    expect($market['home_spread'])->toBeNull()->and($market['total'])->toBeNull();
+})->with(['missing capture', 'live capture', 'live quote']);
+
+it('preserves the research market instead of replacing it with fallback stored odds', function () {
+    [$prediction, , $revision] = boardFixture();
+    $kickoff = now()->utc()->subHour();
+    $odds = $prediction->game->odds_data;
+    $odds['bookmakers'][0]['last_update'] = now()->subHours(2)->toIso8601String();
+    $prediction->game->fill(['status' => 'STATUS_FINAL', 'game_date' => $kickoff->toDateString(), 'game_time' => $kickoff->format('H:i:s'), 'odds_updated_at' => now()->subHours(2), 'odds_data' => $odds]);
+    $quotes = app(ResearchPipeline::class)->quotes($prediction->game);
+    $quotes[0]['line'] = -3.5;
+    $quotes[1]['line'] = 3.5;
+    $revision->update(['market' => $quotes]);
+    $market = app(NflPredictionBoardContext::class)->forPredictions(collect([$prediction]))->get($prediction->id)['market'];
+    expect($market['home_spread'])->toBe(-3.5)->and($market['spread_stale'])->toBeFalse();
+});

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { useViewerAccess } from '@/composables/useViewerAccess';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { decisionLabel, researchReason } from '@/lib/researchDecision';
 
@@ -29,6 +30,7 @@ const props = defineProps<{
     mobileCompact?: boolean;
     gameStatus?: string;
 }>();
+const { isAdmin } = useViewerAccess();
 const api = useApiV2Client();
 const revisions = ref<Revision[]>([]);
 const error = ref('');
@@ -61,7 +63,7 @@ onMounted(async () => {
     <section
         class="min-w-0 rounded-xl border bg-card p-4 text-card-foreground sm:p-5"
     >
-        <h2 class="text-lg font-semibold">Research and prediction changes</h2>
+        <h2 class="text-lg font-semibold">Matchup research</h2>
         <p v-if="loading" class="mt-2 text-sm text-muted-foreground">
             Loading research…
         </p>
@@ -108,11 +110,11 @@ onMounted(async () => {
                 </li>
             </ul>
             <details
-                v-if="revisions[0].brief.eligibility.reasons.length"
+                v-if="isAdmin && revisions[0].brief.eligibility.reasons.length"
                 class="mt-2 text-xs text-muted-foreground"
             >
                 <summary class="min-h-11 cursor-pointer content-center">
-                    Technical reason codes
+                    Admin · technical reason codes
                 </summary>
                 <ul class="break-words">
                     <li

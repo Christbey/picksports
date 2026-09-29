@@ -141,7 +141,7 @@ export function useNflDetailedGamePage(gameId: number) {
                 'STATUS_IN_PROGRESS',
                 'STATUS_HALFTIME',
             ],
-            badgePulseStatuses: ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME'],
+            badgePulseStatuses: [],
             useTeamColorGlow: true,
             showLinescore: computed(
                 () =>

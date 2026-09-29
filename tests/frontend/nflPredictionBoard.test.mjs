@@ -12,9 +12,18 @@ import {
 import { researchReason } from '../../resources/js/lib/researchDecision.ts';
 
 test('provider failures explain the recovery action', () => {
-    assert.match(researchReason('research_provider_cooldown'), /admin can rerun/);
-    assert.match(researchReason('research_provider_quota_exhausted'), /billing and usage limits/);
-    assert.match(researchReason('research_provider_rate_limited'), /Wait briefly/);
+    assert.match(
+        researchReason('research_provider_cooldown'),
+        /admin can rerun/,
+    );
+    assert.match(
+        researchReason('research_provider_quota_exhausted'),
+        /billing and usage limits/,
+    );
+    assert.match(
+        researchReason('research_provider_rate_limited'),
+        /Wait briefly/,
+    );
 });
 
 test('research labels separate expiry changes and blocked refresh without hiding simultaneous reasons', () => {
@@ -224,7 +233,8 @@ test('compact card renders winner and spread as separate concepts without diagno
     assert.match(html, /Model winner/);
     assert.match(html, /HOME.*72\.0%/s);
     assert.match(html, /AWAY \+13\.5/);
-    assert.match(html, /Research checked/);
+    assert.match(html, /Forecast · see analysis/);
+    assert.doesNotMatch(html, /Research checked/);
     assert.doesNotMatch(html, /Trust|Moneyline:|Week 2|Spread Pass|Total Pass/);
 });
 test('final cards preserve grading and never label predictions as live', async () => {
@@ -293,7 +303,7 @@ test('stored stale lines remain visible with freshness labels despite blocked re
         createSSRApp(component, { prediction: p }),
     );
     assert.match(html, /HOME -7 \(stale line\)/);
-    assert.match(html, /Refresh blocked/);
+    assert.doesNotMatch(html, /Refresh blocked/);
     assert.doesNotMatch(html, /Line unavailable/);
 });
 

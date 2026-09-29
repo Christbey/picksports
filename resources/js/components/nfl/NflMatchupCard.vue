@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useViewerAccess } from '@/composables/useViewerAccess';
+const { isAdmin } = useViewerAccess();
 import { ChevronRight } from 'lucide-vue-next';
 import { computed } from 'vue';
 import {
@@ -49,7 +51,11 @@ const live = computed(() =>
                 <span v-if="view.final || live">{{ game?.home_score }}</span>
             </div>
             <span class="shrink-0 text-xs text-muted-foreground">{{
-                view.final ? 'Final' : live ? 'Live' : kickoffLabel(prediction)
+                view.final
+                    ? 'Final'
+                    : live
+                      ? 'In progress'
+                      : kickoffLabel(prediction)
             }}</span>
         </div>
         <div class="mt-3 grid grid-cols-2 gap-3">
@@ -76,6 +82,13 @@ const live = computed(() =>
                 <div class="mt-0.5 text-base font-semibold">
                     {{ view.spreadLean }}
                 </div>
+                <p
+                    v-if="view.marketBook"
+                    class="mt-1 text-xs text-muted-foreground"
+                    :title="view.marketAt || undefined"
+                >
+                    Stored: {{ view.marketSpread }}
+                </p>
             </div>
         </div>
         <div class="mt-3 flex items-center justify-between gap-2 text-xs">
@@ -92,12 +105,13 @@ const live = computed(() =>
                 v-else
                 class="inline-flex items-center gap-1.5"
                 :class="
-                    view.researchStatus === 'reviewed'
+                    !isAdmin || view.researchStatus === 'reviewed'
                         ? 'text-muted-foreground'
                         : 'text-amber-700 dark:text-amber-300'
                 "
             >
                 <span
+                    v-if="isAdmin"
                     aria-hidden="true"
                     class="h-1.5 w-1.5 rounded-full"
                     :class="
@@ -105,7 +119,7 @@ const live = computed(() =>
                             ? 'bg-emerald-500'
                             : 'bg-amber-500'
                     "
-                />{{ view.researchLabel }}
+                />{{ isAdmin ? view.researchLabel : 'Forecast · see analysis' }}
             </span>
             <span class="inline-flex items-center gap-1 text-muted-foreground"
                 >Details <ChevronRight class="h-3.5 w-3.5"

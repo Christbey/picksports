@@ -31,6 +31,7 @@ try {
     const errors = [];
     const requests = [];
     let authenticated = false;
+    let admin = false;
     let challenge = false;
     page.on('pageerror', (error) => errors.push(error.message));
     const team = (id, abbreviation, display_name) => ({
@@ -67,7 +68,7 @@ try {
                       data: {
                           name: 'PickSports',
                           auth: {
-                              user: { id: 1, name: 'Test', is_admin: false },
+                              user: { id: 1, name: 'Test', is_admin: admin },
                           },
                           subscription: {
                               tiers_enabled: false,
@@ -111,9 +112,47 @@ try {
                         home_score: null,
                         away_score: null,
                     },
-                    prediction: null,
+                    prediction: {
+                        game_id: 1753,
+                        predicted_spread: -5.5,
+                        predicted_total: 42,
+                        win_probability: 0.3,
+                    },
                     team_stats: [],
                 },
+            };
+        else if (path.endsWith('/predictions'))
+            body = {
+                data: [
+                    {
+                        id: 1,
+                        game_id: 1753,
+                        status: 'STATUS_SCHEDULED',
+                        game: {
+                            id: 1753,
+                            home_team: home,
+                            away_team: away,
+                            kickoff_at: '2026-09-29T00:15:00Z',
+                        },
+                        win_probability: 0.3,
+                        predicted_spread: -5.5,
+                        predicted_total: 42,
+                        nfl_board: {
+                            research: {
+                                status: 'refresh_blocked',
+                                decision: 'pass',
+                            },
+                            market: {
+                                home_spread: 4.5,
+                                total: 41.5,
+                                bookmaker: 'draftkings',
+                                observed_at: '2026-09-26T16:38:53Z',
+                                spread_stale: true,
+                                total_stale: true,
+                            },
+                        },
+                    },
+                ],
             };
         else if (path.endsWith('/trends'))
             body = {
@@ -152,6 +191,12 @@ try {
     await page
         .getByRole('heading', { name: 'NFL predictions', exact: true })
         .waitFor();
+    await page.getByText('Forecast · see analysis', { exact: true }).waitFor();
+    await page.screenshot({
+        path: '/tmp/clean-board.png',
+        fullPage: true,
+        animations: 'disabled',
+    });
     for (const width of [1440, 390]) {
         await page.setViewportSize({ width, height: 950 });
         await page.goto('http://127.0.0.1:5174/nfl/games/1753');
@@ -159,8 +204,30 @@ try {
             .getByText('Chicago Bears', { exact: true })
             .first()
             .waitFor({ state: 'attached' });
+        assert.equal(
+            await page
+                .getByText('Admin · model diagnostics', { exact: true })
+                .count(),
+            0,
+        );
+        assert.equal(
+            await page
+                .getByRole('heading', { name: 'Matchup research', exact: true })
+                .isVisible(),
+            false,
+        );
+        await page
+            .getByRole('button', { name: 'Research', exact: true })
+            .click();
+        await page
+            .getByRole('heading', { name: 'Matchup research', exact: true })
+            .waitFor();
+        await page
+            .getByRole('button', { name: 'Overview', exact: true })
+            .click();
         await page.screenshot({
             path: `/tmp/standalone-${width}.png`,
+            animations: 'disabled',
             fullPage: true,
         });
         assert.ok(
@@ -179,6 +246,11 @@ try {
             .length,
         0,
     );
+    admin = true;
+    await page.reload();
+    await page
+        .getByText('Admin · model diagnostics', { exact: true })
+        .waitFor();
     await page.getByRole('button', { name: 'Sign out', exact: true }).click();
     await page.getByLabel('Email', { exact: true }).waitFor();
     assert.deepEqual(errors, []);

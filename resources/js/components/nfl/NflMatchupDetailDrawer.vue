@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useViewerAccess } from '@/composables/useViewerAccess';
+const { isAdmin } = useViewerAccess();
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { Button } from '@/components/ui/button';
@@ -310,7 +312,7 @@ const timestamp = (value: string | null | undefined) =>
                         forecast and evidence.
                     </p>
                     <ul
-                        v-if="reasons.length"
+                        v-if="isAdmin && reasons.length"
                         class="mt-2 list-disc space-y-1 pl-4 text-sm"
                     >
                         <li v-for="reason in reasons" :key="reason">
@@ -332,9 +334,9 @@ const timestamp = (value: string | null | undefined) =>
                     v-if="prediction.game_id ?? prediction.game?.id"
                     :game-id="Number(prediction.game_id ?? prediction.game?.id)"
                 />
-                <details class="rounded-xl border p-3">
+                <details v-if="isAdmin" class="rounded-xl border p-3">
                     <summary class="cursor-pointer text-sm font-medium">
-                        Model diagnostics
+                        Admin · model diagnostics
                     </summary>
                     <p class="mt-3 text-xs text-muted-foreground">
                         Signal scores and tiers are internal model diagnostics,

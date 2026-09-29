@@ -21,7 +21,17 @@ let server;
 before(async () => {
     server = await createServer({
         configFile: false,
-        plugins: [vue()],
+        plugins: [
+            {
+                name: 'viewer',
+                enforce: 'pre',
+                load(id) {
+                    if (id.endsWith('/composables/useViewerAccess.ts'))
+                        return 'import { computed } from "vue"; export const useViewerAccess = () => ({ isAdmin: computed(() => globalThis.__reviewAdmin === true) });';
+                },
+            },
+            vue(),
+        ],
         server: { middlewareMode: true, hmr: false, ws: false, watch: null },
         optimizeDeps: { noDiscovery: true, include: [] },
         resolve: {
@@ -37,7 +47,8 @@ after(async () => {
     await server?.close();
 });
 
-test('archived research renders one plain-language explanation and retains technical codes', async () => {
+test('research retains plain-language explanations and reserves technical codes for admins', async () => {
+    globalThis.__reviewAdmin = true;
     const { default: component } = await server.ssrLoadModule(
         '/resources/js/components/game-page/NflResearchBrief.vue',
     );
@@ -84,8 +95,18 @@ test('archived research renders one plain-language explanation and retains techn
             .length - 1,
         1,
     );
-    assert.match(html, /Technical reason codes/);
+    assert.match(html, /Admin · technical reason codes/);
     assert.match(html, /specialist_market_scores_spread_tier_does_not_approve/);
+    globalThis.__reviewAdmin = false;
+    const publicHtml = await renderToString(
+        createSSRApp(wrapper, { gameId: 1722, gameStatus: 'STATUS_FINAL' }),
+    );
+    assert.doesNotMatch(
+        publicHtml,
+        /technical reason codes|specialist_market_scores_spread_tier_does_not_approve/,
+    );
+    assert.match(publicHtml, /No approved spread bet/);
+    delete globalThis.__reviewAdmin;
 });
 
 test('record outcomes preserve ties, shutouts and unavailable scores', () => {

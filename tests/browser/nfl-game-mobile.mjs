@@ -71,7 +71,9 @@ try {
     let researchRequests = 0;
     await page.route('**/api/v2/sports/nfl/games/1722/research', (route) => {
         researchRequests++;
-        return route.fulfill({ json: { data: { game_id: 1722, revisions: [revision] } } });
+        return route.fulfill({
+            json: { data: { game_id: 1722, revisions: [revision] } },
+        });
     });
     const assertVisible = async (locator, expected = true) =>
         assert.equal(await locator.isVisible(), expected);
@@ -128,11 +130,7 @@ try {
     for (const width of [320, 390, 767]) {
         await page.setViewportSize({ width, height: 844 });
         await page.goto(`${server.resolvedUrls.local[0]}__nfl-mobile`);
-        await page
-            .getByText('A current kickoff weather report is unavailable.', {
-                exact: true,
-            })
-            .waitFor();
+        await page.getByText('Prediction Model', { exact: true }).waitFor();
         await assertVisible(
             page.getByRole('region', { name: 'Final result summary' }),
         );
@@ -210,9 +208,7 @@ try {
             false,
         );
         await assertVisible(
-            page.getByText('A current kickoff weather report is unavailable.', {
-                exact: true,
-            }),
+            page.getByText('Matchup research', { exact: true }),
         );
         await page
             .locator('summary')
@@ -233,13 +229,13 @@ try {
         const evidence = page.getByRole('region', {
             name: 'Team evidence windows',
         });
-        await assertVisible(evidence.locator('article').nth(0));
-        await assertVisible(evidence.locator('article').nth(1), false);
+        await assertVisible(evidence.getByRole('heading', { name: /^DET ·/ }));
+        await assertVisible(evidence.getByRole('heading', { name: /^BUF ·/ }), false);
         await evidence
             .getByRole('button', { name: 'BUF', exact: true })
             .click();
-        await assertVisible(evidence.locator('article').nth(1));
-        await assertVisible(evidence.locator('article').nth(0), false);
+        await assertVisible(evidence.getByRole('heading', { name: /^BUF ·/ }));
+        await assertVisible(evidence.getByRole('heading', { name: /^DET ·/ }), false);
         await evidence
             .getByRole('button', { name: 'Previous 3 seasons', exact: true })
             .click();
@@ -254,28 +250,28 @@ try {
             });
         await select('Overview');
         await assertVisible(
-            page.getByText('A current kickoff weather report is unavailable.', {
-                exact: true,
-            }),
+            page.getByText('Prediction Model', { exact: true }),
         );
         assert.equal(
             researchRequests,
             count,
             'Navigation must not refetch research',
         );
-        // Resize after choosing a hidden-on-mobile section: desktop must show all panels.
+        // Resizing retains the selected section; other panels remain available through navigation.
         await select('Research');
         await page.setViewportSize({ width: 1280, height: 900 });
         await checkMatchupRow();
-        await assertVisible(nav, false);
+        await assertVisible(nav);
+        await select('Overview');
         await assertVisible(
             page.getByText('Prediction Model', { exact: true }),
         );
+        await select('Trends');
         await assertVisible(
             page.getByText('Trends & Matchup History', { exact: true }),
         );
-        await assertVisible(evidence.locator('article').nth(0));
-        await assertVisible(evidence.locator('article').nth(1));
+        await assertVisible(evidence.getByRole('heading', { name: /^DET ·/ }));
+        await assertVisible(evidence.getByRole('heading', { name: /^BUF ·/ }));
         await checkWidth();
         console.log(
             `PASS: ${width}px mobile navigation, evidence, holds, overflow, 1280px desktop restoration`,
@@ -286,11 +282,7 @@ try {
         await page.goto(
             `${server.resolvedUrls.local[0]}__nfl-mobile?phase=${phase}`,
         );
-        await page
-            .getByText('A current kickoff weather report is unavailable.', {
-                exact: true,
-            })
-            .waitFor();
+        await page.getByText('Prediction Model', { exact: true }).waitFor();
         await assertVisible(
             page.getByRole('region', { name: 'Final result summary' }),
             false,

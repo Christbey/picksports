@@ -7,7 +7,10 @@ use App\Models\NFL\ResearchRevision;
 use App\Models\SportsGameContextReport;
 use App\Services\NFL\Research\ResearchPipeline;
 use App\Services\NFL\Research\ResearchRefreshPolicy;
+use App\Services\Sports\SportsDateWindowService;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Throwable;
 
 /** Read-only, batched board context. Never runs forecasts or paid research. */
 class NflPredictionBoardContext
@@ -77,11 +80,14 @@ class NflPredictionBoardContext
             // Prefer a fresh book; retain valid stored quotes for display when all books are stale.
             $quotes = $pregame
                 ? ($pipeline->quotes($game) ?: $pipeline->quotes($game, requireFresh: false))
-                : ($revision?->market ?? []);
+                : ($revision?->market ?: $this->storedPregameQuotes($game, $pipeline));
             $home = collect($quotes)->where('side', 'home')->sortBy(fn ($q) => match ($q['bookmaker'] ?? '') {
                 'draftkings' => 0, 'fanduel' => 1, default => 2,
             })->first();
-            $total = $pregame && $home ? collect($pipeline->additionalMarketQuotes($game, 'totals', requireFresh: false))
+            $totalQuotes = $pregame
+                ? $pipeline->additionalMarketQuotes($game, 'totals', requireFresh: false)
+                : $this->storedPregameQuotes($game, $pipeline, 'totals');
+            $total = $home ? collect($totalQuotes)
                 ->first(fn ($q) => $q['bookmaker'] === $home['bookmaker'] && $q['side'] === 'over') : null;
             $forecast = ! $final && $revision && ! $changed && ! $comparisonMissing && ! $expired && ! $unlinked ? $revision->revised : null;
 
@@ -106,11 +112,34 @@ class NflPredictionBoardContext
                     'bookmaker' => $home['bookmaker'] ?? null,
                     'observed_at' => $home['observed_at'] ?? null,
                     'historical' => ! $pregame,
-                    'spread_stale' => $pregame && $home && ! $pipeline->marketIsFresh($game, collect($quotes)->where('bookmaker', $home['bookmaker'])->values()->all()),
-                    'total_stale' => $pregame && $total && ! collect($pipeline->additionalMarketQuotes($game, 'totals'))->contains(fn ($q) => $q['bookmaker'] === $total['bookmaker'] && $q['side'] === 'over'),
+                    'spread_stale' => $home !== null && ! $pipeline->marketIsFresh($game, collect($quotes)->where('bookmaker', $home['bookmaker'])->values()->all()),
+                    'total_stale' => $total !== null && ! collect($pipeline->additionalMarketQuotes($game, 'totals'))->contains(fn ($q) => $q['bookmaker'] === $total['bookmaker'] && $q['side'] === 'over'),
                     'total_observed_at' => $total['observed_at'] ?? null,
                 ],
             ]];
         });
+    }
+
+    /** Only timestamped odds saved before kickoff may stand in for missing research market evidence. */
+    private function storedPregameQuotes(Game $game, ResearchPipeline $pipeline, string $market = 'spreads'): array
+    {
+        $kickoff = app(SportsDateWindowService::class)->gameDateTimeUtc($game->game_date, $game->game_time);
+        if (! $kickoff || $kickoff->isFuture() || ! $game->odds_updated_at || $game->odds_updated_at->gte($kickoff)) {
+            return [];
+        }
+        $quotes = $market === 'spreads'
+            ? $pipeline->quotes($game, requireFresh: false)
+            : $pipeline->additionalMarketQuotes($game, $market, requireFresh: false);
+
+        return collect($quotes)->groupBy('bookmaker')->filter(function ($pair) use ($kickoff): bool {
+            return $pair->every(function ($quote) use ($kickoff): bool {
+                try {
+                    return is_string($quote['observed_at'] ?? null)
+                        && Carbon::parse($quote['observed_at'])->lt($kickoff);
+                } catch (Throwable) {
+                    return false;
+                }
+            });
+        })->flatten(1)->values()->all();
     }
 }

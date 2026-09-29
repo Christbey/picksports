@@ -37,7 +37,7 @@ export function usePage() {
         get url() {
             return router.currentRoute.value.fullPath;
         },
-        get props() {
+        get props(): Partial<NonNullable<typeof session.context>> {
             return session.context ?? {};
         },
     };

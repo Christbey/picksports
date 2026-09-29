@@ -421,3 +421,15 @@ test('unmount during the first live refresh cannot install a late timer or visib
     assert.equal(intervals.size, 0);
     assert.equal(listeners.size, 0);
 });
+
+test('unchanged stored snapshots preserve rendered game state across background checks', async () => {
+    const stored = snapshot();
+    snapshotResult = async () => ({
+        data: { ...stored, generated_at: new Date().toISOString() },
+    });
+    await mount();
+    const previous = state.game.value;
+    await tickRefresh();
+    assert.equal(state.game.value, previous);
+    assert.equal(state.gameStatus.value, 'In progress');
+});

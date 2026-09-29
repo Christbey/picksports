@@ -230,7 +230,10 @@ export function useNflGamePage(gameId: number) {
     let refreshing = false;
     let lastStatsRefresh = 0;
 
-    const gameStatus = useGameStatus(() => currentGame.value.status);
+    const statusLabel = useGameStatus(() => currentGame.value.status);
+    const gameStatus = computed(() =>
+        statusLabel.value === 'Live' ? 'In progress' : statusLabel.value,
+    );
     const formatDate = (dateString: string, timeString?: string): string => {
         void timeString;
         return formatDateLong(dateString);
@@ -468,11 +471,28 @@ export function useNflGamePage(gameId: number) {
             );
             if (requestController.signal.aborted) return;
             if (!response?.data) throw new Error('Live snapshot unavailable');
-            liveSnapshot.value = response.data;
-            currentGame.value = {
-                ...currentGame.value,
-                ...response.data.game,
-            } as NflPageGame;
+            const previous = liveSnapshot.value;
+            if (
+                !previous ||
+                JSON.stringify([
+                    previous.game,
+                    previous.projection,
+                    previous.source_updated_at,
+                    previous.warning,
+                ]) !==
+                    JSON.stringify([
+                        response.data.game,
+                        response.data.projection,
+                        response.data.source_updated_at,
+                        response.data.warning,
+                    ])
+            ) {
+                liveSnapshot.value = response.data;
+                currentGame.value = {
+                    ...currentGame.value,
+                    ...response.data.game,
+                } as NflPageGame;
+            }
             liveRefreshFailed.value = false;
             currentTime.value = Date.now();
             if (

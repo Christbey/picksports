@@ -45,7 +45,7 @@ const mobileSections = {
 const sectionClass = (section: string) =>
     mobileSection.value === section
         ? 'min-w-0 space-y-4'
-        : 'hidden min-w-0 space-y-4 md:block';
+        : 'hidden min-w-0 space-y-4';
 </script>
 
 <template>
@@ -58,13 +58,13 @@ const sectionClass = (section: string) =>
         <template #afterHero>
             <nav
                 aria-label="Game sections"
-                class="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 grid grid-cols-4 gap-1 rounded-xl border bg-background/95 p-1 shadow-lg backdrop-blur md:hidden"
+                class="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 grid grid-cols-4 gap-1 rounded-xl border bg-background/95 p-1 shadow-lg backdrop-blur md:static md:inset-auto md:mb-4 md:flex md:w-fit md:gap-2 md:shadow-none"
             >
                 <button
                     v-for="(label, key) in mobileSections"
                     :key="key"
                     type="button"
-                    class="min-h-11 rounded-lg px-1 py-2 text-sm font-medium"
+                    class="min-h-11 rounded-lg px-4 py-2 text-sm font-medium"
                     :class="
                         mobileSection === key
                             ? 'bg-primary text-primary-foreground'
@@ -76,6 +76,21 @@ const sectionClass = (section: string) =>
                     {{ label }}
                 </button>
             </nav>
+            <p class="text-xs text-muted-foreground">
+                Latest saved game information · updates may be delayed.<span
+                    v-if="
+                        analysisSectionProps.livePredictionData?.sourceUpdatedAt
+                    "
+                >
+                    Updated
+                    {{
+                        new Date(
+                            analysisSectionProps.livePredictionData
+                                .sourceUpdatedAt,
+                        ).toLocaleString()
+                    }}.</span
+                >
+            </p>
             <div ref="mobileContent" class="scroll-mt-36 md:hidden" />
             <div :class="sectionClass('overview')">
                 <NflGameEnhancements v-bind="predictionSectionProps" />
@@ -130,24 +145,15 @@ const sectionClass = (section: string) =>
         <template #afterLinescore>
             <div
                 :class="
-                    mobileSection === 'overview' || mobileSection === 'research'
+                    mobileSection === 'research'
                         ? 'min-w-0 space-y-3'
-                        : 'hidden min-w-0 space-y-3 md:block'
+                        : 'hidden min-w-0 space-y-3'
                 "
             >
                 <NflResearchBrief
                     :game-id="gameId"
                     :game-status="pageProps.game.status"
-                    :mobile-compact="mobileSection === 'overview'"
                 />
-                <button
-                    v-if="mobileSection === 'overview'"
-                    type="button"
-                    class="min-h-11 w-full rounded-lg border px-4 py-3 text-left text-sm font-medium md:hidden"
-                    @click="selectSection('research')"
-                >
-                    Read evidence &amp; counterarguments →
-                </button>
             </div>
             <div :class="sectionClass('overview')">
                 <BettingPlanCard

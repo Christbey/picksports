@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useViewerAccess } from '@/composables/useViewerAccess';
 import LiveBettingAnalysisCard from '@/components/game-page/LiveBettingAnalysisCard.vue';
 import NFLBoxScoreCard from '@/components/game-page/NFLBoxScoreCard.vue';
 import NFLPredictionModelCard from '@/components/game-page/NFLPredictionModelCard.vue';
@@ -12,6 +13,7 @@ import type {
     GamePageGame,
 } from '@/types';
 
+const { isAdmin } = useViewerAccess();
 const props = withDefaults(
     defineProps<{
         section: 'prediction' | 'analysis' | 'recent';
@@ -116,19 +118,34 @@ const props = withDefaults(
             />
         </details>
 
+        <details
+            v-if="isAdmin && game?.status !== 'STATUS_FINAL'"
+            class="rounded-xl border bg-card p-4"
+        >
+            <summary
+                class="min-h-11 cursor-pointer content-center text-sm font-medium"
+            >
+                Admin · model diagnostics
+            </summary>
+            <LiveBettingAnalysisCard
+                :has-live-prediction="hasLivePrediction"
+                :betting-value="prediction?.betting_value"
+                :live-prediction="livePredictionData"
+                :prediction-analysis="prediction?.prediction_analysis"
+                :winner-correct="prediction?.winner_correct ?? null"
+                :actual-total="
+                    prediction?.actual_total != null
+                        ? Number(prediction.actual_total)
+                        : null
+                "
+                sportsbook-label="DraftKings"
+            />
+        </details>
         <LiveBettingAnalysisCard
-            v-if="game?.status !== 'STATUS_FINAL'"
-            :has-live-prediction="hasLivePrediction"
+            v-else-if="game?.status !== 'STATUS_FINAL'"
+            :has-live-prediction="false"
             :betting-value="prediction?.betting_value"
-            :live-prediction="livePredictionData"
             :prediction-analysis="prediction?.prediction_analysis"
-            :winner-correct="prediction?.winner_correct ?? null"
-            :actual-total="
-                prediction?.actual_total != null
-                    ? Number(prediction.actual_total)
-                    : null
-            "
-            sportsbook-label="DraftKings"
         />
     </template>
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { CalendarDays, RefreshCw, Search } from 'lucide-vue-next';
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import NflMatchupCard from '@/components/nfl/NflMatchupCard.vue';
 import NflMatchupDetailDrawer from '@/components/nfl/NflMatchupDetailDrawer.vue';
 import NflSignalsPanel from '@/components/nfl/NflSignalsPanel.vue';
@@ -23,6 +23,12 @@ type BoardFilter =
     | 'finals';
 
 const api = useApiV2Client();
+let boardRequest: AbortController | undefined;
+let boardVersion = 0;
+onBeforeUnmount(() => {
+    boardVersion++;
+    boardRequest?.abort();
+});
 
 const loading = ref(true);
 const refreshing = ref(false);
@@ -288,10 +294,12 @@ async function fetchAvailableFilters(): Promise<void> {
 }
 
 async function fetchAvailableDates(): Promise<void> {
+    const season = selectedSeason.value;
     const datesPayload = await api.predictions.availableDates('nfl', {
         query: selectedSeason.value ? { season: selectedSeason.value } : {},
     });
 
+    if (season !== selectedSeason.value) return;
     availableDates.value = Array.isArray(datesPayload?.data)
         ? datesPayload.data
         : [];
@@ -318,6 +326,9 @@ async function loadBoard(): Promise<void> {
         return;
     }
 
+    const version = ++boardVersion;
+    boardRequest?.abort();
+    boardRequest = new AbortController();
     refreshing.value = true;
     error.value = null;
 
@@ -332,7 +343,9 @@ async function loadBoard(): Promise<void> {
 
         const predictionPayload = await api.predictions.index('nfl', {
             query,
+            init: { signal: boardRequest.signal },
         });
+        if (version !== boardVersion) return;
 
         predictions.value = (
             (
@@ -347,11 +360,14 @@ async function loadBoard(): Promise<void> {
             if (!selectedPrediction.value) detailOpen.value = false;
         }
     } catch (e) {
+        if (version !== boardVersion) return;
         error.value =
             e instanceof Error ? e.message : 'Unable to load NFL board';
     } finally {
-        refreshing.value = false;
-        loading.value = false;
+        if (version === boardVersion) {
+            refreshing.value = false;
+            loading.value = false;
+        }
     }
 }
 
@@ -362,13 +378,28 @@ async function refreshBoard(): Promise<void> {
 watch(selectedSeason, async () => {
     if (bootstrapping.value) return;
 
+    boardVersion++;
+    boardRequest?.abort();
+    const season = selectedSeason.value;
     selectedDate.value = '';
-    await fetchAvailableDates();
-    await loadBoard();
+    refreshing.value = true;
+    try {
+        await fetchAvailableDates();
+        if (season === selectedSeason.value && !selectedDate.value)
+            await loadBoard();
+    } catch (cause) {
+        if (season === selectedSeason.value) {
+            error.value =
+                cause instanceof Error
+                    ? cause.message
+                    : 'Unable to load available dates';
+            refreshing.value = false;
+        }
+    }
 });
 
 watch(selectedDate, async () => {
-    if (bootstrapping.value) return;
+    if (bootstrapping.value || !selectedDate.value) return;
 
     await loadBoard();
 });
@@ -388,12 +419,11 @@ onMounted(async () => {
 </script>
 
 <template>
-    <section class="space-y-5">
+    <section class="space-y-5" :aria-busy="refreshing">
         <header>
             <h1 class="text-xl font-semibold">NFL predictions</h1>
             <p class="mt-1 text-sm text-muted-foreground">
-                Model winners and spread leans. Research status is separate from
-                bet approval.
+                Matchup forecasts and stored lines. Updates may be delayed.
             </p>
         </header>
         <div v-if="loading" class="space-y-4">

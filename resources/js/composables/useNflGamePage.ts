@@ -1,3 +1,4 @@
+import type { ApiV2Stat } from '@/types';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { flattenApiV2Stats } from '@/composables/useApiV2StatsAdapter';
@@ -338,10 +339,21 @@ export function useNflGamePage(gameId: number) {
             const requestOptions = {
                 init: { signal: requestController.signal },
             };
-            const [gameData, predictionData] = await Promise.all([
-                api.games.show('nfl', gameId, requestOptions),
-                api.predictions.forGame('nfl', gameId, requestOptions),
-            ]);
+            const page = await api.games.page<{
+                game: NflPageGame;
+                prediction: Record<string, unknown> | null;
+                team_stats: ApiV2Stat[];
+            }>('nfl', gameId, requestOptions);
+            if (!page?.data?.game) throw new Error('Game data is unavailable.');
+            const gameData = { data: page.data.game };
+            const predictionData = { data: page?.data?.prediction };
+            const stats = flattenApiV2Stats(
+                page?.data?.team_stats ?? [],
+            ) as unknown as NflTeamStats[];
+            homeTeamStats.value =
+                stats.find((row) => row.team_type === 'home') ?? null;
+            awayTeamStats.value =
+                stats.find((row) => row.team_type === 'away') ?? null;
 
             if (gameData?.data) {
                 const fullGame = gameData.data as unknown as NflPageGame;
@@ -361,6 +373,8 @@ export function useNflGamePage(gameId: number) {
                     ? (predictionData.data[0] ?? null)
                     : predictionData.data;
                 prediction.value = normalizePrediction(raw);
+            } else {
+                prediction.value = null;
             }
 
             loading.value = false;
@@ -376,26 +390,7 @@ export function useNflGamePage(gameId: number) {
                 before_date:
                     currentGame.value.starts_at ?? currentGame.value.game_date,
             };
-            const supplemental: Promise<unknown>[] = [
-                api.stats
-                    .teams('nfl', {
-                        query: { game_id: gameId, per_page: 100 },
-                        init: { signal: requestController.signal },
-                    })
-                    .then((response) => {
-                        const stats = flattenApiV2Stats(
-                            response?.data,
-                        ) as unknown as NflTeamStats[];
-                        homeTeamStats.value =
-                            stats.find(
-                                (statsRow) => statsRow.team_type === 'home',
-                            ) ?? null;
-                        awayTeamStats.value =
-                            stats.find(
-                                (statsRow) => statsRow.team_type === 'away',
-                            ) ?? null;
-                    }),
-            ];
+            const supplemental: Promise<unknown>[] = [];
 
             const addTeamContext = (
                 team: number | string | null | undefined,

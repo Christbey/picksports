@@ -3,8 +3,7 @@ import {
     mutateJson,
     type ApiMutationOptions,
 } from '@/composables/useApiClient';
-import v2 from '@/routes/v2';
-import type { RouteQueryOptions } from '@/wayfinder';
+import { apiRoute, type RouteQueryOptions } from '@/lib/apiV2Routes';
 import type {
     ApiV2CollectionResponse,
     ApiV2FuturesOdd,
@@ -63,7 +62,10 @@ export function useApiV2Client() {
         liveScoreboard: {
             show: (options: RequestOptions = {}) =>
                 item<ApiV2LiveScoreboardPayload>(
-                    v2.liveScoreboard.show.url(routeOptions(options.query)),
+                    apiRoute(
+                        'liveScoreboard.show',
+                        routeOptions(options.query),
+                    ),
                     options,
                 ),
         },
@@ -71,7 +73,7 @@ export function useApiV2Client() {
         userBets: {
             index: <T = unknown>(options: RequestOptions = {}) =>
                 get<T>(
-                    v2.userBets.index.url(routeOptions(options.query)),
+                    apiRoute('userBets.index', routeOptions(options.query)),
                     options,
                 ),
             store: <T = unknown>(
@@ -79,7 +81,7 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 mutate<T>(
-                    v2.userBets.store.url(routeOptions(options.query)),
+                    apiRoute('userBets.store', routeOptions(options.query)),
                     'POST',
                     payload,
                     options,
@@ -90,7 +92,11 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 mutate<T>(
-                    v2.userBets.update.url(bet, routeOptions(options.query)),
+                    apiRoute(
+                        'userBets.update',
+                        bet,
+                        routeOptions(options.query),
+                    ),
                     'PUT',
                     payload,
                     options,
@@ -100,24 +106,31 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 mutate<T>(
-                    v2.userBets.destroy.url(bet, routeOptions(options.query)),
+                    apiRoute(
+                        'userBets.destroy',
+                        bet,
+                        routeOptions(options.query),
+                    ),
                     'DELETE',
                     undefined,
                     options,
                 ),
             exportUrl: (query?: ApiV2Query) =>
-                v2.userBets.export.url(routeOptions(query)),
+                apiRoute('userBets.export', routeOptions(query)),
         },
 
         cbbBrackets: {
             index: <T = unknown>(options: RequestOptions = {}) =>
                 get<T>(
-                    v2.cbbBrackets.index.url(routeOptions(options.query)),
+                    apiRoute('cbbBrackets.index', routeOptions(options.query)),
                     options,
                 ),
             leaderboard: <T = unknown>(options: RequestOptions = {}) =>
                 get<T>(
-                    v2.cbbBrackets.leaderboard.url(routeOptions(options.query)),
+                    apiRoute(
+                        'cbbBrackets.leaderboard',
+                        routeOptions(options.query),
+                    ),
                     options,
                 ),
             show: <T = unknown>(
@@ -125,7 +138,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 get<T>(
-                    v2.cbbBrackets.show.url(
+                    apiRoute(
+                        'cbbBrackets.show',
                         publicId,
                         routeOptions(options.query),
                     ),
@@ -133,7 +147,8 @@ export function useApiV2Client() {
                 ),
             current: <T = unknown>(options: RequestOptions = {}) =>
                 get<T>(
-                    v2.cbbBrackets.current.show.url(
+                    apiRoute(
+                        'cbbBrackets.current.show',
                         routeOptions(options.query),
                     ),
                     options,
@@ -143,7 +158,7 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 mutate<T>(
-                    v2.cbbBrackets.store.url(routeOptions(options.query)),
+                    apiRoute('cbbBrackets.store', routeOptions(options.query)),
                     'POST',
                     payload,
                     options,
@@ -154,7 +169,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 mutate<T>(
-                    v2.cbbBrackets.update.url(
+                    apiRoute(
+                        'cbbBrackets.update',
                         publicId,
                         routeOptions(options.query),
                     ),
@@ -167,7 +183,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 mutate<T>(
-                    v2.cbbBrackets.current.upsert.url(
+                    apiRoute(
+                        'cbbBrackets.current.upsert',
                         routeOptions(options.query),
                     ),
                     'PUT',
@@ -179,7 +196,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 mutate<T>(
-                    v2.cbbBrackets.destroy.url(
+                    apiRoute(
+                        'cbbBrackets.destroy',
                         publicId,
                         routeOptions(options.query),
                     ),
@@ -192,7 +210,7 @@ export function useApiV2Client() {
         groups: {
             index: <T = unknown>(options: RequestOptions = {}) =>
                 get<T>(
-                    v2.groups.index.url(routeOptions(options.query)),
+                    apiRoute('groups.index', routeOptions(options.query)),
                     options,
                 ),
             store: <T = unknown>(
@@ -200,7 +218,7 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 mutate<T>(
-                    v2.groups.store.url(routeOptions(options.query)),
+                    apiRoute('groups.store', routeOptions(options.query)),
                     'POST',
                     payload,
                     options,
@@ -211,7 +229,11 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 mutate<T>(
-                    v2.groups.update.url(publicId, routeOptions(options.query)),
+                    apiRoute(
+                        'groups.update',
+                        publicId,
+                        routeOptions(options.query),
+                    ),
                     'PATCH',
                     payload,
                     options,
@@ -221,7 +243,10 @@ export function useApiV2Client() {
         alertPreferences: {
             show: <T = unknown>(options: RequestOptions = {}) =>
                 get<T>(
-                    v2.alertPreferences.show.url(routeOptions(options.query)),
+                    apiRoute(
+                        'alertPreferences.show',
+                        routeOptions(options.query),
+                    ),
                     options,
                 ),
             store: <T = unknown>(
@@ -229,7 +254,10 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 mutate<T>(
-                    v2.alertPreferences.store.url(routeOptions(options.query)),
+                    apiRoute(
+                        'alertPreferences.store',
+                        routeOptions(options.query),
+                    ),
                     'POST',
                     payload,
                     options,
@@ -239,7 +267,10 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 mutate<T>(
-                    v2.alertPreferences.update.url(routeOptions(options.query)),
+                    apiRoute(
+                        'alertPreferences.update',
+                        routeOptions(options.query),
+                    ),
                     'PUT',
                     payload,
                     options,
@@ -249,12 +280,12 @@ export function useApiV2Client() {
         sports: {
             index: (options: RequestOptions = {}) =>
                 collection<ApiV2Sport>(
-                    v2.sports.index.url(routeOptions(options.query)),
+                    apiRoute('sports.index', routeOptions(options.query)),
                     options,
                 ),
             show: (sport: ApiV2SportSlug, options: RequestOptions = {}) =>
                 item<ApiV2Sport>(
-                    v2.sports.show.url(sport, routeOptions(options.query)),
+                    apiRoute('sports.show', sport, routeOptions(options.query)),
                     options,
                 ),
         },
@@ -262,25 +293,51 @@ export function useApiV2Client() {
         nflResearchRetry: {
             show: (game: ApiV2Id, options: RequestOptions = {}) =>
                 item<ApiV2Record>(
-                    v2.admin.nfl.researchRetry.show.url({ game }),
+                    apiRoute('admin.nfl.researchRetry.show', { game }),
                     options,
                 ),
             store: (game: ApiV2Id) =>
                 mutate<ApiV2ItemResponse<ApiV2Record>>(
-                    v2.admin.nfl.researchRetry.store.url({ game }),
+                    apiRoute('admin.nfl.researchRetry.store', { game }),
                     'POST',
                     {},
                 ),
         },
 
         games: {
+            matchupSignals: <T = ApiV2Record>(
+                sport: ApiV2SportSlug,
+                game: ApiV2Id,
+                options: RequestOptions = {},
+            ) =>
+                item<T>(
+                    apiRoute(
+                        'sports.games.matchupSignals.show',
+                        { sport, game },
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+            marketHistory: <T = ApiV2Record>(
+                sport: ApiV2SportSlug,
+                game: ApiV2Id,
+                options: RequestOptions = {},
+            ) =>
+                item<T>(
+                    apiRoute(
+                        'sports.games.marketHistory.show',
+                        { sport, game },
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
             research: <T = ApiV2Record>(
                 sport: ApiV2SportSlug,
                 game: ApiV2Id,
                 options: RequestOptions = {},
             ) =>
                 item<T>(
-                    v2.sports.games.research.show.url({ sport, game }),
+                    apiRoute('sports.games.research.show', { sport, game }),
                     options,
                 ),
             liveSnapshot: <T = ApiV2Record>(
@@ -289,12 +346,13 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 item<T>(
-                    v2.sports.games.liveSnapshot.show.url({ sport, game }),
+                    apiRoute('sports.games.liveSnapshot.show', { sport, game }),
                     options,
                 ),
             index: (sport: ApiV2SportSlug, options: RequestOptions = {}) =>
                 collection<ApiV2Game>(
-                    v2.sports.games.index.url(
+                    apiRoute(
+                        'sports.games.index',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -306,7 +364,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 item<ApiV2Game>(
-                    v2.sports.games.show.url(
+                    apiRoute(
+                        'sports.games.show',
                         { sport, game },
                         routeOptions(options.query),
                     ),
@@ -318,7 +377,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 item<T>(
-                    v2.sports.games.page.show.url(
+                    apiRoute(
+                        'sports.games.page.show',
                         { sport, game },
                         routeOptions(options.query),
                     ),
@@ -330,7 +390,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 item<T>(
-                    v2.sports.games.trends.show.url(
+                    apiRoute(
+                        'sports.games.trends.show',
                         { sport, game },
                         routeOptions(options.query),
                     ),
@@ -342,7 +403,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 item<GameDepthChartsData>(
-                    v2.sports.games.depthCharts.show.url(
+                    apiRoute(
+                        'sports.games.depthCharts.show',
                         { sport, game },
                         routeOptions(options.query),
                     ),
@@ -353,7 +415,8 @@ export function useApiV2Client() {
         teams: {
             index: (sport: ApiV2SportSlug, options: RequestOptions = {}) =>
                 collection<ApiV2Team>(
-                    v2.sports.teams.index.url(
+                    apiRoute(
+                        'sports.teams.index',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -365,7 +428,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 item<ApiV2Team>(
-                    v2.sports.teams.show.url(
+                    apiRoute(
+                        'sports.teams.show',
                         { sport, team },
                         routeOptions(options.query),
                     ),
@@ -377,7 +441,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 collection<ApiV2Player>(
-                    v2.sports.teams.players.index.url(
+                    apiRoute(
+                        'sports.teams.players.index',
                         { sport, team },
                         routeOptions(options.query),
                     ),
@@ -389,7 +454,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 collection<ApiV2FuturesOdd>(
-                    v2.sports.teams.futures.index.url(
+                    apiRoute(
+                        'sports.teams.futures.index',
                         { sport, team },
                         routeOptions(options.query),
                     ),
@@ -401,7 +467,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 collection<ApiV2Game>(
-                    v2.sports.teams.games.index.url(
+                    apiRoute(
+                        'sports.teams.games.index',
                         { sport, team },
                         routeOptions(options.query),
                     ),
@@ -413,7 +480,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 item<ApiV2TeamMetric>(
-                    v2.sports.teams.metrics.show.url(
+                    apiRoute(
+                        'sports.teams.metrics.show',
                         { sport, team },
                         routeOptions(options.query),
                     ),
@@ -425,7 +493,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 item<ApiV2Record>(
-                    v2.sports.teams.trends.show.url(
+                    apiRoute(
+                        'sports.teams.trends.show',
                         { sport, team },
                         routeOptions(options.query),
                     ),
@@ -437,7 +506,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 item<T>(
-                    v2.sports.teams.stats.seasonAverages.show.url(
+                    apiRoute(
+                        'sports.teams.stats.seasonAverages.show',
                         { sport, team },
                         routeOptions(options.query),
                     ),
@@ -449,7 +519,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 item<GameDepthChartTeam>(
-                    v2.sports.teams.depthCharts.show.url(
+                    apiRoute(
+                        'sports.teams.depthCharts.show',
                         { sport, team },
                         routeOptions(options.query),
                     ),
@@ -460,7 +531,8 @@ export function useApiV2Client() {
         players: {
             index: (sport: ApiV2SportSlug, options: RequestOptions = {}) =>
                 collection<ApiV2Player>(
-                    v2.sports.players.index.url(
+                    apiRoute(
+                        'sports.players.index',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -472,7 +544,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 item<ApiV2Player>(
-                    v2.sports.players.show.url(
+                    apiRoute(
+                        'sports.players.show',
                         { sport, player },
                         routeOptions(options.query),
                     ),
@@ -484,7 +557,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 collection<ApiV2PlayerProp>(
-                    v2.sports.players.playerProps.index.url(
+                    apiRoute(
+                        'sports.players.playerProps.index',
                         { sport, player },
                         routeOptions(options.query),
                     ),
@@ -495,7 +569,8 @@ export function useApiV2Client() {
         predictions: {
             index: (sport: ApiV2SportSlug, options: RequestOptions = {}) =>
                 collection<ApiV2Prediction>(
-                    v2.sports.predictions.index.url(
+                    apiRoute(
+                        'sports.predictions.index',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -506,7 +581,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 get<ApiV2ItemResponse<number[]>>(
-                    v2.sports.predictions.availableSeasons.url(
+                    apiRoute(
+                        'sports.predictions.availableSeasons',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -517,7 +593,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 get<ApiV2ItemResponse<string[]>>(
-                    v2.sports.predictions.availableDates.url(
+                    apiRoute(
+                        'sports.predictions.availableDates',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -529,7 +606,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 item<ApiV2Prediction>(
-                    v2.sports.predictions.show.url(
+                    apiRoute(
+                        'sports.predictions.show',
                         { sport, prediction },
                         routeOptions(options.query),
                     ),
@@ -541,7 +619,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 item<ApiV2Prediction>(
-                    v2.sports.games.prediction.show.url(
+                    apiRoute(
+                        'sports.games.prediction.show',
                         { sport, game },
                         routeOptions(options.query),
                     ),
@@ -555,7 +634,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 collection<T>(
-                    v2.sports.forecasts.index.url(
+                    apiRoute(
+                        'sports.forecasts.index',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -569,7 +649,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 collection<T>(
-                    v2.sports.injuries.index.url(
+                    apiRoute(
+                        'sports.injuries.index',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -583,7 +664,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 item<T>(
-                    v2.sports.signals.index.url(
+                    apiRoute(
+                        'sports.signals.index',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -615,7 +697,8 @@ export function useApiV2Client() {
         stats: {
             players: (sport: ApiV2SportSlug, options: RequestOptions = {}) =>
                 collection<ApiV2Stat>(
-                    v2.sports.stats.player.index.url(
+                    apiRoute(
+                        'sports.stats.player.index',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -626,7 +709,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 get<ApiV2ItemResponse<number[]>>(
-                    v2.sports.stats.player.availableSeasons.url(
+                    apiRoute(
+                        'sports.stats.player.availableSeasons',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -637,7 +721,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 get<ApiV2ItemResponse<string[]>>(
-                    v2.sports.stats.player.availableDates.url(
+                    apiRoute(
+                        'sports.stats.player.availableDates',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -645,7 +730,8 @@ export function useApiV2Client() {
                 ),
             teams: (sport: ApiV2SportSlug, options: RequestOptions = {}) =>
                 collection<ApiV2Stat>(
-                    v2.sports.stats.team.index.url(
+                    apiRoute(
+                        'sports.stats.team.index',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -656,7 +742,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 collection<T>(
-                    v2.sports.stats.team.seasonAverages.index.url(
+                    apiRoute(
+                        'sports.stats.team.seasonAverages.index',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -667,7 +754,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 get<ApiV2ItemResponse<number[]>>(
-                    v2.sports.stats.team.availableSeasons.url(
+                    apiRoute(
+                        'sports.stats.team.availableSeasons',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -678,7 +766,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 get<ApiV2ItemResponse<string[]>>(
-                    v2.sports.stats.team.availableDates.url(
+                    apiRoute(
+                        'sports.stats.team.availableDates',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -689,7 +778,8 @@ export function useApiV2Client() {
         metrics: {
             teams: (sport: ApiV2SportSlug, options: RequestOptions = {}) =>
                 collection<ApiV2TeamMetric>(
-                    v2.sports.metrics.teams.index.url(
+                    apiRoute(
+                        'sports.metrics.teams.index',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -700,7 +790,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 get<ApiV2ItemResponse<number[]>>(
-                    v2.sports.metrics.teams.availableSeasons.url(
+                    apiRoute(
+                        'sports.metrics.teams.availableSeasons',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -711,7 +802,8 @@ export function useApiV2Client() {
         leaderboards: {
             players: (sport: ApiV2SportSlug, options: RequestOptions = {}) =>
                 collection<ApiV2PlayerLeaderboardRow>(
-                    v2.sports.leaderboards.players.index.url(
+                    apiRoute(
+                        'sports.leaderboards.players.index',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -722,7 +814,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 get<ApiV2ItemResponse<number[]>>(
-                    v2.sports.leaderboards.players.availableSeasons.url(
+                    apiRoute(
+                        'sports.leaderboards.players.availableSeasons',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -736,7 +829,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 collection<ApiV2PlayerProp>(
-                    v2.sports.markets.playerProps.index.url(
+                    apiRoute(
+                        'sports.markets.playerProps.index',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -744,7 +838,8 @@ export function useApiV2Client() {
                 ),
             futures: (sport: ApiV2SportSlug, options: RequestOptions = {}) =>
                 collection<ApiV2FuturesOdd>(
-                    v2.sports.markets.futures.index.url(
+                    apiRoute(
+                        'sports.markets.futures.index',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -755,7 +850,8 @@ export function useApiV2Client() {
         playerProps: {
             index: (sport: ApiV2SportSlug, options: RequestOptions = {}) =>
                 collection<ApiV2PlayerProp>(
-                    v2.sports.playerProps.index.url(
+                    apiRoute(
+                        'sports.playerProps.index',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -766,7 +862,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 get<T>(
-                    v2.sports.playerProps.board.url(
+                    apiRoute(
+                        'sports.playerProps.board',
                         sport,
                         routeOptions(options.query),
                     ),
@@ -778,7 +875,8 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 collection<ApiV2PlayerProp>(
-                    v2.sports.games.playerProps.index.url(
+                    apiRoute(
+                        'sports.games.playerProps.index',
                         { sport, game },
                         routeOptions(options.query),
                     ),
@@ -789,7 +887,10 @@ export function useApiV2Client() {
         admin: {
             payloadInspector: (options: RequestOptions = {}) =>
                 item<ApiV2PayloadInspector>(
-                    v2.admin.payloadInspector.url(routeOptions(options.query)),
+                    apiRoute(
+                        'admin.payloadInspector',
+                        routeOptions(options.query),
+                    ),
                     options,
                 ),
         },

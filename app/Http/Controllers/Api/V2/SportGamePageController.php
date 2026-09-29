@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V2\SportGameResource;
 use App\Http\Resources\Api\V2\SportPredictionResource;
 use App\Http\Resources\Api\V2\SportTeamMetricResource;
+use App\Services\Api\V2\NflGamePageQuery;
 use App\Services\Api\V2\SportContext;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportGameQuery;
@@ -29,9 +30,13 @@ class SportGamePageController extends Controller
         SportPredictionPresentationService $presentations,
         SportTeamMetricQuery $metrics,
         GameMatchupContextService $matchupContext,
+        NflGamePageQuery $nflPage,
     ): JsonResponse {
         $context = $sports->resolve($sport);
-        abort_unless($context->slug === 'mlb', 404, 'The composite game page is currently available for MLB.');
+        if ($context->slug === 'nfl') {
+            return response()->json($nflPage->get($context, $game, $request));
+        }
+        abort_unless($context->slug === 'mlb', 404, 'The composite game page is currently available for MLB and NFL.');
 
         $resolvedGame = $games->find($context, $game, $request->user(), 'page');
         $this->hydrateStartingPitchers($resolvedGame, $context->models['player']);

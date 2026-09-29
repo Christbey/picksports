@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3';
+import { Link } from '@/platform';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { RecentGameListItem } from '@/types';
 import { gameOutcome } from '@/lib/gameOutcome';

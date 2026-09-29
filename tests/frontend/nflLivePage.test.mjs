@@ -139,7 +139,18 @@ beforeEach(() => {
         };
     globalThis.__nflLivePageApi = {
         games: {
-            show: track('show', { data: game }),
+            page: track('page', {
+                data: {
+                    game,
+                    prediction: {
+                        game_id: 1722,
+                        win_probability: 70,
+                        predicted_spread: 7,
+                        predicted_total: 45,
+                    },
+                    team_stats: [],
+                },
+            }),
             liveSnapshot: track('liveSnapshot', () => snapshotResult()),
         },
         predictions: {
@@ -244,12 +255,16 @@ test('recent record counts shutouts and ties without inventing losses for missin
 });
 
 test('normalization preserves unavailable model values instead of inventing zero forecasts', async () => {
-    globalThis.__nflLivePageApi.predictions.forGame = async () => ({
+    globalThis.__nflLivePageApi.games.page = async () => ({
         data: {
-            game_id: 1722,
-            predicted_spread: null,
-            predicted_total: null,
-            win_probability: null,
+            game,
+            team_stats: [],
+            prediction: {
+                game_id: 1722,
+                predicted_spread: null,
+                predicted_total: null,
+                win_probability: null,
+            },
         },
     });
     await mount();
@@ -259,8 +274,12 @@ test('normalization preserves unavailable model values instead of inventing zero
 });
 
 test('missing kickoff cannot trigger an unbounded recent-game query', async () => {
-    globalThis.__nflLivePageApi.games.show = async () => ({
-        data: { ...game, starts_at: null },
+    globalThis.__nflLivePageApi.games.page = async () => ({
+        data: {
+            game: { ...game, starts_at: null },
+            prediction: null,
+            team_stats: [],
+        },
     });
     await mount();
     assert.equal(count('recent'), 0);
@@ -286,8 +305,9 @@ test('polling assigns a coherent score/projection snapshot without reloading exp
     assert.equal(state.livePredictionData.value.awayScore, 13);
     assert.equal(state.livePredictionData.value.period, 4);
     assert.equal(state.livePredictionData.value.liveWinProbability, 92);
-    assert.equal(count('show'), 1);
-    assert.equal(count('prediction'), 1);
+    assert.equal(count('page'), 1);
+    assert.equal(count('show'), 0);
+    assert.equal(count('prediction'), 0);
     assert.deepEqual(
         {
             trends: count('trends'),
@@ -351,7 +371,7 @@ test('unmount aborts all requests and removes refresh timers and visibility list
     const signals = calls
         .map(({ args }) => args.at(-1)?.init?.signal)
         .filter(Boolean);
-    assert.ok(signals.length >= 7);
+    assert.ok(signals.length >= 6);
     assert.ok(signals.every((signal) => !signal.aborted));
     app.unmount();
     app = undefined;

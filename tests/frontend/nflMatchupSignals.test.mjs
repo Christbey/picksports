@@ -212,7 +212,9 @@ test('lazy wrapper fetches once when opened and exposes retry on failure', async
     let calls = 0;
     globalThis.fetch = async () => {
         calls++;
-        return { ok: true, json: async () => ({ data: fixture() }) };
+        return new Response(JSON.stringify({ data: fixture() }), {
+            headers: { 'Content-Type': 'application/json' },
+        });
     };
     try {
         await renderToString(createSSRApp(wrapper, { gameId: 1722 }));
@@ -228,7 +230,7 @@ test('lazy wrapper fetches once when opened and exposes retry on failure', async
         bindings.data.value = null;
         globalThis.fetch = async () => {
             calls++;
-            return { ok: false };
+            return new Response(null, { status: 503 });
         };
         await bindings.load();
         assert.match(bindings.error.value, /No result is inferred/);

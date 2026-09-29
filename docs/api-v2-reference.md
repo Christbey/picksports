@@ -636,3 +636,17 @@ application callers use:
 
 The application Reporting-Endpoints header points to the new report URLs.
 No compatibility redirects or V1 logging commands remain.
+
+### Standalone Vue browser contracts
+
+`GET /api/v2/auth/context` requires the existing V2 authentication middleware and
+returns `data.name`, `data.auth.user` and `data.subscription`. It never returns
+session tokens, passwords or two-factor secrets and is private/no-store.
+Standalone browser login uses Fortify cookie sessions and CSRF, not token login.
+
+`GET /api/v2/sports/nfl/games/{game}/page` returns `data.game`,
+`data.prediction` (nullable), and `data.team_stats`. Prediction fields use the
+same subscription gates and canonical-reader selection as `/prediction`.
+Supplemental team evidence, research, depth charts, independent analysis and
+market history remain separate requests, listed in `meta.deferred`. MLB retains
+its existing composite page contract.

@@ -8,6 +8,7 @@ use App\Http\Resources\Api\V2\CanonicalSportPredictionResource;
 use App\Http\Resources\Api\V2\SportPredictionResource;
 use App\Services\Api\V2\CanonicalPredictionPresentationService;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
+use App\Services\Api\V2\GamePredictionPayload;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportPredictionPresentationService;
 use App\Services\Api\V2\SportPredictionQuery;
@@ -156,38 +157,14 @@ class SportPredictionController extends Controller
         string $game,
         Request $request,
         SportContextResolver $sports,
-        SportPredictionQuery $predictions,
-        SportPredictionPresentationService $presentations,
-        CanonicalSportPredictionQuery $canonicalPredictions,
-        CanonicalPredictionPresentationService $canonicalPresentations,
+        GamePredictionPayload $predictions,
     ): JsonResponse {
         $context = $sports->resolve($sport);
-
-        if ($canonicalPredictions->supports($context)) {
-            $resolvedPrediction = $canonicalPredictions->findForGame($context, $game, $request->user());
-
-            return response()->json([
-                'data' => new CanonicalSportPredictionResource(
-                    $resolvedPrediction,
-                    $context,
-                    $canonicalPresentations->forPrediction($resolvedPrediction),
-                ),
-                'meta' => $this->itemMeta($context->slug) + [
-                    'game_id' => $resolvedPrediction->sportEvent?->getRelation($context->slug.'Game')?->getKey(),
-                    'prediction_source' => 'canonical',
-                ],
-            ]);
-        }
-
-        $resolvedPrediction = $predictions->findForGame($context, $game, $request->user());
+        $payload = $predictions->forGame($context, $game, $request);
 
         return response()->json([
-            'data' => new SportPredictionResource(
-                $resolvedPrediction,
-                $context,
-                $presentations->forPrediction($context, $resolvedPrediction),
-            ),
-            'meta' => $this->itemMeta($context->slug) + ['game_id' => (int) $game],
+            'data' => $payload['data'],
+            'meta' => $this->itemMeta($context->slug) + $payload['meta'],
         ]);
     }
 

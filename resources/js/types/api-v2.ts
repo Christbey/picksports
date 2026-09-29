@@ -1,4 +1,4 @@
-import type { QueryParams } from '@/wayfinder';
+import type { Query as QueryParams } from '@/lib/apiV2Routes';
 import type {
     MarketAwareProjection,
     PredictionRecommendation,

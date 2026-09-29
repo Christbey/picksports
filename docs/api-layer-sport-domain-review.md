@@ -13,6 +13,52 @@ and safety without changing prediction flow, formulas, grading, or model
 selection. Calculation changes require a separate backtest and validation
 cycle.
 
+## Vue 3 Separation — September 28, 2026
+
+The repository now includes a separately built Vue 3 application in `frontend/`.
+Run `npm ci` at the repository root, then `npm run frontend:dev`,
+`npm run frontend:typecheck`, or `npm run frontend:build`. Its static output is
+`frontend/dist`; no Composer install, PHP process, Laravel Vite plugin, Inertia
+runtime, or generated Wayfinder files are required to build it. CI checks this
+independently, and the build rejects accidental Inertia/generated-route imports.
+The existing Laravel/Inertia application continues to build and serve its routes.
+
+The standalone app currently covers session login, two-factor challenges,
+`/nfl/predictions`, and `/nfl/games/:gameId`. Both applications reuse the existing
+NFL board, game sections, evidence tables, injury/depth charts, base controls,
+formatters, and API client. The small `platform` adapters supply each host's
+navigation, document title, account context, and layout. Domain components must
+not import server-generated navigation or fetch their own ad hoc API URLs.
+Heavy research/history panels remain lazy; navigation does not initiate provider
+odds synchronization. This is an incremental migration, not full route parity:
+account, billing, administration, other sports and team/player pages still use
+the legacy application. No standalone production host has been provisioned.
+
+Deployment requires a static host with history fallback to `index.html`, plus
+`VITE_API_ORIGIN` set at build time to the API origin and `VITE_LEGACY_ORIGIN` to
+the existing application's origin for unmigrated links. Deploy the static bundle
+independently from Laravel. On Laravel, configure exact `FRONTEND_ORIGINS`,
+`SANCTUM_STATEFUL_DOMAINS` (hosts including development ports), a shared
+`SESSION_DOMAIN` for sibling subdomains, and secure session cookies in production.
+Cookie authentication requires the frontend and API to share a top-level domain;
+an arbitrary unrelated static-host domain is not a supported cookie setup.
+Keep the existing origin in the stateful list during the transition.
+
+Local development defaults to the Vue server at `127.0.0.1:5174` proxying API,
+CSRF and authentication requests to `127.0.0.1:8000`; override
+`FRONTEND_DEV_BACKEND` in `frontend/.env` when needed. Leave `VITE_API_ORIGIN`
+empty for that proxy setup. Browser HTML requests to `/login` stay in Vue.
+
+Browser sessions use Fortify `/login`, `/two-factor-challenge`, and `/logout`,
+with `/sanctum/csrf-cookie`; bearer-token login remains for native/API clients.
+`GET /api/v2/auth/context` returns sanitized account and subscription context
+with private/no-store caching. `/api/v2/sports/nfl/games/{game}/page` returns
+`game`, `prediction` (nullable), and `team_stats` under `data`, using the same
+prediction presentation/authorization as the individual prediction endpoint.
+Its `meta.deferred` lists supplemental panels; this endpoint does not promise
+all page data in one response. Live snapshots retain their separate polling
+and stop when a game finishes.
+
 ## Current Request Flow
 
 ```text

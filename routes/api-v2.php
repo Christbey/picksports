@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V2\Admin\NflResearchRetryController;
 use App\Http\Controllers\Api\V2\Admin\PayloadInspectorController;
 use App\Http\Controllers\Api\V2\CfbLiveBettingController;
 use App\Http\Controllers\Api\V2\DeveloperSandboxController;
+use App\Http\Controllers\Api\V2\FrontendContextController;
 use App\Http\Controllers\Api\V2\LiveScoreboardController;
 use App\Http\Controllers\Api\V2\MlbDailyPickController;
 use App\Http\Controllers\Api\V2\NativeDeviceSessionController;
@@ -74,6 +75,7 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
                 ->name('device-sessions.refresh');
 
             Route::middleware('v2.auth')->group(function (): void {
+                Route::get('/context', FrontendContextController::class)->name('context');
                 Route::get('/me', [TokenAuthController::class, 'me'])->name('me');
                 Route::post('/logout', [TokenAuthController::class, 'logout'])
                     ->middleware('throttle:api-v2-writes')

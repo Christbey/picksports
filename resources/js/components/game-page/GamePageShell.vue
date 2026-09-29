@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { Head, usePage } from '@inertiajs/vue3';
+import { Head, usePage } from '@/platform';
 import { computed } from 'vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
-import AppLayout from '@/layouts/AppLayout.vue';
+import AppLayout from '@/platform/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
 
 const props = defineProps<{

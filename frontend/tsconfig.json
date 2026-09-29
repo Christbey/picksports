@@ -1,0 +1,24 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+        "strict": true,
+        "skipLibCheck": true,
+        "noEmit": true,
+        "resolveJsonModule": true,
+        "lib": ["ES2022", "DOM", "DOM.Iterable"],
+        "types": ["vite/client"],
+        "paths": {
+            "@/platform": ["./src/platform/index.ts"],
+            "@/platform/AppLayout.vue": ["./src/AppLayout.vue"],
+            "@/*": ["../resources/js/*"]
+        }
+    },
+    "include": [
+        "src/**/*.ts",
+        "src/**/*.vue",
+        "vite.config.ts",
+        "../resources/js/types/*.d.ts"
+    ]
+}

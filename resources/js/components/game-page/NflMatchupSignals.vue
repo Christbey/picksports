@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue';
 import NflMatchupSignalEvidence from '@/components/game-page/NflMatchupSignalEvidence.vue';
+import { useApiV2Client } from '@/composables/useApiV2Client';
 import type { NflMatchupSignalData } from '@/lib/nflMatchupSignals';
 
+const api = useApiV2Client();
 const props = defineProps<{ gameId: number }>();
 const data = ref<NflMatchupSignalData | null>(null);
 const loading = ref(false);
@@ -17,16 +19,15 @@ async function load() {
     loading.value = true;
     error.value = '';
     try {
-        const response = await fetch(
-            `/api/v2/sports/nfl/games/${props.gameId}/matchup-signals?window=${window.value}`,
+        const payload = await api.games.matchupSignals<NflMatchupSignalData>(
+            'nfl',
+            props.gameId,
             {
-                credentials: 'same-origin',
-                headers: { Accept: 'application/json' },
-                signal: controller.signal,
+                query: { window: window.value },
+                init: { signal: controller.signal },
             },
         );
-        if (!response.ok) throw new Error('Unavailable');
-        const payload = await response.json();
+        if (!payload?.data) throw new Error('Unavailable');
         if (request === controller) data.value = payload.data;
     } catch {
         if (!controller.signal.aborted)

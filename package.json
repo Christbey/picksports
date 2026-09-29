@@ -12,7 +12,10 @@
         "lint:check": "eslint .",
         "typecheck": "vue-tsc --noEmit --pretty false",
         "quality:fix": "npm run format && npm run lint -- --fix",
-        "quality:check": "npm run format:check && npm run lint:check && npm run typecheck"
+        "quality:check": "npm run format:check && npm run lint:check && npm run typecheck",
+        "frontend:dev": "npm run dev --workspace @picksports/frontend",
+        "frontend:build": "npm run build --workspace @picksports/frontend",
+        "frontend:typecheck": "npm run typecheck --workspace @picksports/frontend"
     },
     "devDependencies": {
         "@eslint/js": "^9.19.0",
@@ -59,5 +62,8 @@
         "@tailwindcss/oxide-win32-x64-msvc": "^4.0.1",
         "lightningcss-linux-x64-gnu": "^1.29.1",
         "lightningcss-win32-x64-msvc": "^1.29.1"
-    }
+    },
+    "workspaces": [
+        "frontend"
+    ]
 }

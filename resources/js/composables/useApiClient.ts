@@ -1,3 +1,36 @@
+let apiOrigin = '';
+let apiCredentials: RequestCredentials = 'same-origin';
+
+export function configureApiClient(origin = ''): void {
+    if (origin) {
+        const parsed = new URL(origin);
+        if (
+            !['https:', 'http:'].includes(parsed.protocol) ||
+            parsed.username ||
+            parsed.password ||
+            parsed.pathname !== '/' ||
+            parsed.search ||
+            parsed.hash
+        ) {
+            throw new Error(
+                'API origin must be an HTTP(S) origin without credentials, path, query or fragment.',
+            );
+        }
+        apiOrigin = parsed.origin;
+    } else apiOrigin = '';
+    apiCredentials = apiOrigin ? 'include' : 'same-origin';
+}
+
+export function apiUrl(path: string): string {
+    if (!apiOrigin) return path;
+    const resolved = new URL(path, apiOrigin);
+    if (resolved.origin !== apiOrigin)
+        throw new Error(
+            'Refusing an API request outside the configured origin.',
+        );
+    return resolved.href;
+}
+
 export class ApiError extends Error {
     readonly status: number;
     readonly data: unknown;
@@ -62,8 +95,8 @@ export async function fetchJson<T>(
     init: RequestInit = {},
 ): Promise<T | null> {
     return readResponse<T>(
-        await fetch(url, {
-            credentials: 'same-origin',
+        await fetch(apiUrl(url), {
+            credentials: apiCredentials,
             ...init,
             headers: jsonHeaders(init),
         }),
@@ -122,7 +155,7 @@ export async function mutateJson<T>(
         attachCsrfToken(headers);
     }
     const request: RequestInit = {
-        credentials: 'same-origin',
+        credentials: apiCredentials,
         ...init,
         method,
         headers,
@@ -130,7 +163,7 @@ export async function mutateJson<T>(
     };
     let response: Response;
     try {
-        response = await fetch(url, request);
+        response = await fetch(apiUrl(url), request);
     } catch (error) {
         // Retry an ambiguous network failure once with the same key and body.
         // Never retry a cancelled request or a completed HTTP error response.
@@ -139,7 +172,7 @@ export async function mutateJson<T>(
             (error instanceof Error && error.name === 'AbortError')
         )
             throw error;
-        response = await fetch(url, request);
+        response = await fetch(apiUrl(url), request);
     }
     return readResponse<T>(response);
 }

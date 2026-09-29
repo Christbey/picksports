@@ -4,7 +4,6 @@ import { formatNumber, getBetterValue } from '@/composables/useFormatters';
 import { useNflGamePage } from '@/composables/useNflGamePage';
 import { useSportGameLayout } from '@/composables/useSportGameLayout';
 import { trackViewItem } from '@/lib/analytics';
-import NFLTeamController from '@/actions/App/Http/Controllers/NFL/TeamController';
 
 const formatSpread = (spread: number | string): string => {
     const numSpread = typeof spread === 'string' ? parseFloat(spread) : spread;
@@ -106,7 +105,7 @@ export function useNflDetailedGamePage(gameId: number) {
     const { pageProps } = useSportGameLayout({
         sport: 'nfl',
         gameId,
-        teamLink: (id: number) => NFLTeamController.url(id),
+        teamLink: (id: number) => `/nfl/teams/${id}`,
         pageProps: {
             title: computed(
                 () =>

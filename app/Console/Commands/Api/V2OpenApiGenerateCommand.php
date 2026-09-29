@@ -684,6 +684,7 @@ class V2OpenApiGenerateCommand extends Command
             'v2.alert-preferences.update' => 'AlertPreferenceResponse',
             'v2.auth.login', 'v2.auth.passkeys.verify' => 'TokenAuthResponse',
             'v2.auth.me' => 'AuthUserResponse',
+            'v2.auth.context' => 'FrontendContextResponse',
             'v2.auth.passkeys.createOptions' => 'PasskeyAuthenticationOptionsResponse',
             'v2.auth.device-sessions.store',
             'v2.auth.device-sessions.refresh' => 'NativeDeviceTokenResponse',
@@ -969,6 +970,17 @@ class V2OpenApiGenerateCommand extends Command
                 'permissions' => ['type' => 'array', 'items' => ['type' => 'string']],
             ]),
             'AuthUserResponse' => $this->itemEnvelope('AuthUser', false),
+            'FrontendContextResponse' => $this->itemEnvelope('FrontendContext', true),
+            'FrontendContext' => $this->fixedObjectSchema(['name', 'auth', 'subscription'], [
+                'name' => ['type' => 'string'],
+                'auth' => $this->fixedObjectSchema(['user'], ['user' => ['$ref' => '#/components/schemas/AuthUser']]),
+                'subscription' => $this->fixedObjectSchema(['tier', 'tier_name', 'is_subscribed', 'is_founding_user', 'features', 'tiers_enabled', 'tiers_bypassed'], [
+                    'tier' => ['type' => 'string'], 'tier_name' => ['type' => 'string'],
+                    'is_subscribed' => ['type' => 'boolean'], 'is_founding_user' => ['type' => 'boolean'],
+                    'features' => ['oneOf' => [$openObject, ['type' => 'array', 'maxItems' => 0]]],
+                    'tiers_enabled' => ['type' => 'boolean'], 'tiers_bypassed' => ['type' => 'boolean'],
+                ]),
+            ]),
             'TokenAuthResponse' => $this->fixedObjectSchema(['token_type', 'access_token', 'user'], [
                 'token_type' => ['type' => 'string', 'const' => 'Bearer'],
                 'access_token' => ['type' => 'string'],
@@ -1167,7 +1179,16 @@ class V2OpenApiGenerateCommand extends Command
                 'generated_at' => ['type' => 'string', 'format' => 'date-time'],
             ]),
             'SportGamePageResponse' => $this->sportCustomEnvelope('SportGamePageData'),
-            'SportGamePageData' => $this->fixedObjectSchema([
+            'SportGamePageData' => ['oneOf' => [
+                ['$ref' => '#/components/schemas/MlbGamePageData'],
+                ['$ref' => '#/components/schemas/NflGamePageData'],
+            ]],
+            'NflGamePageData' => $this->fixedObjectSchema(['game', 'prediction', 'team_stats'], [
+                'game' => ['$ref' => '#/components/schemas/SportGame'],
+                'prediction' => ['oneOf' => [['$ref' => '#/components/schemas/SportPrediction'], ['type' => 'null']]],
+                'team_stats' => ['type' => 'array', 'items' => ['$ref' => '#/components/schemas/SportStat']],
+            ]),
+            'MlbGamePageData' => $this->fixedObjectSchema([
                 'game', 'prediction', 'recent_games', 'metrics', 'depth_charts_available',
             ], [
                 'game' => ['$ref' => '#/components/schemas/SportGame'],

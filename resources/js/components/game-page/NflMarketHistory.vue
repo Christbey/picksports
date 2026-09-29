@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { ApiError } from '@/composables/useApiClient';
+import { useApiV2Client } from '@/composables/useApiV2Client';
 import unitMetrics from '@/lib/nflUnitMetrics.json';
 
 type RecordRow = {
@@ -62,6 +64,7 @@ type Evidence = {
     limitations: string[];
 };
 // Opt in only when the endpoint supports the unit-filter contract.
+const api = useApiV2Client();
 const props = defineProps<{ gameId: number; enableUnitFilters?: boolean }>();
 const data = ref<Evidence | null>(null);
 const side = ref<'home' | 'away'>('away');
@@ -103,21 +106,18 @@ async function load() {
     if (homeLine.value.trim() !== '')
         params.set('home_line', homeLine.value.trim());
     try {
-        const response = await fetch(
-            `/api/v2/sports/nfl/games/${props.gameId}/market-history?${params}`,
+        const payload = await api.games.marketHistory<Evidence>(
+            'nfl',
+            props.gameId,
             {
-                credentials: 'same-origin',
-                headers: { Accept: 'application/json' },
-                signal: controller.signal,
+                query: Object.fromEntries(params.entries()),
+                init: { signal: controller.signal },
             },
         );
-        if (!response.ok)
+        if (!payload?.data)
             throw new Error(
-                response.status === 422
-                    ? 'Use a starting season from 2009 through this game’s season and a line in 0.5-point steps.'
-                    : 'Historical lines are unavailable right now. No record is inferred.',
+                'Historical lines are unavailable right now. No record is inferred.',
             );
-        const payload = await response.json();
         if (
             props.enableUnitFilters &&
             (payload.data?.unit_filter?.unit !== params.get('opponent_unit') ||
@@ -132,9 +132,13 @@ async function load() {
     } catch (cause) {
         if (request === controller && !controller.signal.aborted)
             error.value =
-                cause instanceof Error
-                    ? cause.message
-                    : 'Could not load historical lines.';
+                cause instanceof ApiError
+                    ? cause.status === 422
+                        ? 'Use a starting season from 2009 through this game’s season and a line in 0.5-point steps.'
+                        : 'Historical lines are unavailable right now. No record is inferred.'
+                    : cause instanceof Error
+                      ? cause.message
+                      : 'Could not load historical lines.';
     } finally {
         if (request === controller) loading.value = false;
     }

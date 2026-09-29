@@ -6,6 +6,8 @@ use App\Models\User;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Permission;
 
+require_once __DIR__.'/../../Support/NflFutures.php';
+
 uses()->group('nfl', 'playoff-forecasts');
 
 it('returns nfl playoff forecasts through the api route', function () {
@@ -47,12 +49,14 @@ it('returns nfl playoff forecasts through the api route', function () {
         ]);
     }
 
+    completeNflFuturesSchedule(2026, '2026-04-03T18:00:00Z');
+
     $response = $this->getJson('/api/v2/sports/nfl/forecasts?season=2026&as_of_date=2026-04-03T18:00:00Z&require_historical_metrics=1');
 
     $response->assertOk();
     $response->assertJsonPath('meta.season', 2026);
     $response->assertJsonPath('meta.require_historical_metrics', true);
-    $response->assertJsonCount(4, 'data');
+    $response->assertJsonCount(32, 'data');
     $response->assertJsonPath('data.0.team_name', 'Buffalo Bills');
     $response->assertJsonStructure([
         'data' => [[

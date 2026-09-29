@@ -4,6 +4,8 @@ use App\Models\NFL\Team;
 use App\Models\NFL\TeamMetricSnapshot;
 use Illuminate\Support\Facades\Artisan;
 
+require_once __DIR__.'/../../Support/NflFutures.php';
+
 it('generates nfl playoff forecast probabilities from preseason team snapshots', function () {
     $teams = collect([
         ['BUF', 'Bills', 'AFC', 'East', 11.5],
@@ -50,6 +52,8 @@ it('generates nfl playoff forecast probabilities from preseason team snapshots',
         return $team;
     });
 
+    completeNflFuturesSchedule(2025, '2025-08-01T12:00:00Z');
+
     $output = storage_path('app/ml/reports/nfl_team_playoff_forecast_test.json');
     @unlink($output);
 
@@ -66,7 +70,7 @@ it('generates nfl playoff forecast probabilities from preseason team snapshots',
 
     expect($report)->toBeArray()
         ->and($report['report_type'])->toBe('nfl_team_playoff_forecast')
-        ->and($report['summary']['teams'])->toBe(16)
+        ->and($report['summary']['teams'])->toBe(32)
         ->and(count($report['division_leaders']))->toBe(8)
         ->and(count($report['conference_leaders']))->toBe(2)
         ->and($report['super_bowl_leaders'][0]['super_bowl_champion_probability'])->toBeGreaterThan(0.0)

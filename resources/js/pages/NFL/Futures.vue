@@ -11,6 +11,7 @@ type MarketOdds = {
     price: number | null;
     implied_probability: number | null;
     fetched_at: string | null;
+    stale?: boolean;
 };
 
 type MarketEdge = {
@@ -39,6 +40,7 @@ type PlayoffForecast = {
 type ForecastMeta = {
     season?: number;
     simulations?: number | null;
+    warnings?: string[];
 };
 
 const api = useApiV2Client();
@@ -50,6 +52,7 @@ const forecasts = ref<PlayoffForecast[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const simulations = ref<number | null>(null);
+const warnings = ref<string[]>([]);
 let activeRequest = 0;
 
 const seasonOptions = computed(() =>
@@ -136,7 +139,9 @@ const conferenceLeaders = computed(() =>
 const formatPct = (value: number | null | undefined, digits = 1) =>
     value === null || value === undefined
         ? '-'
-        : `${(value * 100).toFixed(digits)}%`;
+        : value === 0 && simulations.value
+          ? '0%*'
+          : `${(value * 100).toFixed(digits)}%`;
 
 const formatAmericanOdds = (value: number | null | undefined) => {
     if (value === null || value === undefined) return '-';
@@ -166,6 +171,7 @@ const fetchForecasts = async () => {
         forecasts.value = payload.data ?? [];
         const meta = (payload.meta ?? {}) as ForecastMeta;
         simulations.value = meta.simulations ?? null;
+        warnings.value = meta.warnings ?? [];
 
         if (forecasts.value.length === 0) {
             error.value = `No NFL futures forecast is available for ${selectedSeason.value}.`;
@@ -226,7 +232,9 @@ watch(selectedSeason, () => void fetchForecasts(), { immediate: true });
                                 <option value="title">Super Bowl chance</option>
                                 <option value="playoffs">Playoff chance</option>
                                 <option value="wins">Projected wins</option>
-                                <option value="edge">Best market edge</option>
+                                <option value="edge">
+                                    Largest model difference
+                                </option>
                             </select>
                         </div>
                         <label
@@ -237,7 +245,7 @@ watch(selectedSeason, () => void fetchForecasts(), { immediate: true });
                                 type="checkbox"
                                 class="h-4 w-4 rounded border-input"
                             />
-                            Only +EV
+                            Positive model differences
                         </label>
                         <p
                             v-if="simulations"
@@ -253,6 +261,23 @@ watch(selectedSeason, () => void fetchForecasts(), { immediate: true });
                 <AlertDescription>{{ error }}</AlertDescription>
             </Alert>
 
+            <p class="text-sm text-muted-foreground">
+                Schedule-based estimates, not calibrated betting probabilities.
+                Completed results are preserved. Prices older than 36 hours are
+                excluded from comparisons.
+            </p>
+            <p v-if="simulations" class="text-xs text-muted-foreground">
+                * 0% means no occurrences in
+                {{ simulations.toLocaleString() }} simulations, not proof of
+                impossibility.
+            </p>
+            <p
+                v-for="warning in warnings"
+                :key="warning"
+                class="text-xs text-muted-foreground"
+            >
+                {{ warning }}
+            </p>
             <div v-if="loading" class="space-y-3">
                 <Skeleton v-for="row in 8" :key="row" class="h-12 w-full" />
             </div>
@@ -278,7 +303,7 @@ watch(selectedSeason, () => void fetchForecasts(), { immediate: true });
                     </Card>
                     <Card>
                         <CardContent class="pt-5">
-                            <p class="ui-kicker">Projected Playoff Field</p>
+                            <p class="ui-kicker">Teams Favored to Qualify</p>
                             <p class="mt-2 text-3xl font-bold">
                                 {{ playoffField }}
                             </p>
@@ -289,12 +314,12 @@ watch(selectedSeason, () => void fetchForecasts(), { immediate: true });
                     </Card>
                     <Card>
                         <CardContent class="pt-5">
-                            <p class="ui-kicker">Positive Market Edges</p>
+                            <p class="ui-kicker">Positive Model Differences</p>
                             <p class="mt-2 text-3xl font-bold">
                                 {{ plusEvCount }}
                             </p>
                             <p class="mt-1 text-xs text-muted-foreground">
-                                Based on currently captured title prices
+                                Fresh stored prices only · not approved bets
                             </p>
                         </CardContent>
                     </Card>
@@ -353,7 +378,7 @@ watch(selectedSeason, () => void fetchForecasts(), { immediate: true });
                                         <th
                                             class="px-3 py-3 text-right font-medium"
                                         >
-                                            Seed
+                                            Seed if qualified
                                         </th>
                                         <th
                                             class="px-3 py-3 text-right font-medium"
@@ -383,7 +408,7 @@ watch(selectedSeason, () => void fetchForecasts(), { immediate: true });
                                         <th
                                             class="px-3 py-3 text-right font-medium"
                                         >
-                                            Edge
+                                            Difference
                                         </th>
                                     </tr>
                                 </thead>
@@ -466,6 +491,35 @@ watch(selectedSeason, () => void fetchForecasts(), { immediate: true });
                                                     forecast.market_odds?.price,
                                                 )
                                             }}
+                                            <p
+                                                v-if="forecast.market_odds"
+                                                class="mt-1 text-xs text-muted-foreground"
+                                            >
+                                                {{
+                                                    forecast.market_odds
+                                                        .bookmaker
+                                                }}
+                                                ·
+                                                {{
+                                                    forecast.market_odds.stale
+                                                        ? 'Stale'
+                                                        : 'Stored'
+                                                }}
+                                            </p>
+                                            <p
+                                                v-if="
+                                                    forecast.market_odds
+                                                        ?.fetched_at
+                                                "
+                                                class="text-xs text-muted-foreground"
+                                            >
+                                                {{
+                                                    new Date(
+                                                        forecast.market_odds
+                                                            .fetched_at,
+                                                    ).toLocaleString()
+                                                }}
+                                            </p>
                                         </td>
                                         <td
                                             class="px-3 py-3 text-right font-medium tabular-nums"

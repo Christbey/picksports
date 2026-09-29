@@ -23,6 +23,7 @@ use App\Services\Sports\FuturesOddsLookupService;
 use App\Support\SportsViewCache;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
 class SportForecastQuery
@@ -167,7 +168,7 @@ class SportForecastQuery
         ], 'super_bowl_champion_probability');
         $direction = $this->direction($filters);
 
-        return $this->remember($context, $filters, function () use ($season, $asOfDate, $requireHistoricalMetrics, $sortBy, $direction): array {
+        $payload = $this->remember($context, $filters, function () use ($season, $asOfDate, $requireHistoricalMetrics, $sortBy, $direction): array {
             $report = $this->nflForecastService->forecast(
                 season: $season,
                 asOfDate: $asOfDate,
@@ -181,9 +182,6 @@ class SportForecastQuery
                 return $direction === 'asc' ? $comparison : -$comparison;
             });
 
-            $data = $this->withMarketEdges($data, 'nfl', $season, 'super_bowl_champion_probability');
-            $data = NflPlayoffForecastResource::collection(collect($data))->resolve();
-
             return [
                 'data' => $data,
                 'meta' => [
@@ -193,9 +191,44 @@ class SportForecastQuery
                     'sort_by' => $sortBy,
                     'sort_direction' => $direction,
                     'simulations' => data_get($report, 'summary.simulations'),
+                    'warnings' => $report['warnings'] ?? [],
+                    'generated_at' => $report['generated_at'] ?? null,
+                    'model_version' => $report['model_version'] ?? null,
+                    'probability_status' => 'uncalibrated_model_estimate',
+                    'seed_definition' => 'Average seed when making the playoffs',
+                    'odds_stale_after_hours' => 36,
                 ],
             ];
         });
+        $data = $payload['data'];
+        $data = $asOfDate === null
+            ? $this->withMarketEdges($data, 'nfl', $season, 'super_bowl_champion_probability')
+            : $this->futuresEdgeService->annotate($data, 'super_bowl_champion_probability');
+        $data = array_map(function (array $row): array {
+            $captured = data_get($row, 'market_odds.fetched_at');
+            try {
+                $date = $captured ? Carbon::parse($captured) : null;
+            } catch (\Throwable) {
+                $date = null;
+            }
+            $stale = ! $date || $date->isFuture() || $date->lt(now()->subHours(36));
+            if (is_array($row['market_odds'] ?? null)) {
+                $row['market_odds']['stale'] = $stale;
+            }
+            if ($stale) {
+                $row['market_edge']['edge_probability'] = null;
+                $row['market_edge']['edge_percent_points'] = null;
+                $row['market_edge']['has_edge'] = false;
+            }
+            $row['market_edge']['actionable'] = false;
+
+            return $row;
+        }, $data);
+        $data = NflPlayoffForecastResource::collection(collect($data))->resolve();
+
+        $payload['data'] = $data;
+
+        return $payload;
     }
 
     /**
@@ -364,7 +397,7 @@ class SportForecastQuery
     private function remember(SportContext $context, array $filters, callable $resolver): array
     {
         $cacheKey = $this->sportsViewCache->contextHash([
-            'contract' => 'sports.forecasts.index',
+            'contract' => $context->slug === 'nfl' ? 'sports.forecasts.index.schedule_v2' : 'sports.forecasts.index',
             'sport' => $context->slug,
             'filters' => $filters,
         ]);

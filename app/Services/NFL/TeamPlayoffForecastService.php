@@ -2,6 +2,7 @@
 
 namespace App\Services\NFL;
 
+use App\Models\NFL\Game;
 use App\Models\NFL\Team;
 use Carbon\Carbon;
 
@@ -65,39 +66,63 @@ class TeamPlayoffForecastService
             season: $season,
             market: 'season_wins',
             asOfDate: $asOfDate !== null ? Carbon::parse($asOfDate) : null,
-            requireHistoricalMetrics: $requireHistoricalMetrics,
+            requireHistoricalMetrics: $requireHistoricalMetrics || $asOfDate !== null,
             onlyWithOdds: false,
             sortBy: 'projected_total',
             direction: 'desc',
             limit: 64,
         );
 
-        if ($rows === []) {
-            return [
-                'report_type' => 'nfl_team_playoff_forecast',
-                'season' => $season,
-                'as_of_date' => $asOfDate,
-                'summary' => ['teams' => 0, 'simulations' => 0],
-                'teams' => [],
-                'division_leaders' => [],
-                'conference_leaders' => [],
-                'super_bowl_leaders' => [],
-            ];
-        }
-
         $teams = $this->buildTeamInputs($rows);
-        if ($teams === []) {
-            return [
-                'report_type' => 'nfl_team_playoff_forecast',
-                'season' => $season,
-                'as_of_date' => $asOfDate,
-                'summary' => ['teams' => 0, 'simulations' => 0],
-                'teams' => [],
-                'division_leaders' => [],
-                'conference_leaders' => [],
-                'super_bowl_leaders' => [],
+        $cutoff = $asOfDate !== null ? Carbon::parse($asOfDate) : now();
+        $schedule = Game::query()->where('season', $season)
+            ->where('season_type', (string) config('nfl.season.types.regular', 2))
+            ->orderBy('id')->get();
+        $teamIds = array_column($teams, 'team_id');
+        $counts = array_fill_keys($teamIds, 0);
+        $games = [];
+        $warnings = [];
+        foreach ($schedule as $game) {
+            if (! isset($counts[$game->home_team_id], $counts[$game->away_team_id]) || $game->home_team_id === $game->away_team_id) {
+                $warnings[] = 'Schedule contains teams without usable ratings.';
+
+                continue;
+            }
+            $counts[$game->home_team_id]++;
+            $counts[$game->away_team_id]++;
+            $completedAt = $game->completed_at ?? $game->game_date?->copy()->endOfDay();
+            $completed = $game->status === 'STATUS_FINAL' && ($asOfDate === null || ($completedAt !== null && $completedAt->lte($cutoff)));
+            if ($completed && ($game->home_score === null || $game->away_score === null)) {
+                $warnings[] = 'A completed game is missing its score.';
+            }
+            if (in_array($game->status, ['STATUS_CANCELED', 'STATUS_CANCELLED'], true)) {
+                $warnings[] = 'The schedule includes a cancelled game.';
+            }
+            $games[] = [
+                'home' => (int) $game->home_team_id, 'away' => (int) $game->away_team_id,
+                'completed' => $completed, 'home_score' => $game->home_score, 'away_score' => $game->away_score,
+                'neutral' => (bool) $game->neutral_site,
             ];
         }
+        $alignmentCounts = array_count_values(array_map(fn (array $team): string => $team['conference'].' '.$team['division'], $teams));
+        if (count($teams) !== 32 || count($alignmentCounts) !== 8 || count(array_filter($alignmentCounts, fn (int $count): bool => $count !== 4)) > 0 || count($games) !== 272 || count(array_filter($counts, fn (int $count): bool => $count !== 17)) > 0) {
+            $warnings[] = 'A complete 32-team, 272-game regular-season schedule and team ratings are required.';
+        }
+        if ($warnings !== []) {
+            return [
+                'report_type' => 'nfl_team_playoff_forecast', 'season' => $season, 'as_of_date' => $asOfDate,
+                'summary' => ['teams' => 0, 'simulations' => 0], 'teams' => [],
+                'division_leaders' => [], 'conference_leaders' => [], 'super_bowl_leaders' => [],
+                'warnings' => array_values(array_unique($warnings)),
+            ];
+        }
+        $games = array_map(function (array $game) use ($teams): array {
+            $home = $this->findTeamById($teams, $game['home']);
+            $away = $this->findTeamById($teams, $game['away']);
+            $game['home_probability'] = $this->gameProbability($home, $away, ! $game['neutral']);
+
+            return $game;
+        }, $games);
 
         $simulationCount = max(100, $simulations ?? (int) config('nfl.team_playoff_forecast.simulations', 5000));
         $randomSeed = $seed ?? (int) config('nfl.team_playoff_forecast.random_seed', 20260402);
@@ -110,7 +135,7 @@ class TeamPlayoffForecastService
                 'team_name' => $team['team_name'],
                 'conference' => $team['conference'],
                 'division' => $team['division'],
-                'projected_wins' => round($team['projected_total'], 3),
+                'projected_wins' => 0.0,
                 'projected_seed_avg' => 0.0,
                 'division_titles' => 0,
                 'playoff_berths' => 0,
@@ -120,7 +145,10 @@ class TeamPlayoffForecastService
         }
 
         for ($i = 0; $i < $simulationCount; $i++) {
-            $sampled = array_map(fn (array $team): array => $this->sampleSeason($team), $teams);
+            $sampled = $this->sampleSchedule($teams, $games);
+            foreach ($sampled as $team) {
+                $teamResults[$team['team_id']]['projected_wins'] += $team['sampled_wins'];
+            }
             $standings = $this->simulateStandings($sampled);
 
             foreach ($standings['teams'] as $teamId => $result) {
@@ -147,8 +175,8 @@ class TeamPlayoffForecastService
                 'team_name' => $result['team_name'],
                 'conference' => $result['conference'],
                 'division' => $result['division'],
-                'projected_wins' => $result['projected_wins'],
-                'projected_seed' => round($result['projected_seed_avg'] / $simulationCount, 2),
+                'projected_wins' => round($result['projected_wins'] / $simulationCount, 3),
+                'projected_seed' => $result['playoff_berths'] > 0 ? round($result['projected_seed_avg'] / $result['playoff_berths'], 2) : null,
                 'division_winner_probability' => round($result['division_titles'] / $simulationCount, 4),
                 'make_playoffs_probability' => round($result['playoff_berths'] / $simulationCount, 4),
                 'conference_champion_probability' => round($result['conference_titles'] / $simulationCount, 4),
@@ -163,6 +191,9 @@ class TeamPlayoffForecastService
             'season' => $season,
             'as_of_date' => $asOfDate,
             'require_historical_metrics' => $requireHistoricalMetrics,
+            'warnings' => ['Uncalibrated model estimates. Equal-record tiebreakers are randomized; future ties and postseason results are not modeled.'],
+            'generated_at' => now()->toIso8601String(),
+            'model_version' => 'schedule_v2',
             'summary' => [
                 'teams' => count($teamsOut),
                 'simulations' => $simulationCount,
@@ -198,7 +229,12 @@ class TeamPlayoffForecastService
             }
 
             $teamName = trim(implode(' ', array_filter([$teamModel->location, $teamModel->name])));
-            $winsStddev = (float) data_get($row, 'projection_factors.wins_stddev', 2.5);
+            $rating = (float) data_get($row, 'projection_factors.predictive_rating', 0.0);
+            if (abs($rating) > 200) {
+                $rating = ($rating - 1500.0) / 25.0;
+            }
+            $played = (int) ($row['games_played'] ?? 0);
+            $reliability = $played > 0 ? $played / ($played + max(1, (int) config('nfl.team_futures.prior_games', 4))) : 1.0;
 
             $teams[] = [
                 'team_id' => $teamId,
@@ -207,10 +243,7 @@ class TeamPlayoffForecastService
                 'conference' => $alignment['conference'],
                 'division' => $alignment['division'],
                 'projected_total' => (float) ($row['projected_total'] ?? 0.0),
-                'wins_stddev' => max(0.75, $winsStddev),
-                'strength_rating' => (float) ($row['projected_total'] ?? 0.0)
-                    + ((float) data_get($row, 'projection_factors.predictive_rating', 0.0) / 8.0)
-                    + ((float) data_get($row, 'projection_factors.offseason_adjustment', 0.0) / 4.0),
+                'strength_rating' => ($rating / 8.0) * $reliability,
             ];
         }
 
@@ -238,15 +271,28 @@ class TeamPlayoffForecastService
      * @param  array<string,mixed>  $team
      * @return array<string,mixed>
      */
-    protected function sampleSeason(array $team): array
+    protected function sampleSchedule(array $teams, array $games): array
     {
-        $sampledWins = $team['projected_total'] + ($this->gaussian() * $team['wins_stddev']);
+        $sampled = [];
+        foreach ($teams as $team) {
+            $sampled[$team['team_id']] = [...$team, 'sampled_wins' => 0, 'sampled_ties' => 0, 'tie_breaker' => mt_rand() / mt_getrandmax()];
+        }
+        foreach ($games as $game) {
+            if ($game['completed']) {
+                if ($game['home_score'] === $game['away_score']) {
+                    $sampled[$game['home']]['sampled_ties']++;
+                    $sampled[$game['away']]['sampled_ties']++;
 
-        return [
-            ...$team,
-            'sampled_wins' => max(0.0, min(17.0, $sampledWins)),
-            'tie_breaker' => mt_rand() / mt_getrandmax(),
-        ];
+                    continue;
+                }
+                $winner = $game['home_score'] > $game['away_score'] ? $game['home'] : $game['away'];
+            } else {
+                $winner = mt_rand() / mt_getrandmax() < $game['home_probability'] ? $game['home'] : $game['away'];
+            }
+            $sampled[$winner]['sampled_wins']++;
+        }
+
+        return array_values($sampled);
     }
 
     /**
@@ -390,38 +436,29 @@ class TeamPlayoffForecastService
      */
     protected function simulateGame(array $teamA, array $teamB, bool $useHomeField, bool $teamAHome = true): array
     {
+        $probabilityA = $this->gameProbability($teamA, $teamB, $useHomeField, $teamAHome);
+
+        return mt_rand() / mt_getrandmax() < $probabilityA ? $teamA : $teamB;
+    }
+
+    protected function gameProbability(array $teamA, array $teamB, bool $useHomeField, bool $teamAHome = true): float
+    {
         $homeField = $useHomeField ? (float) config('nfl.team_playoff_forecast.playoff_home_field_advantage', 0.35) : 0.0;
         $ratingA = (float) $teamA['strength_rating'] + ($teamAHome ? $homeField : 0.0);
         $ratingB = (float) $teamB['strength_rating'] + (! $teamAHome ? $homeField : 0.0);
         $scale = max(0.1, (float) config('nfl.team_playoff_forecast.win_probability_scale', 1.6));
 
-        $probabilityA = 1.0 / (1.0 + exp(-(($ratingA - $ratingB) / $scale)));
-        $draw = mt_rand() / mt_getrandmax();
-
-        return $draw <= $probabilityA ? $teamA : $teamB;
+        return 1.0 / (1.0 + exp(-(($ratingA - $ratingB) / $scale)));
     }
 
     protected function rankTeams(array $left, array $right): int
     {
-        $winsComparison = ($right['sampled_wins'] <=> $left['sampled_wins']);
+        $winsComparison = (($right['sampled_wins'] + 0.5 * $right['sampled_ties']) <=> ($left['sampled_wins'] + 0.5 * $left['sampled_ties']));
         if ($winsComparison !== 0) {
             return $winsComparison;
         }
 
-        $strengthComparison = ($right['strength_rating'] <=> $left['strength_rating']);
-        if ($strengthComparison !== 0) {
-            return $strengthComparison;
-        }
-
         return $right['tie_breaker'] <=> $left['tie_breaker'];
-    }
-
-    protected function gaussian(): float
-    {
-        $u = max(mt_rand() / mt_getrandmax(), 1e-9);
-        $v = max(mt_rand() / mt_getrandmax(), 1e-9);
-
-        return sqrt(-2.0 * log($u)) * cos(2.0 * M_PI * $v);
     }
 
     /**

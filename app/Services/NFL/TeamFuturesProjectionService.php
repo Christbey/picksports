@@ -323,7 +323,6 @@ class TeamFuturesProjectionService
         $predictiveSignalScale = max(0.1, (float) config('nfl.team_futures.predictive_signal_scale', 10.0));
         $recentFormSignalScale = max(0.1, (float) config('nfl.team_futures.recent_form_signal_scale', 20.0));
         $sosSignalScale = max(0.1, (float) config('nfl.team_futures.sos_signal_scale', 25.0));
-        $injurySignalScale = max(0.1, (float) config('nfl.team_futures.injury_signal_scale', 1.5));
 
         $paceWinPct = $gamesPlayed > 0
             ? ((float) ($metric['wins'] ?? 0.0) / $gamesPlayed)
@@ -334,7 +333,6 @@ class TeamFuturesProjectionService
             ? (float) $metric['future_strength_of_schedule']
             : null;
         $recentFormRating = (float) ($metric['recent_form_rating'] ?? 0.0);
-        $injuryAdjustment = (float) ($metric['injury_total_adjustment'] ?? 0.0);
 
         // Historical team metrics are stored on a centered scale (~ -15 to +15),
         // while older rows may still use Elo-like values around 1500.
@@ -345,9 +343,8 @@ class TeamFuturesProjectionService
             ? (($futureStrengthOfSchedule - $leagueAverageElo) / $sosSignalScale)
             : 0.0;
         $recentSignal = $recentFormRating / $recentFormSignalScale;
-        $injurySignal = $injuryAdjustment / $injurySignalScale;
 
-        $strengthSignal = $predictiveSignal + $recentSignal - $scheduleSignal + $injurySignal;
+        $strengthSignal = $predictiveSignal + $recentSignal - $scheduleSignal;
 
         $strengthWinPct = $this->sigmoid($strengthSignal);
 

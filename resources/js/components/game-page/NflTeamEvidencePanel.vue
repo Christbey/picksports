@@ -139,6 +139,7 @@ const date = (value: string | null | undefined) =>
                             <tr>
                                 <th scope="col" class="text-left">Metric</th>
                                 <th scope="col" class="text-right">Average</th>
+                                <th scope="col" class="text-right">NFL rank</th>
                                 <th scope="col" class="text-right">Games</th>
                             </tr>
                         </thead>
@@ -156,6 +157,31 @@ const date = (value: string | null | undefined) =>
                                         )
                                     }}
                                 </td>
+                                <td
+                                    class="px-2 text-right whitespace-nowrap tabular-nums"
+                                >
+                                    <template
+                                        v-if="
+                                            side.evidence.metrics[key]?.rank !=
+                                            null
+                                        "
+                                    >
+                                        {{
+                                            side.evidence.metrics[key]
+                                                ?.rank_tied
+                                                ? 'T-'
+                                                : ''
+                                        }}{{
+                                            side.evidence.metrics[key]?.rank
+                                        }}/{{
+                                            side.evidence.metrics[key]
+                                                ?.ranked_teams
+                                        }}
+                                    </template>
+                                    <span v-else aria-label="Rank unavailable"
+                                        >—</span
+                                    >
+                                </td>
                                 <td class="text-right">
                                     {{
                                         side.evidence.metrics[key]
@@ -167,7 +193,9 @@ const date = (value: string | null | undefined) =>
                     </table>
                     <p class="text-xs text-muted-foreground">
                         Per-game averages; absent stats are excluded, not zero.
-                        Data last updated:
+                        Rank 1 is best; ties share a rank. Ranks compare teams
+                        with recorded data in the same window before kickoff;
+                        sample sizes can differ. Data last updated:
                         {{
                             side.evidence.latest_source_update ?? 'Unavailable'
                         }}.

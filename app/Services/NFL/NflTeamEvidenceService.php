@@ -6,6 +6,7 @@ use App\Actions\NFL\CalculateTeamTrends;
 use App\Services\Trends\TrendSignalScorer;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 
 class NflTeamEvidenceService
 {
@@ -27,15 +28,23 @@ class NflTeamEvidenceService
                 $game->setRelation('prediction', null);
             }
         }
-        $sets = [
-            'recent_5' => ['Last 5 regular-season games', $games->take(5)],
-            'recent_10' => ['Last 10 regular-season games', $games->take(10)],
-            'season' => ["{$season} regular season", $games->where('season', $season)],
-            'historical' => ['Previous 3 regular seasons', $games->where('season', '<', $season)],
-        ];
+        $sets = $this->windowSamples($games, $season);
+        $league = Cache::remember('nfl-team-evidence-ranks-v1:'.$season.':'.$cutoff->timestamp, 120,
+            fn () => $this->leagueMetrics($season, $cutoff->toIso8601String()));
         $windows = [];
         foreach ($sets as $key => [$label, $sample]) {
             $windows[$key] = $this->window($team, $sample->values(), $label);
+            foreach ($windows[$key]['evidence']['metrics'] as $metric => &$result) {
+                $values = collect($league[$key][$metric] ?? []);
+                $lowerIsBetter = in_array($metric, ['points_against', 'turnovers', 'yards_allowed'], true);
+                $result['rank'] = $result['value'] === null ? null : 1 + $values->filter(
+                    fn ($value) => $lowerIsBetter ? $value < $result['value'] : $value > $result['value']
+                )->count();
+                $result['ranked_teams'] = $values->count();
+                $result['rank_tied'] = $result['rank'] !== null
+                    && $values->filter(fn ($value) => $value === $result['value'])->count() > 1;
+            }
+            unset($result);
         }
         // The comparison baseline needs metrics, not another collector/scorer pass.
         $prior = $this->evidence($team, $games->slice(5, 10)->values(), 'Preceding 10 games');
@@ -66,6 +75,38 @@ class NflTeamEvidenceService
                 'EPA, pressure, injury, weather and market-value conclusions are not inferred from missing or mutable historical inputs. Use the separate game analysis for verified matchup context.',
             ],
         ];
+    }
+
+    private function windowSamples(Collection $games, int $season): array
+    {
+        return [
+            'recent_5' => ['Last 5 regular-season games', $games->take(5)],
+            'recent_10' => ['Last 10 regular-season games', $games->take(10)],
+            'season' => ["{$season} regular season", $games->where('season', $season)],
+            'historical' => ['Previous 3 regular seasons', $games->where('season', '<', $season)],
+        ];
+    }
+
+    private function leagueMetrics(int $season, string $before): array
+    {
+        $gamesByTeam = [];
+        foreach ($this->calculator->leagueEvidenceGames($season, $before) as $game) {
+            $gamesByTeam[$game->home_team_id][] = $game;
+            $gamesByTeam[$game->away_team_id][] = $game;
+        }
+        $league = [];
+        foreach ($gamesByTeam as $teamId => $games) {
+            foreach ($this->windowSamples(collect($games), $season) as $key => [$label, $sample]) {
+                $evidence = $this->evidence((object) ['id' => $teamId], $sample, $label);
+                foreach ($evidence['metrics'] as $metric => $result) {
+                    if ($result['value'] !== null) {
+                        $league[$key][$metric][$teamId] = $result['value'];
+                    }
+                }
+            }
+        }
+
+        return $league;
     }
 
     private function window(object $team, Collection $games, string $label): array

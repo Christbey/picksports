@@ -38,7 +38,7 @@ it('builds distinct windows in one load and compares nonoverlapping samples', fu
     DB::flushQueryLog();
     try {
         $profile = app(NflTeamEvidenceService::class)->build($team, 2026, '2026-09-18T00:15:00Z');
-        expect(DB::getQueryLog())->toHaveCount(5);
+        expect(DB::getQueryLog())->toHaveCount(7);
     } finally {
         DB::disableQueryLog();
     }
@@ -139,4 +139,42 @@ it('returns empty evidence rather than fabricated baselines and caches profile r
     }
     $this->getJson("/api/v2/sports/nfl/teams/{$team->id}/trends?season=2026")
         ->assertOk()->assertJsonMissingPath('data.team_evidence');
+});
+
+it('ranks each window across the league with defensive direction ties and missing values', function () {
+    Cache::flush();
+    [$team, $opponent, $games] = evidenceFixture();
+    $peer = Team::factory()->create();
+    $other = Team::factory()->create();
+    Game::factory()->create(['home_team_id' => $peer->id, 'away_team_id' => $other->id,
+        'game_date' => '2026-09-13', 'game_time' => '17:00:00', 'season' => 2026,
+        'season_type' => '2', 'status' => 'STATUS_FINAL', 'home_score' => 30, 'away_score' => 10]);
+    Game::factory()->create(['home_team_id' => $peer->id, 'away_team_id' => $other->id,
+        'game_date' => '2025-09-13', 'game_time' => '17:00:00', 'season' => 2025,
+        'season_type' => '2', 'status' => 'STATUS_FINAL', 'home_score' => 50, 'away_score' => 0]);
+    // Neither the target kickoff nor exhibitions may change the league ranks.
+    foreach (['2', '1'] as $phase) {
+        Game::factory()->create(['home_team_id' => $other->id, 'away_team_id' => $peer->id,
+            'game_date' => $phase === '2' ? '2026-09-18' : '2026-08-20', 'game_time' => '00:15:00',
+            'season' => 2026, 'season_type' => $phase, 'status' => 'STATUS_FINAL',
+            'home_score' => 100, 'away_score' => 0]);
+    }
+    TeamStat::create(['game_id' => $games[0]->id, 'team_id' => $team->id,
+        'team_type' => 'home', 'interceptions' => 0, 'fumbles_lost' => 0, 'total_yards' => 300]);
+    TeamStat::create(['game_id' => $games[0]->id, 'team_id' => $opponent->id,
+        'team_type' => 'away', 'interceptions' => 1, 'fumbles_lost' => 0, 'total_yards' => 200]);
+    $windows = app(NflTeamEvidenceService::class)->build($team, 2026, '2026-09-18T00:15:00Z')['windows'];
+    $season = $windows['season']['evidence']['metrics'];
+    expect($season['points_for']['rank'])->toBe(1)
+        ->and($season['points_for']['rank_tied'])->toBeTrue()
+        ->and($season['points_for']['ranked_teams'])->toBe(4)
+        ->and($windows['recent_5']['evidence']['metrics']['points_for']['rank'])->toBe(2)
+        ->and($windows['recent_10']['evidence']['metrics']['points_for']['rank'])->toBe(2)
+        ->and($windows['historical']['evidence']['metrics']['points_for']['rank'])->toBe(2)
+        ->and($season['points_against']['rank'])->toBe(2)
+        ->and($season['turnovers']['rank'])->toBe(1)
+        ->and($season['turnovers']['ranked_teams'])->toBe(2)
+        ->and($season['yards_allowed']['rank'])->toBe(1)
+        ->and($season['yards_per_play']['rank'])->toBeNull()
+        ->and($season['yards_per_play']['ranked_teams'])->toBe(0);
 });

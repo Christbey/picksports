@@ -43,6 +43,18 @@ class CalculateTeamTrends extends AbstractCalculateTeamTrends
             ->orderByDesc('game_date')->orderByDesc('game_time')->orderByDesc('id')->get();
     }
 
+    public function leagueEvidenceGames(int $season, string $beforeDate): Collection
+    {
+        $query = Game::query()->where('status', 'STATUS_FINAL')
+            ->whereIn('season_type', $this->resolveSeasonTypeCandidates('2'))
+            ->whereBetween('season', [$season - 3, $season])
+            ->whereNotNull('home_score')->whereNotNull('away_score');
+
+        return $this->applyBeforeDateFilter($query, $beforeDate)
+            ->with('teamStats')
+            ->orderByDesc('game_date')->orderByDesc('game_time')->orderByDesc('id')->get();
+    }
+
     protected function baseGamesQuery(
         object $team,
         ?int $season = null,

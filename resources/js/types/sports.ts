@@ -586,6 +586,9 @@ export interface TeamTrendData {
 }
 
 export interface NflEvidenceMetric {
+    rank?: number | null;
+    ranked_teams?: number;
+    rank_tied?: boolean;
     value: number | null;
     sample_size: number;
     aggregation?: string;

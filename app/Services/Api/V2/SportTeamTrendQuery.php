@@ -45,7 +45,7 @@ class SportTeamTrendQuery
 
         $cacheKey = $this->sportsViewCache->contextHash([
             'contract' => 'sports.teams.trends.show',
-            'sample_contract_version' => 3,
+            'sample_contract_version' => 4,
             'sport' => $context->slug,
             'team_id' => $teamId,
             'season' => $season,

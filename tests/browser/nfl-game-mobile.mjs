@@ -148,12 +148,12 @@ try {
         );
         await page
             .locator('summary')
-            .filter({ hasText: 'Team ratings (Elo)' })
+            .filter({ hasText: 'Model details & team ratings' })
             .click();
         await assertVisible(page.getByText('1500', { exact: true }));
         await page
             .locator('summary')
-            .filter({ hasText: 'Team ratings (Elo)' })
+            .filter({ hasText: 'Model details & team ratings' })
             .click();
         await page
             .locator('summary')
@@ -230,12 +230,18 @@ try {
             name: 'Team evidence windows',
         });
         await assertVisible(evidence.getByRole('heading', { name: /^DET ·/ }));
-        await assertVisible(evidence.getByRole('heading', { name: /^BUF ·/ }), false);
+        await assertVisible(
+            evidence.getByRole('heading', { name: /^BUF ·/ }),
+            false,
+        );
         await evidence
             .getByRole('button', { name: 'BUF', exact: true })
             .click();
         await assertVisible(evidence.getByRole('heading', { name: /^BUF ·/ }));
-        await assertVisible(evidence.getByRole('heading', { name: /^DET ·/ }), false);
+        await assertVisible(
+            evidence.getByRole('heading', { name: /^DET ·/ }),
+            false,
+        );
         await evidence
             .getByRole('button', { name: 'Previous 3 seasons', exact: true })
             .click();
@@ -266,6 +272,18 @@ try {
         await assertVisible(
             page.getByText('Prediction Model', { exact: true }),
         );
+        if (output && width === 390) {
+            await page.evaluate(() =>
+                document.documentElement.classList.add('dark'),
+            );
+            await page
+                .getByText('Prediction Model', { exact: true })
+                .locator('xpath=ancestor::*[@data-slot="card"]')
+                .screenshot({ path: `${output}/forecast-desktop-dark.png` });
+            await page.evaluate(() =>
+                document.documentElement.classList.remove('dark'),
+            );
+        }
         await select('Trends');
         await assertVisible(
             page.getByText('Trends & Matchup History', { exact: true }),

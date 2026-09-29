@@ -33,6 +33,15 @@ const favorite = computed(() => {
     if (margin.value === 0) return 'Even matchup';
     return `${margin.value > 0 ? props.homeLabel || 'Home' : props.awayLabel || 'Away'} favored`;
 });
+const winner = computed(() => {
+    if (probability.value === null) return null;
+    if (probability.value === 0.5) return { label: 'Even matchup', chance: 50 };
+    const homeWins = probability.value > 0.5;
+    return {
+        label: `${homeWins ? props.homeLabel || 'Home' : props.awayLabel || 'Away'} to win`,
+        chance: (homeWins ? probability.value : 1 - probability.value) * 100,
+    };
+});
 </script>
 
 <template>
@@ -46,6 +55,38 @@ const favorite = computed(() => {
             </p>
         </CardHeader>
         <CardContent class="space-y-4 px-5">
+            <div
+                class="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-sky-500/25 bg-sky-500/10 px-4 py-4"
+                aria-label="Model pick"
+            >
+                <div>
+                    <p
+                        class="text-xs font-semibold tracking-wider text-sky-700 uppercase dark:text-sky-300"
+                    >
+                        Model winner
+                    </p>
+                    <p class="mt-1 text-3xl font-bold tracking-tight">
+                        {{ winner?.label ?? 'Pick unavailable' }}
+                    </p>
+                    <p v-if="winner" class="mt-1 text-sm text-muted-foreground">
+                        {{ formatNumber(winner.chance, 1) }}% model win
+                        probability
+                    </p>
+                </div>
+                <div
+                    v-if="
+                        prediction.spread_assessment?.recommendation ===
+                        'pass_small_edge'
+                    "
+                    class="rounded-lg border border-border/60 bg-background/60 px-4 py-3"
+                >
+                    <p class="text-xs text-muted-foreground">Spread pick</p>
+                    <p class="text-lg font-semibold">Pass</p>
+                    <p class="text-xs text-muted-foreground">
+                        Edge below threshold
+                    </p>
+                </div>
+            </div>
             <div class="grid gap-5 md:grid-cols-2 md:gap-8">
                 <dl class="grid grid-cols-2 divide-x divide-border/60">
                     <div class="pr-4">

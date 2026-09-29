@@ -137,6 +137,8 @@ test('forecast leads with model spread and total, preserves sign and marks even 
     assert.match(html, /-3\.5/);
     assert.match(html, /48\.5/);
     assert.match(html, /BUF favored/);
+    assert.match(html, /BUF to win/);
+    assert.match(html, /aria-label="Model pick"/);
     assert.match(html, /63\.0%/);
     assert.match(html, /37\.0%/);
     assert.match(html, /not sportsbook lines or an approved bet/);
@@ -151,6 +153,7 @@ test('forecast leads with model spread and total, preserves sign and marks even 
     const away = await forecastHtml({ predicted_spread: -3.5 });
     assert.match(away, /\+3\.5/);
     assert.match(away, /DET favored/);
+    assert.match(away, /Pick unavailable/);
 });
 
 test('missing or invalid forecast values never become zero, a favorite or a fake probability', async () => {

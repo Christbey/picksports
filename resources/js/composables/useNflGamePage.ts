@@ -165,6 +165,9 @@ export const normalizePrediction = (
     const source = rawPrediction as Record<string, unknown>;
 
     return {
+        sport: typeof source.sport === 'string' ? source.sport : undefined,
+        confidence_context:
+            source.confidence_context as NflPagePrediction['confidence_context'],
         id: toNumber(source.id),
         game_id: toNumber(source.game_id),
         home_elo: toOptionalNumber(source.home_elo) ?? '',
@@ -277,46 +280,54 @@ export function useNflGamePage(gameId: number) {
     const hasLivePrediction = computed(() =>
         NFL_LIVE_STATUSES.has(currentGame.value.status),
     );
-    const livePredictionData = computed((): LivePredictionData | undefined => {
-        if (!hasLivePrediction.value) return undefined;
-        const snapshot = liveSnapshot.value;
-        return {
-            isLive: true,
-            provisional: true,
-            homeLabel: homeTeam.value?.abbreviation,
-            awayLabel: awayTeam.value?.abbreviation,
-            homeScore: snapshot?.game.home_score ?? null,
-            awayScore: snapshot?.game.away_score ?? null,
-            status: snapshot?.game.status ?? currentGame.value.status,
-            period: snapshot?.game.period,
-            gameClock: snapshot?.game.game_clock,
-            liveWinProbability:
-                snapshot?.projection?.live_win_probability ?? null,
-            livePredictedSpread:
-                snapshot?.projection?.live_predicted_spread ?? null,
-            livePredictedTotal:
-                snapshot?.projection?.live_predicted_total ?? null,
-            liveSecondsRemaining: snapshot?.projection?.live_seconds_remaining,
-            sourceUpdatedAt: snapshot?.source_updated_at,
-            freshnessWarning: liveSnapshotWarning(
-                snapshot,
-                currentTime.value,
-                liveRefreshFailed.value,
-            ),
-            modelWarning:
-                snapshot?.warning ??
-                'Experimental score-and-clock estimate; not a live sportsbook edge.',
-            preGameWinProbability: Number(
-                prediction.value?.win_probability ?? 0,
-            ),
-            preGamePredictedSpread: Number(
-                prediction.value?.predicted_spread ?? 0,
-            ),
-            preGamePredictedTotal: Number(
-                prediction.value?.predicted_total ?? 0,
-            ),
-        };
-    });
+    const livePredictionData = computed<LivePredictionData | undefined>(
+        (
+            previous: LivePredictionData | undefined,
+        ): LivePredictionData | undefined => {
+            if (!hasLivePrediction.value) return undefined;
+            const snapshot = liveSnapshot.value;
+            const next: LivePredictionData = {
+                isLive: true,
+                provisional: true,
+                homeLabel: homeTeam.value?.abbreviation,
+                awayLabel: awayTeam.value?.abbreviation,
+                homeScore: snapshot?.game.home_score ?? null,
+                awayScore: snapshot?.game.away_score ?? null,
+                status: snapshot?.game.status ?? currentGame.value.status,
+                period: snapshot?.game.period,
+                gameClock: snapshot?.game.game_clock,
+                liveWinProbability:
+                    snapshot?.projection?.live_win_probability ?? null,
+                livePredictedSpread:
+                    snapshot?.projection?.live_predicted_spread ?? null,
+                livePredictedTotal:
+                    snapshot?.projection?.live_predicted_total ?? null,
+                liveSecondsRemaining:
+                    snapshot?.projection?.live_seconds_remaining,
+                sourceUpdatedAt: snapshot?.source_updated_at,
+                freshnessWarning: liveSnapshotWarning(
+                    snapshot,
+                    currentTime.value,
+                    liveRefreshFailed.value,
+                ),
+                modelWarning:
+                    snapshot?.warning ??
+                    'Experimental score-and-clock estimate; not a live sportsbook edge.',
+                preGameWinProbability: Number(
+                    prediction.value?.win_probability ?? 0,
+                ),
+                preGamePredictedSpread: Number(
+                    prediction.value?.predicted_spread ?? 0,
+                ),
+                preGamePredictedTotal: Number(
+                    prediction.value?.predicted_total ?? 0,
+                ),
+            };
+            return JSON.stringify(previous) === JSON.stringify(next)
+                ? previous
+                : next;
+        },
+    );
 
     const trendsSubtitle = computed(
         () =>
@@ -488,10 +499,15 @@ export function useNflGamePage(gameId: number) {
                     ])
             ) {
                 liveSnapshot.value = response.data;
-                currentGame.value = {
-                    ...currentGame.value,
-                    ...response.data.game,
-                } as NflPageGame;
+            }
+            const nextGame = {
+                ...currentGame.value,
+                ...response.data.game,
+            } as NflPageGame;
+            if (
+                JSON.stringify(currentGame.value) !== JSON.stringify(nextGame)
+            ) {
+                currentGame.value = nextGame;
             }
             liveRefreshFailed.value = false;
             currentTime.value = Date.now();
@@ -509,12 +525,18 @@ export function useNflGamePage(gameId: number) {
                 const stats = flattenApiV2Stats(
                     statsResponse?.data,
                 ) as unknown as NflTeamStats[];
-                homeTeamStats.value =
-                    stats.find((row) => row.team_type === 'home') ??
-                    homeTeamStats.value;
-                awayTeamStats.value =
-                    stats.find((row) => row.team_type === 'away') ??
-                    awayTeamStats.value;
+                const home = stats.find((row) => row.team_type === 'home');
+                const away = stats.find((row) => row.team_type === 'away');
+                if (
+                    home &&
+                    JSON.stringify(home) !== JSON.stringify(homeTeamStats.value)
+                )
+                    homeTeamStats.value = home;
+                if (
+                    away &&
+                    JSON.stringify(away) !== JSON.stringify(awayTeamStats.value)
+                )
+                    awayTeamStats.value = away;
                 lastStatsRefresh = Date.now();
             }
         } catch {

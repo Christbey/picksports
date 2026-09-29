@@ -433,3 +433,31 @@ test('unchanged stored snapshots preserve rendered game state across background 
     assert.equal(state.game.value, previous);
     assert.equal(state.gameStatus.value, 'In progress');
 });
+
+test('diagnostic-only snapshot updates preserve the displayed game and prediction', async () => {
+    const stored = snapshot();
+    snapshotResult = async () => ({ data: stored });
+    await mount();
+    const previousGame = state.game.value;
+    const previousPrediction = state.prediction.value;
+    snapshotResult = async () => ({
+        data: {
+            ...stored,
+            source_updated_at: new Date(Date.now() + 1000).toISOString(),
+            projection: { ...stored.projection, live_win_probability: 82 },
+        },
+    });
+    await tickRefresh();
+    assert.equal(state.game.value, previousGame);
+    assert.equal(state.prediction.value, previousPrediction);
+    assert.equal(state.livePredictionData.value.liveWinProbability, 82);
+    assert.equal(state.loading.value, false);
+});
+
+test('clock ticks preserve diagnostic props when the freshness warning has not changed', async () => {
+    await mount();
+    const previous = state.livePredictionData.value;
+    for (const interval of intervals.values()) interval.callback();
+    await flush();
+    assert.equal(state.livePredictionData.value, previous);
+});

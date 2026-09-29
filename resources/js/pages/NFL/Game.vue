@@ -58,7 +58,7 @@ const sectionClass = (section: string) =>
         <template #afterHero>
             <nav
                 aria-label="Game sections"
-                class="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 grid grid-cols-4 gap-1 rounded-xl border bg-background/95 p-1 shadow-lg backdrop-blur md:static md:inset-auto md:mb-4 md:flex md:w-fit md:gap-2 md:shadow-none"
+                class="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 grid grid-cols-4 gap-1 rounded-xl border bg-background p-1 shadow-lg md:static md:inset-auto md:mb-4 md:flex md:w-fit md:gap-2 md:shadow-none"
             >
                 <button
                     v-for="(label, key) in mobileSections"

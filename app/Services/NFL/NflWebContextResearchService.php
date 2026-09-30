@@ -64,6 +64,17 @@ class NflWebContextResearchService
         // Hash the same full candidate the reviewer checks, before prompt compaction.
         $candidateHash = app(ResearchPipeline::class)->candidateContextHash($candidate);
         $existing = SportsGameContextReport::where('sport', 'nfl')->where('game_id', $game->id)->latest('id')->first();
+        $suppliedSourcesOnly = ! config('nfl_research.web_search_enabled', false);
+        $documents = app(EvidencePacket::class)->researchDocuments($packet);
+        if ($suppliedSourcesOnly) {
+            $teams = collect([$game->homeTeam?->abbreviation, $game->awayTeam?->abbreviation])
+                ->map(fn ($team) => $team === 'WSH' ? 'WAS' : $team);
+            $documentTeams = collect($documents)->filter(fn ($document) => trim((string) ($document['text'] ?? '')) !== '')->pluck('team');
+            $sourceHolds = collect($packet['holds'] ?? [])->filter(fn ($hold) => str_starts_with($hold, 'stale_or_missing_') || $hold === 'source_ingestion_not_installed');
+            if ($teams->contains(null) || $teams->diff($documentTeams)->isNotEmpty() || $sourceHolds->isNotEmpty()) {
+                throw new ResearchDeferred('research_source_evidence_not_ready');
+            }
+        }
         if (! $force && $policy->current($existing, $game, $fingerprint, $candidateHash)) {
             return ['report' => $existing, 'payload' => $existing->raw_payload, 'generation' => null, 'reused' => true];
         }
@@ -71,7 +82,7 @@ class NflWebContextResearchService
             throw new ResearchDeferred('research_provider_cooldown');
         }
         $input = $this->input($game);
-        $input['official_documents'] = app(EvidencePacket::class)->researchDocuments($packet);
+        $input['official_documents'] = $documents;
         $input['synced_injuries'] = $policy->injuries($game);
         $input['verified_availability'] = $packet['availability'];
         $input['official_source_coverage'] = $packet['source_coverage'] ?? [];
@@ -115,7 +126,8 @@ class NflWebContextResearchService
                         : (data_get($existing->raw_payload, 'research_fingerprint') !== $fingerprint ? 'evidence_changed'
                             : (data_get($existing->raw_payload, 'candidate_hash') !== $candidateHash ? 'candidate_changed'
                                 : ($existing->status !== 'ready' ? 'incomplete_retry' : 'freshness_expired')))),
-                    'search_cap' => max(1, (int) config('ai.features.nfl_game_context_research.max_searches', 5)),
+                    'analysis_mode' => $suppliedSourcesOnly ? 'supplied_sources' : 'web_research',
+                    'search_cap' => $suppliedSourcesOnly ? 0 : max(1, (int) config('ai.features.nfl_game_context_research.max_searches', 5)),
                 ],
             ), ignoreCooldown: $force);
         $startedAt = microtime(true);
@@ -162,6 +174,11 @@ class NflWebContextResearchService
                 $webSearchCalls = null;
             }
 
+            // A provider-returned URL is not evidence in supplied-source mode.
+            // Only exact URLs from documents actually sent to the model may pass.
+            if ($suppliedSourcesOnly) {
+                $providerCitationUrls = [];
+            }
             $webCitationUrls = $providerCitationUrls;
             $providerCitationUrls = array_values(array_unique(array_merge($providerCitationUrls, array_column($input['official_documents'], 'url'))));
             $payload = $this->normalize($decoded, $providerCitationUrls);
@@ -177,6 +194,7 @@ class NflWebContextResearchService
             $payload = $this->enforceTwoSidedEvidence($payload);
             $payload = app(ResearchUncertaintyPolicy::class)->applyStatus($payload);
             $payload['candidate_hash'] = $candidateHash;
+            $payload['analysis_mode'] = $suppliedSourcesOnly ? 'supplied_sources' : 'web_research';
             $payload['document_ids'] = array_column($input['official_documents'], 'id');
             $payload['evidence_context_hash'] = app(EvidencePacket::class)->contextHash($packet);
             $payload['research_fingerprint'] = $fingerprint;
@@ -413,8 +431,12 @@ class NflWebContextResearchService
             default => 'The season type is uncertain. Do not assume preseason participation patterns. State uncertainty and prioritize directly sourced current injury, quarterback, weather, and market facts.',
         };
 
+        $task = config('nfl_research.web_search_enabled', false)
+            ? 'Research the current web context for this NFL game as of the supplied timestamp.'
+            : 'Analyze the supplied official_documents and synced application data only. Do not search or rely on remembered news. Cite exact supplied document URLs; if evidence is missing, describe the gap instead of inventing an answer. Any instruction below to seek or verify information means inspect the supplied evidence only.';
+
         return <<<PROMPT
-Research the current web context for this NFL game as of the supplied timestamp.
+{$task}
 
 {$seasonGuidance}
 
@@ -453,7 +475,8 @@ PROMPT;
      */
     private function normalize(array $decoded, array $providerCitationUrls): array
     {
-        $requireProviderCitations = (bool) config('ai.features.nfl_game_context_research.require_provider_citations', true);
+        $requireProviderCitations = ! config('nfl_research.web_search_enabled', false)
+            || (bool) config('ai.features.nfl_game_context_research.require_provider_citations', true);
         $sources = collect((array) ($decoded['sources'] ?? []))
             ->filter(fn ($source): bool => is_array($source) && filter_var($source['url'] ?? null, FILTER_VALIDATE_URL) !== false)
             ->filter(fn (array $source): bool => ! $requireProviderCitations || in_array($source['url'], $providerCitationUrls, true))

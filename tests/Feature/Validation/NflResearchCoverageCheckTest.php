@@ -88,6 +88,7 @@ it('fails stale reports and expired revision evidence even when the latest repor
 });
 
 it('applies the tighter pregame age even before a stored six hour expiry', function () {
+    config(['nfl_research.cost_control.pregame_minutes' => 90]);
     $game = researchCoverageGame(4);
     $report = researchCoverageReport($game, ['researched_at' => now()->subHours(2), 'expires_at' => now()->addHour()]);
     researchCoverageRevision($game, $report);
@@ -188,6 +189,7 @@ it('links newer research immediately while deduplicating repeated reviews of the
 })->with(['ready', 'partial']);
 
 it('readiness fails data holds and stale markets but accepts a completed no-edge pass', function () {
+    config(['nfl_research.market_freshness_minutes' => 60]);
     $game = researchCoverageGame();
     $revision = researchCoverageRevision($game, researchCoverageReport($game));
     $game->update(['odds_updated_at' => now(), 'odds_data' => [

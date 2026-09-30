@@ -12,6 +12,7 @@ use App\Services\NFL\NflWebContextResearchService;
 use App\Services\NFL\OpenAiNflGameContextResearchClient;
 use App\Services\NFL\Research\EvidencePacket;
 use App\Services\NFL\Research\OfficialSourceIngestor;
+use App\Services\NFL\Research\ResearchDeferred;
 use App\Services\NFL\Research\ResearchPipeline;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
@@ -20,6 +21,7 @@ use Illuminate\Support\Facades\Http;
 uses()->group('nfl', 'research');
 
 beforeEach(function () {
+    config(['nfl_research.web_search_enabled' => true]);
     $this->travelTo('2026-09-16 12:00:00');
     config(['nfl_research.enabled' => true]);
 });
@@ -66,7 +68,7 @@ it('honors a shared provider cooldown in direct pipeline service calls without f
     $this->mock(OpenAiNflGameContextResearchClient::class, fn ($mock) => $mock->shouldNotReceive('research'));
 
     expect(fn () => app(NflWebContextResearchService::class)->research(reliabilityResearchGame(), 'openai'))
-        ->toThrow(RuntimeException::class, 'rate-limit cooldown');
+        ->toThrow(ResearchDeferred::class, 'research_provider_cooldown');
     $this->assertDatabaseCount('sports_game_context_reports', 0);
     $this->assertDatabaseCount('ai_generations', 0);
 });

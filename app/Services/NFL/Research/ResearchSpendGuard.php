@@ -37,12 +37,20 @@ class ResearchSpendGuard
                     throw new ResearchDeferred('research_game_daily_budget_reached');
                 }
                 $limit = max(1, (int) config('nfl_research.cost_control.game_daily_attempts', 8));
+                $suppliedSourcesOnly = ! config('nfl_research.web_search_enabled', false);
+                if ($suppliedSourcesOnly) {
+                    $limit = min($limit, max(1, (int) config('nfl_research.source_analysis.daily_attempts', 2)));
+                }
                 $kickoff = app(SportsDateWindowService::class)->gameDateTimeUtc($game->game_date, $game->game_time);
                 $pregameReserve = $kickoff && $kickoff->isFuture()
                     && $kickoff->lte(now()->addHours(max(0, (int) config('nfl_research.cost_control.pregame_reserve_hours', 12))))
                     && in_array($game->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true);
                 if ($pregameReserve) {
-                    $limit += max(0, (int) config('nfl_research.cost_control.pregame_reserved_attempts', 4));
+                    $reserve = max(0, (int) config('nfl_research.cost_control.pregame_reserved_attempts', 4));
+                    if ($suppliedSourcesOnly) {
+                        $reserve = min($reserve, max(0, (int) config('nfl_research.source_analysis.pregame_reserved_attempts', 1)));
+                    }
+                    $limit += $reserve;
                 }
                 if ($gameRows->count() >= $limit) {
                     throw new ResearchDeferred('research_game_attempt_limit_reached');
@@ -50,6 +58,9 @@ class ResearchSpendGuard
                 if ($latest && ! $ignoreCooldown) {
                     $sameEvidence = data_get($latest->metadata, 'research_fingerprint') === $fingerprint;
                     $minutes = max(1, (int) config('nfl_research.cost_control.minimum_interval_minutes', 15));
+                    if ($suppliedSourcesOnly && ! $pregameReserve) {
+                        $minutes = max($minutes, (int) config('nfl_research.source_analysis.minimum_interval_minutes', 360));
+                    }
                     if ($sameEvidence) {
                         $minutes = max($minutes, min(
                             app(ResearchRefreshPolicy::class)->freshnessMinutes($game),

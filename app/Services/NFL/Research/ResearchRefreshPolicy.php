@@ -52,6 +52,7 @@ class ResearchRefreshPolicy
 
         return hash('sha256', json_encode([
             'version' => 1,
+            'analysis_mode' => config('nfl_research.web_search_enabled', false) ? 'web_research' : 'supplied_sources',
             'prompt_version' => config('ai.features.nfl_game_context_research.prompt_version'),
             'uncertainty_policy' => ResearchUncertaintyPolicy::VERSION,
             'documents' => collect(app(EvidencePacket::class)->researchDocuments($packet))

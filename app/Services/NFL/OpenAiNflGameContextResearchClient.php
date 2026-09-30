@@ -58,6 +58,10 @@ class OpenAiNflGameContextResearchClient
             ],
         ];
 
+        if (! config('nfl_research.web_search_enabled', false)) {
+            unset($payload['tools'], $payload['tool_choice'], $payload['max_tool_calls'], $payload['include']);
+        }
+
         if ($this->supportsReasoningEffort($model)) {
             $payload['reasoning'] = [
                 'effort' => (string) config('ai.features.nfl_game_context_research.reasoning_effort', 'none'),

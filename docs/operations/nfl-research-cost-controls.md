@@ -1,5 +1,38 @@
 # NFL research cost controls
 
+## Supplied-source analysis
+
+Routine NFL analysis now defaults to `NFL_RESEARCH_WEB_SEARCH_ENABLED=false`.
+The existing official RSS, newsroom, roster and injury collectors continue to
+fetch and deduplicate source documents without an AI request. The OpenAI
+Responses request receives those documents and synced application data, with no
+web-search tool. The alternate agent path also exposes no search tools. Only
+exact document URLs supplied to the model may support its claims; provider
+annotations cannot introduce new sources in this mode.
+
+Before spending, both teams must have nonempty selected documents and the
+packet must have no stale/missing source-collection holds. An incomplete packet
+returns `research_source_evidence_not_ready`, even for a forced retry. Freshness,
+candidate identity, evidence conflicts and recommendation holds still apply.
+Matching fresh reports reuse their original timestamps. Mode changes invalidate
+the report fingerprint, so old web reports are not silently relabeled.
+
+Additional source-analysis limits apply even when production has larger legacy
+limits: two attempts per game per rolling 24 hours, with at most one additional
+attempt within the existing 12-hour pregame reserve window. Away from that
+window, requests are spaced at least six hours apart. Existing monetary limits
+can reduce admission further. Configure these with
+`NFL_SOURCE_ANALYSIS_DAILY_ATTEMPTS`,
+`NFL_SOURCE_ANALYSIS_PREGAME_RESERVED_ATTEMPTS`, and
+`NFL_SOURCE_ANALYSIS_MINIMUM_INTERVAL_MINUTES`.
+
+This is supplied-document game analysis, not yet a reusable per-article fact
+extraction cache. A material candidate change or expired report can still need
+new analysis, subject to these limits. RSS fetching incurs normal hosting and
+network work; text analysis still consumes API credits. No savings percentage
+is assumed until measured. Setting `NFL_RESEARCH_WEB_SEARCH_ENABLED=true`
+explicitly restores the legacy web-research path described below.
+
 ## Scope and baseline
 
 These controls apply to `nfl_game_context_research` from the pipeline, legacy command and direct service callers. They do not cap other OpenAI purposes, other applications or the OpenAI account itself. No model downgrade, source-validation relaxation or reduction of the five-search/6,000-output-token caps is included.

@@ -16,6 +16,8 @@ use Mockery as m;
 
 uses()->group('nfl', 'ai');
 
+beforeEach(fn () => config(['nfl_research.web_search_enabled' => true]));
+
 it('fails visibly when nfl context research is disabled', function () {
     config()->set('ai.features.nfl_game_context_research.enabled', false);
 

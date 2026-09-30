@@ -22,6 +22,8 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
+    // These regression cases exercise the explicitly enabled web-research path.
+    config(['nfl_research.web_search_enabled' => true]);
     $this->travelTo('2026-09-18 10:00:00');
     Cache::flush();
     Http::preventStrayRequests();

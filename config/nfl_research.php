@@ -2,6 +2,13 @@
 
 return [
     'enabled' => (bool) env('NFL_RESEARCH_PIPELINE_ENABLED', true),
+    // Routine analysis consumes our ingested sources. Paid discovery is opt-in.
+    'web_search_enabled' => (bool) env('NFL_RESEARCH_WEB_SEARCH_ENABLED', false),
+    'source_analysis' => [
+        'daily_attempts' => env('NFL_SOURCE_ANALYSIS_DAILY_ATTEMPTS', 2),
+        'pregame_reserved_attempts' => env('NFL_SOURCE_ANALYSIS_PREGAME_RESERVED_ATTEMPTS', 1),
+        'minimum_interval_minutes' => env('NFL_SOURCE_ANALYSIS_MINIMUM_INTERVAL_MINUTES', 360),
+    ],
     'cost_control' => [
         // Rolling 24-hour, estimated admission budgets, not a provider billing guarantee.
         'daily_budget_usd' => env('NFL_RESEARCH_DAILY_BUDGET_USD', 5),

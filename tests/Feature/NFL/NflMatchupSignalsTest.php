@@ -65,8 +65,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(54)
-        ->and($result['signals'])->toHaveCount(108)
+    expect($result['summary']['supported_rules'])->toBe(58)
+        ->and($result['signals'])->toHaveCount(116)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -139,7 +139,7 @@ it('ranks offense higher and EPA allowed lower with grouped queries and independ
         ->and(matchupSignal($result, 51, $target->home_team_id)['status'])->toBe('matched')
         ->and(matchupSignal($result, 101, $target->home_team_id)['status'])->toBe('matched')
         ->and($result['predictive_weight'])->toBe(0)
-        ->and(count($queries))->toBe(2);
+        ->and(count($queries))->toBe(3);
     $target->home_team_id = $teams[0]->id;
     $target->away_team_id = $teams[1]->id;
     $result = app(NflMatchupSignalService::class)->build($target);
@@ -307,4 +307,27 @@ it('excludes two point tries rather than treating their absent down as missing s
     }
     $after = matchupSignal($service->build($target), 78, $target->home_team_id);
     expect($after)->toBe($before);
+});
+
+it('evaluates points per drive from possession scores including conversions without counting opponent scores', function () {
+    [$target, $teams] = matchupSignalLeague();
+    // Eight complete drives per game, each with five plays. The first drive
+    // scores seven points, the other seven score zero.
+    $rows = DB::table('nflverse_pbp_plays')->get();
+    foreach ($rows as $index => $row) {
+        $play = (int) substr($row->nflverse_play_key, strrpos($row->nflverse_play_key, '-') + 1);
+        DB::table('nflverse_pbp_plays')->where('id', $row->id)->update([
+            'fixed_drive' => intdiv($play, 5) + 1,
+            'fixed_drive_result' => $play < 5 ? 'Touchdown' : 'Opp touchdown',
+            'possession_score_before' => $play < 5 ? 0 : 7,
+            'possession_score_after' => 7,
+        ]);
+    }
+    $service = app(NflMatchupSignalService::class);
+    $signal = matchupSignal($service->build($target), 15, $target->home_team_id);
+    expect($signal['evidence']['offense']['value'])->toBe(0.875)
+        ->and($signal['evidence']['league_teams'])->toBe(32)
+        ->and($signal['status'])->not->toBe('insufficient_data');
+    DB::table('nflverse_pbp_plays')->where('possession_team_id', $target->home_team_id)->update(['fixed_drive' => null]);
+    expect(matchupSignal($service->build($target), 15, $target->home_team_id)['status'])->toBe('insufficient_data');
 });

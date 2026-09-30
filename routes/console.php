@@ -1040,6 +1040,7 @@ $scheduleSportPipeline(
     scheduleStandaloneOdds: false,
 );
 // Daily provider fetch; NFL prop freshness is evaluated against a 24-hour window.
+$scheduleDailySeasonJob("nfl:sync-nflverse-pbp --season={$fallSeasonYear}", '08:05', $nflInSeason, 'NFL: Sync Matchup Play-by-Play');
 $scheduleDailySeasonJob("nfl:sync-game-quarterbacks --season={$fallSeasonYear} --apply", '08:15', $nflInSeason, 'NFL: Sync Confirmed Game Quarterbacks');
 $nflPlayerPropsCommand = 'nfl:sync-player-props';
 $nflPlayerPropsEvent = Schedule::command($nflPlayerPropsCommand)

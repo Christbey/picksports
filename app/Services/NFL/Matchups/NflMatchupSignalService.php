@@ -105,7 +105,7 @@ final class NflMatchupSignalService
             })->keyBy('id');
     }
 
-    /** Two queries total per build: qualifying games, then grouped provider plays. */
+    /** Three queries per build: qualifying games, grouped drives, and grouped provider plays. */
     private function metrics(Collection $games): array
     {
         $buckets = [];
@@ -120,6 +120,34 @@ final class NflMatchupSignalService
             }
         }
         if ($games->isNotEmpty()) {
+            $drives = DB::table('nflverse_pbp_plays')->whereIn('nfl_game_id', $games->keys())
+                ->select(['nfl_game_id', 'possession_team_id', 'defense_team_id', 'fixed_drive'])
+                ->selectRaw("SUM(CASE WHEN play_type IN ('pass', 'run') THEN 1 ELSE 0 END) AS scrimmage_plays")
+                ->selectRaw('COUNT(*) AS rows_count, COUNT(possession_score_before) AS before_count, COUNT(possession_score_after) AS after_count')
+                ->selectRaw('MIN(possession_score_before) AS start_score, MAX(possession_score_after) AS end_score')
+                ->selectRaw('MIN(fixed_drive_result) AS result_min, MAX(fixed_drive_result) AS result_max, COUNT(fixed_drive_result) AS result_count')
+                ->groupBy('nfl_game_id', 'possession_team_id', 'defense_team_id', 'fixed_drive')->get();
+            foreach ($drives as $drive) {
+                if ((int) $drive->scrimmage_plays === 0) {
+                    continue;
+                }
+                $game = $games->get($drive->nfl_game_id);
+                $offense = (int) $drive->possession_team_id;
+                $defense = (int) $drive->defense_team_id;
+                if ($offense === $defense || ! in_array($offense, [(int) $game->home_team_id, (int) $game->away_team_id], true)
+                    || ! in_array($defense, [(int) $game->home_team_id, (int) $game->away_team_id], true)) {
+                    continue;
+                }
+                $points = (int) $drive->end_score - (int) $drive->start_score;
+                $valid = $drive->fixed_drive !== null && $drive->before_count === $drive->rows_count
+                    && $drive->after_count === $drive->rows_count && $drive->result_count === $drive->rows_count
+                    && $drive->result_min === $drive->result_max
+                    && in_array($drive->result_min, ['Touchdown', 'Punt', 'Field goal', 'Turnover', 'Turnover on downs', 'End of half', 'Missed field goal', 'Opp touchdown', 'Safety'], true)
+                    && $points >= 0 && $points <= 8;
+                foreach ([['offense', $offense], ['defense', $defense]] as [$side, $team]) {
+                    $this->add($buckets, 'points_per_drive', $side, $team, (int) $drive->nfl_game_id, $valid ? $points : 0, $valid ? 1 : 0, 1);
+                }
+            }
             $query = DB::table('nflverse_pbp_plays')->whereIn('nfl_game_id', $games->keys())
                 ->whereIn('play_type', ['pass', 'run'])
                 ->where(fn ($query) => $query->whereNull('description')->orWhereRaw('LOWER(description) NOT LIKE ?', ['%no play%']))
@@ -184,6 +212,7 @@ final class NflMatchupSignalService
                 foreach ($teams as $team => $bucket) {
                     $minimumPerGame = match ($metric) {
                         'points_per_game' => 1,
+                        'points_per_drive' => 5,
                         'pass_epa', 'pass_success_rate', 'pass_explosive_rate', 'pass_yards_per_attempt', 'early_epa' => 15,
                         'rush_epa', 'rush_success_rate', 'rush_explosive_rate', 'first_down_pass_epa' => 8,
                         'late_epa' => 5,
@@ -192,7 +221,10 @@ final class NflMatchupSignalService
                         default => 30
                     };
                     $pooledSituation = in_array($metric, ['first_down_pass_epa', 'third_down_pass_epa', 'red_zone_pass_epa', 'short_yardage_success_rate'], true);
-                    $validGames = array_filter($bucket['games'], function (array $sample, int $gameId) use ($minimumPerGame, $pooledSituation, $buckets, $side, $team): bool {
+                    $validGames = array_filter($bucket['games'], function (array $sample, int $gameId) use ($metric, $minimumPerGame, $pooledSituation, $buckets, $side, $team): bool {
+                        if ($metric === 'points_per_drive') {
+                            return $sample['count'] >= $minimumPerGame && $sample['count'] === $sample['candidate'];
+                        }
                         if (! $pooledSituation) {
                             return $sample['count'] >= $minimumPerGame && $sample['count'] >= $sample['candidate'] * .9;
                         }
@@ -269,6 +301,7 @@ final class NflMatchupSignalService
                 'source' => match ($rule['metric']) {
                     'points_per_game' => 'nfl_games: final team scores',
                     'pass_yards_per_attempt' => 'nflverse_pbp_plays: pass attempts (sacks excluded)',
+                    'points_per_drive' => 'nflverse_pbp_plays: completed drives and possession-team scores',
                     default => 'nflverse_pbp_plays: pass/run plays (sacks included)',
                 },
                 'offense' => $offense, 'defense' => $defense, 'league_teams' => $league,

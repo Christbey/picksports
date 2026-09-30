@@ -4,13 +4,13 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-09-27.2';
+    public const VERSION = '2026-09-30.1';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
     {
         $rules = [];
-        foreach ([1 => ['epa', 5], 5 => ['epa', 10], 11 => ['success_rate', 10], 19 => ['yards_per_play', 10], 51 => ['pass_epa', 5], 55 => ['pass_epa', 10], 101 => ['rush_epa', 5]] as $start => [$metric, $size]) {
+        foreach ([1 => ['epa', 5], 5 => ['epa', 10], 11 => ['success_rate', 10], 15 => ['points_per_drive', 10], 19 => ['yards_per_play', 10], 51 => ['pass_epa', 5], 55 => ['pass_epa', 10], 101 => ['rush_epa', 5]] as $start => [$metric, $size]) {
             foreach ([['top', 'top'], ['top', 'bottom'], ['bottom', 'top'], ['bottom', 'bottom']] as $offset => [$offense, $defense]) {
                 $rules[$start + $offset] = compact('metric', 'size', 'offense', 'defense');
             }
@@ -84,6 +84,7 @@ final class NflMatchupSignalCatalog
             'short_yardage_success_rate' => 'Share of eligible pass/run plays with 1–2 yards to go that gain at least the required yards. Not a charted blocking grade.',
             'yards_per_play' => 'Play-weighted yards gained on eligible pass/run plays, including sacks.',
             'pass_yards_per_attempt' => 'Passing yards gained per provider-classified pass with a known false sack flag. Includes incomplete passes as zero yards; excludes sacks, runs, no-play rows and unknown sack classifications. Requires at least 15 attempts per game and 90% yardage coverage.',
+            'points_per_drive' => 'Possession-team scoreboard points gained per completed drive containing a pass or run. Includes conversion points; excludes return-only and kneel-only drives and opponent scores. Requires complete drive identities, results and score coverage, at least five drives per game and two complete games for all 32 teams.',
             'points_per_game' => 'Team points scored/allowed per final game, including defensive and special-teams scoring.',
         }.' High/elite/strong means top 10 and low/weak/poor means bottom 10 where the supplied label has no numeric band; explicit top-5/top-10 bands take precedence. Thresholds describe this catalog, not validated betting edges.';
     }

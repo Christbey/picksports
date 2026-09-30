@@ -244,5 +244,6 @@ test('lazy wrapper fetches once when opened and exposes retry on failure', async
     const { default: component } = await server.ssrLoadModule('/resources/js/components/game-page/NflMatchupSignalEvidence.vue');
     const html = await renderToString(createSSRApp(component, { data: fixture() }));
     assert.match(html, /Offense 0\.000/);
-    assert.doesNotMatch(html, /Full checklist|matching items|Insufficient history|needs data or implementation|Charting required|Coverage and limitations|Data coverage|Admin ·/);
+    assert.match(html, /Evaluated matchups/);
+    assert.doesNotMatch(html, /Full checklist|Insufficient history|needs data or implementation|Charting required|Coverage and limitations|Data coverage|Admin ·/);
 });

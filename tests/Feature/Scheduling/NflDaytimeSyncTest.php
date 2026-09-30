@@ -27,3 +27,15 @@ it('refreshes confirmed game quarterbacks before the daily NFL model pipeline', 
         Carbon::setTestNow();
     }
 });
+
+it('refreshes independent matchup plays before daytime forecasts', function () {
+    Carbon::setTestNow(Carbon::parse('2026-09-30 08:05:00', 'America/Chicago'));
+    try {
+        $event = collect(app(Schedule::class)->events())->firstWhere('description', 'NFL: Sync Matchup Play-by-Play');
+        expect($event)->not->toBeNull()->and($event->expression)->toBe('5 8 * * *')
+            ->and($event->command)->toContain('nfl:sync-nflverse-pbp --season=2026')
+            ->and($event->filtersPass(app()))->toBeTrue();
+    } finally {
+        Carbon::setTestNow();
+    }
+});

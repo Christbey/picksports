@@ -7,12 +7,23 @@ import {
     type NflMatchupSignalData,
 } from '@/lib/nflMatchupSignals';
 
-const props = defineProps<{ data: NflMatchupSignalData }>();
+const props = defineProps<{
+    data: NflMatchupSignalData;
+    diagnostics?: boolean;
+}>();
 const query = ref('');
 const category = ref('all');
 const status = ref('all');
 const visibleCount = ref(20);
-const checklist = computed(() => matchupChecklist(props.data));
+const checklist = computed(() =>
+    matchupChecklist(props.data).filter(
+        (entry) =>
+            props.diagnostics ||
+            ['matched', 'not_matched', 'descriptive_record'].includes(
+                entry.status,
+            ),
+    ),
+);
 const filtered = computed(() =>
     checklist.value.filter(
         (entry) =>
@@ -38,12 +49,17 @@ const value = (number: number | null | undefined) =>
 <template>
     <section
         class="min-w-0 space-y-3"
-        aria-label="Full independent matchup checklist"
+        :aria-label="
+            diagnostics
+                ? 'Full independent matchup checklist'
+                : 'Evaluated matchup comparisons'
+        "
     >
         <h3 class="font-semibold">
-            Full checklist · {{ checklist.length }} items
+            {{ diagnostics ? 'Full checklist' : 'Evaluated matchups' }} ·
+            {{ checklist.length }} items
         </h3>
-        <p class="text-xs text-muted-foreground">
+        <p v-if="diagnostics" class="text-xs text-muted-foreground">
             Every supplied item is retained. Open an item for both teams'
             evidence, sample sizes, definition or missing inputs. Status counts
             are not confidence scores.
@@ -81,8 +97,12 @@ const value = (number: number | null | undefined) =>
                 <option value="descriptive_record">
                     Historical record available
                 </option>
-                <option value="insufficient_data">Insufficient history</option>
-                <option value="unavailable">Not yet evaluated</option>
+                <option v-if="diagnostics" value="insufficient_data">
+                    Insufficient history
+                </option>
+                <option v-if="diagnostics" value="unavailable">
+                    Not yet evaluated
+                </option>
             </select>
         </div>
         <p role="status" class="text-xs text-muted-foreground">
@@ -131,7 +151,7 @@ const value = (number: number | null | undefined) =>
                             {{ signal.evidence.defense.rank ?? 'unavailable' }}
                             · {{ signal.evidence.defense.games }} games
                         </p>
-                        <p>{{ signal.reason }}</p>
+                        <p v-if="diagnostics">{{ signal.reason }}</p>
                         <p>
                             League coverage:
                             {{ signal.evidence.league_teams }} teams. Source:

@@ -110,7 +110,7 @@ it('reuses cached matchup payloads without repeating league or team history quer
     DB::flushQueryLog();
     $first = $this->getJson($url)->assertOk();
     $firstQueries = collect(DB::getQueryLog())->pluck('query');
-    expect($firstQueries->filter(fn ($sql) => str_contains($sql, 'nflverse_pbp_plays')))->toHaveCount(1);
+    expect($firstQueries->filter(fn ($sql) => str_contains($sql, 'nflverse_pbp_plays')))->toHaveCount(2);
 
     DB::flushQueryLog();
     $second = $this->getJson($url)->assertOk();

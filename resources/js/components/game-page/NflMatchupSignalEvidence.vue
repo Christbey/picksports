@@ -78,13 +78,14 @@ const unavailable = computed(() =>
             No supported matchup conditions are confirmed for this sample.
             Missing history is not evidence of a disadvantage.
         </p>
+        <NflMatchupCatalog :data="data" />
         <details v-if="adminDiagnostics">
             <summary
                 class="min-h-11 cursor-pointer content-center text-sm font-medium"
             >
                 Admin · matchup diagnostics
             </summary>
-            <NflMatchupCatalog :data="data" />
+            <NflMatchupCatalog :data="data" diagnostics />
         </details>
         <details>
             <summary

@@ -7,7 +7,10 @@ import {
     type NflMatchupSignalData,
 } from '@/lib/nflMatchupSignals';
 
-const props = defineProps<{ data: NflMatchupSignalData }>();
+const props = defineProps<{
+    data: NflMatchupSignalData;
+    adminDiagnostics?: boolean;
+}>();
 const highlights = computed(() =>
     distinctMatchupSignals(props.data.matchup.signals).slice(0, 4),
 );
@@ -75,7 +78,14 @@ const unavailable = computed(() =>
             No supported matchup conditions are confirmed for this sample.
             Missing history is not evidence of a disadvantage.
         </p>
-        <NflMatchupCatalog :data="data" />
+        <details v-if="adminDiagnostics">
+            <summary
+                class="min-h-11 cursor-pointer content-center text-sm font-medium"
+            >
+                Admin · matchup diagnostics
+            </summary>
+            <NflMatchupCatalog :data="data" />
+        </details>
         <details>
             <summary
                 class="min-h-11 cursor-pointer content-center text-sm font-medium"
@@ -99,7 +109,9 @@ const unavailable = computed(() =>
                             v-for="record in side.records.filter(
                                 (r) =>
                                     r.sample_size > 0 &&
-                                    r.status !== 'unavailable',
+                                    r.status !== 'unavailable' &&
+                                    (adminDiagnostics ||
+                                        r.sample_size >= r.minimum_sample),
                             )"
                             :key="record.id"
                             class="py-2"
@@ -111,8 +123,9 @@ const unavailable = computed(() =>
                                 }}–{{ record.record.ties }} ·
                                 {{ record.sample_size }} games<span
                                     v-if="
+                                        adminDiagnostics &&
                                         record.sample_size <
-                                        record.minimum_sample
+                                            record.minimum_sample
                                     "
                                 >
                                     · Insufficient history</span
@@ -131,7 +144,7 @@ const unavailable = computed(() =>
                     >
                         No qualifying history.
                     </p>
-                    <details class="mt-2">
+                    <details v-if="adminDiagnostics" class="mt-2">
                         <summary
                             class="min-h-11 cursor-pointer content-center text-xs"
                         >
@@ -169,7 +182,7 @@ const unavailable = computed(() =>
                 </section>
             </div>
         </details>
-        <details>
+        <details v-if="adminDiagnostics">
             <summary
                 class="min-h-11 cursor-pointer content-center text-sm font-medium"
             >

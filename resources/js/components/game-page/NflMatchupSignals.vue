@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue';
+import { useViewerAccess } from '@/composables/useViewerAccess';
+const { isAdmin } = useViewerAccess();
 import NflMatchupSignalEvidence from '@/components/game-page/NflMatchupSignalEvidence.vue';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import type { NflMatchupSignalData } from '@/lib/nflMatchupSignals';
@@ -58,7 +60,7 @@ onBeforeUnmount(() => request?.abort());
         @toggle="toggle"
     >
         <summary class="min-h-11 cursor-pointer content-center font-semibold">
-            Independent matchup analysis · full checklist
+            Matchup analysis
         </summary>
         <p class="mt-2 text-xs text-muted-foreground">
             Analysis only. Does not change your model winner, spread, total,
@@ -102,6 +104,10 @@ onBeforeUnmount(() => request?.abort());
                 Retry evidence
             </button>
         </div>
-        <NflMatchupSignalEvidence v-else-if="data" :data="data" />
+        <NflMatchupSignalEvidence
+            v-else-if="data"
+            :data="data"
+            :admin-diagnostics="isAdmin"
+        />
     </details>
 </template>

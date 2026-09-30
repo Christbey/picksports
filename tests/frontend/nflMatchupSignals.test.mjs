@@ -129,7 +129,7 @@ test('evidence displays zero EPA, ties, sample limits and no approval claim', as
         '/resources/js/components/game-page/NflMatchupSignalEvidence.vue',
     );
     const html = await renderToString(
-        createSSRApp(component, { data: fixture() }),
+        createSSRApp(component, { data: fixture(), adminDiagnostics: true }),
     );
     assert.match(html, /Offense 0\.000/);
     assert.match(html, /1–0–1/);
@@ -148,7 +148,7 @@ test('empty or incomplete evidence never becomes a negative matchup', async () =
     const data = fixture();
     data.matchup.signals = [signal(1, 'insufficient_data')];
     data.matchup.signals[0].evidence.offense.value = null;
-    const html = await renderToString(createSSRApp(component, { data }));
+    const html = await renderToString(createSSRApp(component, { data, adminDiagnostics: true }));
     assert.match(html, /Missing history is not evidence of a disadvantage/);
     assert.match(html, /Offense Unavailable/);
     assert.match(html, /Insufficient history/);
@@ -186,7 +186,7 @@ test('catalog is searchable and paginated and previous season stays explicitly h
         support: 'unavailable',
         reason: 'Needs data',
     }));
-    const html = await renderToString(createSSRApp(component, { data }));
+    const html = await renderToString(createSSRApp(component, { data, adminDiagnostics: true }));
     assert.match(html, /Full checklist · 353 items/);
     assert.match(html, /Search matchup checklist/);
     assert.match(html, /Showing 20 of 353/);
@@ -238,4 +238,11 @@ test('lazy wrapper fetches once when opened and exposes retry on failure', async
     } finally {
         globalThis.fetch = originalFetch;
     }
+});
+
+ test('customer evidence excludes internal checklist and implementation diagnostics', async () => {
+    const { default: component } = await server.ssrLoadModule('/resources/js/components/game-page/NflMatchupSignalEvidence.vue');
+    const html = await renderToString(createSSRApp(component, { data: fixture() }));
+    assert.match(html, /Offense 0\.000/);
+    assert.doesNotMatch(html, /Full checklist|matching items|Insufficient history|needs data or implementation|Charting required|Coverage and limitations|Data coverage|Admin ·/);
 });

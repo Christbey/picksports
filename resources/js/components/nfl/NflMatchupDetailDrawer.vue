@@ -120,9 +120,7 @@ watch(
 );
 onUnmounted(stopRetryPolling);
 const view = computed(() =>
-    props.prediction
-        ? nflBoardPresentation(props.prediction, isAdmin.value)
-        : null,
+    props.prediction ? nflBoardPresentation(props.prediction) : null,
 );
 const layer = computed(() => record(props.prediction?.pro_signal_layer));
 const tiers = computed(() => record(layer.value.market_scores));
@@ -342,6 +340,19 @@ const timestamp = (value: string | null | undefined) =>
                     <summary class="cursor-pointer text-sm font-medium">
                         Admin · model diagnostics
                     </summary>
+                    <p v-if="view.marketStale" class="mt-3 text-sm">
+                        Spread quote is stale. Last recorded:
+                        {{ timestamp(view.marketAt) }}.
+                    </p>
+                    <p
+                        v-if="
+                            record(record(prediction.nfl_board).market)
+                                .total_stale === true
+                        "
+                        class="mt-3 text-sm"
+                    >
+                        Total quote is stale.
+                    </p>
                     <p class="mt-3 text-xs text-muted-foreground">
                         Signal scores and tiers are internal model diagnostics,
                         not win probabilities.

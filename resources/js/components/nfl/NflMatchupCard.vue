@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { useViewerAccess } from '@/composables/useViewerAccess';
-const { isAdmin } = useViewerAccess();
 import { ChevronRight } from 'lucide-vue-next';
 import { computed } from 'vue';
 import {
@@ -14,9 +12,7 @@ import type { ApiV2Prediction } from '@/types';
 
 const props = defineProps<{ prediction: ApiV2Prediction }>();
 const emit = defineEmits<{ select: [prediction: ApiV2Prediction] }>();
-const view = computed(() =>
-    nflBoardPresentation(props.prediction, isAdmin.value),
-);
+const view = computed(() => nflBoardPresentation(props.prediction));
 const game = computed(() => props.prediction.game);
 const live = computed(() =>
     /in_progress|live/i.test(
@@ -109,26 +105,9 @@ const live = computed(() =>
                 "
                 >{{ view.result }}</span
             >
-            <span
-                v-else
-                class="inline-flex items-center gap-1.5"
-                :class="
-                    !isAdmin || view.researchStatus === 'reviewed'
-                        ? 'text-muted-foreground'
-                        : 'text-amber-700 dark:text-amber-300'
-                "
+            <span v-else class="text-muted-foreground"
+                >Forecast · see analysis</span
             >
-                <span
-                    v-if="isAdmin"
-                    aria-hidden="true"
-                    class="h-1.5 w-1.5 rounded-full"
-                    :class="
-                        view.researchStatus === 'reviewed'
-                            ? 'bg-emerald-500'
-                            : 'bg-amber-500'
-                    "
-                />{{ isAdmin ? view.researchLabel : 'Forecast · see analysis' }}
-            </span>
             <span class="inline-flex items-center gap-1 text-muted-foreground"
                 >Details <ChevronRight class="h-3.5 w-3.5"
             /></span>

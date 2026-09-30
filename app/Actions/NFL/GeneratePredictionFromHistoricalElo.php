@@ -29,6 +29,7 @@ use App\Services\NFL\QuarterbackAvailability;
 use App\Services\NFL\Research\RecommendationEligibility;
 use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
 use App\Services\Sports\DepthChartImpactService;
+use App\Services\Sports\SportsDateWindowService;
 use App\Support\NflBetRuleEngine;
 use App\Support\NflReasonCodeCatalog;
 use App\Support\NflValidatedSignalCombos;
@@ -358,6 +359,13 @@ class GeneratePredictionFromHistoricalElo
             $this->projectedQuarterbacks[$teamId] = $this->qbContextForGame($game, $teamId);
         }
         [$predictedSpread, $winProbability, $predictedTotal] = $this->applyTrueEpaBlend($game, $predictedSpread, $winProbability, $predictedTotal);
+        foreach ($this->projectedQuarterbacks as $teamId => $quarterback) {
+            $side = $teamId === (int) $game->home_team_id ? 'home' : 'away';
+            $this->lastModelMetadata['game_depth_charts'][$side] = [
+                'depth_chart_game_link' => $quarterback['depth_chart_game_link'] ?? null,
+                'identity_status' => 'projected_not_confirmed_starter',
+            ];
+        }
         [$predictedSpread, $winProbability] = $this->applyPreseasonSignalBlend($game, $predictedSpread, $winProbability);
         [$predictedSpread, $winProbability, $predictedTotal] = $this->applyRollingEfficiencyBlend($game, $predictedSpread, $winProbability, $predictedTotal);
         [$predictedSpread, $winProbability, $predictedTotal] = $this->applyOpponentAdjustedEfficiencyBlend($game, $predictedSpread, $winProbability, $predictedTotal);
@@ -3604,9 +3612,10 @@ class GeneratePredictionFromHistoricalElo
      */
     protected function qbContextForGame(Game $game, int $teamId): array
     {
-        $historicalProfile = (string) config('nfl.predictions.historical_profile', 'configured');
+        // A configured-profile rerun is still a pregame reconstruction. The
+        // target game's passing leader is postgame evidence, not its starter.
         $historicalReconstruction = (string) $game->status === 'STATUS_FINAL'
-            && $historicalProfile !== 'configured';
+            || $this->gameKickoffAt($game)?->lte(now()) === true;
 
         if ($historicalReconstruction) {
             $depthChartQb = $this->projectedQbContextFromDepthChart($game, $teamId);
@@ -3684,12 +3693,12 @@ class GeneratePredictionFromHistoricalElo
     protected function projectedQbContextFromDepthChart(Game $game, int $teamId): ?array
     {
         $asOf = $this->gameKickoffAt($game) ?? Carbon::parse($game->game_date)->startOfDay();
-        $asOf = $asOf->gt(now()) ? now() : $asOf;
+        $observedNow = now();
+        $historicalReconstruction = (string) $game->status === 'STATUS_FINAL'
+            || $asOf->lt($observedNow);
+        $asOf = $asOf->gt($observedNow) ? $observedNow : $asOf;
         $availability = app(QuarterbackAvailability::class);
         $unavailable = $availability->forGame($game, $teamId);
-        $historicalProfile = (string) config('nfl.predictions.historical_profile', 'configured');
-        $historicalReconstruction = (string) $game->status === 'STATUS_FINAL'
-            && $historicalProfile !== 'configured';
         $snapshot = DepthChartSnapshot::query()
             ->with('entries.player')
             ->where('team_id', $teamId)
@@ -3708,27 +3717,28 @@ class GeneratePredictionFromHistoricalElo
             )) === 'QB')
             ->sortBy([['depth_rank', 'asc'], ['slot_order', 'asc']]);
 
-        if ($candidates === null || $candidates->isEmpty()) {
+        if (($candidates === null || $candidates->isEmpty()) && ! $historicalReconstruction) {
+            // Mutable depth entries cannot establish what was known before a
+            // past kickoff, even when their provider timestamp is backdated.
+            $snapshot = null;
             $candidates = DepthChartEntry::query()
                 ->with('player')
                 ->where('team_id', $teamId)
                 ->where('season', (int) $game->season)
                 ->where('position_code', 'QB')
-                ->when($historicalReconstruction, fn ($query) => $query
-                    ->whereNotNull('source_updated_at')
-                    ->where('source_updated_at', '<=', $asOf))
                 ->where(fn ($query) => $query->whereNull('source_updated_at')->orWhere('source_updated_at', '<=', $asOf))
                 ->orderBy('depth_rank')
                 ->orderBy('slot_order')
                 ->get();
         }
+        $candidates ??= collect();
 
         $excluded = $candidates->filter(fn ($candidate) => $availability->excludes($unavailable, $candidate->player_id, $candidate->player?->full_name));
         $entry = $candidates->first(fn ($candidate) => ! $availability->excludes($unavailable, $candidate->player_id, $candidate->player?->full_name));
         if (! $entry && $excluded->isNotEmpty()) {
             return ['qb_id' => null, 'reason' => 'no_available_depth_chart_qb', 'availability_exclusions' => $unavailable];
         }
-        if ($entry && $excluded->isNotEmpty() && (! is_numeric($entry->depth_rank)
+        if ($entry && (! is_numeric($entry->depth_rank)
             || $candidates->filter(fn ($candidate) => $candidate->depth_rank === $entry->depth_rank
                 && ! $availability->excludes($unavailable, $candidate->player_id, $candidate->player?->full_name))
                 ->pluck('player_id')->unique()->count() > 1)) {
@@ -3750,6 +3760,17 @@ class GeneratePredictionFromHistoricalElo
             'experience_bucket' => $this->qbExperienceBucket($experience, (int) $prior['games']),
             'game_attempts' => 0,
             'projected_from_depth_chart' => true,
+            'identity_status' => 'projected_not_confirmed_starter',
+            'depth_chart_game_link' => [
+                'game_id' => $game->id,
+                'team_id' => $teamId,
+                'side' => $teamId === (int) $game->home_team_id ? 'home' : 'away',
+                'snapshot_id' => $snapshot?->id,
+                'snapshot_uuid' => $snapshot?->snapshot_uuid,
+                'observed_at' => $snapshot?->observed_at?->toIso8601String(),
+                'as_of' => $asOf->toIso8601String(),
+                'source' => $snapshot ? 'append_only_snapshot' : 'live_mutable_depth_chart',
+            ],
             'availability_exclusions' => $unavailable,
             'replaced_unavailable_qb_ids' => $excluded->filter(fn ($candidate) => $candidate->depth_rank <= $entry->depth_rank)->pluck('player_id')->unique()->values()->all(),
             'depth_chart_snapshot_uuid' => $snapshot?->snapshot_uuid,
@@ -5518,17 +5539,15 @@ class GeneratePredictionFromHistoricalElo
 
     protected function gameKickoffAt(Game $game): ?CarbonInterface
     {
-        $date = $this->asDate($game->game_date);
-        if ($date === null) {
-            return null;
-        }
+        $kickoff = $game->sportEvent?->starts_at
+            ?? app(SportsDateWindowService::class)->gameDateTimeUtc(
+                $game->getAttributes()['game_date'] ?? $game->game_date,
+                $game->game_time,
+            );
 
-        $time = (string) ($game->game_time ?? '');
-        if ($time === '') {
-            return $date;
-        }
-
-        return Carbon::parse($date->toDateString().' '.$time);
+        // Event clocks are UTC; database observation timestamps use app timezone.
+        // Convert the same instant before binding it to timestamp comparisons.
+        return $kickoff?->copy()->setTimezone(config('app.timezone'));
     }
 
     protected function historicalLineMovement(Game $game): ?float

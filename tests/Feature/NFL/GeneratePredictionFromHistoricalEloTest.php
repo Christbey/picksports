@@ -4,6 +4,7 @@ use App\Actions\NFL\GeneratePredictionFromHistoricalElo;
 use App\Models\ModelRun;
 use App\Models\NFL\Coach;
 use App\Models\NFL\DepthChartEntry;
+use App\Models\NFL\DepthChartSnapshot;
 use App\Models\NFL\EloRating;
 use App\Models\NFL\Game;
 use App\Models\NFL\GameWeather;
@@ -20,6 +21,7 @@ use App\Support\NflBetRuleEngine;
 use App\Support\NflValidatedSignalCombos;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 uses()->group('nfl', 'predictions');
 
@@ -966,6 +968,7 @@ it('uses game primary passer identity with only prior qb production for qb form'
 });
 
 it('uses synced nfl depth chart starter as upcoming qb identity', function () {
+    $this->travelTo(Carbon::parse('2025-10-14 00:00:00'));
     config([
         'nfl.predictions.true_epa.enabled' => false,
         'nfl.predictions.preseason_signal.enabled' => false,
@@ -1054,6 +1057,7 @@ it('uses synced nfl depth chart starter as upcoming qb identity', function () {
         ->and(data_get($prediction->model_metadata, 'qb_form.away.qb_id'))->toBe($awayQb->id)
         ->and(data_get($prediction->model_metadata, 'qb_form.home.projected_from_depth_chart'))->toBeTrue()
         ->and(data_get($prediction->model_metadata, 'qb_form.away.projected_from_depth_chart'))->toBeTrue();
+    $this->travelBack();
 });
 
 it('does not use target-game passing stats to identify quarterbacks during historical reconstruction', function () {
@@ -1112,7 +1116,14 @@ it('does not use target-game passing stats to identify quarterbacks during histo
         'passing_attempts' => 45,
         'passing_yards' => 450,
     ]);
-    DepthChartEntry::query()->create([
+    $depthSnapshot = DepthChartSnapshot::create([
+        'snapshot_uuid' => (string) Str::uuid(), 'team_id' => $game->home_team_id,
+        'espn_team_id' => $game->homeTeam->espn_id,
+        'season' => 2025, 'provider' => 'espn', 'observed_at' => '2025-10-14 12:00:00',
+        'payload_hash' => hash('sha256', 'historical-depth-test'), 'entry_count' => 1,
+    ]);
+    $depthSnapshot->entries()->create([
+        'espn_athlete_id' => $pregameStarter->espn_id,
         'team_id' => $game->home_team_id,
         'player_id' => $pregameStarter->id,
         'season' => 2025,
@@ -1122,6 +1133,7 @@ it('does not use target-game passing stats to identify quarterbacks during histo
         'slot_order' => 1,
         'is_starter' => true,
         'source_updated_at' => '2025-10-14 12:00:00',
+        'observed_at' => '2025-10-14 12:00:00',
     ]);
 
     app(GeneratePredictionFromHistoricalElo::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
@@ -1132,6 +1144,9 @@ it('does not use target-game passing stats to identify quarterbacks during histo
         ->and(data_get($prediction->model_metadata, 'qb_form.home.projected_from_depth_chart'))->toBeTrue()
         ->and(data_get($prediction->model_metadata, 'qb_form.home.game_attempts'))->toBe(0)
         ->and(data_get($prediction->model_metadata, 'qb_form.home.qb_id'))->not->toBe($targetGamePasser->id);
+    expect($game->homeDepthChartLinks()->count())->toBe(1)
+        ->and($game->homeDepthChartLinks()->first()->snapshot_id)->toBe($depthSnapshot->id)
+        ->and($game->homeDepthChartLinks()->first()->selection_mode)->toBe('historical_reconstruction');
 });
 
 it('uses nflverse depth charts and weekly stats as qb form fallback', function () {

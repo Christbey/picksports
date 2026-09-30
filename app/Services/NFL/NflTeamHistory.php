@@ -27,7 +27,7 @@ class NflTeamHistory
     public function rolling(int $teamId): array
     {
         $rows = $this->rows($teamId, (int) $this->target->season, true);
-        [$rows] = $this->offenseSample($teamId, $rows, 0);
+        [$rows, $qbContext] = $this->offenseSample($teamId, $rows, 0);
         $stats = array_values(array_filter($rows, fn ($r) => $r['off'] !== null));
         $recent = max(1, (int) config('nfl.predictions.rolling_efficiency.recent_games', 5));
 
@@ -38,13 +38,14 @@ class NflTeamHistory
             'turnover_diff' => $this->mean($stats, fn ($r) => $r['def']['turnovers'] - $r['off']['turnovers']),
             'points_for' => $this->mean($rows, fn ($r) => $r['for']),
             'points_against' => $this->mean($rows, fn ($r) => $r['against']),
+            ...($qbContext === [] ? [] : ['qb_context' => $qbContext]),
         ];
     }
 
     public function opponentAdjusted(int $teamId): array
     {
         $rows = $this->rows($teamId, (int) $this->target->season, true);
-        [$rows] = $this->offenseSample($teamId, $rows, 0);
+        [$rows, $qbContext] = $this->offenseSample($teamId, $rows, 0);
         $stats = array_values(array_filter($rows, fn ($r) => $r['off'] !== null));
         $weight = (float) config('nfl.predictions.opponent_adjusted_efficiency.opponent_elo_weight', .015);
         $default = (float) config('nfl.elo.default_rating', 1500);
@@ -60,6 +61,7 @@ class NflTeamHistory
             'red_zone_rate_diff' => $this->mean($stats, fn ($r) => $r['off']['red_zone_rate'] - $r['def']['red_zone_rate']),
             'third_down_rate_diff' => $this->mean($stats, fn ($r) => $r['off']['third_down_rate'] - $r['def']['third_down_rate']),
             'avg_opponent_elo' => $this->mean($rows, $elo, 1),
+            ...($qbContext === [] ? [] : ['qb_context' => $qbContext]),
         ];
     }
 
@@ -145,12 +147,27 @@ class NflTeamHistory
                 fn ($r) => $matches($r) && ! in_array($r['id'], $currentIds, true)));
         }
         $sample = array_slice([...$prior, ...$current], -max(1, $recent));
+        // Audit the whole current-season eligible window, not the already truncated
+        // totals/line sample. Unknown identities are a source gap, not a QB change.
+        $seasonRows = $this->rows($teamId, (int) $this->target->season, true);
+        $unknown = array_values(array_filter($seasonRows, fn ($r) => $r['qb_name'] === ''));
+        $different = array_values(array_filter($seasonRows, fn ($r) => $r['qb_name'] !== '' && $r['qb_name'] !== $name));
+        $same = array_values(array_filter($seasonRows, $matches));
+        $usesPriorSeason = count(array_filter($sample, fn ($r) => $r['season'] < (int) $this->target->season)) > 0;
 
         return [$sample, ['projected_qb' => $this->quarterbacks[$teamId]['qb_name'],
             'policy' => 'same_team_same_starting_qb_regular_season', 'offense_games' => count($sample),
             'excluded_other_or_unknown_qb_games' => count($rows) - count($current),
-            'prior_season_fallback' => count(array_filter($sample, fn ($r) => $r['season'] < (int) $this->target->season)) > 0,
+            'prior_season_fallback' => $usesPriorSeason,
             'sample_game_ids' => array_column($sample, 'id'), 'minimum_games_met' => count($sample) >= $minimum,
+            'current_season_available_games' => count($seasonRows),
+            'current_season_matching_qb_games' => count($same),
+            'current_season_unknown_qb_games' => count($unknown),
+            'current_season_other_qb_games' => count($different),
+            'current_season_unknown_qb_game_ids' => array_column($unknown, 'id'),
+            'current_season_sample_games' => count(array_filter($sample, fn ($r) => $r['season'] === (int) $this->target->season)),
+            'identity_coverage_complete' => $unknown === [],
+            'fallback_reason' => ! $usesPriorSeason ? null : ($unknown !== [] ? 'missing_current_season_starter_identity' : 'insufficient_same_qb_history'),
             'limitation' => 'Prior-season personnel/coaching can differ; no automatic return bonus.']];
     }
 
@@ -194,13 +211,16 @@ class NflTeamHistory
         $teams = [(int) $this->target->home_team_id, (int) $this->target->away_team_id];
         $date = $this->target->game_date;
 
+        if (! $date instanceof CarbonInterface) {
+            return $this->seasons[$season] = collect();
+        }
+
         return $this->seasons[$season] = Game::query()
             ->select(['id', 'home_team_id', 'away_team_id', 'game_date', 'season', 'season_type', 'home_score', 'away_score', 'home_qb_name', 'away_qb_name'])
             ->with('teamStats:id,game_id,team_id,team_type,total_yards,passing_attempts,rushing_attempts,rushing_yards,sacks_allowed,interceptions,fumbles_lost,fumbles,red_zone_scores,red_zone_attempts,third_down_conversions,third_down_attempts,penalty_yards')
             ->where('season', $season)->where('status', 'STATUS_FINAL')
             ->whereNotNull('home_score')->whereNotNull('away_score')
-            ->when($season === (int) $this->target->season && $date instanceof CarbonInterface,
-                fn ($q) => $q->whereDate('game_date', '<', $date->toDateString()))
+            ->whereDate('game_date', '<', $date->toDateString())
             ->where(fn ($q) => $q->whereIn('home_team_id', $teams)->orWhereIn('away_team_id', $teams))
             ->orderBy('game_date')->orderBy('id')->get();
     }

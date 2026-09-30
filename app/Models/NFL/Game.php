@@ -48,6 +48,7 @@ class Game extends Model
         'home_qb_name',
         'away_qb_id',
         'away_qb_name',
+        'quarterback_identity_evidence',
         'home_coach',
         'away_coach',
         'home_linescores',
@@ -74,6 +75,7 @@ class Game extends Model
             'broadcast_networks' => 'array',
             'odds_data' => 'array',
             'division_game' => 'boolean',
+            'quarterback_identity_evidence' => 'array',
         ];
     }
 
@@ -105,6 +107,21 @@ class Game extends Model
     public function contextFacts(): HasMany
     {
         return $this->hasMany(GameContextFact::class, 'game_id');
+    }
+
+    public function depthChartLinks(): HasMany
+    {
+        return $this->hasMany(GameDepthChartLink::class, 'game_id');
+    }
+
+    public function homeDepthChartLinks(): HasMany
+    {
+        return $this->depthChartLinks()->where('side', 'home');
+    }
+
+    public function awayDepthChartLinks(): HasMany
+    {
+        return $this->depthChartLinks()->where('side', 'away');
     }
 
     public function teamStats(): HasMany

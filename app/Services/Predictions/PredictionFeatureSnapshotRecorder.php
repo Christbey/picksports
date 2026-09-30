@@ -2,8 +2,10 @@
 
 namespace App\Services\Predictions;
 
+use App\Models\NFL\Game;
 use App\Models\PredictionFeatureSnapshot;
 use App\Services\ML\ShadowModelOutputRecorder;
+use App\Services\NFL\GameDepthChartLinkRecorder;
 use App\Support\Odds\MarketSpread;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
@@ -60,6 +62,10 @@ class PredictionFeatureSnapshotRecorder
             'generated_at' => $generatedAt,
             ...$provenance,
         ]);
+
+        if ($sport === 'nfl' && $game instanceof Game) {
+            app(GameDepthChartLinkRecorder::class)->record($game, $featureSnapshot);
+        }
 
         app(ShadowModelOutputRecorder::class)->record($featureSnapshot);
 

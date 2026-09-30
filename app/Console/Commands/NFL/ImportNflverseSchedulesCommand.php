@@ -94,6 +94,21 @@ class ImportNflverseSchedulesCommand extends Command
             $attributes = $this->gameAttributes($row, $homeTeam, $awayTeam, $nflverseGameId);
             if ($existing) {
                 unset($attributes['espn_event_id'], $attributes['espn_uid']);
+                // A blank schedule refresh must not erase a verified starter;
+                // existing identities require an explicit reviewed correction.
+                foreach (['home', 'away'] as $side) {
+                    if (filled($existing->{$side.'_qb_id'}) || filled($existing->{$side.'_qb_name'})) {
+                        unset($attributes[$side.'_qb_id'], $attributes[$side.'_qb_name']);
+
+                        continue;
+                    }
+                    foreach (['id', 'name'] as $field) {
+                        $key = $side.'_qb_'.$field;
+                        if (blank($attributes[$key] ?? null)) {
+                            unset($attributes[$key]);
+                        }
+                    }
+                }
                 $attributes = NflGameStateGuard::preserve($existing, $attributes);
                 $existing->fill($attributes);
                 $existing->nflverse_game_id = $nflverseGameId;

@@ -127,3 +127,20 @@ it('does not reset a completed ESPN game when an unscored schedule is imported',
         unlink($path);
     }
 });
+
+it('preserves an existing quarterback identity when a schedule refresh is blank or conflicting', function (string $qbId, string $qbName) {
+    $home = Team::factory()->create(['abbreviation' => 'SEA']);
+    $away = Team::factory()->create(['abbreviation' => 'NE']);
+    $game = Game::factory()->create(['espn_event_id' => '401872656', 'season' => 2026, 'season_type' => '2', 'week' => 1,
+        'game_date' => '2026-09-11', 'home_team_id' => $home->id, 'away_team_id' => $away->id,
+        'status' => 'STATUS_FINAL', 'home_score' => 20, 'away_score' => 13,
+        'home_qb_id' => '00-0035228', 'home_qb_name' => 'Sam Darnold']);
+    $path = sys_get_temp_dir().'/nfl-qb-preserve-'.uniqid().'.csv';
+    File::put($path, "game_id,espn,season,game_type,week,gameday,gametime,home_team,away_team,home_score,away_score,home_qb_id,home_qb_name\n2026_01_NE_SEA,401872656,2026,REG,1,2026-09-10,20:00,SEA,NE,20,13,$qbId,$qbName\n");
+    try {
+        artisan('nfl:import-nflverse-schedules', ['file' => $path, '--from-season' => 2026, '--to-season' => 2026])->assertExitCode(0);
+        expect($game->fresh()->home_qb_name)->toBe('Sam Darnold')->and($game->fresh()->home_qb_id)->toBe('00-0035228');
+    } finally {
+        File::delete($path);
+    }
+})->with([['', ''], ['00-0035704', 'Drew Lock']]);

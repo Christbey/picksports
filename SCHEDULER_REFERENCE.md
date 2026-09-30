@@ -144,6 +144,8 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 
 ### NFL
 
+- At `08:15` Central in season, `nfl:sync-game-quarterbacks --season=<current> --apply` fills missing final-game starter identities from the public nflverse schedule. It validates event/team/date/score identity, preserves existing conflicting values and all forecasts, records source provenance, and fails its heartbeat when source coverage is incomplete. Without `--apply`, the command is read-only; `--file` accepts a reviewed source archive.
+
 - Daily current-week sync at `08:00`
 - Live scoreboard sync every 5 minutes between `17:00` and `02:00`
 - Game details sync every 30 minutes between `06:00` and `02:00`, checking a 14-day lookback for missing details or plays that have not reached the final score.

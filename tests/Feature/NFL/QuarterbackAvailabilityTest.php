@@ -213,3 +213,50 @@ it('uses current-week nflverse injuries without crossing season types', function
     DB::table('nflverse_injuries')->update(['source_updated_at' => now()->subDays(10)]);
     expect(projectedQb($game)['qb_id'])->toBe($starter->id);
 });
+
+it('never uses mutable depth entries or target passing leaders for a configured past game', function () {
+    [$game, $starter, $backup] = qbAvailabilityFixture();
+    $game->update(['status' => 'STATUS_FINAL', 'game_date' => '2026-09-10']);
+    DepthChartEntry::query()->update(['source_updated_at' => null]);
+    PlayerStat::create(['game_id' => $game->id, 'team_id' => $game->home_team_id, 'player_id' => $backup->id,
+        'passing_attempts' => 40, 'passing_yards' => 400]);
+    config(['nfl.predictions.historical_profile' => 'configured']);
+    expect(projectedQb($game))->toBeNull();
+    $context = (new ReflectionMethod(GeneratePredictionFromHistoricalElo::class, 'qbContextForGame'))
+        ->invoke(app(GeneratePredictionFromHistoricalElo::class), $game, $game->home_team_id);
+    expect($context['qb_id'])->toBeNull()->and($context['reason'])->toBe('no_pregame_qb_identity');
+});
+
+it('records the exact game and immutable depth chart snapshot behind a projection', function () {
+    [$game, $starter] = qbAvailabilityFixture();
+    $snapshot = DepthChartSnapshot::create(['snapshot_uuid' => (string) Str::uuid(), 'team_id' => $game->home_team_id,
+        'espn_team_id' => $game->homeTeam->espn_id, 'season' => 2026, 'provider' => 'espn', 'observed_at' => now(),
+        'payload_hash' => hash('sha256', 'game-link-depth'), 'entry_count' => 1]);
+    $snapshot->entries()->create(['player_id' => $starter->id, 'position_slot_key' => 'QB', 'position_code' => 'QB',
+        'espn_athlete_id' => $starter->espn_id, 'depth_rank' => 1, 'is_starter' => true, 'observed_at' => now()]);
+    $context = projectedQb($game);
+    expect($context['identity_status'])->toBe('projected_not_confirmed_starter')
+        ->and($context['depth_chart_game_link']['game_id'])->toBe($game->id)
+        ->and($context['depth_chart_game_link']['snapshot_id'])->toBe($snapshot->id)
+        ->and($context['depth_chart_game_link']['snapshot_uuid'])->toBe($snapshot->snapshot_uuid)
+        ->and($context['depth_chart_game_link']['side'])->toBe('home');
+});
+
+it('holds equally ranked projected starters even without an injury exclusion', function () {
+    [$game, $starter, $backup] = qbAvailabilityFixture();
+    DepthChartEntry::where('player_id', $backup->id)->update(['depth_rank' => 1]);
+    expect(projectedQb($game)['reason'])->toBe('ambiguous_available_depth_chart_qb');
+});
+
+it('uses UTC kickoff storage when rejecting a post kickoff depth snapshot', function () {
+    [$game, $starter] = qbAvailabilityFixture();
+    // 20:00 stored UTC is 15:00 Central, not 20:00 Central.
+    $snapshot = DepthChartSnapshot::create(['snapshot_uuid' => (string) Str::uuid(), 'team_id' => $game->home_team_id,
+        'espn_team_id' => $game->homeTeam->espn_id, 'season' => 2026, 'provider' => 'espn',
+        'observed_at' => '2026-09-20 16:00:00', 'payload_hash' => hash('sha256', 'post-kickoff-local'), 'entry_count' => 1]);
+    $snapshot->entries()->create(['player_id' => $starter->id, 'position_slot_key' => 'QB', 'position_code' => 'QB',
+        'espn_athlete_id' => $starter->espn_id, 'depth_rank' => 1, 'is_starter' => true, 'observed_at' => '2026-09-20 16:00:00']);
+    $this->travelTo('2026-09-21 10:00:00');
+    $game->update(['status' => 'STATUS_FINAL']);
+    expect(projectedQb($game))->toBeNull();
+});

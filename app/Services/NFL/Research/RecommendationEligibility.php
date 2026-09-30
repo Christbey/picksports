@@ -30,6 +30,13 @@ class RecommendationEligibility
         if (data_get($metadata, 'qb_form.enabled') === true && data_get($metadata, 'qb_form.reason') === 'missing_game_qb_identity') {
             $holds[] = 'missing_quarterback_identity';
         }
+        foreach (['total_environment', 'line_matchup', 'rolling_efficiency', 'opponent_adjusted_efficiency'] as $layer) {
+            foreach (['home', 'away'] as $side) {
+                if (data_get($metadata, "$layer.$side.qb_context.identity_coverage_complete") === false) {
+                    $holds[] = 'incomplete_current_season_quarterback_history';
+                }
+            }
+        }
 
         return [
             'eligible' => $holds === [] && $modelReasons === [],

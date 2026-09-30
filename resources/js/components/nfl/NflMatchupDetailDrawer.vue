@@ -16,6 +16,7 @@ import {
 import {
     kickoffLabel,
     nflBoardPresentation,
+    lineUpdatedLabel,
     numberValue,
     percent,
     record,
@@ -119,7 +120,9 @@ watch(
 );
 onUnmounted(stopRetryPolling);
 const view = computed(() =>
-    props.prediction ? nflBoardPresentation(props.prediction) : null,
+    props.prediction
+        ? nflBoardPresentation(props.prediction, isAdmin.value)
+        : null,
 );
 const layer = computed(() => record(props.prediction?.pro_signal_layer));
 const tiers = computed(() => record(layer.value.market_scores));
@@ -260,11 +263,12 @@ const timestamp = (value: string | null | undefined) =>
                     <p class="mt-2 text-xs text-muted-foreground">
                         {{ view.marketBook || 'No verified market'
                         }}<template v-if="view.marketAt">
-                            · {{ timestamp(view.marketAt) }}</template
+                            · {{ lineUpdatedLabel(view.marketAt) }}</template
                         >
                     </p>
                 </section>
                 <section
+                    v-if="isAdmin"
                     class="rounded-xl border p-3"
                     :class="
                         ['hold', 'stale', 'missing'].includes(

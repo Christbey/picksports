@@ -7,6 +7,7 @@ import { createSSRApp } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import {
     kickoffLabel,
+    lineUpdatedLabel,
     nflBoardPresentation,
 } from '../../resources/js/lib/nflBoardPresentation.ts';
 import { researchReason } from '../../resources/js/lib/researchDecision.ts';
@@ -277,7 +278,7 @@ test('board leads with games, collapses season insights, and labels filter contr
     assert.ok(html.indexOf('Model winner') < html.indexOf('More insights'));
 });
 
-test('stored stale lines remain visible with freshness labels despite blocked research', async () => {
+test('public lines show update times while stale diagnostics remain admin-only', async () => {
     const p = prediction(0.73, 10, -7);
     p.predicted_total = 42.4;
     p.nfl_board.market = {
@@ -290,9 +291,12 @@ test('stored stale lines remain visible with freshness labels despite blocked re
     };
     p.nfl_board.research = { status: 'refresh_blocked', decision: 'hold' };
     const v = nflBoardPresentation(p);
-    assert.equal(v.spreadLean, 'HOME -7 (stale line)');
-    assert.equal(v.marketSpread, 'HOME -7 (stale)');
-    assert.equal(v.totalLean, 'Under 50.5 (stale line)');
+    assert.equal(v.spreadLean, 'HOME -7');
+    assert.equal(nflBoardPresentation(p, true).spreadLean, 'HOME -7 (stale line)');
+    assert.equal(v.marketSpread, 'HOME -7');
+    assert.equal(nflBoardPresentation(p, true).marketSpread, 'HOME -7 (stale)');
+    assert.equal(v.totalLean, 'Under 50.5');
+    assert.equal(nflBoardPresentation(p, true).totalLean, 'Under 50.5 (stale line)');
     assert.equal(v.marketAt, '2026-09-26T16:10:06Z');
     assert.equal(v.researchLabel, 'Refresh blocked');
     assert.equal(v.researchDecision, 'hold');
@@ -302,7 +306,11 @@ test('stored stale lines remain visible with freshness labels despite blocked re
     const html = await renderToString(
         createSSRApp(component, { prediction: p }),
     );
-    assert.match(html, /HOME -7 \(stale line\)/);
+    assert.match(html, /HOME -7/);
+    assert.match(html, /Lines updated/);
+    assert.doesNotMatch(html, /stale/i);
+    assert.equal(lineUpdatedLabel(null), null);
+    assert.equal(lineUpdatedLabel('invalid'), null);
     assert.doesNotMatch(html, /Refresh blocked/);
     assert.doesNotMatch(html, /Line unavailable/);
 });

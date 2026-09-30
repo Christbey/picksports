@@ -156,19 +156,20 @@ test('zero wins and pushes are explicit; win rate excludes pushes', async () => 
     assert.match(html, /Games include pushes; win % excludes them/);
 });
 
-test('expired and unknown quote warnings stay visible at the daily boundary', async () => {
+test('public quotes show recorded update time without operational warnings', async () => {
     const fetched = Date.parse('2026-09-20T15:10:00Z');
     assert.doesNotMatch(
         primary(await render(fixture(), fetched + 86400000)),
         /Quote expired/,
     );
-    assert.match(
+    assert.doesNotMatch(
         primary(await render(fixture(), fetched + 86400001)),
         /Quote expired/,
     );
-    assert.match(
+    assert.match(primary(await render(fixture(), fetched + 86400001)), /Line updated:/);
+    assert.doesNotMatch(
         primary(await render(fixture({ fetched_at: null }))),
-        /Quote age unavailable/,
+        /Quote age unavailable|Line updated:/,
     );
 });
 

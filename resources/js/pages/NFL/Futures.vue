@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { useViewerAccess } from '@/composables/useViewerAccess';
+const { isAdmin } = useViewerAccess();
 import PredictionsPageShell from '@/components/predictions/PredictionsPageShell.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -501,9 +503,10 @@ watch(selectedSeason, () => void fetchForecasts(), { immediate: true });
                                                 }}
                                                 ·
                                                 {{
+                                                    isAdmin &&
                                                     forecast.market_odds.stale
                                                         ? 'Stale'
-                                                        : 'Stored'
+                                                        : 'Last recorded'
                                                 }}
                                             </p>
                                             <p

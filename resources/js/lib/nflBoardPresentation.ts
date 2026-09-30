@@ -17,7 +17,10 @@ export function signed(value: number): string {
 }
 
 /** HOME probability determines the winner; market pick_side is a different concept. */
-export function nflBoardPresentation(prediction: ApiV2Prediction) {
+export function nflBoardPresentation(
+    prediction: ApiV2Prediction,
+    isAdmin = false,
+) {
     const board = record(prediction.nfl_board);
     const forecast = record(board.forecast);
     const p = numberValue(
@@ -88,7 +91,7 @@ export function nflBoardPresentation(prediction: ApiV2Prediction) {
             spreadSide && smallSpreadEdge
                 ? 'Pass — small edge'
                 : spreadSide && homeLine !== null
-                  ? `${team(spreadSide)} ${signed(spreadSide === 'home' ? homeLine : -homeLine)}${market.spread_stale === true ? ' (stale line)' : ''}`
+                  ? `${team(spreadSide)} ${signed(spreadSide === 'home' ? homeLine : -homeLine)}${isAdmin && market.spread_stale === true ? ' (stale line)' : ''}`
                   : homeLine === null
                     ? 'Line unavailable'
                     : margin === null
@@ -98,7 +101,7 @@ export function nflBoardPresentation(prediction: ApiV2Prediction) {
         marketSpread:
             homeLine === null
                 ? 'Unavailable'
-                : `${team('home')} ${signed(homeLine)}${market.spread_stale === true ? ' (stale)' : ''}`,
+                : `${team('home')} ${signed(homeLine)}${isAdmin && market.spread_stale === true ? ' (stale)' : ''}`,
         marketTotal,
         marketStale: market.spread_stale === true,
         totalLean:
@@ -106,7 +109,7 @@ export function nflBoardPresentation(prediction: ApiV2Prediction) {
                 ? 'Unavailable'
                 : Math.abs(total - marketTotal) < 0.05
                   ? 'No edge'
-                  : `${total > marketTotal ? 'Over' : 'Under'} ${marketTotal}${market.total_stale === true ? ' (stale line)' : ''}`,
+                  : `${total > marketTotal ? 'Over' : 'Under'} ${marketTotal}${isAdmin && market.total_stale === true ? ' (stale line)' : ''}`,
         totalEdge:
             total === null || marketTotal === null
                 ? null
@@ -165,4 +168,17 @@ export function kickoffLabel(prediction: ApiV2Prediction): string {
 }
 export function percent(value: number | null): string {
     return value === null ? '—' : `${(value * 100).toFixed(1)}%`;
+}
+
+export function lineUpdatedLabel(
+    value: string | null | undefined,
+): string | null {
+    if (!value || !Number.isFinite(new Date(value).getTime())) return null;
+    return `Lines updated ${new Date(value).toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZoneName: 'short',
+    })}`;
 }

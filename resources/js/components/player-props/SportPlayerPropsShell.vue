@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useViewerAccess } from '@/composables/useViewerAccess';
+const { isAdmin } = useViewerAccess();
 import { Link } from '@inertiajs/vue3';
 import { BarChart3, TrendingDown, TrendingUp, X } from 'lucide-vue-next';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
@@ -725,7 +727,7 @@ onBeforeUnmount(() => {
                                     Sportsbook: {{ rec.bookmaker || 'Unknown' }}
                                 </p>
                                 <p>
-                                    Quote fetched:
+                                    Line updated:
                                     {{
                                         formatPropTimestamp(
                                             rec.fetched_at,
@@ -734,6 +736,7 @@ onBeforeUnmount(() => {
                                     }}
                                 </p>
                                 <p
+                                    v-if="isAdmin"
                                     :class="
                                         quoteStatus(rec) === 'stale'
                                             ? 'text-amber-700 dark:text-amber-400'

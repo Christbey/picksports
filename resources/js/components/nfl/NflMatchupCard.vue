@@ -6,6 +6,7 @@ import { computed } from 'vue';
 import {
     kickoffLabel,
     nflBoardPresentation,
+    lineUpdatedLabel,
     percent,
     teamLabel,
 } from '@/lib/nflBoardPresentation';
@@ -13,7 +14,9 @@ import type { ApiV2Prediction } from '@/types';
 
 const props = defineProps<{ prediction: ApiV2Prediction }>();
 const emit = defineEmits<{ select: [prediction: ApiV2Prediction] }>();
-const view = computed(() => nflBoardPresentation(props.prediction));
+const view = computed(() =>
+    nflBoardPresentation(props.prediction, isAdmin.value),
+);
 const game = computed(() => props.prediction.game);
 const live = computed(() =>
     /in_progress|live/i.test(
@@ -87,7 +90,12 @@ const live = computed(() =>
                     class="mt-1 text-xs text-muted-foreground"
                     :title="view.marketAt || undefined"
                 >
-                    Stored: {{ view.marketSpread }}
+                    Market: {{ view.marketSpread }}
+                    <span
+                        v-if="lineUpdatedLabel(view.marketAt)"
+                        class="block"
+                        >{{ lineUpdatedLabel(view.marketAt) }}</span
+                    >
                 </p>
             </div>
         </div>

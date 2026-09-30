@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
+import { useViewerAccess } from '@/composables/useViewerAccess';
+const { isAdmin } = useViewerAccess();
 import {
     formatPropOdds,
     formatPropStat,
@@ -126,8 +128,12 @@ const result = computed(() => {
                 </div>
             </div>
 
+            <p v-if="rec.fetched_at" class="text-xs text-muted-foreground">
+                Line updated:
+                {{ formatPropTimestamp(rec.fetched_at, rec.game.timezone) }}
+            </p>
             <p
-                v-if="freshness !== 'fresh'"
+                v-if="isAdmin && freshness !== 'fresh'"
                 role="status"
                 class="rounded-md border border-amber-500/40 px-3 py-2 text-xs text-amber-800 dark:text-amber-300"
             >
@@ -371,7 +377,7 @@ const result = computed(() => {
                     </dl>
                 </section>
                 <p class="border-t pt-3 text-muted-foreground">
-                    Quote fetched:
+                    Line updated:
                     {{
                         formatPropTimestamp(rec.fetched_at, rec.game.timezone)
                     }}. Quote window: {{ rec.freshness_hours ?? 24 }} hours.

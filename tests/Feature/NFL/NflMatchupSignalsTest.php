@@ -65,8 +65,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(58)
-        ->and($result['signals'])->toHaveCount(116)
+    expect($result['summary']['supported_rules'])->toBe(98)
+        ->and($result['signals'])->toHaveCount(196)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -330,4 +330,51 @@ it('evaluates points per drive from possession scores including conversions with
         ->and($signal['status'])->not->toBe('insufficient_data');
     DB::table('nflverse_pbp_plays')->where('possession_team_id', $target->home_team_id)->update(['fixed_drive' => null]);
     expect(matchupSignal($service->build($target), 15, $target->home_team_id)['status'])->toBe('insufficient_data');
+});
+
+it('evaluates provider passing splits and mixed offensive and defensive metrics without swapping directions', function () {
+    [$target] = matchupSignalLeague();
+    DB::table('nflverse_pbp_plays')->update(['first_down' => 1, 'air_yards' => 25, 'cpoe' => 5,
+        'shotgun' => 1, 'complete_pass' => 1, 'pass_touchdown' => 0, 'pass_oe' => 12,
+        'is_interception' => 0, 'down' => 1, 'win_probability' => .5, 'game_seconds_remaining' => 1800]);
+    $result = app(NflMatchupSignalService::class)->build($target);
+    $signal = matchupSignal($result, 65, $target->home_team_id);
+    expect($signal['evidence']['offense_metric'])->toBe('cpoe')
+        ->and($signal['evidence']['defense_metric'])->toBe('completion_rate')
+        ->and($signal['evidence']['offense']['value'])->toBe(5.0)
+        ->and($signal['evidence']['defense']['value'])->toBe(1.0)
+        ->and($signal['status'])->not->toBe('insufficient_data');
+    expect(matchupSignal($result, 67, $target->home_team_id)['evidence']['offense']['plays'])->toBe(57)
+        ->and(matchupSignal($result, 23, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
+        ->and(matchupSignal($result, 90, $target->home_team_id)['evidence']['offense']['value'])->toBe(.5)
+        ->and(matchupSignal($result, 93, $target->home_team_id)['evidence']['offense']['value'])->toBe(12.0);
+    DB::table('nflverse_pbp_plays')->update(['shotgun' => null, 'first_down' => null, 'cpoe' => null]);
+    $missing = app(NflMatchupSignalService::class)->build($target);
+    foreach ([23, 65, 75, 76] as $id) {
+        expect(matchupSignal($missing, $id, $target->home_team_id)['status'])->toBe('insufficient_data');
+    }
+});
+
+it('ranks low interception offense and high interception defense as better', function () {
+    [$target, $teams] = matchupSignalLeague();
+    DB::table('nflverse_pbp_plays')->update(['is_interception' => 0]);
+    DB::table('nflverse_pbp_plays')->where('possession_team_id', $teams[0]->id)->where('play_type', 'pass')->update(['is_interception' => 1]);
+    $target->home_team_id = $teams[0]->id;
+    $target->away_team_id = $teams[31]->id;
+    $s = matchupSignal(app(NflMatchupSignalService::class)->build($target), 83, $target->home_team_id);
+    expect($s['evidence']['offense']['rank'])->toBe(32)
+        ->and($s['evidence']['defense']['rank'])->toBe(1)
+        ->and($s['status'])->toBe('matched');
+});
+
+it('requires a full trend sequence and excludes the current game from opponent adjustment', function () {
+    [$target] = matchupSignalLeague();
+    $result = app(NflMatchupSignalService::class)->build($target);
+    expect(matchupSignal($result, 40, $target->home_team_id)['status'])->toBe('insufficient_data')
+        ->and(matchupSignal($result, 42, $target->home_team_id)['status'])->toBe('insufficient_data');
+    // Every fixture offense faces the same defense with unchanged EPA in all games.
+    // Subtracting the opponent's other-game allowance must therefore equal zero.
+    $adjusted = matchupSignal($result, 44, $target->home_team_id);
+    expect($adjusted['evidence']['offense']['value'])->toEqualWithDelta(0, .000001)
+        ->and($adjusted['evidence']['offense']['games'])->toBe(3);
 });

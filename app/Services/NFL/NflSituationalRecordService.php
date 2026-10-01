@@ -12,6 +12,13 @@ class NflSituationalRecordService
     public function build(object $team, Collection $games): array
     {
         $definitions = [
+            'rest_advantage_two' => [288, 'At least two extra rest days', 'Provider-recorded own rest minus opponent rest is at least two days.'],
+            'rest_advantage_four' => [290, 'At least four extra rest days', 'Provider-recorded own rest minus opponent rest is at least four days.'],
+            'rest_disadvantage' => [292, 'Rest disadvantage', 'Provider-recorded own rest is less than opponent rest.'],
+            'after_overtime' => [300, 'After overtime', 'The previous adjacent completed game has a recorded final period greater than four.'],
+            'after_divisional' => [318, 'Following a divisional game', 'The previous adjacent completed game is provider-marked as a divisional matchup.'],
+            'before_divisional' => [319, 'Before a divisional game', 'The next adjacent game in the supplied cutoff-bounded history is provider-marked divisional.'],
+            'between_divisional' => [320, 'Between divisional games', 'Both adjacent surrounding games in supplied history are provider-marked divisional.'],
             'home' => [321, 'Home record', 'Designated home games, excluding neutral sites.'],
             'road' => [323, 'Road record', 'Designated away games, excluding neutral sites.'],
             'thursday' => [294, 'Thursday record', 'Kickoff falls on Thursday in America/New_York.'],
@@ -48,7 +55,7 @@ class NflSituationalRecordService
         $previous = null;
         $winStreak = $lossStreak = $roadStreak = 0;
         $streakOriginKnown = $roadOriginKnown = false;
-        foreach ($rows as $row) {
+        foreach ($rows as $index => $row) {
             $game = $row['game'];
             $kickoff = $row['kickoff'];
             $valid = $this->validResult($game);
@@ -69,9 +76,25 @@ class NflSituationalRecordService
             }
             if ($valid) {
                 $matches = ['home' => $home && ! $neutral, 'road' => $road, 'thursday' => $kickoff?->isThursday() ?? false];
+                $ownRest = $home ? ($game->home_rest ?? null) : ($game->away_rest ?? null);
+                $opponentRest = $home ? ($game->away_rest ?? null) : ($game->home_rest ?? null);
+                if (is_numeric($ownRest) && is_numeric($opponentRest) && $ownRest >= 4 && $opponentRest >= 4 && $ownRest <= 21 && $opponentRest <= 21 && (int) $game->week > 1) {
+                    $matches += ['rest_advantage_two' => $ownRest - $opponentRest >= 2,
+                        'rest_advantage_four' => $ownRest - $opponentRest >= 4,
+                        'rest_disadvantage' => $ownRest < $opponentRest];
+                }
+                $next = $rows->get($index + 1);
+                $nextDays = $kickoff && $next && $next['kickoff'] ? (int) $kickoff->startOfDay()->diffInDays($next['kickoff']->startOfDay(), false) : null;
+                $nextAdjacent = $next && (int) $next['game']->season === (int) $game->season
+                    && (int) $next['game']->week === (int) $game->week + 1 && $nextDays >= 4 && $nextDays <= 14;
+                $nextDivisional = $nextAdjacent && $next['game']->division_game === true;
+                $matches['before_divisional'] = $nextDivisional;
                 if ($adjacent && $previous['valid']) {
                     $priorMargin = $previous['margin'];
                     $matches += [
+                        'after_overtime' => is_numeric($previous['game']->period) && (int) $previous['game']->period > 4,
+                        'after_divisional' => $previous['game']->division_game === true,
+                        'between_divisional' => $previous['game']->division_game === true && $nextDivisional,
                         'after_win' => $priorMargin > 0, 'after_loss' => $priorMargin < 0,
                         'after_blowout_win' => $priorMargin >= 21, 'after_blowout_loss' => $priorMargin <= -21,
                         'after_one_score_win' => $priorMargin >= 1 && $priorMargin <= 8,
@@ -124,7 +147,7 @@ class NflSituationalRecordService
                 'History is limited to supplied, cutoff-bounded regular-season games; no sequence crosses a season boundary.',
                 'Sequential records require adjacent schedule weeks and known kickoff times; week gaps are excluded because a bye or missing game cannot be distinguished here.',
                 'Neutral sites are excluded from home/road records. Thursday and rest use Eastern calendar dates, not UTC weekdays.',
-                'Bye, opponent-rest, overtime, snap counts, division sequences, travel, stadium and weather conditions are unavailable without verified inputs.',
+                'Bye, snap counts, travel, stadium and weather conditions require further verified inputs. Rest comparisons use explicit provider rest fields; overtime and division sequences require recorded flags and adjacent games.',
                 'Historical market odds are not reconstructed from current mutable odds. Missing scores and prior history are not counted as losses.',
             ],
         ];

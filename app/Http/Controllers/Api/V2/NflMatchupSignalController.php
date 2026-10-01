@@ -52,7 +52,7 @@ class NflMatchupSignalController extends Controller
                 ->whereDate('game_date', '<', $cutoff->toDateString())
                 ->where(fn ($query) => $query->whereIn('home_team_id', $teamIds)->orWhereIn('away_team_id', $teamIds))
                 ->get(['id', 'home_team_id', 'away_team_id', 'season', 'season_type', 'week', 'status',
-                    'game_date', 'game_time', 'home_score', 'away_score', 'neutral_site']) : collect();
+                    'game_date', 'game_time', 'home_score', 'away_score', 'neutral_site', 'home_rest', 'away_rest', 'division_game', 'period']) : collect();
             $records = [];
             foreach (['away' => $resolved->awayTeam, 'home' => $resolved->homeTeam] as $side => $team) {
                 $records[$side] = [

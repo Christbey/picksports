@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-09-30.1';
+    public const VERSION = '2026-09-30.2';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -31,6 +31,33 @@ final class NflMatchupSignalCatalog
         $rules[79] = ['metric' => 'third_down_pass_epa', 'size' => 10, 'offense' => 'bottom', 'defense' => 'top'];
         $rules[63] = ['metric' => 'pass_yards_per_attempt', 'size' => 10, 'offense' => 'top', 'defense' => 'bottom'];
         $rules[64] = ['metric' => 'pass_yards_per_attempt', 'size' => 10, 'offense' => 'bottom', 'defense' => 'top'];
+        foreach ([23 => ['first_down_rate', 'top', 'top'], 24 => ['first_down_rate', 'top', 'bottom'], 25 => ['first_down_rate', 'bottom', 'top'],
+            30 => ['neutral_epa', 'top', 'bottom'], 31 => ['neutral_epa', 'bottom', 'top'],
+            36 => ['drive_success_rate', 'top', 'bottom'], 37 => ['drive_success_rate', 'bottom', 'top'],
+            67 => ['deep_pass_epa', 'top', 'bottom'], 68 => ['deep_pass_epa', 'top', 'top'],
+            69 => ['intermediate_pass_epa', 'top', 'bottom'], 70 => ['short_pass_epa', 'top', 'bottom'],
+            75 => ['shotgun_pass_epa', 'top', 'bottom'], 76 => ['under_center_pass_success', 'top', 'bottom'],
+            81 => ['pass_td_rate', 'top', 'bottom'], 82 => ['interception_rate', 'top', 'bottom'],
+            83 => ['interception_rate', 'bottom', 'top'], 129 => ['goal_line_rush_epa', 'top', 'bottom'],
+            151 => ['sack_rate', 'bottom', 'top']] as $id => [$metric, $offense, $defense]) {
+            $rules[$id] = compact('metric', 'offense', 'defense') + ['size' => 10];
+        }
+        foreach ([65 => ['cpoe', 'completion_rate', 'top', 'bottom'], 66 => ['cpoe', 'completion_rate', 'bottom', 'top'],
+            90 => ['pass_rate', 'pass_epa', 'top', 'bottom'], 91 => ['pass_rate', 'pass_epa', 'top', 'top'],
+            92 => ['pass_oe', 'pass_epa', 'bottom', 'bottom'], 93 => ['pass_oe', 'pass_epa', 'top', 'bottom'], 94 => ['pass_oe', 'pass_epa', 'top', 'top'],
+            125 => ['rush_success_rate', 'rush_stuff_rate', 'top', 'bottom'], 126 => ['rush_success_rate', 'rush_stuff_rate', 'bottom', 'top'],
+            130 => ['run_rate', 'rush_epa', 'top', 'bottom'], 131 => ['run_rate', 'rush_epa', 'top', 'top'],
+            133 => ['early_run_rate', 'rush_epa', 'top', 'bottom']] as $id => [$metric, $defenseMetric, $offense, $defense]) {
+            $rules[$id] = compact('metric', 'offense', 'defense') + ['defense_metric' => $defenseMetric, 'size' => 10];
+        }
+        foreach ([40 => ['epa_trend_3', 'improving', 'declining'], 41 => ['epa_trend_3', 'declining', 'improving'],
+            95 => ['pass_epa_trend_3', 'improving', 'declining'], 96 => ['pass_epa_trend_3', 'declining', 'improving'],
+            137 => ['rush_epa_trend_3', 'improving', 'declining'], 138 => ['rush_epa_trend_3', 'declining', 'improving'],
+            44 => ['opponent_adjusted_epa', 'top', 'bottom'], 45 => ['opponent_adjusted_epa', 'bottom', 'top']] as $id => [$metric, $offense, $defense]) {
+            $rules[$id] = compact('metric', 'offense', 'defense') + ['size' => 10];
+        }
+        $rules[42] = ['metric' => 'epa_trend_5', 'defense_metric' => 'epa', 'offense' => 'improving', 'defense' => 'any', 'size' => null];
+        $rules[43] = ['metric' => 'epa', 'defense_metric' => 'epa_trend_5', 'offense' => 'any', 'defense' => 'improving', 'size' => null];
         ksort($rules);
 
         return $rules;
@@ -63,7 +90,7 @@ final class NflMatchupSignalCatalog
         return array_map(function (array $entry) use ($rules): array {
             $metric = $rules[$entry['id']]['metric'] ?? null;
 
-            return [...$entry, 'definition' => $metric ? $this->definition($metric) : null,
+            return [...$entry, 'definition' => $metric ? $this->definition($metric).(isset($rules[$entry['id']]['defense_metric']) ? ' Defense comparison: '.$this->definition($rules[$entry['id']]['defense_metric']) : '') : null,
                 'required_inputs' => $metric ? ($metric === 'points_per_game' ? ['Final team scores', 'Complete league schedule'] : ['Mapped nflverse play-by-play', 'Eligible play values and situational fields', 'Complete league schedule']) : $this->requirements($entry['id'], $entry['category']),
                 'prediction_effect' => 'none'];
         }, $entries);
@@ -71,7 +98,7 @@ final class NflMatchupSignalCatalog
 
     public function definition(string $metric): string
     {
-        return match ($metric) {
+        return (NflMatchupMetricDefinitions::definition($metric) ?? match ($metric) {
             'epa', 'pass_epa', 'rush_epa' => 'Play-weighted EPA on eligible pass/run plays; sacks count as passes. Higher offense and lower EPA allowed rank better.',
             'success_rate', 'pass_success_rate', 'rush_success_rate' => 'Share of eligible plays with EPA > 0, within the named play type. Defense is opponent success allowed; lower is better.',
             'explosive_rate', 'pass_explosive_rate', 'rush_explosive_rate' => 'Share of eligible plays gaining at least 20 passing yards or 10 rushing yards. Defense is explosive plays allowed; lower is better.',
@@ -86,7 +113,7 @@ final class NflMatchupSignalCatalog
             'pass_yards_per_attempt' => 'Passing yards gained per provider-classified pass with a known false sack flag. Includes incomplete passes as zero yards; excludes sacks, runs, no-play rows and unknown sack classifications. Requires at least 15 attempts per game and 90% yardage coverage.',
             'points_per_drive' => 'Possession-team scoreboard points gained per completed drive containing a pass or run. Includes conversion points; excludes return-only and kneel-only drives and opponent scores. Requires complete drive identities, results and score coverage, at least five drives per game and two complete games for all 32 teams.',
             'points_per_game' => 'Team points scored/allowed per final game, including defensive and special-teams scoring.',
-        }.' High/elite/strong means top 10 and low/weak/poor means bottom 10 where the supplied label has no numeric band; explicit top-5/top-10 bands take precedence. Thresholds describe this catalog, not validated betting edges.';
+        }).' High/elite/strong means top 10 and low/weak/poor means bottom 10 where the supplied label has no numeric band; explicit top-5/top-10 bands take precedence. Thresholds describe this catalog, not validated betting edges.';
     }
 
     private function requirements(int $id, string $category): array

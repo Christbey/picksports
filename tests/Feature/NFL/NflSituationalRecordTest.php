@@ -127,3 +127,18 @@ it('derives short rest and Thursday mini bye without claiming a verified bye', f
     expect($result['market_records']['ats']['status'])->toBe('unavailable')
         ->and($result['market_records']['totals']['status'])->toBe('unavailable');
 });
+
+it('uses explicit rest overtime and division evidence and leaves absent inputs uncounted', function () {
+    $records = situationalRecords([
+        situationalGame(1, '2026-09-06', 7, true, ['division_game' => true, 'period' => 5]),
+        situationalGame(2, '2026-09-13', 7, true, ['home_rest' => 11, 'away_rest' => 7, 'division_game' => false]),
+        situationalGame(3, '2026-09-20', -3, true, ['division_game' => true, 'home_rest' => 6, 'away_rest' => 7]),
+    ]);
+    expect($records['rest_advantage_two']['sample_size'])->toBe(1)
+        ->and($records['rest_advantage_four']['sample_size'])->toBe(1)
+        ->and($records['rest_disadvantage']['sample_size'])->toBe(1)
+        ->and($records['after_overtime']['sample_size'])->toBe(1)
+        ->and($records['between_divisional']['sample_size'])->toBe(1)
+        ->and($records['before_divisional']['sample_size'])->toBe(1)
+        ->and($records['after_divisional']['sample_size'])->toBe(1);
+});

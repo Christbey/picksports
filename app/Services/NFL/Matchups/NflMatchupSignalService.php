@@ -28,11 +28,12 @@ final class NflMatchupSignalService
             ? 'This catalog version supports regular-season target games only.' : null;
         $games = $cutoff === null || $scopeReason !== null ? collect() : $this->priorGames($game, $cutoff, $season);
         $metrics = $this->metrics($games);
+        $metrics['qb_pass_epa']['offense'] = app(NflMatchupQuarterbacks::class)->metrics($game, $games, $cutoff);
         $entries = collect($this->catalog->entries())->keyBy('id');
         $signals = [];
         foreach ($this->catalog->rules() as $id => $rule) {
             foreach ([[(int) $game->home_team_id, (int) $game->away_team_id], [(int) $game->away_team_id, (int) $game->home_team_id]] as [$offenseId, $defenseId]) {
-                $signals[] = $this->evaluate($entries[$id], $rule, $metrics, $offenseId, $defenseId, $cutoff, $scopeReason);
+                $signals[] = $this->evaluate($entries[$id], $rule, $metrics, $offenseId, $defenseId, $cutoff, $scopeReason, $game);
             }
         }
         $counts = array_count_values(array_column($signals, 'status'));
@@ -52,7 +53,7 @@ final class NflMatchupSignalService
                 'Reconstructed from currently stored historical results and provider plays, not an immutable as-known-at-kickoff snapshot. Later corrections may change these descriptions.',
                 'Only final regular-season games from the explicitly selected season and a prior UTC calendar date are included. Same-day results are excluded because the games table has no reliable completion timestamp.',
                 'Previous-season context is a separate selected sample, never a silent fallback or blended forecast input. Rosters, quarterbacks and coaches may have changed.',
-                'Rankings require all 32 teams with at least two qualifying games. Ties crossing a top/bottom boundary do not qualify.',
+                'Team rankings require all 32 teams; QB rankings require at least 24 qualified passers. Both require at least two qualifying games. Ties crossing a top/bottom boundary do not qualify.',
                 'Each prior game must meet volume floors: 30 overall; 15 passing or early-down; 8 rushing; 5 late-down; 4 first-down rushing. First-down passing requires 16 pooled opportunities; third-down passing, red-zone passing and short-yardage require 6 pooled opportunities across at least two complete games. Require 90% metric/context coverage in every game, including games with zero situational opportunities. These checks cannot independently prove that a provider import contains every play.',
                 'EPA and success use nflverse pass/run plays including sacks, excluding no-play, conversion-attempt and special-teams rows. Success means EPA greater than zero; rushing includes scrambles classified as runs.',
                 'Scoring uses team points scored/allowed, including defensive and special-teams scores, not isolated offensive scoring.',
@@ -94,7 +95,7 @@ final class NflMatchupSignalService
             ->whereIn('status', [config('nfl.statuses.final', 'STATUS_FINAL'), 'final', 'completed'])
             ->where('id', '!=', $game->id)
             ->whereDate('game_date', '<', $cutoff->toDateString())
-            ->get(['id', 'home_team_id', 'away_team_id', 'game_date', 'game_time', 'home_score', 'away_score'])
+            ->get(['id', 'home_team_id', 'away_team_id', 'game_date', 'game_time', 'home_score', 'away_score', 'neutral_site'])
             ->filter(function (Game $prior) use ($cutoff): bool {
                 $kickoff = $this->dates->gameDateTimeUtc($prior->getRawOriginal('game_date'), $prior->game_time);
                 if ($kickoff === null || $kickoff->greaterThanOrEqualTo($cutoff)) {
@@ -105,13 +106,18 @@ final class NflMatchupSignalService
             })->keyBy('id');
     }
 
-    /** Three queries per build: qualifying games, grouped drives, and grouped provider plays. */
+    /** Team metrics use grouped drive and play queries; player metrics load separately. */
     private function metrics(Collection $games): array
     {
         $buckets = [];
         $scheduled = [];
+        $venueScheduled = [];
         foreach ($games as $game) {
             foreach ([[$game->home_team_id, $game->away_team_id, $game->home_score, $game->away_score], [$game->away_team_id, $game->home_team_id, $game->away_score, $game->home_score]] as [$offense, $defense, $scored, $allowed]) {
+                if (! $game->neutral_site) {
+                    $venue = (int) $offense === (int) $game->home_team_id ? 'home_pass_epa' : 'road_pass_epa';
+                    $venueScheduled[$venue][(int) $offense] = ($venueScheduled[$venue][(int) $offense] ?? 0) + 1;
+                }
                 $scheduled[(int) $offense] = ($scheduled[(int) $offense] ?? 0) + 1;
                 if ($scored !== null && $allowed !== null && $scored >= 0 && $allowed >= 0) {
                     $this->add($buckets, 'points_per_game', 'offense', (int) $offense, (int) $game->id, (float) $scored, 1, 1);
@@ -189,6 +195,10 @@ final class NflMatchupSignalService
                 $split = $row->play_type === 'pass' || $row->is_sack ? 'pass_epa' : 'rush_epa';
                 $pass = $split === 'pass_epa';
                 foreach ([['offense', $offense], ['defense', $defense]] as [$side, $team]) {
+                    if ($pass && ! $game->neutral_site) {
+                        $venue = $team === (int) $game->home_team_id ? 'home_pass_epa' : 'road_pass_epa';
+                        $this->add($buckets, $venue, $side, $team, (int) $row->nfl_game_id, (float) $row->epa_sum, (int) $row->epa_plays, (int) $row->candidate_plays);
+                    }
                     if ($row->play_type === 'pass' && $row->is_sack !== null && ! $row->is_sack) {
                         $this->add($buckets, 'pass_yards_per_attempt', $side, $team, (int) $row->nfl_game_id,
                             (float) $row->yards_sum, (int) $row->yard_plays, (int) $row->candidate_plays);
@@ -244,7 +254,7 @@ final class NflMatchupSignalService
                     $minimumPerGame = $splitDefinition[4] ?? match ($metric) {
                         'points_per_game' => 1,
                         'points_per_drive', 'drive_success_rate' => 5,
-                        'pass_epa', 'pass_success_rate', 'pass_explosive_rate', 'pass_yards_per_attempt', 'early_epa' => 15,
+                        'home_pass_epa', 'road_pass_epa', 'pass_epa', 'pass_success_rate', 'pass_explosive_rate', 'pass_yards_per_attempt', 'early_epa' => 15,
                         'rush_epa', 'rush_success_rate', 'rush_explosive_rate', 'first_down_pass_epa' => 8,
                         'late_epa' => 5,
                         'first_down_rush_epa' => 4,
@@ -269,7 +279,8 @@ final class NflMatchupSignalService
                             && $sample['count'] >= $sample['candidate'] * .9;
                     }, ARRAY_FILTER_USE_BOTH);
                     $count = array_sum(array_column($validGames, 'count'));
-                    $eligible = count($validGames) >= self::MIN_GAMES && count($validGames) === ($scheduled[$team] ?? 0)
+                    $expectedGames = $venueScheduled[$metric][$team] ?? ($scheduled[$team] ?? 0);
+                    $eligible = count($validGames) >= self::MIN_GAMES && count($validGames) === $expectedGames
                         && (! $pooledSituation || $count >= $minimumPerGame * self::MIN_GAMES);
                     $metrics[$metric][$side][$team] = [
                         'metric' => $metric,
@@ -277,7 +288,7 @@ final class NflMatchupSignalService
                         'games' => count($validGames),
                         'game_ids' => array_keys($validGames),
                         'plays' => $metric === 'points_per_game' ? null : $count,
-                        'scheduled_games' => $scheduled[$team] ?? 0,
+                        'scheduled_games' => $expectedGames,
                         'eligible' => $eligible,
                         'volume_policy' => $pooledSituation ? 'pooled_situational_opportunities' : 'per_game',
                         'minimum_plays' => $pooledSituation ? $minimumPerGame * self::MIN_GAMES : $minimumPerGame,
@@ -337,21 +348,25 @@ final class NflMatchupSignalService
         $sample['candidate'] += $candidate;
     }
 
-    private function evaluate(array $entry, array $rule, array $metrics, int $offenseId, int $defenseId, ?CarbonImmutable $cutoff, ?string $scopeReason): array
+    private function evaluate(array $entry, array $rule, array $metrics, int $offenseId, int $defenseId, ?CarbonImmutable $cutoff, ?string $scopeReason, Game $target): array
     {
         $offense = $metrics[$rule['metric']]['offense'][$offenseId] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => null, 'eligible' => false];
         $defenseMetric = $rule['defense_metric'] ?? $rule['metric'];
         $defense = $metrics[$defenseMetric]['defense'][$defenseId] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => null, 'eligible' => false];
-        $league = min($offense['league_teams'] ?? 0, $defense['league_teams'] ?? 0);
+        $qbRule = $rule['metric'] === 'qb_pass_epa';
+        $league = $qbRule ? ($defense['league_teams'] ?? 0) : min($offense['league_teams'] ?? 0, $defense['league_teams'] ?? 0);
+        $venueApplies = ! isset($rule['venue']) || (! $target->neutral_site && (($offenseId === (int) $target->home_team_id) === ($rule['venue'] === 'home')));
         $reason = match (true) {
             $scopeReason !== null => $scopeReason,
             $cutoff === null => 'Kickoff cutoff is unavailable.',
+            $qbRule && isset($offense['identity_reason']) => $offense['identity_reason'],
+            $qbRule && ($offense['league_players'] ?? 0) < 24 => 'Quarterback rankings require at least 24 qualified passers.',
             (! $offense['eligible'] || ! $defense['eligible']) && (str_contains($rule['metric'], '_trend_') || str_contains($defenseMetric, '_trend_')) => 'Trend comparison requires the full four- or five-game sequence specified in the definition, with complete inputs.',
             ! $offense['eligible'] || ! $defense['eligible'] => 'At least two qualifying games per team are required, with volume and non-null coverage checks for every preceding game; missing values are not treated as zero.',
             $league !== self::LEAGUE_TEAMS => 'League rankings require qualified data for all 32 teams.',
             default => null,
         };
-        $matched = $reason === null && $this->matches($offense, $rule['offense'], $rule['size'], true) && $this->matches($defense, $rule['defense'], $rule['size'], false);
+        $matched = $venueApplies && $reason === null && $this->matches($offense, $rule['offense'], $rule['size'], true) && $this->matches($defense, $rule['defense'], $rule['size'], false);
 
         return [
             'id' => $entry['id'], 'label' => $entry['label'], 'category' => $entry['category'],
@@ -366,6 +381,7 @@ final class NflMatchupSignalService
                 'source' => match ($rule['metric']) {
                     'points_per_game' => 'nfl_games: final team scores',
                     'pass_yards_per_attempt' => 'nflverse_pbp_plays: pass attempts (sacks excluded)',
+                    'qb_pass_epa' => 'nflverse_pbp_plays: selected quarterback passing plays and sacks',
                     'points_per_drive' => 'nflverse_pbp_plays: completed drives and possession-team scores',
                     default => 'nflverse_pbp_plays: pass/run plays (sacks included)',
                 },
@@ -382,7 +398,7 @@ final class NflMatchupSignalService
             'improving' => $offense ? $sample['value'] > 0 : $sample['value'] < 0,
             'declining' => $offense ? $sample['value'] < 0 : $sample['value'] > 0,
             'top' => $sample['rank_end'] <= $size,
-            'bottom' => $sample['rank'] > self::LEAGUE_TEAMS - $size,
+            'bottom' => $sample['rank'] > ($sample['league_players'] ?? self::LEAGUE_TEAMS) - $size,
             'above_average' => $offense ? $sample['value'] > $sample['league_average'] : $sample['value'] < $sample['league_average'],
             'below_average' => $offense ? $sample['value'] < $sample['league_average'] : $sample['value'] > $sample['league_average'],
         };

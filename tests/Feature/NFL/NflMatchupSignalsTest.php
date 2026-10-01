@@ -1,10 +1,15 @@
 <?php
 
+use App\Models\NFL\DepthChartSnapshot;
+use App\Models\NFL\DepthChartSnapshotEntry;
 use App\Models\NFL\Game;
+use App\Models\NFL\Prediction;
 use App\Models\NFL\Team;
 use App\Services\NFL\Matchups\NflMatchupSignalCatalog;
 use App\Services\NFL\Matchups\NflMatchupSignalService;
+use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 function matchupSignalLeague(int $teamCount = 32): array
 {
@@ -65,8 +70,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(106)
-        ->and($result['signals'])->toHaveCount(212)
+    expect($result['summary']['supported_rules'])->toBe(113)
+        ->and($result['signals'])->toHaveCount(226)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -139,7 +144,7 @@ it('ranks offense higher and EPA allowed lower with grouped queries and independ
         ->and(matchupSignal($result, 51, $target->home_team_id)['status'])->toBe('matched')
         ->and(matchupSignal($result, 101, $target->home_team_id)['status'])->toBe('matched')
         ->and($result['predictive_weight'])->toBe(0)
-        ->and(count($queries))->toBe(3);
+        ->and(collect($queries)->filter(fn ($q) => str_contains($q['query'], 'nflverse_pbp_plays')))->toHaveCount(3);
     $target->home_team_id = $teams[0]->id;
     $target->away_team_id = $teams[1]->id;
     $result = app(NflMatchupSignalService::class)->build($target);
@@ -393,4 +398,86 @@ it('requires charted play-action screen RPO and motion flags instead of treating
     }
     expect(matchupSignal($result, 277, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 122, $target->home_team_id)['evidence']['defense']['value'])->toBe(6.0);
+});
+
+it('uses the selected quarterbacks own passing sample including sacks and refuses missing identities', function () {
+    [$target, $teams] = matchupSignalLeague();
+    foreach ($teams as $i => $team) {
+        DB::table('nflverse_pbp_plays')->where('possession_team_id', $team->id)->where('play_type', 'pass')->update(['passer_player_id' => '00-'.(1000 + $i)]);
+    }
+    $target->home_qb_id = '00-1031';
+    $target->home_qb_name = 'Selected QB';
+    $service = app(NflMatchupSignalService::class);
+    $row = matchupSignal($service->build($target), 191, $target->home_team_id);
+    expect($row['status'])->toBe('matched')
+        ->and($row['evidence']['offense']['player_name'])->toBe('Selected QB')
+        ->and($row['evidence']['offense']['plays'])->toBe(60)
+        ->and($row['evidence']['offense']['value'])->toEqualWithDelta(.15, .000001)
+        ->and($row['evidence']['offense']['league_players'])->toBe(32);
+    // A newly selected passer keeps his own sample, never the current team's .15 EPA.
+    $target->home_qb_id = '00-1000';
+    $row = matchupSignal($service->build($target), 193, $target->home_team_id);
+    expect($row['status'])->toBe('matched')->and($row['evidence']['offense']['value'])->toEqualWithDelta(-.16, .000001);
+    $target->home_qb_id = null;
+    expect(matchupSignal($service->build($target), 191, $target->home_team_id)['status'])->toBe('insufficient_data');
+    $target->home_qb_id = '00-1031';
+    DB::table('nflverse_pbp_plays')->where('passer_player_id', '00-1031')->update(['epa' => null]);
+    expect(matchupSignal($service->build($target), 191, $target->home_team_id)['status'])->toBe('insufficient_data');
+});
+
+it('ranks home and road passing separately and excludes neutral sites and wrong target roles', function () {
+    [$target, , $games] = matchupSignalLeague();
+    foreach ($games as $game) {
+        $copy = $game->replicate();
+        $copy->home_team_id = $game->away_team_id;
+        $copy->away_team_id = $game->home_team_id;
+        $copy->espn_event_id = 'venue-'.$game->id;
+        $copy->save();
+        foreach (DB::table('nflverse_pbp_plays')->where('nfl_game_id', $game->id)->get() as $play) {
+            $row = (array) $play;
+            unset($row['id']);
+            $row['nfl_game_id'] = $copy->id;
+            $row['nflverse_play_key'] .= '-venue';
+            DB::table('nflverse_pbp_plays')->insert($row);
+        }
+    }
+    $service = app(NflMatchupSignalService::class);
+    $row = matchupSignal($service->build($target), 98, $target->home_team_id);
+    expect($row['evidence']['offense']['games'])->toBe(3)
+        ->and($row['evidence']['offense']['league_teams'])->toBe(32)
+        ->and($row['evidence']['offense']['plays'])->toBe(60)
+        ->and($row['evidence']['offense']['value'])->toEqualWithDelta(.15, .000001)
+        ->and(matchupSignal($service->build($target), 97, $target->home_team_id)['status'])->toBe('not_matched');
+    Game::whereIn('id', collect($games)->pluck('id'))->update(['neutral_site' => true]);
+    expect(matchupSignal($service->build($target), 98, $target->home_team_id)['status'])->toBe('insufficient_data');
+});
+
+it('resolves a projected QB only through a recent game link and unambiguous ESPN to GSIS mapping', function () {
+    $this->travelTo('2026-09-19 12:00:00');
+    [$target, $teams] = matchupSignalLeague();
+    foreach ($teams as $i => $team) {
+        DB::table('nflverse_pbp_plays')->where('possession_team_id', $team->id)->where('play_type', 'pass')->update(['passer_player_id' => '00-'.(1000 + $i)]);
+    }
+    $snapshot = DepthChartSnapshot::create(['snapshot_uuid' => (string) Str::uuid(),
+        'team_id' => $target->home_team_id, 'espn_team_id' => '123', 'season' => 2026, 'provider' => 'espn',
+        'observed_at' => now()->subHour(), 'payload_hash' => hash('sha256', 'qb-depth'), 'entry_count' => 1]);
+    DepthChartSnapshotEntry::create(['snapshot_id' => $snapshot->id, 'position_slot_key' => 'offense:QB',
+        'position_code' => 'QB', 'depth_rank' => 1, 'espn_athlete_id' => '456', 'observed_at' => now()->subHour()]);
+    $prediction = Prediction::factory()->create(['game_id' => $target->id]);
+    app(PredictionFeatureSnapshotRecorder::class)->record($prediction, $target, 'nfl', [
+        'model_metadata' => ['quarterback' => ['home' => ['depth_chart_game_link' => [
+            'game_id' => $target->id, 'team_id' => $target->home_team_id, 'side' => 'home', 'snapshot_id' => $snapshot->id,
+            'snapshot_uuid' => $snapshot->snapshot_uuid, 'as_of' => now()->toIso8601String(),
+        ]]]],
+    ]);
+    $roster = ['nflverse_roster_key' => 'qb-mapping', 'season' => 2026, 'team_id' => $target->home_team_id,
+        'position' => 'QB', 'espn_id' => '456', 'gsis_id' => '00-1031', 'full_name' => 'Projected Passer'];
+    DB::table('nflverse_rosters')->insert($roster);
+    $service = app(NflMatchupSignalService::class);
+    $row = matchupSignal($service->build($target), 191, $target->home_team_id);
+    expect($row['status'])->toBe('matched')
+        ->and($row['evidence']['offense']['player_id'])->toBe('00-1031')
+        ->and($row['evidence']['offense']['identity_status'])->toBe('projected_not_confirmed_starter');
+    DB::table('nflverse_rosters')->insert([...$roster, 'nflverse_roster_key' => 'conflict', 'gsis_id' => '00-1000']);
+    expect(matchupSignal($service->build($target), 191, $target->home_team_id)['status'])->toBe('insufficient_data');
 });

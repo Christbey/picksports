@@ -9,6 +9,7 @@ use App\Services\Api\V2\SportGameQuery;
 use App\Services\NFL\Matchups\NflHistoricalMatchupMarkets;
 use App\Services\NFL\Matchups\NflMatchupSignalCatalog;
 use App\Services\NFL\Matchups\NflMatchupSignalService;
+use App\Services\NFL\Matchups\NflMatchupWorkloads;
 use App\Services\NFL\NflSituationalRecordService;
 use App\Support\SportsViewCache;
 use Illuminate\Http\JsonResponse;
@@ -71,13 +72,14 @@ class NflMatchupSignalController extends Controller
 
                 return $copy;
             })->filter(fn (Game $game) => $game->game_date->toDateString() < $cutoff->toDateString());
+            $workloads = app(NflMatchupWorkloads::class)->forGames($history);
             $records = [];
             foreach (['away' => $resolved->awayTeam, 'home' => $resolved->homeTeam] as $side => $team) {
                 $records[$side] = [
                     'team_id' => $team?->id,
                     'label' => $team?->abbreviation ?? ucfirst($side),
                     'window' => 'Current and previous 3 regular seasons, before kickoff',
-                    ...$situations->build($team ?? (object) ['id' => 0], $history, $markets),
+                    ...$situations->build($team ?? (object) ['id' => 0], $history, $markets, $workloads),
                 ];
             }
 

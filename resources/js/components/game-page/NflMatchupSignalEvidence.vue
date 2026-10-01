@@ -41,9 +41,10 @@ const unavailable = computed(() =>
         <p class="text-xs text-muted-foreground">
             {{ data.matchup.season }} regular season, before
             {{ timestamp(data.matchup.cutoff_at) }}. Rankings require
-            {{ data.matchup.minimum_games }} qualifying games per team and
-            {{ data.matchup.minimum_league_teams }} qualifying teams. No
-            automatic prior-season fallback.
+            {{ data.matchup.minimum_games }} qualifying games. Team rankings
+            require {{ data.matchup.minimum_league_teams }} qualifying teams; QB
+            rankings require 24 qualified passers. No automatic prior-season
+            fallback.
         </p>
         <p
             v-if="data.matchup.window === 'previous_season'"
@@ -65,7 +66,8 @@ const unavailable = computed(() =>
                 </h3>
                 <p class="mt-1 text-sm">{{ signal.label }}</p>
                 <p class="mt-2 text-xs text-muted-foreground">
-                    Offense {{ value(signal.evidence.offense.value) }} · rank
+                    {{ signal.evidence.offense.player_name ?? 'Offense' }}
+                    {{ value(signal.evidence.offense.value) }} · rank
                     {{ signal.evidence.offense.rank ?? '—' }} ·
                     {{ signal.evidence.offense.games }} games<br />
                     Defense {{ value(signal.evidence.defense.value) }} · rank
@@ -125,7 +127,9 @@ const unavailable = computed(() =>
                                 {{
                                     record.record_type === 'ats'
                                         ? 'W–L–P ATS'
-                                        : record.record_type === 'totals' ? 'O–U–P' : 'W–L–T'
+                                        : record.record_type === 'totals'
+                                          ? 'O–U–P'
+                                          : 'W–L–T'
                                 }}
                                 · {{ record.sample_size }} games<span
                                     v-if="

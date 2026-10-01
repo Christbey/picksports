@@ -177,3 +177,12 @@ it('requires corroborated bye rest and grades totals without inventing missing l
         ->and($records['after_bye_ats']['record'])->toBe(['wins' => 1, 'losses' => 0, 'ties' => 1])
         ->and($records['after_bye_total']['record'])->toBe(['wins' => 1, 'losses' => 0, 'ties' => 1]);
 });
+
+it('uses the prior games workload and keeps offense and defense separate', function () {
+    $games = collect([situationalGame(1, '2026-09-06'), situationalGame(2, '2026-09-13', -7), situationalGame(3, '2026-09-20')]);
+    $workloads = [1 => [1 => ['snaps' => 70], 2 => ['snaps' => 69]], 2 => [1 => ['snaps' => 60], 2 => ['snaps' => 75]]];
+    $rows = collect(app(NflSituationalRecordService::class)->build((object) ['id' => 1], $games, [], $workloads)['records'])->keyBy('id');
+    expect($rows['after_70_offensive_snaps']['record'])->toBe(['wins' => 0, 'losses' => 1, 'ties' => 0])
+        ->and($rows['after_70_defensive_snaps']['record'])->toBe(['wins' => 1, 'losses' => 0, 'ties' => 0])
+        ->and($rows['after_70_defensive_snaps']['workload_evidence'][0]['previous_game_id'])->toBe(2);
+});

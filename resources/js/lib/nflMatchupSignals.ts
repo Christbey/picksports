@@ -1,4 +1,7 @@
 export interface MatchupMetricEvidence {
+    player_name?: string | null;
+    identity_status?: string;
+    league_players?: number;
     value: number | null;
     rank: number | null;
     games: number;

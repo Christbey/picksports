@@ -21,6 +21,7 @@ final class NflMatchupMetricDefinitions
             'defensive_box' => [$run, '1=0', 'NULLIF(ftn_n_defense_box, 0)', 'ftn_n_defense_box', 8],
             'first_down_rate' => ['1=1', '1=0', 'first_down', 'first_down', 30],
             'neutral_epa' => ['win_probability BETWEEN 0.2 AND 0.8 AND game_seconds_remaining > 120', 'win_probability IS NULL OR game_seconds_remaining IS NULL', 'epa', 'epa', 8],
+            'air_yards_per_attempt' => [$attempt, '1=0', 'air_yards', 'air_yards', 10],
             'cpoe' => [$attempt, '1=0', 'cpoe', 'cpoe', 10],
             'completion_rate' => [$attempt, '1=0', 'complete_pass', 'complete_pass', 10],
             'deep_pass_epa' => ["{$attempt} AND air_yards >= 20", '1=0', 'epa', 'epa', 3],
@@ -48,6 +49,9 @@ final class NflMatchupMetricDefinitions
     public static function definition(string $metric): ?string
     {
         return match ($metric) {
+            'home_pass_epa', 'road_pass_epa' => 'Passing EPA in the named home/road subset, excluding neutral sites. At least two qualifying games in that subset and complete coverage of every preceding game in the subset for all 32 teams. Applied only when the target offense plays in the named venue role.',
+            'air_yards_per_attempt' => 'Mean supplied air yards on nonsack pass attempts. Requires 90% air-yard coverage in each complete game; missing depth is never zero.',
+            'qb_pass_epa' => 'Passing EPA for the game-selected quarterback, including sacks and excluding scrambles. Rank among qualified quarterbacks with at least two games of 15 pass plays and 90% EPA coverage in every appearance; at least 24 qualified quarterbacks required. Identity is sourced from the game or its linked pregame depth chart, never team passing totals.',
             'opponent_adjusted_epa' => 'Play-weighted EPA minus each opponent’s other-game EPA allowed (offense) or produced (defense). The game being adjusted is excluded from the baseline. Requires at least two other complete games for every opponent. This is a one-pass adjustment, not DVOA.',
             'epa_trend_3', 'pass_epa_trend_3', 'rush_epa_trend_3' => 'Three consecutive improvements or declines in per-game EPA, requiring four complete games in chronological order. Offense improves upward and defense improves downward; any reversal or flat change does not qualify.',
             'epa_trend_5', 'pass_epa_trend_5', 'rush_epa_trend_5' => 'Ordinary least-squares slope of per-game EPA across the five latest complete games. A positive slope improves offense; a negative slope improves defense. Fewer than five games is insufficient.',

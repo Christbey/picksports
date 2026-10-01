@@ -1,0 +1,122 @@
+<?php
+
+namespace App\Services\NFL\Matchups;
+
+use App\Models\NFL\DepthChartSnapshotEntry;
+use App\Models\NFL\Game;
+use App\Models\NFL\GameDepthChartLink;
+use App\Services\NFL\QuarterbackAvailability;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+
+final class NflMatchupQuarterbacks
+{
+    public function metrics(Game $target, Collection $games, ?CarbonImmutable $cutoff): array
+    {
+        if (! $cutoff || $games->isEmpty()) {
+            return [];
+        }
+        $query = DB::table('nflverse_pbp_plays')->whereIn('nfl_game_id', $games->keys())
+            ->where('play_type', 'pass')
+            ->where(fn ($q) => $q->whereNull('description')->orWhereRaw('LOWER(description) NOT LIKE ?', ['%no play%']))
+            ->where(fn ($q) => $q->whereNull('description')->orWhereRaw('LOWER(description) NOT LIKE ?', ['%two-point conversion attempt%']));
+        $rows = $query->select(['nfl_game_id', 'possession_team_id', 'defense_team_id', 'passer_player_id'])
+            ->selectRaw('COUNT(*) AS candidates, COUNT(epa) AS measured, SUM(epa) AS total')
+            ->groupBy('nfl_game_id', 'possession_team_id', 'defense_team_id', 'passer_player_id')->get();
+        $appearances = [];
+        $coverage = [];
+        foreach ($rows as $row) {
+            $game = $games->get($row->nfl_game_id);
+            $ids = [(int) $game->home_team_id, (int) $game->away_team_id];
+            if ((int) $row->possession_team_id === (int) $row->defense_team_id
+                || ! in_array((int) $row->possession_team_id, $ids, true) || ! in_array((int) $row->defense_team_id, $ids, true)) {
+                continue;
+            }
+            $key = $row->nfl_game_id.':'.$row->possession_team_id;
+            $coverage[$key] ??= ['total' => 0, 'identified' => 0];
+            $coverage[$key]['total'] += (int) $row->candidates;
+            if (! filled($row->passer_player_id)) {
+                continue;
+            }
+            $coverage[$key]['identified'] += (int) $row->candidates;
+            $appearances[$row->passer_player_id][] = ['game_id' => (int) $row->nfl_game_id, 'key' => $key,
+                'count' => (int) $row->measured, 'candidate' => (int) $row->candidates, 'sum' => (float) $row->total];
+        }
+        $samples = [];
+        foreach ($appearances as $id => $rows) {
+            $valid = array_filter($rows, fn ($r) => $r['count'] >= 15 && $r['count'] >= $r['candidate'] * .9
+                && $coverage[$r['key']]['identified'] >= $coverage[$r['key']]['total'] * .9);
+            $count = array_sum(array_column($valid, 'count'));
+            $samples[$id] = ['value' => $count ? array_sum(array_column($valid, 'sum')) / $count : null,
+                'games' => count($valid), 'game_ids' => array_column($valid, 'game_id'), 'plays' => $count,
+                'eligible' => count($valid) >= 2 && count($valid) === count($rows), 'rank' => null,
+                'player_id' => $id, 'player_id_namespace' => 'gsis', 'minimum_plays_per_appearance' => 15];
+        }
+        $qualified = array_filter($samples, fn ($r) => $r['eligible']);
+        foreach ($samples as $id => &$sample) {
+            $sample['league_players'] = count($qualified);
+            $sample['ranking_population'] = 'qualified_quarterbacks';
+            if (! $sample['eligible'] || count($qualified) < 24) {
+                continue;
+            }
+            $sample['rank'] = 1 + count(array_filter($qualified, fn ($r) => $r['value'] - $sample['value'] > .0000001));
+            $sample['rank_end'] = $sample['rank'] - 1 + count(array_filter($qualified, fn ($r) => abs($r['value'] - $sample['value']) < .0000001));
+        }
+        unset($sample);
+        $target->loadMissing(['homeTeam', 'awayTeam']);
+        $result = [];
+        foreach (['home', 'away'] as $side) {
+            $team = (int) $target->{$side.'_team_id'};
+            $identity = $this->identity($target, $side, $cutoff);
+            $sample = $samples[$identity['player_id'] ?? ''] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => 0, 'eligible' => false, 'league_players' => count($qualified)];
+            $availability = app(QuarterbackAvailability::class);
+            if (! isset($identity['identity_reason']) && $availability->excludes($availability->forGame($target, $team), $identity['local_player_id'] ?? null, $identity['player_name'] ?? null)) {
+                $identity['identity_reason'] = 'The selected quarterback is unavailable in game-scoped injury evidence; no replacement is guessed.';
+            }
+            if (isset($identity['identity_reason'])) {
+                $sample['eligible'] = false;
+                $sample['value'] = null;
+                $sample['rank'] = null;
+            }
+            $result[$team] = [...$sample, ...$identity];
+        }
+
+        return $result;
+    }
+
+    private function identity(Game $game, string $side, CarbonImmutable $cutoff): array
+    {
+        $id = $game->{$side.'_qb_id'};
+        if (is_string($id) && preg_match('/^00-\d+$/', $id)) {
+            return ['player_id' => $id, 'player_name' => $game->{$side.'_qb_name'}, 'identity_source' => 'game_quarterback', 'identity_status' => 'game_record_identity'];
+        }
+        $asOf = $cutoff->min(CarbonImmutable::now());
+        $link = GameDepthChartLink::where('game_id', $game->id)->where('side', $side)->where('team_id', $game->{$side.'_team_id'})
+            ->where('as_of', '<=', $asOf)->where('observed_at', '<=', $asOf)
+            ->where('observed_at', '>=', $asOf->subDays(7))->orderByDesc('as_of')->orderByDesc('id')->first();
+        $missing = ['identity_reason' => 'A unique game-linked quarterback identity with a verified player-ID mapping is required.'];
+        if (! $link) {
+            return $missing;
+        }
+        $entries = DepthChartSnapshotEntry::with('player')->where('snapshot_id', $link->snapshot_id)
+            ->where('position_code', 'QB')->where('depth_rank', 1)->get();
+        if ($entries->count() !== 1) {
+            return $missing;
+        }
+        $entry = $entries->first();
+        if (! filled($entry->espn_athlete_id)) {
+            return $missing;
+        }
+        $rosters = DB::table('nflverse_rosters')->where('season', $game->season)->where('team_id', $game->{$side.'_team_id'})
+            ->where('position', 'QB')->where('espn_id', $entry->espn_athlete_id)->whereNotNull('gsis_id')->get();
+        $ids = $rosters->pluck('gsis_id')->filter()->unique();
+        if ($ids->count() !== 1) {
+            return $missing;
+        }
+
+        return ['player_id' => $ids->first(), 'player_name' => $entry->player?->full_name ?? $rosters->first()->full_name,
+            'local_player_id' => $entry->player_id, 'identity_source' => 'game_depth_chart_link', 'depth_chart_link_id' => $link->id,
+            'identity_status' => 'projected_not_confirmed_starter', 'identity_observed_at' => $link->observed_at->toIso8601String()];
+    }
+}

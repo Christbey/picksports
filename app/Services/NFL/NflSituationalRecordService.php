@@ -9,9 +9,11 @@ use Illuminate\Support\Collection;
 /** Descriptive records only: consumes already-loaded, cutoff-bounded team history. */
 class NflSituationalRecordService
 {
-    public function build(object $team, Collection $games, array $markets = []): array
+    public function build(object $team, Collection $games, array $markets = [], array $workloads = []): array
     {
         $definitions = [
+            'after_70_offensive_snaps' => [302, 'After 70+ offensive snaps', 'Previous adjacent completed game had at least 70 offensive plays: official pass attempts plus rush attempts plus sacks allowed.'],
+            'after_70_defensive_snaps' => [303, 'After 70+ defensive snaps', 'Opponent in the previous adjacent completed game ran at least 70 offensive plays, using complete paired official team statistics.'],
             'after_bye' => [281, 'After a bye', 'Provider-rest gap of 13–21 days and a two-week schedule gap after the prior game in the same season.'],
             'before_bye' => [284, 'Before a bye', 'Next game has a provider-rest gap of 13–21 days and a two-week schedule gap in the supplied historical sample.'],
             'opponent_after_bye' => [286, 'Opponent after a bye', 'Opponent has provider-recorded 13–21 rest days, excluding season openers.'],
@@ -134,6 +136,10 @@ class NflSituationalRecordService
 
                 if ($adjacent && $previous['valid']) {
                     $priorMargin = $previous['margin'];
+                    $prior = $previous['game'];
+                    $priorOpponent = (int) $prior->home_team_id === (int) $team->id ? $prior->away_team_id : $prior->home_team_id;
+                    $matches['after_70_offensive_snaps'] = ($workloads[$prior->id][$team->id]['snaps'] ?? -1) >= 70;
+                    $matches['after_70_defensive_snaps'] = ($workloads[$prior->id][$priorOpponent]['snaps'] ?? -1) >= 70;
                     $matches += [
                         'after_overtime' => is_numeric($previous['game']->period) && (int) $previous['game']->period > 4,
                         'after_divisional' => $previous['game']->division_game === true,
@@ -163,6 +169,9 @@ class NflSituationalRecordService
                     if ($matchesSituation) {
                         $record = &$records[$id];
                         $record['sample_size']++;
+                        if (str_starts_with($id, 'after_70_')) {
+                            $record['workload_evidence'][] = ['previous_game_id' => $previous['game']->id, 'team_stats' => $workloads[$previous['game']->id]];
+                        }
                         $resultMargin = match ($record['record_type'] ?? null) {
                             'ats' => $margin + $teamHandicap,
                             'totals' => $game->home_score + $game->away_score - $market['total'],
@@ -203,7 +212,7 @@ class NflSituationalRecordService
                 'History is limited to supplied, cutoff-bounded regular-season games; no sequence crosses a season boundary.',
                 'Sequential records require adjacent schedule weeks and known kickoff times; week gaps are excluded because a bye or missing game cannot be distinguished here.',
                 'Neutral sites are excluded from home/road records. Thursday and rest use Eastern calendar dates, not UTC weekdays.',
-                'Bye, snap counts, travel, stadium and weather conditions require further verified inputs. Rest comparisons use explicit provider rest fields; overtime and division sequences require recorded flags and adjacent games.',
+                'Travel, stadium and weather conditions require further verified inputs. Workload records require complete paired official team statistics. Rest comparisons use explicit provider rest fields; overtime and division sequences require recorded flags and adjacent games.',
                 'Historical ATS uses only explicitly normalized archived nflverse closing lines, not current mutable odds. These retrospective records are not an as-known betting backtest. Missing scores, lines and prior history are excluded, not counted as losses.',
             ],
         ];

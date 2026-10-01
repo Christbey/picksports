@@ -140,8 +140,10 @@ const value = (number: number | null | undefined) =>
                             {{ signalStatus(signal.status) }}
                         </p>
                         <p>
-                            Offense {{ value(signal.evidence.offense.value) }} ·
-                            rank
+                            {{
+                                signal.evidence.offense.player_name ?? 'Offense'
+                            }}
+                            {{ value(signal.evidence.offense.value) }} · rank
                             {{ signal.evidence.offense.rank ?? 'unavailable' }}
                             · {{ signal.evidence.offense.games }} games
                         </p>
@@ -171,7 +173,9 @@ const value = (number: number | null | undefined) =>
                             {{
                                 situation.record.record_type === 'ats'
                                     ? 'W–L–P ATS'
-                                    : situation.record.record_type === 'totals' ? 'O–U–P' : 'W–L–T'
+                                    : situation.record.record_type === 'totals'
+                                      ? 'O–U–P'
+                                      : 'W–L–T'
                             }}
                             · {{ situation.record.sample_size }} games
                         </p>

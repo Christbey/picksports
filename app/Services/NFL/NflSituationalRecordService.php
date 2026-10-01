@@ -12,6 +12,8 @@ class NflSituationalRecordService
     public function build(object $team, Collection $games, array $markets = [], array $workloads = []): array
     {
         $definitions = [
+            'road_after_home_heavy' => [351, 'Road after a home-heavy stretch', 'Away at a non-neutral site after at least three home games in the previous four completed games. Requires four adjacent schedule weeks in the same season, known venues and kickoffs; neutral games count as neither home nor road.'],
+            'home_after_road_heavy' => [352, 'Home after a road-heavy stretch', 'Home at a non-neutral site after at least three away games in the previous four completed games. Requires four adjacent schedule weeks in the same season, known venues and kickoffs; neutral games count as neither home nor road.'],
             'after_70_offensive_snaps' => [302, 'After 70+ offensive snaps', 'Previous adjacent completed game had at least 70 offensive plays: official pass attempts plus rush attempts plus sacks allowed.'],
             'after_70_defensive_snaps' => [303, 'After 70+ defensive snaps', 'Opponent in the previous adjacent completed game ran at least 70 offensive plays, using complete paired official team statistics.'],
             'after_bye' => [281, 'After a bye', 'Provider-rest gap of 13–21 days and a two-week schedule gap after the prior game in the same season.'],
@@ -102,6 +104,11 @@ class NflSituationalRecordService
             }
             if ($valid) {
                 $matches = ['home' => $home && ! $neutral, 'road' => $road, 'thursday' => $kickoff?->isThursday() ?? false];
+                $stretch = $this->priorVenueStretch($rows, $index, (int) $team->id);
+                if ($stretch !== null && $game->neutral_site === false) {
+                    $matches['road_after_home_heavy'] = $road && $stretch['home_games'] >= 3;
+                    $matches['home_after_road_heavy'] = $home && $stretch['road_games'] >= 3;
+                }
                 $market = $markets[$game->id] ?? null;
                 $homeHandicap = $market['home_handicap'] ?? null;
                 $teamHandicap = $homeHandicap !== null ? ($home ? $homeHandicap : -$homeHandicap) : null;
@@ -169,6 +176,9 @@ class NflSituationalRecordService
                     if ($matchesSituation) {
                         $record = &$records[$id];
                         $record['sample_size']++;
+                        if (in_array($id, ['road_after_home_heavy', 'home_after_road_heavy'], true)) {
+                            $record['schedule_evidence'][] = ['game_id' => $game->id, ...$stretch];
+                        }
                         if (str_starts_with($id, 'after_70_')) {
                             $record['workload_evidence'][] = ['previous_game_id' => $previous['game']->id, 'team_stats' => $workloads[$previous['game']->id]];
                         }
@@ -216,6 +226,40 @@ class NflSituationalRecordService
                 'Historical ATS uses only explicitly normalized archived nflverse closing lines, not current mutable odds. These retrospective records are not an as-known betting backtest. Missing scores, lines and prior history are excluded, not counted as losses.',
             ],
         ];
+    }
+
+    private function priorVenueStretch(Collection $rows, int $index, int $teamId): ?array
+    {
+        if ($index < 4) {
+            return null;
+        }
+        $window = $rows->slice($index - 4, 5)->values();
+        $homeGames = $roadGames = 0;
+        $gameIds = [];
+        foreach ($window as $offset => $row) {
+            $game = $row['game'];
+            if (! $this->validResult($game) || ! $row['kickoff'] || ! is_bool($game->neutral_site)) {
+                return null;
+            }
+            if ($offset > 0) {
+                $previous = $window[$offset - 1];
+                $days = (int) $previous['kickoff']->startOfDay()->diffInDays($row['kickoff']->startOfDay(), false);
+                if ((int) $game->season !== (int) $previous['game']->season
+                    || ! is_numeric($game->week) || ! is_numeric($previous['game']->week)
+                    || (int) $game->week !== (int) $previous['game']->week + 1 || $days < 4 || $days > 14) {
+                    return null;
+                }
+            }
+            if ($offset < 4) {
+                $gameIds[] = $game->id;
+                if (! $game->neutral_site) {
+                    (int) $game->home_team_id === $teamId ? $homeGames++ : $roadGames++;
+                }
+            }
+        }
+
+        return ['previous_game_ids' => $gameIds, 'home_games' => $homeGames, 'road_games' => $roadGames,
+            'neutral_games' => 4 - $homeGames - $roadGames];
     }
 
     private function validResult(object $game): bool

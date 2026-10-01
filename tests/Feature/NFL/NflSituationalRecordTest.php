@@ -186,3 +186,70 @@ it('uses the prior games workload and keeps offense and defense separate', funct
         ->and($rows['after_70_defensive_snaps']['record'])->toBe(['wins' => 1, 'losses' => 0, 'ties' => 0])
         ->and($rows['after_70_defensive_snaps']['workload_evidence'][0]['previous_game_id'])->toBe(2);
 });
+
+it('counts venue-heavy stretches from the prior four games and retains their evidence', function (bool $home) {
+    $games = [];
+    foreach ([1, 2, 3, 4, 5] as $week) {
+        $games[] = situationalGame($week, now()->setDate(2026, 9, 6)->addWeeks($week - 1)->toDateString(),
+            $week === 5 ? 0 : 7, $week === 5 ? $home : ! $home,
+            $week === 2 ? ['neutral_site' => true] : []);
+    }
+    $id = $home ? 'home_after_road_heavy' : 'road_after_home_heavy';
+    $other = $home ? 'road_after_home_heavy' : 'home_after_road_heavy';
+    $records = situationalRecords(array_reverse($games));
+    expect($records[$id]['sample_size'])->toBe(1)
+        ->and($records[$id]['record'])->toBe(['wins' => 0, 'losses' => 0, 'ties' => 1])
+        ->and($records[$id]['status'])->toBe('insufficient_data')
+        ->and($records[$id]['schedule_evidence'])->toBe([[
+            'game_id' => 5, 'previous_game_ids' => [1, 2, 3, 4],
+            'home_games' => $home ? 0 : 3, 'road_games' => $home ? 3 : 0, 'neutral_games' => 1,
+        ]])
+        ->and($records[$other]['sample_size'])->toBe(0);
+})->with([true, false]);
+
+it('holds venue stretches when the previous four games cannot establish the condition', function (string $fault) {
+    $games = [];
+    foreach ([1, 2, 3, 4, 5] as $week) {
+        $games[] = situationalGame($week, now()->setDate(2026, 9, 6)->addWeeks($week - 1)->toDateString(), 7, $week < 5);
+    }
+    switch ($fault) {
+        case 'missing week':
+            unset($games[1]);
+            break;
+        case 'week gap':
+            $games[0]->week = 0;
+            break;
+        case 'season boundary':
+            $games[0]->season = 2025;
+            break;
+        case 'unfinished':
+            $games[1]->status = 'STATUS_SCHEDULED';
+            break;
+        case 'missing score':
+            $games[1]->home_score = null;
+            break;
+        case 'unknown kickoff':
+            $games[1]->game_time = null;
+            break;
+        case 'unknown venue':
+            $games[1]->neutral_site = null;
+            break;
+        case 'neutral target':
+            $games[4]->neutral_site = true;
+            break;
+        case 'unknown target venue':
+            $games[4]->neutral_site = null;
+            break;
+        case 'only two of four':
+            $games[0]->neutral_site = true;
+            $games[1]->neutral_site = true;
+            break;
+        case 'long gap':
+            $games[0]->game_date = '2026-08-01';
+            break;
+    }
+    $records = situationalRecords($games);
+    expect($records['road_after_home_heavy']['sample_size'])->toBe(0)
+        ->and($records['home_after_road_heavy']['sample_size'])->toBe(0);
+})->with(['missing week', 'week gap', 'season boundary', 'unfinished', 'missing score', 'unknown kickoff',
+    'unknown venue', 'neutral target', 'unknown target venue', 'only two of four', 'long gap']);

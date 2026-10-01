@@ -2,6 +2,7 @@
 
 namespace App\Services\NFL;
 
+use App\Services\NFL\Matchups\NflMatchupAltitudeContext;
 use App\Services\NFL\Matchups\NflMatchupTravelContext;
 use App\Services\Sports\SportsDateWindowService;
 use Carbon\CarbonImmutable;
@@ -13,6 +14,8 @@ class NflSituationalRecordService
     public function build(object $team, Collection $games, array $markets = [], array $workloads = []): array
     {
         $definitions = [
+            'at_altitude' => [345, 'At elevations of 1,500+ meters', 'Completed games at U.S. venues with USGS terrain elevation at least 1,500 meters (about 4,921 feet). Requires verified game venue and sourced elevation; includes home and visiting teams.'],
+            'low_home_at_altitude' => [346, 'Low-elevation home team at altitude', 'Home venue at 150 meters or lower (about 492 feet), playing at a U.S. venue at least 1,500 meters high. Requires an earlier verified home venue in the same season. Descriptive venue comparison, not evidence of acclimatization or actual itinerary.'],
             'distance_1000' => [336, 'At least 1,000 miles from home venue', 'Straight-line stadium distance of at least 1,000 miles from the latest earlier verified home venue this season. U.S. venues only; not actual flight miles or proof of team itinerary.'],
             'distance_2000' => [337, 'At least 2,000 miles from home venue', 'Straight-line stadium distance of at least 2,000 miles from the latest earlier verified home venue this season. U.S. venues only; not actual flight miles or proof of team itinerary.'],
             'clock_one' => [338, 'One-hour home-to-game clock difference', 'Exactly one hour between home-venue and game-venue clocks at kickoff, accounting for daylight saving. U.S. venues with prior same-season home evidence; not an itinerary reconstruction.'],
@@ -143,6 +146,14 @@ class NflSituationalRecordService
                         'eastward_early' => $clockDifference > 0 && $localHour >= 12 && $localHour < 14,
                         'westward_clock' => $clockDifference < 0];
                 }
+                $altitudeService = app(NflMatchupAltitudeContext::class);
+                $altitude = ($market['source'] ?? null) === 'nflverse_schedule_verified'
+                    && empty($market['international']) && isset($market['venue']['stadium_id'])
+                    ? $altitudeService->at($market['venue']['stadium_id']) : null;
+                $homeAltitude = $roofContext !== null ? $altitudeService->at($roofContext['home_venue']['stadium_id']) : null;
+                $matches['at_altitude'] = $altitude !== null && $altitude['elevation_meters'] >= NflMatchupAltitudeContext::HIGH_METERS;
+                $matches['low_home_at_altitude'] = $matches['at_altitude'] && $homeAltitude !== null
+                    && $homeAltitude['elevation_meters'] <= NflMatchupAltitudeContext::LOW_METERS;
                 $international = $this->internationalEvidence($market);
                 $matches['in_international'] = $international !== null;
                 $homeHandicap = $market['home_handicap'] ?? null;
@@ -214,6 +225,12 @@ class NflSituationalRecordService
                     if ($matchesSituation) {
                         $record = &$records[$id];
                         $record['sample_size']++;
+                        if (in_array($id, ['at_altitude', 'low_home_at_altitude'], true)) {
+                            $record['altitude_evidence'][] = ['game_id' => $game->id, 'game_elevation' => $altitude,
+                                'schedule_evidence_id' => $market['evidence_id'] ?? null,
+                                'home_elevation' => $id === 'low_home_at_altitude' ? $homeAltitude : null,
+                                'home_venue' => $id === 'low_home_at_altitude' ? $roofContext['home_venue'] : null];
+                        }
                         if ($record['catalog_id'] >= 336 && $record['catalog_id'] <= 342) {
                             $record['travel_evidence'][] = ['game_id' => $game->id, ...$travel,
                                 'home_venue' => $roofContext['home_venue'], 'game_venue' => $roofContext['game_venue']];
@@ -272,7 +289,7 @@ class NflSituationalRecordService
                 'History is limited to supplied, cutoff-bounded regular-season games; no sequence crosses a season boundary.',
                 'Sequential records require adjacent schedule weeks and known kickoff times; week gaps are excluded because a bye or missing game cannot be distinguished here.',
                 'Neutral sites are excluded from home/road records. Thursday and rest use Eastern calendar dates, not UTC weekdays.',
-                'Travel records compare U.S. home and game venues, not actual itineraries. Altitude and weather conditions require further verified inputs. Roof records require a prior same-season home venue and verified game roof conditions; international roof data is excluded. Workload records require complete paired official team statistics. Rest comparisons use explicit provider rest fields; overtime and division sequences require recorded flags and adjacent games.',
+                'Travel records compare U.S. home and game venues, not actual itineraries. Elevation records use USGS terrain estimates with explicit 1,500-meter high and 150-meter low thresholds. Weather conditions require further verified inputs. Roof records require a prior same-season home venue and verified game roof conditions; international roof data is excluded. Workload records require complete paired official team statistics. Rest comparisons use explicit provider rest fields; overtime and division sequences require recorded flags and adjacent games.',
                 'Historical ATS uses only explicitly normalized archived nflverse closing lines, not current mutable odds. These retrospective records are not an as-known betting backtest. Missing scores, lines and prior history are excluded, not counted as losses.',
             ],
         ];

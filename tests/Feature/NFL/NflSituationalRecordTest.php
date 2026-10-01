@@ -402,3 +402,44 @@ it('requires earlier same-season home evidence before evaluating travel', functi
     $records = collect(app(NflSituationalRecordService::class)->build((object) ['id' => 1], collect([$home, $away]), $markets)['records']);
     expect($records->whereBetween('catalog_id', [336, 342])->sum('sample_size'))->toBe(0);
 })->with(['missing', 'future', 'prior season', 'international']);
+
+it('counts games at altitude even without prior home evidence', function () {
+    $records = collect(app(NflSituationalRecordService::class)->build((object) ['id' => 1],
+        collect([situationalGame(1, '2026-09-06')]), [1 => roofScheduleEvidence('outdoors', 'DEN00')])['records'])->keyBy('id');
+    expect($records['at_altitude']['sample_size'])->toBe(1)
+        ->and($records['at_altitude']['record']['wins'])->toBe(1)
+        ->and($records['at_altitude']['altitude_evidence'][0]['schedule_evidence_id'])->toBe(88)
+        ->and($records['low_home_at_altitude']['sample_size'])->toBe(0);
+});
+
+it('applies explicit altitude boundaries and preserves the earlier home source', function (float $homeMeters, float $gameMeters, int $atAltitude, int $lowHome) {
+    config(['nfl_stadium_elevations.stadiums.MIA00.elevation_meters' => $homeMeters,
+        'nfl_stadium_elevations.stadiums.DEN00.elevation_meters' => $gameMeters]);
+    $records = collect(app(NflSituationalRecordService::class)->build((object) ['id' => 1],
+        collect([situationalGame(1, '2026-09-06'), situationalGame(2, '2026-09-13', -3, false)]),
+        [1 => roofScheduleEvidence('outdoors', 'MIA00'), 2 => roofScheduleEvidence('outdoors', 'DEN00')])['records'])->keyBy('id');
+    expect($records['at_altitude']['sample_size'])->toBe($atAltitude)
+        ->and($records['low_home_at_altitude']['sample_size'])->toBe($lowHome)
+        ->and($records['low_home_at_altitude']['record']['losses'])->toBe($lowHome);
+    if ($lowHome) {
+        expect($records['low_home_at_altitude']['altitude_evidence'][0]['home_venue']['game_id'])->toBe(1)
+            ->and($records['low_home_at_altitude']['altitude_evidence'][0]['home_elevation']['elevation_meters'])->toBe($homeMeters);
+    }
+})->with([[150.0, 1500.0, 1, 1], [150.1, 1500.0, 1, 0], [149.9, 1499.9, 0, 0], [0.0, 1500.1, 1, 1]]);
+
+it('holds altitude records for unknown or unverified game elevations', function (string $fault) {
+    $market = roofScheduleEvidence('outdoors', 'DEN00');
+    if ($fault === 'international') {
+        $market['international'] = ['source' => 'nfl_official_international_schedule'];
+    } elseif ($fault === 'unverified') {
+        $market['source'] = 'other';
+    } elseif ($fault === 'unknown venue') {
+        $market['venue']['stadium_id'] = 'UNKNOWN';
+    } else {
+        config(['nfl_stadium_elevations.stadiums.DEN00.elevation_meters' => null]);
+    }
+    $records = collect(app(NflSituationalRecordService::class)->build((object) ['id' => 1],
+        collect([situationalGame(1, '2026-09-06')]), [1 => $market])['records'])->keyBy('id');
+    expect($records['at_altitude']['sample_size'])->toBe(0)
+        ->and($records['low_home_at_altitude']['sample_size'])->toBe(0);
+})->with(['international', 'unverified', 'unknown venue', 'missing elevation']);

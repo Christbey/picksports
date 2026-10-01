@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.2';
+    public const VERSION = '2026-10-01.3';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -503,8 +503,8 @@ final class NflMatchupSignalCatalog
 342. Game clock behind home clock
 343. Record following international game
 344. Record in international game
-345. Record at altitude
-346. Sea-level team at altitude
+345. Record at elevations of 1,500+ meters
+346. Low-elevation home team at altitude
 347. Roofed-home team outdoors
 348. Outdoor-home team under a roof
 349. Warm-weather team in cold game

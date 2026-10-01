@@ -59,7 +59,7 @@ class NflSituationalRecordService
             304 => 305, 306 => 307, 308 => 309, 310 => 311, 313 => 316, 315 => 317, 321 => 322,
             323 => 324, 325 => 326, 327 => 328, 329 => 330, 331 => 332, 333 => 334];
         foreach ($records as $id => $record) {
-            if (! isset($atsIds[$record['catalog_id']])) {
+            if ($record['catalog_id'] === null || ! isset($atsIds[$record['catalog_id']])) {
                 continue;
             }
             $records[$id.'_ats'] = [...$record, 'id' => $id.'_ats', 'catalog_id' => $atsIds[$record['catalog_id']],

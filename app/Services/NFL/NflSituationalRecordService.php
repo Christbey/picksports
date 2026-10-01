@@ -9,9 +9,16 @@ use Illuminate\Support\Collection;
 /** Descriptive records only: consumes already-loaded, cutoff-bounded team history. */
 class NflSituationalRecordService
 {
-    public function build(object $team, Collection $games): array
+    public function build(object $team, Collection $games, array $markets = []): array
     {
         $definitions = [
+            'after_bye' => [281, 'After a bye', 'Provider-rest gap of 13–21 days and a two-week schedule gap after the prior game in the same season.'],
+            'before_bye' => [284, 'Before a bye', 'Next game has a provider-rest gap of 13–21 days and a two-week schedule gap in the supplied historical sample.'],
+            'opponent_after_bye' => [286, 'Opponent after a bye', 'Opponent has provider-recorded 13–21 rest days, excluding season openers.'],
+            'home_favorite' => [325, 'As home favorite', 'Home team favored by a verified archived closing spread; pick’em and neutral sites excluded.'],
+            'home_underdog' => [327, 'As home underdog', 'Home team an underdog by a verified archived closing spread; pick’em and neutral sites excluded.'],
+            'road_favorite' => [329, 'As road favorite', 'Away team favored by a verified archived closing spread; pick’em and neutral sites excluded.'],
+            'road_underdog' => [331, 'As road underdog', 'Away team an underdog by a verified archived closing spread; pick’em and neutral sites excluded.'],
             'rest_advantage_two' => [288, 'At least two extra rest days', 'Provider-recorded own rest minus opponent rest is at least two days.'],
             'rest_advantage_four' => [290, 'At least four extra rest days', 'Provider-recorded own rest minus opponent rest is at least four days.'],
             'rest_disadvantage' => [292, 'Rest disadvantage', 'Provider-recorded own rest is less than opponent rest.'],
@@ -48,6 +55,23 @@ class NflSituationalRecordService
             ];
         }
 
+        $atsIds = [281 => 282, 284 => 285, 286 => 287, 288 => 289, 290 => 291, 292 => 293, 294 => 295, 296 => 297, 298 => 299, 300 => 301,
+            304 => 305, 306 => 307, 308 => 309, 310 => 311, 313 => 316, 315 => 317, 321 => 322,
+            323 => 324, 325 => 326, 327 => 328, 329 => 330, 331 => 332, 333 => 334];
+        foreach ($records as $id => $record) {
+            if (! isset($atsIds[$record['catalog_id']])) {
+                continue;
+            }
+            $records[$id.'_ats'] = [...$record, 'id' => $id.'_ats', 'catalog_id' => $atsIds[$record['catalog_id']],
+                'label' => $record['label'].' · closing-line ATS', 'record_type' => 'ats',
+                'definition' => $record['definition'].' Reconstructed against the archived closing handicap. W–L–P counts covers, non-covers and pushes; this is not an as-known-at-kickoff wager backtest.',
+                'market_evidence' => []];
+        }
+
+        $records['after_bye_total'] = [...$records['after_bye'], 'id' => 'after_bye_total', 'catalog_id' => 283,
+            'label' => 'After a bye · closing total', 'record_type' => 'totals', 'market_evidence' => [],
+            'definition' => 'Combined final score versus the archived closing total after a verified rest/schedule bye. O–U–P counts overs, unders and pushes. Retrospective record, not a pregame betting backtest.'];
+
         // Keep unusable rows in sequence: they break streaks rather than being silently skipped.
         $rows = $games->filter(fn ($g) => (int) $g->home_team_id === (int) $team->id || (int) $g->away_team_id === (int) $team->id)
             ->map(fn ($g) => ['game' => $g, 'kickoff' => $this->kickoff($g)])
@@ -76,6 +100,15 @@ class NflSituationalRecordService
             }
             if ($valid) {
                 $matches = ['home' => $home && ! $neutral, 'road' => $road, 'thursday' => $kickoff?->isThursday() ?? false];
+                $market = $markets[$game->id] ?? null;
+                $homeHandicap = $market['home_handicap'] ?? null;
+                $teamHandicap = $homeHandicap !== null ? ($home ? $homeHandicap : -$homeHandicap) : null;
+                if ($teamHandicap !== null && ! $neutral) {
+                    $matches += ['home_favorite' => $home && $teamHandicap < 0,
+                        'home_underdog' => $home && $teamHandicap > 0,
+                        'road_favorite' => ! $home && $teamHandicap < 0,
+                        'road_underdog' => ! $home && $teamHandicap > 0];
+                }
                 $ownRest = $home ? ($game->home_rest ?? null) : ($game->away_rest ?? null);
                 $opponentRest = $home ? ($game->away_rest ?? null) : ($game->home_rest ?? null);
                 if (is_numeric($ownRest) && is_numeric($opponentRest) && $ownRest >= 4 && $opponentRest >= 4 && $ownRest <= 21 && $opponentRest <= 21 && (int) $game->week > 1) {
@@ -89,6 +122,16 @@ class NflSituationalRecordService
                     && (int) $next['game']->week === (int) $game->week + 1 && $nextDays >= 4 && $nextDays <= 14;
                 $nextDivisional = $nextAdjacent && $next['game']->division_game === true;
                 $matches['before_divisional'] = $nextDivisional;
+                $nextHome = $next && (int) $next['game']->home_team_id === (int) $team->id;
+                $nextRest = $next ? ($nextHome ? $next['game']->home_rest : $next['game']->away_rest) : null;
+                $matches['after_bye'] = $sameSeason && $previous['valid'] && (int) $game->week === (int) $previous['game']->week + 2
+                    && is_numeric($ownRest) && $ownRest >= 13 && $ownRest <= 21 && $days === (int) $ownRest;
+                $matches['before_bye'] = $next && (int) $next['game']->season === (int) $game->season
+                    && (int) $next['game']->week === (int) $game->week + 2
+                    && is_numeric($nextRest) && $nextRest >= 13 && $nextRest <= 21 && $nextDays === (int) $nextRest;
+                $matches['opponent_after_bye'] = (int) $game->week > 1 && is_numeric($opponentRest) && $opponentRest >= 13 && $opponentRest <= 21;
+                $matches['after_bye_total'] = $matches['after_bye'] && isset($market['total']);
+
                 if ($adjacent && $previous['valid']) {
                     $priorMargin = $previous['margin'];
                     $matches += [
@@ -112,10 +155,23 @@ class NflSituationalRecordService
                     ];
                 }
                 foreach ($matches as $id => $matchesSituation) {
+                    if (isset($records[$id.'_ats'])) {
+                        $matches[$id.'_ats'] = $matchesSituation && $teamHandicap !== null;
+                    }
+                }
+                foreach ($matches as $id => $matchesSituation) {
                     if ($matchesSituation) {
                         $record = &$records[$id];
                         $record['sample_size']++;
-                        $record['record'][$margin > 0 ? 'wins' : ($margin < 0 ? 'losses' : 'ties')]++;
+                        $resultMargin = match ($record['record_type'] ?? null) {
+                            'ats' => $margin + $teamHandicap,
+                            'totals' => $game->home_score + $game->away_score - $market['total'],
+                            default => $margin,
+                        };
+                        $record['record'][$resultMargin > 0 ? 'wins' : ($resultMargin < 0 ? 'losses' : 'ties')]++;
+                        if (in_array($record['record_type'] ?? null, ['ats', 'totals'], true)) {
+                            $record['market_evidence'][] = ['game_id' => $game->id, 'team_handicap' => $teamHandicap, ...$market];
+                        }
                         $date = $kickoff?->toDateString() ?? substr((string) $game->game_date, 0, 10);
                         $record['from_date'] ??= $date;
                         $record['through_date'] = $date;
@@ -140,15 +196,15 @@ class NflSituationalRecordService
         return [
             'version' => 'nfl-situational-records-v1', 'source' => 'nfl_games', 'timezone' => 'America/New_York',
             'records' => array_values($records),
-            'market_records' => ['ats' => ['status' => 'unavailable', 'reason' => 'Verified immutable historical pregame spread snapshots are not supplied.'],
-                'totals' => ['status' => 'unavailable', 'reason' => 'Verified immutable historical pregame total snapshots are not supplied.']],
+            'market_records' => ['ats' => ['status' => $markets === [] ? 'unavailable' : 'retrospective_closing_line_record', 'reason' => $markets === [] ? 'Verified archived closing spreads are not supplied.' : 'Reconstructed closing-line records, including pushes. Archive observation times are retained; synthetic capture times are not evidence of pregame availability.'],
+                'totals' => ['status' => $markets === [] ? 'unavailable' : 'retrospective_closing_line_record', 'reason' => $markets === [] ? 'Verified archived closing totals are not supplied.' : 'Reconstructed O–U–P records versus archived closing totals; not an as-known betting backtest.']],
             'limitations' => [
                 'Descriptive W-L-T only; sample size is not statistical significance or a validated betting edge. Situations overlap.',
                 'History is limited to supplied, cutoff-bounded regular-season games; no sequence crosses a season boundary.',
                 'Sequential records require adjacent schedule weeks and known kickoff times; week gaps are excluded because a bye or missing game cannot be distinguished here.',
                 'Neutral sites are excluded from home/road records. Thursday and rest use Eastern calendar dates, not UTC weekdays.',
                 'Bye, snap counts, travel, stadium and weather conditions require further verified inputs. Rest comparisons use explicit provider rest fields; overtime and division sequences require recorded flags and adjacent games.',
-                'Historical market odds are not reconstructed from current mutable odds. Missing scores and prior history are not counted as losses.',
+                'Historical ATS uses only explicitly normalized archived nflverse closing lines, not current mutable odds. These retrospective records are not an as-known betting backtest. Missing scores, lines and prior history are excluded, not counted as losses.',
             ],
         ];
     }

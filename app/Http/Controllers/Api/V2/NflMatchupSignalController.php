@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\NFL\Game;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportGameQuery;
+use App\Services\NFL\Matchups\NflHistoricalMatchupMarkets;
 use App\Services\NFL\Matchups\NflMatchupSignalCatalog;
 use App\Services\NFL\Matchups\NflMatchupSignalService;
 use App\Services\NFL\NflSituationalRecordService;
@@ -53,13 +54,30 @@ class NflMatchupSignalController extends Controller
                 ->where(fn ($query) => $query->whereIn('home_team_id', $teamIds)->orWhereIn('away_team_id', $teamIds))
                 ->get(['id', 'home_team_id', 'away_team_id', 'season', 'season_type', 'week', 'status',
                     'game_date', 'game_time', 'home_score', 'away_score', 'neutral_site', 'home_rest', 'away_rest', 'division_game', 'period']) : collect();
+            $markets = app(NflHistoricalMatchupMarkets::class)->forGames($history);
+            $history = $history->map(function (Game $game) use ($markets): Game {
+                $evidence = $markets[$game->id] ?? null;
+                if (($evidence['source'] ?? null) !== 'nflverse_schedule_verified') {
+                    return $game;
+                }
+                $copy = clone $game;
+                $kickoff = Carbon::parse($evidence['kickoff_at'])->utc();
+                $copy->game_date = $kickoff->toDateString();
+                $copy->game_time = $kickoff->format('H:i:s');
+                $copy->home_rest = $evidence['home_rest'];
+                $copy->away_rest = $evidence['away_rest'];
+                $copy->division_game = $evidence['division_game'];
+                $copy->period = $evidence['overtime'] === null ? null : ($evidence['overtime'] ? 5 : 4);
+
+                return $copy;
+            })->filter(fn (Game $game) => $game->game_date->toDateString() < $cutoff->toDateString());
             $records = [];
             foreach (['away' => $resolved->awayTeam, 'home' => $resolved->homeTeam] as $side => $team) {
                 $records[$side] = [
                     'team_id' => $team?->id,
                     'label' => $team?->abbreviation ?? ucfirst($side),
                     'window' => 'Current and previous 3 regular seasons, before kickoff',
-                    ...$situations->build($team ?? (object) ['id' => 0], $history),
+                    ...$situations->build($team ?? (object) ['id' => 0], $history, $markets),
                 ];
             }
 

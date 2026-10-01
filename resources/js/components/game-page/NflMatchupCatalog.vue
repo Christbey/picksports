@@ -167,8 +167,13 @@ const value = (number: number | null | undefined) =>
                             {{ situation.team }}:
                             {{ situation.record.record.wins }}–{{
                                 situation.record.record.losses
-                            }}–{{ situation.record.record.ties }} W–L–T ·
-                            {{ situation.record.sample_size }} games
+                            }}–{{ situation.record.record.ties }}
+                            {{
+                                situation.record.record_type === 'ats'
+                                    ? 'W–L–P ATS'
+                                    : situation.record.record_type === 'totals' ? 'O–U–P' : 'W–L–T'
+                            }}
+                            · {{ situation.record.sample_size }} games
                         </p>
                         <p>
                             {{ signalStatus(situation.record.status) }}.

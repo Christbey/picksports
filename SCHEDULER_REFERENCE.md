@@ -146,6 +146,7 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 
 - At `08:05` Central in season, `nfl:sync-nflverse-pbp --season=<current>` refreshes the free public play-by-play release, archives the source, and fails its heartbeat if completed games lack play coverage. This supplies the independent matchup analysis before daytime forecasts.
 - At `08:10` Central in season, `nfl:sync-matchup-charting --season=<current>` joins the public FTN release to existing play identities after the play-by-play refresh. It archives the source, preserves unknown charting as missing, and fails on unmatched plays or insufficient scrimmage coverage.
+- At `08:12` Central in season, `nfl:sync-matchup-schedule --season=<current>` verifies completed regular-season games from the current and prior three seasons against public schedule identities and scores. It appends separate retrospective rest, division, overtime and closing-line evidence for matchup records; it never rewrites games, odds snapshots or predictions.
 - At `08:15` Central in season, `nfl:sync-game-quarterbacks --season=<current> --apply` fills missing final-game starter identities from the public nflverse schedule. It validates event/team/date/score identity, preserves existing conflicting values and all forecasts, records source provenance, and fails its heartbeat when source coverage is incomplete. Without `--apply`, the command is read-only; `--file` accepts a reviewed source archive.
 
 - Daily current-week sync at `08:00`

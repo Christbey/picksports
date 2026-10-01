@@ -42,7 +42,7 @@ class NflGameQuarterbackIdentitySync
             ->whereIn('season_type', ['2', 'regular', '3', 'postseason'])->where('status', 'STATUS_FINAL')->orderBy('id')->get();
         foreach ($games as $game) {
             $rows = $byEvent[(string) $game->espn_event_id] ?? [];
-            if (count($rows) !== 1 || ! $this->matches($game, $rows[0])) {
+            if (count($rows) !== 1 || ! $this->matchesFinalGame($game, $rows[0])) {
                 $report['games'][] = ['game_id' => $game->id, 'status' => 'missing_ambiguous_or_mismatched_source'];
                 $report['unresolved_games']++;
 
@@ -51,7 +51,7 @@ class NflGameQuarterbackIdentitySync
             $row = $rows[0];
             $result = DB::transaction(function () use ($game, $row, $hash, $report, $apply) {
                 $locked = Game::query()->when($apply, fn ($query) => $query->lockForUpdate())->findOrFail($game->id);
-                if (! $this->matches($locked, $row)) {
+                if (! $this->matchesFinalGame($locked, $row)) {
                     return ['game_id' => $game->id, 'status' => 'game_changed_during_repair'];
                 }
                 $updates = [];
@@ -94,16 +94,16 @@ class NflGameQuarterbackIdentitySync
         return $report;
     }
 
-    private function matches(Game $game, array $row): bool
+    public function matchesFinalGame(Game $game, array $row): bool
     {
         try {
             $date = CarbonImmutable::createFromFormat('!Y-m-d', $row['gameday']);
         } catch (\Throwable) {
             return false;
         }
-        $regular = in_array((string) $game->season_type, ['2', 'regular'], true);
+        $regular = in_array((string) $game->season_type, ['2', 'regular', 'REG'], true);
 
-        return $date && in_array($game->game_date?->toDateString(), [$date->toDateString(), $date->addDay()->toDateString()], true)
+        return $game->status === 'STATUS_FINAL' && $date && in_array($game->game_date?->toDateString(), [$date->toDateString(), $date->addDay()->toDateString()], true)
             && (int) $row['season'] === (int) $game->season
             // ESPN postseason week numbers restart; nflverse continues the season.
             && (! $regular || (int) $row['week'] === (int) $game->week)

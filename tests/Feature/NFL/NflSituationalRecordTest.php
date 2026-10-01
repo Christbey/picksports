@@ -142,3 +142,38 @@ it('uses explicit rest overtime and division evidence and leaves absent inputs u
         ->and($records['before_divisional']['sample_size'])->toBe(1)
         ->and($records['after_divisional']['sample_size'])->toBe(1);
 });
+
+it('grades archived closing handicaps with correct home-away signs and retains pushes', function () {
+    $games = collect([
+        situationalGame(1, '2026-09-06', 3, true),
+        situationalGame(2, '2026-09-13', -3, false),
+        situationalGame(3, '2026-09-20', 7, true),
+        situationalGame(4, '2026-09-27', 7, false),
+    ]);
+    $markets = [1 => ['home_handicap' => -3, 'snapshot_id' => 1, 'mode' => 'retrospective_closing_line_record'],
+        2 => ['home_handicap' => -7, 'snapshot_id' => 2, 'mode' => 'retrospective_closing_line_record'],
+        3 => ['home_handicap' => -10, 'snapshot_id' => 3, 'mode' => 'retrospective_closing_line_record']];
+    $records = collect(app(NflSituationalRecordService::class)->build((object) ['id' => 1], $games, $markets)['records'])->keyBy('id');
+    expect($records['home_ats']['record'])->toBe(['wins' => 0, 'losses' => 1, 'ties' => 1])
+        ->and($records['road_ats']['record'])->toBe(['wins' => 1, 'losses' => 0, 'ties' => 0])
+        ->and($records['road_ats']['sample_size'])->toBe(1)
+        ->and($records['home_favorite']['sample_size'])->toBe(2)
+        ->and($records['road_underdog']['sample_size'])->toBe(1)
+        ->and($records['home_ats']['market_evidence'][0]['team_handicap'])->toBe(-3);
+});
+
+it('requires corroborated bye rest and grades totals without inventing missing lines', function () {
+    $games = collect([
+        situationalGame(1, '2026-09-06', 7),
+        situationalGame(3, '2026-09-20', 7, true, ['home_rest' => 14, 'away_rest' => 14]),
+        situationalGame(5, '2026-10-04', -7, true, ['home_rest' => null]),
+        situationalGame(7, '2026-10-18', 0, true, ['home_rest' => 14]),
+    ]);
+    $markets = [3 => ['home_handicap' => -7, 'total' => 67], 7 => ['home_handicap' => 3, 'total' => 59]];
+    $records = collect(app(NflSituationalRecordService::class)->build((object) ['id' => 1], $games, $markets)['records'])->keyBy('id');
+    expect($records['after_bye']['sample_size'])->toBe(2)
+        ->and($records['before_bye']['sample_size'])->toBe(2)
+        ->and($records['opponent_after_bye']['sample_size'])->toBe(1)
+        ->and($records['after_bye_ats']['record'])->toBe(['wins' => 1, 'losses' => 0, 'ties' => 1])
+        ->and($records['after_bye_total']['record'])->toBe(['wins' => 1, 'losses' => 0, 'ties' => 1]);
+});

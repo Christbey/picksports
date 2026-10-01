@@ -91,7 +91,7 @@ const unavailable = computed(() =>
             <summary
                 class="min-h-11 cursor-pointer content-center text-sm font-medium"
             >
-                Situational W–L–T records
+                Situational records
             </summary>
             <p class="mb-3 text-xs text-muted-foreground">
                 Current and previous 3 regular seasons, before kickoff. These
@@ -121,8 +121,13 @@ const unavailable = computed(() =>
                             <dd class="tabular-nums">
                                 {{ record.record.wins }}–{{
                                     record.record.losses
-                                }}–{{ record.record.ties }} ·
-                                {{ record.sample_size }} games<span
+                                }}–{{ record.record.ties }}
+                                {{
+                                    record.record_type === 'ats'
+                                        ? 'W–L–P ATS'
+                                        : record.record_type === 'totals' ? 'O–U–P' : 'W–L–T'
+                                }}
+                                · {{ record.sample_size }} games<span
                                     v-if="
                                         adminDiagnostics &&
                                         record.sample_size <

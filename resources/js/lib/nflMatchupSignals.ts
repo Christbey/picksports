@@ -26,6 +26,7 @@ export interface NflMatchupSignal {
 export interface NflSituationalRecord {
     id: string;
     catalog_id: number | null;
+    record_type?: 'ats' | 'totals';
     label: string;
     definition: string;
     minimum_sample: number;

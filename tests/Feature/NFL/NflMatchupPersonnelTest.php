@@ -104,3 +104,16 @@ it('requires backup depth evidence and the prior centers absence before calling 
     PlayerInjurySnapshotEntry::create(['snapshot_id' => $injury->id, 'espn_athlete_id' => '102', 'injury_key' => 'center', 'status' => 'Out', 'observed_at' => now()]);
     expect($service->forGame($target, $cutoff)[$target->home_team_id]['backup_center']['value'])->toBe(1);
 });
+
+it('interprets absence only from a complete fresh injury report and never from missing report data', function (bool $complete) {
+    [$target, , , $injury, $entry] = personnelFixture();
+    $entry->delete();
+    if ($complete) {
+        $injury->update(['provider' => 'espn', 'entry_count' => 0, 'raw_payload' => []]);
+    }
+    $row = app(NflMatchupPersonnel::class)->forGame($target, CarbonImmutable::parse('2026-09-27T17:00:00Z'))[$target->home_team_id]['rb1_out'];
+    expect($row['eligible'])->toBe($complete)->and($row['value'])->toBe($complete ? 0 : null);
+    if ($complete) {
+        expect($row['display_value'])->toBe('No unavailable designation for lead running back');
+    }
+})->with([true, false]);

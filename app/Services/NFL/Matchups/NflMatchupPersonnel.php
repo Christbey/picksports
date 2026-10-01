@@ -49,7 +49,7 @@ final class NflMatchupPersonnel
             if ($rb) {
                 $status = $this->outStatus($injuries, $rb, $asOf, $cutoff);
                 if ($status !== null) {
-                    $rows['rb1_out'] = ['display_value' => $status ? 'Lead running back listed unavailable' : 'Lead running back listed available'] + $this->known($status ? 1 : 0, ['player_id' => $rb->espn_athlete_id, 'player_name' => $rb->player?->full_name,
+                    $rows['rb1_out'] = ['display_value' => $status ? 'Lead running back listed unavailable' : 'No unavailable designation for lead running back'] + $this->known($status ? 1 : 0, ['player_id' => $rb->espn_athlete_id, 'player_name' => $rb->player?->full_name,
                         'injury_snapshot_id' => $injuries?->id] + $evidence);
                 }
             }
@@ -113,7 +113,7 @@ final class NflMatchupPersonnel
                 $sample['display_value'] = ! $sample['eligible'] ? null : match ($metric) {
                     'ol_changed', 'ol_changed_two' => $sample['value'].' of 5 projected line positions changed',
                     'ol_same_four' => $sample['value'] === 4 ? 'Same five projected linemen across four game charts' : 'Projected lineups differ across the four game charts',
-                    'rb1_out' => $sample['value'] ? 'Lead running back listed unavailable' : 'Lead running back listed available',
+                    'rb1_out' => $sample['value'] ? 'Lead running back listed unavailable' : 'No unavailable designation for lead running back',
                     'backup_center' => $sample['value'] ? 'Prior backup center projected to replace unavailable starter' : 'Same projected center as the previous week',
                 };
             }
@@ -157,7 +157,18 @@ final class NflMatchupPersonnel
     {
         $entries = $snapshot?->entries->filter(fn ($e) => (string) $e->espn_athlete_id === (string) $player->espn_athlete_id
             && $e->observed_at?->lte($asOf) && (! $e->source_updated_at || $e->source_updated_at->lte($asOf))) ?? collect();
-        // Missing or conflicting statuses are not proof of availability.
+        // This provider stores the complete injury report, not every healthy player.
+        // Absence is only negative evidence for an out designation when the report
+        // is demonstrably complete and recent; it is never proof of health.
+        if ($entries->isEmpty() && $snapshot && $snapshot->provider === 'espn'
+            && is_array($snapshot->raw_payload) && count($snapshot->raw_payload) === $snapshot->entry_count
+            && $snapshot->entry_count === $snapshot->entries->count()
+            && $snapshot->observed_at->copy()->addDays(7)->gte($kickoff)
+            && $snapshot->entries->every(fn ($e) => filled($e->espn_athlete_id) && $e->observed_at?->lte($asOf)
+                && (! $e->source_updated_at || $e->source_updated_at->lte($asOf)))) {
+            return false;
+        }
+        // Missing/incomplete reports and conflicting player statuses stay unknown.
         if ($entries->count() !== 1) {
             return null;
         }

@@ -105,7 +105,7 @@ class NflSituationalRecordService
             if ($valid) {
                 $matches = ['home' => $home && ! $neutral, 'road' => $road, 'thursday' => $kickoff?->isThursday() ?? false];
                 $stretch = $this->priorVenueStretch($rows, $index, (int) $team->id);
-                if ($stretch !== null && $game->neutral_site === false) {
+                if ($stretch !== null && in_array($game->neutral_site, [false, 0, '0'], true)) {
                     $matches['road_after_home_heavy'] = $road && $stretch['home_games'] >= 3;
                     $matches['home_after_road_heavy'] = $home && $stretch['road_games'] >= 3;
                 }
@@ -238,7 +238,7 @@ class NflSituationalRecordService
         $gameIds = [];
         foreach ($window as $offset => $row) {
             $game = $row['game'];
-            if (! $this->validResult($game) || ! $row['kickoff'] || ! is_bool($game->neutral_site)) {
+            if (! $this->validResult($game) || ! $row['kickoff'] || ! in_array($game->neutral_site, [false, true, 0, 1, '0', '1'], true)) {
                 return null;
             }
             if ($offset > 0) {

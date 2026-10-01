@@ -253,3 +253,12 @@ it('holds venue stretches when the previous four games cannot establish the cond
         ->and($records['home_after_road_heavy']['sample_size'])->toBe(0);
 })->with(['missing week', 'week gap', 'season boundary', 'unfinished', 'missing score', 'unknown kickoff',
     'unknown venue', 'neutral target', 'unknown target venue', 'only two of four', 'long gap']);
+
+it('recognizes stored database venue flags without accepting null or arbitrary values', function (mixed $flag, int $expected) {
+    $games = [];
+    foreach ([1, 2, 3, 4, 5] as $week) {
+        $games[] = situationalGame($week, now()->setDate(2026, 9, 6)->addWeeks($week - 1)->toDateString(), 7, $week < 5,
+            ['neutral_site' => $flag]);
+    }
+    expect(situationalRecords($games)['road_after_home_heavy']['sample_size'])->toBe($expected);
+})->with([[0, 1], ['0', 1], [false, 1], [1, 0], ['1', 0], [true, 0], [null, 0], ['unknown', 0], [2, 0]]);

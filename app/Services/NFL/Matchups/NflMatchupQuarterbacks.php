@@ -24,6 +24,7 @@ final class NflMatchupQuarterbacks
         $splits = [
             'deep' => ['is_sack = 0 AND air_yards >= 20', 'is_sack = 1 OR (is_sack = 0 AND air_yards IS NOT NULL)'],
             'play_action' => ['ftn_is_play_action = 1', 'ftn_is_play_action IS NOT NULL'],
+            'rpo' => ['ftn_is_rpo = 1', 'ftn_is_rpo IS NOT NULL'],
         ];
         $query->select(['nfl_game_id', 'possession_team_id', 'defense_team_id', 'passer_player_id'])
             ->selectRaw('COUNT(*) AS candidates, COUNT(epa) AS measured, SUM(epa) AS total')

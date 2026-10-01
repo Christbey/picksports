@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.5';
+    public const VERSION = '2026-10-01.6';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -83,6 +83,7 @@ final class NflMatchupSignalCatalog
         $rules[196] = ['metric' => 'qb_blitz_epa', 'defense_metric' => 'blitz_rate', 'offense' => 'bottom', 'defense' => 'bottom', 'size' => 10];
         $rules[220] = ['metric' => 'qb_deep_epa', 'defense_metric' => 'deep_pass_epa', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
         $rules[225] = ['metric' => 'qb_play_action_epa', 'defense_metric' => 'play_action_epa', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
+        $rules[226] = ['metric' => 'qb_rpo_epa', 'defense_metric' => 'rpo_epa', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
         ksort($rules);
 
         return $rules;
@@ -392,7 +393,7 @@ final class NflMatchupSignalCatalog
 223. Slow time-to-throw QB vs strong pass rush
 224. High checkdown QB vs underneath weakness
 225. High play-action EPA QB vs play-action weakness
-226. Strong RPO QB vs RPO weakness
+226. High RPO passing EPA QB vs RPO pass-defense weakness
 227. QB turnover-prone vs takeaway-heavy defense
 228. Ball-secure QB vs takeaway-dependent defense
 229. QB first start vs top defense

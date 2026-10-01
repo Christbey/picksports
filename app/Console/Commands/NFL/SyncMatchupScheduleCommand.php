@@ -75,6 +75,11 @@ class SyncMatchupScheduleCommand extends Command
                     'division_game' => in_array($row['div_game'], ['0', '1'], true) ? $row['div_game'] === '1' : null,
                     'overtime' => in_array($row['overtime'], ['0', '1'], true) ? $row['overtime'] === '1' : null];
                 $evidence['international'] = app(NflInternationalGameEvidence::class)->forScheduleRow($row);
+                $evidence['venue'] = $evidence['international'] === null
+                    && filled($row['stadium_id'] ?? null)
+                    && in_array($row['roof'] ?? null, ['dome', 'closed', 'open', 'outdoors'], true)
+                    && in_array($row['location'] ?? null, ['Home', 'Neutral'], true)
+                    ? ['stadium_id' => $row['stadium_id'], 'roof' => $row['roof'], 'location' => $row['location']] : null;
                 if (($evidence['home_handicap'] !== null && abs($evidence['home_handicap']) > 60)
                     || ($evidence['total'] !== null && ($evidence['total'] <= 0 || $evidence['total'] >= 150))) {
                     $blocked[] = $game->id;

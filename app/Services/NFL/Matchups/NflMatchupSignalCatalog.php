@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-09-30.10';
+    public const VERSION = '2026-10-01.1';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -505,8 +505,8 @@ final class NflMatchupSignalCatalog
 344. Record in international game
 345. Record at altitude
 346. Sea-level team at altitude
-347. Dome team outdoors
-348. Outdoor team indoors
+347. Roofed-home team outdoors
+348. Outdoor-home team under a roof
 349. Warm-weather team in cold game
 350. Cold-weather team in hot game
 351. Road team after home-heavy stretch

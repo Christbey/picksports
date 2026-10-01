@@ -12,6 +12,8 @@ class NflSituationalRecordService
     public function build(object $team, Collection $games, array $markets = [], array $workloads = []): array
     {
         $definitions = [
+            'roofed_team_outdoors' => [347, 'Roofed-home team outdoors', 'Team whose latest earlier home game this season establishes a dome or retractable-roof home venue, playing with the roof open or outdoors. Uses provider roof categories, not climate control; requires verified game and prior home-venue evidence.'],
+            'outdoor_team_indoors' => [348, 'Outdoor-home team under a roof', 'Team whose latest earlier home game this season establishes an outdoor home venue, playing in a dome or with the roof closed. Uses provider roof categories, not climate control; international roof conditions and missing venue evidence are excluded.'],
             'in_international' => [344, 'In international games', 'Completed games outside the United States, identified by the official NFL international schedule and verified game identity. Neutral-site designation alone is not evidence of an international game.'],
             'after_international' => [343, 'Following an international game', 'Next completed game in the same season after an official international game, including a verified 13–21 day bye. Missing intervening weeks without matching provider rest are excluded.'],
             'road_after_home_heavy' => [351, 'Road after a home-heavy stretch', 'Away at a non-neutral site after at least three home games in the previous four completed games. Requires four adjacent schedule weeks in the same season, known venues and kickoffs; neutral games count as neither home nor road.'],
@@ -82,6 +84,7 @@ class NflSituationalRecordService
         $rows = $games->filter(fn ($g) => (int) $g->home_team_id === (int) $team->id || (int) $g->away_team_id === (int) $team->id)
             ->map(fn ($g) => ['game' => $g, 'kickoff' => $this->kickoff($g)])
             ->sortBy(fn ($r) => $r['kickoff']?->getTimestamp() ?? strtotime((string) $r['game']->game_date))->values();
+        $roofContexts = $this->roofContexts($rows, (int) $team->id, $markets);
         $previous = null;
         $winStreak = $lossStreak = $roadStreak = 0;
         $streakOriginKnown = $roadOriginKnown = false;
@@ -112,6 +115,13 @@ class NflSituationalRecordService
                     $matches['home_after_road_heavy'] = $home && $stretch['road_games'] >= 3;
                 }
                 $market = $markets[$game->id] ?? null;
+                $roofContext = $roofContexts[$game->id] ?? null;
+                if ($roofContext !== null) {
+                    $matches['roofed_team_outdoors'] = $roofContext['home_venue']['roof'] !== 'outdoors'
+                        && in_array($roofContext['game_venue']['roof'], ['open', 'outdoors'], true);
+                    $matches['outdoor_team_indoors'] = $roofContext['home_venue']['roof'] === 'outdoors'
+                        && in_array($roofContext['game_venue']['roof'], ['dome', 'closed'], true);
+                }
                 $international = $this->internationalEvidence($market);
                 $matches['in_international'] = $international !== null;
                 $homeHandicap = $market['home_handicap'] ?? null;
@@ -183,6 +193,9 @@ class NflSituationalRecordService
                     if ($matchesSituation) {
                         $record = &$records[$id];
                         $record['sample_size']++;
+                        if (in_array($id, ['roofed_team_outdoors', 'outdoor_team_indoors'], true)) {
+                            $record['roof_evidence'][] = ['game_id' => $game->id, ...$roofContext];
+                        }
                         if (in_array($id, ['in_international', 'after_international'], true)) {
                             $record['venue_evidence'][] = ['game_id' => $game->id,
                                 'venue_game_id' => $id === 'in_international' ? $game->id : $previous['game']->id,
@@ -234,10 +247,48 @@ class NflSituationalRecordService
                 'History is limited to supplied, cutoff-bounded regular-season games; no sequence crosses a season boundary.',
                 'Sequential records require adjacent schedule weeks and known kickoff times; week gaps are excluded because a bye or missing game cannot be distinguished here.',
                 'Neutral sites are excluded from home/road records. Thursday and rest use Eastern calendar dates, not UTC weekdays.',
-                'Travel, stadium and weather conditions require further verified inputs. Workload records require complete paired official team statistics. Rest comparisons use explicit provider rest fields; overtime and division sequences require recorded flags and adjacent games.',
+                'Distance, timezone, altitude and weather conditions require further verified inputs. Roof records require a prior same-season home venue and verified game roof conditions; international roof data is excluded. Workload records require complete paired official team statistics. Rest comparisons use explicit provider rest fields; overtime and division sequences require recorded flags and adjacent games.',
                 'Historical ATS uses only explicitly normalized archived nflverse closing lines, not current mutable odds. These retrospective records are not an as-known betting backtest. Missing scores, lines and prior history are excluded, not counted as losses.',
             ],
         ];
+    }
+
+    private function roofContexts(Collection $rows, int $teamId, array $markets): array
+    {
+        $contexts = [];
+        $homeVenue = null;
+        foreach ($rows as $row) {
+            $game = $row['game'];
+            $market = $markets[$game->id] ?? null;
+            $venue = $market['venue'] ?? null;
+            $validVenue = ($market['source'] ?? null) === 'nflverse_schedule_verified'
+                && empty($market['international']) && is_array($venue)
+                && filled($venue['stadium_id'] ?? null)
+                && in_array($venue['roof'] ?? null, ['dome', 'closed', 'open', 'outdoors'], true)
+                && in_array($venue['location'] ?? null, ['Home', 'Neutral'], true);
+            $evidence = $validVenue ? [...$venue, 'game_id' => $game->id,
+                'schedule_evidence_id' => $market['evidence_id'] ?? null,
+                'schedule_source_sha256' => $market['source_sha256'] ?? null,
+                'observed_at' => $market['observed_at'] ?? null] : null;
+            $home = (int) $game->home_team_id === $teamId;
+            if ($homeVenue !== null && (int) $homeVenue['season'] !== (int) $game->season) {
+                $homeVenue = null;
+            }
+            if ($evidence !== null && $homeVenue !== null && $this->validResult($game) && $row['kickoff']
+                && $homeVenue['kickoff']->lessThan($row['kickoff'])
+                && (! $home || $venue['location'] === 'Neutral' || $homeVenue['evidence']['stadium_id'] === $venue['stadium_id'])) {
+                $contexts[$game->id] = ['home_venue' => $homeVenue['evidence'], 'game_venue' => $evidence];
+            }
+            if ($home && ! $this->internationalEvidence($market)
+                && ! in_array($game->neutral_site, [true, 1, '1'], true)) {
+                $homeVenue = $evidence !== null && $venue['location'] === 'Home'
+                    && in_array($game->neutral_site, [false, 0, '0'], true)
+                    && $this->validResult($game) && $row['kickoff']
+                    ? ['season' => $game->season, 'kickoff' => $row['kickoff'], 'evidence' => $evidence] : null;
+            }
+        }
+
+        return $contexts;
     }
 
     private function internationalEvidence(?array $market): ?array

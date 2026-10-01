@@ -285,3 +285,78 @@ it('never classifies neutral games as international without official evidence', 
     expect($records['in_international']['sample_size'])->toBe(0)
         ->and($records['after_international']['sample_size'])->toBe(0);
 });
+
+function roofScheduleEvidence(string $roof, string $stadium = 'HOME', array $overrides = []): array
+{
+    return array_replace(['source' => 'nflverse_schedule_verified', 'evidence_id' => 88, 'source_sha256' => 'test-source',
+        'venue' => ['stadium_id' => $stadium, 'roof' => $roof, 'location' => 'Home']], $overrides);
+}
+
+it('classifies roof exposure from earlier home evidence and retains both source games', function (string $homeRoof, string $gameRoof, string $rule) {
+    $games = collect([situationalGame(1, '2026-09-06'), situationalGame(2, '2026-09-13', -3, false)]);
+    $markets = [1 => roofScheduleEvidence($homeRoof), 2 => roofScheduleEvidence($gameRoof, 'AWAY')];
+    $records = collect(app(NflSituationalRecordService::class)->build((object) ['id' => 1], $games, $markets)['records'])->keyBy('id');
+    expect($records[$rule]['sample_size'])->toBe(1)
+        ->and($records[$rule]['record']['losses'])->toBe(1)
+        ->and($records[$rule]['roof_evidence'][0]['home_venue']['game_id'])->toBe(1)
+        ->and($records[$rule]['roof_evidence'][0]['game_venue']['game_id'])->toBe(2)
+        ->and($records[$rule]['roof_evidence'][0]['home_venue']['schedule_evidence_id'])->toBe(88);
+})->with([
+    ['dome', 'outdoors', 'roofed_team_outdoors'], ['closed', 'outdoors', 'roofed_team_outdoors'],
+    ['open', 'outdoors', 'roofed_team_outdoors'], ['dome', 'open', 'roofed_team_outdoors'],
+    ['outdoors', 'dome', 'outdoor_team_indoors'], ['outdoors', 'closed', 'outdoor_team_indoors'],
+]);
+
+it('holds roof classifications with missing conflicting or future home evidence', function (string $fault) {
+    $games = [situationalGame(1, '2026-09-06'), situationalGame(2, '2026-09-13', 7, false)];
+    $markets = [1 => roofScheduleEvidence('dome'), 2 => roofScheduleEvidence('outdoors', 'AWAY')];
+    switch ($fault) {
+        case 'missing home venue': unset($markets[1]);
+            break;
+        case 'missing game roof': $markets[2]['venue']['roof'] = null;
+            break;
+        case 'unknown home roof': $markets[1]['venue']['roof'] = 'unknown';
+            break;
+        case 'unverified source': $markets[1]['source'] = 'espn';
+            break;
+        case 'missing stadium': $markets[1]['venue']['stadium_id'] = '';
+            break;
+        case 'neutral home': $games[0]->neutral_site = 1;
+            break;
+        case 'unknown home location': $games[0]->neutral_site = null;
+            break;
+        case 'provider neutral home': $markets[1]['venue']['location'] = 'Neutral';
+            break;
+        case 'international home': $markets[1]['international'] = ['source' => 'nfl_official_international_schedule'];
+            break;
+        case 'international target': $markets[2]['international'] = ['source' => 'nfl_official_international_schedule'];
+            break;
+        case 'season boundary': $games[0]->season = 2025;
+            break;
+        case 'unfinished home': $games[0]->status = 'STATUS_SCHEDULED';
+            break;
+        case 'unknown kickoff': $games[0]->game_time = null;
+            break;
+        case 'future home': $games[0]->game_date = '2026-09-20';
+            break;
+        case 'same kickoff': $games[0]->game_date = '2026-09-13';
+            break;
+        case 'new home stadium': $games[1]->home_team_id = 1;
+            $games[1]->away_team_id = 2;
+            break;
+        case 'covered target': $markets[2]['venue']['roof'] = 'closed';
+            break;
+    }
+    $records = collect(app(NflSituationalRecordService::class)->build((object) ['id' => 1], collect($games), $markets)['records'])->keyBy('id');
+    expect($records['roofed_team_outdoors']['sample_size'])->toBe(0)
+        ->and($records['outdoor_team_indoors']['sample_size'])->toBe(0);
+})->with(['missing home venue', 'missing game roof', 'unknown home roof', 'unverified source', 'missing stadium',
+    'neutral home', 'unknown home location', 'provider neutral home', 'international home', 'international target',
+    'season boundary', 'unfinished home', 'unknown kickoff', 'future home', 'same kickoff', 'new home stadium', 'covered target']);
+
+it('clears an old home profile when a later home game has no verified venue', function () {
+    $games = collect([situationalGame(1, '2026-09-06'), situationalGame(2, '2026-09-13'), situationalGame(3, '2026-09-20', 7, false)]);
+    $records = collect(app(NflSituationalRecordService::class)->build((object) ['id' => 1], $games,
+        [1 => roofScheduleEvidence('dome'), 3 => roofScheduleEvidence('outdoors', 'AWAY')])['records'])->keyBy('id');
+    expect($records['roofed_team_outdoors']['sample_size'])->toBe(0);
+});

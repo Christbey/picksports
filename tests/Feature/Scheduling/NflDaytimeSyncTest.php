@@ -39,3 +39,15 @@ it('refreshes independent matchup plays before daytime forecasts', function () {
         Carbon::setTestNow();
     }
 });
+
+it('refreshes charted matchup inputs after the base play import', function () {
+    Carbon::setTestNow(Carbon::parse('2026-09-30 08:10:00', 'America/Chicago'));
+    try {
+        $event = collect(app(Schedule::class)->events())->firstWhere('description', 'NFL: Sync Matchup Charting');
+        expect($event)->not->toBeNull()->and($event->expression)->toBe('10 8 * * *')
+            ->and($event->command)->toContain('nfl:sync-matchup-charting --season=2026')
+            ->and($event->filtersPass(app()))->toBeTrue();
+    } finally {
+        Carbon::setTestNow();
+    }
+});

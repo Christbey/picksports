@@ -65,8 +65,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(98)
-        ->and($result['signals'])->toHaveCount(196)
+    expect($result['summary']['supported_rules'])->toBe(106)
+        ->and($result['signals'])->toHaveCount(212)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -377,4 +377,20 @@ it('requires a full trend sequence and excludes the current game from opponent a
     $adjusted = matchupSignal($result, 44, $target->home_team_id);
     expect($adjusted['evidence']['offense']['value'])->toEqualWithDelta(0, .000001)
         ->and($adjusted['evidence']['offense']['games'])->toBe(3);
+});
+
+it('requires charted play-action screen RPO and motion flags instead of treating unknown flags as false', function () {
+    [$target] = matchupSignalLeague();
+    $service = app(NflMatchupSignalService::class);
+    foreach ([71, 73, 74, 277] as $id) {
+        expect(matchupSignal($service->build($target), $id, $target->home_team_id)['status'])->toBe('insufficient_data');
+    }
+    DB::table('nflverse_pbp_plays')->update(['ftn_is_play_action' => true, 'ftn_is_screen_pass' => true,
+        'ftn_is_rpo' => true, 'ftn_is_motion' => true, 'ftn_n_defense_box' => 6]);
+    $result = $service->build($target);
+    foreach ([71, 73, 74, 277] as $id) {
+        expect(matchupSignal($result, $id, $target->home_team_id)['status'])->not->toBe('insufficient_data');
+    }
+    expect(matchupSignal($result, 277, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
+        ->and(matchupSignal($result, 122, $target->home_team_id)['evidence']['defense']['value'])->toBe(6.0);
 });

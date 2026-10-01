@@ -13,6 +13,12 @@ final class NflMatchupMetricDefinitions
         $success = 'CASE WHEN epa > 0 THEN 1 ELSE 0 END';
 
         return [
+            'play_action_epa' => ["{$pass} AND ftn_is_play_action = 1", "{$pass} AND ftn_is_play_action IS NULL", 'epa', 'epa', 5],
+            'screen_pass_epa' => ["{$pass} AND ftn_is_screen_pass = 1", "{$pass} AND ftn_is_screen_pass IS NULL", 'epa', 'epa', 2],
+            'rpo_epa' => ["{$pass} AND ftn_is_rpo = 1", "{$pass} AND ftn_is_rpo IS NULL", 'epa', 'epa', 2],
+            'motion_rate' => ['1=1', '1=0', 'ftn_is_motion', 'ftn_is_motion', 30],
+            'motion_epa' => ['ftn_is_motion = 1', 'ftn_is_motion IS NULL', 'epa', 'epa', 5],
+            'defensive_box' => [$run, '1=0', 'NULLIF(ftn_n_defense_box, 0)', 'ftn_n_defense_box', 8],
             'first_down_rate' => ['1=1', '1=0', 'first_down', 'first_down', 30],
             'neutral_epa' => ['win_probability BETWEEN 0.2 AND 0.8 AND game_seconds_remaining > 120', 'win_probability IS NULL OR game_seconds_remaining IS NULL', 'epa', 'epa', 8],
             'cpoe' => [$attempt, '1=0', 'cpoe', 'cpoe', 10],
@@ -45,6 +51,12 @@ final class NflMatchupMetricDefinitions
             'opponent_adjusted_epa' => 'Play-weighted EPA minus each opponent’s other-game EPA allowed (offense) or produced (defense). The game being adjusted is excluded from the baseline. Requires at least two other complete games for every opponent. This is a one-pass adjustment, not DVOA.',
             'epa_trend_3', 'pass_epa_trend_3', 'rush_epa_trend_3' => 'Three consecutive improvements or declines in per-game EPA, requiring four complete games in chronological order. Offense improves upward and defense improves downward; any reversal or flat change does not qualify.',
             'epa_trend_5', 'pass_epa_trend_5', 'rush_epa_trend_5' => 'Ordinary least-squares slope of per-game EPA across the five latest complete games. A positive slope improves offense; a negative slope improves defense. Fewer than five games is insufficient.',
+            'play_action_epa' => 'EPA on pass plays explicitly charted by FTN as play action. Missing flags are not inferred from play text.',
+            'screen_pass_epa' => 'EPA on pass plays explicitly charted by FTN as screens. Short throws are not automatically screens.',
+            'rpo_epa' => 'EPA on pass plays explicitly charted by FTN as RPOs. Teams without enough charted RPO opportunities cannot receive an RPO efficiency rank.',
+            'motion_rate' => 'Share of scrimmage plays with FTN-charted motion; motion-heavy means top-10 usage.',
+            'motion_epa' => 'EPA on scrimmage plays with FTN-charted motion; defensive value is EPA allowed against motion.',
+            'defensive_box' => 'Average FTN-charted defenders in the box on run plays. Light boxes rank first and heavy boxes rank last; this measures alignment, not defensive quality. Zero/unknown counts are excluded.',
             'first_down_rate' => 'Share of eligible scrimmage plays earning a provider-recorded first down; defense is first downs allowed.',
             'neutral_epa' => 'EPA on plays with pre-play possession win probability between 20% and 80% and more than two minutes remaining. This is the explicit neutral-script definition.',
             'cpoe' => 'Provider completion percentage over expectation, averaged over nonsack pass attempts with supplied CPOE; no estimate is substituted.',

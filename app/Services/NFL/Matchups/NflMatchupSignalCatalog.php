@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-09-30.2';
+    public const VERSION = '2026-09-30.3';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -58,6 +58,14 @@ final class NflMatchupSignalCatalog
         }
         $rules[42] = ['metric' => 'epa_trend_5', 'defense_metric' => 'epa', 'offense' => 'improving', 'defense' => 'any', 'size' => null];
         $rules[43] = ['metric' => 'epa', 'defense_metric' => 'epa_trend_5', 'offense' => 'any', 'defense' => 'improving', 'size' => null];
+        foreach ([71 => ['play_action_epa', 'top', 'bottom'], 72 => ['play_action_epa', 'bottom', 'top'],
+            73 => ['screen_pass_epa', 'top', 'bottom'], 74 => ['rpo_epa', 'top', 'bottom']] as $id => [$metric, $offense, $defense]) {
+            $rules[$id] = compact('metric', 'offense', 'defense') + ['size' => 10];
+        }
+        foreach ([122 => ['rush_epa', 'defensive_box', 'top', 'top'], 123 => ['rush_epa', 'defensive_box', 'top', 'bottom'],
+            124 => ['rush_epa', 'defensive_box', 'bottom', 'top'], 277 => ['motion_rate', 'motion_epa', 'top', 'bottom']] as $id => [$metric, $defenseMetric, $offense, $defense]) {
+            $rules[$id] = compact('metric', 'offense', 'defense') + ['defense_metric' => $defenseMetric, 'size' => 10];
+        }
         ksort($rules);
 
         return $rules;

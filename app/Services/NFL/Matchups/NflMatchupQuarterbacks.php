@@ -64,6 +64,7 @@ final class NflMatchupQuarterbacks
         }
         $samples = [];
         $blitzSamples = [];
+        $trendSamples = [];
         $splitSamples = [];
         foreach ($appearances as $id => $rows) {
             $valid = array_filter($rows, fn ($r) => $r['count'] >= 15 && $r['count'] >= $r['candidate'] * .9
@@ -73,6 +74,17 @@ final class NflMatchupQuarterbacks
                 'games' => count($valid), 'game_ids' => array_column($valid, 'game_id'), 'plays' => $count,
                 'eligible' => count($valid) >= 2 && count($valid) === count($rows), 'rank' => null,
                 'player_id' => $id, 'player_id_namespace' => 'gsis', 'minimum_plays_per_appearance' => 15];
+            $recent = collect($rows)->sortBy(fn ($row) => $games->get($row['game_id'])->game_date->getTimestamp())->take(-4)->values();
+            $trendEligible = $samples[$id]['eligible'] && $recent->count() === 4;
+            $values = $recent->map(fn ($row) => $row['count'] ? $row['sum'] / $row['count'] : null)->all();
+            $trend = null;
+            if ($trendEligible) {
+                $changes = array_map(fn ($index) => $values[$index] - $values[$index - 1], [1, 2, 3]);
+                $trend = min($changes) > 0 ? min($changes) : (max($changes) < 0 ? max($changes) : 0);
+            }
+            $trendSamples[$id] = [...$samples[$id], 'value' => $trend, 'eligible' => $trendEligible,
+                'games' => $recent->count(), 'game_ids' => $recent->pluck('game_id')->all(), 'plays' => $recent->sum('count'),
+                'trend_games_required' => 4, 'trend_game_values' => $values, 'ranking_population' => null];
             $charted = array_filter($valid, fn ($r) => $r['charted'] >= $r['candidate'] * .9 && $r['blitz_count'] >= $r['blitzes'] * .9);
             $blitzCount = array_sum(array_column($charted, 'blitz_count'));
             $blitzSamples[$id] = [...$samples[$id], 'value' => $blitzCount ? array_sum(array_column($charted, 'blitz_sum')) / $blitzCount : null,
@@ -118,7 +130,12 @@ final class NflMatchupQuarterbacks
                 $blitz['value'] = null;
                 $blitz['rank'] = null;
             }
-            $result[$team] = [...$sample, ...$identity, 'blitz_sample' => [...$blitz, ...$identity]];
+            $trend = $trendSamples[$identity['player_id'] ?? ''] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => 0, 'eligible' => false, 'trend_games_required' => 4];
+            if (isset($identity['identity_reason'])) {
+                $trend['eligible'] = false;
+                $trend['value'] = null;
+            }
+            $result[$team] = [...$sample, ...$identity, 'blitz_sample' => [...$blitz, ...$identity], 'trend_sample' => [...$trend, ...$identity]];
             foreach ($splits as $key => $_) {
                 $split = $splitSamples[$key][$identity['player_id'] ?? ''] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => 0, 'eligible' => false, 'league_players' => 0];
                 if (isset($identity['identity_reason'])) {

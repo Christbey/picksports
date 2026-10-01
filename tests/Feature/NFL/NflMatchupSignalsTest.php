@@ -11,12 +11,12 @@ use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
-function matchupSignalLeague(int $teamCount = 32): array
+function matchupSignalLeague(int $teamCount = 32, int $weeks = 3): array
 {
     $teams = Team::factory()->count($teamCount)->create();
     $games = [];
     $plays = [];
-    for ($week = 1; $week <= 3; $week++) {
+    for ($week = 1; $week <= $weeks; $week++) {
         for ($index = 0; $index < $teamCount / 2; $index++) {
             $opponent = $teamCount - $index - 1;
             $game = Game::factory()->create([
@@ -70,8 +70,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(125)
-        ->and($result['signals'])->toHaveCount(250)
+    expect($result['summary']['supported_rules'])->toBe(127)
+        ->and($result['signals'])->toHaveCount(254)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -650,4 +650,60 @@ it('isolates charted RPO passes and enforces split volume and EPA coverage', fun
     $signal = matchupSignal($service->build($target), 226, $target->home_team_id);
     expect($signal['status'])->toBe('insufficient_data')
         ->and($signal['evidence']['offense']['games'])->toBe(2);
+});
+
+it('compares the selected quarterback trend with the opposing pass defense in chronological order', function () {
+    [$target, $teams, $games] = matchupSignalLeague(32, 4);
+    foreach ($games as $game) {
+        DB::table('nflverse_pbp_plays')->where('nfl_game_id', $game->id)->where('play_type', 'pass')
+            ->update(['epa' => $game->week / 10]);
+    }
+    DB::table('nflverse_pbp_plays')->where('possession_team_id', $teams[31]->id)->where('play_type', 'pass')
+        ->update(['passer_player_id' => '00-1031']);
+    $target->home_qb_id = '00-1031';
+    $target->away_team_id = $teams[0]->id;
+    $service = app(NflMatchupSignalService::class);
+    $result = $service->build($target);
+    $signal = matchupSignal($result, 237, $target->home_team_id);
+    expect($signal['status'])->toBe('matched')
+        ->and($signal['evidence']['offense']['trend_game_values'])->toEqual([.1, .2, .3, .4])
+        ->and($signal['evidence']['offense']['value'])->toEqualWithDelta(.1, .000001)
+        ->and($signal['evidence']['offense']['plays'])->toBe(80)
+        ->and($signal['evidence']['offense']['rank'])->toBeNull()
+        ->and(matchupSignal($result, 238, $target->home_team_id)['status'])->toBe('not_matched');
+    DB::table('nflverse_pbp_plays')->where('play_type', 'pass')->update(['epa' => DB::raw('-epa')]);
+    $result = $service->build($target);
+    expect(matchupSignal($result, 238, $target->home_team_id)['status'])->toBe('matched')
+        ->and(matchupSignal($result, 237, $target->home_team_id)['status'])->toBe('not_matched');
+    DB::table('nflverse_pbp_plays')->where('nfl_game_id', $games[48]->id)->where('play_type', 'pass')->update(['epa' => -.3]);
+    $result = $service->build($target);
+    foreach ([237, 238] as $id) {
+        expect(matchupSignal($result, $id, $target->home_team_id)['status'])->toBe('not_matched');
+    }
+    $target->home_qb_id = '00-9999';
+    expect(matchupSignal($service->build($target), 237, $target->home_team_id)['status'])->toBe('insufficient_data');
+});
+
+it('requires four complete prior quarterback appearances without filling gaps from team passing', function () {
+    [$target, $teams, $games] = matchupSignalLeague(32, 4);
+    DB::table('nflverse_pbp_plays')->where('possession_team_id', $teams[31]->id)->where('play_type', 'pass')
+        ->update(['passer_player_id' => '00-1031']);
+    $target->home_qb_id = '00-1031';
+    $target->away_team_id = $teams[0]->id;
+    $service = app(NflMatchupSignalService::class);
+    $last = $games[48];
+    $last->update(['game_date' => '2026-09-20']);
+    $signal = matchupSignal($service->build($target), 237, $target->home_team_id);
+    expect($signal['status'])->toBe('insufficient_data')
+        ->and($signal['evidence']['offense']['games'])->toBe(3)
+        ->and($signal['reason'])->toContain('full four- or five-game sequence');
+    $last->update(['game_date' => '2026-09-04']);
+    $plays = DB::table('nflverse_pbp_plays')->where('nfl_game_id', $last->id)->where('passer_player_id', '00-1031');
+    $ids = (clone $plays)->limit(6)->pluck('nflverse_play_key');
+    DB::table('nflverse_pbp_plays')->whereIn('nflverse_play_key', $ids)->update(['epa' => null]);
+    expect(matchupSignal($service->build($target), 237, $target->home_team_id)['status'])->toBe('insufficient_data');
+    $plays->update(['epa' => .5, 'passer_player_id' => '00-9999']);
+    $signal = matchupSignal($service->build($target), 237, $target->home_team_id);
+    expect($signal['status'])->toBe('insufficient_data')
+        ->and($signal['evidence']['offense']['games'])->toBe(3);
 });

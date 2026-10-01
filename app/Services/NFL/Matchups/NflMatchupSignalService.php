@@ -35,6 +35,7 @@ final class NflMatchupSignalService
             $metrics['qb_deep_epa']['offense'][$teamId] = $sample['deep_sample'] ?? [];
             $metrics['qb_play_action_epa']['offense'][$teamId] = $sample['play_action_sample'] ?? [];
             $metrics['qb_rpo_epa']['offense'][$teamId] = $sample['rpo_sample'] ?? [];
+            $metrics['qb_pass_epa_trend_3']['offense'][$teamId] = $sample['trend_sample'] ?? [];
         }
         foreach (app(NflMatchupPersonnel::class)->forGame($game, $cutoff) as $teamId => $samples) {
             foreach ($samples as $metric => $sample) {
@@ -389,7 +390,7 @@ final class NflMatchupSignalService
         $offense = $metrics[$rule['metric']]['offense'][$offenseId] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => null, 'eligible' => false];
         $defenseMetric = $rule['defense_metric'] ?? $rule['metric'];
         $defense = $metrics[$defenseMetric]['defense'][$defenseId] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => null, 'eligible' => false];
-        $qbRule = in_array($rule['metric'], ['qb_pass_epa', 'qb_blitz_epa', 'qb_deep_epa', 'qb_play_action_epa', 'qb_rpo_epa'], true);
+        $qbRule = in_array($rule['metric'], ['qb_pass_epa', 'qb_blitz_epa', 'qb_deep_epa', 'qb_play_action_epa', 'qb_rpo_epa', 'qb_pass_epa_trend_3'], true);
         $personnel = $rule['personnel'] ?? false;
         $personnelOnly = $rule['personnel_only'] ?? false;
         if ($personnelOnly) {
@@ -401,7 +402,7 @@ final class NflMatchupSignalService
             $scopeReason !== null => $scopeReason,
             $cutoff === null => 'Kickoff cutoff is unavailable.',
             ($qbRule || $personnel) && isset($offense['identity_reason']) => $offense['identity_reason'],
-            $qbRule && ($offense['league_players'] ?? 0) < 24 => 'Quarterback rankings require at least 24 qualified passers.',
+            $qbRule && $rule['metric'] !== 'qb_pass_epa_trend_3' && ($offense['league_players'] ?? 0) < 24 => 'Quarterback rankings require at least 24 qualified passers.',
             (! $offense['eligible'] || ! $defense['eligible']) && (str_contains($rule['metric'], '_trend_') || str_contains($defenseMetric, '_trend_')) => 'Trend comparison requires the full four- or five-game sequence specified in the definition, with complete inputs.',
             $rule['metric'] === 'epa_stddev' && (! $offense['eligible'] || ! $defense['eligible']) => 'Variability requires at least three complete games, with volume and EPA coverage checks for every preceding game.',
             ! $offense['eligible'] || ! $defense['eligible'] => 'At least two qualifying games per team are required, with volume and non-null coverage checks for every preceding game; missing values are not treated as zero.',
@@ -424,7 +425,7 @@ final class NflMatchupSignalService
                 'source' => match ($rule['metric']) {
                     'points_per_game' => 'nfl_games: final team scores',
                     'pass_yards_per_attempt' => 'nflverse_pbp_plays: pass attempts (sacks excluded)',
-                    'qb_pass_epa', 'qb_blitz_epa', 'qb_deep_epa', 'qb_play_action_epa', 'qb_rpo_epa' => 'nflverse_pbp_plays: selected quarterback passing plays and sacks',
+                    'qb_pass_epa', 'qb_blitz_epa', 'qb_deep_epa', 'qb_play_action_epa', 'qb_rpo_epa', 'qb_pass_epa_trend_3' => 'nflverse_pbp_plays: selected quarterback passing plays and sacks',
                     'ol_changed', 'ol_changed_two', 'ol_same_four', 'rb1_out', 'backup_center' => 'Game-linked depth charts, historical pregame charts and timestamped injury snapshots',
                     'points_per_drive' => 'nflverse_pbp_plays: completed drives and possession-team scores',
                     default => 'nflverse_pbp_plays: pass/run plays (sacks included)',

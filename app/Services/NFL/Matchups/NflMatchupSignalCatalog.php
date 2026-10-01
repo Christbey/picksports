@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.6';
+    public const VERSION = '2026-10-01.7';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -84,6 +84,8 @@ final class NflMatchupSignalCatalog
         $rules[220] = ['metric' => 'qb_deep_epa', 'defense_metric' => 'deep_pass_epa', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
         $rules[225] = ['metric' => 'qb_play_action_epa', 'defense_metric' => 'play_action_epa', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
         $rules[226] = ['metric' => 'qb_rpo_epa', 'defense_metric' => 'rpo_epa', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
+        $rules[237] = ['metric' => 'qb_pass_epa_trend_3', 'defense_metric' => 'pass_epa_trend_3', 'offense' => 'improving', 'defense' => 'declining', 'size' => null];
+        $rules[238] = ['metric' => 'qb_pass_epa_trend_3', 'defense_metric' => 'pass_epa_trend_3', 'offense' => 'declining', 'defense' => 'improving', 'size' => null];
         ksort($rules);
 
         return $rules;
@@ -127,7 +129,7 @@ final class NflMatchupSignalCatalog
 
     public function definition(string $metric): string
     {
-        if ($metric === 'epa_stddev') {
+        if (in_array($metric, ['epa_stddev', 'qb_pass_epa_trend_3'], true)) {
             return NflMatchupMetricDefinitions::definition($metric);
         }
 
@@ -404,8 +406,8 @@ final class NflMatchupSignalCatalog
 234. Backup QB vs bottom-10 defense
 235. QB returning from injury vs high-pressure defense
 236. QB change during week vs strong defense
-237. QB EPA trending up vs defense trending down
-238. QB EPA trending down vs defense trending up
+237. QB passing EPA improving 3 straight appearances vs declining pass defense
+238. QB passing EPA declining 3 straight appearances vs improving pass defense
 239. QB scheme-matchup advantage score
 240. QB scheme-matchup disadvantage score
 241. Elite WR1 vs weak CB1

@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.8';
+    public const VERSION = '2026-10-01.9';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -77,6 +77,8 @@ final class NflMatchupSignalCatalog
         foreach ([167 => ['ol_changed', 1], 168 => ['ol_changed', 2], 169 => ['ol_same_four', 4]] as $id => [$personnel, $threshold]) {
             $rules[$id] = ['metric' => $personnel, 'personnel' => true, 'personnel_only' => true, 'offense_threshold' => $threshold, 'offense' => 'any', 'defense' => 'any', 'size' => null];
         }
+        $rules[261] = ['metric' => 'wr1_out', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'pass_epa', 'offense' => 'any', 'defense' => 'top', 'size' => 10];
+        $rules[262] = ['metric' => 'wr1_out', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'pass_epa', 'offense' => 'any', 'defense' => 'bottom', 'size' => 10];
         $rules[265] = ['metric' => 'rb1_out', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'rush_epa', 'offense' => 'any', 'defense' => 'bottom', 'size' => 10];
         $rules[166] = ['metric' => 'backup_center', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'blitz_rate', 'offense' => 'any', 'defense' => 'bottom', 'size' => 10];
         $rules[195] = ['metric' => 'qb_blitz_epa', 'defense_metric' => 'blitz_rate', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
@@ -432,8 +434,8 @@ final class NflMatchupSignalCatalog
 258. WR2 vs replacement CB
 259. Slot WR vs replacement nickel
 260. TE vs backup safety/LB
-261. WR1 out vs elite secondary
-262. WR1 out vs weak secondary
+261. Lead WR out vs top-10 pass defense
+262. Lead WR out vs bottom-10 pass defense
 263. WR2 out vs elite secondary
 264. TE1 out vs defense weak against TE
 265. RB1 out vs weak run defense

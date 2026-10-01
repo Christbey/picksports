@@ -428,7 +428,7 @@ final class NflMatchupSignalService
                     'points_per_game' => 'nfl_games: final team scores',
                     'pass_yards_per_attempt' => 'nflverse_pbp_plays: pass attempts (sacks excluded)',
                     'qb_pass_epa', 'qb_blitz_epa', 'qb_deep_epa', 'qb_play_action_epa', 'qb_rpo_epa', 'qb_pass_epa_trend_3' => 'nflverse_pbp_plays: selected quarterback passing plays and sacks',
-                    'ol_changed', 'ol_changed_two', 'ol_same_four', 'rb1_out', 'backup_center' => 'Game-linked depth charts, historical pregame charts and timestamped injury snapshots',
+                    'ol_changed', 'ol_changed_two', 'ol_same_four', 'rb1_out', 'wr1_out', 'backup_center' => 'Game-linked depth charts, historical pregame charts and timestamped injury snapshots',
                     'points_per_drive' => 'nflverse_pbp_plays: completed drives and possession-team scores',
                     default => 'nflverse_pbp_plays: pass/run plays (sacks included)',
                 },

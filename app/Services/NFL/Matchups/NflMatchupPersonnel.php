@@ -34,6 +34,7 @@ final class NflMatchupPersonnel
                 'ol_changed' => $this->missing('Five identified projected linemen and the previous week’s pregame chart are required.', $evidence),
                 'ol_changed_two' => $this->missing('Five identified projected linemen and the previous week’s pregame chart are required.', $evidence),
                 'ol_same_four' => $this->missing('Four consecutive weekly pregame projected lineups are required.', $evidence),
+                'wr1_out' => $this->missing('A unique game-linked depth-rank-one WR and current injury evidence are required; multiple starting WR slots are ambiguous.', $evidence),
                 'rb1_out' => $this->missing('A game-linked lead running back and current injury evidence are required.', $evidence),
                 'backup_center' => $this->missing('A prior backup center promoted into the projected lineup is required.', $evidence),
             ];
@@ -45,12 +46,20 @@ final class NflMatchupPersonnel
             $injuries = PlayerInjurySnapshot::with('entries')->where('team_id', $teamId)->where('observed_at', '<=', $asOf)
                 ->where('observed_at', '>=', $asOf->subDays(7))->where(fn ($q) => $q->whereNull('source_updated_at')->orWhere('source_updated_at', '<=', $asOf))
                 ->latest('observed_at')->latest('id')->first();
-            $rb = $this->position($current->entries, 'RB');
-            if ($rb) {
-                $status = $this->outStatus($injuries, $rb, $asOf, $cutoff);
+            foreach (['RB' => ['rb1_out', 'running back'], 'WR' => ['wr1_out', 'wide receiver']] as $position => [$metric, $label]) {
+                if ($position === 'WR' && $current->entries->filter(fn ($entry) => strtoupper((string) $entry->position_code) === 'WR' && (int) $entry->depth_rank === 1)->count() !== 1) {
+                    continue;
+                }
+                $player = $this->position($current->entries, $position);
+                if (! $player || ! $player->observed_at || $player->observed_at->gt($current->observed_at)
+                    || $player->source_updated_at?->gt($current->observed_at)) {
+                    continue;
+                }
+                $status = $this->outStatus($injuries, $player, $asOf, $cutoff);
                 if ($status !== null) {
-                    $rows['rb1_out'] = ['display_value' => $status ? 'Lead running back listed unavailable' : 'No unavailable designation for lead running back'] + $this->known($status ? 1 : 0, ['player_id' => $rb->espn_athlete_id, 'player_name' => $rb->player?->full_name,
-                        'injury_snapshot_id' => $injuries?->id] + $evidence);
+                    $rows[$metric] = ['display_value' => $status ? 'Lead '.$label.' listed unavailable' : 'No unavailable designation for lead '.$label]
+                        + $this->known($status ? 1 : 0, ['player_id' => $player->espn_athlete_id, 'player_name' => $player->player?->full_name,
+                            'injury_snapshot_id' => $injuries?->id] + $evidence);
                 }
             }
             $line = $this->line($current);
@@ -113,6 +122,7 @@ final class NflMatchupPersonnel
                 $sample['display_value'] = ! $sample['eligible'] ? null : match ($metric) {
                     'ol_changed', 'ol_changed_two' => $sample['value'].' of 5 projected line positions changed',
                     'ol_same_four' => $sample['value'] === 4 ? 'Same five projected linemen across four game charts' : 'Projected lineups differ across the four game charts',
+                    'wr1_out' => $sample['value'] ? 'Lead wide receiver listed unavailable' : 'No unavailable designation for lead wide receiver',
                     'rb1_out' => $sample['value'] ? 'Lead running back listed unavailable' : 'No unavailable designation for lead running back',
                     'backup_center' => $sample['value'] ? 'Prior backup center projected to replace unavailable starter' : 'Same projected center as the previous week',
                 };

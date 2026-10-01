@@ -117,3 +117,33 @@ it('interprets absence only from a complete fresh injury report and never from m
         expect($row['display_value'])->toBe('No unavailable designation for lead running back');
     }
 })->with([true, false]);
+
+it('requires a unique timestamped lead receiver and explicit current absence', function () {
+    [$target, $charts, , $injury] = personnelFixture();
+    $service = app(NflMatchupPersonnel::class);
+    $cutoff = CarbonImmutable::parse('2026-09-27T17:00:00Z');
+    $sample = fn () => $service->forGame($target, $cutoff)[$target->home_team_id]['wr1_out'];
+    expect($sample()['eligible'])->toBeFalse();
+    $receiver = DepthChartSnapshotEntry::create(['snapshot_id' => $charts[3]->id, 'position_slot_key' => 'wr',
+        'position_code' => 'WR', 'depth_rank' => 1, 'espn_athlete_id' => '300', 'observed_at' => $charts[3]->observed_at]);
+    $report = PlayerInjurySnapshotEntry::create(['snapshot_id' => $injury->id, 'espn_athlete_id' => '300',
+        'injury_key' => 'wr', 'status' => 'Out', 'observed_at' => now()]);
+    expect($sample()['value'])->toBe(1)
+        ->and($sample()['personnel']['player_id'])->toBe('300');
+    $report->update(['status' => 'Questionable']);
+    expect($sample()['eligible'])->toBeFalse();
+    $report->update(['status' => 'Active']);
+    expect($sample()['value'])->toBe(0);
+    $report->update(['status' => 'Out']);
+    $second = DepthChartSnapshotEntry::create(['snapshot_id' => $charts[3]->id, 'position_slot_key' => 'wr2',
+        'position_code' => 'WR', 'depth_rank' => 1, 'espn_athlete_id' => '301', 'observed_at' => $charts[3]->observed_at]);
+    expect($sample()['eligible'])->toBeFalse();
+    $second->update(['espn_athlete_id' => null]);
+    expect($sample()['eligible'])->toBeFalse();
+    $second->delete();
+    $receiver->update(['observed_at' => $charts[3]->observed_at->copy()->addDay()]);
+    expect($sample()['eligible'])->toBeFalse();
+    $receiver->update(['observed_at' => $charts[3]->observed_at]);
+    $report->update(['source_updated_at' => $cutoff->addDay()]);
+    expect($sample()['eligible'])->toBeFalse();
+});

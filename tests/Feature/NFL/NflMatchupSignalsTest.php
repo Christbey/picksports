@@ -3,6 +3,8 @@
 use App\Models\NFL\DepthChartSnapshot;
 use App\Models\NFL\DepthChartSnapshotEntry;
 use App\Models\NFL\Game;
+use App\Models\NFL\PlayerInjurySnapshot;
+use App\Models\NFL\PlayerInjurySnapshotEntry;
 use App\Models\NFL\Prediction;
 use App\Models\NFL\Team;
 use App\Services\NFL\Matchups\NflMatchupSignalCatalog;
@@ -71,8 +73,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(129)
-        ->and($result['signals'])->toHaveCount(258)
+    expect($result['summary']['supported_rules'])->toBe(131)
+        ->and($result['signals'])->toHaveCount(262)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -760,4 +762,35 @@ it('identifies rookie quarterbacks from the target roster without requiring prio
     expect($signal['status'])->toBe('insufficient_data')
         ->and($signal['reason'])->toContain('unavailable')
         ->and($signal['evidence']['offense']['value'])->toBeNull();
+});
+
+it('compares a verified lead receiver absence with top and bottom pass defenses', function () {
+    $this->travelTo('2026-09-19 12:00:00');
+    [$target, $teams] = matchupSignalLeague();
+    $chart = DepthChartSnapshot::create(['snapshot_uuid' => (string) Str::uuid(), 'team_id' => $target->home_team_id,
+        'espn_team_id' => '123', 'season' => 2026, 'observed_at' => now()->subHour(), 'payload_hash' => hash('sha256', 'wr-chart')]);
+    DepthChartSnapshotEntry::create(['snapshot_id' => $chart->id, 'position_slot_key' => 'wr', 'position_code' => 'WR',
+        'depth_rank' => 1, 'espn_athlete_id' => '300', 'observed_at' => now()->subHour()]);
+    $prediction = Prediction::factory()->create(['game_id' => $target->id]);
+    app(PredictionFeatureSnapshotRecorder::class)->record($prediction, $target, 'nfl', [
+        'model_metadata' => ['quarterback' => ['home' => ['depth_chart_game_link' => [
+            'game_id' => $target->id, 'team_id' => $target->home_team_id, 'side' => 'home', 'snapshot_id' => $chart->id,
+            'snapshot_uuid' => $chart->snapshot_uuid, 'as_of' => now()->toIso8601String(),
+        ]]]],
+    ]);
+    $injury = PlayerInjurySnapshot::create(['snapshot_uuid' => (string) Str::uuid(), 'team_id' => $target->home_team_id,
+        'espn_team_id' => '123', 'observed_at' => now(), 'payload_hash' => hash('sha256', 'wr-injury')]);
+    $report = PlayerInjurySnapshotEntry::create(['snapshot_id' => $injury->id, 'espn_athlete_id' => '300',
+        'injury_key' => 'wr', 'status' => 'Out', 'observed_at' => now()]);
+    $service = app(NflMatchupSignalService::class);
+    $target->away_team_id = $teams[30]->id;
+    $result = $service->build($target);
+    expect(matchupSignal($result, 261, $target->home_team_id)['status'])->toBe('matched')
+        ->and(matchupSignal($result, 262, $target->home_team_id)['status'])->toBe('not_matched');
+    $target->away_team_id = $teams[0]->id;
+    $result = $service->build($target);
+    expect(matchupSignal($result, 262, $target->home_team_id)['status'])->toBe('matched')
+        ->and(matchupSignal($result, 261, $target->home_team_id)['status'])->toBe('not_matched');
+    $report->update(['status' => 'Active']);
+    expect(matchupSignal($service->build($target), 262, $target->home_team_id)['status'])->toBe('not_matched');
 });

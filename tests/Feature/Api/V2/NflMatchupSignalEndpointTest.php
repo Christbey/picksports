@@ -85,7 +85,7 @@ it('returns descriptive matchup evidence and situational records without approvi
         ->assertJsonPath('data.matchup.cutoff_at', '2026-09-27T17:00:00+00:00')
         ->assertJsonPath('data.matchup.summary.matched', 0)
         ->assertJsonPath('data.matchup.summary.situational_records', 70)
-        ->assertJsonPath('data.matchup.summary.unsupported', 154)
+        ->assertJsonPath('data.matchup.summary.unsupported', 152)
         ->assertJsonPath('data.matchup.catalog.350.support', 'situational_records')
         ->assertJsonPath('data.matchup.catalog.351.support', 'situational_records')
         ->assertJsonPath('data.situational.home.team_id', $game->home_team_id)

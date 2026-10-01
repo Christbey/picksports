@@ -16,6 +16,7 @@ final class NflMatchupMetricDefinitions
             'play_action_epa' => ["{$pass} AND ftn_is_play_action = 1", "{$pass} AND ftn_is_play_action IS NULL", 'epa', 'epa', 5],
             'screen_pass_epa' => ["{$pass} AND ftn_is_screen_pass = 1", "{$pass} AND ftn_is_screen_pass IS NULL", 'epa', 'epa', 2],
             'rpo_epa' => ["{$pass} AND ftn_is_rpo = 1", "{$pass} AND ftn_is_rpo IS NULL", 'epa', 'epa', 2],
+            'blitz_rate' => [$pass, '1=0', 'ftn_n_blitzers', 'CASE WHEN ftn_n_blitzers > 0 THEN 1 ELSE 0 END', 15],
             'motion_rate' => ['1=1', '1=0', 'ftn_is_motion', 'ftn_is_motion', 30],
             'motion_epa' => ['ftn_is_motion = 1', 'ftn_is_motion IS NULL', 'epa', 'epa', 5],
             'defensive_box' => [$run, '1=0', 'NULLIF(ftn_n_defense_box, 0)', 'ftn_n_defense_box', 8],
@@ -49,6 +50,12 @@ final class NflMatchupMetricDefinitions
     public static function definition(string $metric): ?string
     {
         return match ($metric) {
+            'ol_changed', 'ol_changed_two' => 'Number of LT/LG/C/RG/RT projected position assignments changed from the previous adjacent regular-season week. Requires five distinct players in both charts, a saved game link for the target, and a chart observed before the prior game. These are projected lineups, not observed starts.',
+            'ol_same_four' => 'The same five projected LT/LG/C/RG/RT assignments across the target game and the three immediately preceding regular-season weeks. Every historical chart must predate its game. Missing weeks or ambiguous positions remain unavailable; projected continuity is not proof of participation.',
+            'rb1_out' => 'The unique depth-rank-one RB in the game-linked chart has an explicit current Out, Inactive, reserve or suspension status. Questionable, Doubtful, missing or conflicting injury evidence is unknown. Weak run defense means bottom-10 rushing EPA allowed.',
+            'backup_center' => 'The target projected center differs from the previous week’s projected starter, was listed as a backup center in that pregame chart, and that prior starter is explicitly unavailable. Current projected status is not confirmation of participation.',
+            'blitz_rate' => 'Share of pass plays with at least one FTN-charted blitzer. High blitz frequency is the highest ten usage rates (the bottom rank band under the defensive lower-value ordering), not a claim of defensive quality.',
+            'qb_blitz_epa' => 'Selected quarterback passing EPA on FTN-charted blitzes, including sacks. At least two complete passing appearances, ten charted blitz plays pooled, 90% per-appearance charting coverage, and 24 qualified passers are required. High-blitz defenses are the ten highest charted blitz rates.',
             'home_pass_epa', 'road_pass_epa' => 'Passing EPA in the named home/road subset, excluding neutral sites. At least two qualifying games in that subset and complete coverage of every preceding game in the subset for all 32 teams. Applied only when the target offense plays in the named venue role.',
             'air_yards_per_attempt' => 'Mean supplied air yards on nonsack pass attempts. Requires 90% air-yard coverage in each complete game; missing depth is never zero.',
             'qb_pass_epa' => 'Passing EPA for the game-selected quarterback, including sacks and excluding scrambles. Rank among qualified quarterbacks with at least two games of 15 pass plays and 90% EPA coverage in every appearance; at least 24 qualified quarterbacks required. Identity is sourced from the game or its linked pregame depth chart, never team passing totals.',

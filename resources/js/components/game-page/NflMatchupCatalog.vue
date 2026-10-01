@@ -135,11 +135,23 @@ const value = (number: number | null | undefined) =>
                         class="rounded-md bg-muted/40 p-2"
                     >
                         <p class="font-medium text-foreground">
-                            {{ team(signal.offense_team_id) }} offense vs
-                            {{ team(signal.defense_team_id) }} defense:
+                            {{ team(signal.offense_team_id) }}
+                            <template v-if="signal.evidence.personnel_only"
+                                >projected offensive line:</template
+                            >
+                            <template v-else
+                                >offense vs
+                                {{
+                                    team(signal.defense_team_id)
+                                }}
+                                defense:</template
+                            >
                             {{ signalStatus(signal.status) }}
                         </p>
-                        <p>
+                        <p v-if="signal.evidence.offense.display_value">
+                            {{ signal.evidence.offense.display_value }}
+                        </p>
+                        <p v-else>
                             {{
                                 signal.evidence.offense.player_name ?? 'Offense'
                             }}
@@ -147,7 +159,7 @@ const value = (number: number | null | undefined) =>
                             {{ signal.evidence.offense.rank ?? 'unavailable' }}
                             · {{ signal.evidence.offense.games }} games
                         </p>
-                        <p>
+                        <p v-if="!signal.evidence.personnel_only">
                             Defense {{ value(signal.evidence.defense.value) }} ·
                             rank
                             {{ signal.evidence.defense.rank ?? 'unavailable' }}
@@ -155,9 +167,14 @@ const value = (number: number | null | undefined) =>
                         </p>
                         <p v-if="diagnostics">{{ signal.reason }}</p>
                         <p>
-                            League coverage:
-                            {{ signal.evidence.league_teams }} teams. Source:
-                            {{ signal.evidence.source }}.
+                            <template v-if="!signal.evidence.personnel_only"
+                                >League coverage:
+                                {{
+                                    signal.evidence.league_teams
+                                }}
+                                teams.</template
+                            >
+                            Source: {{ signal.evidence.source }}.
                         </p>
                     </div>
                     <div

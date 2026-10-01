@@ -23,7 +23,7 @@ function matchupSignalLeague(int $teamCount = 32): array
                 'home_team_id' => $teams[$index]->id, 'away_team_id' => $teams[$opponent]->id,
                 'season' => 2026, 'season_type' => '2', 'status' => 'STATUS_FINAL', 'week' => $week,
                 'game_date' => "2026-09-0{$week}", 'game_time' => '17:00:00',
-                'home_score' => $index, 'away_score' => $opponent,
+                'home_score' => $index, 'away_score' => $opponent, 'neutral_site' => false,
             ]);
             $games[] = $game;
             foreach ([[$index, $opponent], [$opponent, $index]] as [$offense, $defense]) {
@@ -44,7 +44,7 @@ function matchupSignalLeague(int $teamCount = 32): array
     $target = Game::factory()->create([
         'home_team_id' => $teams[$teamCount - 1]->id, 'away_team_id' => $teams[$teamCount - 2]->id,
         'season' => 2026, 'season_type' => '2', 'status' => 'STATUS_SCHEDULED',
-        'game_date' => '2026-09-20', 'game_time' => '17:00:00',
+        'game_date' => '2026-09-20', 'game_time' => '17:00:00', 'neutral_site' => false,
     ]);
 
     return [$target, $teams, $games];
@@ -59,8 +59,8 @@ it('preserves all supplied catalog IDs without inventing missing definitions', f
     $entries = app(NflMatchupSignalCatalog::class)->entries();
     expect(array_column($entries, 'id'))->toBe(range(1, 353))
         ->and($entries[352]['reason'])->toContain('Incomplete')
-        ->and($entries[194]['support'])->toBe('unavailable')
-        ->and($entries[194]['reason'])->toContain('charting');
+        ->and($entries[200]['support'])->toBe('unavailable')
+        ->and($entries[200]['reason'])->toContain('charting');
 });
 
 it('computes split success explosives and situational EPA without guessing missing context', function () {
@@ -70,8 +70,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(113)
-        ->and($result['signals'])->toHaveCount(226)
+    expect($result['summary']['supported_rules'])->toBe(120)
+        ->and($result['signals'])->toHaveCount(240)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -480,4 +480,23 @@ it('resolves a projected QB only through a recent game link and unambiguous ESPN
         ->and($row['evidence']['offense']['identity_status'])->toBe('projected_not_confirmed_starter');
     DB::table('nflverse_rosters')->insert([...$roster, 'nflverse_roster_key' => 'conflict', 'gsis_id' => '00-1000']);
     expect(matchupSignal($service->build($target), 191, $target->home_team_id)['status'])->toBe('insufficient_data');
+});
+
+it('uses charted blitzes for quarterback splits and treats unknown blitz flags as missing', function () {
+    [$target, $teams] = matchupSignalLeague();
+    foreach ($teams as $i => $team) {
+        DB::table('nflverse_pbp_plays')->where('possession_team_id', $team->id)->where('play_type', 'pass')->update(['passer_player_id' => '00-'.(1000 + $i)]);
+    }
+    $target->home_qb_id = '00-1031';
+    DB::table('nflverse_pbp_plays')->update(['ftn_n_blitzers' => 0]);
+    DB::table('nflverse_pbp_plays')->whereRaw('id % 2 = 0')->update(['ftn_n_blitzers' => 1]);
+    DB::table('nflverse_pbp_plays')->where('defense_team_id', $target->away_team_id)->update(['ftn_n_blitzers' => 1]);
+    $service = app(NflMatchupSignalService::class);
+    $row = matchupSignal($service->build($target), 195, $target->home_team_id);
+    expect($row['status'])->toBe('matched')
+        ->and($row['evidence']['offense']['plays'])->toBe(30)
+        ->and($row['evidence']['offense']['value'])->toEqualWithDelta(.15, .000001)
+        ->and($row['evidence']['defense']['value'])->toBe(1.0);
+    DB::table('nflverse_pbp_plays')->where('passer_player_id', '00-1031')->update(['ftn_n_blitzers' => null]);
+    expect(matchupSignal($service->build($target), 195, $target->home_team_id)['status'])->toBe('insufficient_data');
 });

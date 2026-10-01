@@ -61,11 +61,28 @@ const unavailable = computed(() =>
                 class="min-w-0 rounded-lg border p-3"
             >
                 <h3 class="text-sm font-medium">
-                    {{ team(signal.offense_team_id) }} offense ·
-                    {{ team(signal.defense_team_id) }} defense
+                    {{ team(signal.offense_team_id) }}
+                    <template v-if="signal.evidence.personnel_only"
+                        >projected offensive line</template
+                    >
+                    <template v-else
+                        >offense ·
+                        {{ team(signal.defense_team_id) }} defense</template
+                    >
                 </h3>
                 <p class="mt-1 text-sm">{{ signal.label }}</p>
-                <p class="mt-2 text-xs text-muted-foreground">
+                <p
+                    v-if="signal.evidence.offense.display_value"
+                    class="mt-2 text-xs text-muted-foreground"
+                >
+                    {{ signal.evidence.offense.display_value }}
+                    <template v-if="!signal.evidence.personnel_only"
+                        ><br />Defense
+                        {{ value(signal.evidence.defense.value) }} · rank
+                        {{ signal.evidence.defense.rank ?? '—' }}</template
+                    >
+                </p>
+                <p v-else class="mt-2 text-xs text-muted-foreground">
                     {{ signal.evidence.offense.player_name ?? 'Offense' }}
                     {{ value(signal.evidence.offense.value) }} · rank
                     {{ signal.evidence.offense.rank ?? '—' }} ·

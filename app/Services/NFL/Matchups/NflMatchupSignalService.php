@@ -28,7 +28,16 @@ final class NflMatchupSignalService
             ? 'This catalog version supports regular-season target games only.' : null;
         $games = $cutoff === null || $scopeReason !== null ? collect() : $this->priorGames($game, $cutoff, $season);
         $metrics = $this->metrics($games);
-        $metrics['qb_pass_epa']['offense'] = app(NflMatchupQuarterbacks::class)->metrics($game, $games, $cutoff);
+        $quarterbacks = app(NflMatchupQuarterbacks::class)->metrics($game, $games, $cutoff);
+        $metrics['qb_pass_epa']['offense'] = $quarterbacks;
+        foreach ($quarterbacks as $teamId => $sample) {
+            $metrics['qb_blitz_epa']['offense'][$teamId] = $sample['blitz_sample'] ?? [];
+        }
+        foreach (app(NflMatchupPersonnel::class)->forGame($game, $cutoff) as $teamId => $samples) {
+            foreach ($samples as $metric => $sample) {
+                $metrics[$metric]['offense'][$teamId] = $sample;
+            }
+        }
         $entries = collect($this->catalog->entries())->keyBy('id');
         $signals = [];
         foreach ($this->catalog->rules() as $id => $rule) {
@@ -353,20 +362,25 @@ final class NflMatchupSignalService
         $offense = $metrics[$rule['metric']]['offense'][$offenseId] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => null, 'eligible' => false];
         $defenseMetric = $rule['defense_metric'] ?? $rule['metric'];
         $defense = $metrics[$defenseMetric]['defense'][$defenseId] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => null, 'eligible' => false];
-        $qbRule = $rule['metric'] === 'qb_pass_epa';
-        $league = $qbRule ? ($defense['league_teams'] ?? 0) : min($offense['league_teams'] ?? 0, $defense['league_teams'] ?? 0);
+        $qbRule = in_array($rule['metric'], ['qb_pass_epa', 'qb_blitz_epa'], true);
+        $personnel = $rule['personnel'] ?? false;
+        $personnelOnly = $rule['personnel_only'] ?? false;
+        if ($personnelOnly) {
+            $defense = ['value' => null, 'rank' => null, 'eligible' => true, 'games' => 0];
+        }
+        $league = ($qbRule || $personnel) ? ($defense['league_teams'] ?? 0) : min($offense['league_teams'] ?? 0, $defense['league_teams'] ?? 0);
         $venueApplies = ! isset($rule['venue']) || (! $target->neutral_site && (($offenseId === (int) $target->home_team_id) === ($rule['venue'] === 'home')));
         $reason = match (true) {
             $scopeReason !== null => $scopeReason,
             $cutoff === null => 'Kickoff cutoff is unavailable.',
-            $qbRule && isset($offense['identity_reason']) => $offense['identity_reason'],
+            ($qbRule || $personnel) && isset($offense['identity_reason']) => $offense['identity_reason'],
             $qbRule && ($offense['league_players'] ?? 0) < 24 => 'Quarterback rankings require at least 24 qualified passers.',
             (! $offense['eligible'] || ! $defense['eligible']) && (str_contains($rule['metric'], '_trend_') || str_contains($defenseMetric, '_trend_')) => 'Trend comparison requires the full four- or five-game sequence specified in the definition, with complete inputs.',
             ! $offense['eligible'] || ! $defense['eligible'] => 'At least two qualifying games per team are required, with volume and non-null coverage checks for every preceding game; missing values are not treated as zero.',
-            $league !== self::LEAGUE_TEAMS => 'League rankings require qualified data for all 32 teams.',
+            ! $personnelOnly && $league !== self::LEAGUE_TEAMS => 'League rankings require qualified data for all 32 teams.',
             default => null,
         };
-        $matched = $venueApplies && $reason === null && $this->matches($offense, $rule['offense'], $rule['size'], true) && $this->matches($defense, $rule['defense'], $rule['size'], false);
+        $matched = $venueApplies && $reason === null && ($personnel ? $offense['value'] >= $rule['offense_threshold'] : $this->matches($offense, $rule['offense'], $rule['size'], true)) && $this->matches($defense, $rule['defense'], $rule['size'], false);
 
         return [
             'id' => $entry['id'], 'label' => $entry['label'], 'category' => $entry['category'],
@@ -374,6 +388,7 @@ final class NflMatchupSignalService
             'offense_team_id' => $offenseId, 'defense_team_id' => $defenseId,
             'reason' => $reason,
             'evidence' => [
+                'personnel_only' => $personnelOnly,
                 'metric' => $rule['metric'],
                 'offense_metric' => $rule['metric'],
                 'defense_metric' => $defenseMetric,
@@ -381,7 +396,8 @@ final class NflMatchupSignalService
                 'source' => match ($rule['metric']) {
                     'points_per_game' => 'nfl_games: final team scores',
                     'pass_yards_per_attempt' => 'nflverse_pbp_plays: pass attempts (sacks excluded)',
-                    'qb_pass_epa' => 'nflverse_pbp_plays: selected quarterback passing plays and sacks',
+                    'qb_pass_epa', 'qb_blitz_epa' => 'nflverse_pbp_plays: selected quarterback passing plays and sacks',
+                    'ol_changed', 'ol_changed_two', 'ol_same_four', 'rb1_out', 'backup_center' => 'Game-linked depth charts, historical pregame charts and timestamped injury snapshots',
                     'points_per_drive' => 'nflverse_pbp_plays: completed drives and possession-team scores',
                     default => 'nflverse_pbp_plays: pass/run plays (sacks included)',
                 },

@@ -23,6 +23,7 @@ final class NflMatchupQuarterbacks
             ->where(fn ($q) => $q->whereNull('description')->orWhereRaw('LOWER(description) NOT LIKE ?', ['%two-point conversion attempt%']));
         $rows = $query->select(['nfl_game_id', 'possession_team_id', 'defense_team_id', 'passer_player_id'])
             ->selectRaw('COUNT(*) AS candidates, COUNT(epa) AS measured, SUM(epa) AS total')
+            ->selectRaw('COUNT(ftn_n_blitzers) AS charted, SUM(CASE WHEN ftn_n_blitzers > 0 THEN 1 ELSE 0 END) AS blitzes, SUM(CASE WHEN ftn_n_blitzers > 0 AND epa IS NOT NULL THEN 1 ELSE 0 END) AS blitz_measured, SUM(CASE WHEN ftn_n_blitzers > 0 THEN epa ELSE 0 END) AS blitz_total')
             ->groupBy('nfl_game_id', 'possession_team_id', 'defense_team_id', 'passer_player_id')->get();
         $appearances = [];
         $coverage = [];
@@ -41,9 +42,11 @@ final class NflMatchupQuarterbacks
             }
             $coverage[$key]['identified'] += (int) $row->candidates;
             $appearances[$row->passer_player_id][] = ['game_id' => (int) $row->nfl_game_id, 'key' => $key,
-                'count' => (int) $row->measured, 'candidate' => (int) $row->candidates, 'sum' => (float) $row->total];
+                'count' => (int) $row->measured, 'candidate' => (int) $row->candidates, 'sum' => (float) $row->total,
+                'charted' => (int) $row->charted, 'blitzes' => (int) $row->blitzes, 'blitz_count' => (int) $row->blitz_measured, 'blitz_sum' => (float) $row->blitz_total];
         }
         $samples = [];
+        $blitzSamples = [];
         foreach ($appearances as $id => $rows) {
             $valid = array_filter($rows, fn ($r) => $r['count'] >= 15 && $r['count'] >= $r['candidate'] * .9
                 && $coverage[$r['key']]['identified'] >= $coverage[$r['key']]['total'] * .9);
@@ -52,18 +55,16 @@ final class NflMatchupQuarterbacks
                 'games' => count($valid), 'game_ids' => array_column($valid, 'game_id'), 'plays' => $count,
                 'eligible' => count($valid) >= 2 && count($valid) === count($rows), 'rank' => null,
                 'player_id' => $id, 'player_id_namespace' => 'gsis', 'minimum_plays_per_appearance' => 15];
+            $charted = array_filter($valid, fn ($r) => $r['charted'] >= $r['candidate'] * .9 && $r['blitz_count'] >= $r['blitzes'] * .9);
+            $blitzCount = array_sum(array_column($charted, 'blitz_count'));
+            $blitzSamples[$id] = [...$samples[$id], 'value' => $blitzCount ? array_sum(array_column($charted, 'blitz_sum')) / $blitzCount : null,
+                'games' => count($charted), 'game_ids' => array_column($charted, 'game_id'), 'plays' => $blitzCount,
+                'eligible' => $samples[$id]['eligible'] && count($charted) === count($rows) && $blitzCount >= 10,
+                'minimum_blitz_plays' => 10];
         }
+        $samples = $this->rank($samples);
+        $blitzSamples = $this->rank($blitzSamples);
         $qualified = array_filter($samples, fn ($r) => $r['eligible']);
-        foreach ($samples as $id => &$sample) {
-            $sample['league_players'] = count($qualified);
-            $sample['ranking_population'] = 'qualified_quarterbacks';
-            if (! $sample['eligible'] || count($qualified) < 24) {
-                continue;
-            }
-            $sample['rank'] = 1 + count(array_filter($qualified, fn ($r) => $r['value'] - $sample['value'] > .0000001));
-            $sample['rank_end'] = $sample['rank'] - 1 + count(array_filter($qualified, fn ($r) => abs($r['value'] - $sample['value']) < .0000001));
-        }
-        unset($sample);
         $target->loadMissing(['homeTeam', 'awayTeam']);
         $result = [];
         foreach (['home', 'away'] as $side) {
@@ -79,10 +80,33 @@ final class NflMatchupQuarterbacks
                 $sample['value'] = null;
                 $sample['rank'] = null;
             }
-            $result[$team] = [...$sample, ...$identity];
+            $blitz = $blitzSamples[$identity['player_id'] ?? ''] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => 0, 'eligible' => false, 'league_players' => 0];
+            if (isset($identity['identity_reason'])) {
+                $blitz['eligible'] = false;
+                $blitz['value'] = null;
+                $blitz['rank'] = null;
+            }
+            $result[$team] = [...$sample, ...$identity, 'blitz_sample' => [...$blitz, ...$identity]];
         }
 
         return $result;
+    }
+
+    private function rank(array $samples): array
+    {
+        $qualified = array_filter($samples, fn ($r) => $r['eligible']);
+        foreach ($samples as &$sample) {
+            $sample['league_players'] = count($qualified);
+            $sample['ranking_population'] = 'qualified_quarterbacks';
+            if (! $sample['eligible'] || count($qualified) < 24) {
+                continue;
+            }
+            $sample['rank'] = 1 + count(array_filter($qualified, fn ($r) => $r['value'] - $sample['value'] > .0000001));
+            $sample['rank_end'] = $sample['rank'] - 1 + count(array_filter($qualified, fn ($r) => abs($r['value'] - $sample['value']) < .0000001));
+        }
+        unset($sample);
+
+        return $samples;
     }
 
     private function identity(Game $game, string $side, CarbonImmutable $cutoff): array

@@ -1,4 +1,5 @@
 export interface MatchupMetricEvidence {
+    display_value?: string | null;
     player_name?: string | null;
     identity_status?: string;
     league_players?: number;
@@ -17,6 +18,7 @@ export interface NflMatchupSignal {
     defense_team_id: number;
     reason: string | null;
     evidence: {
+        personnel_only?: boolean;
         metric: string;
         definition?: string;
         source: string;

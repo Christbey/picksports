@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-09-30.5';
+    public const VERSION = '2026-09-30.6';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -72,6 +72,13 @@ final class NflMatchupSignalCatalog
         foreach ([['top', 'top'], ['top', 'bottom'], ['bottom', 'top'], ['bottom', 'bottom']] as $offset => [$offense, $defense]) {
             $rules[191 + $offset] = ['metric' => 'qb_pass_epa', 'defense_metric' => 'pass_epa', 'size' => 10, 'offense' => $offense, 'defense' => $defense];
         }
+        foreach ([167 => ['ol_changed', 1], 168 => ['ol_changed', 2], 169 => ['ol_same_four', 4]] as $id => [$personnel, $threshold]) {
+            $rules[$id] = ['metric' => $personnel, 'personnel' => true, 'personnel_only' => true, 'offense_threshold' => $threshold, 'offense' => 'any', 'defense' => 'any', 'size' => null];
+        }
+        $rules[265] = ['metric' => 'rb1_out', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'rush_epa', 'offense' => 'any', 'defense' => 'bottom', 'size' => 10];
+        $rules[166] = ['metric' => 'backup_center', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'blitz_rate', 'offense' => 'any', 'defense' => 'bottom', 'size' => 10];
+        $rules[195] = ['metric' => 'qb_blitz_epa', 'defense_metric' => 'blitz_rate', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
+        $rules[196] = ['metric' => 'qb_blitz_epa', 'defense_metric' => 'blitz_rate', 'offense' => 'bottom', 'defense' => 'bottom', 'size' => 10];
         ksort($rules);
 
         return $rules;
@@ -84,6 +91,9 @@ final class NflMatchupSignalCatalog
         foreach (explode("\n", self::LABELS) as $line) {
             [$id, $label] = explode('. ', $line, 2);
             $id = (int) $id;
+            if (in_array($id, [167, 168, 169], true)) {
+                $label = 'Projected: '.$label;
+            }
             $category = match (true) {
                 $id <= 50 => 'overall', $id <= 100 => 'passing', $id <= 140 => 'rushing',
                 $id <= 190 => 'offensive_line', $id <= 240 => 'quarterback_scheme',
@@ -105,7 +115,7 @@ final class NflMatchupSignalCatalog
             $metric = $rules[$entry['id']]['metric'] ?? null;
 
             return [...$entry, 'definition' => $metric ? $this->definition($metric).(isset($rules[$entry['id']]['defense_metric']) ? ' Defense comparison: '.$this->definition($rules[$entry['id']]['defense_metric']) : '') : null,
-                'required_inputs' => $metric ? ($metric === 'points_per_game' ? ['Final team scores', 'Complete league schedule'] : ['Mapped nflverse play-by-play', 'Eligible play values and situational fields', 'Complete league schedule']) : $this->requirements($entry['id'], $entry['category']),
+                'required_inputs' => ($rules[$entry['id']]['personnel'] ?? false) ? ['Game-linked target depth chart', 'Timestamped charts observed before historical kickoffs', 'Explicit player-ID injury evidence where required'] : ($metric ? ($metric === 'points_per_game' ? ['Final team scores', 'Complete league schedule'] : ['Mapped nflverse play-by-play', 'Eligible play values and situational fields', 'Complete league schedule']) : $this->requirements($entry['id'], $entry['category'])),
                 'prediction_effect' => 'none'];
         }, $entries);
     }

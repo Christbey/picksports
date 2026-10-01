@@ -247,3 +247,19 @@ test('lazy wrapper fetches once when opened and exposes retry on failure', async
     assert.match(html, /Evaluated matchups/);
     assert.doesNotMatch(html, /Full checklist|Insufficient history|needs data or implementation|Charting required|Coverage and limitations|Data coverage|Admin ·/);
 });
+
+test('projected lineup evidence is displayed as personnel rather than a fictional defensive metric', async () => {
+    const { default: component } = await server.ssrLoadModule('/resources/js/components/game-page/NflMatchupSignalEvidence.vue');
+    const data = fixture();
+    const personnel = signal(167, 'matched', 'ol_changed');
+    personnel.label = 'Projected: OL lineup changed from previous week';
+    personnel.evidence.personnel_only = true;
+    personnel.evidence.offense = { value: 2, rank: null, games: 2, display_value: '2 of 5 projected line positions changed' };
+    personnel.evidence.defense = { value: null, rank: null, games: 0 };
+    data.matchup.signals = [personnel];
+    data.matchup.catalog = [{ id: 167, label: personnel.label, category: 'offensive_line', support: 'implemented', reason: null }];
+    const html = await renderToString(createSSRApp(component, { data }));
+    assert.match(html, /2 of 5 projected line positions changed/);
+    assert.match(html, /projected offensive line/);
+    assert.doesNotMatch(html, /Defense Unavailable/);
+});

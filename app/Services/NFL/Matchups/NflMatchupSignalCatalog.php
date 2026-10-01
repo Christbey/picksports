@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.3';
+    public const VERSION = '2026-10-01.4';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -17,6 +17,8 @@ final class NflMatchupSignalCatalog
         }
         $rules[9] = ['metric' => 'epa', 'size' => null, 'offense' => 'above_average', 'defense' => 'below_average'];
         $rules[10] = ['metric' => 'epa', 'size' => null, 'offense' => 'below_average', 'defense' => 'above_average'];
+        $rules[34] = ['metric' => 'epa_stddev', 'size' => 10, 'offense' => 'top', 'defense' => 'bottom'];
+        $rules[35] = ['metric' => 'epa_stddev', 'size' => 10, 'offense' => 'bottom', 'defense' => 'bottom'];
         $rules[38] = ['metric' => 'points_per_game', 'size' => 10, 'offense' => 'top', 'defense' => 'bottom'];
         $rules[39] = ['metric' => 'points_per_game', 'size' => 10, 'offense' => 'bottom', 'defense' => 'top'];
         foreach ([26 => 'early_epa', 28 => 'late_epa', 32 => 'explosive_rate', 59 => 'pass_success_rate',
@@ -122,6 +124,10 @@ final class NflMatchupSignalCatalog
 
     public function definition(string $metric): string
     {
+        if ($metric === 'epa_stddev') {
+            return NflMatchupMetricDefinitions::definition($metric);
+        }
+
         return (NflMatchupMetricDefinitions::definition($metric) ?? match ($metric) {
             'epa', 'pass_epa', 'rush_epa' => 'Play-weighted EPA on eligible pass/run plays; sacks count as passes. Higher offense and lower EPA allowed rank better.',
             'success_rate', 'pass_success_rate', 'rush_success_rate' => 'Share of eligible plays with EPA > 0, within the named play type. Defense is opponent success allowed; lower is better.',

@@ -320,9 +320,21 @@ final class NflMatchupSignalService
         foreach (['epa', 'pass_epa', 'rush_epa'] as $metric) {
             foreach (['offense', 'defense'] as $side) {
                 foreach ($metrics[$metric][$side] ?? [] as $team => $sample) {
-                    $series = collect($buckets[$metric][$side][$team]['games'] ?? [])
+                    $gameValues = collect($buckets[$metric][$side][$team]['games'] ?? [])
                         ->sortBy(fn ($row, $id) => $games->get($id)->game_date->getTimestamp())
-                        ->map(fn ($row) => $row['count'] ? $row['sum'] / $row['count'] : null)->values()->all();
+                        ->map(fn ($row) => $row['count'] ? $row['sum'] / $row['count'] : null);
+                    $series = $gameValues->values()->all();
+                    if ($metric === 'epa') {
+                        $eligible = $sample['eligible'] && count($series) >= 3 && ! in_array(null, $series, true);
+                        $deviation = null;
+                        if ($eligible) {
+                            $mean = array_sum($series) / count($series);
+                            $deviation = sqrt(array_sum(array_map(fn ($value) => ($value - $mean) ** 2, $series)) / (count($series) - 1));
+                        }
+                        $metrics['epa_stddev'][$side][$team] = [...$sample, 'metric' => 'epa_stddev',
+                            'value' => $deviation, 'eligible' => $eligible, 'rank' => null, 'rank_end' => null,
+                            'minimum_games' => 3, 'game_epa_values' => $gameValues->all(), 'league_teams' => 0];
+                    }
                     foreach ([3, 5] as $window) {
                         $count = $window === 3 ? 4 : 5;
                         $recent = array_slice($series, -$count);
@@ -342,6 +354,18 @@ final class NflMatchupSignalService
                             'rank' => null, 'rank_end' => null, 'trend_games_required' => $count, 'trend_game_values' => $recent];
                     }
                 }
+            }
+        }
+
+        foreach (['offense', 'defense'] as $side) {
+            $eligible = array_filter($metrics['epa_stddev'][$side] ?? [], fn ($sample) => $sample['eligible']);
+            foreach ($eligible as $team => $sample) {
+                $lower = count(array_filter($eligible, fn ($other) => $sample['value'] - $other['value'] > .0000001));
+                $ties = count(array_filter($eligible, fn ($other) => abs($other['value'] - $sample['value']) < .0000001));
+                $metrics['epa_stddev'][$side][$team]['rank'] = count($eligible) === self::LEAGUE_TEAMS ? $lower + 1 : null;
+                $metrics['epa_stddev'][$side][$team]['rank_end'] = count($eligible) === self::LEAGUE_TEAMS ? $lower + $ties : null;
+                $metrics['epa_stddev'][$side][$team]['league_teams'] = count($eligible);
+                $metrics['epa_stddev'][$side][$team]['league_average'] = array_sum(array_column($eligible, 'value')) / count($eligible);
             }
         }
 
@@ -376,6 +400,7 @@ final class NflMatchupSignalService
             ($qbRule || $personnel) && isset($offense['identity_reason']) => $offense['identity_reason'],
             $qbRule && ($offense['league_players'] ?? 0) < 24 => 'Quarterback rankings require at least 24 qualified passers.',
             (! $offense['eligible'] || ! $defense['eligible']) && (str_contains($rule['metric'], '_trend_') || str_contains($defenseMetric, '_trend_')) => 'Trend comparison requires the full four- or five-game sequence specified in the definition, with complete inputs.',
+            $rule['metric'] === 'epa_stddev' && (! $offense['eligible'] || ! $defense['eligible']) => 'Variability requires at least three complete games, with volume and EPA coverage checks for every preceding game.',
             ! $offense['eligible'] || ! $defense['eligible'] => 'At least two qualifying games per team are required, with volume and non-null coverage checks for every preceding game; missing values are not treated as zero.',
             ! $personnelOnly && $league !== self::LEAGUE_TEAMS => 'League rankings require qualified data for all 32 teams.',
             default => null,

@@ -70,8 +70,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(120)
-        ->and($result['signals'])->toHaveCount(240)
+    expect($result['summary']['supported_rules'])->toBe(122)
+        ->and($result['signals'])->toHaveCount(244)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -499,4 +499,66 @@ it('uses charted blitzes for quarterback splits and treats unknown blitz flags a
         ->and($row['evidence']['defense']['value'])->toBe(1.0);
     DB::table('nflverse_pbp_plays')->where('passer_player_id', '00-1031')->update(['ftn_n_blitzers' => null]);
     expect(matchupSignal($service->build($target), 195, $target->home_team_id)['status'])->toBe('insufficient_data');
+});
+
+it('measures equal-game EPA variability and ranks consistency in the same direction on both sides', function () {
+    [$target, $teams, $games] = matchupSignalLeague();
+    foreach ($games as $game) {
+        foreach ([$game->home_team_id, $game->away_team_id] as $teamId) {
+            $index = $teams->search(fn ($team) => $team->id === $teamId);
+            DB::table('nflverse_pbp_plays')->where('nfl_game_id', $game->id)->where('possession_team_id', $teamId)
+                ->update(['epa' => ($game->week - 2) * $index / 100]);
+        }
+    }
+    $target->home_team_id = $teams[0]->id;
+    $target->away_team_id = $teams[1]->id;
+    $service = app(NflMatchupSignalService::class);
+    $result = $service->build($target);
+    $consistent = matchupSignal($result, 34, $teams[0]->id);
+    expect($consistent['status'])->toBe('matched')
+        ->and($consistent['evidence']['offense']['value'])->toBe(0.0)
+        ->and($consistent['evidence']['offense']['rank'])->toBe(1)
+        ->and($consistent['evidence']['defense']['value'])->toEqualWithDelta(.30, .000001)
+        ->and($consistent['evidence']['defense']['rank'])->toBe(31)
+        ->and($consistent['evidence']['offense']['game_epa_values'])->toHaveCount(3)
+        ->and(matchupSignal($result, 35, $teams[0]->id)['status'])->toBe('not_matched');
+    $target->home_team_id = $teams[31]->id;
+    $variable = matchupSignal($service->build($target), 35, $teams[31]->id);
+    expect($variable['status'])->toBe('matched')
+        ->and($variable['evidence']['offense']['value'])->toEqualWithDelta(.31, .000001)
+        ->and($variable['evidence']['offense']['rank'])->toBe(32);
+
+    // Duplicating one game's plays cannot give that game's mean extra weight.
+    $oneGame = collect($games)->first(fn ($game) => $game->week === 1 && $game->away_team_id === $teams[31]->id);
+    $copies = DB::table('nflverse_pbp_plays')->where('nfl_game_id', $oneGame->id)->get();
+    foreach ($copies as $play) {
+        $copy = (array) $play;
+        unset($copy['id']);
+        $copy['nflverse_play_key'] .= '-extra';
+        DB::table('nflverse_pbp_plays')->insert($copy);
+    }
+    $variable = matchupSignal($service->build($target), 35, $teams[31]->id);
+    expect($variable['evidence']['offense']['value'])->toEqualWithDelta(.31, .000001)
+        ->and($variable['evidence']['offense']['games'])->toBe(3);
+});
+
+it('does not manufacture variance ranks from tied values incomplete games or partial leagues', function () {
+    [$target, $teams, $games] = matchupSignalLeague();
+    $service = app(NflMatchupSignalService::class);
+    $result = $service->build($target);
+    foreach ([34, 35] as $id) {
+        $signal = matchupSignal($result, $id, $target->home_team_id);
+        expect($signal['status'])->toBe('not_matched')
+            ->and($signal['evidence']['offense']['rank'])->toBe(1)
+            ->and($signal['evidence']['offense']['rank_end'])->toBe(32);
+    }
+    $target->update(['game_date' => '2026-09-03']);
+    $signal = matchupSignal($service->build($target), 34, $target->home_team_id);
+    expect($signal['status'])->toBe('insufficient_data')->and($signal['reason'])->toContain('three complete games');
+    $target->update(['game_date' => '2026-09-20']);
+    DB::table('nflverse_pbp_plays')->where('possession_team_id', $teams[3]->id)->where('nfl_game_id', $games[3]->id)->update(['epa' => null]);
+    $signal = matchupSignal($service->build($target), 34, $target->home_team_id);
+    expect($signal['status'])->toBe('insufficient_data')
+        ->and($signal['evidence']['league_teams'])->toBe(31)
+        ->and($signal['evidence']['offense']['rank'])->toBeNull();
 });

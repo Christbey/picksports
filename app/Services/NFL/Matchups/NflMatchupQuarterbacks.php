@@ -21,10 +21,20 @@ final class NflMatchupQuarterbacks
             ->where('play_type', 'pass')
             ->where(fn ($q) => $q->whereNull('description')->orWhereRaw('LOWER(description) NOT LIKE ?', ['%no play%']))
             ->where(fn ($q) => $q->whereNull('description')->orWhereRaw('LOWER(description) NOT LIKE ?', ['%two-point conversion attempt%']));
-        $rows = $query->select(['nfl_game_id', 'possession_team_id', 'defense_team_id', 'passer_player_id'])
+        $splits = [
+            'deep' => ['is_sack = 0 AND air_yards >= 20', 'is_sack = 1 OR (is_sack = 0 AND air_yards IS NOT NULL)'],
+            'play_action' => ['ftn_is_play_action = 1', 'ftn_is_play_action IS NOT NULL'],
+        ];
+        $query->select(['nfl_game_id', 'possession_team_id', 'defense_team_id', 'passer_player_id'])
             ->selectRaw('COUNT(*) AS candidates, COUNT(epa) AS measured, SUM(epa) AS total')
-            ->selectRaw('COUNT(ftn_n_blitzers) AS charted, SUM(CASE WHEN ftn_n_blitzers > 0 THEN 1 ELSE 0 END) AS blitzes, SUM(CASE WHEN ftn_n_blitzers > 0 AND epa IS NOT NULL THEN 1 ELSE 0 END) AS blitz_measured, SUM(CASE WHEN ftn_n_blitzers > 0 THEN epa ELSE 0 END) AS blitz_total')
-            ->groupBy('nfl_game_id', 'possession_team_id', 'defense_team_id', 'passer_player_id')->get();
+            ->selectRaw('COUNT(ftn_n_blitzers) AS charted, SUM(CASE WHEN ftn_n_blitzers > 0 THEN 1 ELSE 0 END) AS blitzes, SUM(CASE WHEN ftn_n_blitzers > 0 AND epa IS NOT NULL THEN 1 ELSE 0 END) AS blitz_measured, SUM(CASE WHEN ftn_n_blitzers > 0 THEN epa ELSE 0 END) AS blitz_total');
+        foreach ($splits as $key => [$condition, $known]) {
+            $query->selectRaw("SUM(CASE WHEN {$known} THEN 1 ELSE 0 END) AS {$key}_charted,
+                SUM(CASE WHEN {$condition} THEN 1 ELSE 0 END) AS {$key}_candidates,
+                SUM(CASE WHEN ({$condition}) AND epa IS NOT NULL THEN 1 ELSE 0 END) AS {$key}_count,
+                SUM(CASE WHEN {$condition} THEN epa ELSE 0 END) AS {$key}_sum");
+        }
+        $rows = $query->groupBy('nfl_game_id', 'possession_team_id', 'defense_team_id', 'passer_player_id')->get();
         $appearances = [];
         $coverage = [];
         foreach ($rows as $row) {
@@ -41,12 +51,19 @@ final class NflMatchupQuarterbacks
                 continue;
             }
             $coverage[$key]['identified'] += (int) $row->candidates;
-            $appearances[$row->passer_player_id][] = ['game_id' => (int) $row->nfl_game_id, 'key' => $key,
+            $appearance = ['game_id' => (int) $row->nfl_game_id, 'key' => $key,
                 'count' => (int) $row->measured, 'candidate' => (int) $row->candidates, 'sum' => (float) $row->total,
                 'charted' => (int) $row->charted, 'blitzes' => (int) $row->blitzes, 'blitz_count' => (int) $row->blitz_measured, 'blitz_sum' => (float) $row->blitz_total];
+            foreach ($splits as $key => $_) {
+                foreach (['charted', 'candidates', 'count', 'sum'] as $field) {
+                    $appearance[$key.'_'.$field] = (float) $row->{$key.'_'.$field};
+                }
+            }
+            $appearances[$row->passer_player_id][] = $appearance;
         }
         $samples = [];
         $blitzSamples = [];
+        $splitSamples = [];
         foreach ($appearances as $id => $rows) {
             $valid = array_filter($rows, fn ($r) => $r['count'] >= 15 && $r['count'] >= $r['candidate'] * .9
                 && $coverage[$r['key']]['identified'] >= $coverage[$r['key']]['total'] * .9);
@@ -61,9 +78,23 @@ final class NflMatchupQuarterbacks
                 'games' => count($charted), 'game_ids' => array_column($charted, 'game_id'), 'plays' => $blitzCount,
                 'eligible' => $samples[$id]['eligible'] && count($charted) === count($rows) && $blitzCount >= 10,
                 'minimum_blitz_plays' => 10];
+            foreach ($splits as $key => $_) {
+                $complete = array_filter($valid, fn ($r) => $r[$key.'_charted'] >= $r['candidate'] * .9
+                    && $r[$key.'_count'] >= $r[$key.'_candidates'] * .9);
+                $splitCount = (int) array_sum(array_column($complete, $key.'_count'));
+                $splitSamples[$key][$id] = [...$samples[$id],
+                    'value' => $splitCount ? array_sum(array_column($complete, $key.'_sum')) / $splitCount : null,
+                    'games' => count($complete), 'game_ids' => array_column($complete, 'game_id'), 'plays' => $splitCount,
+                    'eligible' => $samples[$id]['eligible'] && count($complete) === count($rows) && $splitCount >= 10,
+                    'minimum_split_plays' => 10];
+            }
+
         }
         $samples = $this->rank($samples);
         $blitzSamples = $this->rank($blitzSamples);
+        foreach ($splitSamples as $key => $split) {
+            $splitSamples[$key] = $this->rank($split);
+        }
         $qualified = array_filter($samples, fn ($r) => $r['eligible']);
         $target->loadMissing(['homeTeam', 'awayTeam']);
         $result = [];
@@ -87,6 +118,16 @@ final class NflMatchupQuarterbacks
                 $blitz['rank'] = null;
             }
             $result[$team] = [...$sample, ...$identity, 'blitz_sample' => [...$blitz, ...$identity]];
+            foreach ($splits as $key => $_) {
+                $split = $splitSamples[$key][$identity['player_id'] ?? ''] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => 0, 'eligible' => false, 'league_players' => 0];
+                if (isset($identity['identity_reason'])) {
+                    $split['eligible'] = false;
+                    $split['value'] = null;
+                    $split['rank'] = null;
+                }
+                $result[$team][$key.'_sample'] = [...$split, ...$identity];
+            }
+
         }
 
         return $result;

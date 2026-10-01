@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.4';
+    public const VERSION = '2026-10-01.5';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -81,6 +81,8 @@ final class NflMatchupSignalCatalog
         $rules[166] = ['metric' => 'backup_center', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'blitz_rate', 'offense' => 'any', 'defense' => 'bottom', 'size' => 10];
         $rules[195] = ['metric' => 'qb_blitz_epa', 'defense_metric' => 'blitz_rate', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
         $rules[196] = ['metric' => 'qb_blitz_epa', 'defense_metric' => 'blitz_rate', 'offense' => 'bottom', 'defense' => 'bottom', 'size' => 10];
+        $rules[220] = ['metric' => 'qb_deep_epa', 'defense_metric' => 'deep_pass_epa', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
+        $rules[225] = ['metric' => 'qb_play_action_epa', 'defense_metric' => 'play_action_epa', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
         ksort($rules);
 
         return $rules;
@@ -389,7 +391,7 @@ final class NflMatchupSignalCatalog
 222. Quick-release QB vs strong pass rush
 223. Slow time-to-throw QB vs strong pass rush
 224. High checkdown QB vs underneath weakness
-225. High play-action QB vs play-action weakness
+225. High play-action EPA QB vs play-action weakness
 226. Strong RPO QB vs RPO weakness
 227. QB turnover-prone vs takeaway-heavy defense
 228. Ball-secure QB vs takeaway-dependent defense

@@ -70,8 +70,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(122)
-        ->and($result['signals'])->toHaveCount(244)
+    expect($result['summary']['supported_rules'])->toBe(124)
+        ->and($result['signals'])->toHaveCount(248)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -561,4 +561,63 @@ it('does not manufacture variance ranks from tied values incomplete games or par
     expect($signal['status'])->toBe('insufficient_data')
         ->and($signal['evidence']['league_teams'])->toBe(31)
         ->and($signal['evidence']['offense']['rank'])->toBeNull();
+});
+
+it('uses selected quarterback deep and play-action samples with correct sack handling', function () {
+    [$target, $teams] = matchupSignalLeague();
+    foreach ($teams as $i => $team) {
+        DB::table('nflverse_pbp_plays')->where('possession_team_id', $team->id)->where('play_type', 'pass')
+            ->update(['passer_player_id' => '00-'.(1000 + $i), 'air_yards' => 20, 'ftn_is_play_action' => 1]);
+    }
+    $target->home_qb_id = '00-1031';
+    $target->home_qb_name = 'Selected Deep Passer';
+    $target->away_team_id = $teams[1]->id;
+    $service = app(NflMatchupSignalService::class);
+    $result = $service->build($target);
+    foreach ([220 => 57, 225 => 60] as $rule => $plays) {
+        $signal = matchupSignal($result, $rule, $target->home_team_id);
+        expect($signal['status'])->toBe('matched')
+            ->and($signal['evidence']['offense']['player_name'])->toBe('Selected Deep Passer')
+            ->and($signal['evidence']['offense']['plays'])->toBe($plays)
+            ->and($signal['evidence']['offense']['value'])->toEqualWithDelta(.15, .000001)
+            ->and($signal['evidence']['offense']['league_players'])->toBe(32);
+    }
+    DB::table('nflverse_pbp_plays')->where('passer_player_id', '00-1031')->where('is_sack', true)->update(['epa' => 99]);
+    $result = $service->build($target);
+    expect(matchupSignal($result, 220, $target->home_team_id)['evidence']['offense']['value'])->toEqualWithDelta(.15, .000001)
+        ->and(matchupSignal($result, 225, $target->home_team_id)['evidence']['offense']['value'])->toEqualWithDelta(5.0925, .000001);
+    $target->home_qb_id = '00-1000';
+    $result = $service->build($target);
+    foreach ([220, 225] as $rule) {
+        expect(matchupSignal($result, $rule, $target->home_team_id)['evidence']['offense']['value'])->toEqualWithDelta(-.16, .000001);
+    }
+    $target->home_qb_id = null;
+    foreach ([220, 225] as $rule) {
+        expect(matchupSignal($service->build($target), $rule, $target->home_team_id)['status'])->toBe('insufficient_data');
+    }
+});
+
+it('holds quarterback scheme splits when classification or cohort coverage is missing', function () {
+    [$target, $teams] = matchupSignalLeague();
+    foreach ($teams as $i => $team) {
+        DB::table('nflverse_pbp_plays')->where('possession_team_id', $team->id)->where('play_type', 'pass')
+            ->update(['passer_player_id' => '00-'.(1000 + $i), 'air_yards' => 20, 'ftn_is_play_action' => 1]);
+    }
+    $target->home_qb_id = '00-1031';
+    $service = app(NflMatchupSignalService::class);
+    DB::table('nflverse_pbp_plays')->where('passer_player_id', '00-1031')->update(['air_yards' => null, 'ftn_is_play_action' => null]);
+    $result = $service->build($target);
+    foreach ([220, 225] as $rule) {
+        expect(matchupSignal($result, $rule, $target->home_team_id)['status'])->toBe('insufficient_data');
+    }
+    DB::table('nflverse_pbp_plays')->where('passer_player_id', '00-1031')->update(['air_yards' => 20, 'ftn_is_play_action' => 1]);
+    DB::table('nflverse_pbp_plays')->whereIn('passer_player_id', array_map(fn ($i) => '00-'.(1000 + $i), range(0, 8)))
+        ->update(['air_yards' => 0, 'ftn_is_play_action' => 0]);
+    $result = $service->build($target);
+    foreach ([220, 225] as $rule) {
+        $signal = matchupSignal($result, $rule, $target->home_team_id);
+        expect($signal['status'])->toBe('insufficient_data')
+            ->and($signal['evidence']['offense']['league_players'])->toBe(23)
+            ->and($signal['reason'])->toContain('24 qualified passers');
+    }
 });

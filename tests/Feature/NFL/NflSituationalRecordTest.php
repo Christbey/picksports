@@ -360,3 +360,45 @@ it('clears an old home profile when a later home game has no verified venue', fu
         [1 => roofScheduleEvidence('dome'), 3 => roofScheduleEvidence('outdoors', 'AWAY')])['records'])->keyBy('id');
     expect($records['roofed_team_outdoors']['sample_size'])->toBe(0);
 });
+
+it('evaluates home-base travel records with distance direction and kickoff boundaries', function (string $origin, string $destination, string $time, array $expected) {
+    $games = collect([situationalGame(1, '2026-09-06'), situationalGame(2, '2026-09-13', 7, false, ['game_time' => $time])]);
+    $markets = [1 => roofScheduleEvidence('outdoors', $origin), 2 => roofScheduleEvidence('outdoors', $destination)];
+    $records = collect(app(NflSituationalRecordService::class)->build((object) ['id' => 1], $games, $markets)['records'])->keyBy('id');
+    foreach (['distance_1000', 'distance_2000', 'clock_one', 'clock_two_plus', 'eastward_clock', 'eastward_early', 'westward_clock'] as $id) {
+        expect($records[$id]['sample_size'])->toBe(in_array($id, $expected, true) ? 1 : 0);
+        if ($records[$id]['sample_size']) {
+            expect($records[$id]['travel_evidence'][0]['home_venue']['game_id'])->toBe(1)
+                ->and($records[$id]['travel_evidence'][0]['game_venue']['game_id'])->toBe(2)
+                ->and($records[$id]['travel_evidence'][0]['mode'])->toBe('home_base_comparison');
+        }
+    }
+})->with([
+    ['LAX01', 'NYC01', '17:00:00', ['distance_1000', 'distance_2000', 'clock_two_plus', 'eastward_clock', 'eastward_early']],
+    ['LAX01', 'NYC01', '16:00:00', ['distance_1000', 'distance_2000', 'clock_two_plus', 'eastward_clock', 'eastward_early']],
+    ['LAX01', 'NYC01', '18:00:00', ['distance_1000', 'distance_2000', 'clock_two_plus', 'eastward_clock']],
+    ['LAX01', 'NYC01', '15:00:00', ['distance_1000', 'distance_2000', 'clock_two_plus', 'eastward_clock']],
+    ['NYC01', 'LAX01', '20:00:00', ['distance_1000', 'distance_2000', 'clock_two_plus', 'westward_clock']],
+    ['CHI98', 'NYC01', '17:00:00', ['clock_one', 'eastward_clock', 'eastward_early']],
+    ['LAX01', 'KAN00', '17:00:00', ['distance_1000', 'clock_two_plus', 'eastward_clock', 'eastward_early']],
+    ['LAX01', 'DEN00', '17:00:00', ['clock_one', 'eastward_clock']],
+    ['NYC01', 'NYC01', '17:00:00', []],
+    ['UNKNOWN', 'NYC01', '17:00:00', []],
+]);
+
+it('requires earlier same-season home evidence before evaluating travel', function (string $fault) {
+    $home = situationalGame(1, '2026-09-06');
+    $away = situationalGame(2, '2026-09-13', 7, false);
+    $markets = [1 => roofScheduleEvidence('dome', 'LAX01'), 2 => roofScheduleEvidence('outdoors', 'NYC01')];
+    if ($fault === 'missing') {
+        unset($markets[1]);
+    } elseif ($fault === 'future') {
+        $home->game_date = '2026-09-20';
+    } elseif ($fault === 'prior season') {
+        $home->season = 2025;
+    } elseif ($fault === 'international') {
+        $markets[2]['international'] = ['source' => 'nfl_official_international_schedule'];
+    }
+    $records = collect(app(NflSituationalRecordService::class)->build((object) ['id' => 1], collect([$home, $away]), $markets)['records']);
+    expect($records->whereBetween('catalog_id', [336, 342])->sum('sample_size'))->toBe(0);
+})->with(['missing', 'future', 'prior season', 'international']);

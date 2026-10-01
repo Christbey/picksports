@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.1';
+    public const VERSION = '2026-10-01.2';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -494,13 +494,13 @@ final class NflMatchupSignalCatalog
 333. Record second consecutive road game
 334. ATS second consecutive road game
 335. Record third consecutive road game
-336. Record after 1,000+ travel miles
-337. Record after 2,000+ travel miles
-338. Record crossing one time zone
-339. Record crossing 2+ time zones
-340. West→East record
-341. West→East early kickoff record
-342. East→West record
+336. Record 1,000+ miles from home venue
+337. Record 2,000+ miles from home venue
+338. One-hour home-to-game clock difference
+339. Two-plus-hour home-to-game clock difference
+340. Game clock ahead of home clock
+341. Game clock ahead of home, early afternoon kickoff
+342. Game clock behind home clock
 343. Record following international game
 344. Record in international game
 345. Record at altitude

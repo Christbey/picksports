@@ -2,6 +2,7 @@
 
 namespace App\Services\NFL;
 
+use App\Services\NFL\Matchups\NflMatchupTravelContext;
 use App\Services\Sports\SportsDateWindowService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
@@ -12,6 +13,13 @@ class NflSituationalRecordService
     public function build(object $team, Collection $games, array $markets = [], array $workloads = []): array
     {
         $definitions = [
+            'distance_1000' => [336, 'At least 1,000 miles from home venue', 'Straight-line stadium distance of at least 1,000 miles from the latest earlier verified home venue this season. U.S. venues only; not actual flight miles or proof of team itinerary.'],
+            'distance_2000' => [337, 'At least 2,000 miles from home venue', 'Straight-line stadium distance of at least 2,000 miles from the latest earlier verified home venue this season. U.S. venues only; not actual flight miles or proof of team itinerary.'],
+            'clock_one' => [338, 'One-hour home-to-game clock difference', 'Exactly one hour between home-venue and game-venue clocks at kickoff, accounting for daylight saving. U.S. venues with prior same-season home evidence; not an itinerary reconstruction.'],
+            'clock_two_plus' => [339, 'Two-plus-hour home-to-game clock difference', 'At least two hours between home-venue and game-venue clocks at kickoff, accounting for daylight saving. U.S. venues with prior same-season home evidence.'],
+            'eastward_clock' => [340, 'Game clock ahead of home clock', 'Game venue clock ahead of the established home venue clock at kickoff. U.S. venues, using date-specific UTC offsets; a home-base comparison, not actual departure location.'],
+            'eastward_early' => [341, 'Clock ahead of home, early afternoon kickoff', 'Game venue clock ahead of the established home clock and local kickoff from noon up to but not including 2 p.m. U.S. venues only.'],
+            'westward_clock' => [342, 'Game clock behind home clock', 'Game venue clock behind the established home venue clock at kickoff. U.S. venues, using date-specific UTC offsets; a home-base comparison, not actual departure location.'],
             'roofed_team_outdoors' => [347, 'Roofed-home team outdoors', 'Team whose latest earlier home game this season establishes a dome or retractable-roof home venue, playing with the roof open or outdoors. Uses provider roof categories, not climate control; requires verified game and prior home-venue evidence.'],
             'outdoor_team_indoors' => [348, 'Outdoor-home team under a roof', 'Team whose latest earlier home game this season establishes an outdoor home venue, playing in a dome or with the roof closed. Uses provider roof categories, not climate control; international roof conditions and missing venue evidence are excluded.'],
             'in_international' => [344, 'In international games', 'Completed games outside the United States, identified by the official NFL international schedule and verified game identity. Neutral-site designation alone is not evidence of an international game.'],
@@ -84,7 +92,7 @@ class NflSituationalRecordService
         $rows = $games->filter(fn ($g) => (int) $g->home_team_id === (int) $team->id || (int) $g->away_team_id === (int) $team->id)
             ->map(fn ($g) => ['game' => $g, 'kickoff' => $this->kickoff($g)])
             ->sortBy(fn ($r) => $r['kickoff']?->getTimestamp() ?? strtotime((string) $r['game']->game_date))->values();
-        $roofContexts = $this->roofContexts($rows, (int) $team->id, $markets);
+        $venueContexts = $this->venueContexts($rows, (int) $team->id, $markets);
         $previous = null;
         $winStreak = $lossStreak = $roadStreak = 0;
         $streakOriginKnown = $roadOriginKnown = false;
@@ -115,12 +123,25 @@ class NflSituationalRecordService
                     $matches['home_after_road_heavy'] = $home && $stretch['road_games'] >= 3;
                 }
                 $market = $markets[$game->id] ?? null;
-                $roofContext = $roofContexts[$game->id] ?? null;
+                $roofContext = $venueContexts[$game->id] ?? null;
                 if ($roofContext !== null) {
                     $matches['roofed_team_outdoors'] = $roofContext['home_venue']['roof'] !== 'outdoors'
                         && in_array($roofContext['game_venue']['roof'], ['open', 'outdoors'], true);
                     $matches['outdoor_team_indoors'] = $roofContext['home_venue']['roof'] === 'outdoors'
                         && in_array($roofContext['game_venue']['roof'], ['dome', 'closed'], true);
+                }
+                $travel = $roofContext !== null && $kickoff
+                    ? app(NflMatchupTravelContext::class)->between($roofContext['home_venue']['stadium_id'], $roofContext['game_venue']['stadium_id'], $kickoff) : null;
+                if ($travel !== null) {
+                    $clockDifference = $travel['clock_difference_hours'];
+                    $localHour = CarbonImmutable::parse($travel['destination_local_kickoff'])->hour;
+                    $matches += ['distance_1000' => $travel['distance_miles'] >= 1000,
+                        'distance_2000' => $travel['distance_miles'] >= 2000,
+                        'clock_one' => abs($clockDifference) === 1 || abs($clockDifference) === 1.0,
+                        'clock_two_plus' => abs($clockDifference) >= 2,
+                        'eastward_clock' => $clockDifference > 0,
+                        'eastward_early' => $clockDifference > 0 && $localHour >= 12 && $localHour < 14,
+                        'westward_clock' => $clockDifference < 0];
                 }
                 $international = $this->internationalEvidence($market);
                 $matches['in_international'] = $international !== null;
@@ -193,6 +214,10 @@ class NflSituationalRecordService
                     if ($matchesSituation) {
                         $record = &$records[$id];
                         $record['sample_size']++;
+                        if ($record['catalog_id'] >= 336 && $record['catalog_id'] <= 342) {
+                            $record['travel_evidence'][] = ['game_id' => $game->id, ...$travel,
+                                'home_venue' => $roofContext['home_venue'], 'game_venue' => $roofContext['game_venue']];
+                        }
                         if (in_array($id, ['roofed_team_outdoors', 'outdoor_team_indoors'], true)) {
                             $record['roof_evidence'][] = ['game_id' => $game->id, ...$roofContext];
                         }
@@ -247,13 +272,13 @@ class NflSituationalRecordService
                 'History is limited to supplied, cutoff-bounded regular-season games; no sequence crosses a season boundary.',
                 'Sequential records require adjacent schedule weeks and known kickoff times; week gaps are excluded because a bye or missing game cannot be distinguished here.',
                 'Neutral sites are excluded from home/road records. Thursday and rest use Eastern calendar dates, not UTC weekdays.',
-                'Distance, timezone, altitude and weather conditions require further verified inputs. Roof records require a prior same-season home venue and verified game roof conditions; international roof data is excluded. Workload records require complete paired official team statistics. Rest comparisons use explicit provider rest fields; overtime and division sequences require recorded flags and adjacent games.',
+                'Travel records compare U.S. home and game venues, not actual itineraries. Altitude and weather conditions require further verified inputs. Roof records require a prior same-season home venue and verified game roof conditions; international roof data is excluded. Workload records require complete paired official team statistics. Rest comparisons use explicit provider rest fields; overtime and division sequences require recorded flags and adjacent games.',
                 'Historical ATS uses only explicitly normalized archived nflverse closing lines, not current mutable odds. These retrospective records are not an as-known betting backtest. Missing scores, lines and prior history are excluded, not counted as losses.',
             ],
         ];
     }
 
-    private function roofContexts(Collection $rows, int $teamId, array $markets): array
+    private function venueContexts(Collection $rows, int $teamId, array $markets): array
     {
         $contexts = [];
         $homeVenue = null;

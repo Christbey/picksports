@@ -7,6 +7,7 @@ use App\Models\NFL\Prediction;
 use App\Models\NFL\Team;
 use App\Services\NFL\Matchups\NflMatchupSignalCatalog;
 use App\Services\NFL\Matchups\NflMatchupSignalService;
+use App\Services\NFL\QuarterbackAvailability;
 use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -70,8 +71,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(127)
-        ->and($result['signals'])->toHaveCount(254)
+    expect($result['summary']['supported_rules'])->toBe(129)
+        ->and($result['signals'])->toHaveCount(258)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -706,4 +707,57 @@ it('requires four complete prior quarterback appearances without filling gaps fr
     $signal = matchupSignal($service->build($target), 237, $target->home_team_id);
     expect($signal['status'])->toBe('insufficient_data')
         ->and($signal['evidence']['offense']['games'])->toBe(3);
+});
+
+it('identifies rookie quarterbacks from the target roster without requiring prior passing appearances', function () {
+    [$target, $teams] = matchupSignalLeague();
+    $target->home_team_id = $teams[31]->id;
+    $target->away_team_id = $teams[0]->id;
+    $target->away_qb_id = '00-9000';
+    foreach ($teams as $i => $team) {
+        DB::table('nflverse_pbp_plays')->where('defense_team_id', $team->id)->where('play_type', 'pass')
+            ->update(['ftn_n_blitzers' => 0]);
+        $ids = DB::table('nflverse_pbp_plays')->where('defense_team_id', $team->id)->where('play_type', 'pass')
+            ->limit($i + 1)->pluck('nflverse_play_key');
+        DB::table('nflverse_pbp_plays')->whereIn('nflverse_play_key', $ids)->update(['ftn_n_blitzers' => 1]);
+    }
+    $roster = ['nflverse_roster_key' => 'rookie-matchup', 'season' => 2026, 'team_id' => $target->away_team_id,
+        'position' => 'QB', 'gsis_id' => '00-9000', 'years_exp' => 0];
+    DB::table('nflverse_rosters')->insert($roster);
+    $service = app(NflMatchupSignalService::class);
+    $result = $service->build($target);
+    foreach ([230, 232] as $id) {
+        $signal = matchupSignal($result, $id, $target->away_team_id);
+        expect($signal['status'])->toBe('matched')
+            ->and($signal['evidence']['offense']['years_experience'])->toBe(0)
+            ->and($signal['evidence']['offense']['player_id'])->toBe('00-9000');
+    }
+    $target->neutral_site = true;
+    expect(matchupSignal($service->build($target), 232, $target->away_team_id)['status'])->toBe('not_matched');
+    $target->neutral_site = false;
+    DB::table('nflverse_rosters')->update(['years_exp' => 1]);
+    foreach ([230, 232] as $id) {
+        expect(matchupSignal($service->build($target), $id, $target->away_team_id)['status'])->toBe('not_matched');
+    }
+    DB::table('nflverse_rosters')->update(['years_exp' => null]);
+    expect(matchupSignal($service->build($target), 230, $target->away_team_id)['status'])->toBe('insufficient_data');
+    DB::table('nflverse_rosters')->update(['years_exp' => 0, 'season' => 2025]);
+    expect(matchupSignal($service->build($target), 230, $target->away_team_id)['status'])->toBe('insufficient_data');
+    DB::table('nflverse_rosters')->update(['season' => 2026, 'team_id' => $target->home_team_id]);
+    expect(matchupSignal($service->build($target), 230, $target->away_team_id)['status'])->toBe('insufficient_data');
+    DB::table('nflverse_rosters')->update(['team_id' => $target->away_team_id]);
+    DB::table('nflverse_rosters')->insert([...$roster, 'nflverse_roster_key' => 'conflicting-experience', 'years_exp' => 2]);
+    expect(matchupSignal($service->build($target), 230, $target->away_team_id)['status'])->toBe('insufficient_data');
+    $target->away_qb_id = null;
+    expect(matchupSignal($service->build($target), 230, $target->away_team_id)['status'])->toBe('insufficient_data');
+    $target->away_qb_id = '00-9000';
+    DB::table('nflverse_rosters')->where('nflverse_roster_key', 'conflicting-experience')->delete();
+    $availability = Mockery::mock(QuarterbackAvailability::class);
+    $availability->shouldReceive('forGame')->andReturn([]);
+    $availability->shouldReceive('excludes')->andReturn(true);
+    app()->instance(QuarterbackAvailability::class, $availability);
+    $signal = matchupSignal($service->build($target), 230, $target->away_team_id);
+    expect($signal['status'])->toBe('insufficient_data')
+        ->and($signal['reason'])->toContain('unavailable')
+        ->and($signal['evidence']['offense']['value'])->toBeNull();
 });

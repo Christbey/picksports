@@ -110,6 +110,8 @@ final class NflMatchupQuarterbacks
         }
         $qualified = array_filter($samples, fn ($r) => $r['eligible']);
         $target->loadMissing(['homeTeam', 'awayTeam']);
+        $rosters = DB::table('nflverse_rosters')->where('season', $target->season)
+            ->whereIn('team_id', [$target->home_team_id, $target->away_team_id])->where('position', 'QB')->get();
         $result = [];
         foreach (['home', 'away'] as $side) {
             $team = (int) $target->{$side.'_team_id'};
@@ -136,6 +138,7 @@ final class NflMatchupQuarterbacks
                 $trend['value'] = null;
             }
             $result[$team] = [...$sample, ...$identity, 'blitz_sample' => [...$blitz, ...$identity], 'trend_sample' => [...$trend, ...$identity]];
+            $result[$team]['rookie_sample'] = $this->rookieSample($identity, $rosters, $team, (int) $target->season);
             foreach ($splits as $key => $_) {
                 $split = $splitSamples[$key][$identity['player_id'] ?? ''] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => 0, 'eligible' => false, 'league_players' => 0];
                 if (isset($identity['identity_reason'])) {
@@ -149,6 +152,26 @@ final class NflMatchupQuarterbacks
         }
 
         return $result;
+    }
+
+    private function rookieSample(array $identity, Collection $rosters, int $team, int $season): array
+    {
+        $rows = $rosters->filter(fn ($row) => (int) $row->team_id === $team && filled($identity['player_id'] ?? null)
+            && $row->gsis_id === $identity['player_id']);
+        $experience = $rows->pluck('years_exp')->unique();
+        $known = $rows->isNotEmpty() && $experience->count() === 1 && $experience->first() !== null;
+        $reason = $identity['identity_reason'] ?? ($known ? null : 'Unambiguous quarterback experience from the target-season team roster is required.');
+        $years = $known ? (int) $experience->first() : null;
+        $sample = [...$identity, 'value' => $reason === null ? (int) ($years === 0) : null,
+            'eligible' => $reason === null, 'rank' => null, 'games' => 0, 'plays' => null,
+            'years_experience' => $years, 'roster_season' => $season, 'roster_ids' => $rows->pluck('id')->values()->all(),
+            'display_value' => $reason !== null ? null : ($years === 0 ? 'Rookie quarterback' : 'Veteran quarterback ('.$years.' years)'),
+        ];
+        if ($reason !== null) {
+            $sample['identity_reason'] = $reason;
+        }
+
+        return $sample;
     }
 
     private function rank(array $samples): array

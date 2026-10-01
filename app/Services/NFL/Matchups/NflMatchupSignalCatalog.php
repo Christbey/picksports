@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.7';
+    public const VERSION = '2026-10-01.8';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -86,6 +86,8 @@ final class NflMatchupSignalCatalog
         $rules[226] = ['metric' => 'qb_rpo_epa', 'defense_metric' => 'rpo_epa', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
         $rules[237] = ['metric' => 'qb_pass_epa_trend_3', 'defense_metric' => 'pass_epa_trend_3', 'offense' => 'improving', 'defense' => 'declining', 'size' => null];
         $rules[238] = ['metric' => 'qb_pass_epa_trend_3', 'defense_metric' => 'pass_epa_trend_3', 'offense' => 'declining', 'defense' => 'improving', 'size' => null];
+        $rules[230] = ['metric' => 'rookie_qb', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'blitz_rate', 'offense' => 'any', 'defense' => 'bottom', 'size' => 10];
+        $rules[232] = ['metric' => 'rookie_qb', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'epa', 'offense' => 'any', 'defense' => 'top', 'size' => 10, 'venue' => 'road'];
         ksort($rules);
 
         return $rules;
@@ -122,7 +124,7 @@ final class NflMatchupSignalCatalog
             $metric = $rules[$entry['id']]['metric'] ?? null;
 
             return [...$entry, 'definition' => $metric ? $this->definition($metric).(isset($rules[$entry['id']]['defense_metric']) ? ' Defense comparison: '.$this->definition($rules[$entry['id']]['defense_metric']) : '') : null,
-                'required_inputs' => ($rules[$entry['id']]['personnel'] ?? false) ? ['Game-linked target depth chart', 'Timestamped charts observed before historical kickoffs', 'Explicit player-ID injury evidence where required'] : ($metric ? ($metric === 'points_per_game' ? ['Final team scores', 'Complete league schedule'] : ['Mapped nflverse play-by-play', 'Eligible play values and situational fields', 'Complete league schedule']) : $this->requirements($entry['id'], $entry['category'])),
+                'required_inputs' => $metric === 'rookie_qb' ? ['Game-selected quarterback identity and availability', 'Unambiguous target-season team roster experience', 'Complete league defensive play-by-play'] : (($rules[$entry['id']]['personnel'] ?? false) ? ['Game-linked target depth chart', 'Timestamped charts observed before historical kickoffs', 'Explicit player-ID injury evidence where required'] : ($metric ? ($metric === 'points_per_game' ? ['Final team scores', 'Complete league schedule'] : ['Mapped nflverse play-by-play', 'Eligible play values and situational fields', 'Complete league schedule']) : $this->requirements($entry['id'], $entry['category']))),
                 'prediction_effect' => 'none'];
         }, $entries);
     }

@@ -262,3 +262,26 @@ it('recognizes stored database venue flags without accepting null or arbitrary v
     }
     expect(situationalRecords($games)['road_after_home_heavy']['sample_size'])->toBe($expected);
 })->with([[0, 1], ['0', 1], [false, 1], [1, 0], ['1', 0], [true, 0], [null, 0], ['unknown', 0], [2, 0]]);
+
+it('counts international games and their next game including verified byes with source evidence', function (int $week, string $date, ?int $rest, int $expected) {
+    $games = [situationalGame(1, '2026-09-06', 7, true, ['neutral_site' => true]),
+        situationalGame($week, $date, -3, true, ['home_rest' => $rest])];
+    $markets = [1 => ['source' => 'nflverse_schedule_verified', 'evidence_id' => 99,
+        'international' => ['source' => 'nfl_official_international_schedule', 'country' => 'GB', 'stadium' => 'Wembley Stadium']]];
+    $records = collect(app(NflSituationalRecordService::class)->build((object) ['id' => 1], collect($games), $markets)['records'])->keyBy('id');
+    expect($records['in_international']['sample_size'])->toBe(1)
+        ->and($records['in_international']['record']['wins'])->toBe(1)
+        ->and($records['in_international']['venue_evidence'][0]['schedule_evidence_id'])->toBe(99)
+        ->and($records['after_international']['sample_size'])->toBe($expected)
+        ->and($records['after_international']['record']['losses'])->toBe($expected);
+    if ($expected) {
+        expect($records['after_international']['venue_evidence'][0]['venue_game_id'])->toBe(1);
+    }
+})->with([[2, '2026-09-13', 7, 1], [3, '2026-09-20', 14, 1], [3, '2026-09-20', null, 0],
+    [3, '2026-09-20', 7, 0], [4, '2026-09-27', 21, 0]]);
+
+it('never classifies neutral games as international without official evidence', function () {
+    $records = situationalRecords([situationalGame(1, '2026-09-06', 7, true, ['neutral_site' => true]), situationalGame(2, '2026-09-13')]);
+    expect($records['in_international']['sample_size'])->toBe(0)
+        ->and($records['after_international']['sample_size'])->toBe(0);
+});

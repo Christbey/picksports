@@ -62,6 +62,9 @@ class NflMatchupSignalController extends Controller
                     return $game;
                 }
                 $copy = clone $game;
+                if (($evidence['international']['source'] ?? null) === 'nfl_official_international_schedule') {
+                    $copy->neutral_site = true;
+                }
                 $kickoff = Carbon::parse($evidence['kickoff_at'])->utc();
                 $copy->game_date = $kickoff->toDateString();
                 $copy->game_time = $kickoff->format('H:i:s');

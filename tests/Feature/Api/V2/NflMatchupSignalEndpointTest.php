@@ -84,8 +84,8 @@ it('returns descriptive matchup evidence and situational records without approvi
         ->assertJsonPath('data.matchup.predictive_weight', 0)
         ->assertJsonPath('data.matchup.cutoff_at', '2026-09-27T17:00:00+00:00')
         ->assertJsonPath('data.matchup.summary.matched', 0)
-        ->assertJsonPath('data.matchup.summary.situational_records', 57)
-        ->assertJsonPath('data.matchup.summary.unsupported', 176)
+        ->assertJsonPath('data.matchup.summary.situational_records', 59)
+        ->assertJsonPath('data.matchup.summary.unsupported', 174)
         ->assertJsonPath('data.matchup.catalog.350.support', 'situational_records')
         ->assertJsonPath('data.matchup.catalog.351.support', 'situational_records')
         ->assertJsonPath('data.situational.home.team_id', $game->home_team_id)
@@ -158,4 +158,24 @@ it('bounds situational evidence before kickoff and conservatively excludes same 
         $ids = collect($response->json("data.situational.{$side}.records"))->pluck('game_ids')->flatten()->all();
         expect($ids)->not->toContain($game->id, $later->id, $unknownFinish->id);
     }
+});
+
+it('uses verified international context without rewriting the game or counting it as home', function () {
+    Sanctum::actingAs(User::factory()->create());
+    $target = createNflMatchupEndpointGame();
+    $prior = createNflMatchupEndpointGame(['home_team_id' => $target->home_team_id, 'away_team_id' => $target->away_team_id,
+        'week' => 1, 'game_date' => '2026-09-06', 'status' => 'STATUS_FINAL', 'home_score' => 24, 'away_score' => 21,
+        'neutral_site' => false]);
+    $before = $prior->fresh()->getRawOriginal();
+    $evidence = ['source' => 'nflverse_schedule_verified', 'kickoff_at' => '2026-09-06T17:00:00+00:00',
+        'home_handicap' => null, 'home_rest' => 7, 'away_rest' => 7, 'division_game' => false, 'overtime' => false,
+        'international' => ['source' => 'nfl_official_international_schedule', 'country' => 'GB', 'stadium' => 'Wembley Stadium']];
+    DB::table('nfl_matchup_schedule_evidence')->insert(['game_id' => $prior->id, 'evidence_hash' => hash('sha256', json_encode($evidence)),
+        'source_sha256' => str_repeat('a', 64), 'observed_at' => now(), 'evidence' => json_encode($evidence)]);
+    $response = $this->getJson("/api/v2/sports/nfl/games/{$target->id}/matchup-signals")->assertOk();
+    $records = collect($response->json('data.situational.home.records'))->keyBy('id');
+    expect($records['in_international']['sample_size'])->toBe(1)
+        ->and($records['home']['sample_size'])->toBe(0)
+        ->and($records['road']['sample_size'])->toBe(0)
+        ->and($prior->fresh()->getRawOriginal())->toBe($before);
 });

@@ -12,6 +12,8 @@ class NflSituationalRecordService
     public function build(object $team, Collection $games, array $markets = [], array $workloads = []): array
     {
         $definitions = [
+            'in_international' => [344, 'In international games', 'Completed games outside the United States, identified by the official NFL international schedule and verified game identity. Neutral-site designation alone is not evidence of an international game.'],
+            'after_international' => [343, 'Following an international game', 'Next completed game in the same season after an official international game, including a verified 13–21 day bye. Missing intervening weeks without matching provider rest are excluded.'],
             'road_after_home_heavy' => [351, 'Road after a home-heavy stretch', 'Away at a non-neutral site after at least three home games in the previous four completed games. Requires four adjacent schedule weeks in the same season, known venues and kickoffs; neutral games count as neither home nor road.'],
             'home_after_road_heavy' => [352, 'Home after a road-heavy stretch', 'Home at a non-neutral site after at least three away games in the previous four completed games. Requires four adjacent schedule weeks in the same season, known venues and kickoffs; neutral games count as neither home nor road.'],
             'after_70_offensive_snaps' => [302, 'After 70+ offensive snaps', 'Previous adjacent completed game had at least 70 offensive plays: official pass attempts plus rush attempts plus sacks allowed.'],
@@ -110,6 +112,8 @@ class NflSituationalRecordService
                     $matches['home_after_road_heavy'] = $home && $stretch['road_games'] >= 3;
                 }
                 $market = $markets[$game->id] ?? null;
+                $international = $this->internationalEvidence($market);
+                $matches['in_international'] = $international !== null;
                 $homeHandicap = $market['home_handicap'] ?? null;
                 $teamHandicap = $homeHandicap !== null ? ($home ? $homeHandicap : -$homeHandicap) : null;
                 if ($teamHandicap !== null && ! $neutral) {
@@ -139,6 +143,9 @@ class NflSituationalRecordService
                     && (int) $next['game']->week === (int) $game->week + 2
                     && is_numeric($nextRest) && $nextRest >= 13 && $nextRest <= 21 && $nextDays === (int) $nextRest;
                 $matches['opponent_after_bye'] = (int) $game->week > 1 && is_numeric($opponentRest) && $opponentRest >= 13 && $opponentRest <= 21;
+                $priorInternational = $previous ? $this->internationalEvidence($markets[$previous['game']->id] ?? null) : null;
+                $matches['after_international'] = $priorInternational !== null && $previous['valid']
+                    && ($adjacent || $matches['after_bye']);
                 $matches['after_bye_total'] = $matches['after_bye'] && isset($market['total']);
 
                 if ($adjacent && $previous['valid']) {
@@ -176,6 +183,11 @@ class NflSituationalRecordService
                     if ($matchesSituation) {
                         $record = &$records[$id];
                         $record['sample_size']++;
+                        if (in_array($id, ['in_international', 'after_international'], true)) {
+                            $record['venue_evidence'][] = ['game_id' => $game->id,
+                                'venue_game_id' => $id === 'in_international' ? $game->id : $previous['game']->id,
+                                ...($id === 'in_international' ? $international : $priorInternational)];
+                        }
                         if (in_array($id, ['road_after_home_heavy', 'home_after_road_heavy'], true)) {
                             $record['schedule_evidence'][] = ['game_id' => $game->id, ...$stretch];
                         }
@@ -226,6 +238,17 @@ class NflSituationalRecordService
                 'Historical ATS uses only explicitly normalized archived nflverse closing lines, not current mutable odds. These retrospective records are not an as-known betting backtest. Missing scores, lines and prior history are excluded, not counted as losses.',
             ],
         ];
+    }
+
+    private function internationalEvidence(?array $market): ?array
+    {
+        if (($market['source'] ?? null) !== 'nflverse_schedule_verified'
+            || ($market['international']['source'] ?? null) !== 'nfl_official_international_schedule') {
+            return null;
+        }
+
+        return [...$market['international'], 'schedule_evidence_id' => $market['evidence_id'] ?? null,
+            'schedule_source_sha256' => $market['source_sha256'] ?? null, 'observed_at' => $market['observed_at'] ?? null];
     }
 
     private function priorVenueStretch(Collection $rows, int $index, int $teamId): ?array

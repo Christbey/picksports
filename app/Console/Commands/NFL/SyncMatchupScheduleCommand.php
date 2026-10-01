@@ -3,6 +3,7 @@
 namespace App\Console\Commands\NFL;
 
 use App\Models\NFL\Game;
+use App\Services\NFL\Matchups\NflInternationalGameEvidence;
 use App\Services\NFL\NflGameQuarterbackIdentitySync;
 use App\Services\ProviderData\ProviderSourceStorage;
 use Carbon\CarbonImmutable;
@@ -73,6 +74,7 @@ class SyncMatchupScheduleCommand extends Command
                     'total' => $number('total_line'), 'home_rest' => $number('home_rest'), 'away_rest' => $number('away_rest'),
                     'division_game' => in_array($row['div_game'], ['0', '1'], true) ? $row['div_game'] === '1' : null,
                     'overtime' => in_array($row['overtime'], ['0', '1'], true) ? $row['overtime'] === '1' : null];
+                $evidence['international'] = app(NflInternationalGameEvidence::class)->forScheduleRow($row);
                 if (($evidence['home_handicap'] !== null && abs($evidence['home_handicap']) > 60)
                     || ($evidence['total'] !== null && ($evidence['total'] <= 0 || $evidence['total'] >= 150))) {
                     $blocked[] = $game->id;

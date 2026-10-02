@@ -2,6 +2,7 @@
 
 use App\Models\NFL\Game;
 use App\Models\NFL\Team;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -16,8 +17,14 @@ function trackingDefenseCsv(string $rows = "2026,REG,2026_01_DEN_KC,DEN,KC,Defen
     return "season,game_type,game_id,team,opponent,pfr_player_id,def_tackles_combined,def_missed_tackles\n".$rows;
 }
 
+function trackingRushingCsv(string $rows = "2026,REG,2026_01_DEN_KC,DEN,KC,Rusher01,10,-2,30\n"): string
+{
+    return "season,game_type,game_id,team,opponent,pfr_player_id,carries,rushing_yards_before_contact,rushing_yards_after_contact\n".$rows;
+}
+
 beforeEach(function () {
     $this->travelTo(now()->setDate(2026, 10, 1));
+    Http::preventStrayRequests();
     Storage::fake('provider-local');
     config(['provider-data.storage.disk' => 'provider-local']);
     $home = Team::factory()->create();
@@ -28,20 +35,20 @@ beforeEach(function () {
 });
 
 it('imports weekly tracking and tackle opportunities without counting season totals', function () {
-    Http::fake([
+    Http::fake(['*advstats_week_rush_2026.csv' => Http::response(trackingRushingCsv()),
         '*ngs_passing.csv.gz' => Http::response(gzencode(trackingPassingCsv("2026,REG,0,DEN,00-0001031,QB,9,80\n2026,REG,1,DEN,00-0001031,QB,2.5,20\n"))),
         '*advstats_week_def_2026.csv' => Http::response(trackingDefenseCsv()),
     ]);
     $this->artisan('nfl:sync-matchup-tracking --season=2026')->assertSuccessful();
     $qb = DB::table('nfl_matchup_tracking_samples')->where('metric', 'release_time')->first();
     $tackles = DB::table('nfl_matchup_tracking_samples')->where('metric', 'missed_tackles')->first();
-    expect(DB::table('nfl_matchup_tracking_samples')->count())->toBe(2)
+    expect(DB::table('nfl_matchup_tracking_samples')->count())->toBe(4)
         ->and($qb->player_id)->toBe('gsis:00-0001031')->and((float) $qb->value)->toBe(2.5)
         ->and((int) $tackles->sample_size)->toBe(6)->and((float) $tackles->value)->toBe(1.0);
 });
 
 it('publishes neither source when the defensive source is corrupt', function (string $defense) {
-    Http::fake(['*ngs_passing.csv.gz' => Http::response(gzencode(trackingPassingCsv())), '*advstats_week_def_2026.csv' => Http::response($defense)]);
+    Http::fake(['*advstats_week_rush_2026.csv' => Http::response(trackingRushingCsv()), '*ngs_passing.csv.gz' => Http::response(gzencode(trackingPassingCsv())), '*advstats_week_def_2026.csv' => Http::response($defense)]);
     $this->artisan('nfl:sync-matchup-tracking --season=2026')->assertFailed();
     expect(DB::table('nfl_matchup_tracking_samples')->count())->toBe(0);
 })->with([
@@ -52,7 +59,7 @@ it('publishes neither source when the defensive source is corrupt', function (st
 ]);
 
 it('rejects invalid QB values or duplicate weekly identities', function (string $passing) {
-    Http::fake(['*ngs_passing.csv.gz' => Http::response(gzencode($passing)), '*advstats_week_def_2026.csv' => Http::response(trackingDefenseCsv())]);
+    Http::fake(['*advstats_week_rush_2026.csv' => Http::response(trackingRushingCsv()), '*ngs_passing.csv.gz' => Http::response(gzencode($passing)), '*advstats_week_def_2026.csv' => Http::response(trackingDefenseCsv())]);
     $this->artisan('nfl:sync-matchup-tracking --season=2026')->assertFailed();
     expect(DB::table('nfl_matchup_tracking_samples')->count())->toBe(0);
 })->with([
@@ -62,9 +69,39 @@ it('rejects invalid QB values or duplicate weekly identities', function (string 
 ]);
 
 it('preserves unknown tackle measurements rather than converting them to zero', function () {
-    Http::fake(['*ngs_passing.csv.gz' => Http::response(gzencode(trackingPassingCsv())),
+    Http::fake(['*advstats_week_rush_2026.csv' => Http::response(trackingRushingCsv()), '*ngs_passing.csv.gz' => Http::response(gzencode(trackingPassingCsv())),
         '*advstats_week_def_2026.csv' => Http::response(trackingDefenseCsv("2026,REG,2026_01_DEN_KC,DEN,KC,Defender01,5,\n"))]);
     $this->artisan('nfl:sync-matchup-tracking --season=2026')->assertSuccessful();
     $row = DB::table('nfl_matchup_tracking_samples')->where('metric', 'missed_tackles')->first();
     expect($row->value)->toBeNull()->and($row->sample_size)->toBeNull();
 });
+
+it('preserves negative contact yards and missing values and imports idempotently', function () {
+    Http::fake(['*ngs_passing.csv.gz' => Http::response(gzencode(trackingPassingCsv())),
+        '*advstats_week_def_2026.csv' => Http::response(trackingDefenseCsv()),
+        '*advstats_week_rush_2026.csv' => Http::response(trackingRushingCsv("2026,REG,2026_01_DEN_KC,DEN,KC,Rusher01,10,-2,\n"))]);
+    $this->artisan('nfl:sync-matchup-tracking --season=2026')->assertSuccessful();
+    $this->artisan('nfl:sync-matchup-tracking --season=2026')->assertSuccessful();
+    expect(DB::table('nfl_matchup_tracking_samples')->count())->toBe(4)
+        ->and((float) DB::table('nfl_matchup_tracking_samples')->where('metric', 'rush_ybc')->value('value'))->toBe(-2.0)
+        ->and(DB::table('nfl_matchup_tracking_samples')->where('metric', 'rush_yac')->value('value'))->toBeNull();
+});
+
+it('keeps existing samples intact when rushing identities or measurements fail validation', function (string $rows) {
+    Http::fake(['*advstats_week_rush_2026.csv' => Http::response(trackingRushingCsv()), '*ngs_passing.csv.gz' => Http::response(gzencode(trackingPassingCsv())),
+        '*advstats_week_def_2026.csv' => Http::response(trackingDefenseCsv())]);
+    $this->artisan('nfl:sync-matchup-tracking --season=2026')->assertSuccessful();
+    $before = DB::table('nfl_matchup_tracking_samples')->orderBy('id')->get()->toJson();
+    Http::swap(new Factory);
+    Http::preventStrayRequests();
+    Http::fake(['*ngs_passing.csv.gz' => Http::response(gzencode(trackingPassingCsv())),
+        '*advstats_week_def_2026.csv' => Http::response(trackingDefenseCsv()),
+        '*advstats_week_rush_2026.csv' => Http::response(trackingRushingCsv($rows))]);
+    $this->artisan('nfl:sync-matchup-tracking --season=2026')->assertFailed();
+    expect(DB::table('nfl_matchup_tracking_samples')->orderBy('id')->get()->toJson())->toBe($before);
+})->with([
+    "2026,REG,2026_01_DEN_KC,DEN,KC,Rusher01,-1,5,5\n",
+    "2026,REG,2026_01_DEN_KC,DEN,SEA,Rusher01,10,5,5\n",
+    "2026,REG,2026_01_DEN_KC,DEN,KC,Rusher01,0,5,5\n",
+    "2026,REG,2026_01_DEN_KC,DEN,KC,Rusher01,10,5,5\n2026,REG,2026_01_DEN_KC,DEN,KC,Rusher01,10,5,5\n",
+]);

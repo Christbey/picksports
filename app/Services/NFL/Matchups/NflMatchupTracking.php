@@ -88,11 +88,58 @@ final class NflMatchupTracking
                 'missed_tackles' => $misses, 'rank' => null, 'source' => 'PFR player missed tackles and combined tackles via nflverse'];
         }
         $result['missed_tackle_rate']['defense'] = $this->rank($defense, false);
+        foreach ($this->contactYards($games, $saved, $expected) as $metric => $samples) {
+            $result[$metric] = $samples;
+        }
 
         return $result;
     }
 
-    private function rank(array $samples, bool $quarterbacks): array
+    private function contactYards(Collection $games, Collection $saved, array $expected): array
+    {
+        $carries = DB::table('nflverse_pbp_plays')->whereIn('nfl_game_id', $games->keys())
+            ->whereIn('play_type', ['run', 'qb_kneel'])
+            ->where(fn ($q) => $q->whereNull('description')->orWhereRaw('LOWER(description) NOT LIKE ?', ['%no play%']))
+            ->where(fn ($q) => $q->whereNull('description')->orWhereRaw('LOWER(description) NOT LIKE ?', ['%two-point conversion attempt%']))
+            ->select(['nfl_game_id', 'possession_team_id', 'defense_team_id'])->selectRaw('COUNT(*) AS carries')
+            ->groupBy('nfl_game_id', 'possession_team_id', 'defense_team_id')->get()
+            ->keyBy(fn ($row) => $row->nfl_game_id.'|'.$row->possession_team_id.'|'.$row->defense_team_id);
+        $result = [];
+        foreach (['rush_ybc', 'rush_yac'] as $metric) {
+            $samples = $saved->where('metric', $metric)->groupBy(fn ($row) => $row->game_id.'|'.$row->team_id);
+            $buckets = [];
+            foreach ($games as $game) {
+                foreach ([[$game->home_team_id, $game->away_team_id], [$game->away_team_id, $game->home_team_id]] as [$offense, $defense]) {
+                    $rows = $samples->get($game->id.'|'.$offense, collect());
+                    $count = (int) $rows->sum('sample_size');
+                    $observed = (int) ($carries->get($game->id.'|'.$offense.'|'.$defense)?->carries ?? 0);
+                    $valid = $count >= 8 && $observed >= 8
+                        && min($count, $observed) >= max($count, $observed) * .9
+                        && $rows->every(fn ($row) => $row->value !== null && $row->sample_size !== null);
+                    foreach (['offense' => $offense, 'defense' => $defense] as $side => $team) {
+                        if ($valid) {
+                            $buckets[$side][$team][$game->id] = ['yards' => (float) $rows->sum('value'), 'carries' => $count];
+                        }
+                    }
+                }
+            }
+            foreach (['offense', 'defense'] as $side) {
+                $teams = [];
+                foreach ($expected as $team => $ids) {
+                    $rows = $buckets[$side][$team] ?? [];
+                    $count = array_sum(array_column($rows, 'carries'));
+                    $eligible = count($ids) >= 2 && count($rows) === count($ids);
+                    $teams[$team] = ['eligible' => $eligible, 'value' => $eligible && $count ? array_sum(array_column($rows, 'yards')) / $count : null,
+                        'games' => count($rows), 'game_ids' => array_keys($rows), 'plays' => $count, 'rank' => null];
+                }
+                $result[$metric][$side] = $this->rank($teams, false, $side === 'offense');
+            }
+        }
+
+        return $result;
+    }
+
+    private function rank(array $samples, bool $quarterbacks, bool $descending = false): array
     {
         $eligible = array_filter($samples, fn ($s) => $s['eligible']);
         foreach ($samples as &$sample) {
@@ -100,7 +147,7 @@ final class NflMatchupTracking
             if (! $sample['eligible'] || count($eligible) < ($quarterbacks ? 24 : 32)) {
                 continue;
             }
-            $sample['rank'] = 1 + count(array_filter($eligible, fn ($other) => $other['value'] < $sample['value'] - 1e-9));
+            $sample['rank'] = 1 + count(array_filter($eligible, fn ($other) => $descending ? $other['value'] > $sample['value'] + 1e-9 : $other['value'] < $sample['value'] - 1e-9));
             $sample['rank_end'] = $sample['rank'] - 1 + count(array_filter($eligible, fn ($other) => abs($other['value'] - $sample['value']) < 1e-9));
             $sample['league_average'] = array_sum(array_column($eligible, 'value')) / count($eligible);
         }

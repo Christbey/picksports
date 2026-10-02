@@ -28,7 +28,7 @@ final class NflMatchupQuarterbacks
             'rpo' => ['ftn_is_rpo = 1', 'ftn_is_rpo IS NOT NULL'],
         ];
         foreach (['man' => ['participation_man_zone', 'MAN_COVERAGE'], 'zone' => ['participation_man_zone', 'ZONE_COVERAGE'],
-            'cover_1' => ['participation_coverage', 'COVER_1'], 'cover_2' => ['participation_coverage', 'COVER_2'], 'cover_3' => ['participation_coverage', 'COVER_3']] as $key => [$field, $code]) {
+            'cover_1' => ['participation_coverage', 'COVER_1'], 'cover_2' => ['participation_coverage', 'COVER_2'], 'cover_3' => ['participation_coverage', 'COVER_3'], 'cover_4' => ['participation_coverage', 'COVER_4']] as $key => [$field, $code]) {
             $splits[$key] = ["{$field} = '{$code}'", "{$field} IS NOT NULL"];
         }
         $fumbleKnown = "(is_fumble_lost = 0 OR (is_fumble_lost = 1 AND NULLIF(fumbled_1_player_id, '') IS NOT NULL AND NULLIF(fumbled_2_player_id, '') IS NULL))";

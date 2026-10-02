@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.25';
+    public const VERSION = '2026-10-01.26';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -117,7 +117,7 @@ final class NflMatchupSignalCatalog
         $rules[228] = ['metric' => 'qb_turnover_rate', 'defense_metric' => 'takeaway_play_rate', 'offense' => 'bottom', 'defense' => 'top', 'size' => 10];
         $rules[248] = ['metric' => 'wr_target_weight', 'defense_metric' => 'cb_weight', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
         $rules[249] = ['metric' => 'wr_target_height', 'defense_metric' => 'secondary_height', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
-        foreach ([201 => 'man', 203 => 'zone', 205 => 'cover_1', 207 => 'cover_2', 209 => 'cover_3'] as $id => $coverage) {
+        foreach ([201 => 'man', 203 => 'zone', 205 => 'cover_1', 207 => 'cover_2', 209 => 'cover_3', 211 => 'cover_4'] as $id => $coverage) {
             foreach (['top', 'bottom'] as $offset => $band) {
                 $rules[$id + $offset] = ['metric' => 'qb_'.$coverage.'_epa', 'defense_metric' => $coverage.'_rate',
                     'offense' => $band, 'defense' => 'bottom', 'size' => 10, 'coverage' => true];
@@ -142,6 +142,10 @@ final class NflMatchupSignalCatalog
         }
         $rules[222] = ['metric' => 'qb_release_time', 'defense_metric' => 'pressure_rate', 'offense' => 'top', 'defense' => 'top', 'size' => 10];
         $rules[223] = ['metric' => 'qb_release_time', 'defense_metric' => 'pressure_rate', 'offense' => 'bottom', 'defense' => 'top', 'size' => 10];
+        $rules[107] = ['metric' => 'rush_ybc', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
+        $rules[108] = ['metric' => 'rush_ybc', 'offense' => 'bottom', 'defense' => 'top', 'size' => 10];
+        $rules[109] = ['metric' => 'rush_yac', 'defense_metric' => 'missed_tackle_rate', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
+        $rules[218] = ['metric' => 'qb_scramble_rate', 'defense_metric' => 'man_rate', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10, 'coverage' => true];
         ksort($rules);
 
         return $rules;
@@ -189,6 +193,9 @@ final class NflMatchupSignalCatalog
             }
             if ($entry['id'] === 179) {
                 $positionInputs = ['Verified PFR pressure counts and complete league dropbacks', 'FTN exact pass-rusher counts joined to game/play identities', 'At least two complete prior games for all 32 teams'];
+            }
+            if (in_array($entry['id'], [107, 108, 109], true)) {
+                $positionInputs = ['PFR weekly rushing contact yards and carries via nflverse', 'Verified game/team/opponent mapping and complete play-by-play carry counts', 'Complete current-season samples for all 32 teams; PFR team missed tackles for rule 109'];
             }
             if (in_array($entry['id'], [85, 86, 255], true)) {
                 $positionInputs = ['Completed-pass yards after catch and complete league play-by-play', 'PFR missed and combined tackle counts for every prior team game', 'Unambiguous season/team WR roster positions for the WR-only rule'];
@@ -358,9 +365,9 @@ final class NflMatchupSignalCatalog
 104. Bottom-5 rush EPA vs bottom-5 run defense
 105. Top-10 rush success vs bottom-10 run defense
 106. Bottom-10 rush success vs top-10 run defense
-107. High yards-before-contact vs weak defensive front
-108. Low yards-before-contact vs elite front
-109. High yards-after-contact vs poor tackling defense
+107. High rushing yards before contact vs high yards before contact allowed
+108. Low rushing yards before contact vs low yards before contact allowed
+109. High rushing yards after contact vs high team missed-tackle rate
 110. Explosive rushing offense vs explosive runs allowed
 111. Outside-zone offense vs weak outside-zone defense
 112. Outside-zone offense vs elite outside-zone defense
@@ -469,7 +476,7 @@ final class NflMatchupSignalCatalog
 215. QB strong vs single-high
 216. QB weak vs single-high
 217. Mobile QB vs weak contain defense
-218. Scrambling QB vs man coverage
+218. High selected-QB scramble rate vs man-heavy defense
 219. High QB scramble rate vs defense allowing explosive QB runs
 220. QB deep-ball strength vs weak deep defense
 221. Poor deep passer vs defense forcing deep throws

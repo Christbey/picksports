@@ -12,7 +12,7 @@ class SyncMatchupTrackingCommand extends Command
 {
     protected $signature = 'nfl:sync-matchup-tracking {--season= : Required season}';
 
-    protected $description = 'Import free NGS release times and PFR missed tackles via nflverse for independent matchup analysis';
+    protected $description = 'Import free NGS release times and PFR rushing contact yards and missed tackles via nflverse for independent matchup analysis';
 
     public function handle(ProviderSourceStorage $sources): int
     {
@@ -32,7 +32,8 @@ class SyncMatchupTrackingCommand extends Command
             $skipped = 0;
             $seen = [];
             foreach (['release_time' => 'https://github.com/nflverse/nflverse-data/releases/download/nextgen_stats/ngs_passing.csv.gz',
-                'missed_tackles' => "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_def_{$season}.csv"] as $metric => $url) {
+                'missed_tackles' => "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_def_{$season}.csv",
+                'rushing_contact' => "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rush_{$season}.csv"] as $metric => $url) {
                 $path = tempnam(sys_get_temp_dir(), 'nfl-tracking-');
                 $paths[] = $path;
                 $body = Http::connectTimeout(15)->timeout(120)->retry(2, 1000)->get($url)->throw()->body();
@@ -47,7 +48,7 @@ class SyncMatchupTrackingCommand extends Command
                 $header = fgetcsv($stream, escape: '');
                 $required = $metric === 'release_time'
                     ? ['season', 'season_type', 'week', 'team_abbr', 'player_gsis_id', 'player_position', 'avg_time_to_throw', 'attempts']
-                    : ['season', 'game_type', 'game_id', 'team', 'opponent', 'pfr_player_id', 'def_tackles_combined', 'def_missed_tackles'];
+                    : ['season', 'game_type', 'game_id', 'team', 'opponent', 'pfr_player_id', ...($metric === 'rushing_contact' ? ['carries', 'rushing_yards_before_contact', 'rushing_yards_after_contact'] : ['def_tackles_combined', 'def_missed_tackles'])];
                 if (! is_array($header) || count(array_unique($header)) !== count($header) || array_diff($required, $header)) {
                     throw new RuntimeException('Invalid tracking header; no samples updated.');
                 }
@@ -79,9 +80,18 @@ class SyncMatchupTrackingCommand extends Command
                         $key = $row['game_id'].'|'.$this->team($row['team']);
                         $matches = $byGame->get($key);
                         $player = 'pfr:'.$row['pfr_player_id'];
-                        $value = $this->number($row['def_missed_tackles'], 0, 100, true);
-                        $tackles = $this->number($row['def_tackles_combined'], 0, 100, true);
-                        $size = $value !== null && $tackles !== null ? $value + $tackles : null;
+                        if ($metric === 'rushing_contact') {
+                            $value = $this->number($row['rushing_yards_before_contact'], -100, 500, true);
+                            $afterContact = $this->number($row['rushing_yards_after_contact'], -100, 500, true);
+                            $size = $this->number($row['carries'], 0, 100, true);
+                            if ($size === 0 && (($value !== null && $value !== 0) || ($afterContact !== null && $afterContact !== 0))) {
+                                throw new RuntimeException('Contact yardage without carries; no samples updated.');
+                            }
+                        } else {
+                            $value = $this->number($row['def_missed_tackles'], 0, 100, true);
+                            $tackles = $this->number($row['def_tackles_combined'], 0, 100, true);
+                            $size = $value !== null && $tackles !== null ? $value + $tackles : null;
+                        }
                     }
                     $identity = $metric.'|'.$key.'|'.$player;
                     if (isset($seen[$identity])) {
@@ -93,19 +103,25 @@ class SyncMatchupTrackingCommand extends Command
 
                         continue;
                     }
-                    if ($matches->count() !== 1 || ($metric === 'missed_tackles' && $matches->first()->defense_team !== $this->team($row['opponent']))) {
+                    if ($matches->count() !== 1 || ($metric !== 'release_time' && $matches->first()->defense_team !== $this->team($row['opponent']))) {
                         throw new RuntimeException('Ambiguous tracking game or opponent mismatch; no samples updated.');
                     }
                     $game = $matches->first();
                     $updates[] = ['game_id' => $game->nfl_game_id, 'team_id' => $game->possession_team_id, 'season' => $season,
-                        'metric' => $metric, 'player_id' => $player, 'value' => $value, 'sample_size' => $size, 'observed_at' => now()->toDateTimeString()];
+                        'metric' => $metric === 'rushing_contact' ? 'rush_ybc' : $metric, 'player_id' => $player, 'value' => $value, 'sample_size' => $size, 'observed_at' => now()->toDateTimeString()];
+                    if ($metric === 'rushing_contact') {
+                        $updates[] = ['game_id' => $game->nfl_game_id, 'team_id' => $game->possession_team_id, 'season' => $season,
+                            'metric' => 'rush_yac', 'player_id' => $player, 'value' => $afterContact, 'sample_size' => $size, 'observed_at' => now()->toDateTimeString()];
+                    }
                     $sourceCount++;
                 }
                 fclose($stream);
                 if ($sourceCount === 0) {
                     throw new RuntimeException('No verified samples for '.$metric.'; no samples updated.');
                 }
-                $sources->archive('nflverse', $metric === 'release_time' ? 'ngs-passing' : 'pfr-defensive-tackles', $path, ['source_url' => $url, 'season' => $season]);
+                $sources->archive('nflverse', match ($metric) {
+                    'release_time' => 'ngs-passing', 'rushing_contact' => 'pfr-rushing-contact', default => 'pfr-defensive-tackles'
+                }, $path, ['source_url' => $url, 'season' => $season]);
                 $this->line($metric.': '.$sourceCount.' verified samples.');
             }
             DB::transaction(function () use ($season, $updates): void {

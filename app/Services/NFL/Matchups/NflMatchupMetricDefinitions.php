@@ -15,7 +15,7 @@ final class NflMatchupMetricDefinitions
         return [
             'charted_pressure_rate' => [$pass, '1=0', 'participation_pressure', 'participation_pressure', 15],
             'four_rusher_pressure_rate' => ["{$pass} AND participation_rushers = 4", "{$pass} AND participation_rushers IS NULL", 'participation_pressure', 'participation_pressure', 10],
-            'wr_zone_target_epa' => ["{$attempt} AND participation_man_zone = 'ZONE_COVERAGE' AND catch_roster.roster_position = 'WR'", "{$attempt} AND (participation_man_zone IS NULL OR catch_roster.roster_position IS NULL)", 'epa', 'epa', 5],
+            'wr_zone_target_epa' => ["{$attempt} AND participation_man_zone = 'ZONE_COVERAGE' AND catch_roster.roster_position = 'WR'", "{$attempt} AND NULLIF(receiver_player_id, '') IS NOT NULL AND (catch_roster.roster_position IS NULL OR (catch_roster.roster_position = 'WR' AND participation_man_zone IS NULL))", 'epa', 'epa', 5],
             'zone_pass_epa' => ["{$pass} AND participation_man_zone = 'ZONE_COVERAGE'", "{$pass} AND participation_man_zone IS NULL", 'epa', 'epa', 10],
             'personnel_11_rate' => ['1=1', '1=0', 'participation_offense_package', "CASE WHEN participation_offense_package = '11' THEN 1 ELSE 0 END", 15],
             'personnel_12_rate' => ['1=1', '1=0', 'participation_offense_package', "CASE WHEN participation_offense_package = '12' THEN 1 ELSE 0 END", 15],

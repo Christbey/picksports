@@ -1792,3 +1792,18 @@ it('requires a known available selected QB and never silently borrows historical
         expect(matchupSignal($result, $id, $target->home_team_id)['status'])->toBe('insufficient_data');
     }
 });
+
+it('excludes passes without a receiver from WR target samples while withholding unidentified receiver positions', function () {
+    [$target] = participationMatchupLeague();
+    $service = app(NflMatchupSignalService::class);
+    $ids = DB::table('nflverse_pbp_plays')->where('possession_team_id', $target->home_team_id)->where('play_type', 'pass')
+        ->where('is_sack', false)->get()->groupBy('nfl_game_id');
+    foreach ($ids as $rows) {
+        DB::table('nflverse_pbp_plays')->whereIn('id', $rows->take(5)->pluck('id'))->update(['receiver_player_id' => null]);
+    }
+    expect(matchupSignal($service->build($target), 253, $target->home_team_id)['status'])->toBe('matched');
+    foreach ($ids as $rows) {
+        DB::table('nflverse_pbp_plays')->whereIn('id', $rows->take(5)->pluck('id'))->update(['receiver_player_id' => 'unmapped-receiver']);
+    }
+    expect(matchupSignal($service->build($target), 253, $target->home_team_id)['status'])->toBe('insufficient_data');
+});

@@ -140,6 +140,9 @@ const value = (number: number | null | undefined) =>
                             <template v-if="signal.evidence.personnel_only"
                                 >projected offensive line:</template
                             >
+                            <template v-else-if="signal.evidence.offense_only"
+                                >offense condition:</template
+                            >
                             <template v-else
                                 >offense vs
                                 {{ team(signal.defense_team_id) }}
@@ -158,12 +161,21 @@ const value = (number: number | null | undefined) =>
                             {{ signal.evidence.offense.rank ?? 'unavailable' }}
                             · {{ signal.evidence.offense.games }} games
                         </p>
-                        <p v-if="!signal.evidence.personnel_only">
+                        <p
+                            v-if="
+                                !signal.evidence.personnel_only &&
+                                !signal.evidence.offense_only
+                            "
+                        >
                             {{ defenseEvidenceText(signal.evidence.defense) }}
                         </p>
                         <p v-if="diagnostics">{{ signal.reason }}</p>
                         <p>
-                            <template v-if="!signal.evidence.personnel_only"
+                            <template
+                                v-if="
+                                    !signal.evidence.personnel_only &&
+                                    !signal.evidence.offense_only
+                                "
                                 >League coverage:
                                 {{ signal.evidence.league_teams }}
                                 teams.</template

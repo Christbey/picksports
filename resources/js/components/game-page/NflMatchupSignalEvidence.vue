@@ -66,6 +66,9 @@ const unavailable = computed(() =>
                     <template v-if="signal.evidence.personnel_only"
                         >projected offensive line</template
                     >
+                    <template v-else-if="signal.evidence.offense_only"
+                        >offense condition</template
+                    >
                     <template v-else
                         >offense ·
                         {{ team(signal.defense_team_id) }} defense</template
@@ -77,7 +80,11 @@ const unavailable = computed(() =>
                     class="mt-2 text-xs text-muted-foreground"
                 >
                     {{ signal.evidence.offense.display_value }}
-                    <template v-if="!signal.evidence.personnel_only"
+                    <template
+                        v-if="
+                            !signal.evidence.personnel_only &&
+                            !signal.evidence.offense_only
+                        "
                         ><br />{{
                             defenseEvidenceText(signal.evidence.defense)
                         }}</template
@@ -87,8 +94,16 @@ const unavailable = computed(() =>
                     {{ signal.evidence.offense.player_name ?? 'Offense' }}
                     {{ value(signal.evidence.offense.value) }} · rank
                     {{ signal.evidence.offense.rank ?? '—' }} ·
-                    {{ signal.evidence.offense.games }} games<br />
-                    {{ defenseEvidenceText(signal.evidence.defense) }}
+                    {{ signal.evidence.offense.games }} games
+                    <template
+                        v-if="
+                            !signal.evidence.personnel_only &&
+                            !signal.evidence.offense_only
+                        "
+                        ><br />{{
+                            defenseEvidenceText(signal.evidence.defense)
+                        }}</template
+                    >
                 </p>
             </div>
         </div>

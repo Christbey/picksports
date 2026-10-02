@@ -73,8 +73,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(156)
-        ->and($result['signals'])->toHaveCount(312)
+    expect($result['summary']['supported_rules'])->toBe(157)
+        ->and($result['signals'])->toHaveCount(314)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -147,7 +147,7 @@ it('ranks offense higher and EPA allowed lower with grouped queries and independ
         ->and(matchupSignal($result, 51, $target->home_team_id)['status'])->toBe('matched')
         ->and(matchupSignal($result, 101, $target->home_team_id)['status'])->toBe('matched')
         ->and($result['predictive_weight'])->toBe(0)
-        ->and(collect($queries)->filter(fn ($q) => str_contains($q['query'], 'nflverse_pbp_plays')))->toHaveCount(5);
+        ->and(collect($queries)->filter(fn ($q) => str_contains($q['query'], 'nflverse_pbp_plays')))->toHaveCount(6);
     $target->home_team_id = $teams[0]->id;
     $target->away_team_id = $teams[1]->id;
     $result = app(NflMatchupSignalService::class)->build($target);
@@ -1176,4 +1176,54 @@ it('requires read coverage in every QB appearance and a qualified ranking popula
     DB::table('nflverse_pbp_plays')->whereIn('possession_team_id', $teams->take(9)->pluck('id'))->update(['ftn_read_thrown' => null]);
     $signal = matchupSignal($service->build($target), 224, $target->home_team_id);
     expect($signal['status'])->toBe('insufficient_data')->and($signal['reason'])->toContain('24 qualified');
+});
+
+it('counts explicit false starts including penalty no-plays only for the road offense', function () {
+    [$target, $teams, $games] = matchupSignalLeague();
+    DB::table('nflverse_pbp_plays')->update(['is_penalty' => false]);
+    $target->away_team_id = $teams[0]->id;
+    $penalties = [];
+    foreach ($games as $game) {
+        if ((int) $game->home_team_id !== (int) $teams[0]->id) {
+            continue;
+        }
+        for ($i = 0; $i < 4; $i++) {
+            $penalties[] = ['nflverse_play_key' => 'false-start-'.$game->id.'-'.$i, 'nfl_game_id' => $game->id,
+                'possession_team_id' => $teams[0]->id, 'defense_team_id' => $teams[31]->id,
+                'play_type' => 'no_play', 'description' => 'False Start. No Play.',
+                'is_penalty' => true, 'penalty_type' => 'False Start', 'penalty_team_id' => $teams[0]->id];
+        }
+    }
+    DB::table('nflverse_pbp_plays')->insert($penalties);
+    $service = app(NflMatchupSignalService::class);
+    $signal = matchupSignal($service->build($target), 182, $teams[0]->id);
+    expect($signal['status'])->toBe('matched')
+        ->and($signal['evidence']['offense']['value'])->toEqualWithDelta(12 / 132, .000001)
+        ->and($signal['evidence']['league_teams'])->toBe(32)
+        ->and($signal['evidence']['offense_only'])->toBeTrue();
+
+    DB::table('nflverse_pbp_plays')->where('nflverse_play_key', $penalties[0]['nflverse_play_key'])->update(['penalty_team_id' => $teams[31]->id, 'penalty_type' => 'Defensive Offside']);
+    $signal = matchupSignal($service->build($target), 182, $teams[0]->id);
+    expect($signal['evidence']['offense']['value'])->toEqualWithDelta(11 / 132, .000001);
+    $target->neutral_site = true;
+    expect(matchupSignal($service->build($target), 182, $teams[0]->id)['status'])->toBe('not_matched');
+    $target->neutral_site = false;
+    $target->home_team_id = $teams[0]->id;
+    $target->away_team_id = $teams[31]->id;
+    expect(matchupSignal($service->build($target), 182, $teams[0]->id)['status'])->toBe('not_matched');
+
+    DB::table('nflverse_pbp_plays')->where('nflverse_play_key', $penalties[1]['nflverse_play_key'])->update(['penalty_type' => null]);
+    expect(matchupSignal($service->build($target), 182, $teams[0]->id)['status'])->toBe('insufficient_data');
+});
+
+it('does not infer false starts from penalty text or missing classification', function () {
+    [$target, $teams] = matchupSignalLeague();
+    $service = app(NflMatchupSignalService::class);
+    expect(matchupSignal($service->build($target), 182, $target->away_team_id)['status'])->toBe('insufficient_data');
+    DB::table('nflverse_pbp_plays')->update(['is_penalty' => false, 'description' => 'False Start']);
+    $signal = matchupSignal($service->build($target), 182, $target->away_team_id);
+    expect($signal['status'])->toBe('not_matched')->and($signal['evidence']['offense']['value'])->toEqual(0);
+    DB::table('nflverse_pbp_plays')->where('possession_team_id', $teams[0]->id)->update(['is_penalty' => null]);
+    $signal = matchupSignal($service->build($target), 182, $target->away_team_id);
+    expect($signal['status'])->toBe('insufficient_data')->and($signal['reason'])->toContain('all 32');
 });

@@ -306,3 +306,33 @@ test('defensive personnel evidence displays absences without a fictitious rank',
         'Defense -0.250 · rank 4 · 3 games',
     );
 });
+
+test('road false-start evidence does not display a fabricated defense comparison', async () => {
+    const { default: component } = await server.ssrLoadModule(
+        '/resources/js/components/game-page/NflMatchupSignalEvidence.vue',
+    );
+    const data = fixture();
+    const penalty = signal(182, 'matched', 'false_start_rate');
+    penalty.label = 'High false-start rate in road environment';
+    penalty.evidence.offense_only = true;
+    penalty.evidence.offense.display_value =
+        '3.00 false starts per 100 offensive opportunities';
+    penalty.evidence.defense = { value: null, rank: null, games: 0 };
+    data.matchup.signals = [penalty];
+    data.matchup.catalog = [
+        {
+            id: 182,
+            label: penalty.label,
+            category: 'offensive_line',
+            support: 'implemented',
+            reason: null,
+        },
+    ];
+    const html = await renderToString(createSSRApp(component, { data }));
+    assert.match(html, /3.00 false starts per 100 offensive opportunities/);
+    assert.match(html, /offense condition/);
+    assert.doesNotMatch(
+        html,
+        /Defense Unavailable|projected offensive line|offense vs/,
+    );
+});

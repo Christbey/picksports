@@ -19,6 +19,7 @@ export interface NflMatchupSignal {
     reason: string | null;
     evidence: {
         personnel_only?: boolean;
+        offense_only?: boolean;
         metric: string;
         definition?: string;
         source: string;

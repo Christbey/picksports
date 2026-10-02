@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.15';
+    public const VERSION = '2026-10-01.16';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -112,6 +112,7 @@ final class NflMatchupSignalCatalog
         }
         $rules[236] = ['metric' => 'qb_recent_change', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'epa', 'offense' => 'any', 'defense' => 'top', 'size' => 10];
         $rules[224] = ['metric' => 'qb_checkdown_rate', 'defense_metric' => 'short_pass_epa', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
+        $rules[182] = ['metric' => 'false_start_rate', 'offense_only' => true, 'venue' => 'road', 'offense' => 'top', 'defense' => 'any', 'size' => 10];
         ksort($rules);
 
         return $rules;

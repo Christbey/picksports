@@ -148,6 +148,23 @@ final class NflMatchupSignalService
             }
         }
         if ($games->isNotEmpty()) {
+            $penalties = DB::table('nflverse_pbp_plays')->whereIn('nfl_game_id', $games->keys())
+                ->where(fn ($q) => $q->whereIn('play_type', ['pass', 'run'])->orWhere(fn ($q) => $q->where('play_type', 'no_play')->where(fn ($q) => $q->where('is_penalty', true)->orWhereNull('is_penalty'))))
+                ->where(fn ($q) => $q->whereNull('description')->orWhereRaw('LOWER(description) NOT LIKE ?', ['%two-point conversion attempt%']))
+                ->select(['nfl_game_id', 'possession_team_id', 'defense_team_id'])
+                ->selectRaw("COUNT(*) AS candidates,
+                    SUM(CASE WHEN is_penalty = 0 OR (is_penalty = 1 AND NULLIF(TRIM(penalty_type), '') IS NOT NULL AND penalty_team_id IN (possession_team_id, defense_team_id)) THEN 1 ELSE 0 END) AS classified,
+                    SUM(CASE WHEN is_penalty = 1 AND LOWER(TRIM(penalty_type)) = 'false start' AND penalty_team_id = possession_team_id THEN 1 ELSE 0 END) AS false_starts")
+                ->groupBy('nfl_game_id', 'possession_team_id', 'defense_team_id')->get();
+            foreach ($penalties as $row) {
+                $game = $games->get($row->nfl_game_id);
+                $teams = [(int) $game->home_team_id, (int) $game->away_team_id];
+                if ($row->possession_team_id === $row->defense_team_id || ! in_array((int) $row->possession_team_id, $teams, true) || ! in_array((int) $row->defense_team_id, $teams, true)) {
+                    continue;
+                }
+                $this->add($buckets, 'false_start_rate', 'offense', (int) $row->possession_team_id, (int) $row->nfl_game_id,
+                    (float) $row->false_starts, (int) $row->classified, (int) $row->candidates);
+            }
             $drives = DB::table('nflverse_pbp_plays')->whereIn('nfl_game_id', $games->keys())
                 ->select(['nfl_game_id', 'possession_team_id', 'defense_team_id', 'fixed_drive'])
                 ->selectRaw("SUM(CASE WHEN play_type IN ('pass', 'run') THEN 1 ELSE 0 END) AS scrimmage_plays")
@@ -305,6 +322,12 @@ final class NflMatchupSignalService
                     };
                     $pooledSituation = $splitDefinition !== null || in_array($metric, ['first_down_pass_epa', 'third_down_pass_epa', 'red_zone_pass_epa', 'short_yardage_success_rate'], true);
                     $validGames = array_filter($bucket['games'], function (array $sample, int $gameId) use ($metric, $minimumPerGame, $pooledSituation, $buckets, $side, $team): bool {
+                        if ($metric === 'false_start_rate') {
+                            $base = $buckets['epa'][$side][$team]['games'][$gameId] ?? null;
+
+                            return $sample['count'] >= 30 && $sample['count'] === $sample['candidate']
+                                && $base !== null && $base['count'] >= 30 && $base['count'] >= $base['candidate'] * .9;
+                        }
                         if (in_array($metric, ['points_per_drive', 'drive_success_rate'], true)) {
                             return $sample['count'] >= $minimumPerGame && $sample['count'] === $sample['candidate'];
                         }
@@ -336,6 +359,9 @@ final class NflMatchupSignalService
                         'minimum_plays' => $pooledSituation ? $minimumPerGame * self::MIN_GAMES : $minimumPerGame,
                         'rank' => null,
                     ];
+                    if ($metric === 'false_start_rate' && $eligible) {
+                        $metrics[$metric][$side][$team]['display_value'] = number_format($metrics[$metric][$side][$team]['value'] * 100, 2).' false starts per 100 offensive opportunities';
+                    }
                 }
                 $eligible = array_filter($metrics[$metric][$side] ?? [], fn (array $sample): bool => $sample['eligible']);
                 foreach ($eligible as $team => $sample) {
@@ -440,11 +466,12 @@ final class NflMatchupSignalService
         $defensePersonnel = $rule['defense_personnel'] ?? false;
         $personnel = $rule['personnel'] ?? false;
         $personnelOnly = $rule['personnel_only'] ?? false;
-        if ($personnelOnly) {
+        $offenseOnly = $rule['offense_only'] ?? false;
+        if ($personnelOnly || $offenseOnly) {
             $defense = ['value' => null, 'rank' => null, 'eligible' => true, 'games' => 0];
         }
         $league = ($qbRule || $personnel) ? ($defense['league_teams'] ?? 0) : min($offense['league_teams'] ?? 0, $defense['league_teams'] ?? 0);
-        if ($defensePersonnel) {
+        if ($defensePersonnel || $offenseOnly) {
             $league = $offense['league_teams'] ?? 0;
         }
         $venueApplies = ! isset($rule['venue']) || (! $target->neutral_site && (($offenseId === (int) $target->home_team_id) === ($rule['venue'] === 'home')));
@@ -484,11 +511,13 @@ final class NflMatchupSignalService
                 ...($profile !== null ? ['epa_profile_differential' => $profile] : []),
                 'defense_personnel' => $defensePersonnel,
                 'personnel_only' => $personnelOnly,
+                'offense_only' => $offenseOnly,
                 'metric' => $rule['metric'],
                 'offense_metric' => $rule['metric'],
                 'defense_metric' => $defenseMetric,
                 'definition' => $entry['definition'],
                 'source' => match ($rule['metric']) {
+                    'false_start_rate' => 'nflverse penalty flag, penalty type and penalized team; includes penalty no-play rows',
                     'qb_checkdown_rate' => 'FTN read_thrown joined to nflverse pass attempts by game/play identity and selected quarterback GSIS ID',
                     'qb_scramble_rate' => 'nflverse_pbp_plays: selected quarterback passing plays, sacks and identified scrambles',
                     'qb_recent_change', 'backup_qb' => 'Game-selected quarterback, target-season roster mapping and timestamped game-linked depth chart',

@@ -36,6 +36,7 @@ final class NflMatchupSignalService
             $metrics['qb_play_action_epa']['offense'][$teamId] = $sample['play_action_sample'] ?? [];
             $metrics['qb_rpo_epa']['offense'][$teamId] = $sample['rpo_sample'] ?? [];
             $metrics['qb_pass_epa_trend_3']['offense'][$teamId] = $sample['trend_sample'] ?? [];
+            $metrics['qb_scramble_rate']['offense'][$teamId] = $sample['mobility_sample'] ?? [];
             $metrics['backup_qb']['offense'][$teamId] = $sample['backup_sample'] ?? [];
             $metrics['rookie_qb']['offense'][$teamId] = $sample['rookie_sample'] ?? [];
         }
@@ -110,7 +111,7 @@ final class NflMatchupSignalService
             ->whereIn('status', [config('nfl.statuses.final', 'STATUS_FINAL'), 'final', 'completed'])
             ->where('id', '!=', $game->id)
             ->whereDate('game_date', '<', $cutoff->toDateString())
-            ->get(['id', 'home_team_id', 'away_team_id', 'game_date', 'game_time', 'home_score', 'away_score', 'neutral_site'])
+            ->get(['id', 'season', 'home_team_id', 'away_team_id', 'game_date', 'game_time', 'home_score', 'away_score', 'neutral_site'])
             ->filter(function (Game $prior) use ($cutoff): bool {
                 $kickoff = $this->dates->gameDateTimeUtc($prior->getRawOriginal('game_date'), $prior->game_time);
                 if ($kickoff === null || $kickoff->greaterThanOrEqualTo($cutoff)) {
@@ -170,7 +171,14 @@ final class NflMatchupSignalService
                     $this->add($buckets, 'drive_success_rate', $side, $team, (int) $drive->nfl_game_id, $valid && in_array($drive->result_min, ['Touchdown', 'Field goal'], true) ? 1 : 0, $valid ? 1 : 0, 1);
                 }
             }
+            $positions = DB::table('nflverse_rosters')->whereIn('season', $games->pluck('season')->unique())
+                ->whereNotNull('gsis_id')->groupBy('season', 'team_id', 'gsis_id')
+                ->havingRaw('COUNT(position) = COUNT(*) AND COUNT(DISTINCT position) = 1')
+                ->selectRaw('season AS roster_season, team_id AS roster_team, gsis_id AS roster_player, MIN(position) AS roster_position');
             $query = DB::table('nflverse_pbp_plays')->whereIn('nfl_game_id', $games->keys())
+                ->leftJoin('nfl_games as position_games', 'position_games.id', '=', 'nflverse_pbp_plays.nfl_game_id')
+                ->leftJoinSub(clone $positions, 'run_roster', fn ($join) => $join->on('run_roster.roster_player', '=', 'nflverse_pbp_plays.rusher_player_id')->on('run_roster.roster_team', '=', 'nflverse_pbp_plays.possession_team_id')->on('run_roster.roster_season', '=', 'position_games.season'))
+                ->leftJoinSub(clone $positions, 'catch_roster', fn ($join) => $join->on('catch_roster.roster_player', '=', 'nflverse_pbp_plays.receiver_player_id')->on('catch_roster.roster_team', '=', 'nflverse_pbp_plays.possession_team_id')->on('catch_roster.roster_season', '=', 'position_games.season'))
                 ->whereIn('play_type', ['pass', 'run'])
                 ->where(fn ($query) => $query->whereNull('description')->orWhereRaw('LOWER(description) NOT LIKE ?', ['%no play%']))
                 ->where(fn ($query) => $query->whereNull('description')->orWhereRaw('LOWER(description) NOT LIKE ?', ['%two-point conversion attempt%']))
@@ -392,7 +400,7 @@ final class NflMatchupSignalService
         $offense = $metrics[$rule['metric']]['offense'][$offenseId] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => null, 'eligible' => false];
         $defenseMetric = $rule['defense_metric'] ?? $rule['metric'];
         $defense = $metrics[$defenseMetric]['defense'][$defenseId] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => null, 'eligible' => false];
-        $qbRule = in_array($rule['metric'], ['qb_pass_epa', 'qb_blitz_epa', 'qb_deep_epa', 'qb_play_action_epa', 'qb_rpo_epa', 'qb_pass_epa_trend_3'], true);
+        $qbRule = in_array($rule['metric'], ['qb_pass_epa', 'qb_blitz_epa', 'qb_deep_epa', 'qb_play_action_epa', 'qb_rpo_epa', 'qb_pass_epa_trend_3', 'qb_scramble_rate'], true);
         $personnel = $rule['personnel'] ?? false;
         $personnelOnly = $rule['personnel_only'] ?? false;
         if ($personnelOnly) {
@@ -439,12 +447,13 @@ final class NflMatchupSignalService
                 'defense_metric' => $defenseMetric,
                 'definition' => $entry['definition'],
                 'source' => match ($rule['metric']) {
+                    'qb_scramble_rate' => 'nflverse_pbp_plays: selected quarterback passing plays, sacks and identified scrambles',
                     'backup_qb' => 'Game-selected quarterback, target-season roster mapping and timestamped game-linked depth chart',
                     'rookie_qb' => 'Game-selected quarterback identity and target-season nflverse_rosters years_exp',
                     'points_per_game' => 'nfl_games: final team scores',
                     'pass_yards_per_attempt' => 'nflverse_pbp_plays: pass attempts (sacks excluded)',
                     'qb_pass_epa', 'qb_blitz_epa', 'qb_deep_epa', 'qb_play_action_epa', 'qb_rpo_epa', 'qb_pass_epa_trend_3' => 'nflverse_pbp_plays: selected quarterback passing plays and sacks',
-                    'ol_changed', 'ol_changed_two', 'ol_same_four', 'rb1_out', 'wr1_out', 'backup_center' => 'Game-linked depth charts, historical pregame charts and timestamped injury snapshots',
+                    'ol_changed', 'ol_changed_two', 'ol_same_four', 'rb1_out', 'wr1_out', 'te1_out', 'multiple_wr_out', 'backup_center' => 'Game-linked depth charts, historical pregame charts and timestamped injury snapshots',
                     'points_per_drive' => 'nflverse_pbp_plays: completed drives and possession-team scores',
                     default => 'nflverse_pbp_plays: pass/run plays (sacks included)',
                 },

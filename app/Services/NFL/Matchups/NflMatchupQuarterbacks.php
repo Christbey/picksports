@@ -62,6 +62,28 @@ final class NflMatchupQuarterbacks
             }
             $appearances[$row->passer_player_id][] = $appearance;
         }
+        $runs = DB::table('nflverse_pbp_plays')->whereIn('nfl_game_id', $games->keys())->where('play_type', 'run')
+            ->where(fn ($q) => $q->whereNull('is_sack')->orWhere('is_sack', false))
+            ->where(fn ($q) => $q->whereNull('description')->orWhereRaw('LOWER(description) NOT LIKE ?', ['%no play%']))
+            ->where(fn ($q) => $q->whereNull('description')->orWhereRaw('LOWER(description) NOT LIKE ?', ['%two-point conversion attempt%']))
+            ->select(['nfl_game_id', 'possession_team_id', 'defense_team_id', 'rusher_player_id'])
+            ->selectRaw("COUNT(*) AS candidates, SUM(CASE WHEN qb_scramble IS NOT NULL AND rusher_player_id IS NOT NULL AND rusher_player_id <> '' THEN 1 ELSE 0 END) AS charted, SUM(CASE WHEN qb_scramble = 1 THEN 1 ELSE 0 END) AS scrambles")
+            ->groupBy('nfl_game_id', 'possession_team_id', 'defense_team_id', 'rusher_player_id')->get();
+        $runCoverage = [];
+        $scrambles = [];
+        foreach ($runs as $run) {
+            $game = $games->get($run->nfl_game_id);
+            $teams = [(int) $game->home_team_id, (int) $game->away_team_id];
+            if ($run->possession_team_id === $run->defense_team_id || ! in_array((int) $run->possession_team_id, $teams, true) || ! in_array((int) $run->defense_team_id, $teams, true)) {
+                continue;
+            }
+            $key = $run->nfl_game_id.':'.$run->possession_team_id;
+            $runCoverage[$key] ??= ['candidates' => 0, 'charted' => 0];
+            $runCoverage[$key]['candidates'] += (int) $run->candidates;
+            $runCoverage[$key]['charted'] += (int) $run->charted;
+            $scrambles[$run->rusher_player_id][$key] = (int) $run->scrambles;
+        }
+        $mobilitySamples = [];
         $samples = [];
         $blitzSamples = [];
         $trendSamples = [];
@@ -74,6 +96,11 @@ final class NflMatchupQuarterbacks
                 'games' => count($valid), 'game_ids' => array_column($valid, 'game_id'), 'plays' => $count,
                 'eligible' => count($valid) >= 2 && count($valid) === count($rows), 'rank' => null,
                 'player_id' => $id, 'player_id_namespace' => 'gsis', 'minimum_plays_per_appearance' => 15];
+            $runComplete = collect($valid)->every(fn ($row) => ($runCoverage[$row['key']]['charted'] ?? 0) >= ($runCoverage[$row['key']]['candidates'] ?? 0) * .9);
+            $scrambleCount = array_sum(array_map(fn ($row) => $scrambles[$id][$row['key']] ?? 0, $valid));
+            $dropbacks = array_sum(array_column($valid, 'candidate')) + $scrambleCount;
+            $mobilitySamples[$id] = [...$samples[$id], 'value' => $dropbacks ? $scrambleCount / $dropbacks : null,
+                'eligible' => $samples[$id]['eligible'] && $runComplete, 'plays' => $dropbacks, 'scrambles' => $scrambleCount];
             $recent = collect($rows)->sortBy(fn ($row) => $games->get($row['game_id'])->game_date->getTimestamp())->take(-4)->values();
             $trendEligible = $samples[$id]['eligible'] && $recent->count() === 4;
             $values = $recent->map(fn ($row) => $row['count'] ? $row['sum'] / $row['count'] : null)->all();
@@ -103,6 +130,7 @@ final class NflMatchupQuarterbacks
             }
 
         }
+        $mobilitySamples = $this->rank($mobilitySamples);
         $samples = $this->rank($samples);
         $blitzSamples = $this->rank($blitzSamples);
         foreach ($splitSamples as $key => $split) {
@@ -138,6 +166,13 @@ final class NflMatchupQuarterbacks
                 $trend['value'] = null;
             }
             $result[$team] = [...$sample, ...$identity, 'blitz_sample' => [...$blitz, ...$identity], 'trend_sample' => [...$trend, ...$identity]];
+            $mobility = $mobilitySamples[$identity['player_id'] ?? ''] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => 0, 'eligible' => false, 'league_players' => 0];
+            if (isset($identity['identity_reason'])) {
+                $mobility['eligible'] = false;
+                $mobility['value'] = null;
+                $mobility['rank'] = null;
+            }
+            $result[$team]['mobility_sample'] = [...$mobility, ...$identity];
             $result[$team]['backup_sample'] = $this->backupSample($target, $side, $identity, $rosters, $cutoff);
             $result[$team]['rookie_sample'] = $this->rookieSample($identity, $rosters, $team, (int) $target->season);
             foreach ($splits as $key => $_) {

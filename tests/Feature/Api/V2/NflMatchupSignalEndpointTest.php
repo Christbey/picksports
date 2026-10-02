@@ -85,7 +85,7 @@ it('returns descriptive matchup evidence and situational records without approvi
         ->assertJsonPath('data.matchup.cutoff_at', '2026-09-27T17:00:00+00:00')
         ->assertJsonPath('data.matchup.summary.matched', 0)
         ->assertJsonPath('data.matchup.summary.situational_records', 70)
-        ->assertJsonPath('data.matchup.summary.unsupported', 142)
+        ->assertJsonPath('data.matchup.summary.unsupported', 134)
         ->assertJsonPath('data.matchup.catalog.350.support', 'situational_records')
         ->assertJsonPath('data.matchup.catalog.351.support', 'situational_records')
         ->assertJsonPath('data.situational.home.team_id', $game->home_team_id)
@@ -114,7 +114,7 @@ it('reuses cached matchup payloads without repeating league or team history quer
     DB::flushQueryLog();
     $first = $this->getJson($url)->assertOk();
     $firstQueries = collect(DB::getQueryLog())->pluck('query');
-    expect($firstQueries->filter(fn ($sql) => str_contains($sql, 'nflverse_pbp_plays')))->toHaveCount(3);
+    expect($firstQueries->filter(fn ($sql) => str_contains($sql, 'nflverse_pbp_plays')))->toHaveCount(4);
 
     DB::flushQueryLog();
     $second = $this->getJson($url)->assertOk();

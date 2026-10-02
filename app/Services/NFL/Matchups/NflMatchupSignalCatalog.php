@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.12';
+    public const VERSION = '2026-10-01.13';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -98,6 +98,13 @@ final class NflMatchupSignalCatalog
         }
         $rules[46] = ['metric' => 'epa', 'zero_baseline' => true, 'offense' => 'positive', 'defense' => 'positive', 'size' => null];
         $rules[47] = ['metric' => 'epa', 'zero_baseline' => true, 'offense' => 'negative', 'defense' => 'negative', 'size' => null];
+        foreach ([119 => ['qb_designed_run_rate', 'qb_run_epa'], 120 => ['qb_scramble_rate', 'scramble_epa'],
+            134 => ['rb_run_explosive_rate', 'rb_run_explosive_rate'], 219 => ['qb_scramble_rate', 'qb_run_explosive_rate'],
+            245 => ['te_target_epa', 'te_target_epa'], 254 => ['wr_deep_target_rate', 'pass_explosive_rate']] as $id => [$metric, $defenseMetric]) {
+            $rules[$id] = ['metric' => $metric, 'defense_metric' => $defenseMetric, 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
+        }
+        $rules[264] = ['metric' => 'te1_out', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'te_target_epa', 'offense' => 'any', 'defense' => 'bottom', 'size' => 10];
+        $rules[266] = ['metric' => 'multiple_wr_out', 'personnel' => true, 'offense_threshold' => 2, 'defense_metric' => 'pass_epa', 'offense' => 'any', 'defense' => 'top', 'size' => 10];
         ksort($rules);
 
         return $rules;
@@ -132,9 +139,11 @@ final class NflMatchupSignalCatalog
 
         return array_map(function (array $entry) use ($rules): array {
             $metric = $rules[$entry['id']]['metric'] ?? null;
+            $positionInputs = in_array($entry['id'], [119, 120, 134, 219, 245, 254, 264, 266], true)
+                ? ['Season/team-specific GSIS roster position mappings', 'Identified rushing and receiving play-by-play with complete league coverage', 'Game-linked player identity and timestamped injury evidence where named'] : null;
 
             return [...$entry, 'definition' => $metric ? $this->definition($metric).(($rules[$entry['id']]['zero_baseline'] ?? false) ? ' Uses the provider EPA zero baseline, not league rank or league-average centering. Positive offensive EPA means expected points added; positive EPA allowed means the defense allowed expected points to be added. Negative values mean expected points lost or suppressed, respectively. Both sides must be strictly on the named side of zero; zero does not qualify. This is play-level expected-points performance, not actual scoreboard points minus predicted game scores.' : '').(isset($rules[$entry['id']]['profile_threshold']) ? ' EPA profile differential = (offense EPA minus the league mean offensive EPA) + (opponent EPA allowed minus the league mean defensive EPA allowed). League means weight all 32 qualified teams equally. Positive favors the offensive profile; negative favors the defensive profile. The threshold is '.($rules[$entry['id']]['profile_threshold'] > 0 ? 'at least +' : 'at most ').number_format($rules[$entry['id']]['profile_threshold'], 2).' EPA/play, inclusive. These are catalog description thresholds, not backtested edges, predicted scoring margins or forecast inputs.' : '').(isset($rules[$entry['id']]['defense_metric']) ? ' Defense comparison: '.$this->definition($rules[$entry['id']]['defense_metric']) : '') : null,
-                'required_inputs' => $metric === 'rookie_qb' ? ['Game-selected quarterback identity and availability', 'Unambiguous target-season team roster experience', 'Complete league defensive play-by-play'] : (($rules[$entry['id']]['personnel'] ?? false) ? ['Game-linked target depth chart', 'Timestamped charts observed before historical kickoffs', 'Explicit player-ID injury evidence where required'] : ($metric ? ($metric === 'points_per_game' ? ['Final team scores', 'Complete league schedule'] : ['Mapped nflverse play-by-play', 'Eligible play values and situational fields', 'Complete league schedule']) : $this->requirements($entry['id'], $entry['category']))),
+                'required_inputs' => $positionInputs ?? ($metric === 'rookie_qb' ? ['Game-selected quarterback identity and availability', 'Unambiguous target-season team roster experience', 'Complete league defensive play-by-play'] : (($rules[$entry['id']]['personnel'] ?? false) ? ['Game-linked target depth chart', 'Timestamped charts observed before historical kickoffs', 'Explicit player-ID injury evidence where required'] : ($metric ? ($metric === 'points_per_game' ? ['Final team scores', 'Complete league schedule'] : ['Mapped nflverse play-by-play', 'Eligible play values and situational fields', 'Complete league schedule']) : $this->requirements($entry['id'], $entry['category'])))),
                 'prediction_effect' => 'none'];
         }, $entries);
     }
@@ -300,8 +309,8 @@ final class NflMatchupSignalCatalog
 116. Gap/power offense vs elite gap defense
 117. Counter-heavy offense vs weak counter defense
 118. Duo-heavy offense vs weak duo defense
-119. High designed-QB-run offense vs poor QB-run defense
-120. Mobile QB vs high scrambling EPA allowed
+119. High non-scramble QB run share vs weak QB-run defense
+120. High QB scramble rate vs high scrambling EPA allowed
 121. RB-heavy offense vs weak linebacker unit
 122. Strong rushing offense vs light defensive boxes
 123. Strong rushing offense vs heavy boxes
@@ -315,7 +324,7 @@ final class NflMatchupSignalCatalog
 131. Run-heavy offense vs top-10 run defense
 132. High first-down rush EPA vs poor first-down run defense
 133. High early-down rush rate vs weak run defense
-134. Explosive RB vs defense allowing explosive RB runs
+134. Explosive RB rushing unit vs defense allowing explosive RB runs
 135. Strong OL rushing metrics vs weak DL
 136. Weak OL rushing metrics vs strong DL
 137. Rush offense trending up vs run defense trending down
@@ -400,7 +409,7 @@ final class NflMatchupSignalCatalog
 216. QB weak vs single-high
 217. Mobile QB vs weak contain defense
 218. Scrambling QB vs man coverage
-219. Mobile QB vs defense allowing QB explosives
+219. High QB scramble rate vs defense allowing explosive QB runs
 220. QB deep-ball strength vs weak deep defense
 221. Poor deep passer vs defense forcing deep throws
 222. Quick-release QB vs strong pass rush
@@ -426,7 +435,7 @@ final class NflMatchupSignalCatalog
 242. Elite WR1 vs elite CB1
 243. Elite WR2 vs weak CB2
 244. Strong slot WR vs weak nickel CB
-245. Strong TE vs weak TE coverage
+245. High TE-target EPA offense vs weak TE-target defense
 246. Strong receiving RB vs poor LB coverage
 247. Speed WR vs slow secondary
 248. Physical WR vs undersized CB
@@ -435,7 +444,7 @@ final class NflMatchupSignalCatalog
 251. High-separation WR vs man defense
 252. Low-separation receivers vs man defense
 253. Strong zone-beating receivers vs zone defense
-254. Deep threat vs explosive-pass weakness
+254. High WR deep-target rate vs explosive-pass weakness
 255. YAC-heavy receivers vs poor tackling defense
 256. High target concentration vs CB1 injury
 257. WR1 vs replacement CB
@@ -447,7 +456,7 @@ final class NflMatchupSignalCatalog
 263. WR2 out vs elite secondary
 264. TE1 out vs defense weak against TE
 265. RB1 out vs weak run defense
-266. Multiple WR injuries vs elite secondary
+266. Multiple starting WRs unavailable vs top-10 pass defense
 267. Multiple secondary injuries vs elite WR group
 268. CB1 out vs high-target-share WR1
 269. CB2 out vs deep WR2

@@ -1042,6 +1042,7 @@ $scheduleSportPipeline(
 // Daily provider fetch; NFL prop freshness is evaluated against a 24-hour window.
 $scheduleDailySeasonJob("nfl:sync-matchup-rosters --season={$fallSeasonYear}", '08:00', $nflInSeason, 'NFL: Sync Matchup Roster Identities');
 $scheduleDailySeasonJob("nfl:sync-nflverse-pbp --season={$fallSeasonYear}", '08:05', $nflInSeason, 'NFL: Sync Matchup Play-by-Play');
+$scheduleDailySeasonJob("nfl:sync-matchup-pressure --season={$fallSeasonYear}", '08:11', $nflInSeason, 'NFL: Sync Matchup Pressure');
 $scheduleDailySeasonJob("nfl:sync-matchup-charting --season={$fallSeasonYear}", '08:10', $nflInSeason, 'NFL: Sync Matchup Charting');
 $scheduleDailySeasonJob("nfl:sync-matchup-schedule --season={$fallSeasonYear}", '08:12', $nflInSeason, 'NFL: Sync Matchup Schedule Evidence');
 $scheduleDailySeasonJob("nfl:sync-game-quarterbacks --season={$fallSeasonYear} --apply", '08:15', $nflInSeason, 'NFL: Sync Confirmed Game Quarterbacks');

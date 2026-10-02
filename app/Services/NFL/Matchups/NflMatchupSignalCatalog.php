@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.21';
+    public const VERSION = '2026-10-01.22';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -123,6 +123,13 @@ final class NflMatchupSignalCatalog
                     'offense' => $band, 'defense' => 'bottom', 'size' => 10, 'coverage' => true];
             }
         }
+        foreach ([149 => ['pressure_rate', 'pressure_rate', 'top'], 150 => ['pressure_rate', 'pressure_rate', 'bottom'],
+            152 => ['sack_rate', 'pressure_rate', 'top'], 153 => ['pressure_to_sack_rate', 'pressure_rate', 'bottom'],
+            177 => ['pressure_rate', 'blitz_rate', 'bottom'], 178 => ['pressure_rate', 'blitz_rate', 'top'],
+            199 => ['qb_pressure_to_sack_rate', 'pressure_rate', 'top'], 200 => ['qb_pressure_to_sack_rate', 'pressure_rate', 'bottom']] as $id => [$metric, $defenseMetric, $band]) {
+            $rules[$id] = ['metric' => $metric, 'defense_metric' => $defenseMetric, 'offense' => $band,
+                'defense' => $defenseMetric === 'blitz_rate' ? 'bottom' : 'top', 'size' => 10];
+        }
         ksort($rules);
 
         return $rules;
@@ -159,6 +166,9 @@ final class NflMatchupSignalCatalog
             $metric = $rules[$entry['id']]['metric'] ?? null;
             $positionInputs = in_array($entry['id'], [119, 120, 134, 219, 236, 245, 254, 256, 264, 266, 267, 270, 272, 273], true)
                 ? ['Season/team-specific GSIS roster position mappings', 'Identified rushing and receiving play-by-play with complete league coverage', 'Game-linked player identity and timestamped injury evidence where named'] : null;
+            if (in_array($entry['id'], [149, 150, 152, 153, 177, 178, 199, 200], true)) {
+                $positionInputs = ['PFR weekly pressure and sack counts via nflverse', 'Unique season/team PFR-to-GSIS roster identities and verified game/opponent pairs', 'Complete play-by-play dropbacks and matching sacks; all 32 teams, plus 24 qualified QBs for QB rules'];
+            }
             if ($rules[$entry['id']]['coverage'] ?? false) {
                 $positionInputs = ['Game-selected QB identity and availability', 'FTN Data via nflverse participation, released after postseason (CC-BY-SA 4.0)', 'Explicit evidence season, at least 24 qualified QBs and all 32 defensive usage profiles'];
             }
@@ -370,7 +380,7 @@ final class NflMatchupSignalCatalog
 150. High pressure allowed vs high pressure defense
 151. High sack allowed rate vs high sack defense
 152. Low sack rate vs high-pressure defense
-153. High pressure-to-sack OL/QB vs high pressure defense
+153. High team sacks per pressure vs high-pressure defense
 154. OL missing one starter vs top-10 front
 155. OL missing two starters vs top-10 front
 156. OL missing 3+ starters vs top-10 front
@@ -394,8 +404,8 @@ final class NflMatchupSignalCatalog
 174. Strong zone-blocking OL vs weak zone front
 175. Strong gap-blocking OL vs weak gap front
 176. High pressure offense weakness vs four-man pressure defense
-177. High pressure offense weakness vs blitz-heavy defense
-178. Strong pass protection vs blitz-heavy defense
+177. High pressure allowed vs blitz-heavy defense
+178. Low pressure allowed vs blitz-heavy defense
 179. Strong pass protection vs four-man rush
 180. OL penalty-heavy vs disciplined DL
 181. High holding rate vs elite edge

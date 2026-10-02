@@ -73,8 +73,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(171)
-        ->and($result['signals'])->toHaveCount(342)
+    expect($result['summary']['supported_rules'])->toBe(179)
+        ->and($result['signals'])->toHaveCount(358)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -147,7 +147,7 @@ it('ranks offense higher and EPA allowed lower with grouped queries and independ
         ->and(matchupSignal($result, 51, $target->home_team_id)['status'])->toBe('matched')
         ->and(matchupSignal($result, 101, $target->home_team_id)['status'])->toBe('matched')
         ->and($result['predictive_weight'])->toBe(0)
-        ->and(collect($queries)->filter(fn ($q) => str_contains($q['query'], 'nflverse_pbp_plays')))->toHaveCount(6);
+        ->and(collect($queries)->filter(fn ($q) => str_contains($q['query'], 'nflverse_pbp_plays')))->toHaveCount(7);
     $target->home_team_id = $teams[0]->id;
     $target->away_team_id = $teams[1]->id;
     $result = app(NflMatchupSignalService::class)->build($target);
@@ -1416,4 +1416,73 @@ it('keeps historical coverage separate from current-season evidence and excludes
     expect(matchupSignal($prior, 201, $target->home_team_id)['evidence']['offense']['plays'])->toBe(60)
         ->and(matchupSignal($prior, 207, $target->home_team_id)['status'])->toBe('insufficient_data')
         ->and(matchupSignal($prior, 207, $target->home_team_id)['evidence']['offense']['plays'])->toBe(0);
+});
+
+function pressureMatchupLeague(): array
+{
+    [$target, $teams, $games] = matchupSignalLeague();
+    foreach ($teams as $i => $team) {
+        $passes = DB::table('nflverse_pbp_plays')->where('possession_team_id', $team->id)->where('play_type', 'pass');
+        $passes->update(['passer_player_id' => '00-'.(1000 + $i), 'ftn_n_blitzers' => $i >= 24 ? 1 : 0]);
+        foreach ((clone $passes)->get()->groupBy('nfl_game_id') as $gameId => $rows) {
+            $pressures = 5 + intdiv($i, 8) * 4;
+            DB::table('nfl_matchup_pressure_samples')->insert(['game_id' => $gameId, 'team_id' => $team->id,
+                'opponent_id' => $rows->first()->defense_team_id, 'season' => 2026, 'gsis_id' => '00-'.(1000 + $i),
+                'pfr_id' => 'Test'.$i, 'pressures' => $pressures, 'sacks' => 1, 'pressure_rate' => $pressures / 20, 'observed_at' => now()]);
+        }
+    }
+    $target->home_qb_id = '00-1031';
+    $target->away_team_id = $teams[1]->id;
+
+    return [$target, $teams, $games];
+}
+
+it('uses observed pressure rates and selected-QB sack conversion with tie-safe ranks', function () {
+    [$target, $teams] = pressureMatchupLeague();
+    $service = app(NflMatchupSignalService::class);
+    $result = $service->build($target);
+    foreach ([150, 177, 199] as $id) {
+        expect(matchupSignal($result, $id, $target->home_team_id)['status'])->toBe('matched');
+    }
+    foreach ([149, 153, 178, 200] as $id) {
+        expect(matchupSignal($result, $id, $target->home_team_id)['status'])->toBe('not_matched');
+    }
+    expect(matchupSignal($result, 150, $target->home_team_id)['evidence']['offense']['value'])->toBe(.85)
+        ->and(matchupSignal($result, 199, $target->home_team_id)['evidence']['offense']['value'])->toEqualWithDelta(1 / 17, .00001);
+    $target->home_team_id = $teams[0]->id;
+    $target->home_qb_id = '00-1000';
+    $result = $service->build($target);
+    foreach ([149, 153, 178, 200] as $id) {
+        expect(matchupSignal($result, $id, $target->home_team_id)['status'])->toBe('matched');
+    }
+});
+
+it('withholds pressure comparisons for mismatched sacks or missing backup samples', function (string $gap) {
+    [$target] = pressureMatchupLeague();
+    $row = DB::table('nfl_matchup_pressure_samples')->where('gsis_id', '00-1031')->first();
+    if ($gap === 'backup') {
+        DB::table('nflverse_pbp_plays')->where('nfl_game_id', $row->game_id)->where('passer_player_id', '00-1031')->where('is_sack', false)->limit(1)->update(['passer_player_id' => '00-99999']);
+    } else {
+        DB::table('nfl_matchup_pressure_samples')->where('id', $row->id)->update([$gap => $gap === 'sacks' ? 2 : .5]);
+    }
+    $result = app(NflMatchupSignalService::class)->build($target);
+    foreach ([149, 150, 153, 199, 200] as $id) {
+        expect(matchupSignal($result, $id, $target->home_team_id)['status'])->toBe('insufficient_data');
+    }
+})->with(['sacks', 'backup']);
+
+it('normalizes pressure counts to one play-by-play denominator rather than averaging rounded provider percentages', function () {
+    [$target] = pressureMatchupLeague();
+    DB::table('nfl_matchup_pressure_samples')->where('gsis_id', '00-1031')->update(['pressure_rate' => .81]);
+    $signal = matchupSignal(app(NflMatchupSignalService::class)->build($target), 150, $target->home_team_id);
+    expect($signal['status'])->toBe('matched')->and($signal['evidence']['offense']['value'])->toBe(.85)
+        ->and($signal['evidence']['offense']['dropbacks'])->toBe(60)->and($signal['evidence']['offense']['pressures'])->toBe(51);
+});
+
+it('holds team pressure rankings when a provider passer is absent from play history', function () {
+    [$target] = pressureMatchupLeague();
+    $sample = (array) DB::table('nfl_matchup_pressure_samples')->where('team_id', $target->home_team_id)->first();
+    unset($sample['id']);
+    DB::table('nfl_matchup_pressure_samples')->insert([...$sample, 'gsis_id' => '00-99999', 'pfr_id' => 'MissingQB']);
+    expect(matchupSignal(app(NflMatchupSignalService::class)->build($target), 150, $target->home_team_id)['status'])->toBe('insufficient_data');
 });

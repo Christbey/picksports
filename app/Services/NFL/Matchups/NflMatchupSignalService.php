@@ -32,6 +32,9 @@ final class NflMatchupSignalService
             $metrics[$metric] = $samples;
         }
         $quarterbacks = app(NflMatchupQuarterbacks::class)->metrics($game, $games, $cutoff);
+        foreach (app(NflMatchupPressure::class)->metrics($games, $quarterbacks) as $metric => $samples) {
+            $metrics[$metric] = $samples;
+        }
         $metrics['qb_pass_epa']['offense'] = $quarterbacks;
         foreach ($quarterbacks as $teamId => $sample) {
             foreach (['man', 'zone', 'cover_1', 'cover_2', 'cover_3'] as $coverage) {
@@ -474,7 +477,7 @@ final class NflMatchupSignalService
         $offense = $metrics[$rule['metric']]['offense'][$offenseId] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => null, 'eligible' => false];
         $defenseMetric = $rule['defense_metric'] ?? $rule['metric'];
         $defense = $metrics[$defenseMetric]['defense'][$defenseId] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => null, 'eligible' => false];
-        $qbRule = ($rule['coverage'] ?? false) || in_array($rule['metric'], ['qb_pass_epa', 'qb_blitz_epa', 'qb_deep_epa', 'qb_play_action_epa', 'qb_rpo_epa', 'qb_pass_epa_trend_3', 'qb_scramble_rate', 'qb_checkdown_rate', 'qb_turnover_rate'], true);
+        $qbRule = ($rule['coverage'] ?? false) || in_array($rule['metric'], ['qb_pass_epa', 'qb_blitz_epa', 'qb_deep_epa', 'qb_play_action_epa', 'qb_rpo_epa', 'qb_pass_epa_trend_3', 'qb_scramble_rate', 'qb_checkdown_rate', 'qb_turnover_rate', 'qb_pressure_to_sack_rate'], true);
         $defensePersonnel = $rule['defense_personnel'] ?? false;
         $personnel = $rule['personnel'] ?? false;
         $personnelOnly = $rule['personnel_only'] ?? false;
@@ -540,6 +543,7 @@ final class NflMatchupSignalService
                     'rookie_qb' => 'Game-selected quarterback identity and target-season nflverse_rosters years_exp',
                     'points_per_game' => 'nfl_games: final team scores',
                     'pass_yards_per_attempt' => 'nflverse_pbp_plays: pass attempts (sacks excluded)',
+                    'pressure_rate', 'pressure_to_sack_rate', 'qb_pressure_to_sack_rate' => 'PFR weekly advanced passing via nflverse, roster-mapped identities and play-by-play dropbacks',
                     'qb_man_epa', 'qb_zone_epa', 'qb_cover_1_epa', 'qb_cover_2_epa', 'qb_cover_3_epa' => 'FTN Data via nflverse participation (CC-BY-SA 4.0), joined to selected-QB play identities',
                     'qb_pass_epa', 'qb_blitz_epa', 'qb_deep_epa', 'qb_play_action_epa', 'qb_rpo_epa', 'qb_pass_epa_trend_3' => 'nflverse_pbp_plays: selected quarterback passing plays and sacks',
                     'ol_changed', 'ol_changed_two', 'ol_same_four', 'rb1_out', 'wr1_out', 'te1_out', 'multiple_wr_out', 'backup_center' => 'Game-linked depth charts, historical pregame charts and timestamped injury snapshots',

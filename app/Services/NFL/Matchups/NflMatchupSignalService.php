@@ -146,7 +146,7 @@ final class NflMatchupSignalService
             })->keyBy('id');
     }
 
-    /** Only a newly arriving week's missing feed can select a complete earlier week. */
+    /** Keep league comparisons on a complete week while the next week is still arriving. */
     private function baseline(Collection $games, int $season, string $window): array
     {
         $baseline = null;
@@ -157,12 +157,16 @@ final class NflMatchupSignalService
         $covered = DB::table('nflverse_pbp_plays')->whereIn('nfl_game_id', $games->keys())
             ->whereIn('play_type', ['pass', 'run'])->distinct()->pluck('nfl_game_id');
         $missing = $games->reject(fn (Game $prior): bool => $covered->contains($prior->id));
-        if ($missing->isEmpty() || $latestWeek < 2 || $missing->contains(fn (Game $prior): bool => (int) $prior->week !== $latestWeek)) {
+        if ($latestWeek < 2 || $missing->contains(fn (Game $prior): bool => (int) $prior->week !== $latestWeek)) {
             return [$games, $baseline];
         }
         $schedule = Game::query()->where('season', $season)
             ->whereIn('season_type', [(string) config('nfl.season.types.regular', 2), 'regular', 'REG'])
-            ->whereBetween('week', [1, $latestWeek - 1])->get(['id', 'week']);
+            ->whereBetween('week', [1, $latestWeek])->get(['id', 'week']);
+        $weekIncomplete = $schedule->where('week', $latestWeek)->contains(fn (Game $prior): bool => ! $games->has($prior->id));
+        if ($missing->isEmpty() && ! $weekIncomplete) {
+            return [$games, $baseline];
+        }
         $throughWeek = 0;
         for ($week = 1; $week < $latestWeek; $week++) {
             $scheduled = $schedule->where('week', $week);

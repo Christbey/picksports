@@ -48,7 +48,7 @@ function matchupSignalLeague(int $teamCount = 32, int $weeks = 3): array
     $target = Game::factory()->create([
         'home_team_id' => $teams[$teamCount - 1]->id, 'away_team_id' => $teams[$teamCount - 2]->id,
         'season' => 2026, 'season_type' => '2', 'status' => 'STATUS_SCHEDULED',
-        'week' => 4, 'game_date' => '2026-09-20', 'game_time' => '17:00:00', 'neutral_site' => false,
+        'week' => $weeks + 1, 'game_date' => '2026-09-20', 'game_time' => '17:00:00', 'neutral_site' => false,
     ]);
 
     return [$target, $teams, $games];
@@ -1622,8 +1622,10 @@ it('weights release time by weekly source attempts and rejects an unmatched sour
     expect(matchupSignal($service->build($target), 222, $target->home_team_id)['evidence']['offense']['eligible'])->toBeFalse();
 });
 
-it('uses the last complete week while a new final game awaits plays and advances when imported', function () {
+it('keeps the last complete week after Thursday plays arrive and advances only after the week is complete', function () {
+    $this->travelTo('2026-09-19 12:00:00');
     [$target, $teams, $games] = matchupSignalLeague();
+    combinedWinRateSnapshot($teams);
     $new = Game::factory()->create([
         'home_team_id' => $teams[0]->id, 'away_team_id' => $teams[31]->id,
         'season' => 2026, 'season_type' => '2', 'week' => 4, 'status' => 'STATUS_FINAL',
@@ -1643,6 +1645,11 @@ it('uses the last complete week while a new final game awaits plays and advances
         $row['nflverse_play_key'] .= '-new-week';
         DB::table('nflverse_pbp_plays')->insert($row);
     }
+    $result = $service->build($target);
+    expect(matchupSignal($result, 135, $target->home_team_id)['status'])->toBe('matched')
+        ->and($result['baseline']['through_week'])->toBe(3)
+        ->and(matchupSignal($result, 1, $target->home_team_id)['evidence']['offense']['games'])->toBe(3);
+    $target->update(['week' => 5]);
     $result = $service->build($target);
     expect($result['baseline'])->toBeNull()
         ->and(matchupSignal($result, 1, $target->home_team_id)['evidence']['offense']['games'])->toBe(4);

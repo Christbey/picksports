@@ -213,6 +213,8 @@ class ImportNflverseLayerCommand extends Command
             'is_touchdown' => $this->boolValue($row, 'touchdown'),
             'is_interception' => $this->boolValue($row, 'interception'),
             'is_fumble_lost' => $this->boolValue($row, 'fumble_lost'),
+            'fumbled_1_player_id' => array_key_exists('fumbled_2_player_id', $row) ? $this->stringValue($row, 'fumbled_1_player_id') : null,
+            'fumbled_2_player_id' => $this->stringValue($row, 'fumbled_2_player_id'),
             'is_sack' => $this->boolValue($row, 'sack'),
             'is_penalty' => $this->boolValue($row, 'penalty'),
             'penalty_type' => $this->stringValue($row, 'penalty_type'),

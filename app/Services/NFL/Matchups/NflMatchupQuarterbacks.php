@@ -27,8 +27,11 @@ final class NflMatchupQuarterbacks
             'play_action' => ['ftn_is_play_action = 1', 'ftn_is_play_action IS NOT NULL'],
             'rpo' => ['ftn_is_rpo = 1', 'ftn_is_rpo IS NOT NULL'],
         ];
+        $fumbleKnown = "(is_fumble_lost = 0 OR (is_fumble_lost = 1 AND NULLIF(fumbled_1_player_id, '') IS NOT NULL AND NULLIF(fumbled_2_player_id, '') IS NULL))";
         $query->select(['nfl_game_id', 'possession_team_id', 'defense_team_id', 'passer_player_id'])
             ->selectRaw('COUNT(*) AS candidates, COUNT(epa) AS measured, SUM(epa) AS total')
+            ->selectRaw("SUM(CASE WHEN is_interception IN (0, 1) AND {$fumbleKnown} THEN 1 ELSE 0 END) AS turnover_count,
+                SUM(CASE WHEN is_interception IN (0, 1) AND {$fumbleKnown} THEN is_interception + CASE WHEN is_fumble_lost = 1 AND fumbled_1_player_id = passer_player_id THEN 1 ELSE 0 END ELSE 0 END) AS turnovers")
             ->selectRaw("SUM(CASE WHEN is_sack = 0 OR is_sack IS NULL THEN 1 ELSE 0 END) AS read_candidates,
                 SUM(CASE WHEN is_sack = 0 AND ftn_read_thrown IN ('0', '1', '2', 'CHK', 'DES', 'SD') THEN 1 ELSE 0 END) AS read_count,
                 SUM(CASE WHEN is_sack = 0 AND ftn_read_thrown = 'CHK' THEN 1 ELSE 0 END) AS checkdowns")
@@ -57,6 +60,7 @@ final class NflMatchupQuarterbacks
             }
             $coverage[$key]['identified'] += (int) $row->candidates;
             $appearance = ['game_id' => (int) $row->nfl_game_id, 'key' => $key,
+                'turnover_count' => (int) $row->turnover_count, 'turnovers' => (int) $row->turnovers,
                 'read_candidates' => (int) $row->read_candidates, 'read_count' => (int) $row->read_count, 'checkdowns' => (int) $row->checkdowns,
                 'count' => (int) $row->measured, 'candidate' => (int) $row->candidates, 'sum' => (float) $row->total,
                 'charted' => (int) $row->charted, 'blitzes' => (int) $row->blitzes, 'blitz_count' => (int) $row->blitz_measured, 'blitz_sum' => (float) $row->blitz_total];
@@ -72,10 +76,14 @@ final class NflMatchupQuarterbacks
             ->where(fn ($q) => $q->whereNull('description')->orWhereRaw('LOWER(description) NOT LIKE ?', ['%no play%']))
             ->where(fn ($q) => $q->whereNull('description')->orWhereRaw('LOWER(description) NOT LIKE ?', ['%two-point conversion attempt%']))
             ->select(['nfl_game_id', 'possession_team_id', 'defense_team_id', 'rusher_player_id'])
+            ->selectRaw("SUM(CASE WHEN NULLIF(rusher_player_id, '') IS NOT NULL THEN 1 ELSE 0 END) AS identified,
+                SUM(CASE WHEN {$fumbleKnown} THEN 1 ELSE 0 END) AS turnover_count,
+                SUM(CASE WHEN {$fumbleKnown} AND is_fumble_lost = 1 AND fumbled_1_player_id = rusher_player_id THEN 1 ELSE 0 END) AS turnovers")
             ->selectRaw("COUNT(*) AS candidates, SUM(CASE WHEN qb_scramble IS NOT NULL AND rusher_player_id IS NOT NULL AND rusher_player_id <> '' THEN 1 ELSE 0 END) AS charted, SUM(CASE WHEN qb_scramble = 1 THEN 1 ELSE 0 END) AS scrambles")
             ->groupBy('nfl_game_id', 'possession_team_id', 'defense_team_id', 'rusher_player_id')->get();
         $runCoverage = [];
         $scrambles = [];
+        $runTurnovers = [];
         foreach ($runs as $run) {
             $game = $games->get($run->nfl_game_id);
             $teams = [(int) $game->home_team_id, (int) $game->away_team_id];
@@ -83,13 +91,16 @@ final class NflMatchupQuarterbacks
                 continue;
             }
             $key = $run->nfl_game_id.':'.$run->possession_team_id;
-            $runCoverage[$key] ??= ['candidates' => 0, 'charted' => 0];
+            $runCoverage[$key] ??= ['candidates' => 0, 'charted' => 0, 'identified' => 0];
             $runCoverage[$key]['candidates'] += (int) $run->candidates;
             $runCoverage[$key]['charted'] += (int) $run->charted;
+            $runCoverage[$key]['identified'] += (int) $run->identified;
             $scrambles[$run->rusher_player_id][$key] = (int) $run->scrambles;
+            $runTurnovers[$run->rusher_player_id][$key] = ['candidates' => (int) $run->candidates, 'count' => (int) $run->turnover_count, 'turnovers' => (int) $run->turnovers];
         }
         $mobilitySamples = [];
         $checkdownSamples = [];
+        $turnoverSamples = [];
         $samples = [];
         $blitzSamples = [];
         $trendSamples = [];
@@ -102,6 +113,16 @@ final class NflMatchupQuarterbacks
                 'games' => count($valid), 'game_ids' => array_column($valid, 'game_id'), 'plays' => $count,
                 'eligible' => count($valid) >= 2 && count($valid) === count($rows), 'rank' => null,
                 'player_id' => $id, 'player_id_namespace' => 'gsis', 'minimum_plays_per_appearance' => 15];
+            $turnoverComplete = collect($valid)->every(function ($row) use ($id, $runTurnovers, $runCoverage): bool {
+                $run = $runTurnovers[$id][$row['key']] ?? ['count' => 0, 'candidates' => 0];
+
+                return $row['turnover_count'] === $row['candidate'] && $run['count'] === $run['candidates']
+                    && ($runCoverage[$row['key']]['identified'] ?? 0) >= ($runCoverage[$row['key']]['candidates'] ?? 0) * .9;
+            });
+            $turnoverPlays = array_sum(array_column($valid, 'turnover_count')) + array_sum(array_map(fn ($row) => $runTurnovers[$id][$row['key']]['count'] ?? 0, $valid));
+            $turnovers = array_sum(array_column($valid, 'turnovers')) + array_sum(array_map(fn ($row) => $runTurnovers[$id][$row['key']]['turnovers'] ?? 0, $valid));
+            $turnoverSamples[$id] = [...$samples[$id], 'value' => $turnoverPlays ? $turnovers / $turnoverPlays : null,
+                'eligible' => $samples[$id]['eligible'] && $turnoverComplete, 'plays' => $turnoverPlays, 'turnovers' => $turnovers];
             $reads = array_sum(array_column($valid, 'read_count'));
             $checkdowns = array_sum(array_column($valid, 'checkdowns'));
             $readComplete = collect($valid)->every(fn ($row) => $row['read_count'] >= 15 && $row['read_count'] >= $row['read_candidates'] * .9);
@@ -144,6 +165,7 @@ final class NflMatchupQuarterbacks
         }
         $mobilitySamples = $this->rank($mobilitySamples);
         $checkdownSamples = $this->rank($checkdownSamples);
+        $turnoverSamples = $this->rank($turnoverSamples);
         $samples = $this->rank($samples);
         $blitzSamples = $this->rank($blitzSamples);
         foreach ($splitSamples as $key => $split) {
@@ -193,6 +215,13 @@ final class NflMatchupQuarterbacks
                 $checkdown['rank'] = null;
             }
             $result[$team]['checkdown_sample'] = [...$checkdown, ...$identity];
+            $turnover = $turnoverSamples[$identity['player_id'] ?? ''] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => 0, 'eligible' => false, 'league_players' => 0];
+            if (isset($identity['identity_reason'])) {
+                $turnover['eligible'] = false;
+                $turnover['value'] = null;
+                $turnover['rank'] = null;
+            }
+            $result[$team]['turnover_sample'] = [...$turnover, ...$identity];
             $result[$team]['backup_sample'] = $this->backupSample($target, $side, $identity, $rosters, $cutoff);
             $result[$team]['change_sample'] = $this->changeSample($target, $team, $result[$team]['backup_sample'], $cutoff);
             $result[$team]['rookie_sample'] = $this->rookieSample($identity, $rosters, $team, (int) $target->season);

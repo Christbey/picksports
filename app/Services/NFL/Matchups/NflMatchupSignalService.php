@@ -38,6 +38,7 @@ final class NflMatchupSignalService
             $metrics['qb_pass_epa_trend_3']['offense'][$teamId] = $sample['trend_sample'] ?? [];
             $metrics['qb_scramble_rate']['offense'][$teamId] = $sample['mobility_sample'] ?? [];
             $metrics['qb_checkdown_rate']['offense'][$teamId] = $sample['checkdown_sample'] ?? [];
+            $metrics['qb_turnover_rate']['offense'][$teamId] = $sample['turnover_sample'] ?? [];
             $metrics['qb_recent_change']['offense'][$teamId] = $sample['change_sample'] ?? [];
             $metrics['backup_qb']['offense'][$teamId] = $sample['backup_sample'] ?? [];
             $metrics['rookie_qb']['offense'][$teamId] = $sample['rookie_sample'] ?? [];
@@ -462,7 +463,7 @@ final class NflMatchupSignalService
         $offense = $metrics[$rule['metric']]['offense'][$offenseId] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => null, 'eligible' => false];
         $defenseMetric = $rule['defense_metric'] ?? $rule['metric'];
         $defense = $metrics[$defenseMetric]['defense'][$defenseId] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => null, 'eligible' => false];
-        $qbRule = in_array($rule['metric'], ['qb_pass_epa', 'qb_blitz_epa', 'qb_deep_epa', 'qb_play_action_epa', 'qb_rpo_epa', 'qb_pass_epa_trend_3', 'qb_scramble_rate', 'qb_checkdown_rate'], true);
+        $qbRule = in_array($rule['metric'], ['qb_pass_epa', 'qb_blitz_epa', 'qb_deep_epa', 'qb_play_action_epa', 'qb_rpo_epa', 'qb_pass_epa_trend_3', 'qb_scramble_rate', 'qb_checkdown_rate', 'qb_turnover_rate'], true);
         $defensePersonnel = $rule['defense_personnel'] ?? false;
         $personnel = $rule['personnel'] ?? false;
         $personnelOnly = $rule['personnel_only'] ?? false;
@@ -518,6 +519,7 @@ final class NflMatchupSignalService
                 'definition' => $entry['definition'],
                 'source' => match ($rule['metric']) {
                     'false_start_rate' => 'nflverse penalty flag, penalty type and penalized team; includes penalty no-play rows',
+                    'qb_turnover_rate' => 'Selected quarterback GSIS identity, nflverse interception/lost-fumble flags and individual fumbler identities',
                     'qb_checkdown_rate' => 'FTN read_thrown joined to nflverse pass attempts by game/play identity and selected quarterback GSIS ID',
                     'qb_scramble_rate' => 'nflverse_pbp_plays: selected quarterback passing plays, sacks and identified scrambles',
                     'qb_recent_change', 'backup_qb' => 'Game-selected quarterback, target-season roster mapping and timestamped game-linked depth chart',

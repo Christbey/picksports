@@ -13,6 +13,7 @@ final class NflMatchupMetricDefinitions
         $success = 'CASE WHEN epa > 0 THEN 1 ELSE 0 END';
 
         return [
+            'takeaway_play_rate' => ['1=1', '1=0', 'CASE WHEN is_interception IN (0, 1) AND is_fumble_lost IN (0, 1) THEN 1 ELSE NULL END', 'CASE WHEN is_interception = 1 OR is_fumble_lost = 1 THEN 1 ELSE 0 END', 30],
             'qb_designed_run_rate' => ["{$run} AND run_roster.roster_position IS NOT NULL AND qb_scramble IS NOT NULL", "{$run} AND (run_roster.roster_position IS NULL OR qb_scramble IS NULL)", 'qb_scramble', "CASE WHEN run_roster.roster_position = 'QB' AND qb_scramble = 0 THEN 1 ELSE 0 END", 8],
             'qb_run_epa' => ["{$run} AND run_roster.roster_position = 'QB'", "{$run} AND run_roster.roster_position IS NULL", 'epa', 'epa', 3],
             'qb_run_explosive_rate' => ["{$run} AND run_roster.roster_position = 'QB'", "{$run} AND run_roster.roster_position IS NULL", 'yards_gained', 'CASE WHEN yards_gained >= 10 THEN 1 ELSE 0 END', 3],
@@ -54,12 +55,14 @@ final class NflMatchupMetricDefinitions
 
     public static function lowerOffenseIsBetter(string $metric): bool
     {
-        return in_array($metric, ['interception_rate', 'rush_stuff_rate', 'sack_rate'], true);
+        return in_array($metric, ['interception_rate', 'rush_stuff_rate', 'sack_rate', 'takeaway_play_rate'], true);
     }
 
     public static function definition(string $metric): ?string
     {
         return match ($metric) {
+            'qb_turnover_rate' => 'Selected QB interceptions plus individually attributed lost fumbles per eligible passing play (including sacks) or that QB’s run. Receiving and special-team touches are excluded. Receiver/teammate fumbles are not charged to the passer; any lost-fumble play with missing first-player identity or a second fumbler makes the appearance ineligible. Requires complete turnover classification in every included appearance, 90% team rusher-ID coverage, two complete passing appearances and 24 qualified QBs. Ranks run from highest turnover rate to lowest, with boundary ties excluded. This is observed ball security, not a claim about repeatability.',
+            'takeaway_play_rate' => 'Share of eligible opponent pass/run plays flagged as an interception or lost fumble. A play with both flags counts once. Includes sacks, excludes special teams and penalty-only plays. Requires two complete games, sixty pooled plays, 90% flag coverage in every complete game and all 32 teams. Higher defensive rates rank first. This describes turnover-play frequency, not a causal claim that the defense depends on takeaways.',
             'false_start_rate' => 'Provider-labeled offensive false starts per classified offensive pass/run opportunity or penalty no-play opportunity, using all prior regular-season venues. Counts only explicit False Start records charged to the possession team. Retains penalty no-plays, excludes special teams and conversion attempts, and does not infer penalties from text or attribute them to an individual lineman. Unknown classifications are excluded from both numerator and denominator, not counted as zero penalties. Requires at least 90% penalty flag/type/team coverage, 30 classified opportunities and 30 underlying EPA plays per game, two complete games and all 32 teams. High means top ten by rate with boundary ties excluded; applies only when the target team is away at a non-neutral venue. Multiple penalties not separately identified by the provider cannot be recovered.',
             'qb_checkdown_rate' => 'Selected QB share of charted nonsack pass attempts marked CHK by FTN. First/second/third reads, designed reads and scramble-drill throws are separate non-checkdown codes; unknown reads remain unknown, including uncoded primary reads in 2022. Requires two complete passing appearances, at least 15 classified attempts and 90% read coverage per appearance, and 24 qualified QBs. The opponent comparison is EPA allowed on throws from zero to under ten air yards, not a coverage assignment or all checkdowns inferred from short throws.',
             'wr_target_epa' => 'Passing EPA on identified WR targets, including incompletions and excluding sacks. Sixteen pooled targets, unambiguous season/team roster mappings and complete per-game coverage are required. This describes the WR unit, not individual coverage assignments.',

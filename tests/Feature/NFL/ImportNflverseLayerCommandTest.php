@@ -26,8 +26,8 @@ it('imports nflverse play by play rows and links them to nfl games', function ()
 
     $path = sys_get_temp_dir().'/nflverse-pbp-test.csv';
     File::put($path, implode("\n", [
-        'game_id,play_id,season,week,season_type,home_team,away_team,posteam,defteam,qtr,down,ydstogo,yardline_100,yards_gained,game_seconds_remaining,play_type,desc,epa,wp,wpa,passer_player_id,passer_player_name,rusher_player_id,rusher_player_name,receiver_player_id,receiver_player_name,touchdown,interception,fumble_lost,sack,fixed_drive,fixed_drive_result,posteam_score,posteam_score_post,first_down,air_yards,cpoe,shotgun,pass_oe,penalty,penalty_type,penalty_team',
-        '2025_01_DEN_KC,101,2025,1,REG,KC,DEN,DEN,KC,1,1,10,75,8,3550,pass,"Bo Nix pass short right to Courtland Sutton for 8 yards",0.42,0.47,0.02,00-0039918,Bo Nix,,,00-0034348,Courtland Sutton,0,0,0,0,2,Touchdown,0,7,1,22,5.25,1,12.5,1,Offensive Holding,DEN',
+        'game_id,play_id,season,week,season_type,home_team,away_team,posteam,defteam,qtr,down,ydstogo,yardline_100,yards_gained,game_seconds_remaining,play_type,desc,epa,wp,wpa,passer_player_id,passer_player_name,rusher_player_id,rusher_player_name,receiver_player_id,receiver_player_name,touchdown,interception,fumble_lost,sack,fixed_drive,fixed_drive_result,posteam_score,posteam_score_post,first_down,air_yards,cpoe,shotgun,pass_oe,penalty,penalty_type,penalty_team,fumbled_1_player_id,fumbled_2_player_id',
+        '2025_01_DEN_KC,101,2025,1,REG,KC,DEN,DEN,KC,1,1,10,75,8,3550,pass,"Bo Nix pass short right to Courtland Sutton for 8 yards",0.42,0.47,0.02,00-0039918,Bo Nix,,,00-0034348,Courtland Sutton,0,0,0,0,2,Touchdown,0,7,1,22,5.25,1,12.5,1,Offensive Holding,DEN,00-0034348,',
     ]));
 
     artisan('nfl:import-nflverse-layer', [
@@ -51,7 +51,9 @@ it('imports nflverse play by play rows and links them to nfl games', function ()
         ->and((float) $row->cpoe)->toBe(5.25)
         ->and((int) $row->is_penalty)->toBe(1)
         ->and($row->penalty_type)->toBe('Offensive Holding')
-        ->and((int) $row->penalty_team_id)->toBe($away->id);
+        ->and((int) $row->penalty_team_id)->toBe($away->id)
+        ->and($row->fumbled_1_player_id)->toBe('00-0034348')
+        ->and($row->fumbled_2_player_id)->toBeNull();
 });
 
 it('maps current season plays only to a unique matching regular season game', function (string $case, bool $linked) {
@@ -214,4 +216,16 @@ it('archives each nflverse source file once and omits repeated raw row payloads'
 
     Storage::disk('provider-test')->assertExists($source->object_key);
     expect(Storage::disk('provider-test')->getVisibility($source->object_key))->toBe('private');
+});
+
+it('does not treat a missing second-fumbler source column as proof of a single fumble', function () {
+    $path = sys_get_temp_dir().'/nflverse-incomplete-fumbler-test.csv';
+    File::put($path, "game_id,play_id,season,week,home_team,away_team,posteam,defteam,play_type,fumble_lost,fumbled_1_player_id\n2026_01_DEN_KC,99,2026,1,KC,DEN,DEN,KC,pass,1,00-0039918\n");
+    try {
+        artisan('nfl:import-nflverse-layer', ['dataset' => 'pbp', 'file' => $path])->assertSuccessful();
+        $row = DB::table('nflverse_pbp_plays')->sole();
+        expect((int) $row->is_fumble_lost)->toBe(1)->and($row->fumbled_1_player_id)->toBeNull();
+    } finally {
+        File::delete($path);
+    }
 });

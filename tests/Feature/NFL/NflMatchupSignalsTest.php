@@ -73,8 +73,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(157)
-        ->and($result['signals'])->toHaveCount(314)
+    expect($result['summary']['supported_rules'])->toBe(159)
+        ->and($result['signals'])->toHaveCount(318)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -1229,4 +1229,55 @@ it('does not infer false starts from penalty text or missing classification', fu
     DB::table('nflverse_pbp_plays')->where('possession_team_id', $teams[0]->id)->update(['is_penalty' => null]);
     $signal = matchupSignal($service->build($target), 182, $target->away_team_id);
     expect($signal['status'])->toBe('insufficient_data')->and($signal['reason'])->toContain('all 32');
+});
+
+it('attributes quarterback interceptions and lost fumbles without charging receiver fumbles to the passer', function () {
+    [$target, $teams] = matchupPositionLeague();
+    DB::table('nflverse_pbp_plays')->update(['is_interception' => 0, 'is_fumble_lost' => 0]);
+    foreach ($teams as $i => $team) {
+        $limit = $i < 8 ? 0 : ($i < 24 ? 1 : 3);
+        foreach (range(1, max(1, $limit)) as $play) {
+            if ($limit > 0) {
+                DB::table('nflverse_pbp_plays')->where('possession_team_id', $team->id)->where('nflverse_play_key', 'like', '%-'.$i.'-'.$play)->update(['is_interception' => 1]);
+            }
+        }
+    }
+    $home = DB::table('nflverse_pbp_plays')->where('possession_team_id', $target->home_team_id);
+    foreach ([0, 20] as $play) {
+        (clone $home)->where('nflverse_play_key', 'like', '%-31-'.$play)->update(['is_fumble_lost' => 1, 'fumbled_1_player_id' => '00-10124']);
+    }
+    (clone $home)->where('nflverse_play_key', 'like', '%-31-4')->update(['is_fumble_lost' => 1, 'fumbled_1_player_id' => '00-10127']);
+    $service = app(NflMatchupSignalService::class);
+    $signal = matchupSignal($service->build($target), 227, $target->home_team_id);
+    expect($signal['status'])->toBe('matched')
+        ->and($signal['evidence']['offense']['turnovers'])->toBe(15)
+        ->and($signal['evidence']['offense']['plays'])->toBe(75)
+        ->and($signal['evidence']['offense']['value'])->toEqualWithDelta(.2, .000001)
+        ->and($signal['evidence']['defense']['value'])->toEqualWithDelta(3 / 40, .000001)
+        ->and($signal['evidence']['offense']['league_players'])->toBe(32);
+
+    (clone $home)->where('nflverse_play_key', 'like', '%-31-0')->update(['fumbled_2_player_id' => '00-99999']);
+    expect(matchupSignal($service->build($target), 227, $target->home_team_id)['status'])->toBe('insufficient_data');
+    (clone $home)->update(['fumbled_2_player_id' => null]);
+    (clone $home)->where('nflverse_play_key', 'like', '%-31-20')->update(['fumbled_1_player_id' => null]);
+    expect(matchupSignal($service->build($target), 227, $target->home_team_id)['status'])->toBe('insufficient_data');
+    (clone $home)->update(['is_interception' => 0, 'is_fumble_lost' => 0]);
+    $signal = matchupSignal($service->build($target), 228, $target->home_team_id);
+    expect($signal['status'])->toBe('matched')->and($signal['evidence']['offense']['turnovers'])->toBe(0);
+    $target->home_qb_id = null;
+    expect(matchupSignal($service->build($target), 228, $target->home_team_id)['status'])->toBe('insufficient_data');
+});
+
+it('holds turnover rankings with missing flags unidentified runs or too few qualified quarterbacks', function () {
+    [$target, $teams] = matchupPositionLeague();
+    DB::table('nflverse_pbp_plays')->update(['is_interception' => 0, 'is_fumble_lost' => 0]);
+    $service = app(NflMatchupSignalService::class);
+    DB::table('nflverse_pbp_plays')->where('possession_team_id', $target->home_team_id)->where('play_type', 'pass')->update(['is_interception' => null]);
+    expect(matchupSignal($service->build($target), 227, $target->home_team_id)['status'])->toBe('insufficient_data');
+    DB::table('nflverse_pbp_plays')->update(['is_interception' => 0]);
+    DB::table('nflverse_pbp_plays')->where('possession_team_id', $target->home_team_id)->where('play_type', 'run')->update(['rusher_player_id' => null]);
+    expect(matchupSignal($service->build($target), 227, $target->home_team_id)['status'])->toBe('insufficient_data');
+    DB::table('nflverse_pbp_plays')->whereIn('possession_team_id', $teams->take(9)->pluck('id'))->update(['is_fumble_lost' => null]);
+    $signal = matchupSignal($service->build($target), 228, $target->home_team_id);
+    expect($signal['status'])->toBe('insufficient_data')->and($signal['reason'])->toContain('24 qualified');
 });

@@ -13,6 +13,16 @@ final class NflMatchupMetricDefinitions
         $success = 'CASE WHEN epa > 0 THEN 1 ELSE 0 END';
 
         return [
+            'charted_pressure_rate' => [$pass, '1=0', 'participation_pressure', 'participation_pressure', 15],
+            'four_rusher_pressure_rate' => ["{$pass} AND participation_rushers = 4", "{$pass} AND participation_rushers IS NULL", 'participation_pressure', 'participation_pressure', 10],
+            'wr_zone_target_epa' => ["{$attempt} AND participation_man_zone = 'ZONE_COVERAGE' AND catch_roster.roster_position = 'WR'", "{$attempt} AND (participation_man_zone IS NULL OR catch_roster.roster_position IS NULL)", 'epa', 'epa', 5],
+            'zone_pass_epa' => ["{$pass} AND participation_man_zone = 'ZONE_COVERAGE'", "{$pass} AND participation_man_zone IS NULL", 'epa', 'epa', 10],
+            'personnel_11_rate' => ['1=1', '1=0', 'participation_offense_package', "CASE WHEN participation_offense_package = '11' THEN 1 ELSE 0 END", 15],
+            'personnel_12_rate' => ['1=1', '1=0', 'participation_offense_package', "CASE WHEN participation_offense_package = '12' THEN 1 ELSE 0 END", 15],
+            'personnel_21_rate' => ['1=1', '1=0', 'participation_offense_package', "CASE WHEN participation_offense_package = '21' THEN 1 ELSE 0 END", 15],
+            'personnel_12_pass_epa' => ["{$pass} AND participation_offense_package = '12'", "{$pass} AND participation_offense_package IS NULL", 'epa', 'epa', 5],
+            'five_db_epa' => ['participation_defense_dbs = 5', 'participation_defense_dbs IS NULL', 'epa', 'epa', 10],
+            'four_db_epa' => ['participation_defense_dbs = 4', 'participation_defense_dbs IS NULL', 'epa', 'epa', 10],
             'man_rate' => [$pass, '1=0', 'participation_man_zone', "CASE WHEN participation_man_zone = 'MAN_COVERAGE' THEN 1 ELSE 0 END", 15],
             'zone_rate' => [$pass, '1=0', 'participation_man_zone', "CASE WHEN participation_man_zone = 'ZONE_COVERAGE' THEN 1 ELSE 0 END", 15],
             'cover_1_rate' => [$pass, '1=0', 'participation_coverage', "CASE WHEN participation_coverage = 'COVER_1' THEN 1 ELSE 0 END", 15],
@@ -66,12 +76,17 @@ final class NflMatchupMetricDefinitions
 
     public static function lowerOffenseIsBetter(string $metric): bool
     {
-        return in_array($metric, ['interception_rate', 'rush_stuff_rate', 'sack_rate', 'takeaway_play_rate'], true);
+        return in_array($metric, ['interception_rate', 'rush_stuff_rate', 'sack_rate', 'takeaway_play_rate', 'charted_pressure_rate', 'four_rusher_pressure_rate'], true);
     }
 
     public static function definition(string $metric): ?string
     {
         return match ($metric) {
+            'charted_pressure_rate', 'four_rusher_pressure_rate' => 'Observed FTN participation pressure on pass plays, including sacks, divided by classified pass plays. Four-rusher pressure uses only plays charted with exactly four rushers; no pressure is inferred from rusher count or blitz flags. Requires complete per-game classification, two prior games, at least thirty pooled pass plays (twenty for the four-rusher split), and all 32 teams. Lower pressure allowed and higher defensive pressure rank first. Historical charting is used only in the explicitly selected season.',
+            'qb_pressure_epa' => 'Selected-QB EPA on FTN participation passes explicitly marked pressured, including sacks. Requires 90% pressure classification and EPA coverage per appearance, ten pooled pressured plays, two complete appearances and at least 24 qualified QBs. Sacks and blitzes are not substituted for pressure.',
+            'wr_zone_target_epa', 'zone_pass_epa' => 'WR-target EPA against explicitly charted zone coverage, compared with defensive passing EPA allowed in zone. Receiver position comes from unambiguous season/team GSIS roster mapping. Requires 90% context/EPA coverage per game, at least ten pooled WR targets or twenty zone pass plays, two complete games and all 32 teams. This is team target efficiency, not a route-running grade or individual coverage assignment.',
+            'personnel_11_rate', 'personnel_12_rate', 'personnel_21_rate' => 'Share of classified scrimmage plays using the named personnel package: running backs (including fullbacks) then tight ends. Requires eleven identified positions, one QB, five offensive linemen and five RB/FB/TE/WR players; nonstandard complete groups remain OTHER, not a guessed package. Heavy means top-ten usage. Requires 90% classification per game, thirty pooled plays, two games and all 32 teams.',
+            'personnel_12_pass_epa', 'five_db_epa', 'four_db_epa' => 'Defensive EPA allowed on passes facing 12 personnel, or scrimmage plays using exactly five/four listed defensive backs (CB/FS/SS/S), respectively. Requires eleven listed positions for personnel classification; no individual LB, safety or cornerback grade is inferred. At least ten pooled 12-personnel passes or twenty DB-package plays, 90% context/EPA coverage per game, two complete games and all 32 teams. FTN participation is released after the postseason.',
             'qb_release_time' => 'NGS mean time from snap to throw, weighted by source pass attempts across prior regular-season appearances; sacks excluded. Quick/slow means the ten lowest/highest qualified QB values with boundary ties excluded. Requires two complete appearances, at least fifteen attempts per appearance, at least 90% agreement in attempt counts with identified play-by-play, and 24 qualified QBs. Uses weekly records only, never season-total week-zero rows. Selected-QB identity and availability remain required. Source: NFL Next Gen Stats via nflverse.',
             'missed_tackle_rate' => 'PFR missed tackles divided by combined tackles plus missed tackles, summed across all reported defenders in every prior regular-season game. Requires all reported player counts known, thirty tackle opportunities per game, two complete games and all 32 teams. Lower rates rank first; high/poor and low/strong are bottom/top ten with boundary ties excluded. This measures team-wide recorded tackle attempts, including assists; it is not secondary-only tackling or missed tackles per play.',
             'yac_per_catch', 'wr_yac_per_catch' => 'Mean provider yards after catch on completed nonsack passes; incompletions and sacks are excluded, negative supplied YAC is retained, and unknown YAC is never zero. WR-only uses unambiguous season/team GSIS roster positions. Requires 90% classification/YAC coverage in every complete prior game, two games and all 32 teams, with twenty pooled catches (all receivers) or ten pooled WR catches. Opponent tackling is team-wide, not an individual coverage assignment.',

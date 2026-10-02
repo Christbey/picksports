@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.26';
+    public const VERSION = '2026-10-01.27';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -146,6 +146,16 @@ final class NflMatchupSignalCatalog
         $rules[108] = ['metric' => 'rush_ybc', 'offense' => 'bottom', 'defense' => 'top', 'size' => 10];
         $rules[109] = ['metric' => 'rush_yac', 'defense_metric' => 'missed_tackle_rate', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
         $rules[218] = ['metric' => 'qb_scramble_rate', 'defense_metric' => 'man_rate', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10, 'coverage' => true];
+        foreach ([176 => ['charted_pressure_rate', 'four_rusher_pressure_rate', 'bottom', 'top'],
+            197 => ['qb_pressure_epa', 'charted_pressure_rate', 'top', 'top'],
+            198 => ['qb_pressure_epa', 'charted_pressure_rate', 'bottom', 'top'],
+            253 => ['wr_zone_target_epa', 'zone_pass_epa', 'top', 'bottom'],
+            274 => ['personnel_12_rate', 'personnel_12_pass_epa', 'top', 'bottom'],
+            275 => ['personnel_11_rate', 'five_db_epa', 'top', 'bottom'],
+            276 => ['personnel_21_rate', 'four_db_epa', 'top', 'bottom']] as $id => [$metric, $defenseMetric, $offense, $defense]) {
+            $rules[$id] = ['metric' => $metric, 'defense_metric' => $defenseMetric, 'offense' => $offense,
+                'defense' => $defense, 'size' => 10, 'participation' => true];
+        }
         ksort($rules);
 
         return $rules;
@@ -184,6 +194,9 @@ final class NflMatchupSignalCatalog
                 ? ['Season/team-specific GSIS roster position mappings', 'Identified rushing and receiving play-by-play with complete league coverage', 'Game-linked player identity and timestamped injury evidence where named'] : null;
             if (in_array($entry['id'], [149, 150, 152, 153, 177, 178, 199, 200], true)) {
                 $positionInputs = ['PFR weekly pressure and sack counts via nflverse', 'Unique season/team PFR-to-GSIS roster identities and verified game/opponent pairs', 'Complete play-by-play dropbacks and matching sacks; all 32 teams, plus 24 qualified QBs for QB rules'];
+            }
+            if ($rules[$entry['id']]['participation'] ?? false) {
+                $positionInputs = ['FTN postseason pressure/personnel/coverage charting joined by verified play IDs', 'Explicit selected season and complete 32-team samples', 'Game-selected QB or receiver roster identities where required'];
             }
             if ($rules[$entry['id']]['coverage'] ?? false) {
                 $positionInputs = ['Game-selected QB identity and availability', 'FTN Data via nflverse participation, released after postseason (CC-BY-SA 4.0)', 'Explicit evidence season, at least 24 qualified QBs and all 32 defensive usage profiles'];
@@ -434,7 +447,7 @@ final class NflMatchupSignalCatalog
 173. Bottom run-block win rate vs elite run defense
 174. Strong zone-blocking OL vs weak zone front
 175. Strong gap-blocking OL vs weak gap front
-176. High pressure offense weakness vs four-man pressure defense
+176. High pressure allowed vs high pressure from exactly four rushers
 177. High pressure allowed vs blitz-heavy defense
 178. Low pressure allowed vs blitz-heavy defense
 179. Low pressure allowed vs frequent four-man rush
@@ -511,7 +524,7 @@ final class NflMatchupSignalCatalog
 250. Elite route runner vs man-heavy defense
 251. High-separation WR vs man defense
 252. Low-separation receivers vs man defense
-253. Strong zone-beating receivers vs zone defense
+253. High WR-target EPA against zone vs weak zone pass defense
 254. High WR deep-target rate vs explosive-pass weakness
 255. High WR YAC per catch vs high team missed-tackle rate
 256. High individual-WR target concentration vs lead CB unavailable
@@ -532,9 +545,9 @@ final class NflMatchupSignalCatalog
 271. Nickel CB out vs slot-heavy offense
 272. High TE target share vs starting linebacker unavailable
 273. High RB target share vs starting linebacker unavailable
-274. High 12-personnel offense vs weak LB/safety coverage
-275. High 11-personnel offense vs weak nickel defense
-276. High 21-personnel offense vs weak base defense
+274. High 12-personnel usage vs weak pass defense against 12 personnel
+275. High 11-personnel usage vs weak five-DB personnel defense
+276. High 21-personnel usage vs weak four-DB personnel defense
 277. Motion-heavy offense vs poor motion defense
 278. Bunch-heavy offense vs man-heavy defense
 279. Receiver matchup advantage across 2+ positions

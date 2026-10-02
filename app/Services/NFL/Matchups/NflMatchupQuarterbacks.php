@@ -23,6 +23,7 @@ final class NflMatchupQuarterbacks
             ->where(fn ($q) => $q->whereNull('description')->orWhereRaw('LOWER(description) NOT LIKE ?', ['%no play%']))
             ->where(fn ($q) => $q->whereNull('description')->orWhereRaw('LOWER(description) NOT LIKE ?', ['%two-point conversion attempt%']));
         $splits = [
+            'pressure' => ['participation_pressure = 1', 'participation_pressure IS NOT NULL'],
             'deep' => ['is_sack = 0 AND air_yards >= 20', 'is_sack = 1 OR (is_sack = 0 AND air_yards IS NOT NULL)'],
             'play_action' => ['ftn_is_play_action = 1', 'ftn_is_play_action IS NOT NULL'],
             'rpo' => ['ftn_is_rpo = 1', 'ftn_is_rpo IS NOT NULL'],

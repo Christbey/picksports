@@ -36,6 +36,7 @@ class SyncMatchupParticipationCommand extends Command
             $plays = DB::table('nflverse_pbp_plays')->where('season', $season)->whereNotNull('nfl_game_id')
                 ->get(['id', 'nflverse_play_key', 'nflverse_game_id', 'play_id', 'possession_team'])
                 ->groupBy(fn ($row) => $row->nflverse_game_id.'|'.$row->play_id);
+            $observedAt = now()->toDateTimeString();
             $updates = [];
             $seen = [];
             $unmatched = 0;
@@ -67,11 +68,12 @@ class SyncMatchupParticipationCommand extends Command
                     throw new RuntimeException('Possession team mismatch; no rows updated.');
                 }
                 $updates[] = ['id' => $play->id, 'nflverse_play_key' => $play->nflverse_play_key,
-                    'participation_man_zone' => $zone, 'participation_coverage' => $coverage, 'participation_observed_at' => now()];
+                    'participation_man_zone' => $zone, 'participation_coverage' => $coverage, 'participation_observed_at' => $observedAt];
             }
             if ($updates === []) {
                 throw new RuntimeException('No verified play matches; no rows updated.');
             }
+            unset($plays, $seen);
             $sources->archive('nflverse', 'ftn-participation', $path, ['source_url' => $url, 'season' => $season,
                 'attribution' => 'FTN Data via nflverse', 'license' => 'CC-BY-SA 4.0']);
             DB::transaction(function () use ($updates): void {

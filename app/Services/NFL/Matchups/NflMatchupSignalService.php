@@ -34,6 +34,9 @@ final class NflMatchupSignalService
         $quarterbacks = app(NflMatchupQuarterbacks::class)->metrics($game, $games, $cutoff);
         $metrics['qb_pass_epa']['offense'] = $quarterbacks;
         foreach ($quarterbacks as $teamId => $sample) {
+            foreach (['man', 'zone', 'cover_1', 'cover_2', 'cover_3'] as $coverage) {
+                $metrics['qb_'.$coverage.'_epa']['offense'][$teamId] = $sample[$coverage.'_sample'] ?? [];
+            }
             $metrics['qb_blitz_epa']['offense'][$teamId] = $sample['blitz_sample'] ?? [];
             $metrics['qb_deep_epa']['offense'][$teamId] = $sample['deep_sample'] ?? [];
             $metrics['qb_play_action_epa']['offense'][$teamId] = $sample['play_action_sample'] ?? [];
@@ -471,7 +474,7 @@ final class NflMatchupSignalService
         $offense = $metrics[$rule['metric']]['offense'][$offenseId] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => null, 'eligible' => false];
         $defenseMetric = $rule['defense_metric'] ?? $rule['metric'];
         $defense = $metrics[$defenseMetric]['defense'][$defenseId] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => null, 'eligible' => false];
-        $qbRule = in_array($rule['metric'], ['qb_pass_epa', 'qb_blitz_epa', 'qb_deep_epa', 'qb_play_action_epa', 'qb_rpo_epa', 'qb_pass_epa_trend_3', 'qb_scramble_rate', 'qb_checkdown_rate', 'qb_turnover_rate'], true);
+        $qbRule = ($rule['coverage'] ?? false) || in_array($rule['metric'], ['qb_pass_epa', 'qb_blitz_epa', 'qb_deep_epa', 'qb_play_action_epa', 'qb_rpo_epa', 'qb_pass_epa_trend_3', 'qb_scramble_rate', 'qb_checkdown_rate', 'qb_turnover_rate'], true);
         $defensePersonnel = $rule['defense_personnel'] ?? false;
         $personnel = $rule['personnel'] ?? false;
         $personnelOnly = $rule['personnel_only'] ?? false;
@@ -490,6 +493,7 @@ final class NflMatchupSignalService
             in_array($defenseMetric, ['cb_weight', 'secondary_height'], true) && ! $defense['eligible'] => 'A fresh game-linked defensive chart with enough uniquely identified starters and complete roster dimensions is required.',
             $defensePersonnel && isset($defense['identity_reason']) => $defense['identity_reason'],
             ($qbRule || $personnel) && isset($offense['identity_reason']) => $offense['identity_reason'],
+            ($rule['coverage'] ?? false) && (! $offense['eligible'] || ! $defense['eligible']) => 'Complete charted coverage samples are required. Free FTN participation is published after the postseason; previous-season evidence must be selected explicitly.',
             $qbRule && $rule['metric'] !== 'qb_pass_epa_trend_3' && ($offense['league_players'] ?? 0) < 24 => 'Quarterback rankings require at least 24 qualified passers.',
             (! $offense['eligible'] || ! $defense['eligible']) && (str_contains($rule['metric'], '_trend_') || str_contains($defenseMetric, '_trend_')) => 'Trend comparison requires the full four- or five-game sequence specified in the definition, with complete inputs.',
             $rule['metric'] === 'epa_stddev' && (! $offense['eligible'] || ! $defense['eligible']) => 'Variability requires at least three complete games, with volume and EPA coverage checks for every preceding game.',
@@ -536,6 +540,7 @@ final class NflMatchupSignalService
                     'rookie_qb' => 'Game-selected quarterback identity and target-season nflverse_rosters years_exp',
                     'points_per_game' => 'nfl_games: final team scores',
                     'pass_yards_per_attempt' => 'nflverse_pbp_plays: pass attempts (sacks excluded)',
+                    'qb_man_epa', 'qb_zone_epa', 'qb_cover_1_epa', 'qb_cover_2_epa', 'qb_cover_3_epa' => 'FTN Data via nflverse participation (CC-BY-SA 4.0), joined to selected-QB play identities',
                     'qb_pass_epa', 'qb_blitz_epa', 'qb_deep_epa', 'qb_play_action_epa', 'qb_rpo_epa', 'qb_pass_epa_trend_3' => 'nflverse_pbp_plays: selected quarterback passing plays and sacks',
                     'ol_changed', 'ol_changed_two', 'ol_same_four', 'rb1_out', 'wr1_out', 'te1_out', 'multiple_wr_out', 'backup_center' => 'Game-linked depth charts, historical pregame charts and timestamped injury snapshots',
                     'points_per_drive' => 'nflverse_pbp_plays: completed drives and possession-team scores',

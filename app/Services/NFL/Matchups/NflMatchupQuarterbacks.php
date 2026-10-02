@@ -27,6 +27,10 @@ final class NflMatchupQuarterbacks
             'play_action' => ['ftn_is_play_action = 1', 'ftn_is_play_action IS NOT NULL'],
             'rpo' => ['ftn_is_rpo = 1', 'ftn_is_rpo IS NOT NULL'],
         ];
+        foreach (['man' => ['participation_man_zone', 'MAN_COVERAGE'], 'zone' => ['participation_man_zone', 'ZONE_COVERAGE'],
+            'cover_1' => ['participation_coverage', 'COVER_1'], 'cover_2' => ['participation_coverage', 'COVER_2'], 'cover_3' => ['participation_coverage', 'COVER_3']] as $key => [$field, $code]) {
+            $splits[$key] = ["{$field} = '{$code}'", "{$field} IS NOT NULL"];
+        }
         $fumbleKnown = "(is_fumble_lost = 0 OR (is_fumble_lost = 1 AND NULLIF(fumbled_1_player_id, '') IS NOT NULL AND NULLIF(fumbled_2_player_id, '') IS NULL))";
         $query->select(['nfl_game_id', 'possession_team_id', 'defense_team_id', 'passer_player_id'])
             ->selectRaw('COUNT(*) AS candidates, COUNT(epa) AS measured, SUM(epa) AS total')

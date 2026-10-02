@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.20';
+    public const VERSION = '2026-10-01.21';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -117,6 +117,12 @@ final class NflMatchupSignalCatalog
         $rules[228] = ['metric' => 'qb_turnover_rate', 'defense_metric' => 'takeaway_play_rate', 'offense' => 'bottom', 'defense' => 'top', 'size' => 10];
         $rules[248] = ['metric' => 'wr_target_weight', 'defense_metric' => 'cb_weight', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
         $rules[249] = ['metric' => 'wr_target_height', 'defense_metric' => 'secondary_height', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
+        foreach ([201 => 'man', 203 => 'zone', 205 => 'cover_1', 207 => 'cover_2', 209 => 'cover_3'] as $id => $coverage) {
+            foreach (['top', 'bottom'] as $offset => $band) {
+                $rules[$id + $offset] = ['metric' => 'qb_'.$coverage.'_epa', 'defense_metric' => $coverage.'_rate',
+                    'offense' => $band, 'defense' => 'bottom', 'size' => 10, 'coverage' => true];
+            }
+        }
         ksort($rules);
 
         return $rules;
@@ -153,6 +159,9 @@ final class NflMatchupSignalCatalog
             $metric = $rules[$entry['id']]['metric'] ?? null;
             $positionInputs = in_array($entry['id'], [119, 120, 134, 219, 236, 245, 254, 256, 264, 266, 267, 270, 272, 273], true)
                 ? ['Season/team-specific GSIS roster position mappings', 'Identified rushing and receiving play-by-play with complete league coverage', 'Game-linked player identity and timestamped injury evidence where named'] : null;
+            if ($rules[$entry['id']]['coverage'] ?? false) {
+                $positionInputs = ['Game-selected QB identity and availability', 'FTN Data via nflverse participation, released after postseason (CC-BY-SA 4.0)', 'Explicit evidence season, at least 24 qualified QBs and all 32 defensive usage profiles'];
+            }
             if ($entry['id'] === 224) {
                 $positionInputs = ['Game-selected quarterback identity and availability', 'FTN read_thrown charting joined by verified game/play identity', 'At least 24 qualified QBs and short-pass defensive samples for all 32 teams'];
             }

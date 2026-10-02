@@ -62,8 +62,8 @@ it('preserves all supplied catalog IDs without inventing missing definitions', f
     $entries = app(NflMatchupSignalCatalog::class)->entries();
     expect(array_column($entries, 'id'))->toBe(range(1, 353))
         ->and($entries[352]['reason'])->toContain('Incomplete')
-        ->and($entries[200]['support'])->toBe('unavailable')
-        ->and($entries[200]['reason'])->toContain('charting');
+        ->and($entries[210]['support'])->toBe('unavailable')
+        ->and($entries[210]['reason'])->toContain('charting');
 });
 
 it('computes split success explosives and situational EPA without guessing missing context', function () {
@@ -73,8 +73,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(161)
-        ->and($result['signals'])->toHaveCount(322)
+    expect($result['summary']['supported_rules'])->toBe(171)
+        ->and($result['signals'])->toHaveCount(342)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -1363,4 +1363,57 @@ it('requires game-linked and fresh defensive size evidence rather than only a cu
     foreach ([248, 249] as $id) {
         expect(matchupSignal(app(NflMatchupSignalService::class)->build($target), $id, $target->home_team_id)['status'])->toBe('insufficient_data');
     }
+});
+
+it('evaluates paired quarterback coverage rules with actual usage and strict missing-data gates', function (int $rule, string $field, string $code, string $other) {
+    [$target, $teams] = matchupSignalLeague();
+    foreach ($teams as $i => $team) {
+        $passes = DB::table('nflverse_pbp_plays')->where('possession_team_id', $team->id)->where('play_type', 'pass');
+        $passes->update(['passer_player_id' => '00-'.(1000 + $i), $field => $other]);
+        foreach ((clone $passes)->get()->groupBy('nfl_game_id') as $rows) {
+            DB::table('nflverse_pbp_plays')->whereIn('id', $rows->take(5 + intdiv($i, 8) * 5)->pluck('id'))->update([$field => $code]);
+        }
+    }
+    $target->home_qb_id = '00-1031';
+    $target->away_team_id = $teams[1]->id;
+    $service = app(NflMatchupSignalService::class);
+    $result = $service->build($target);
+    $signal = matchupSignal($result, $rule, $target->home_team_id);
+    expect($signal['status'])->toBe('matched')
+        ->and($signal['evidence']['offense']['value'])->toEqualWithDelta(.15, .000001)
+        ->and($signal['evidence']['offense']['plays'])->toBe(60)
+        ->and($signal['evidence']['offense']['league_players'])->toBe(32)
+        ->and($signal['evidence']['defense']['value'])->toBe(1.0)
+        ->and(matchupSignal($result, $rule + 1, $target->home_team_id)['status'])->toBe('not_matched');
+    $target->home_qb_id = '00-1000';
+    expect(matchupSignal($service->build($target), $rule + 1, $target->home_team_id)['status'])->toBe('matched');
+    $target->home_qb_id = '00-1031';
+    DB::table('nflverse_pbp_plays')->where('passer_player_id', '00-1031')->update([$field => null]);
+    expect(matchupSignal($service->build($target), $rule, $target->home_team_id)['status'])->toBe('insufficient_data');
+    $target->home_qb_id = null;
+    expect(matchupSignal($service->build($target), $rule, $target->home_team_id)['status'])->toBe('insufficient_data');
+})->with([
+    [201, 'participation_man_zone', 'MAN_COVERAGE', 'ZONE_COVERAGE'],
+    [203, 'participation_man_zone', 'ZONE_COVERAGE', 'MAN_COVERAGE'],
+    [205, 'participation_coverage', 'COVER_1', 'COVER_3'],
+    [207, 'participation_coverage', 'COVER_2', '2_MAN'],
+    [209, 'participation_coverage', 'COVER_3', 'COVER_1'],
+]);
+
+it('keeps historical coverage separate from current-season evidence and excludes Cover 2 man', function () {
+    [$target, $teams, $games] = matchupSignalLeague();
+    foreach ($games as $game) {
+        $game->update(['season' => 2025, 'game_date' => $game->game_date->subYear()]);
+    }
+    foreach ($teams as $i => $team) {
+        DB::table('nflverse_pbp_plays')->where('possession_team_id', $team->id)->where('play_type', 'pass')
+            ->update(['passer_player_id' => '00-'.(1000 + $i), 'participation_man_zone' => 'MAN_COVERAGE', 'participation_coverage' => '2_MAN']);
+    }
+    $target->home_qb_id = '00-1031';
+    $service = app(NflMatchupSignalService::class);
+    expect(matchupSignal($service->build($target), 201, $target->home_team_id)['status'])->toBe('insufficient_data');
+    $prior = $service->build($target, 'previous_season');
+    expect(matchupSignal($prior, 201, $target->home_team_id)['evidence']['offense']['plays'])->toBe(60)
+        ->and(matchupSignal($prior, 207, $target->home_team_id)['status'])->toBe('insufficient_data')
+        ->and(matchupSignal($prior, 207, $target->home_team_id)['evidence']['offense']['plays'])->toBe(0);
 });

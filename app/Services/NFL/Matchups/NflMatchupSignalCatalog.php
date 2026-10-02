@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.14';
+    public const VERSION = '2026-10-01.15';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -111,6 +111,7 @@ final class NflMatchupSignalCatalog
                 'defense_threshold' => $threshold, 'offense' => 'top', 'defense' => 'any', 'size' => 10];
         }
         $rules[236] = ['metric' => 'qb_recent_change', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'epa', 'offense' => 'any', 'defense' => 'top', 'size' => 10];
+        $rules[224] = ['metric' => 'qb_checkdown_rate', 'defense_metric' => 'short_pass_epa', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
         ksort($rules);
 
         return $rules;
@@ -147,6 +148,9 @@ final class NflMatchupSignalCatalog
             $metric = $rules[$entry['id']]['metric'] ?? null;
             $positionInputs = in_array($entry['id'], [119, 120, 134, 219, 236, 245, 254, 256, 264, 266, 267, 270, 272, 273], true)
                 ? ['Season/team-specific GSIS roster position mappings', 'Identified rushing and receiving play-by-play with complete league coverage', 'Game-linked player identity and timestamped injury evidence where named'] : null;
+            if ($entry['id'] === 224) {
+                $positionInputs = ['Game-selected quarterback identity and availability', 'FTN read_thrown charting joined by verified game/play identity', 'At least 24 qualified QBs and short-pass defensive samples for all 32 teams'];
+            }
 
             return [...$entry, 'definition' => $metric ? $this->definition($metric).(($rules[$entry['id']]['zero_baseline'] ?? false) ? ' Uses the provider EPA zero baseline, not league rank or league-average centering. Positive offensive EPA means expected points added; positive EPA allowed means the defense allowed expected points to be added. Negative values mean expected points lost or suppressed, respectively. Both sides must be strictly on the named side of zero; zero does not qualify. This is play-level expected-points performance, not actual scoreboard points minus predicted game scores.' : '').(isset($rules[$entry['id']]['profile_threshold']) ? ' EPA profile differential = (offense EPA minus the league mean offensive EPA) + (opponent EPA allowed minus the league mean defensive EPA allowed). League means weight all 32 qualified teams equally. Positive favors the offensive profile; negative favors the defensive profile. The threshold is '.($rules[$entry['id']]['profile_threshold'] > 0 ? 'at least +' : 'at most ').number_format($rules[$entry['id']]['profile_threshold'], 2).' EPA/play, inclusive. These are catalog description thresholds, not backtested edges, predicted scoring margins or forecast inputs.' : '').(isset($rules[$entry['id']]['defense_metric']) ? ' Defense comparison: '.$this->definition($rules[$entry['id']]['defense_metric']) : '') : null,
                 'required_inputs' => $positionInputs ?? ($metric === 'rookie_qb' ? ['Game-selected quarterback identity and availability', 'Unambiguous target-season team roster experience', 'Complete league defensive play-by-play'] : (($rules[$entry['id']]['personnel'] ?? false) ? ['Game-linked target depth chart', 'Timestamped charts observed before historical kickoffs', 'Explicit player-ID injury evidence where required'] : ($metric ? ($metric === 'points_per_game' ? ['Final team scores', 'Complete league schedule'] : ['Mapped nflverse play-by-play', 'Eligible play values and situational fields', 'Complete league schedule']) : $this->requirements($entry['id'], $entry['category'])))),
@@ -420,7 +424,7 @@ final class NflMatchupSignalCatalog
 221. Poor deep passer vs defense forcing deep throws
 222. Quick-release QB vs strong pass rush
 223. Slow time-to-throw QB vs strong pass rush
-224. High checkdown QB vs underneath weakness
+224. High charted QB checkdown rate vs weak short-pass EPA defense
 225. High play-action EPA QB vs play-action weakness
 226. High RPO passing EPA QB vs RPO pass-defense weakness
 227. QB turnover-prone vs takeaway-heavy defense

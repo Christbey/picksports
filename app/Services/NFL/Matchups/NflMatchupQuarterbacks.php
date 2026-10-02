@@ -29,6 +29,9 @@ final class NflMatchupQuarterbacks
         ];
         $query->select(['nfl_game_id', 'possession_team_id', 'defense_team_id', 'passer_player_id'])
             ->selectRaw('COUNT(*) AS candidates, COUNT(epa) AS measured, SUM(epa) AS total')
+            ->selectRaw("SUM(CASE WHEN is_sack = 0 OR is_sack IS NULL THEN 1 ELSE 0 END) AS read_candidates,
+                SUM(CASE WHEN is_sack = 0 AND ftn_read_thrown IN ('0', '1', '2', 'CHK', 'DES', 'SD') THEN 1 ELSE 0 END) AS read_count,
+                SUM(CASE WHEN is_sack = 0 AND ftn_read_thrown = 'CHK' THEN 1 ELSE 0 END) AS checkdowns")
             ->selectRaw('COUNT(ftn_n_blitzers) AS charted, SUM(CASE WHEN ftn_n_blitzers > 0 THEN 1 ELSE 0 END) AS blitzes, SUM(CASE WHEN ftn_n_blitzers > 0 AND epa IS NOT NULL THEN 1 ELSE 0 END) AS blitz_measured, SUM(CASE WHEN ftn_n_blitzers > 0 THEN epa ELSE 0 END) AS blitz_total');
         foreach ($splits as $key => [$condition, $known]) {
             $query->selectRaw("SUM(CASE WHEN {$known} THEN 1 ELSE 0 END) AS {$key}_charted,
@@ -54,6 +57,7 @@ final class NflMatchupQuarterbacks
             }
             $coverage[$key]['identified'] += (int) $row->candidates;
             $appearance = ['game_id' => (int) $row->nfl_game_id, 'key' => $key,
+                'read_candidates' => (int) $row->read_candidates, 'read_count' => (int) $row->read_count, 'checkdowns' => (int) $row->checkdowns,
                 'count' => (int) $row->measured, 'candidate' => (int) $row->candidates, 'sum' => (float) $row->total,
                 'charted' => (int) $row->charted, 'blitzes' => (int) $row->blitzes, 'blitz_count' => (int) $row->blitz_measured, 'blitz_sum' => (float) $row->blitz_total];
             foreach ($splits as $key => $_) {
@@ -85,6 +89,7 @@ final class NflMatchupQuarterbacks
             $scrambles[$run->rusher_player_id][$key] = (int) $run->scrambles;
         }
         $mobilitySamples = [];
+        $checkdownSamples = [];
         $samples = [];
         $blitzSamples = [];
         $trendSamples = [];
@@ -97,6 +102,12 @@ final class NflMatchupQuarterbacks
                 'games' => count($valid), 'game_ids' => array_column($valid, 'game_id'), 'plays' => $count,
                 'eligible' => count($valid) >= 2 && count($valid) === count($rows), 'rank' => null,
                 'player_id' => $id, 'player_id_namespace' => 'gsis', 'minimum_plays_per_appearance' => 15];
+            $reads = array_sum(array_column($valid, 'read_count'));
+            $checkdowns = array_sum(array_column($valid, 'checkdowns'));
+            $readComplete = collect($valid)->every(fn ($row) => $row['read_count'] >= 15 && $row['read_count'] >= $row['read_candidates'] * .9);
+            $checkdownSamples[$id] = [...$samples[$id], 'value' => $reads ? $checkdowns / $reads : null,
+                'eligible' => $samples[$id]['eligible'] && $readComplete, 'plays' => $reads, 'checkdowns' => $checkdowns,
+                'candidate_throws' => array_sum(array_column($valid, 'read_candidates'))];
             $runComplete = collect($valid)->every(fn ($row) => ($runCoverage[$row['key']]['charted'] ?? 0) >= ($runCoverage[$row['key']]['candidates'] ?? 0) * .9);
             $scrambleCount = array_sum(array_map(fn ($row) => $scrambles[$id][$row['key']] ?? 0, $valid));
             $dropbacks = array_sum(array_column($valid, 'candidate')) + $scrambleCount;
@@ -132,6 +143,7 @@ final class NflMatchupQuarterbacks
 
         }
         $mobilitySamples = $this->rank($mobilitySamples);
+        $checkdownSamples = $this->rank($checkdownSamples);
         $samples = $this->rank($samples);
         $blitzSamples = $this->rank($blitzSamples);
         foreach ($splitSamples as $key => $split) {
@@ -174,6 +186,13 @@ final class NflMatchupQuarterbacks
                 $mobility['rank'] = null;
             }
             $result[$team]['mobility_sample'] = [...$mobility, ...$identity];
+            $checkdown = $checkdownSamples[$identity['player_id'] ?? ''] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => 0, 'eligible' => false, 'league_players' => 0];
+            if (isset($identity['identity_reason'])) {
+                $checkdown['eligible'] = false;
+                $checkdown['value'] = null;
+                $checkdown['rank'] = null;
+            }
+            $result[$team]['checkdown_sample'] = [...$checkdown, ...$identity];
             $result[$team]['backup_sample'] = $this->backupSample($target, $side, $identity, $rosters, $cutoff);
             $result[$team]['change_sample'] = $this->changeSample($target, $team, $result[$team]['backup_sample'], $cutoff);
             $result[$team]['rookie_sample'] = $this->rookieSample($identity, $rosters, $team, (int) $target->season);

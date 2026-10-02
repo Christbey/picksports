@@ -31,7 +31,7 @@ class SyncMatchupChartingCommand extends Command
             $header = fgetcsv($stream, escape: '');
             $flags = ['is_play_action', 'is_screen_pass', 'is_rpo', 'is_motion'];
             $counts = ['n_defense_box', 'n_blitzers', 'n_pass_rushers'];
-            if (! is_array($header) || array_diff(['season', 'nflverse_game_id', 'nflverse_play_id', ...$flags, ...$counts], $header)) {
+            if (! is_array($header) || array_diff(['season', 'nflverse_game_id', 'nflverse_play_id', 'read_thrown', ...$flags, ...$counts], $header)) {
                 throw new RuntimeException('Invalid charting header; no rows updated.');
             }
             $plays = DB::table('nflverse_pbp_plays')->where('season', $season)->whereNotNull('nfl_game_id')
@@ -49,7 +49,12 @@ class SyncMatchupChartingCommand extends Command
                     throw new RuntimeException('Duplicate play identity or wrong season; no rows updated.');
                 }
                 $seen[$key] = true;
-                $mapped = [];
+                $read = strtoupper(trim($row['read_thrown']));
+                $mapped = ['ftn_read_thrown' => match ($read) {
+                    '0', '1', '2', 'CHK', 'DES', 'SD' => $read,
+                    '', 'NA' => null,
+                    default => throw new RuntimeException('Invalid charted read; no rows updated.'),
+                }];
                 foreach ($flags as $field) {
                     $value = strtoupper(trim($row[$field]));
                     $mapped['ftn_'.$field] = match ($value) {

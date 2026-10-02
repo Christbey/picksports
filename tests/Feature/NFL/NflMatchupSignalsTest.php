@@ -73,8 +73,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(155)
-        ->and($result['signals'])->toHaveCount(310)
+    expect($result['summary']['supported_rules'])->toBe(156)
+        ->and($result['signals'])->toHaveCount(312)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -1126,4 +1126,54 @@ it('requires two timely QB chart observations before reporting a recent projecte
     expect(matchupSignal($service->build($target), 236, $target->home_team_id)['status'])->toBe('not_matched');
     $charts[0]->update(['observed_at' => now()->subDays(8)]);
     expect(matchupSignal($service->build($target), 236, $target->home_team_id)['status'])->toBe('insufficient_data');
+});
+
+it('compares the selected quarterbacks charted checkdown share with short-pass defense', function () {
+    [$target, $teams] = matchupSignalLeague();
+    foreach ($teams as $index => $team) {
+        DB::table('nflverse_pbp_plays')->where('possession_team_id', $team->id)->where('play_type', 'pass')
+            ->update(['passer_player_id' => '00-'.(1000 + $index), 'air_yards' => 5, 'ftn_read_thrown' => 'DES']);
+    }
+    $target->home_qb_id = '00-1031';
+    $target->away_team_id = $teams[0]->id;
+    $home = DB::table('nflverse_pbp_plays')->where('passer_player_id', '00-1031');
+    (clone $home)->update(['ftn_read_thrown' => 'CHK']);
+    $service = app(NflMatchupSignalService::class);
+    $signal = matchupSignal($service->build($target), 224, $target->home_team_id);
+    expect($signal['status'])->toBe('matched')
+        ->and($signal['evidence']['offense']['value'])->toEqualWithDelta(1, .000001)
+        ->and($signal['evidence']['offense']['plays'])->toBe(57)
+        ->and($signal['evidence']['offense']['checkdowns'])->toBe(57)
+        ->and($signal['evidence']['offense']['league_players'])->toBe(32)
+        ->and($signal['evidence']['defense_metric'])->toBe('short_pass_epa');
+
+    foreach (['0', '1', '2', 'DES', 'SD'] as $read) {
+        (clone $home)->update(['ftn_read_thrown' => $read]);
+        $signal = matchupSignal($service->build($target), 224, $target->home_team_id);
+        expect($signal['status'])->toBe('not_matched')->and($signal['evidence']['offense']['value'])->toEqualWithDelta(0, .000001);
+    }
+    (clone $home)->update(['ftn_read_thrown' => null]);
+    expect(matchupSignal($service->build($target), 224, $target->home_team_id)['status'])->toBe('insufficient_data');
+    (clone $home)->update(['ftn_read_thrown' => 'CHK']);
+    $target->home_qb_id = '00-1000';
+    expect(matchupSignal($service->build($target), 224, $target->home_team_id)['status'])->toBe('not_matched');
+    $target->home_qb_id = null;
+    expect(matchupSignal($service->build($target), 224, $target->home_team_id)['status'])->toBe('insufficient_data');
+});
+
+it('requires read coverage in every QB appearance and a qualified ranking population', function () {
+    [$target, $teams, $games] = matchupSignalLeague();
+    foreach ($teams as $index => $team) {
+        DB::table('nflverse_pbp_plays')->where('possession_team_id', $team->id)->where('play_type', 'pass')
+            ->update(['passer_player_id' => '00-'.(1000 + $index), 'air_yards' => 5, 'ftn_read_thrown' => 'CHK']);
+    }
+    $target->home_qb_id = '00-1031';
+    $service = app(NflMatchupSignalService::class);
+    $ids = DB::table('nflverse_pbp_plays')->where('nfl_game_id', $games[0]->id)->where('passer_player_id', '00-1031')->where('is_sack', false)->limit(2)->pluck('id');
+    DB::table('nflverse_pbp_plays')->whereIn('id', $ids)->update(['ftn_read_thrown' => null]);
+    expect(matchupSignal($service->build($target), 224, $target->home_team_id)['status'])->toBe('insufficient_data');
+    DB::table('nflverse_pbp_plays')->whereIn('id', $ids)->update(['ftn_read_thrown' => 'CHK']);
+    DB::table('nflverse_pbp_plays')->whereIn('possession_team_id', $teams->take(9)->pluck('id'))->update(['ftn_read_thrown' => null]);
+    $signal = matchupSignal($service->build($target), 224, $target->home_team_id);
+    expect($signal['status'])->toBe('insufficient_data')->and($signal['reason'])->toContain('24 qualified');
 });

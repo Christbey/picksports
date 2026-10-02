@@ -1043,6 +1043,7 @@ $scheduleSportPipeline(
 $scheduleDailySeasonJob("nfl:sync-matchup-rosters --season={$fallSeasonYear}", '08:00', $nflInSeason, 'NFL: Sync Matchup Roster Identities');
 $scheduleDailySeasonJob("nfl:sync-nflverse-pbp --season={$fallSeasonYear}", '08:05', $nflInSeason, 'NFL: Sync Matchup Play-by-Play');
 $scheduleDailySeasonJob("nfl:sync-matchup-tracking --season={$fallSeasonYear}", '08:13', $nflInSeason, 'NFL: Sync Matchup Tracking');
+$scheduleDailySeasonJob("nfl:sync-matchup-win-rates --season={$fallSeasonYear}", '08:14', $nflInSeason, 'NFL: Sync Matchup Win Rates');
 $scheduleDailySeasonJob("nfl:sync-matchup-pressure --season={$fallSeasonYear}", '08:11', $nflInSeason, 'NFL: Sync Matchup Pressure');
 $scheduleDailySeasonJob("nfl:sync-matchup-charting --season={$fallSeasonYear}", '08:10', $nflInSeason, 'NFL: Sync Matchup Charting');
 $scheduleDailySeasonJob("nfl:sync-matchup-schedule --season={$fallSeasonYear}", '08:12', $nflInSeason, 'NFL: Sync Matchup Schedule Evidence');

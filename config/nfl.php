@@ -1,6 +1,9 @@
 <?php
 
 return [
+    'matchup_win_rate_sources' => [
+        2026 => 'https://www.espn.com/nfl/story/_/id/49742016/2026-win-rates-team-player-rankings-pass-rush-run-stop-blocking',
+    ],
 
     /*
     |--------------------------------------------------------------------------

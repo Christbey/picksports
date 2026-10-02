@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.28';
+    public const VERSION = '2026-10-01.29';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -156,6 +156,14 @@ final class NflMatchupSignalCatalog
             $rules[$id] = ['metric' => $metric, 'defense_metric' => $defenseMetric, 'offense' => $offense,
                 'defense' => $defense, 'size' => 10, 'participation' => true];
         }
+        foreach ([141 => 5, 145 => 10] as $start => $size) {
+            foreach ([['top', 'top'], ['top', 'bottom'], ['bottom', 'top'], ['bottom', 'bottom']] as $offset => [$offense, $defense]) {
+                $rules[$start + $offset] = ['metric' => 'pass_block_win_rate', 'defense_metric' => 'pass_rush_win_rate', 'size' => $size, 'offense' => $offense, 'defense' => $defense, 'win_rates' => true];
+            }
+        }
+        foreach ([172 => ['top', 'bottom'], 173 => ['bottom', 'top']] as $id => [$offense, $defense]) {
+            $rules[$id] = ['metric' => 'run_block_win_rate', 'defense_metric' => 'rush_epa', 'size' => 10, 'offense' => $offense, 'defense' => $defense, 'win_rates' => true];
+        }
         ksort($rules);
 
         return $rules;
@@ -215,6 +223,9 @@ final class NflMatchupSignalCatalog
             }
             if (in_array($entry['id'], [222, 223], true)) {
                 $positionInputs = ['Weekly NGS passing release times and attempt counts (season totals excluded)', 'Game-selected QB identity, availability and identified prior passing appearances', 'Verified complete-league PFR pressure counts and nflverse dropbacks'];
+            }
+            if ($rules[$entry['id']]['win_rates'] ?? false) {
+                $positionInputs = ['Archived ESPN team win-rate table with all 32 published ranks', 'Explicit season and covered week matching the selected baseline', 'Publication and first observation before kickoff; at least two prior games per team'];
             }
             if ($entry['id'] === 224) {
                 $positionInputs = ['Game-selected quarterback identity and availability', 'FTN read_thrown charting joined by verified game/play identity', 'At least 24 qualified QBs and short-pass defensive samples for all 32 teams'];
@@ -412,10 +423,10 @@ final class NflMatchupSignalCatalog
 138. Rush offense trending down vs run defense trending up
 139. Rushing EPA profile differential ≥ +0.10 EPA/play
 140. Rushing EPA profile differential ≤ -0.20 EPA/play
-141. Top-5 pass-block OL vs top-5 pass rush
-142. Top-5 OL vs bottom-5 pass rush
-143. Bottom-5 OL vs top-5 pass rush
-144. Bottom-5 OL vs bottom-5 pass rush
+141. Top-5 pass-block win rate vs top-5 pass-rush win rate
+142. Top-5 PBWR vs bottom-5 PRWR
+143. Bottom-5 PBWR vs top-5 PRWR
+144. Bottom-5 PBWR vs bottom-5 PRWR
 145. Top-10 pass-block win rate vs top-10 pass-rush win rate
 146. Top-10 PBWR vs bottom-10 PRWR
 147. Bottom-10 PBWR vs top-10 PRWR

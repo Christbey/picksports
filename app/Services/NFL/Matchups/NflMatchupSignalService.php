@@ -29,6 +29,9 @@ final class NflMatchupSignalService
         $games = $cutoff === null || $scopeReason !== null ? collect() : $this->priorGames($game, $cutoff, $season);
         [$games, $baseline] = $this->baseline($games, $season, $window);
         $metrics = $this->metrics($games);
+        foreach (app(NflMatchupWinRates::class)->metrics($games, $cutoff, $season) as $metric => $samples) {
+            $metrics[$metric] = $samples;
+        }
         foreach (app(NflMatchupDefensiveSize::class)->metrics($game, $cutoff) as $metric => $samples) {
             $metrics[$metric] = $samples;
         }
@@ -540,6 +543,7 @@ final class NflMatchupSignalService
         $reason = match (true) {
             $scopeReason !== null => $scopeReason,
             $cutoff === null => 'Kickoff cutoff is unavailable.',
+            ($rule['win_rates'] ?? false) && ! $offense['eligible'] => 'A complete 32-team ESPN win-rate snapshot for this season and baseline week is required, published and observed before the cutoff within 14 days, with two prior games per team.',
             in_array($defenseMetric, ['cb_weight', 'secondary_height'], true) && ! $defense['eligible'] => 'A fresh game-linked defensive chart with enough uniquely identified starters and complete roster dimensions is required.',
             $defensePersonnel && isset($defense['identity_reason']) => $defense['identity_reason'],
             ($qbRule || $personnel) && isset($offense['identity_reason']) => $offense['identity_reason'],
@@ -592,6 +596,7 @@ final class NflMatchupSignalService
                     'pass_yards_per_attempt' => 'nflverse_pbp_plays: pass attempts (sacks excluded)',
                     'rush_ybc', 'rush_yac' => 'PFR weekly rushing contact yards and carries via nflverse, verified against game/team play-by-play',
                     'qb_pressure_epa', 'charted_pressure_rate', 'four_rusher_pressure_rate', 'wr_zone_target_epa', 'personnel_11_rate', 'personnel_12_rate', 'personnel_21_rate' => 'FTN Data via nflverse participation (CC-BY-SA 4.0), verified game/play identities',
+                    'pass_block_win_rate', 'run_block_win_rate' => 'ESPN Analytics published team win rates and ranks; run-defense comparison uses nflverse rushing EPA',
                     'qb_release_time' => 'NFL Next Gen Stats via nflverse, weekly identified passing attempts',
                     'yac_per_catch', 'wr_yac_per_catch' => 'nflverse completed-pass YAC and PFR team missed tackles',
                     'pressure_rate', 'pressure_to_sack_rate', 'qb_pressure_to_sack_rate' => 'PFR weekly advanced passing via nflverse, roster-mapped identities and play-by-play dropbacks',

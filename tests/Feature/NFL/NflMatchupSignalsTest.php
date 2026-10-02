@@ -11,6 +11,7 @@ use App\Services\NFL\Matchups\NflMatchupSignalCatalog;
 use App\Services\NFL\Matchups\NflMatchupSignalService;
 use App\Services\NFL\QuarterbackAvailability;
 use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -73,8 +74,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(201)
-        ->and($result['signals'])->toHaveCount(402)
+    expect($result['summary']['supported_rules'])->toBe(211)
+        ->and($result['signals'])->toHaveCount(422)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -1806,4 +1807,48 @@ it('excludes passes without a receiver from WR target samples while withholding 
         DB::table('nflverse_pbp_plays')->whereIn('id', $rows->take(5)->pluck('id'))->update(['receiver_player_id' => 'unmapped-receiver']);
     }
     expect(matchupSignal($service->build($target), 253, $target->home_team_id)['status'])->toBe('insufficient_data');
+});
+
+it('evaluates ten published win-rate comparisons without deriving ranks from rounded values', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-19 12:00:00', 'UTC'));
+    [$target, $teams] = matchupSignalLeague();
+    $samples = [];
+    foreach ($teams as $index => $team) {
+        $samples[$team->id] = [
+            'PBWR' => ['value' => .50, 'rank' => 32 - $index],
+            'PRWR' => ['value' => .50, 'rank' => 32 - $index],
+            'RBWR' => ['value' => .50, 'rank' => 32 - $index],
+            'RSWR' => ['value' => .50, 'rank' => 32 - $index],
+        ];
+    }
+    DB::table('nfl_matchup_win_rate_snapshots')->insert(['season' => 2026, 'through_week' => 3,
+        'source_updated_at' => '2026-09-18 14:00:00', 'observed_at' => '2026-09-18 15:00:00',
+        'source_url' => 'https://www.espn.com/nfl/story/test', 'content_hash' => str_repeat('a', 64), 'teams' => json_encode($samples)]);
+    $service = app(NflMatchupSignalService::class);
+    $rules = [141, 142, 143, 144, 145, 146, 147, 148, 172, 173];
+    foreach ([[31, 30, [141, 145]], [31, 0, [142, 146, 172]], [0, 31, [143, 147, 173]], [0, 1, [144, 148]]] as [$home, $away, $matched]) {
+        $target->update(['home_team_id' => $teams[$home]->id, 'away_team_id' => $teams[$away]->id]);
+        $result = $service->build($target->fresh());
+        foreach ($rules as $id) {
+            $signal = matchupSignal($result, $id, $teams[$home]->id);
+            expect($signal['status'])->toBe(in_array($id, $matched) ? 'matched' : 'not_matched')
+                ->and($signal['evidence']['offense']['plays'])->toBeNull()
+                ->and($signal['evidence']['offense']['display_value'])->toContain('through Week 3')
+                ->and($result['predictive_weight'])->toBe(0);
+        }
+    }
+    Game::factory()->create(['season' => 2026, 'season_type' => '2', 'week' => 4, 'game_date' => '2026-09-18',
+        'game_time' => '17:00:00', 'status' => 'STATUS_FINAL', 'home_team_id' => $teams[2]->id, 'away_team_id' => $teams[3]->id]);
+    $fallback = $service->build($target->fresh());
+    expect($fallback['baseline']['through_week'])->toBe(3)
+        ->and(matchupSignal($fallback, 144, $teams[0]->id)['status'])->toBe('matched');
+    $target->update(['home_team_id' => $teams[27]->id, 'away_team_id' => $teams[31]->id]);
+    $samples[$teams[26]->id]['PBWR']['rank'] = 5;
+    DB::table('nfl_matchup_win_rate_snapshots')->update(['teams' => json_encode($samples)]);
+    $result = $service->build($target->fresh());
+    expect(matchupSignal($result, 141, $teams[27]->id)['status'])->toBe('not_matched')
+        ->and(matchupSignal($result, 145, $teams[27]->id)['status'])->toBe('matched');
+    DB::table('nfl_matchup_win_rate_snapshots')->update(['observed_at' => '2026-09-21 00:00:00']);
+    $result = $service->build($target->fresh());
+    expect(matchupSignal($result, 141, $teams[27]->id)['status'])->toBe('insufficient_data');
 });

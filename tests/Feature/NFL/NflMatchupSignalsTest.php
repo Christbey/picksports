@@ -74,8 +74,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(211)
-        ->and($result['signals'])->toHaveCount(422)
+    expect($result['summary']['supported_rules'])->toBe(219)
+        ->and($result['signals'])->toHaveCount(438)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -818,12 +818,23 @@ it('requires a mapped game-selected backup in a fresh linked quarterback chart',
     $roster = ['nflverse_roster_key' => 'backup-qb', 'season' => 2026, 'team_id' => $target->home_team_id,
         'position' => 'QB', 'espn_id' => '301', 'gsis_id' => '00-9000'];
     DB::table('nflverse_rosters')->insert($roster);
+    combinedWinRateSnapshot($teams, true);
     $service = app(NflMatchupSignalService::class);
     $target->away_team_id = $teams[30]->id;
     $result = $service->build($target);
+    expect(matchupSignal($result, 184, $target->home_team_id)['status'])->toBe('matched')
+        ->and(matchupSignal($result, 184, $target->home_team_id)['evidence']['additional_condition']['sample']['selected_depth_rank'])->toBe(2);
     expect(matchupSignal($result, 233, $target->home_team_id)['status'])->toBe('matched')
         ->and(matchupSignal($result, 234, $target->home_team_id)['status'])->toBe('not_matched')
         ->and(matchupSignal($result, 233, $target->home_team_id)['evidence']['offense']['selected_depth_rank'])->toBe(2);
+    $starter->update(['depth_rank' => 2]);
+    $backup->update(['depth_rank' => 1]);
+    expect(matchupSignal($service->build($target), 184, $target->home_team_id)['status'])->toBe('not_matched');
+    $backup->update(['depth_rank' => 2]);
+    $starter->update(['depth_rank' => 1]);
+    $chart->update(['observed_at' => now()->subDays(8)]);
+    expect(matchupSignal($service->build($target), 184, $target->home_team_id)['status'])->toBe('insufficient_data');
+    $chart->update(['observed_at' => now()->subHour()]);
     $target->away_team_id = $teams[0]->id;
     expect(matchupSignal($service->build($target), 234, $target->home_team_id)['status'])->toBe('matched');
     $starter->update(['depth_rank' => 2]);
@@ -1851,4 +1862,89 @@ it('evaluates ten published win-rate comparisons without deriving ranks from rou
     DB::table('nfl_matchup_win_rate_snapshots')->update(['observed_at' => '2026-09-21 00:00:00']);
     $result = $service->build($target->fresh());
     expect(matchupSignal($result, 141, $teams[27]->id)['status'])->toBe('insufficient_data');
+});
+
+function combinedWinRateSnapshot($teams, bool $reverse = false): void
+{
+    $samples = [];
+    foreach ($teams as $index => $team) {
+        $offenseRank = $reverse ? $index + 1 : 32 - $index;
+        $defenseRank = 33 - $offenseRank;
+        $samples[$team->id] = [
+            'PBWR' => ['value' => .50, 'rank' => $offenseRank], 'PRWR' => ['value' => .50, 'rank' => $defenseRank],
+            'RBWR' => ['value' => .50, 'rank' => $offenseRank], 'RSWR' => ['value' => .50, 'rank' => $defenseRank],
+        ];
+    }
+    DB::table('nfl_matchup_win_rate_snapshots')->delete();
+    DB::table('nfl_matchup_win_rate_snapshots')->insert(['season' => 2026, 'through_week' => 3,
+        'source_updated_at' => '2026-09-18 14:00:00', 'observed_at' => '2026-09-18 15:00:00',
+        'source_url' => 'https://www.espn.com/nfl/story/test', 'content_hash' => str_repeat('b', 64), 'teams' => json_encode($samples)]);
+}
+
+it('combines measured blocking and run stopping with the correct directions and non-neutral road venue', function () {
+    $this->travelTo('2026-09-19 12:00:00');
+    [$target, $teams] = matchupSignalLeague();
+    combinedWinRateSnapshot($teams);
+    $service = app(NflMatchupSignalService::class);
+    $result = $service->build($target);
+    expect(matchupSignal($result, 135, $target->home_team_id)['status'])->toBe('matched')
+        ->and(matchupSignal($result, 136, $target->home_team_id)['status'])->toBe('not_matched')
+        ->and(matchupSignal($result, 135, $target->home_team_id)['evidence']['defense_metric'])->toBe('run_stop_win_rate');
+    combinedWinRateSnapshot($teams, true);
+    $result = $service->build($target);
+    expect(matchupSignal($result, 136, $target->home_team_id)['status'])->toBe('matched')
+        ->and(matchupSignal($result, 135, $target->home_team_id)['status'])->toBe('not_matched')
+        ->and(matchupSignal($result, 183, $target->away_team_id)['status'])->toBe('matched')
+        ->and(matchupSignal($result, 183, $target->home_team_id)['status'])->toBe('not_matched');
+    $target->neutral_site = true;
+    expect(matchupSignal($service->build($target), 183, $target->away_team_id)['status'])->toBe('not_matched');
+    DB::table('nfl_matchup_win_rate_snapshots')->delete();
+    expect(matchupSignal($service->build($target), 135, $target->home_team_id)['status'])->toBe('insufficient_data');
+});
+
+it('requires both pass-protection ranks and the selected quarterbacks own qualified sample', function () {
+    $this->travelTo('2026-09-19 12:00:00');
+    [$target, $teams] = matchupPositionLeague();
+    $target->away_team_id = $teams[30]->id;
+    combinedWinRateSnapshot($teams);
+    $service = app(NflMatchupSignalService::class);
+    $result = $service->build($target);
+    foreach ([186, 187] as $id) {
+        $signal = matchupSignal($result, $id, $target->home_team_id);
+        expect($signal['status'])->toBe('matched')
+            ->and($signal['evidence']['additional_condition']['sample']['player_id'])->toBe('00-10124')
+            ->and($signal['evidence']['offense']['display_value'])->toContain('through Week 3')
+            ->and($signal['evidence']['additional_condition']['matched'])->toBeTrue();
+    }
+    expect(matchupSignal($result, 185, $target->home_team_id)['status'])->toBe('not_matched');
+    $target->home_qb_id = '00-10000';
+    $result = $service->build($target);
+    foreach ([185, 186, 187] as $id) {
+        expect(matchupSignal($result, $id, $target->home_team_id)['status'])->toBe('not_matched');
+    }
+    combinedWinRateSnapshot($teams, true);
+    expect(matchupSignal($service->build($target), 185, $target->home_team_id)['status'])->toBe('matched');
+    $target->home_qb_id = null;
+    expect(matchupSignal($service->build($target), 185, $target->home_team_id)['status'])->toBe('insufficient_data');
+    $target->home_qb_id = '00-10124';
+    combinedWinRateSnapshot($teams);
+    DB::table('nflverse_pbp_plays')->where('possession_team_id', $teams[31]->id)->where('play_type', 'run')->update(['qb_scramble' => null]);
+    expect(matchupSignal($service->build($target), 186, $target->home_team_id)['status'])->toBe('insufficient_data');
+    DB::table('nflverse_pbp_plays')->whereIn('possession_team_id', $teams->take(9)->pluck('id'))->update(['passer_player_id' => null]);
+    expect(matchupSignal($service->build($target), 187, $target->home_team_id)['status'])->toBe('insufficient_data');
+});
+
+it('requires the additional passing defense condition without treating a weak pass rush as weak pass coverage', function () {
+    $this->travelTo('2026-09-19 12:00:00');
+    [$target, $teams] = matchupSignalLeague();
+    combinedWinRateSnapshot($teams);
+    $service = app(NflMatchupSignalService::class);
+    expect(matchupSignal($service->build($target), 188, $target->home_team_id)['status'])->toBe('not_matched');
+    DB::table('nflverse_pbp_plays')->where('defense_team_id', $target->away_team_id)->where('play_type', 'pass')->update(['epa' => .5]);
+    $signal = matchupSignal($service->build($target), 188, $target->home_team_id);
+    expect($signal['status'])->toBe('matched')
+        ->and($signal['evidence']['additional_condition']['metric'])->toBe('pass_epa')
+        ->and($signal['evidence']['offense']['display_value'])->toContain('passing EPA allowed');
+    DB::table('nflverse_pbp_plays')->where('defense_team_id', $teams[0]->id)->where('play_type', 'pass')->update(['epa' => null]);
+    expect(matchupSignal($service->build($target), 188, $target->home_team_id)['status'])->toBe('insufficient_data');
 });

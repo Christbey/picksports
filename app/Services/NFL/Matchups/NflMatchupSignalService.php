@@ -557,6 +557,34 @@ final class NflMatchupSignalService
         };
         $matched = $venueApplies && $reason === null && ($personnel ? ($offense['value'] >= $rule['offense_threshold'] && (! isset($rule['offense_maximum']) || $offense['value'] <= $rule['offense_maximum'])) : $this->matches($offense, $rule['offense'], $rule['size'], true)) && ($defensePersonnel ? $defense['value'] >= $rule['defense_threshold'] : $this->matches($defense, $rule['defense'], $rule['size'], false));
 
+        $conditionEvidence = null;
+        if (isset($rule['condition'])) {
+            $condition = $rule['condition'];
+            $teamId = $condition['side'] === 'offense' ? $offenseId : $defenseId;
+            $sample = $metrics[$condition['metric']][$condition['side']][$teamId] ?? [];
+            $conditionReason = match (true) {
+                isset($sample['identity_reason']) => $sample['identity_reason'],
+                ! ($sample['eligible'] ?? false) => 'The additional '.$condition['metric'].' condition requires a complete, identified sample.',
+                ($condition['quarterback'] ?? false) && ($sample['league_players'] ?? 0) < 24 => 'The additional quarterback condition requires at least 24 qualified passers.',
+                ! ($condition['personnel'] ?? false) && ! ($condition['quarterback'] ?? false) && ($sample['league_teams'] ?? 0) !== self::LEAGUE_TEAMS => 'The additional defensive condition requires all 32 qualified teams.',
+                default => null,
+            };
+            $conditionMatched = $conditionReason === null && (($condition['personnel'] ?? false)
+                ? $sample['value'] >= 1 : $this->matches($sample, $condition['band'], 10, $condition['side'] === 'offense'));
+            $reason ??= $conditionReason;
+            $matched = $matched && $conditionMatched;
+            $conditionEvidence = [...$condition, 'team_id' => $teamId, 'sample' => $sample, 'matched' => $conditionMatched, 'reason' => $conditionReason];
+            if ($conditionReason === null) {
+                $description = $sample['display_value'] ?? match ($condition['metric']) {
+                    'backup_qb' => ($sample['player_name'] ?? 'Selected QB').': '.($sample['value'] >= 1 ? 'backup' : 'starter'),
+                    'qb_scramble_rate' => ($sample['player_name'] ?? 'Selected QB').': '.number_format($sample['value'] * 100, 1).'% scramble rate, rank '.$sample['rank'].' of '.$sample['league_players'],
+                    'qb_pass_epa' => ($sample['player_name'] ?? 'Selected QB').': '.number_format($sample['value'], 3).' passing EPA, rank '.$sample['rank'].' of '.$sample['league_players'],
+                    default => 'Defense: '.number_format($sample['value'], 3).' passing EPA allowed, rank '.$sample['rank'].' of 32',
+                };
+                $offense['display_value'] = ($offense['display_value'] ?? 'Pass-block win rate unavailable').' · '.$description;
+            }
+        }
+
         $profile = null;
         if (isset($rule['profile_threshold'])) {
             $threshold = $rule['profile_threshold'];
@@ -576,6 +604,7 @@ final class NflMatchupSignalService
             'offense_team_id' => $offenseId, 'defense_team_id' => $defenseId,
             'reason' => $reason,
             'evidence' => [
+                ...($conditionEvidence !== null ? ['additional_condition' => $conditionEvidence] : []),
                 ...($profile !== null ? ['epa_profile_differential' => $profile] : []),
                 'defense_personnel' => $defensePersonnel,
                 'personnel_only' => $personnelOnly,
@@ -596,7 +625,7 @@ final class NflMatchupSignalService
                     'pass_yards_per_attempt' => 'nflverse_pbp_plays: pass attempts (sacks excluded)',
                     'rush_ybc', 'rush_yac' => 'PFR weekly rushing contact yards and carries via nflverse, verified against game/team play-by-play',
                     'qb_pressure_epa', 'charted_pressure_rate', 'four_rusher_pressure_rate', 'wr_zone_target_epa', 'personnel_11_rate', 'personnel_12_rate', 'personnel_21_rate' => 'FTN Data via nflverse participation (CC-BY-SA 4.0), verified game/play identities',
-                    'pass_block_win_rate', 'run_block_win_rate' => 'ESPN Analytics published team win rates and ranks; run-defense comparison uses nflverse rushing EPA',
+                    'pass_block_win_rate', 'run_block_win_rate' => 'ESPN Analytics published team win rates and ranks'.($defenseMetric === 'rush_epa' ? '; run-defense comparison uses nflverse rushing EPA' : ''),
                     'qb_release_time' => 'NFL Next Gen Stats via nflverse, weekly identified passing attempts',
                     'yac_per_catch', 'wr_yac_per_catch' => 'nflverse completed-pass YAC and PFR team missed tackles',
                     'pressure_rate', 'pressure_to_sack_rate', 'qb_pressure_to_sack_rate' => 'PFR weekly advanced passing via nflverse, roster-mapped identities and play-by-play dropbacks',
@@ -605,7 +634,7 @@ final class NflMatchupSignalService
                     'ol_out', 'ol_changed', 'ol_changed_two', 'ol_same_four', 'rb1_out', 'wr1_out', 'te1_out', 'multiple_wr_out', 'backup_center' => 'Game-linked depth charts, historical pregame charts and timestamped injury snapshots',
                     'points_per_drive' => 'nflverse_pbp_plays: completed drives and possession-team scores',
                     default => 'nflverse_pbp_plays: pass/run plays (sacks included)',
-                }.($defensePersonnel ? '; game-linked defensive depth chart and timestamped injury evidence' : ''),
+                }.($defensePersonnel ? '; game-linked defensive depth chart and timestamped injury evidence' : '').($conditionEvidence !== null ? '; additional condition uses game-selected quarterback identity, chart status or the specified nflverse EPA/scramble sample' : ''),
                 'offense' => $offense, 'defense' => $defense, 'league_teams' => $league,
                 'cutoff_at' => $cutoff?->toIso8601String(),
             ],

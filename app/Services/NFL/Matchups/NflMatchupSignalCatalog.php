@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.29';
+    public const VERSION = '2026-10-02.30';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -164,6 +164,19 @@ final class NflMatchupSignalCatalog
         foreach ([172 => ['top', 'bottom'], 173 => ['bottom', 'top']] as $id => [$offense, $defense]) {
             $rules[$id] = ['metric' => 'run_block_win_rate', 'defense_metric' => 'rush_epa', 'size' => 10, 'offense' => $offense, 'defense' => $defense, 'win_rates' => true];
         }
+        foreach ([135 => ['top', 'bottom'], 136 => ['bottom', 'top']] as $id => [$offense, $defense]) {
+            $rules[$id] = ['metric' => 'run_block_win_rate', 'defense_metric' => 'run_stop_win_rate', 'size' => 10, 'offense' => $offense, 'defense' => $defense, 'win_rates' => true];
+        }
+        foreach (range(183, 188) as $id) {
+            $rules[$id] = ['metric' => 'pass_block_win_rate', 'defense_metric' => 'pass_rush_win_rate', 'size' => 10,
+                'offense' => $id <= 185 ? 'bottom' : 'top', 'defense' => $id <= 185 ? 'top' : 'bottom', 'win_rates' => true];
+        }
+        $rules[183]['venue'] = 'road';
+        $rules[184]['condition'] = ['metric' => 'backup_qb', 'side' => 'offense', 'personnel' => true, 'band' => 'any'];
+        $rules[185]['condition'] = ['metric' => 'qb_scramble_rate', 'side' => 'offense', 'quarterback' => true, 'band' => 'bottom'];
+        $rules[186]['condition'] = ['metric' => 'qb_scramble_rate', 'side' => 'offense', 'quarterback' => true, 'band' => 'top'];
+        $rules[187]['condition'] = ['metric' => 'qb_pass_epa', 'side' => 'offense', 'quarterback' => true, 'band' => 'top'];
+        $rules[188]['condition'] = ['metric' => 'pass_epa', 'side' => 'defense', 'band' => 'bottom'];
         ksort($rules);
 
         return $rules;
@@ -234,7 +247,11 @@ final class NflMatchupSignalCatalog
                 $positionInputs = ['Unambiguous season/team WR roster dimensions and identified pass targets', 'Fresh game-linked defensive depth charts with complete starter dimensions', 'Thirty-two qualified offensive and projected defensive size profiles'];
             }
 
-            return [...$entry, 'definition' => $metric ? $this->definition($metric).(($rules[$entry['id']]['zero_baseline'] ?? false) ? ' Uses the provider EPA zero baseline, not league rank or league-average centering. Positive offensive EPA means expected points added; positive EPA allowed means the defense allowed expected points to be added. Negative values mean expected points lost or suppressed, respectively. Both sides must be strictly on the named side of zero; zero does not qualify. This is play-level expected-points performance, not actual scoreboard points minus predicted game scores.' : '').(isset($rules[$entry['id']]['profile_threshold']) ? ' EPA profile differential = (offense EPA minus the league mean offensive EPA) + (opponent EPA allowed minus the league mean defensive EPA allowed). League means weight all 32 qualified teams equally. Positive favors the offensive profile; negative favors the defensive profile. The threshold is '.($rules[$entry['id']]['profile_threshold'] > 0 ? 'at least +' : 'at most ').number_format($rules[$entry['id']]['profile_threshold'], 2).' EPA/play, inclusive. These are catalog description thresholds, not backtested edges, predicted scoring margins or forecast inputs.' : '').(isset($rules[$entry['id']]['defense_metric']) ? ' Defense comparison: '.$this->definition($rules[$entry['id']]['defense_metric']) : '') : null,
+            if (isset($rules[$entry['id']]['condition'])) {
+                $positionInputs[] = 'Verified additional condition: '.$this->definition($rules[$entry['id']]['condition']['metric']);
+            }
+
+            return [...$entry, 'definition' => $metric ? $this->definition($metric).(($rules[$entry['id']]['zero_baseline'] ?? false) ? ' Uses the provider EPA zero baseline, not league rank or league-average centering. Positive offensive EPA means expected points added; positive EPA allowed means the defense allowed expected points to be added. Negative values mean expected points lost or suppressed, respectively. Both sides must be strictly on the named side of zero; zero does not qualify. This is play-level expected-points performance, not actual scoreboard points minus predicted game scores.' : '').(isset($rules[$entry['id']]['profile_threshold']) ? ' EPA profile differential = (offense EPA minus the league mean offensive EPA) + (opponent EPA allowed minus the league mean defensive EPA allowed). League means weight all 32 qualified teams equally. Positive favors the offensive profile; negative favors the defensive profile. The threshold is '.($rules[$entry['id']]['profile_threshold'] > 0 ? 'at least +' : 'at most ').number_format($rules[$entry['id']]['profile_threshold'], 2).' EPA/play, inclusive. These are catalog description thresholds, not backtested edges, predicted scoring margins or forecast inputs.' : '').(isset($rules[$entry['id']]['defense_metric']) ? ' Defense comparison: '.$this->definition($rules[$entry['id']]['defense_metric']) : '').(isset($rules[$entry['id']]['condition']) ? ' All conditions must hold: '.($entry['id'] <= 185 ? 'bottom-10 PBWR against top-10 PRWR' : 'top-10 PBWR against bottom-10 PRWR').', plus '.$this->definition($rules[$entry['id']]['condition']['metric']).' This conjunction is descriptive only, not an additive advantage score.' : '').($entry['id'] === 183 ? ' Requires bottom-10 PBWR against top-10 PRWR and the offense playing away at a non-neutral venue.' : '') : null,
                 'required_inputs' => $positionInputs ?? ($metric === 'rookie_qb' ? ['Game-selected quarterback identity and availability', 'Unambiguous target-season team roster experience', 'Complete league defensive play-by-play'] : (($rules[$entry['id']]['personnel'] ?? false) ? ['Game-linked target depth chart', 'Timestamped charts observed before historical kickoffs', 'Explicit player-ID injury evidence where required'] : ($metric ? ($metric === 'points_per_game' ? ['Final team scores', 'Complete league schedule'] : ['Mapped nflverse play-by-play', 'Eligible play values and situational fields', 'Complete league schedule']) : $this->requirements($entry['id'], $entry['category'])))),
                 'prediction_effect' => 'none'];
         }, $entries);
@@ -417,8 +434,8 @@ final class NflMatchupSignalCatalog
 132. High first-down rush EPA vs poor first-down run defense
 133. High early-down rush rate vs weak run defense
 134. Explosive RB rushing unit vs defense allowing explosive RB runs
-135. Strong OL rushing metrics vs weak DL
-136. Weak OL rushing metrics vs strong DL
+135. Top-10 run-block win rate vs bottom-10 run-stop win rate
+136. Bottom-10 run-block win rate vs top-10 run-stop win rate
 137. Rush offense trending up vs run defense trending down
 138. Rush offense trending down vs run defense trending up
 139. Rushing EPA profile differential ≥ +0.10 EPA/play
@@ -465,12 +482,12 @@ final class NflMatchupSignalCatalog
 180. OL penalty-heavy vs disciplined DL
 181. High holding rate vs elite edge
 182. High false-start rate in road environment
-183. OL disadvantage + road game
-184. OL disadvantage + backup QB
-185. OL disadvantage + immobile QB
-186. OL advantage + mobile QB
-187. OL advantage + elite passing QB
-188. OL advantage + weak secondary
+183. Bottom-10 PBWR vs top-10 PRWR on the road
+184. Bottom-10 PBWR vs top-10 PRWR with a selected backup QB
+185. Bottom-10 PBWR vs top-10 PRWR with a bottom-10 scramble-rate QB
+186. Top-10 PBWR vs bottom-10 PRWR with a top-10 scramble-rate QB
+187. Top-10 PBWR vs bottom-10 PRWR with a top-10 passing-EPA QB
+188. Top-10 PBWR vs bottom-10 PRWR and bottom-10 passing-EPA defense
 189. Large PBWR–PRWR differential
 190. Extreme PBWR–PRWR differential
 191. QB top-10 EPA vs top-10 defense

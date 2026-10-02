@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.10';
+    public const VERSION = '2026-10-01.11';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -92,6 +92,10 @@ final class NflMatchupSignalCatalog
         $rules[232] = ['metric' => 'rookie_qb', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'epa', 'offense' => 'any', 'defense' => 'top', 'size' => 10, 'venue' => 'road'];
         $rules[233] = ['metric' => 'backup_qb', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'epa', 'offense' => 'any', 'defense' => 'top', 'size' => 10];
         $rules[234] = ['metric' => 'backup_qb', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'epa', 'offense' => 'any', 'defense' => 'bottom', 'size' => 10];
+        foreach ([49 => ['epa', .10], 50 => ['epa', .20], 99 => ['pass_epa', .10], 100 => ['pass_epa', -.10],
+            139 => ['rush_epa', .10], 140 => ['rush_epa', -.20]] as $id => [$metric, $threshold]) {
+            $rules[$id] = ['metric' => $metric, 'profile_threshold' => $threshold, 'offense' => 'any', 'defense' => 'any', 'size' => null];
+        }
         ksort($rules);
 
         return $rules;
@@ -127,7 +131,7 @@ final class NflMatchupSignalCatalog
         return array_map(function (array $entry) use ($rules): array {
             $metric = $rules[$entry['id']]['metric'] ?? null;
 
-            return [...$entry, 'definition' => $metric ? $this->definition($metric).(isset($rules[$entry['id']]['defense_metric']) ? ' Defense comparison: '.$this->definition($rules[$entry['id']]['defense_metric']) : '') : null,
+            return [...$entry, 'definition' => $metric ? $this->definition($metric).(isset($rules[$entry['id']]['profile_threshold']) ? ' EPA profile differential = (offense EPA minus the league mean offensive EPA) + (opponent EPA allowed minus the league mean defensive EPA allowed). League means weight all 32 qualified teams equally. Positive favors the offensive profile; negative favors the defensive profile. The threshold is '.($rules[$entry['id']]['profile_threshold'] > 0 ? 'at least +' : 'at most ').number_format($rules[$entry['id']]['profile_threshold'], 2).' EPA/play, inclusive. These are catalog description thresholds, not backtested edges, predicted scoring margins or forecast inputs.' : '').(isset($rules[$entry['id']]['defense_metric']) ? ' Defense comparison: '.$this->definition($rules[$entry['id']]['defense_metric']) : '') : null,
                 'required_inputs' => $metric === 'rookie_qb' ? ['Game-selected quarterback identity and availability', 'Unambiguous target-season team roster experience', 'Complete league defensive play-by-play'] : (($rules[$entry['id']]['personnel'] ?? false) ? ['Game-linked target depth chart', 'Timestamped charts observed before historical kickoffs', 'Explicit player-ID injury evidence where required'] : ($metric ? ($metric === 'points_per_game' ? ['Final team scores', 'Complete league schedule'] : ['Mapped nflverse play-by-play', 'Eligible play values and situational fields', 'Complete league schedule']) : $this->requirements($entry['id'], $entry['category']))),
                 'prediction_effect' => 'none'];
         }, $entries);
@@ -224,8 +228,8 @@ final class NflMatchupSignalCatalog
 46. Offense outperforming expected points vs defense underperforming
 47. Offense underperforming expected points vs defense outperforming
 48. Top offensive DVOA-style efficiency vs bottom defensive efficiency
-49. Large offense-defense efficiency differential
-50. Extreme offense-defense efficiency differential
+49. Overall EPA profile differential ≥ +0.10 EPA/play
+50. Overall EPA profile differential ≥ +0.20 EPA/play
 51. Top-5 passing EPA vs top-5 pass defense
 52. Top-5 passing EPA vs bottom-5 pass defense
 53. Bottom-5 passing EPA vs top-5 pass defense
@@ -274,8 +278,8 @@ final class NflMatchupSignalCatalog
 96. Passing offense trending down vs defense trending up
 97. Top road passing offense vs weak home pass defense
 98. Top home passing offense vs weak road pass defense
-99. Pass efficiency advantage ≥ defined threshold
-100. Pass efficiency disadvantage ≥ defined threshold
+99. Passing EPA profile differential ≥ +0.10 EPA/play
+100. Passing EPA profile differential ≤ -0.10 EPA/play
 101. Top-5 rush EPA vs top-5 run defense
 102. Top-5 rush EPA vs bottom-5 run defense
 103. Bottom-5 rush EPA vs top-5 run defense
@@ -314,8 +318,8 @@ final class NflMatchupSignalCatalog
 136. Weak OL rushing metrics vs strong DL
 137. Rush offense trending up vs run defense trending down
 138. Rush offense trending down vs run defense trending up
-139. Large rush-efficiency matchup advantage
-140. Extreme rush-efficiency matchup disadvantage
+139. Rushing EPA profile differential ≥ +0.10 EPA/play
+140. Rushing EPA profile differential ≤ -0.20 EPA/play
 141. Top-5 pass-block OL vs top-5 pass rush
 142. Top-5 OL vs bottom-5 pass rush
 143. Bottom-5 OL vs top-5 pass rush

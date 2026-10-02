@@ -73,8 +73,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(133)
-        ->and($result['signals'])->toHaveCount(266)
+    expect($result['summary']['supported_rules'])->toBe(139)
+        ->and($result['signals'])->toHaveCount(278)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -843,4 +843,64 @@ it('requires a mapped game-selected backup in a fresh linked quarterback chart',
     app()->instance(QuarterbackAvailability::class, $availability);
     $signal = matchupSignal($service->build($target), 234, $target->home_team_id);
     expect($signal['status'])->toBe('insufficient_data')->and($signal['reason'])->toContain('unavailable');
+});
+
+it('computes signed league-centered EPA differentials with explicit inclusive thresholds', function () {
+    [$target, $teams] = matchupSignalLeague();
+    $service = app(NflMatchupSignalService::class);
+    $target->home_team_id = $teams[31]->id;
+    $target->away_team_id = $teams[0]->id;
+    $result = $service->build($target);
+    foreach ([49, 50, 99, 139] as $id) {
+        $signal = matchupSignal($result, $id, $target->home_team_id);
+        expect($signal['status'])->toBe('matched')
+            ->and($signal['evidence']['epa_profile_differential']['value'])->toEqualWithDelta(.31, .000001)
+            ->and($signal['evidence']['epa_profile_differential']['predictive_weight'])->toBe(0);
+    }
+    foreach ([100, 140] as $id) {
+        $signal = matchupSignal($result, $id, $target->away_team_id);
+        expect($signal['status'])->toBe('matched')
+            ->and($signal['evidence']['epa_profile_differential']['value'])->toEqualWithDelta(-.31, .000001);
+    }
+    $target->away_team_id = $teams[21]->id;
+    $result = $service->build($target);
+    expect(matchupSignal($result, 49, $target->home_team_id)['evidence']['epa_profile_differential']['value'])->toEqualWithDelta(.10, .000001)
+        ->and(matchupSignal($result, 49, $target->home_team_id)['status'])->toBe('matched')
+        ->and(matchupSignal($result, 50, $target->home_team_id)['status'])->toBe('not_matched');
+    $target->away_team_id = $teams[22]->id;
+    expect(matchupSignal($service->build($target), 49, $target->home_team_id)['status'])->toBe('not_matched');
+    $target->home_team_id = $teams[0]->id;
+    $target->away_team_id = $teams[10]->id;
+    expect(matchupSignal($service->build($target), 100, $target->home_team_id)['status'])->toBe('matched');
+    $target->away_team_id = $teams[9]->id;
+    expect(matchupSignal($service->build($target), 100, $target->home_team_id)['status'])->toBe('not_matched');
+    DB::table('nflverse_pbp_plays')->where('possession_team_id', $teams[15]->id)->update(['epa' => null]);
+    $result = $service->build($target);
+    foreach ([49, 50, 99, 100, 139, 140] as $id) {
+        $signal = matchupSignal($result, $id, $target->home_team_id);
+        expect($signal['status'])->toBe('insufficient_data')
+            ->and($signal['evidence']['epa_profile_differential']['value'])->toBeNull();
+    }
+});
+
+it('keeps passing and rushing differentials separate and invariant to a league-wide EPA shift', function () {
+    [$target, $teams] = matchupSignalLeague();
+    $target->away_team_id = $teams[0]->id;
+    $service = app(NflMatchupSignalService::class);
+    DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['epa' => DB::raw('-epa')]);
+    $result = $service->build($target);
+    expect(matchupSignal($result, 99, $target->home_team_id)['status'])->toBe('matched')
+        ->and(matchupSignal($result, 139, $target->home_team_id)['status'])->toBe('not_matched')
+        ->and(matchupSignal($result, 140, $target->home_team_id)['status'])->toBe('matched')
+        ->and(matchupSignal($result, 49, $target->home_team_id)['status'])->toBe('not_matched');
+    DB::table('nflverse_pbp_plays')->update(['epa' => DB::raw('epa + 2')]);
+    $shifted = $service->build($target);
+    foreach ([49, 50, 99, 100, 139, 140] as $id) {
+        expect(matchupSignal($shifted, $id, $target->home_team_id)['evidence']['epa_profile_differential']['value'])
+            ->toEqualWithDelta(matchupSignal($result, $id, $target->home_team_id)['evidence']['epa_profile_differential']['value'], .000001);
+    }
+    $target->away_team_id = $teams[11]->id;
+    expect(matchupSignal($service->build($target), 140, $target->home_team_id)['status'])->toBe('matched');
+    $target->away_team_id = $teams[12]->id;
+    expect(matchupSignal($service->build($target), 140, $target->home_team_id)['status'])->toBe('not_matched');
 });

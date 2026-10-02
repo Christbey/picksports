@@ -413,12 +413,26 @@ final class NflMatchupSignalService
         };
         $matched = $venueApplies && $reason === null && ($personnel ? $offense['value'] >= $rule['offense_threshold'] : $this->matches($offense, $rule['offense'], $rule['size'], true)) && $this->matches($defense, $rule['defense'], $rule['size'], false);
 
+        $profile = null;
+        if (isset($rule['profile_threshold'])) {
+            $threshold = $rule['profile_threshold'];
+            $value = $reason === null ? ($offense['value'] - $offense['league_average']) + ($defense['value'] - $defense['league_average']) : null;
+            $matched = $venueApplies && $value !== null && ($threshold > 0 ? $value >= $threshold - 1e-9 : $value <= $threshold + 1e-9);
+            $profile = ['value' => $value, 'unit' => 'EPA/play', 'threshold' => $threshold,
+                'operator' => $threshold > 0 ? '>=' : '<=', 'offense_league_mean' => $offense['league_average'] ?? null,
+                'defense_league_mean' => $defense['league_average'] ?? null, 'predictive_weight' => 0];
+            if ($value !== null) {
+                $offense['display_value'] = 'EPA profile differential '.sprintf('%+.3f', $value).' EPA/play';
+            }
+        }
+
         return [
             'id' => $entry['id'], 'label' => $entry['label'], 'category' => $entry['category'],
             'status' => $reason !== null ? 'insufficient_data' : ($matched ? 'matched' : 'not_matched'),
             'offense_team_id' => $offenseId, 'defense_team_id' => $defenseId,
             'reason' => $reason,
             'evidence' => [
+                ...($profile !== null ? ['epa_profile_differential' => $profile] : []),
                 'personnel_only' => $personnelOnly,
                 'metric' => $rule['metric'],
                 'offense_metric' => $rule['metric'],

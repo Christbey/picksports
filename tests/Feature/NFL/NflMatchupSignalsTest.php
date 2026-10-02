@@ -73,8 +73,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(131)
-        ->and($result['signals'])->toHaveCount(262)
+    expect($result['summary']['supported_rules'])->toBe(133)
+        ->and($result['signals'])->toHaveCount(266)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -793,4 +793,54 @@ it('compares a verified lead receiver absence with top and bottom pass defenses'
         ->and(matchupSignal($result, 261, $target->home_team_id)['status'])->toBe('not_matched');
     $report->update(['status' => 'Active']);
     expect(matchupSignal($service->build($target), 262, $target->home_team_id)['status'])->toBe('not_matched');
+});
+
+it('requires a mapped game-selected backup in a fresh linked quarterback chart', function () {
+    $this->travelTo('2026-09-19 12:00:00');
+    [$target, $teams] = matchupSignalLeague();
+    $target->home_qb_id = '00-9000';
+    $chart = DepthChartSnapshot::create(['snapshot_uuid' => (string) Str::uuid(), 'team_id' => $target->home_team_id,
+        'espn_team_id' => '123', 'season' => 2026, 'observed_at' => now()->subHour(), 'payload_hash' => hash('sha256', 'backup-qb')]);
+    $starter = DepthChartSnapshotEntry::create(['snapshot_id' => $chart->id, 'position_slot_key' => 'qb', 'position_code' => 'QB',
+        'depth_rank' => 1, 'espn_athlete_id' => '300', 'observed_at' => now()->subHour()]);
+    $backup = DepthChartSnapshotEntry::create(['snapshot_id' => $chart->id, 'position_slot_key' => 'qb', 'position_code' => 'QB',
+        'depth_rank' => 2, 'espn_athlete_id' => '301', 'observed_at' => now()->subHour()]);
+    $prediction = Prediction::factory()->create(['game_id' => $target->id]);
+    app(PredictionFeatureSnapshotRecorder::class)->record($prediction, $target, 'nfl', [
+        'model_metadata' => ['quarterback' => ['home' => ['depth_chart_game_link' => [
+            'game_id' => $target->id, 'team_id' => $target->home_team_id, 'side' => 'home', 'snapshot_id' => $chart->id,
+            'snapshot_uuid' => $chart->snapshot_uuid, 'as_of' => now()->toIso8601String(),
+        ]]]],
+    ]);
+    $roster = ['nflverse_roster_key' => 'backup-qb', 'season' => 2026, 'team_id' => $target->home_team_id,
+        'position' => 'QB', 'espn_id' => '301', 'gsis_id' => '00-9000'];
+    DB::table('nflverse_rosters')->insert($roster);
+    $service = app(NflMatchupSignalService::class);
+    $target->away_team_id = $teams[30]->id;
+    $result = $service->build($target);
+    expect(matchupSignal($result, 233, $target->home_team_id)['status'])->toBe('matched')
+        ->and(matchupSignal($result, 234, $target->home_team_id)['status'])->toBe('not_matched')
+        ->and(matchupSignal($result, 233, $target->home_team_id)['evidence']['offense']['selected_depth_rank'])->toBe(2);
+    $target->away_team_id = $teams[0]->id;
+    expect(matchupSignal($service->build($target), 234, $target->home_team_id)['status'])->toBe('matched');
+    $starter->update(['depth_rank' => 2]);
+    $backup->update(['depth_rank' => 1]);
+    expect(matchupSignal($service->build($target), 234, $target->home_team_id)['status'])->toBe('not_matched');
+    $starter->update(['depth_rank' => 1]);
+    expect(matchupSignal($service->build($target), 234, $target->home_team_id)['status'])->toBe('insufficient_data');
+    $backup->update(['depth_rank' => 2, 'source_updated_at' => now()->addDay()]);
+    expect(matchupSignal($service->build($target), 234, $target->home_team_id)['status'])->toBe('insufficient_data');
+    $backup->update(['source_updated_at' => null]);
+    $chart->update(['observed_at' => now()->subDays(8)]);
+    expect(matchupSignal($service->build($target), 234, $target->home_team_id)['status'])->toBe('insufficient_data');
+    $chart->update(['observed_at' => now()->subHour()]);
+    DB::table('nflverse_rosters')->insert([...$roster, 'nflverse_roster_key' => 'backup-conflict', 'gsis_id' => '00-9999']);
+    expect(matchupSignal($service->build($target), 234, $target->home_team_id)['status'])->toBe('insufficient_data');
+    DB::table('nflverse_rosters')->where('nflverse_roster_key', 'backup-conflict')->delete();
+    $availability = Mockery::mock(QuarterbackAvailability::class);
+    $availability->shouldReceive('forGame')->andReturn([]);
+    $availability->shouldReceive('excludes')->andReturn(true);
+    app()->instance(QuarterbackAvailability::class, $availability);
+    $signal = matchupSignal($service->build($target), 234, $target->home_team_id);
+    expect($signal['status'])->toBe('insufficient_data')->and($signal['reason'])->toContain('unavailable');
 });

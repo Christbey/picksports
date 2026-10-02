@@ -36,6 +36,7 @@ final class NflMatchupSignalService
             $metrics['qb_play_action_epa']['offense'][$teamId] = $sample['play_action_sample'] ?? [];
             $metrics['qb_rpo_epa']['offense'][$teamId] = $sample['rpo_sample'] ?? [];
             $metrics['qb_pass_epa_trend_3']['offense'][$teamId] = $sample['trend_sample'] ?? [];
+            $metrics['backup_qb']['offense'][$teamId] = $sample['backup_sample'] ?? [];
             $metrics['rookie_qb']['offense'][$teamId] = $sample['rookie_sample'] ?? [];
         }
         foreach (app(NflMatchupPersonnel::class)->forGame($game, $cutoff) as $teamId => $samples) {
@@ -424,6 +425,7 @@ final class NflMatchupSignalService
                 'defense_metric' => $defenseMetric,
                 'definition' => $entry['definition'],
                 'source' => match ($rule['metric']) {
+                    'backup_qb' => 'Game-selected quarterback, target-season roster mapping and timestamped game-linked depth chart',
                     'rookie_qb' => 'Game-selected quarterback identity and target-season nflverse_rosters years_exp',
                     'points_per_game' => 'nfl_games: final team scores',
                     'pass_yards_per_attempt' => 'nflverse_pbp_plays: pass attempts (sacks excluded)',

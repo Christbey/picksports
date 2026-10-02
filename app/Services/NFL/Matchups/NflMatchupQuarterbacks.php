@@ -138,6 +138,7 @@ final class NflMatchupQuarterbacks
                 $trend['value'] = null;
             }
             $result[$team] = [...$sample, ...$identity, 'blitz_sample' => [...$blitz, ...$identity], 'trend_sample' => [...$trend, ...$identity]];
+            $result[$team]['backup_sample'] = $this->backupSample($target, $side, $identity, $rosters, $cutoff);
             $result[$team]['rookie_sample'] = $this->rookieSample($identity, $rosters, $team, (int) $target->season);
             foreach ($splits as $key => $_) {
                 $split = $splitSamples[$key][$identity['player_id'] ?? ''] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => 0, 'eligible' => false, 'league_players' => 0];
@@ -152,6 +153,49 @@ final class NflMatchupQuarterbacks
         }
 
         return $result;
+    }
+
+    private function backupSample(Game $target, string $side, array $identity, Collection $rosters, CarbonImmutable $cutoff): array
+    {
+        $missing = [...$identity, 'value' => null, 'eligible' => false, 'rank' => null, 'games' => 0, 'plays' => null,
+            'identity_reason' => $identity['identity_reason'] ?? 'The selected quarterback needs an unambiguous roster mapping and a fresh game-linked QB depth order.'];
+        if (isset($identity['identity_reason'])) {
+            return $missing;
+        }
+        $team = (int) $target->{$side.'_team_id'};
+        $mapping = $rosters->filter(fn ($row) => (int) $row->team_id === $team && $row->gsis_id === ($identity['player_id'] ?? null));
+        $espnIds = $mapping->pluck('espn_id')->uniqueStrict();
+        if ($espnIds->count() !== 1 || ! filled($espnIds->first())) {
+            return $missing;
+        }
+        $espn = (string) $espnIds->first();
+        if ($rosters->filter(fn ($row) => (int) $row->team_id === $team && (string) $row->espn_id === $espn)->pluck('gsis_id')->uniqueStrict()->count() !== 1) {
+            return $missing;
+        }
+        $asOf = $cutoff->min(CarbonImmutable::now());
+        $link = GameDepthChartLink::with('snapshot.entries')->where('game_id', $target->id)->where('side', $side)->where('team_id', $team)
+            ->where('as_of', '<=', $asOf)->where('observed_at', '<=', $asOf)->latest('as_of')->latest('id')->first();
+        $chart = $link?->snapshot;
+        if (! $chart || (int) $chart->team_id !== $team || (int) $chart->season !== (int) $target->season
+            || ! $chart->observed_at || $chart->observed_at->gt($asOf) || $chart->observed_at->lt($asOf->subDays(7))
+            || $chart->source_updated_at?->gt($asOf)) {
+            return $missing;
+        }
+        $entries = $chart->entries->filter(fn ($entry) => strtoupper((string) $entry->position_code) === 'QB');
+        $starter = $entries->filter(fn ($entry) => (int) $entry->depth_rank === 1);
+        $selected = $entries->filter(fn ($entry) => (string) $entry->espn_athlete_id === $espn);
+        if ($starter->count() !== 1 || $selected->count() !== 1
+            || ! filled($starter->first()->espn_athlete_id) || (int) $selected->first()->depth_rank < 1
+            || ! $starter->merge($selected)->every(fn ($entry) => $entry->observed_at && $entry->observed_at->lte($chart->observed_at)
+                && (! $entry->source_updated_at || $entry->source_updated_at->lte($chart->observed_at)))) {
+            return $missing;
+        }
+        $backup = (int) $selected->first()->depth_rank > 1;
+
+        return [...$identity, 'value' => (int) $backup, 'eligible' => true, 'rank' => null, 'games' => 0, 'plays' => null,
+            'depth_chart_link_id' => $link->id, 'depth_chart_snapshot_id' => $chart->id,
+            'selected_depth_rank' => (int) $selected->first()->depth_rank, 'charted_starter_espn_id' => $starter->first()->espn_athlete_id,
+            'display_value' => $backup ? 'Selected QB listed below the charted starter' : 'Selected QB is the charted starter'];
     }
 
     private function rookieSample(array $identity, Collection $rosters, int $team, int $season): array

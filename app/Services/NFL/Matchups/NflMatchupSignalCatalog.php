@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.9';
+    public const VERSION = '2026-10-01.10';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -90,6 +90,8 @@ final class NflMatchupSignalCatalog
         $rules[238] = ['metric' => 'qb_pass_epa_trend_3', 'defense_metric' => 'pass_epa_trend_3', 'offense' => 'declining', 'defense' => 'improving', 'size' => null];
         $rules[230] = ['metric' => 'rookie_qb', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'blitz_rate', 'offense' => 'any', 'defense' => 'bottom', 'size' => 10];
         $rules[232] = ['metric' => 'rookie_qb', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'epa', 'offense' => 'any', 'defense' => 'top', 'size' => 10, 'venue' => 'road'];
+        $rules[233] = ['metric' => 'backup_qb', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'epa', 'offense' => 'any', 'defense' => 'top', 'size' => 10];
+        $rules[234] = ['metric' => 'backup_qb', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'epa', 'offense' => 'any', 'defense' => 'bottom', 'size' => 10];
         ksort($rules);
 
         return $rules;
@@ -406,8 +408,8 @@ final class NflMatchupSignalCatalog
 230. Rookie QB vs blitz-heavy defense
 231. Rookie QB vs disguise-heavy defense
 232. Rookie QB on road vs top defense
-233. Backup QB vs top-10 defense
-234. Backup QB vs bottom-10 defense
+233. Selected QB listed as backup vs top-10 defense
+234. Selected QB listed as backup vs bottom-10 defense
 235. QB returning from injury vs high-pressure defense
 236. QB change during week vs strong defense
 237. QB passing EPA improving 3 straight appearances vs declining pass defense

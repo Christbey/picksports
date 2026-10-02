@@ -458,6 +458,8 @@ final class NflMatchupSignalService
     {
         return match ($band) {
             'any' => true,
+            'positive' => $sample['value'] > 0,
+            'negative' => $sample['value'] < 0,
             'improving' => $offense ? $sample['value'] > 0 : $sample['value'] < 0,
             'declining' => $offense ? $sample['value'] < 0 : $sample['value'] > 0,
             'top' => $sample['rank_end'] <= $size,

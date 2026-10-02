@@ -73,8 +73,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(139)
-        ->and($result['signals'])->toHaveCount(278)
+    expect($result['summary']['supported_rules'])->toBe(141)
+        ->and($result['signals'])->toHaveCount(282)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -750,6 +750,8 @@ it('identifies rookie quarterbacks from the target roster without requiring prio
     DB::table('nflverse_rosters')->update(['team_id' => $target->away_team_id]);
     DB::table('nflverse_rosters')->insert([...$roster, 'nflverse_roster_key' => 'conflicting-experience', 'years_exp' => 2]);
     expect(matchupSignal($service->build($target), 230, $target->away_team_id)['status'])->toBe('insufficient_data');
+    DB::table('nflverse_rosters')->where('nflverse_roster_key', 'conflicting-experience')->update(['years_exp' => null]);
+    expect(matchupSignal($service->build($target), 230, $target->away_team_id)['status'])->toBe('insufficient_data');
     $target->away_qb_id = null;
     expect(matchupSignal($service->build($target), 230, $target->away_team_id)['status'])->toBe('insufficient_data');
     $target->away_qb_id = '00-9000';
@@ -903,4 +905,37 @@ it('keeps passing and rushing differentials separate and invariant to a league-w
     expect(matchupSignal($service->build($target), 140, $target->home_team_id)['status'])->toBe('matched');
     $target->away_team_id = $teams[12]->id;
     expect(matchupSignal($service->build($target), 140, $target->home_team_id)['status'])->toBe('not_matched');
+});
+
+it('compares expected-points performance against zero rather than ranks or league averages', function () {
+    [$target, $teams] = matchupSignalLeague();
+    $target->away_team_id = $teams[0]->id;
+    $service = app(NflMatchupSignalService::class);
+    $result = $service->build($target);
+    expect(matchupSignal($result, 46, $target->home_team_id)['status'])->toBe('matched')
+        ->and(matchupSignal($result, 47, $target->home_team_id)['status'])->toBe('not_matched')
+        ->and(matchupSignal($result, 47, $target->away_team_id)['status'])->toBe('matched')
+        ->and(matchupSignal($result, 46, $target->away_team_id)['status'])->toBe('not_matched');
+    $target->away_team_id = $teams[30]->id;
+    $result = $service->build($target);
+    foreach ([46, 47] as $id) {
+        expect(matchupSignal($result, $id, $target->home_team_id)['status'])->toBe('not_matched');
+    }
+    $target->away_team_id = $teams[15]->id;
+    $result = $service->build($target);
+    expect(matchupSignal($result, 46, $target->home_team_id)['evidence']['defense']['value'])->toEqual(0)
+        ->and(matchupSignal($result, 46, $target->home_team_id)['status'])->toBe('not_matched');
+    DB::table('nflverse_pbp_plays')->update(['epa' => DB::raw('epa + 1')]);
+    $target->home_team_id = $teams[0]->id;
+    $target->away_team_id = $teams[31]->id;
+    $result = $service->build($target);
+    $signal = matchupSignal($result, 46, $target->home_team_id);
+    expect($signal['status'])->toBe('matched')
+        ->and($signal['evidence']['offense']['rank'])->toBe(32)
+        ->and($signal['evidence']['definition'])->toContain('zero baseline')
+        ->and($result['predictive_weight'])->toBe(0);
+    DB::table('nflverse_pbp_plays')->where('possession_team_id', $teams[15]->id)->update(['epa' => null]);
+    foreach ([46, 47] as $id) {
+        expect(matchupSignal($service->build($target), $id, $target->home_team_id)['status'])->toBe('insufficient_data');
+    }
 });

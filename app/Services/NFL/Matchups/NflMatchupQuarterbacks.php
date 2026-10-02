@@ -202,7 +202,7 @@ final class NflMatchupQuarterbacks
     {
         $rows = $rosters->filter(fn ($row) => (int) $row->team_id === $team && filled($identity['player_id'] ?? null)
             && $row->gsis_id === $identity['player_id']);
-        $experience = $rows->pluck('years_exp')->unique();
+        $experience = $rows->pluck('years_exp')->uniqueStrict();
         $known = $rows->isNotEmpty() && $experience->count() === 1 && $experience->first() !== null;
         $reason = $identity['identity_reason'] ?? ($known ? null : 'Unambiguous quarterback experience from the target-season team roster is required.');
         $years = $known ? (int) $experience->first() : null;

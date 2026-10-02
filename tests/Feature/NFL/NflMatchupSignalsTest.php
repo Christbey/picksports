@@ -1317,6 +1317,23 @@ it('compares target-weighted WR size with a complete game-linked projected defen
             ->and($signal['evidence']['defense']['value'])->toEqualWithDelta($defense, .000001)
             ->and($signal['evidence']['defense']['depth_chart_link_id'])->not->toBeNull();
     }
+    $twoWay = DB::table('nflverse_rosters')->where('team_id', $target->away_team_id)->where('position', 'DB')->first();
+    DB::table('nflverse_rosters')->where('id', $twoWay->id)->update(['position' => 'WR']);
+    foreach ([248, 249] as $id) {
+        expect(matchupSignal($service->build($target), $id, $target->home_team_id)['status'])->toBe('matched');
+    }
+    DB::table('nflverse_rosters')->where('id', $twoWay->id)->update(['team_id' => $teams[2]->id]);
+    $signal = matchupSignal($service->build($target), 248, $target->home_team_id);
+    expect($signal['status'])->toBe('matched')->and($signal['evidence']['defense']['cross_team_measurement_player_ids'])->toBe([(string) $twoWay->espn_id]);
+    $conflict = (array) $twoWay;
+    unset($conflict['id']);
+    $conflict['nflverse_roster_key'] .= '-ambiguous';
+    $conflict['team_id'] = $teams[3]->id;
+    $conflict['gsis_id'] = '00-different-player';
+    DB::table('nflverse_rosters')->insert($conflict);
+    expect(matchupSignal($service->build($target), 248, $target->home_team_id)['status'])->toBe('insufficient_data');
+    DB::table('nflverse_rosters')->where('nflverse_roster_key', $conflict['nflverse_roster_key'])->delete();
+    DB::table('nflverse_rosters')->where('id', $twoWay->id)->update(['team_id' => $target->away_team_id, 'position' => 'DB']);
     $row = (array) DB::table('nflverse_rosters')->where('team_id', $target->away_team_id)->where('position', 'DB')->first();
     unset($row['id']);
     $row['nflverse_roster_key'] .= '-conflict';

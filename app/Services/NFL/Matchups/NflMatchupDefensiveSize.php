@@ -30,7 +30,9 @@ final class NflMatchupDefensiveSize
             $charts[$team] = $link?->snapshot;
             $linkIds[$team] = $link?->id;
         }
-        $rosters = DB::table('nflverse_rosters')->where('season', $game->season)->whereNotNull('espn_id')->get(['team_id', 'espn_id', 'gsis_id', 'position', 'height', 'weight'])->groupBy(fn ($row) => $row->team_id.':'.$row->espn_id);
+        $rosterRows = DB::table('nflverse_rosters')->where('season', $game->season)->whereNotNull('espn_id')->get(['team_id', 'espn_id', 'gsis_id', 'height', 'weight']);
+        $rosters = $rosterRows->groupBy(fn ($row) => $row->team_id.':'.$row->espn_id);
+        $playerRosters = $rosterRows->groupBy('espn_id');
         $result = [];
         foreach (Team::pluck('id') as $team) {
             $chart = $charts->get($team);
@@ -43,21 +45,31 @@ final class NflMatchupDefensiveSize
                     'depth_chart_snapshot_id' => $chart?->id, 'depth_chart_link_id' => $linkIds[$team] ?? null, 'as_of' => $asOf->toIso8601String(), 'unit' => $unit];
                 $entries = $valid ? $chart->entries->filter(fn ($entry) => (int) $entry->depth_rank === 1 && in_array(strtoupper((string) $entry->position_code), $positions, true)) : collect();
                 $values = [];
+                $fallbackIds = [];
+                $measurementTeams = [];
                 if ($entries->count() >= $minimum && $entries->pluck('espn_athlete_id')->uniqueStrict()->count() === $entries->count()) {
                     foreach ($entries as $entry) {
                         $rows = $rosters->get($team.':'.$entry->espn_athlete_id, collect());
+                        $crossTeam = $rows->isEmpty();
+                        if ($crossTeam) {
+                            $rows = $playerRosters->get((string) $entry->espn_athlete_id, collect());
+                        }
                         $sizes = $rows->pluck($field)->uniqueStrict();
                         if (! filled($entry->espn_athlete_id) || ! $entry->observed_at || $entry->observed_at->gt($chart->observed_at) || $entry->source_updated_at?->gt($chart->observed_at)
-                            || $rows->isEmpty() || ! $rows->every(fn ($row) => filled($row->gsis_id) && in_array($row->position, ['CB', 'DB', 'FS', 'SS', 'S'], true))
+                            || $rows->isEmpty() || ! $rows->every(fn ($row) => filled($row->gsis_id))
                             || $rows->pluck('gsis_id')->uniqueStrict()->count() !== 1 || $sizes->count() !== 1 || ! is_numeric($sizes->first()) || $sizes->first() < $low || $sizes->first() > $high) {
                             break;
                         }
                         $values[] = (float) $sizes->first();
+                        $measurementTeams[(string) $entry->espn_athlete_id] = $rows->pluck('team_id')->unique()->values()->all();
+                        if ($crossTeam) {
+                            $fallbackIds[] = (string) $entry->espn_athlete_id;
+                        }
                     }
                 }
                 if (count($values) === $entries->count() && count($values) >= $minimum) {
                     $sample = [...$sample, 'value' => array_sum($values) / count($values), 'eligible' => true, 'games' => 1,
-                        'projected_players' => count($values), 'player_ids' => $entries->pluck('espn_athlete_id')->values()->all(),
+                        'projected_players' => count($values), 'dimension_roster_team_ids' => $measurementTeams, 'cross_team_measurement_player_ids' => $fallbackIds, 'player_ids' => $entries->pluck('espn_athlete_id')->values()->all(),
                         'display_value' => 'Projected '.($metric === 'cb_weight' ? 'cornerbacks' : 'secondary').' average '.number_format(array_sum($values) / count($values), 2).' '.$unit];
                 }
                 $result[$metric]['defense'][$team] = $sample;

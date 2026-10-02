@@ -50,10 +50,11 @@ class SyncNflversePlayByPlayCommand extends Command
             if ($count === 0) {
                 throw new RuntimeException('Empty play-by-play source; no rows imported.');
             }
+            unset($body, $row, $values);
             // Verify the recoverable source before updating provider rows.
             $sources->archive('nflverse', 'pbp', $compressed, ['source_url' => $url, 'season' => $season]);
             $exit = $this->call('nfl:import-nflverse-layer', ['dataset' => 'pbp', 'file' => $compressed,
-                '--from-season' => $season, '--to-season' => $season, '--archive-source' => true]);
+                '--from-season' => $season, '--to-season' => $season, '--chunk' => 100, '--archive-source' => true]);
             if ($exit !== self::SUCCESS) {
                 return $exit;
             }

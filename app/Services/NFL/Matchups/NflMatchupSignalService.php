@@ -27,6 +27,7 @@ final class NflMatchupSignalService
         $scopeReason = ! in_array((string) $game->season_type, [(string) config('nfl.season.types.regular', 2), 'regular', 'REG'], true)
             ? 'This catalog version supports regular-season target games only.' : null;
         $games = $cutoff === null || $scopeReason !== null ? collect() : $this->priorGames($game, $cutoff, $season);
+        [$games, $baseline] = $this->baseline($games, $season, $window);
         $metrics = $this->metrics($games);
         foreach (app(NflMatchupDefensiveSize::class)->metrics($game, $cutoff) as $metric => $samples) {
             $metrics[$metric] = $samples;
@@ -80,6 +81,7 @@ final class NflMatchupSignalService
             'target_season' => (int) $game->season,
             'cutoff_at' => $cutoff?->toIso8601String(),
             'window' => $window,
+            'baseline' => $baseline,
             'prediction_effect' => ['winner' => false, 'spread' => false, 'total' => false, 'confidence' => false, 'approval' => false],
             'minimum_games' => self::MIN_GAMES,
             'minimum_league_teams' => self::LEAGUE_TEAMS,
@@ -129,7 +131,7 @@ final class NflMatchupSignalService
             ->whereIn('status', [config('nfl.statuses.final', 'STATUS_FINAL'), 'final', 'completed'])
             ->where('id', '!=', $game->id)
             ->whereDate('game_date', '<', $cutoff->toDateString())
-            ->get(['id', 'season', 'home_team_id', 'away_team_id', 'game_date', 'game_time', 'home_score', 'away_score', 'neutral_site'])
+            ->get(['id', 'season', 'week', 'home_team_id', 'away_team_id', 'game_date', 'game_time', 'home_score', 'away_score', 'neutral_site'])
             ->filter(function (Game $prior) use ($cutoff): bool {
                 $kickoff = $this->dates->gameDateTimeUtc($prior->getRawOriginal('game_date'), $prior->game_time);
                 if ($kickoff === null || $kickoff->greaterThanOrEqualTo($cutoff)) {
@@ -138,6 +140,47 @@ final class NflMatchupSignalService
 
                 return $kickoff->toDateString() < $cutoff->toDateString();
             })->keyBy('id');
+    }
+
+    /** Only a newly arriving week's missing feed can select a complete earlier week. */
+    private function baseline(Collection $games, int $season, string $window): array
+    {
+        $baseline = null;
+        if ($window !== 'season_to_date' || $games->isEmpty()) {
+            return [$games, $baseline];
+        }
+        $latestWeek = (int) $games->max('week');
+        $covered = DB::table('nflverse_pbp_plays')->whereIn('nfl_game_id', $games->keys())
+            ->whereIn('play_type', ['pass', 'run'])->distinct()->pluck('nfl_game_id');
+        $missing = $games->reject(fn (Game $prior): bool => $covered->contains($prior->id));
+        if ($missing->isEmpty() || $latestWeek < 2 || $missing->contains(fn (Game $prior): bool => (int) $prior->week !== $latestWeek)) {
+            return [$games, $baseline];
+        }
+        $schedule = Game::query()->where('season', $season)
+            ->whereIn('season_type', [(string) config('nfl.season.types.regular', 2), 'regular', 'REG'])
+            ->whereBetween('week', [1, $latestWeek - 1])->get(['id', 'week']);
+        $throughWeek = 0;
+        for ($week = 1; $week < $latestWeek; $week++) {
+            $scheduled = $schedule->where('week', $week);
+            if ($scheduled->isEmpty() || $scheduled->contains(fn (Game $prior): bool => ! $games->has($prior->id) || ! $covered->contains($prior->id))) {
+                break;
+            }
+            $throughWeek = $week;
+        }
+        if ($throughWeek === 0) {
+            return [$games, $baseline];
+        }
+        $selected = $games->filter(fn (Game $prior): bool => (int) $prior->week <= $throughWeek);
+        $throughDate = $selected->map(fn (Game $prior): string => $this->dates->gameDateTimeUtc($prior->getRawOriginal('game_date'), $prior->game_time)->toDateString())->max();
+        $baseline = [
+            'mode' => 'last_complete_week',
+            'through_week' => $throughWeek,
+            'through_date' => $throughDate,
+            'games' => $selected->count(),
+            'label' => "{$season} season through Week {$throughWeek} ({$throughDate})",
+        ];
+
+        return [$selected, $baseline];
     }
 
     /** Team metrics use grouped drive and play queries; player metrics load separately. */

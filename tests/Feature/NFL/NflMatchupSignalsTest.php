@@ -47,7 +47,7 @@ function matchupSignalLeague(int $teamCount = 32, int $weeks = 3): array
     $target = Game::factory()->create([
         'home_team_id' => $teams[$teamCount - 1]->id, 'away_team_id' => $teams[$teamCount - 2]->id,
         'season' => 2026, 'season_type' => '2', 'status' => 'STATUS_SCHEDULED',
-        'game_date' => '2026-09-20', 'game_time' => '17:00:00', 'neutral_site' => false,
+        'week' => 4, 'game_date' => '2026-09-20', 'game_time' => '17:00:00', 'neutral_site' => false,
     ]);
 
     return [$target, $teams, $games];
@@ -147,7 +147,7 @@ it('ranks offense higher and EPA allowed lower with grouped queries and independ
         ->and(matchupSignal($result, 51, $target->home_team_id)['status'])->toBe('matched')
         ->and(matchupSignal($result, 101, $target->home_team_id)['status'])->toBe('matched')
         ->and($result['predictive_weight'])->toBe(0)
-        ->and(collect($queries)->filter(fn ($q) => str_contains($q['query'], 'nflverse_pbp_plays')))->toHaveCount(8);
+        ->and(collect($queries)->filter(fn ($q) => str_contains($q['query'], 'nflverse_pbp_plays')))->toHaveCount(9);
     $target->home_team_id = $teams[0]->id;
     $target->away_team_id = $teams[1]->id;
     $result = app(NflMatchupSignalService::class)->build($target);
@@ -1607,4 +1607,40 @@ it('weights release time by weekly source attempts and rejects an unmatched sour
     expect(matchupSignal($service->build($target), 222, $target->home_team_id)['evidence']['offense']['value'])->toEqualWithDelta(226 / 57, .000001);
     DB::table('nflverse_pbp_plays')->where('nfl_game_id', $rows[0]->game_id)->where('passer_player_id', '00-1031')->update(['passer_player_id' => '00-99999']);
     expect(matchupSignal($service->build($target), 222, $target->home_team_id)['evidence']['offense']['eligible'])->toBeFalse();
+});
+
+it('uses the last complete week while a new final game awaits plays and advances when imported', function () {
+    [$target, $teams, $games] = matchupSignalLeague();
+    $new = Game::factory()->create([
+        'home_team_id' => $teams[0]->id, 'away_team_id' => $teams[31]->id,
+        'season' => 2026, 'season_type' => '2', 'week' => 4, 'status' => 'STATUS_FINAL',
+        'game_date' => '2026-09-19', 'game_time' => '17:00:00',
+    ]);
+    $service = app(NflMatchupSignalService::class);
+    $result = $service->build($target);
+    expect($result['baseline'])->toMatchArray(['mode' => 'last_complete_week', 'through_week' => 3, 'through_date' => '2026-09-03', 'games' => 48])
+        ->and(matchupSignal($result, 1, $target->home_team_id)['evidence']['league_teams'])->toBe(32)
+        ->and(matchupSignal($result, 1, $target->home_team_id)['evidence']['offense']['games'])->toBe(3)
+        ->and($service->build($target, 'previous_season')['baseline'])->toBeNull();
+    $plays = DB::table('nflverse_pbp_plays')->where('nfl_game_id', $games[0]->id)->get();
+    foreach ($plays as $play) {
+        $row = (array) $play;
+        unset($row['id']);
+        $row['nfl_game_id'] = $new->id;
+        $row['nflverse_play_key'] .= '-new-week';
+        DB::table('nflverse_pbp_plays')->insert($row);
+    }
+    $result = $service->build($target);
+    expect($result['baseline'])->toBeNull()
+        ->and(matchupSignal($result, 1, $target->home_team_id)['evidence']['offense']['games'])->toBe(4);
+});
+
+it('excludes the whole new week and does not call a nonfinal earlier week complete', function () {
+    [$target, $teams, $games] = matchupSignalLeague();
+    DB::table('nflverse_pbp_plays')->where('nfl_game_id', $games[47]->id)->delete();
+    $games[16]->update(['status' => 'STATUS_SCHEDULED']);
+    $result = app(NflMatchupSignalService::class)->build($target);
+    expect($result['baseline']['through_week'])->toBe(1)
+        ->and($result['baseline']['games'])->toBe(16)
+        ->and(matchupSignal($result, 1, $target->home_team_id)['status'])->toBe('insufficient_data');
 });

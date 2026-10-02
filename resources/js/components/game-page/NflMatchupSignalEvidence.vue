@@ -40,6 +40,10 @@ const unavailable = computed(() =>
             Overlapping rules are not independent confirmations.
         </p>
         <p class="text-xs text-muted-foreground">
+            <template v-if="data.matchup.baseline">
+                Performance baseline: {{ data.matchup.baseline.label }}. Current
+                game personnel remain game-specific.
+            </template>
             {{ data.matchup.season }} regular season, before
             {{ timestamp(data.matchup.cutoff_at) }}. Rankings require
             {{ data.matchup.minimum_games }} qualifying games. Team rankings

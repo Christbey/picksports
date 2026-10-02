@@ -336,3 +336,18 @@ test('road false-start evidence does not display a fabricated defense comparison
         /Defense Unavailable|projected offensive line|offense vs/,
     );
 });
+
+test('shows the dated performance baseline to public viewers', async () => {
+    const { default: component } = await server.ssrLoadModule(
+        '/resources/js/components/game-page/NflMatchupSignalEvidence.vue',
+    );
+    const data = fixture();
+    data.matchup.baseline = {
+        mode: 'last_complete_week', through_week: 3,
+        through_date: '2026-09-28', games: 48,
+        label: '2026 season through Week 3 (2026-09-28)',
+    };
+    const html = await renderToString(createSSRApp(component, { data }));
+    assert.match(html, /Performance baseline: 2026 season through Week 3 \(2026-09-28\)/);
+    assert.match(html, /Current game personnel remain game-specific/);
+});

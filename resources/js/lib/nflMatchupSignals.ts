@@ -54,6 +54,13 @@ export interface NflMatchupSignalData {
         season: number;
         target_season?: number;
         cutoff_at: string | null;
+        baseline?: {
+            mode: string;
+            through_week: number;
+            through_date: string;
+            games: number;
+            label: string;
+        } | null;
         window: string;
         minimum_games: number;
         minimum_league_teams: number;

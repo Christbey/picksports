@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.13';
+    public const VERSION = '2026-10-01.14';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -105,6 +105,12 @@ final class NflMatchupSignalCatalog
         }
         $rules[264] = ['metric' => 'te1_out', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'te_target_epa', 'offense' => 'any', 'defense' => 'bottom', 'size' => 10];
         $rules[266] = ['metric' => 'multiple_wr_out', 'personnel' => true, 'offense_threshold' => 2, 'defense_metric' => 'pass_epa', 'offense' => 'any', 'defense' => 'top', 'size' => 10];
+        foreach ([256 => ['wr_target_concentration', 'cb1_out', 1], 267 => ['wr_target_epa', 'secondary_out', 2],
+            270 => ['deep_pass_epa', 'safety_out', 1], 272 => ['te_target_share', 'lb_out', 1], 273 => ['rb_target_share', 'lb_out', 1]] as $id => [$metric, $defenseMetric, $threshold]) {
+            $rules[$id] = ['metric' => $metric, 'defense_metric' => $defenseMetric, 'defense_personnel' => true,
+                'defense_threshold' => $threshold, 'offense' => 'top', 'defense' => 'any', 'size' => 10];
+        }
+        $rules[236] = ['metric' => 'qb_recent_change', 'personnel' => true, 'offense_threshold' => 1, 'defense_metric' => 'epa', 'offense' => 'any', 'defense' => 'top', 'size' => 10];
         ksort($rules);
 
         return $rules;
@@ -139,7 +145,7 @@ final class NflMatchupSignalCatalog
 
         return array_map(function (array $entry) use ($rules): array {
             $metric = $rules[$entry['id']]['metric'] ?? null;
-            $positionInputs = in_array($entry['id'], [119, 120, 134, 219, 245, 254, 264, 266], true)
+            $positionInputs = in_array($entry['id'], [119, 120, 134, 219, 236, 245, 254, 256, 264, 266, 267, 270, 272, 273], true)
                 ? ['Season/team-specific GSIS roster position mappings', 'Identified rushing and receiving play-by-play with complete league coverage', 'Game-linked player identity and timestamped injury evidence where named'] : null;
 
             return [...$entry, 'definition' => $metric ? $this->definition($metric).(($rules[$entry['id']]['zero_baseline'] ?? false) ? ' Uses the provider EPA zero baseline, not league rank or league-average centering. Positive offensive EPA means expected points added; positive EPA allowed means the defense allowed expected points to be added. Negative values mean expected points lost or suppressed, respectively. Both sides must be strictly on the named side of zero; zero does not qualify. This is play-level expected-points performance, not actual scoreboard points minus predicted game scores.' : '').(isset($rules[$entry['id']]['profile_threshold']) ? ' EPA profile differential = (offense EPA minus the league mean offensive EPA) + (opponent EPA allowed minus the league mean defensive EPA allowed). League means weight all 32 qualified teams equally. Positive favors the offensive profile; negative favors the defensive profile. The threshold is '.($rules[$entry['id']]['profile_threshold'] > 0 ? 'at least +' : 'at most ').number_format($rules[$entry['id']]['profile_threshold'], 2).' EPA/play, inclusive. These are catalog description thresholds, not backtested edges, predicted scoring margins or forecast inputs.' : '').(isset($rules[$entry['id']]['defense_metric']) ? ' Defense comparison: '.$this->definition($rules[$entry['id']]['defense_metric']) : '') : null,
@@ -426,7 +432,7 @@ final class NflMatchupSignalCatalog
 233. Selected QB listed as backup vs top-10 defense
 234. Selected QB listed as backup vs bottom-10 defense
 235. QB returning from injury vs high-pressure defense
-236. QB change during week vs strong defense
+236. Latest projected QB changed within 7 days vs top-10 defense
 237. QB passing EPA improving 3 straight appearances vs declining pass defense
 238. QB passing EPA declining 3 straight appearances vs improving pass defense
 239. QB scheme-matchup advantage score
@@ -446,7 +452,7 @@ final class NflMatchupSignalCatalog
 253. Strong zone-beating receivers vs zone defense
 254. High WR deep-target rate vs explosive-pass weakness
 255. YAC-heavy receivers vs poor tackling defense
-256. High target concentration vs CB1 injury
+256. High individual-WR target concentration vs lead CB unavailable
 257. WR1 vs replacement CB
 258. WR2 vs replacement CB
 259. Slot WR vs replacement nickel
@@ -457,13 +463,13 @@ final class NflMatchupSignalCatalog
 264. TE1 out vs defense weak against TE
 265. RB1 out vs weak run defense
 266. Multiple starting WRs unavailable vs top-10 pass defense
-267. Multiple secondary injuries vs elite WR group
+267. High WR-target EPA vs multiple secondary starters unavailable
 268. CB1 out vs high-target-share WR1
 269. CB2 out vs deep WR2
-270. Safety out vs deep-passing offense
+270. High deep-passing EPA vs starting safety unavailable
 271. Nickel CB out vs slot-heavy offense
-272. LB injury vs TE-heavy offense
-273. LB injury vs receiving RB
+272. High TE target share vs starting linebacker unavailable
+273. High RB target share vs starting linebacker unavailable
 274. High 12-personnel offense vs weak LB/safety coverage
 275. High 11-personnel offense vs weak nickel defense
 276. High 21-personnel offense vs weak base defense

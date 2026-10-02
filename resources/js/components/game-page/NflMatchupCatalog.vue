@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import {
     matchupCategories,
+    defenseEvidenceText,
     matchupChecklist,
     signalStatus,
     type NflMatchupSignalData,
@@ -141,9 +142,7 @@ const value = (number: number | null | undefined) =>
                             >
                             <template v-else
                                 >offense vs
-                                {{
-                                    team(signal.defense_team_id)
-                                }}
+                                {{ team(signal.defense_team_id) }}
                                 defense:</template
                             >
                             {{ signalStatus(signal.status) }}
@@ -160,18 +159,13 @@ const value = (number: number | null | undefined) =>
                             · {{ signal.evidence.offense.games }} games
                         </p>
                         <p v-if="!signal.evidence.personnel_only">
-                            Defense {{ value(signal.evidence.defense.value) }} ·
-                            rank
-                            {{ signal.evidence.defense.rank ?? 'unavailable' }}
-                            · {{ signal.evidence.defense.games }} games
+                            {{ defenseEvidenceText(signal.evidence.defense) }}
                         </p>
                         <p v-if="diagnostics">{{ signal.reason }}</p>
                         <p>
                             <template v-if="!signal.evidence.personnel_only"
                                 >League coverage:
-                                {{
-                                    signal.evidence.league_teams
-                                }}
+                                {{ signal.evidence.league_teams }}
                                 teams.</template
                             >
                             Source: {{ signal.evidence.source }}.

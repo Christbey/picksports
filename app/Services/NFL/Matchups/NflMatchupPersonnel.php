@@ -34,6 +34,10 @@ final class NflMatchupPersonnel
                 'ol_changed' => $this->missing('Five identified projected linemen and the previous week’s pregame chart are required.', $evidence),
                 'ol_changed_two' => $this->missing('Five identified projected linemen and the previous week’s pregame chart are required.', $evidence),
                 'ol_same_four' => $this->missing('Four consecutive weekly pregame projected lineups are required.', $evidence),
+                'secondary_out' => $this->missing('Current identified secondary starters and injury evidence are required.', $evidence),
+                'safety_out' => $this->missing('Current identified safety starters and injury evidence are required.', $evidence),
+                'lb_out' => $this->missing('Current identified linebacker starters and injury evidence are required.', $evidence),
+                'cb1_out' => $this->missing('A unique game-linked depth-rank-one cornerback and injury evidence are required.', $evidence),
                 'te1_out' => $this->missing('A unique game-linked lead TE and current injury evidence are required.', $evidence),
                 'multiple_wr_out' => $this->missing('Identified projected starting WRs and current injury evidence are required.', $evidence),
                 'wr1_out' => $this->missing('A unique game-linked depth-rank-one WR and current injury evidence are required; multiple starting WR slots are ambiguous.', $evidence),
@@ -62,6 +66,23 @@ final class NflMatchupPersonnel
                     $rows[$metric] = ['display_value' => $status ? 'Lead '.$label.' listed unavailable' : 'No unavailable designation for lead '.$label]
                         + $this->known($status ? 1 : 0, ['player_id' => $player->espn_athlete_id, 'player_name' => $player->player?->full_name,
                             'injury_snapshot_id' => $injuries?->id] + $evidence);
+                }
+            }
+            foreach (['secondary_out' => [['CB', 'LCB', 'RCB', 'S', 'FS', 'SS'], 2],
+                'safety_out' => [['S', 'FS', 'SS'], 1], 'lb_out' => [['LB', 'ILB', 'OLB', 'MLB', 'WLB', 'SLB', 'LILB', 'RILB', 'LOLB', 'ROLB'], 1],
+                'cb1_out' => [['CB', 'LCB', 'RCB'], 1]] as $metric => [$positions, $threshold]) {
+                $starters = $current->entries->filter(fn ($entry) => in_array(strtoupper((string) $entry->position_code), $positions, true) && (int) $entry->depth_rank === 1);
+                if ($starters->isEmpty() || ($metric === 'cb1_out' && $starters->count() !== 1)
+                    || ! $starters->every(fn ($entry) => filled($entry->espn_athlete_id) && $entry->observed_at?->lte($current->observed_at)
+                        && (! $entry->source_updated_at || $entry->source_updated_at->lte($current->observed_at)))
+                    || $starters->pluck('espn_athlete_id')->unique()->count() !== $starters->count()) {
+                    continue;
+                }
+                $statuses = $starters->map(fn ($entry) => $this->outStatus($injuries, $entry, $asOf, $cutoff));
+                $out = $statuses->filter(fn ($status) => $status === true)->count();
+                if ($out >= $threshold || ! $statuses->containsStrict(null)) {
+                    $rows[$metric] = ['display_value' => $out.' projected defensive starters listed unavailable'] + $this->known($out,
+                        ['injury_snapshot_id' => $injuries?->id, 'unavailable_player_ids' => $starters->filter(fn ($entry, $key) => $statuses[$key] === true)->pluck('espn_athlete_id')->values()->all()] + $evidence);
                 }
             }
             $receivers = $current->entries->filter(fn ($entry) => strtoupper((string) $entry->position_code) === 'WR' && (int) $entry->depth_rank === 1);
@@ -135,6 +156,7 @@ final class NflMatchupPersonnel
                 $sample['display_value'] = ! $sample['eligible'] ? null : match ($metric) {
                     'ol_changed', 'ol_changed_two' => $sample['value'].' of 5 projected line positions changed',
                     'ol_same_four' => $sample['value'] === 4 ? 'Same five projected linemen across four game charts' : 'Projected lineups differ across the four game charts',
+                    'secondary_out', 'safety_out', 'lb_out', 'cb1_out' => $sample['value'].' projected defensive starters listed unavailable',
                     'te1_out' => $sample['value'] ? 'Lead tight end listed unavailable' : 'No unavailable designation for lead tight end',
                     'multiple_wr_out' => $sample['value'].' projected starting WRs listed unavailable',
                     'wr1_out' => $sample['value'] ? 'Lead wide receiver listed unavailable' : 'No unavailable designation for lead wide receiver',

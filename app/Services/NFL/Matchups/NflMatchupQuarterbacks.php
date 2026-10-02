@@ -2,6 +2,7 @@
 
 namespace App\Services\NFL\Matchups;
 
+use App\Models\NFL\DepthChartSnapshot;
 use App\Models\NFL\DepthChartSnapshotEntry;
 use App\Models\NFL\Game;
 use App\Models\NFL\GameDepthChartLink;
@@ -174,6 +175,7 @@ final class NflMatchupQuarterbacks
             }
             $result[$team]['mobility_sample'] = [...$mobility, ...$identity];
             $result[$team]['backup_sample'] = $this->backupSample($target, $side, $identity, $rosters, $cutoff);
+            $result[$team]['change_sample'] = $this->changeSample($target, $team, $result[$team]['backup_sample'], $cutoff);
             $result[$team]['rookie_sample'] = $this->rookieSample($identity, $rosters, $team, (int) $target->season);
             foreach ($splits as $key => $_) {
                 $split = $splitSamples[$key][$identity['player_id'] ?? ''] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => 0, 'eligible' => false, 'league_players' => 0];
@@ -231,6 +233,32 @@ final class NflMatchupQuarterbacks
             'depth_chart_link_id' => $link->id, 'depth_chart_snapshot_id' => $chart->id,
             'selected_depth_rank' => (int) $selected->first()->depth_rank, 'charted_starter_espn_id' => $starter->first()->espn_athlete_id,
             'display_value' => $backup ? 'Selected QB listed below the charted starter' : 'Selected QB is the charted starter'];
+    }
+
+    private function changeSample(Game $target, int $team, array $current, CarbonImmutable $cutoff): array
+    {
+        $missing = [...$current, 'value' => null, 'eligible' => false,
+            'identity_reason' => $current['identity_reason'] ?? 'Two recent unambiguous QB chart observations, with the selected QB currently first, are required.'];
+        if (! $current['eligible'] || ($current['selected_depth_rank'] ?? null) !== 1) {
+            return $missing;
+        }
+        $chart = DepthChartSnapshot::find($current['depth_chart_snapshot_id']);
+        $asOf = $cutoff->min(CarbonImmutable::now());
+        $prior = DepthChartSnapshot::with('entries')->where('team_id', $team)->where('season', $target->season)
+            ->where('observed_at', '<', $chart->observed_at)->where('observed_at', '>=', $asOf->subDays(7))
+            ->where(fn ($q) => $q->whereNull('source_updated_at')->orWhere('source_updated_at', '<=', $asOf))
+            ->latest('observed_at')->latest('id')->first();
+        $qbs = $prior?->entries->filter(fn ($entry) => strtoupper((string) $entry->position_code) === 'QB' && (int) $entry->depth_rank === 1);
+        $qb = $qbs?->first();
+        if (! $qb || $qbs->count() !== 1 || ! filled($qb->espn_athlete_id) || ! $qb->observed_at
+            || $qb->observed_at->gt($prior->observed_at) || $qb->source_updated_at?->gt($prior->observed_at)) {
+            return $missing;
+        }
+        $changed = (string) $qb->espn_athlete_id !== (string) $current['charted_starter_espn_id'];
+
+        return [...$current, 'value' => (int) $changed, 'previous_snapshot_id' => $prior->id,
+            'previous_charted_qb_espn_id' => $qb->espn_athlete_id,
+            'display_value' => $changed ? 'Latest projected QB differs from the preceding chart' : 'Same projected QB in the two latest charts'];
     }
 
     private function rookieSample(array $identity, Collection $rosters, int $team, int $season): array

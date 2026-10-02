@@ -159,3 +159,12 @@ export function matchupChecklist(data: NflMatchupSignalData) {
         return { ...entry, status, signals, situations };
     });
 }
+
+export function defenseEvidenceText(sample: MatchupMetricEvidence): string {
+    if (sample.display_value) return `Defense: ${sample.display_value}`;
+    const value =
+        sample.value == null || !Number.isFinite(sample.value)
+            ? 'Unavailable'
+            : sample.value.toFixed(3);
+    return `Defense ${value} · rank ${sample.rank ?? '—'} · ${sample.games} games`;
+}

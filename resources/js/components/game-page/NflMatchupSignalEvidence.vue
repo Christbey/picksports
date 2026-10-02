@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import NflMatchupCatalog from './NflMatchupCatalog.vue';
 import {
+    defenseEvidenceText,
     distinctMatchupSignals,
     signalStatus,
     type NflMatchupSignalData,
@@ -77,9 +78,9 @@ const unavailable = computed(() =>
                 >
                     {{ signal.evidence.offense.display_value }}
                     <template v-if="!signal.evidence.personnel_only"
-                        ><br />Defense
-                        {{ value(signal.evidence.defense.value) }} · rank
-                        {{ signal.evidence.defense.rank ?? '—' }}</template
+                        ><br />{{
+                            defenseEvidenceText(signal.evidence.defense)
+                        }}</template
                     >
                 </p>
                 <p v-else class="mt-2 text-xs text-muted-foreground">
@@ -87,9 +88,7 @@ const unavailable = computed(() =>
                     {{ value(signal.evidence.offense.value) }} · rank
                     {{ signal.evidence.offense.rank ?? '—' }} ·
                     {{ signal.evidence.offense.games }} games<br />
-                    Defense {{ value(signal.evidence.defense.value) }} · rank
-                    {{ signal.evidence.defense.rank ?? '—' }} ·
-                    {{ signal.evidence.defense.games }} games
+                    {{ defenseEvidenceText(signal.evidence.defense) }}
                 </p>
             </div>
         </div>

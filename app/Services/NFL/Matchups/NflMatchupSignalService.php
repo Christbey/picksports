@@ -37,12 +37,16 @@ final class NflMatchupSignalService
             $metrics['qb_rpo_epa']['offense'][$teamId] = $sample['rpo_sample'] ?? [];
             $metrics['qb_pass_epa_trend_3']['offense'][$teamId] = $sample['trend_sample'] ?? [];
             $metrics['qb_scramble_rate']['offense'][$teamId] = $sample['mobility_sample'] ?? [];
+            $metrics['qb_recent_change']['offense'][$teamId] = $sample['change_sample'] ?? [];
             $metrics['backup_qb']['offense'][$teamId] = $sample['backup_sample'] ?? [];
             $metrics['rookie_qb']['offense'][$teamId] = $sample['rookie_sample'] ?? [];
         }
         foreach (app(NflMatchupPersonnel::class)->forGame($game, $cutoff) as $teamId => $samples) {
             foreach ($samples as $metric => $sample) {
                 $metrics[$metric]['offense'][$teamId] = $sample;
+                if (in_array($metric, ['secondary_out', 'safety_out', 'lb_out', 'cb1_out'], true)) {
+                    $metrics[$metric]['defense'][$teamId] = $sample;
+                }
             }
         }
         $entries = collect($this->catalog->entries())->keyBy('id');
@@ -126,6 +130,7 @@ final class NflMatchupSignalService
     private function metrics(Collection $games): array
     {
         $buckets = [];
+        $targetCounts = [];
         $scheduled = [];
         $venueScheduled = [];
         foreach ($games as $game) {
@@ -208,6 +213,19 @@ final class NflMatchupSignalService
                     ->selectRaw("SUM(CASE WHEN ({$condition}) AND {$field} IS NOT NULL THEN {$value} ELSE 0 END) AS split_{$key}_sum");
             }
             $rows = $query->get();
+            $targets = $query->cloneWithout(['columns', 'groups'])->select(['nfl_game_id', 'possession_team_id', 'defense_team_id', 'receiver_player_id'])
+                ->selectRaw('COUNT(*) AS targets')->where('play_type', 'pass')->where('is_sack', false)
+                ->where('catch_roster.roster_position', 'WR')->whereNotNull('receiver_player_id')
+                ->groupBy('nfl_game_id', 'possession_team_id', 'defense_team_id', 'receiver_player_id')->get();
+            foreach ($targets as $target) {
+                $game = $games->get($target->nfl_game_id);
+                $ids = [(int) $game->home_team_id, (int) $game->away_team_id];
+                if ($target->possession_team_id === $target->defense_team_id || ! in_array((int) $target->possession_team_id, $ids, true) || ! in_array((int) $target->defense_team_id, $ids, true)) {
+                    continue;
+                }
+                $targetCounts[$target->possession_team_id][$target->receiver_player_id] = ($targetCounts[$target->possession_team_id][$target->receiver_player_id] ?? 0) + (int) $target->targets;
+            }
+
             foreach ($rows as $row) {
                 $game = $games->get($row->nfl_game_id);
                 $offense = (int) $row->possession_team_id;
@@ -383,6 +401,23 @@ final class NflMatchupSignalService
             }
         }
 
+        foreach ($metrics['te_target_share']['offense'] ?? [] as $team => $sample) {
+            $counts = $targetCounts[$team] ?? [];
+            $maximum = $counts ? max($counts) : 0;
+            $metrics['wr_target_concentration']['offense'][$team] = [...$sample, 'metric' => 'wr_target_concentration',
+                'value' => $sample['eligible'] ? $maximum / $sample['plays'] : null, 'rank' => null, 'rank_end' => null,
+                'league_average' => null, 'leading_receiver_ids' => array_keys(array_filter($counts, fn ($count) => $count === $maximum))];
+        }
+        $qualified = array_filter($metrics['wr_target_concentration']['offense'] ?? [], fn ($sample) => $sample['eligible']);
+        foreach ($qualified as $team => $sample) {
+            $rank = 1 + count(array_filter($qualified, fn ($other) => $other['value'] - $sample['value'] > .0000001));
+            $ties = count(array_filter($qualified, fn ($other) => abs($other['value'] - $sample['value']) < .0000001));
+            $metrics['wr_target_concentration']['offense'][$team]['league_average'] = array_sum(array_column($qualified, 'value')) / count($qualified);
+            $metrics['wr_target_concentration']['offense'][$team]['league_teams'] = count($qualified);
+            $metrics['wr_target_concentration']['offense'][$team]['rank'] = count($qualified) === 32 ? $rank : null;
+            $metrics['wr_target_concentration']['offense'][$team]['rank_end'] = count($qualified) === 32 ? $rank + $ties - 1 : null;
+        }
+
         return $metrics;
     }
 
@@ -401,16 +436,21 @@ final class NflMatchupSignalService
         $defenseMetric = $rule['defense_metric'] ?? $rule['metric'];
         $defense = $metrics[$defenseMetric]['defense'][$defenseId] ?? ['value' => null, 'rank' => null, 'games' => 0, 'plays' => null, 'eligible' => false];
         $qbRule = in_array($rule['metric'], ['qb_pass_epa', 'qb_blitz_epa', 'qb_deep_epa', 'qb_play_action_epa', 'qb_rpo_epa', 'qb_pass_epa_trend_3', 'qb_scramble_rate'], true);
+        $defensePersonnel = $rule['defense_personnel'] ?? false;
         $personnel = $rule['personnel'] ?? false;
         $personnelOnly = $rule['personnel_only'] ?? false;
         if ($personnelOnly) {
             $defense = ['value' => null, 'rank' => null, 'eligible' => true, 'games' => 0];
         }
         $league = ($qbRule || $personnel) ? ($defense['league_teams'] ?? 0) : min($offense['league_teams'] ?? 0, $defense['league_teams'] ?? 0);
+        if ($defensePersonnel) {
+            $league = $offense['league_teams'] ?? 0;
+        }
         $venueApplies = ! isset($rule['venue']) || (! $target->neutral_site && (($offenseId === (int) $target->home_team_id) === ($rule['venue'] === 'home')));
         $reason = match (true) {
             $scopeReason !== null => $scopeReason,
             $cutoff === null => 'Kickoff cutoff is unavailable.',
+            $defensePersonnel && isset($defense['identity_reason']) => $defense['identity_reason'],
             ($qbRule || $personnel) && isset($offense['identity_reason']) => $offense['identity_reason'],
             $qbRule && $rule['metric'] !== 'qb_pass_epa_trend_3' && ($offense['league_players'] ?? 0) < 24 => 'Quarterback rankings require at least 24 qualified passers.',
             (! $offense['eligible'] || ! $defense['eligible']) && (str_contains($rule['metric'], '_trend_') || str_contains($defenseMetric, '_trend_')) => 'Trend comparison requires the full four- or five-game sequence specified in the definition, with complete inputs.',
@@ -419,7 +459,7 @@ final class NflMatchupSignalService
             ! $personnelOnly && $league !== self::LEAGUE_TEAMS => 'League rankings require qualified data for all 32 teams.',
             default => null,
         };
-        $matched = $venueApplies && $reason === null && ($personnel ? $offense['value'] >= $rule['offense_threshold'] : $this->matches($offense, $rule['offense'], $rule['size'], true)) && $this->matches($defense, $rule['defense'], $rule['size'], false);
+        $matched = $venueApplies && $reason === null && ($personnel ? $offense['value'] >= $rule['offense_threshold'] : $this->matches($offense, $rule['offense'], $rule['size'], true)) && ($defensePersonnel ? $defense['value'] >= $rule['defense_threshold'] : $this->matches($defense, $rule['defense'], $rule['size'], false));
 
         $profile = null;
         if (isset($rule['profile_threshold'])) {
@@ -441,6 +481,7 @@ final class NflMatchupSignalService
             'reason' => $reason,
             'evidence' => [
                 ...($profile !== null ? ['epa_profile_differential' => $profile] : []),
+                'defense_personnel' => $defensePersonnel,
                 'personnel_only' => $personnelOnly,
                 'metric' => $rule['metric'],
                 'offense_metric' => $rule['metric'],
@@ -448,7 +489,7 @@ final class NflMatchupSignalService
                 'definition' => $entry['definition'],
                 'source' => match ($rule['metric']) {
                     'qb_scramble_rate' => 'nflverse_pbp_plays: selected quarterback passing plays, sacks and identified scrambles',
-                    'backup_qb' => 'Game-selected quarterback, target-season roster mapping and timestamped game-linked depth chart',
+                    'qb_recent_change', 'backup_qb' => 'Game-selected quarterback, target-season roster mapping and timestamped game-linked depth chart',
                     'rookie_qb' => 'Game-selected quarterback identity and target-season nflverse_rosters years_exp',
                     'points_per_game' => 'nfl_games: final team scores',
                     'pass_yards_per_attempt' => 'nflverse_pbp_plays: pass attempts (sacks excluded)',
@@ -456,7 +497,7 @@ final class NflMatchupSignalService
                     'ol_changed', 'ol_changed_two', 'ol_same_four', 'rb1_out', 'wr1_out', 'te1_out', 'multiple_wr_out', 'backup_center' => 'Game-linked depth charts, historical pregame charts and timestamped injury snapshots',
                     'points_per_drive' => 'nflverse_pbp_plays: completed drives and possession-team scores',
                     default => 'nflverse_pbp_plays: pass/run plays (sacks included)',
-                },
+                }.($defensePersonnel ? '; game-linked defensive depth chart and timestamped injury evidence' : ''),
                 'offense' => $offense, 'defense' => $defense, 'league_teams' => $league,
                 'cutoff_at' => $cutoff?->toIso8601String(),
             ],

@@ -6,6 +6,7 @@ import vue from '@vitejs/plugin-vue';
 import { createSSRApp, nextTick } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import {
+    defenseEvidenceText,
     distinctMatchupSignals,
     matchupChecklist,
     signalStatus,
@@ -148,7 +149,9 @@ test('empty or incomplete evidence never becomes a negative matchup', async () =
     const data = fixture();
     data.matchup.signals = [signal(1, 'insufficient_data')];
     data.matchup.signals[0].evidence.offense.value = null;
-    const html = await renderToString(createSSRApp(component, { data, adminDiagnostics: true }));
+    const html = await renderToString(
+        createSSRApp(component, { data, adminDiagnostics: true }),
+    );
     assert.match(html, /Missing history is not evidence of a disadvantage/);
     assert.match(html, /Offense Unavailable/);
     assert.match(html, /Insufficient history/);
@@ -186,7 +189,9 @@ test('catalog is searchable and paginated and previous season stays explicitly h
         support: 'unavailable',
         reason: 'Needs data',
     }));
-    const html = await renderToString(createSSRApp(component, { data, adminDiagnostics: true }));
+    const html = await renderToString(
+        createSSRApp(component, { data, adminDiagnostics: true }),
+    );
     assert.match(html, /Full checklist · 353 items/);
     assert.match(html, /Search matchup checklist/);
     assert.match(html, /Showing 20 of 353/);
@@ -240,26 +245,64 @@ test('lazy wrapper fetches once when opened and exposes retry on failure', async
     }
 });
 
- test('customer evidence excludes internal checklist and implementation diagnostics', async () => {
-    const { default: component } = await server.ssrLoadModule('/resources/js/components/game-page/NflMatchupSignalEvidence.vue');
-    const html = await renderToString(createSSRApp(component, { data: fixture() }));
+test('customer evidence excludes internal checklist and implementation diagnostics', async () => {
+    const { default: component } = await server.ssrLoadModule(
+        '/resources/js/components/game-page/NflMatchupSignalEvidence.vue',
+    );
+    const html = await renderToString(
+        createSSRApp(component, { data: fixture() }),
+    );
     assert.match(html, /Offense 0\.000/);
     assert.match(html, /Evaluated matchups/);
-    assert.doesNotMatch(html, /Full checklist|Insufficient history|needs data or implementation|Charting required|Coverage and limitations|Data coverage|Admin ·/);
+    assert.doesNotMatch(
+        html,
+        /Full checklist|Insufficient history|needs data or implementation|Charting required|Coverage and limitations|Data coverage|Admin ·/,
+    );
 });
 
 test('projected lineup evidence is displayed as personnel rather than a fictional defensive metric', async () => {
-    const { default: component } = await server.ssrLoadModule('/resources/js/components/game-page/NflMatchupSignalEvidence.vue');
+    const { default: component } = await server.ssrLoadModule(
+        '/resources/js/components/game-page/NflMatchupSignalEvidence.vue',
+    );
     const data = fixture();
     const personnel = signal(167, 'matched', 'ol_changed');
     personnel.label = 'Projected: OL lineup changed from previous week';
     personnel.evidence.personnel_only = true;
-    personnel.evidence.offense = { value: 2, rank: null, games: 2, display_value: '2 of 5 projected line positions changed' };
+    personnel.evidence.offense = {
+        value: 2,
+        rank: null,
+        games: 2,
+        display_value: '2 of 5 projected line positions changed',
+    };
     personnel.evidence.defense = { value: null, rank: null, games: 0 };
     data.matchup.signals = [personnel];
-    data.matchup.catalog = [{ id: 167, label: personnel.label, category: 'offensive_line', support: 'implemented', reason: null }];
+    data.matchup.catalog = [
+        {
+            id: 167,
+            label: personnel.label,
+            category: 'offensive_line',
+            support: 'implemented',
+            reason: null,
+        },
+    ];
     const html = await renderToString(createSSRApp(component, { data }));
     assert.match(html, /2 of 5 projected line positions changed/);
     assert.match(html, /projected offensive line/);
     assert.doesNotMatch(html, /Defense Unavailable/);
+});
+
+test('defensive personnel evidence displays absences without a fictitious rank', () => {
+    assert.equal(
+        defenseEvidenceText({
+            value: 2,
+            rank: null,
+            games: 1,
+            display_value: '2 projected defensive starters listed unavailable',
+        }),
+        'Defense: 2 projected defensive starters listed unavailable',
+    );
+    assert.equal(
+        defenseEvidenceText({ value: -0.25, rank: 4, games: 3 }),
+        'Defense -0.250 · rank 4 · 3 games',
+    );
 });

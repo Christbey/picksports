@@ -57,3 +57,11 @@ it('does not request the unavailable current season or replace data after an HTT
     $this->artisan('nfl:sync-matchup-participation --season=2025')->assertFailed();
     expect(DB::table('nflverse_pbp_plays')->find($id)->participation_observed_at)->toBeNull();
 });
+
+it('normalizes the existing play importer team aliases without accepting a different team', function (string $local, string $source) {
+    $id = participationPlay();
+    DB::table('nflverse_pbp_plays')->where('id', $id)->update(['possession_team' => $local]);
+    Http::fake(['*' => Http::response(participationCsv(team: $source))]);
+    $this->artisan('nfl:sync-matchup-participation --season=2025')->assertSuccessful();
+    expect(DB::table('nflverse_pbp_plays')->find($id)->participation_coverage)->toBe('COVER_1');
+})->with([['WSH', 'WAS'], ['LAR', 'LA']]);

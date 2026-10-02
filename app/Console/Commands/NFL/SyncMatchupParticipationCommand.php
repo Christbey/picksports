@@ -61,7 +61,9 @@ class SyncMatchupParticipationCommand extends Command
                     throw new RuntimeException('Ambiguous local play identity; no rows updated.');
                 }
                 $play = $matches->first();
-                if (($zone !== null || $coverage !== null) && (! filled($play->possession_team) || $play->possession_team !== $row['possession_team'])) {
+                if (($zone !== null || $coverage !== null) && (! filled($play->possession_team) || $play->possession_team !== match ($row['possession_team']) {
+                    'WAS' => 'WSH', 'LA' => 'LAR', default => $row['possession_team']
+                })) {
                     throw new RuntimeException('Possession team mismatch; no rows updated.');
                 }
                 $updates[] = ['id' => $play->id, 'nflverse_play_key' => $play->nflverse_play_key,

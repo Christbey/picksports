@@ -1213,6 +1213,9 @@ it('counts explicit false starts including penalty no-plays only for the road of
     expect(matchupSignal($service->build($target), 182, $teams[0]->id)['status'])->toBe('not_matched');
 
     DB::table('nflverse_pbp_plays')->where('nflverse_play_key', $penalties[1]['nflverse_play_key'])->update(['penalty_type' => null]);
+    $signal = matchupSignal($service->build($target), 182, $teams[0]->id);
+    expect($signal['evidence']['offense']['value'])->toEqualWithDelta(10 / 131, .000001);
+    DB::table('nflverse_pbp_plays')->where('nfl_game_id', $games[0]->id)->where('possession_team_id', $teams[0]->id)->where('play_type', 'pass')->update(['is_penalty' => null]);
     expect(matchupSignal($service->build($target), 182, $teams[0]->id)['status'])->toBe('insufficient_data');
 });
 

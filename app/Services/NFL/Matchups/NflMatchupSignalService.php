@@ -325,7 +325,7 @@ final class NflMatchupSignalService
                         if ($metric === 'false_start_rate') {
                             $base = $buckets['epa'][$side][$team]['games'][$gameId] ?? null;
 
-                            return $sample['count'] >= 30 && $sample['count'] === $sample['candidate']
+                            return $sample['count'] >= 30 && $sample['count'] >= $sample['candidate'] * .9
                                 && $base !== null && $base['count'] >= 30 && $base['count'] >= $base['candidate'] * .9;
                         }
                         if (in_array($metric, ['points_per_drive', 'drive_success_rate'], true)) {
@@ -360,7 +360,7 @@ final class NflMatchupSignalService
                         'rank' => null,
                     ];
                     if ($metric === 'false_start_rate' && $eligible) {
-                        $metrics[$metric][$side][$team]['display_value'] = number_format($metrics[$metric][$side][$team]['value'] * 100, 2).' false starts per 100 offensive opportunities';
+                        $metrics[$metric][$side][$team]['display_value'] = number_format($metrics[$metric][$side][$team]['value'] * 100, 2).' false starts per 100 classified offensive opportunities';
                     }
                 }
                 $eligible = array_filter($metrics[$metric][$side] ?? [], fn (array $sample): bool => $sample['eligible']);

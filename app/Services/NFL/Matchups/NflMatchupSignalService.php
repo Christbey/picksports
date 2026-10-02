@@ -504,7 +504,7 @@ final class NflMatchupSignalService
             ! $personnelOnly && $league !== self::LEAGUE_TEAMS => 'League rankings require qualified data for all 32 teams.',
             default => null,
         };
-        $matched = $venueApplies && $reason === null && ($personnel ? $offense['value'] >= $rule['offense_threshold'] : $this->matches($offense, $rule['offense'], $rule['size'], true)) && ($defensePersonnel ? $defense['value'] >= $rule['defense_threshold'] : $this->matches($defense, $rule['defense'], $rule['size'], false));
+        $matched = $venueApplies && $reason === null && ($personnel ? ($offense['value'] >= $rule['offense_threshold'] && (! isset($rule['offense_maximum']) || $offense['value'] <= $rule['offense_maximum'])) : $this->matches($offense, $rule['offense'], $rule['size'], true)) && ($defensePersonnel ? $defense['value'] >= $rule['defense_threshold'] : $this->matches($defense, $rule['defense'], $rule['size'], false));
 
         $profile = null;
         if (isset($rule['profile_threshold'])) {
@@ -546,7 +546,7 @@ final class NflMatchupSignalService
                     'pressure_rate', 'pressure_to_sack_rate', 'qb_pressure_to_sack_rate' => 'PFR weekly advanced passing via nflverse, roster-mapped identities and play-by-play dropbacks',
                     'qb_man_epa', 'qb_zone_epa', 'qb_cover_1_epa', 'qb_cover_2_epa', 'qb_cover_3_epa' => 'FTN Data via nflverse participation (CC-BY-SA 4.0), joined to selected-QB play identities',
                     'qb_pass_epa', 'qb_blitz_epa', 'qb_deep_epa', 'qb_play_action_epa', 'qb_rpo_epa', 'qb_pass_epa_trend_3' => 'nflverse_pbp_plays: selected quarterback passing plays and sacks',
-                    'ol_changed', 'ol_changed_two', 'ol_same_four', 'rb1_out', 'wr1_out', 'te1_out', 'multiple_wr_out', 'backup_center' => 'Game-linked depth charts, historical pregame charts and timestamped injury snapshots',
+                    'ol_out', 'ol_changed', 'ol_changed_two', 'ol_same_four', 'rb1_out', 'wr1_out', 'te1_out', 'multiple_wr_out', 'backup_center' => 'Game-linked depth charts, historical pregame charts and timestamped injury snapshots',
                     'points_per_drive' => 'nflverse_pbp_plays: completed drives and possession-team scores',
                     default => 'nflverse_pbp_plays: pass/run plays (sacks included)',
                 }.($defensePersonnel ? '; game-linked defensive depth chart and timestamped injury evidence' : ''),

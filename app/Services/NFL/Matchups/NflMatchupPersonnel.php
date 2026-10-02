@@ -31,6 +31,7 @@ final class NflMatchupPersonnel
             $evidence = ['mode' => 'projected_personnel', 'game_id' => $target->id, 'team_id' => $teamId,
                 'depth_chart_link_id' => $link?->id, 'depth_chart_snapshot_id' => $current?->id, 'as_of' => $asOf->toIso8601String()];
             $rows = [
+                'ol_out' => $this->missing('Five uniquely identified game-linked projected linemen and complete current injury statuses are required.', $evidence),
                 'ol_changed' => $this->missing('Five identified projected linemen and the previous week’s pregame chart are required.', $evidence),
                 'ol_changed_two' => $this->missing('Five identified projected linemen and the previous week’s pregame chart are required.', $evidence),
                 'ol_same_four' => $this->missing('Four consecutive weekly pregame projected lineups are required.', $evidence),
@@ -102,6 +103,13 @@ final class NflMatchupPersonnel
 
                 continue;
             }
+            $lineStatuses = collect(self::LINE)->mapWithKeys(fn ($position) => [$position => $this->outStatus($injuries, $this->position($current->entries, $position), $asOf, $cutoff)]);
+            if (! $lineStatuses->containsStrict(null)) {
+                $out = $lineStatuses->filter(fn ($status) => $status === true)->keys()->all();
+                $rows['ol_out'] = $this->known(count($out), ['lineup' => $line, 'unavailable_positions' => $out,
+                    'unavailable_player_ids' => array_values(array_intersect_key($line, array_flip($out))),
+                    'injury_snapshot_id' => $injuries?->id] + $evidence);
+            }
             $previous = Game::where('season', $target->season)->whereIn('season_type', ['2', 'regular', 'REG'])
                 ->where('status', 'STATUS_FINAL')->where('week', '<', $target->week)
                 ->whereDate('game_date', '<', $cutoff->toDateString())
@@ -154,6 +162,7 @@ final class NflMatchupPersonnel
             }
             foreach ($rows as $metric => &$sample) {
                 $sample['display_value'] = ! $sample['eligible'] ? null : match ($metric) {
+                    'ol_out' => $sample['value'].' of 5 projected offensive-line starters listed unavailable',
                     'ol_changed', 'ol_changed_two' => $sample['value'].' of 5 projected line positions changed',
                     'ol_same_four' => $sample['value'] === 4 ? 'Same five projected linemen across four game charts' : 'Projected lineups differ across the four game charts',
                     'secondary_out', 'safety_out', 'lb_out', 'cb1_out' => $sample['value'].' projected defensive starters listed unavailable',

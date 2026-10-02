@@ -73,8 +73,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(179)
-        ->and($result['signals'])->toHaveCount(358)
+    expect($result['summary']['supported_rules'])->toBe(183)
+        ->and($result['signals'])->toHaveCount(366)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -1485,4 +1485,56 @@ it('holds team pressure rankings when a provider passer is absent from play hist
     unset($sample['id']);
     DB::table('nfl_matchup_pressure_samples')->insert([...$sample, 'gsis_id' => '00-99999', 'pfr_id' => 'MissingQB']);
     expect(matchupSignal(app(NflMatchupSignalService::class)->build($target), 150, $target->home_team_id)['status'])->toBe('insufficient_data');
+});
+
+it('distinguishes exact one two and three-plus unavailable projected linemen against measured pressure', function () {
+    $this->travelTo('2026-09-19 12:00:00');
+    [$target] = pressureMatchupLeague();
+    $chart = DepthChartSnapshot::create(['snapshot_uuid' => (string) Str::uuid(), 'team_id' => $target->home_team_id,
+        'espn_team_id' => '123', 'season' => 2026, 'observed_at' => now()->subHour(), 'payload_hash' => hash('sha256', 'line-injuries')]);
+    $injury = PlayerInjurySnapshot::create(['snapshot_uuid' => (string) Str::uuid(), 'team_id' => $target->home_team_id,
+        'espn_team_id' => '123', 'observed_at' => now(), 'payload_hash' => hash('sha256', 'line-injuries')]);
+    foreach (['LT', 'LG', 'C', 'RG', 'RT'] as $index => $position) {
+        DepthChartSnapshotEntry::create(['snapshot_id' => $chart->id, 'position_slot_key' => $position,
+            'position_code' => $position, 'depth_rank' => 1, 'espn_athlete_id' => (string) (500 + $index), 'observed_at' => now()->subHour()]);
+        PlayerInjurySnapshotEntry::create(['snapshot_id' => $injury->id, 'espn_athlete_id' => (string) (500 + $index),
+            'injury_key' => $position, 'status' => 'Active', 'observed_at' => now()]);
+    }
+    app(PredictionFeatureSnapshotRecorder::class)->record(Prediction::factory()->create(['game_id' => $target->id]), $target, 'nfl', [
+        'model_metadata' => ['quarterback' => ['home' => ['depth_chart_game_link' => [
+            'game_id' => $target->id, 'team_id' => $target->home_team_id, 'side' => 'home', 'snapshot_id' => $chart->id,
+            'snapshot_uuid' => $chart->snapshot_uuid, 'as_of' => now()->toIso8601String(),
+        ]]]],
+    ]);
+    $service = app(NflMatchupSignalService::class);
+    for ($count = 0; $count <= 5; $count++) {
+        if ($count) {
+            $injury->entries()->where('espn_athlete_id', (string) (499 + $count))->update(['status' => 'Out']);
+        }
+        $result = $service->build($target);
+        foreach ([154 => $count === 1, 155 => $count === 2, 156 => $count >= 3] as $id => $matched) {
+            $signal = matchupSignal($result, $id, $target->home_team_id);
+            expect($signal['status'])->toBe($matched ? 'matched' : 'not_matched')
+                ->and($signal['evidence']['offense']['value'])->toBe($count);
+        }
+    }
+    $injury->entries()->where('espn_athlete_id', '500')->update(['status' => 'Questionable']);
+    expect(matchupSignal($service->build($target), 156, $target->home_team_id)['status'])->toBe('insufficient_data');
+    $injury->entries()->where('espn_athlete_id', '500')->update(['status' => 'Out']);
+    $chart->entries()->where('position_code', 'LT')->update(['espn_athlete_id' => '501']);
+    expect(matchupSignal($service->build($target), 156, $target->home_team_id)['status'])->toBe('insufficient_data');
+});
+
+it('uses exactly four charted rushers independently of blitz flags and requires complete league coverage', function () {
+    [$target, $teams] = pressureMatchupLeague();
+    $target->home_team_id = $teams[0]->id;
+    foreach ($teams as $i => $team) {
+        DB::table('nflverse_pbp_plays')->where('possession_team_id', $team->id)->where('play_type', 'pass')
+            ->update(['ftn_n_pass_rushers' => $i >= 24 ? 4 : 3, 'ftn_n_blitzers' => 1]);
+    }
+    $service = app(NflMatchupSignalService::class);
+    $signal = matchupSignal($service->build($target), 179, $target->home_team_id);
+    expect($signal['status'])->toBe('matched')->and($signal['evidence']['defense']['value'])->toBe(1.0);
+    DB::table('nflverse_pbp_plays')->where('possession_team_id', $teams[31]->id)->update(['ftn_n_pass_rushers' => null]);
+    expect(matchupSignal($service->build($target), 179, $target->home_team_id)['status'])->toBe('insufficient_data');
 });

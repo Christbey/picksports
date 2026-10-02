@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.22';
+    public const VERSION = '2026-10-01.23';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -130,6 +130,12 @@ final class NflMatchupSignalCatalog
             $rules[$id] = ['metric' => $metric, 'defense_metric' => $defenseMetric, 'offense' => $band,
                 'defense' => $defenseMetric === 'blitz_rate' ? 'bottom' : 'top', 'size' => 10];
         }
+        foreach ([154 => 1, 155 => 2, 156 => 3] as $id => $count) {
+            $rules[$id] = ['metric' => 'ol_out', 'personnel' => true, 'offense_threshold' => $count,
+                'offense_maximum' => $count < 3 ? $count : 5, 'defense_metric' => 'pressure_rate',
+                'offense' => 'any', 'defense' => 'top', 'size' => 10];
+        }
+        $rules[179] = ['metric' => 'pressure_rate', 'defense_metric' => 'four_man_rush_rate', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
         ksort($rules);
 
         return $rules;
@@ -171,6 +177,12 @@ final class NflMatchupSignalCatalog
             }
             if ($rules[$entry['id']]['coverage'] ?? false) {
                 $positionInputs = ['Game-selected QB identity and availability', 'FTN Data via nflverse participation, released after postseason (CC-BY-SA 4.0)', 'Explicit evidence season, at least 24 qualified QBs and all 32 defensive usage profiles'];
+            }
+            if (in_array($entry['id'], [154, 155, 156], true)) {
+                $positionInputs = ['Fresh game-linked depth chart with five unique LT/LG/C/RG/RT identities', 'Complete timestamped injury-status evidence for all five projected starters', 'Verified PFR pressure counts and complete 32-team play-by-play dropback samples'];
+            }
+            if ($entry['id'] === 179) {
+                $positionInputs = ['Verified PFR pressure counts and complete league dropbacks', 'FTN exact pass-rusher counts joined to game/play identities', 'At least two complete prior games for all 32 teams'];
             }
             if ($entry['id'] === 224) {
                 $positionInputs = ['Game-selected quarterback identity and availability', 'FTN read_thrown charting joined by verified game/play identity', 'At least 24 qualified QBs and short-pass defensive samples for all 32 teams'];
@@ -381,9 +393,9 @@ final class NflMatchupSignalCatalog
 151. High sack allowed rate vs high sack defense
 152. Low sack rate vs high-pressure defense
 153. High team sacks per pressure vs high-pressure defense
-154. OL missing one starter vs top-10 front
-155. OL missing two starters vs top-10 front
-156. OL missing 3+ starters vs top-10 front
+154. Exactly one projected OL starter unavailable vs top-10 pressure defense
+155. Exactly two projected OL starters unavailable vs top-10 pressure defense
+156. Three-plus projected OL starters unavailable vs top-10 pressure defense
 157. LT out vs elite edge
 158. RT out vs elite edge
 159. Both tackles compromised vs strong edge duo
@@ -406,7 +418,7 @@ final class NflMatchupSignalCatalog
 176. High pressure offense weakness vs four-man pressure defense
 177. High pressure allowed vs blitz-heavy defense
 178. Low pressure allowed vs blitz-heavy defense
-179. Strong pass protection vs four-man rush
+179. Low pressure allowed vs frequent four-man rush
 180. OL penalty-heavy vs disciplined DL
 181. High holding rate vs elite edge
 182. High false-start rate in road environment

@@ -34,6 +34,7 @@ final class NflMatchupMetricDefinitions
             'play_action_epa' => ["{$pass} AND ftn_is_play_action = 1", "{$pass} AND ftn_is_play_action IS NULL", 'epa', 'epa', 5],
             'screen_pass_epa' => ["{$pass} AND ftn_is_screen_pass = 1", "{$pass} AND ftn_is_screen_pass IS NULL", 'epa', 'epa', 2],
             'rpo_epa' => ["{$pass} AND ftn_is_rpo = 1", "{$pass} AND ftn_is_rpo IS NULL", 'epa', 'epa', 2],
+            'four_man_rush_rate' => [$pass, '1=0', 'ftn_n_pass_rushers', 'CASE WHEN ftn_n_pass_rushers = 4 THEN 1 ELSE 0 END', 15],
             'blitz_rate' => [$pass, '1=0', 'ftn_n_blitzers', 'CASE WHEN ftn_n_blitzers > 0 THEN 1 ELSE 0 END', 15],
             'motion_rate' => ['1=1', '1=0', 'ftn_is_motion', 'ftn_is_motion', 30],
             'motion_epa' => ['ftn_is_motion = 1', 'ftn_is_motion IS NULL', 'epa', 'epa', 5],
@@ -68,6 +69,9 @@ final class NflMatchupMetricDefinitions
     public static function definition(string $metric): ?string
     {
         return match ($metric) {
+            'ol_out' => 'Count of five distinct projected LT/LG/C/RG/RT starters in a fresh game-linked depth chart with explicit current unavailable injury designations. All five statuses must be resolved; Questionable, Doubtful, stale or conflicting reports remain unknown. Rules distinguish exactly one, exactly two and at least three. This describes players still listed as projected starters; it does not infer a displaced historical starter or offensive-line blocking quality. Opposing front means top-ten measured team pressure rate, not an edge/interior grade.',
+            'four_man_rush_rate' => 'Share of FTN-charted pass plays with exactly four pass rushers. Frequent means the ten highest usage rates, with boundary ties excluded (bottom defensive rank band). Requires 90% rusher-count coverage in every complete prior game, at least thirty pooled passing plays, two games and all 32 teams. Four rushers does not imply no blitz and does not measure pressure generated on that subset.',
+
             'pressure_rate' => 'PFR charted pressures divided by verified pass plays plus QB scrambles, pooled across prior regular-season games. Lower offensive pressure allowed and higher defensive pressure generated rank first. Every player/game must map through season/team PFR-to-GSIS roster identity and have matching sack totals. Uses PFR pressure counts with a consistent nflverse dropback denominator; this normalized rate can differ from PFR published percentages because the providers classify some dropbacks differently. Requires every preceding team game, at least fifteen pass plays per game, two games, and all 32 teams. Missing pressure is never inferred from sacks or hits. Source: PFR weekly advanced passing via nflverse.',
             'pressure_to_sack_rate', 'qb_pressure_to_sack_rate' => 'PFR sacks divided by charted pressures, with at least ten pooled pressures, two complete appearances/games and fifteen pass plays in every appearance/game. Rates use matched player/game IDs and are reconciled to play-by-play dropbacks and sacks. Lower conversion ranks first on offense. Team ratios include every passer; QB ratios use only the game-selected player with availability checks and at least 24 qualified QBs. This is an observed sack conversion rate, not an offensive-line blocking grade. Source: PFR weekly advanced passing via nflverse.',
 

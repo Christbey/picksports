@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.23';
+    public const VERSION = '2026-10-01.24';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -136,6 +136,12 @@ final class NflMatchupSignalCatalog
                 'offense' => 'any', 'defense' => 'top', 'size' => 10];
         }
         $rules[179] = ['metric' => 'pressure_rate', 'defense_metric' => 'four_man_rush_rate', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
+        foreach ([85 => ['yac_per_catch', 'top', 'bottom'], 86 => ['yac_per_catch', 'bottom', 'top'],
+            255 => ['wr_yac_per_catch', 'top', 'bottom']] as $id => [$metric, $offense, $defense]) {
+            $rules[$id] = ['metric' => $metric, 'defense_metric' => 'missed_tackle_rate', 'offense' => $offense, 'defense' => $defense, 'size' => 10];
+        }
+        $rules[222] = ['metric' => 'qb_release_time', 'defense_metric' => 'pressure_rate', 'offense' => 'top', 'defense' => 'top', 'size' => 10];
+        $rules[223] = ['metric' => 'qb_release_time', 'defense_metric' => 'pressure_rate', 'offense' => 'bottom', 'defense' => 'top', 'size' => 10];
         ksort($rules);
 
         return $rules;
@@ -183,6 +189,12 @@ final class NflMatchupSignalCatalog
             }
             if ($entry['id'] === 179) {
                 $positionInputs = ['Verified PFR pressure counts and complete league dropbacks', 'FTN exact pass-rusher counts joined to game/play identities', 'At least two complete prior games for all 32 teams'];
+            }
+            if (in_array($entry['id'], [85, 86, 255], true)) {
+                $positionInputs = ['Completed-pass yards after catch and complete league play-by-play', 'PFR missed and combined tackle counts for every prior team game', 'Unambiguous season/team WR roster positions for the WR-only rule'];
+            }
+            if (in_array($entry['id'], [222, 223], true)) {
+                $positionInputs = ['Weekly NGS passing release times and attempt counts (season totals excluded)', 'Game-selected QB identity, availability and identified prior passing appearances', 'Verified complete-league PFR pressure counts and nflverse dropbacks'];
             }
             if ($entry['id'] === 224) {
                 $positionInputs = ['Game-selected quarterback identity and availability', 'FTN read_thrown charting joined by verified game/play identity', 'At least 24 qualified QBs and short-pass defensive samples for all 32 teams'];
@@ -324,8 +336,8 @@ final class NflMatchupSignalCatalog
 82. Low INT offense vs low takeaway defense
 83. High INT offense vs high takeaway defense
 84. High air yards/attempt vs weak deep secondary
-85. High YAC offense vs poor tackling secondary
-86. Low YAC offense vs elite tackling secondary
+85. High YAC per catch vs high team missed-tackle rate
+86. Low YAC per catch vs low team missed-tackle rate
 87. High receiver separation vs man-heavy defense
 88. Low receiver separation vs man-heavy defense
 89. High contested-catch offense vs physical secondary
@@ -461,8 +473,8 @@ final class NflMatchupSignalCatalog
 219. High QB scramble rate vs defense allowing explosive QB runs
 220. QB deep-ball strength vs weak deep defense
 221. Poor deep passer vs defense forcing deep throws
-222. Quick-release QB vs strong pass rush
-223. Slow time-to-throw QB vs strong pass rush
+222. Quick-release QB vs high-pressure defense
+223. Slow-release QB vs high-pressure defense
 224. High charted QB checkdown rate vs weak short-pass EPA defense
 225. High play-action EPA QB vs play-action weakness
 226. High RPO passing EPA QB vs RPO pass-defense weakness
@@ -494,7 +506,7 @@ final class NflMatchupSignalCatalog
 252. Low-separation receivers vs man defense
 253. Strong zone-beating receivers vs zone defense
 254. High WR deep-target rate vs explosive-pass weakness
-255. YAC-heavy receivers vs poor tackling defense
+255. High WR YAC per catch vs high team missed-tackle rate
 256. High individual-WR target concentration vs lead CB unavailable
 257. WR1 vs replacement CB
 258. WR2 vs replacement CB

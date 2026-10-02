@@ -26,8 +26,8 @@ it('imports nflverse play by play rows and links them to nfl games', function ()
 
     $path = sys_get_temp_dir().'/nflverse-pbp-test.csv';
     File::put($path, implode("\n", [
-        'game_id,play_id,season,week,season_type,home_team,away_team,posteam,defteam,qtr,down,ydstogo,yardline_100,yards_gained,game_seconds_remaining,play_type,desc,epa,wp,wpa,passer_player_id,passer_player_name,rusher_player_id,rusher_player_name,receiver_player_id,receiver_player_name,touchdown,interception,fumble_lost,sack,fixed_drive,fixed_drive_result,posteam_score,posteam_score_post,first_down,air_yards,cpoe,shotgun,pass_oe,penalty,penalty_type,penalty_team,fumbled_1_player_id,fumbled_2_player_id',
-        '2025_01_DEN_KC,101,2025,1,REG,KC,DEN,DEN,KC,1,1,10,75,8,3550,pass,"Bo Nix pass short right to Courtland Sutton for 8 yards",0.42,0.47,0.02,00-0039918,Bo Nix,,,00-0034348,Courtland Sutton,0,0,0,0,2,Touchdown,0,7,1,22,5.25,1,12.5,1,Offensive Holding,DEN,00-0034348,',
+        'game_id,play_id,season,week,season_type,home_team,away_team,posteam,defteam,qtr,down,ydstogo,yardline_100,yards_gained,game_seconds_remaining,play_type,desc,epa,wp,wpa,passer_player_id,passer_player_name,rusher_player_id,rusher_player_name,receiver_player_id,receiver_player_name,touchdown,interception,fumble_lost,sack,fixed_drive,fixed_drive_result,posteam_score,posteam_score_post,first_down,air_yards,cpoe,shotgun,pass_oe,penalty,penalty_type,penalty_team,fumbled_1_player_id,fumbled_2_player_id,yards_after_catch',
+        '2025_01_DEN_KC,101,2025,1,REG,KC,DEN,DEN,KC,1,1,10,75,8,3550,pass,"Bo Nix pass short right to Courtland Sutton for 8 yards",0.42,0.47,0.02,00-0039918,Bo Nix,,,00-0034348,Courtland Sutton,0,0,0,0,2,Touchdown,0,7,1,22,5.25,1,12.5,1,Offensive Holding,DEN,00-0034348,,-2',
     ]));
 
     artisan('nfl:import-nflverse-layer', [
@@ -48,6 +48,7 @@ it('imports nflverse play by play rows and links them to nfl games', function ()
         ->and((int) $row->possession_score_after)->toBe(7)
         ->and((int) $row->first_down)->toBe(1)
         ->and((float) $row->air_yards)->toBe(22.0)
+        ->and((float) $row->yards_after_catch)->toBe(-2.0)
         ->and((float) $row->cpoe)->toBe(5.25)
         ->and((int) $row->is_penalty)->toBe(1)
         ->and($row->penalty_type)->toBe('Offensive Holding')

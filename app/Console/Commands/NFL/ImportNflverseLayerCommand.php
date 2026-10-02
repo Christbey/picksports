@@ -187,6 +187,7 @@ class ImportNflverseLayerCommand extends Command
             'complete_pass' => $this->boolValue($row, 'complete_pass'),
             'qb_hit' => $this->boolValue($row, 'qb_hit'),
             'air_yards' => $this->floatValue($row, 'air_yards'),
+            'yards_after_catch' => $this->floatValue($row, 'yards_after_catch'),
             'cpoe' => $this->floatValue($row, 'cpoe'),
             'pass_oe' => $this->floatValue($row, 'pass_oe'),
             'fixed_drive' => $this->intValue($row, 'fixed_drive'),

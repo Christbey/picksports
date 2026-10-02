@@ -27,6 +27,9 @@ abstract class AbstractSyncTeamDepthCharts
 
         $observedAt = now();
         $payload = $this->espnService->getTeamDepthCharts($teamEspnId, $season);
+        if ($payload === null || ! is_array($payload['items'] ?? null)) {
+            throw new \RuntimeException("Depth chart response unavailable or malformed for team {$teamEspnId} in season {$season}.");
+        }
         $entries = $this->normalizeEntries($payload, (int) $team->getKey(), $season, $observedAt);
 
         if (is_array($payload)) {

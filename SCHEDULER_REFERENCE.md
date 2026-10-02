@@ -144,6 +144,8 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 
 ### NFL
 
+- At `07:45` Central during the depth-chart season, `espn:sync-nfl-depth-charts --season=<current> --sync` refreshes all teams daily and waits for completion before reporting success. Each fetch preserves a timestamped observation, allowing recent QB-change comparisons and fresh personnel inputs for the later prediction pipeline. Game links remain tied to the prediction revision that selected the chart.
+
 - At `08:00` Central in season, `nfl:sync-matchup-rosters --season=<current>` validates and archives the free roster release, then refreshes ESPN-to-GSIS mappings. It requires all 32 teams and rejects conflicting quarterback identities before importing.
 - At `08:05` Central in season, `nfl:sync-nflverse-pbp --season=<current>` refreshes the free public play-by-play release, archives the source, and fails its heartbeat if completed games lack play coverage. This supplies the independent matchup analysis before daytime forecasts.
 - At `08:10` Central in season, `nfl:sync-matchup-charting --season=<current>` joins the public FTN release to existing play identities after the play-by-play refresh. It archives the source, preserves unknown charting as missing, and fails on unmatched plays or insufficient scrimmage coverage.

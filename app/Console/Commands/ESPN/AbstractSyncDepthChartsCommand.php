@@ -31,13 +31,21 @@ abstract class AbstractSyncDepthChartsCommand extends Command
         $teamEspnId = $this->argument('teamEspnId');
         $season = (int) ($this->option('season') ?: now()->year);
 
+        $job = $this->depthChartsSyncJobClass();
+        if ($this->option('sync')) {
+            $this->info("Syncing {$sport} depth charts for season {$season}...");
+            $job::dispatchSync($teamEspnId !== null ? (string) $teamEspnId : null, $season);
+            $this->info("{$sport} depth chart sync completed.");
+
+            return Command::SUCCESS;
+        }
+
         if ($teamEspnId) {
             $this->info("Dispatching {$sport} depth chart sync job for team {$teamEspnId} and season {$season}...");
         } else {
             $this->info("Dispatching {$sport} depth chart sync job for all teams in season {$season}...");
         }
 
-        $job = $this->depthChartsSyncJobClass();
         $job::dispatch($teamEspnId !== null ? (string) $teamEspnId : null, $season);
 
         $this->info("{$sport} depth chart sync job dispatched successfully.");
@@ -48,7 +56,7 @@ abstract class AbstractSyncDepthChartsCommand extends Command
     protected function buildSignature(): string
     {
         return sprintf(
-            "%s\n {teamEspnId? : Optional ESPN team ID to sync a specific team}\n {--season= : Season year to sync}",
+            "%s\n {teamEspnId? : Optional ESPN team ID to sync a specific team}\n {--season= : Season year to sync}\n {--sync : Wait for the depth chart sync to complete}",
             $this->commandName()
         );
     }

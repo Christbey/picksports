@@ -51,3 +51,19 @@ it('refreshes charted matchup inputs after the base play import', function () {
         Carbon::setTestNow();
     }
 });
+
+it('refreshes NFL depth charts daily before personnel-dependent forecasts', function (string $date) {
+    Carbon::setTestNow(Carbon::parse($date.' 07:45:00', 'America/Chicago'));
+    try {
+        $events = collect(app(Schedule::class)->events())->where('description', 'NFL: Sync Depth Charts');
+        expect($events)->toHaveCount(1);
+        $event = $events->first();
+        expect($event->expression)->toBe('45 7 * * *')
+            ->and($event->command)->toContain('espn:sync-nfl-depth-charts --season=2026 --sync')
+            ->and($event->onOneServer)->toBeTrue()
+            ->and($event->withoutOverlapping)->toBeTrue()
+            ->and($event->filtersPass(app()))->toBeTrue();
+    } finally {
+        Carbon::setTestNow();
+    }
+})->with(['2026-09-28', '2026-10-01', '2026-10-04']);

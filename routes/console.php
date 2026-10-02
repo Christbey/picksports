@@ -1104,9 +1104,8 @@ $scheduleWeeklySeasonJob(
     $nflInSeason,
     'NFL: Refresh Teams Weekly',
 );
-$scheduleWeeklySeasonJob(
-    "espn:sync-nfl-depth-charts --season={$fallSeasonYear}",
-    1,
+$scheduleDailySeasonJob(
+    "espn:sync-nfl-depth-charts --season={$fallSeasonYear} --sync",
     '07:45',
     $nflDepthChartSeason,
     'NFL: Sync Depth Charts'

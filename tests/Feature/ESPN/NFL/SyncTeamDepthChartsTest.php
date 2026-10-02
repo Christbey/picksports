@@ -1,12 +1,14 @@
 <?php
 
 use App\Actions\ESPN\NFL\SyncTeamDepthCharts;
+use App\Jobs\ESPN\NFL\FetchTeamDepthCharts;
 use App\Models\NFL\DepthChartEntry;
 use App\Models\NFL\DepthChartSnapshot;
 use App\Models\NFL\Player;
 use App\Models\NFL\Team;
 use App\Services\ESPN\BaseEspnService;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Bus;
 
 uses()->group('espn', 'nfl');
 
@@ -165,3 +167,48 @@ it('preserves each nfl depth chart observation across repeated syncs', function 
                 ->value('is_starter')
         )->toBeTruthy();
 });
+
+it('can wait for a depth chart refresh while preserving queued dispatch by default', function (bool $sync) {
+    Bus::fake();
+    $arguments = ['teamEspnId' => '22', '--season' => 2026];
+    if ($sync) {
+        $arguments['--sync'] = true;
+    }
+    $this->artisan('espn:sync-nfl-depth-charts', $arguments)->assertSuccessful();
+    $matches = fn ($job) => $job->teamEspnId === '22' && $job->season === 2026;
+    if ($sync) {
+        Bus::assertDispatchedSync(FetchTeamDepthCharts::class, $matches);
+        expect(Bus::dispatched(FetchTeamDepthCharts::class))->toBeEmpty();
+    } else {
+        Bus::assertDispatched(FetchTeamDepthCharts::class, $matches);
+        Bus::assertNotDispatchedSync(FetchTeamDepthCharts::class);
+    }
+})->with([true, false]);
+
+it('preserves the current chart and observations when the provider response fails', function (?array $payload) {
+    $team = Team::factory()->create(['espn_id' => '22']);
+    $service = new class extends BaseEspnService
+    {
+        protected const SPORT_KEY = 'nfl';
+
+        public ?array $payload = ['items' => [[
+            'positions' => ['qb' => [
+                'position' => ['abbreviation' => 'QB'],
+                'athletes' => [['rank' => 1, 'athlete' => ['id' => '123']]],
+            ]],
+        ]]];
+
+        public function getTeamDepthCharts(string $teamId, int $season): ?array
+        {
+            return $this->payload;
+        }
+    };
+    $action = new SyncTeamDepthCharts($service);
+    $action->execute('22', 2026);
+    $entryId = DepthChartEntry::where('team_id', $team->id)->sole()->id;
+    $service->payload = $payload;
+
+    expect(fn () => $action->execute('22', 2026))->toThrow(RuntimeException::class)
+        ->and(DepthChartEntry::where('team_id', $team->id)->sole()->id)->toBe($entryId)
+        ->and(DepthChartSnapshot::where('team_id', $team->id)->count())->toBe(1);
+})->with([[null], [[]], [['items' => null]], [['items' => 'invalid']]]);

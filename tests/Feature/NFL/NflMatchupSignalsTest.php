@@ -73,8 +73,8 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(159)
-        ->and($result['signals'])->toHaveCount(318)
+    expect($result['summary']['supported_rules'])->toBe(161)
+        ->and($result['signals'])->toHaveCount(322)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 110, $target->home_team_id)['evidence']['offense']['value'])->toBe(0.0)
@@ -1280,4 +1280,70 @@ it('holds turnover rankings with missing flags unidentified runs or too few qual
     DB::table('nflverse_pbp_plays')->whereIn('possession_team_id', $teams->take(9)->pluck('id'))->update(['is_fumble_lost' => null]);
     $signal = matchupSignal($service->build($target), 228, $target->home_team_id);
     expect($signal['status'])->toBe('insufficient_data')->and($signal['reason'])->toContain('24 qualified');
+});
+
+it('compares target-weighted WR size with a complete game-linked projected defensive group', function () {
+    $this->travelTo('2026-09-19 12:00:00');
+    [$target, $teams] = matchupPositionLeague();
+    $charts = [];
+    foreach ($teams as $i => $team) {
+        $tier = intdiv($i, 8);
+        DB::table('nflverse_rosters')->where('team_id', $team->id)->where('position', 'WR')->update(['height' => 70 + $tier * 2, 'weight' => 180 + $tier * 10]);
+        $chart = DepthChartSnapshot::create(['snapshot_uuid' => (string) Str::uuid(), 'team_id' => $team->id,
+            'espn_team_id' => (string) $team->id, 'season' => 2026, 'observed_at' => now()->subHour(), 'payload_hash' => hash('sha256', 'size-'.$i)]);
+        $charts[$team->id] = $chart;
+        foreach (['CB', 'CB', 'FS', 'SS'] as $slot => $position) {
+            $espn = (string) (70000 + $i * 4 + $slot);
+            $chart->entries()->create(['position_slot_key' => $position.$slot, 'position_code' => $position, 'depth_rank' => 1,
+                'espn_athlete_id' => $espn, 'observed_at' => now()->subHour()]);
+            DB::table('nflverse_rosters')->insert(['nflverse_roster_key' => 'size-'.$espn, 'season' => 2026, 'team_id' => $team->id,
+                'gsis_id' => '00-'.$espn, 'espn_id' => $espn, 'position' => 'DB', 'height' => 68 + $tier * 2, 'weight' => 175 + $tier * 10]);
+        }
+    }
+    $prediction = Prediction::factory()->create(['game_id' => $target->id]);
+    $links = [];
+    foreach (['home', 'away'] as $side) {
+        $chart = $charts[$target->{$side.'_team_id'}];
+        $links[$side] = ['depth_chart_game_link' => ['game_id' => $target->id, 'team_id' => $chart->team_id, 'side' => $side,
+            'snapshot_id' => $chart->id, 'snapshot_uuid' => $chart->snapshot_uuid, 'as_of' => now()->toIso8601String()]];
+    }
+    app(PredictionFeatureSnapshotRecorder::class)->record($prediction, $target, 'nfl', ['model_metadata' => ['quarterback' => $links]]);
+    $service = app(NflMatchupSignalService::class);
+    $result = $service->build($target);
+    foreach ([248 => [210, 175], 249 => [76, 68]] as $id => [$offense, $defense]) {
+        $signal = matchupSignal($result, $id, $target->home_team_id);
+        expect($signal['status'])->toBe('matched')->and($signal['evidence']['league_teams'])->toBe(32)
+            ->and($signal['evidence']['offense']['value'])->toEqualWithDelta($offense, .000001)
+            ->and($signal['evidence']['defense']['value'])->toEqualWithDelta($defense, .000001)
+            ->and($signal['evidence']['defense']['depth_chart_link_id'])->not->toBeNull();
+    }
+    $row = (array) DB::table('nflverse_rosters')->where('team_id', $target->away_team_id)->where('position', 'DB')->first();
+    unset($row['id']);
+    $row['nflverse_roster_key'] .= '-conflict';
+    $row['height'] = null;
+    DB::table('nflverse_rosters')->insert($row);
+    expect(matchupSignal($service->build($target), 249, $target->home_team_id)['status'])->toBe('insufficient_data');
+    expect(matchupSignal($service->build($target), 248, $target->home_team_id)['status'])->toBe('matched');
+    DB::table('nflverse_rosters')->where('nflverse_roster_key', $row['nflverse_roster_key'])->delete();
+    $charts[$target->away_team_id]->update(['observed_at' => now()->subDays(8)]);
+    foreach ([248, 249] as $id) {
+        expect(matchupSignal($service->build($target), $id, $target->home_team_id)['status'])->toBe('insufficient_data');
+    }
+    $charts[$target->away_team_id]->update(['observed_at' => now()->subHour()]);
+    DB::table('nflverse_rosters')->where('team_id', $target->home_team_id)->where('position', 'WR')->update(['height' => 91]);
+    expect(matchupSignal($service->build($target), 249, $target->home_team_id)['status'])->toBe('insufficient_data');
+    DB::table('nflverse_rosters')->where('team_id', $target->home_team_id)->where('position', 'WR')->update(['height' => 76]);
+    $charts[$target->away_team_id]->entries()->where('position_code', 'CB')->first()->update(['espn_athlete_id' => null]);
+    foreach ([248, 249] as $id) {
+        expect(matchupSignal($service->build($target), $id, $target->home_team_id)['status'])->toBe('insufficient_data');
+    }
+});
+
+it('requires game-linked and fresh defensive size evidence rather than only a current roster', function () {
+    $this->travelTo('2026-09-19 12:00:00');
+    [$target] = matchupPositionLeague();
+    DB::table('nflverse_rosters')->where('position', 'WR')->update(['height' => 74, 'weight' => 200]);
+    foreach ([248, 249] as $id) {
+        expect(matchupSignal(app(NflMatchupSignalService::class)->build($target), $id, $target->home_team_id)['status'])->toBe('insufficient_data');
+    }
 });

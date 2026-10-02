@@ -4,7 +4,7 @@ namespace App\Services\NFL\Matchups;
 
 final class NflMatchupSignalCatalog
 {
-    public const VERSION = '2026-10-01.18';
+    public const VERSION = '2026-10-01.19';
 
     /** Rules are descriptive; overlapping ranks must never be added as independent evidence. */
     public function rules(): array
@@ -115,6 +115,8 @@ final class NflMatchupSignalCatalog
         $rules[182] = ['metric' => 'false_start_rate', 'offense_only' => true, 'venue' => 'road', 'offense' => 'top', 'defense' => 'any', 'size' => 10];
         $rules[227] = ['metric' => 'qb_turnover_rate', 'defense_metric' => 'takeaway_play_rate', 'offense' => 'top', 'defense' => 'top', 'size' => 10];
         $rules[228] = ['metric' => 'qb_turnover_rate', 'defense_metric' => 'takeaway_play_rate', 'offense' => 'bottom', 'defense' => 'top', 'size' => 10];
+        $rules[248] = ['metric' => 'wr_target_weight', 'defense_metric' => 'cb_weight', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
+        $rules[249] = ['metric' => 'wr_target_height', 'defense_metric' => 'secondary_height', 'offense' => 'top', 'defense' => 'bottom', 'size' => 10];
         ksort($rules);
 
         return $rules;
@@ -153,6 +155,9 @@ final class NflMatchupSignalCatalog
                 ? ['Season/team-specific GSIS roster position mappings', 'Identified rushing and receiving play-by-play with complete league coverage', 'Game-linked player identity and timestamped injury evidence where named'] : null;
             if ($entry['id'] === 224) {
                 $positionInputs = ['Game-selected quarterback identity and availability', 'FTN read_thrown charting joined by verified game/play identity', 'At least 24 qualified QBs and short-pass defensive samples for all 32 teams'];
+            }
+            if (in_array($entry['id'], [248, 249], true)) {
+                $positionInputs = ['Unambiguous season/team WR roster dimensions and identified pass targets', 'Fresh game-linked defensive depth charts with complete starter dimensions', 'Thirty-two qualified offensive and projected defensive size profiles'];
             }
 
             return [...$entry, 'definition' => $metric ? $this->definition($metric).(($rules[$entry['id']]['zero_baseline'] ?? false) ? ' Uses the provider EPA zero baseline, not league rank or league-average centering. Positive offensive EPA means expected points added; positive EPA allowed means the defense allowed expected points to be added. Negative values mean expected points lost or suppressed, respectively. Both sides must be strictly on the named side of zero; zero does not qualify. This is play-level expected-points performance, not actual scoreboard points minus predicted game scores.' : '').(isset($rules[$entry['id']]['profile_threshold']) ? ' EPA profile differential = (offense EPA minus the league mean offensive EPA) + (opponent EPA allowed minus the league mean defensive EPA allowed). League means weight all 32 qualified teams equally. Positive favors the offensive profile; negative favors the defensive profile. The threshold is '.($rules[$entry['id']]['profile_threshold'] > 0 ? 'at least +' : 'at most ').number_format($rules[$entry['id']]['profile_threshold'], 2).' EPA/play, inclusive. These are catalog description thresholds, not backtested edges, predicted scoring margins or forecast inputs.' : '').(isset($rules[$entry['id']]['defense_metric']) ? ' Defense comparison: '.$this->definition($rules[$entry['id']]['defense_metric']) : '') : null,
@@ -451,8 +456,8 @@ final class NflMatchupSignalCatalog
 245. High TE-target EPA offense vs weak TE-target defense
 246. Strong receiving RB vs poor LB coverage
 247. Speed WR vs slow secondary
-248. Physical WR vs undersized CB
-249. Tall WR vs undersized secondary
+248. Heavier target-weighted WR unit vs lighter projected cornerbacks
+249. Taller target-weighted WR unit vs shorter projected secondary
 250. Elite route runner vs man-heavy defense
 251. High-separation WR vs man defense
 252. Low-separation receivers vs man defense

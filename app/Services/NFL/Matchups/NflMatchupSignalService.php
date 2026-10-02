@@ -28,6 +28,9 @@ final class NflMatchupSignalService
             ? 'This catalog version supports regular-season target games only.' : null;
         $games = $cutoff === null || $scopeReason !== null ? collect() : $this->priorGames($game, $cutoff, $season);
         $metrics = $this->metrics($games);
+        foreach (app(NflMatchupDefensiveSize::class)->metrics($game, $cutoff) as $metric => $samples) {
+            $metrics[$metric] = $samples;
+        }
         $quarterbacks = app(NflMatchupQuarterbacks::class)->metrics($game, $games, $cutoff);
         $metrics['qb_pass_epa']['offense'] = $quarterbacks;
         foreach ($quarterbacks as $teamId => $sample) {
@@ -199,6 +202,8 @@ final class NflMatchupSignalService
                 ->whereNotNull('gsis_id')->groupBy('season', 'team_id', 'gsis_id')
                 ->havingRaw('COUNT(position) = COUNT(*) AND COUNT(DISTINCT position) = 1')
                 ->selectRaw('season AS roster_season, team_id AS roster_team, gsis_id AS roster_player, MIN(position) AS roster_position');
+            $positions->selectRaw('CASE WHEN COUNT(height) = COUNT(*) AND COUNT(DISTINCT height) = 1 AND MIN(height) BETWEEN 60 AND 90 THEN MIN(height) ELSE NULL END AS roster_height,
+                CASE WHEN COUNT(weight) = COUNT(*) AND COUNT(DISTINCT weight) = 1 AND MIN(weight) BETWEEN 120 AND 450 THEN MIN(weight) ELSE NULL END AS roster_weight');
             $query = DB::table('nflverse_pbp_plays')->whereIn('nfl_game_id', $games->keys())
                 ->leftJoin('nfl_games as position_games', 'position_games.id', '=', 'nflverse_pbp_plays.nfl_game_id')
                 ->leftJoinSub(clone $positions, 'run_roster', fn ($join) => $join->on('run_roster.roster_player', '=', 'nflverse_pbp_plays.rusher_player_id')->on('run_roster.roster_team', '=', 'nflverse_pbp_plays.possession_team_id')->on('run_roster.roster_season', '=', 'position_games.season'))
@@ -363,6 +368,9 @@ final class NflMatchupSignalService
                     if ($metric === 'false_start_rate' && $eligible) {
                         $metrics[$metric][$side][$team]['display_value'] = number_format($metrics[$metric][$side][$team]['value'] * 100, 2).' false starts per 100 classified offensive opportunities';
                     }
+                    if (in_array($metric, ['wr_target_height', 'wr_target_weight'], true) && $eligible) {
+                        $metrics[$metric][$side][$team]['display_value'] = 'Target-weighted WR '.($metric === 'wr_target_height' ? 'height ' : 'weight ').number_format($metrics[$metric][$side][$team]['value'], 2).($metric === 'wr_target_height' ? ' in' : ' lb');
+                    }
                 }
                 $eligible = array_filter($metrics[$metric][$side] ?? [], fn (array $sample): bool => $sample['eligible']);
                 foreach ($eligible as $team => $sample) {
@@ -479,6 +487,7 @@ final class NflMatchupSignalService
         $reason = match (true) {
             $scopeReason !== null => $scopeReason,
             $cutoff === null => 'Kickoff cutoff is unavailable.',
+            in_array($defenseMetric, ['cb_weight', 'secondary_height'], true) && ! $defense['eligible'] => 'A fresh game-linked defensive chart with enough uniquely identified starters and complete roster dimensions is required.',
             $defensePersonnel && isset($defense['identity_reason']) => $defense['identity_reason'],
             ($qbRule || $personnel) && isset($offense['identity_reason']) => $offense['identity_reason'],
             $qbRule && $rule['metric'] !== 'qb_pass_epa_trend_3' && ($offense['league_players'] ?? 0) < 24 => 'Quarterback rankings require at least 24 qualified passers.',
@@ -518,6 +527,7 @@ final class NflMatchupSignalService
                 'defense_metric' => $defenseMetric,
                 'definition' => $entry['definition'],
                 'source' => match ($rule['metric']) {
+                    'wr_target_height', 'wr_target_weight' => 'Season/team roster dimensions weighted by WR targets; current game-linked defensive chart with roster dimensions and fresh 32-team chart cohort',
                     'false_start_rate' => 'nflverse penalty flag, penalty type and penalized team; includes penalty no-play rows',
                     'qb_turnover_rate' => 'Selected quarterback GSIS identity, nflverse interception/lost-fumble flags and individual fumbler identities',
                     'qb_checkdown_rate' => 'FTN read_thrown joined to nflverse pass attempts by game/play identity and selected quarterback GSIS ID',

@@ -111,7 +111,7 @@ it('does not flag unchanged distant schedules but flags stale near kickoff recor
 
 it('does not demand timestamp refreshes for complete final games', function () {
     $game = cfbHealthGame('FBS', 0);
-    $game->update(['status' => 'STATUS_FINAL', 'game_time' => '00:04:00']);
+    $game->update(['status' => 'STATUS_FINAL', 'game_time' => '10:04:00']);
     DB::table('cfb_games')->where('id', $game->id)->update(['updated_at' => now()->subHours(20)]);
     foreach ([$game->home_team_id => 'home', $game->away_team_id => 'away'] as $teamId => $side) {
         TeamStat::factory()->create(['game_id' => $game->id, 'team_id' => $teamId, 'team_type' => $side]);
@@ -173,4 +173,15 @@ it('checks actual canonical source ordering without requiring legacy command hea
     $result = $check->run('cfb', $profile);
     expect($result['status'])->toBe('failing')->and($result['metadata']['checked_active_games'])->toBe(1)
         ->and($result['metadata']['violations'][0]['reason'])->toBe('metrics_newer_than_forecast');
+});
+
+it('uses the Central game date across the UTC midnight boundary', function () {
+    $yesterday = cfbHealthGame('FBS', 0);
+    $yesterday->update(['game_time' => '00:04:00', 'status' => 'STATUS_FINAL']);
+    DB::table('cfb_games')->where('id', $yesterday->id)->update(['updated_at' => now()->subDays(2)]);
+    $tonight = cfbHealthGame('FBS', 1);
+    $tonight->update(['game_time' => '01:00:00']);
+    $result = app(CurrentDayGameDataFreshnessCheck::class)->run('cfb', config('validation.sports.cfb'));
+    expect($result['metadata']['games_today'])->toBe(1)->and($result['status'])->toBe('passing')
+        ->and($result['metadata']['final_games_missing_team_stats'])->toBe(0);
 });

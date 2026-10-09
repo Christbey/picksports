@@ -44,9 +44,10 @@ class CurrentDayGameDataFreshnessCheck implements ValidationCheck
         $failPct = (float) config('validation.thresholds.current_day_game_data.problem_fail_pct', 0.20);
 
         $games = DB::table($gamesTable)
-            ->whereDate('game_date', '>=', $todayWindow->localStartDate())
-            ->whereDate('game_date', '<=', $todayWindow->localEndDate())
-            ->get(['id', 'espn_event_id', 'short_name', 'name', 'status', 'game_date', 'updated_at']);
+            ->whereDate('game_date', '>=', $todayWindow->utcStart->toDateString())
+            ->whereDate('game_date', '<=', $todayWindow->utcEnd->toDateString())
+            ->get(['id', 'espn_event_id', 'short_name', 'name', 'status', 'game_date', 'game_time', 'updated_at'])
+            ->filter(fn ($game) => $dates->gameDateForDisplay($game->game_date, $game->game_time) === $todayWindow->localStartDate());
 
         $totalGames = $games->count();
         $staleGames = 0;
@@ -63,7 +64,7 @@ class CurrentDayGameDataFreshnessCheck implements ValidationCheck
             $reasons = [];
 
             $updatedAt = $game->updated_at ? CarbonImmutable::parse($game->updated_at) : null;
-            $gameDate = $game->game_date ? CarbonImmutable::parse($game->game_date) : null;
+            $gameDate = $dates->gameDateTimeUtc($game->game_date, $game->game_time);
 
             // Completed records need complete stats, not perpetual timestamp changes.
             $isFinal = in_array((string) $game->status, self::FINAL_STATUSES, true);
@@ -108,7 +109,7 @@ class CurrentDayGameDataFreshnessCheck implements ValidationCheck
                     'game_id' => $gameId,
                     'espn_event_id' => $game->espn_event_id,
                     'matchup' => $game->short_name ?: $game->name,
-                    'game_date' => $gameDate?->toDateString(),
+                    'game_date' => $dates->gameDateForDisplay($game->game_date, $game->game_time),
                     'status' => $game->status,
                     'updated_at' => $updatedAt?->toIso8601String(),
                     'reasons' => $reasons,

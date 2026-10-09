@@ -162,17 +162,6 @@ class RunPregamePipelineCommand extends Command
                 $this->warn('Partial odds coverage; valid forecasts continue and unpriced markets remain unavailable.');
             }
 
-            // Weather is optional evidence. Provider unavailability must not block a forecast.
-            try {
-                if ($this->call('cfb:sync-game-weather', ['--season' => (int) $season,
-                    '--from-date' => now()->toDateString(), '--days-forward' => (int) $days, '--force' => true]) !== self::SUCCESS) {
-                    $this->warn('Weather refresh unavailable; missing weather remains unknown.');
-                }
-            } catch (\Throwable $error) {
-                report($error);
-                $this->warn('Weather refresh unavailable; missing weather remains unknown.');
-            }
-
             $results = [];
             foreach ($games as $game) {
                 $inputs = ['game_updated_at' => $game->updated_at?->toISOString(),
@@ -206,6 +195,18 @@ class RunPregamePipelineCommand extends Command
                         'prediction_id' => $output?->public_id, 'reason' => $output ? null : 'no_fresh_published_forecast'];
                 }, (bool) $this->option('resume'));
             }
+            // Publish first: optional weather requests must not delay otherwise valid forecasts.
+            try {
+                if ($this->call('cfb:sync-game-weather', ['--season' => (int) $season,
+                    '--from-date' => now()->toDateString(), '--days-forward' => (int) $days, '--force' => true,
+                    ...($this->option('game') ? ['--game-id' => $this->option('game')] : [])]) !== self::SUCCESS) {
+                    $this->warn('Weather refresh unavailable; missing weather remains unknown.');
+                }
+            } catch (\Throwable $error) {
+                report($error);
+                $this->warn('Weather refresh unavailable; missing weather remains unknown.');
+            }
+
             $this->line(json_encode(['games' => $results], JSON_THROW_ON_ERROR));
 
             return collect($results)->every(fn ($r) => $r['state'] === 'complete') ? self::SUCCESS : 2;

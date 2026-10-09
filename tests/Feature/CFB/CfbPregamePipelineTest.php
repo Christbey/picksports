@@ -54,7 +54,7 @@ beforeEach(function () {
 
         return 0;
     });
-    Artisan::command('cfb:sync-game-weather {--season=} {--from-date=} {--days-forward=} {--force}', fn () => 0);
+    Artisan::command('cfb:sync-game-weather {--season=} {--from-date=} {--days-forward=} {--game-id=} {--force}', fn () => 0);
     Artisan::command('cfb:generate-canonical-predictions {--season=} {--days-forward=} {--game=}', function () use ($steps) {
         $steps[] = 'generation';
         $game = Game::findOrFail($this->option('game'));
@@ -172,7 +172,7 @@ it('requires personnel data and retries an empty refresh without caching success
 
 it('continues generation after an unavailable optional weather refresh', function () {
     Artisan::command('cfb:sync-odds {--days=}', fn () => 0);
-    Artisan::command('cfb:sync-game-weather {--season=} {--from-date=} {--days-forward=} {--force}', fn () => 1);
+    Artisan::command('cfb:sync-game-weather {--season=} {--from-date=} {--days-forward=} {--game-id=} {--force}', fn () => 1);
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->expectsOutput('Weather refresh unavailable; missing weather remains unknown.')->assertSuccessful();
     expect($this->steps->getArrayCopy())->toContain('generation');
 });
@@ -213,4 +213,16 @@ it('reuses completed historical normalization for unchanged accepted source revi
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertSuccessful();
     expect(DB::table('cfb_pipeline_steps')->where('scope', 'game:'.$past->id)->where('stage', 'normalize')->value('attempts'))->toBe(1)
         ->and($this->steps->getArrayCopy())->toContain('generation');
+});
+
+it('publishes before optional weather and keeps a single game recovery scoped', function () {
+    $game = Game::firstOrFail();
+    Artisan::command('cfb:sync-odds {--days=}', fn () => 0);
+    Artisan::command('cfb:sync-game-weather {--season=} {--from-date=} {--days-forward=} {--game-id=} {--force}', function () use ($game) {
+        expect((int) $this->option('game-id'))->toBe($game->id)
+            ->and(CanonicalPrediction::where('sport_event_id', $game->sport_event_id)->where('publication_state', 'published')->exists())->toBeTrue();
+
+        return 1;
+    });
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026, '--game' => $game->id])->assertSuccessful();
 });

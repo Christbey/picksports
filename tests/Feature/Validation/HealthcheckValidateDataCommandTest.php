@@ -135,11 +135,13 @@ test('healthcheck validate data persists validation run and completeness finding
 });
 
 test('healthcheck validate data flags current day final games missing stats', function () {
+    $this->travelTo('2026-10-08 18:00:00');
     $home = Team::factory()->create();
     $away = Team::factory()->create();
 
     $game = Game::factory()->create([
         'espn_event_id' => '401999900',
+        'game_time' => '19:00:00',
         'short_name' => 'BOS @ LAL',
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,

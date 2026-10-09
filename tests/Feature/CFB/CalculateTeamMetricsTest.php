@@ -10,6 +10,7 @@ use App\Models\CFB\TeamStat;
 use App\Services\CFB\PlayerAvailabilityImpactService;
 use App\Services\CollegeFootballData\CollegeFootballDataService;
 use App\Support\CfbSeasonAffiliationResolver;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Http;
 
 uses()->group('cfb', 'team-metrics');
@@ -288,3 +289,38 @@ it('refreshes only existing external metrics without recalculating local ratings
         ->and($updated->calculation_date->toDateString())->toBe('2026-09-01')
         ->and($action->refreshExternalMetrics($this->opponent, 2026))->toBeNull();
 });
+
+it('keeps supported metrics current when optional WEPA requires a paid subscription', function () {
+    Http::swap(new Factory);
+    config()->set('services.collegefootballdata.api_key', 'configured-test-key');
+    $this->team->update(['cfbd_team_id' => 61]);
+    $metric = TeamMetric::create(['team_id' => $this->team->id, 'season' => 2026,
+        'offensive_rating' => 123.4, 'cfbd_wepa_net' => .8]);
+    Http::fake([
+        'api.collegefootballdata.com/wepa/team/season*' => Http::response([
+            'message' => 'Unauthorized. This endpoint requires a Patreon subscription at Tier 1 or higher.',
+        ], 401),
+        'api.collegefootballdata.com/stats/season/advanced*' => Http::response([
+            ['season' => 2026, 'teamId' => 61, 'offense' => ['successRate' => .5]],
+        ]),
+    ]);
+    $action = app(CalculateTeamMetrics::class);
+    $updated = $action->refreshExternalMetrics($this->team, 2026);
+    expect($updated->cfbd_wepa_net)->toBeNull()
+        ->and(data_get($updated->cfbd_wepa_payload, 'availability.reason'))->toBe('subscription_required')
+        ->and((float) $updated->offensive_success_rate)->toBe(.5)
+        ->and($updated->offensive_rating)->toBe($metric->offensive_rating);
+    $action->refreshExternalMetrics($this->team, 2026);
+    Http::assertSentCount(2);
+});
+
+it('preserves prior metrics on actual WEPA provider or authentication failures', function (int $status, string $message) {
+    Http::swap(new Factory);
+    config()->set('services.collegefootballdata.api_key', 'configured-test-key');
+    $this->team->update(['cfbd_team_id' => 61]);
+    $metric = TeamMetric::create(['team_id' => $this->team->id, 'season' => 2026, 'cfbd_wepa_net' => .8]);
+    Http::fake(['api.collegefootballdata.com/wepa/team/season*' => Http::response(['message' => $message], $status)]);
+    expect(fn () => app(CalculateTeamMetrics::class)->refreshExternalMetrics($this->team, 2026))
+        ->toThrow(RuntimeException::class, 'metric update withheld');
+    expect((float) $metric->fresh()->cfbd_wepa_net)->toBe(.8);
+})->with([[401, 'Invalid API token'], [500, 'Service unavailable']]);

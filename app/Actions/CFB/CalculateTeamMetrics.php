@@ -30,6 +30,8 @@ class CalculateTeamMetrics
      */
     protected array $seasonWepaIndex = [];
 
+    protected array $seasonWepaAvailability = [];
+
     /**
      * @var array<int, array<int|string, array<string, mixed>>>
      */
@@ -405,7 +407,9 @@ class CalculateTeamMetrics
         $row = $this->seasonWepaIndex($season)[$cfbdTeamId] ?? null;
 
         if (! is_array($row)) {
-            return ['offense' => null, 'defense' => null, 'net' => null, 'payload' => null];
+            return ['offense' => null, 'defense' => null, 'net' => null,
+                'payload' => isset($this->seasonWepaAvailability[$season])
+                    ? ['availability' => $this->seasonWepaAvailability[$season]] : null];
         }
 
         $offense = $this->extractMetricValue($row, [
@@ -704,6 +708,18 @@ class CalculateTeamMetrics
         } catch (\Throwable $exception) {
             Log::warning('CFB external metric request failed', ['source' => $source, 'season' => $season,
                 'exception' => get_class($exception)]);
+            // WEPA is optional enrichment. Explicit subscription denial is unavailable evidence,
+            // rather than a transient failure or permission to reuse old values as current.
+            if ($source === 'wepa' && $exception instanceof RequestException
+                && in_array($exception->response->status(), [401, 403], true)
+                && preg_match('/endpoint.*requires.*(?:patreon|subscription)/i',
+                    (string) $exception->response->json('message'))) {
+                $this->seasonWepaAvailability[$season] = ['state' => 'unavailable',
+                    'reason' => 'subscription_required', 'season' => $season,
+                    'checked_at' => now()->toIso8601String()];
+
+                return [];
+            }
             // Optional unconfigured local environments can still calculate local box-score metrics.
             // A configured provider failure must not silently overwrite real metrics with nulls.
             if (config('services.collegefootballdata.api_key') || $exception instanceof RequestException) {

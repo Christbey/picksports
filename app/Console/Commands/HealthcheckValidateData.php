@@ -16,6 +16,9 @@ class HealthcheckValidateData extends Command
 {
     protected $signature = 'healthcheck:validate-data
         {--sport= : Specific sport to validate (mlb, nba, nfl, cbb, cfb, wcbb, wnba)}
+        {--if-stale= : Skip when the latest completed validation is younger than this many minutes}
+        {--skip-ai-summary : Use the local summary without calling an AI provider}
+        {--skip-alerts : Do not send regression alerts}
         {--scope=full : Validation scope to run: full or data}
         {--data-only : Shortcut for --scope=data; validates source data freshness/completeness without derived prediction or AI readiness checks}';
 
@@ -40,9 +43,31 @@ class HealthcheckValidateData extends Command
             return Command::FAILURE;
         }
 
+        $runScope = $this->option('sport') ? 'sport:'.$this->option('sport') : 'all_sports';
+        if ($this->option('if-stale') !== null) {
+            $minutes = filter_var($this->option('if-stale'), FILTER_VALIDATE_INT);
+            if ($minutes === false || $minutes < 1) {
+                $this->error('--if-stale must be a positive number of minutes.');
+
+                return Command::FAILURE;
+            }
+            if (ValidationRun::query()->where('scope', $runScope)->whereIn('status', ['passing', 'warning', 'failing'])->whereNotNull('completed_at')
+                ->where('completed_at', '>=', now()->subMinutes($minutes))->exists()) {
+                $this->info('Recent completed validation is available.');
+
+                return Command::SUCCESS;
+            }
+        }
+        // A process killed by a restart cannot mark itself failed. Keep that interruption visible.
+        ValidationRun::query()->where('scope', $runScope)->where('status', 'running')
+            ->where('started_at', '<', now()->subHours(2))->update([
+                'status' => 'interrupted', 'completed_at' => now(),
+                'summary' => json_encode(['error' => 'Validation process did not complete; superseded by a retry.']),
+            ]);
+
         $run = ValidationRun::query()->create([
             'command_name' => 'healthcheck:validate-data',
-            'scope' => $this->option('sport') ? 'sport:'.$this->option('sport') : 'all_sports',
+            'scope' => $runScope,
             'status' => 'running',
             'started_at' => now(),
         ]);
@@ -50,24 +75,14 @@ class HealthcheckValidateData extends Command
         foreach ($sports as $sport) {
             $this->line("Validating {$sport} ({$scope})...");
 
-            $results = $this->sportValidator->validate($sport, $scope);
+            // Persist CFB findings as each check finishes, even if a later check is interrupted.
+            $results = $sport === 'cfb'
+                ? $this->sportValidator->results($sport, $scope)
+                : $this->sportValidator->validate($sport, $scope);
 
-            if ($results === []) {
-                $this->recordCheck(
-                    $run,
-                    $sport,
-                    'validation_configuration',
-                    'warning',
-                    'No validation profile or checks configured for this sport.',
-                    [],
-                    'warning',
-                    null
-                );
-
-                continue;
-            }
-
+            $resultCount = 0;
             foreach ($results as $result) {
+                $resultCount++;
                 $this->recordCheck(
                     $run,
                     $sport,
@@ -79,6 +94,18 @@ class HealthcheckValidateData extends Command
                     isset($result['recommended_action']) ? (string) $result['recommended_action'] : null
                 );
             }
+            if ($resultCount === 0) {
+                $this->recordCheck(
+                    $run,
+                    $sport,
+                    'validation_configuration',
+                    'warning',
+                    'No validation profile or checks configured for this sport.',
+                    [],
+                    'warning',
+                    null
+                );
+            }
         }
 
         $run->forceFill([
@@ -88,7 +115,9 @@ class HealthcheckValidateData extends Command
         ])->save();
 
         $this->persistAiSummary($run);
-        $this->validationRegressionAlertService->maybeNotify($run);
+        if (! $this->option('skip-alerts')) {
+            $this->validationRegressionAlertService->maybeNotify($run);
+        }
 
         return $this->displayResults($run);
     }
@@ -259,7 +288,9 @@ class HealthcheckValidateData extends Command
 
     protected function persistAiSummary(ValidationRun $run): void
     {
-        $summary = $this->validationReviewSummaryService->summarizeRun($run);
+        $summary = $this->option('skip-ai-summary')
+            ? $this->validationReviewSummaryService->buildFallbackSummary($run->findings()->get(), $run)
+            : $this->validationReviewSummaryService->summarizeRun($run);
         $generatedBy = (string) ($summary['generated_by'] ?? '');
         $provider = null;
         $model = null;

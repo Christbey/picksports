@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\CFB;
 
+use App\Actions\CFB\CalculateElo;
 use App\Actions\ESPN\CFB\SyncGameDetails;
 use App\Actions\ESPN\CFB\SyncPlayerInjuries;
 use App\Actions\ESPN\CFB\SyncPlayers;
@@ -14,6 +15,7 @@ use App\Models\MarketQuote;
 use App\Services\CFB\Data\CfbDataReadiness;
 use App\Services\CFB\Data\CfbDriveBuilder;
 use App\Services\CFB\Data\CfbPipelineStage;
+use App\Services\Validation\CfbValidationCoverage;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Validator;
@@ -42,11 +44,14 @@ class RunPregamePipelineCommand extends Command
             return self::FAILURE;
         }
         try {
-            $games = Game::with(['homeTeam', 'awayTeam'])->where('season', $season)
+            $gameColumns = array_merge(CalculateElo::RESULT_COLUMNS, ['sport_event_id', 'updated_at']);
+            $games = Game::with(['homeTeam', 'awayTeam'])->select($gameColumns)->where('season', $season)
                 ->when($this->option('game'), fn ($q, $v) => $q->whereKey($v))
                 ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_DELAYED'])
                 ->whereHas('sportEvent', fn ($q) => $q->where('starts_at', '>', now())->where('starts_at', '<=', now()->addDays((int) $days)))
                 ->get();
+            $coverage = app(CfbValidationCoverage::class);
+            $games = $games->filter(fn ($game) => $coverage->requiredTeamIds($game) !== [])->values();
             if ($games->isEmpty()) {
                 $this->info('No upcoming CFB games in the pipeline horizon.');
 
@@ -108,7 +113,7 @@ class RunPregamePipelineCommand extends Command
                 }
             }
             $historyFailures = [];
-            $history = Game::where('season', $season)->where('status', 'STATUS_FINAL')
+            $history = Game::select($gameColumns)->where('season', $season)->where('status', 'STATUS_FINAL')
                 ->where(fn ($q) => $q->whereIn('home_team_id', $teams->pluck('id')->all())->orWhereIn('away_team_id', $teams->pluck('id')->all()))->get();
             foreach ($history as $past) {
                 $readiness = app(CfbDataReadiness::class);
@@ -132,12 +137,15 @@ class RunPregamePipelineCommand extends Command
                         $drives = app(CfbDriveBuilder::class)->build($past, true);
 
                         return ['state' => $code === self::SUCCESS && $drives['state'] === 'complete' ? 'complete' : 'failed', 'drives' => $drives];
-                    }, false);
+                    });
                     if ($processed['state'] !== 'complete') {
                         $historyFailures[] = $past->home_team_id;
                         $historyFailures[] = $past->away_team_id;
                     }
                 }
+                $past->unsetRelations();
+                gc_collect_cycles();
+                gc_mem_caches();
             }
             if ($this->call('cfb:calculate-elo', ['--season' => (int) $season]) !== self::SUCCESS) {
                 $this->error('Elo integrity/update failed; generation stopped.');
@@ -192,6 +200,7 @@ class RunPregamePipelineCommand extends Command
                         ->where('published_at', '<', $game->sportEvent->starts_at)->whereHas('markets')->latest('revision')->first();
                     $game->unsetRelations();
                     gc_collect_cycles();
+                    gc_mem_caches();
 
                     return ['state' => $code === self::SUCCESS && $output ? 'complete' : 'failed', 'code' => $code,
                         'prediction_id' => $output?->public_id, 'reason' => $output ? null : 'no_fresh_published_forecast'];

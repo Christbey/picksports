@@ -23,7 +23,7 @@ class EloRebuildService
         if ($history->isEmpty()) {
             return;
         }
-        $allGames = Game::query()->get()->keyBy('id');
+        $allGames = Game::query()->get(CalculateElo::RESULT_COLUMNS)->keyBy('id');
         $teams = Team::query()->with('seasonAffiliations')->get()->keyBy('id');
         $latest = [];
         foreach ($history as $gameId => $pair) {
@@ -219,7 +219,7 @@ class EloRebuildService
 
     private function inputs(): array
     {
-        $games = Game::query()->where('status', 'STATUS_FINAL')->orderBy('season')
+        $games = Game::query()->select(CalculateElo::RESULT_COLUMNS)->where('status', 'STATUS_FINAL')->orderBy('season')
             ->orderBy('game_date')->orderBy('game_time')->orderBy('id')->get();
         $teams = Team::query()->with('seasonAffiliations')->get()->keyBy('id');
         $eligibility = [];

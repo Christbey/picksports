@@ -65,13 +65,14 @@ class CurrentDayGameDataFreshnessCheck implements ValidationCheck
             $updatedAt = $game->updated_at ? CarbonImmutable::parse($game->updated_at) : null;
             $gameDate = $game->game_date ? CarbonImmutable::parse($game->game_date) : null;
 
-            if ($inSeason && (! $updatedAt || $updatedAt->lt($now->subHours($staleHours)))) {
+            // Completed records need complete stats, not perpetual timestamp changes.
+            $isFinal = in_array((string) $game->status, self::FINAL_STATUSES, true);
+            if ($inSeason && ! $isFinal && (! $updatedAt || $updatedAt->lt($now->subHours($staleHours)))) {
                 $staleGames++;
                 $flagged = true;
                 $reasons[] = 'stale_game_row';
             }
 
-            $isFinal = in_array((string) $game->status, self::FINAL_STATUSES, true);
             $gameIsPastGrace = $gameDate?->lt($now->subHours($finalStatsGraceHours)) ?? false;
 
             if ($isFinal && $gameIsPastGrace) {

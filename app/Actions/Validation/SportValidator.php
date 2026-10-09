@@ -112,21 +112,31 @@ class SportValidator
      */
     public function validate(string $sport, string $scope = 'full'): array
     {
+        return iterator_to_array($this->results($sport, $scope), false);
+    }
+
+    /** @return \Generator<int, array<string, mixed>> */
+    public function results(string $sport, string $scope = 'full'): \Generator
+    {
         $profile = config("validation.sports.{$sport}");
 
         if (! is_array($profile)) {
-            return [];
+            return;
         }
-
-        $results = [];
 
         foreach ($this->checksForScope($scope) as $check) {
-            $result = $check->run($sport, $profile);
+            try {
+                $result = $check->run($sport, $profile);
+            } catch (\Throwable $error) {
+                report($error);
+                $result = ['check_type' => 'validation_check_error_'.substr(explode('@', class_basename($check))[0], 0, 90),
+                    'status' => 'failing', 'message' => 'Validation check could not complete.',
+                    'metadata' => ['check' => get_class($check), 'error' => $error->getMessage()],
+                    'recommended_action' => 'Review validation errors and rerun healthcheck:validate-data'];
+            }
             if ($result !== null) {
-                $results[] = $result;
+                yield $result;
             }
         }
-
-        return $results;
     }
 }

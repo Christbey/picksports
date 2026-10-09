@@ -926,6 +926,13 @@ foreach ($operationsSentinelSchedules as $sentinelSchedule) {
         "{$sentinelSchedule['label']}: Operations Sentinel"
     );
 }
+// Recover an interrupted daily audit and keep the CFB dashboard current during the day.
+$cfbHealthRecoveryCommand = 'healthcheck:validate-data --sport=cfb --if-stale=120 --skip-ai-summary --skip-alerts';
+$cfbHealthRecoveryEvent = Schedule::command($cfbHealthRecoveryCommand)
+    ->hourlyAt(55)->timezone('America/Chicago')->when($cfbInSeason)
+    ->withoutOverlapping(30)->onOneServer()->runInBackground()
+    ->name('CFB: Recover Stale Health Checks');
+$attachCommandHeartbeat($cfbHealthRecoveryEvent, $cfbHealthRecoveryCommand, 'CFB: Recover Stale Health Checks');
 $scheduleDailySeasonJob(
     "sports:ai-daily-predictions --sport=mlb --season={$currentYear}",
     '09:05',

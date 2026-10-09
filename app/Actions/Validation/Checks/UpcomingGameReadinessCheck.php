@@ -5,6 +5,7 @@ namespace App\Actions\Validation\Checks;
 use App\Actions\Validation\Contracts\ValidationCheck;
 use App\Services\Sports\SeasonStage\SeasonStageService;
 use App\Services\Sports\SportsDateWindowService;
+use App\Services\Validation\CfbValidationCoverage;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -44,10 +45,12 @@ class UpcomingGameReadinessCheck implements ValidationCheck
         $stageContext = app(SeasonStageService::class)->context($sport, null, null, $windowDays);
         $dates = app(SportsDateWindowService::class);
         $upcomingQuery = DB::table($gamesTable)
-            ->whereIn('id', $stageContext->activeGameIds);
+            ->whereIn('id', $stageContext->activeGameIds)
+            ->whereIn('status', self::ACTIVE_STATUSES);
 
         $upcomingGames = $upcomingQuery->get([
             'id',
+            'sport_event_id',
             'espn_event_id',
             'home_team_id',
             'away_team_id',
@@ -61,6 +64,13 @@ class UpcomingGameReadinessCheck implements ValidationCheck
             'odds_updated_at',
             'updated_at',
         ]);
+
+        $cfbCoverage = app(CfbValidationCoverage::class);
+        if ($sport === 'cfb') {
+            $upcomingGames = $upcomingGames->filter(fn ($game) => $cfbCoverage->requiredTeamIds($game) !== [])->values();
+        }
+        $canonical = $sport === 'cfb' && $cfbCoverage->usesCanonical()
+            ? $cfbCoverage->publishedForGames($upcomingGames) : null;
 
         $missingTeams = 0;
         $missingEspnEventIds = 0;
@@ -91,7 +101,10 @@ class UpcomingGameReadinessCheck implements ValidationCheck
                 $reasons[] = 'missing_espn_event_id';
             }
 
-            if (! DB::table($predictionsTable)->where('game_id', $gameId)->exists()) {
+            $hasPrediction = $canonical !== null
+                ? $canonical->has($game->sport_event_id)
+                : DB::table($predictionsTable)->where('game_id', $gameId)->exists();
+            if (! $hasPrediction) {
                 $missingPredictions++;
                 $reasons[] = 'missing_prediction';
             }
@@ -116,13 +129,16 @@ class UpcomingGameReadinessCheck implements ValidationCheck
                 }
             }
 
-            if (! $this->hasMetricsForBothTeams($teamMetricsTable, $game)) {
+            if (! $this->hasMetricsForBothTeams($teamMetricsTable, $game, $sport === 'cfb' ? $cfbCoverage->requiredTeamIds($game) : null)) {
                 $missingTeamMetrics++;
                 $reasons[] = 'missing_team_metrics';
             }
 
             $updatedAt = $game->updated_at ? CarbonImmutable::parse($game->updated_at) : null;
-            if (! $updatedAt || $updatedAt->lt(now()->subHours($staleHours))) {
+            $startsAt = $dates->gameDateTimeUtc($game->game_date, $game->game_time);
+            // A distant unchanged schedule is not a stale live/pregame feed.
+            if ((! $startsAt || $startsAt->lte(now()->addHours(24)))
+                && (! $updatedAt || $updatedAt->lt(now()->subHours($staleHours)))) {
                 $staleGameRows++;
                 $reasons[] = 'stale_game_row';
             }
@@ -178,21 +194,22 @@ class UpcomingGameReadinessCheck implements ValidationCheck
         ];
     }
 
-    private function hasMetricsForBothTeams(string $teamMetricsTable, object $game): bool
+    private function hasMetricsForBothTeams(string $teamMetricsTable, object $game, ?array $requiredTeamIds = null): bool
     {
         if (! $game->home_team_id || ! $game->away_team_id || ! $game->season) {
             return false;
         }
 
+        $requiredTeamIds ??= [(int) $game->home_team_id, (int) $game->away_team_id];
         $query = DB::table($teamMetricsTable)
             ->where('season', $game->season)
-            ->whereIn('team_id', [(int) $game->home_team_id, (int) $game->away_team_id]);
+            ->whereIn('team_id', $requiredTeamIds);
 
         if (Schema::hasColumn($teamMetricsTable, 'season_type') && $game->season_type !== null) {
             $query->where('season_type', $game->season_type);
         }
 
-        return $query->distinct('team_id')->count('team_id') >= 2;
+        return $query->distinct('team_id')->count('team_id') >= count($requiredTeamIds);
     }
 
     /**

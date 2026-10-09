@@ -190,3 +190,21 @@ it('rejects a candidate from an older model before activation', function () {
     expect(fn () => $service->activate($candidate['id']))->toThrow(RuntimeException::class, 'another model version');
     expect(EloRating::count())->toBe(0);
 });
+
+it('omits provider payloads from game reads while preserving result integrity', function () {
+    [$home, $away] = integrityTeams();
+    integrityGame($home, $away, '2026-09-05');
+    $queries = [];
+    DB::listen(function ($query) use (&$queries) {
+        if (str_starts_with($query->sql, 'select') && str_contains($query->sql, 'from "cfb_games"')) {
+            $queries[] = $query->sql;
+        }
+    });
+    $this->artisan('cfb:calculate-elo', ['--season' => 2026])->assertSuccessful();
+    $this->artisan('cfb:calculate-elo', ['--season' => 2026])->assertSuccessful();
+    expect($queries)->not->toBeEmpty();
+    foreach ($queries as $query) {
+        expect($query)->not->toContain('select *')->not->toContain('odds_data');
+    }
+    expect(EloRating::count())->toBe(2);
+});

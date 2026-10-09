@@ -178,21 +178,14 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 
 ### CFB
 
-- Hourly at `:45`, 08:00–23:00 Central: `cfb:run-pregame-pipeline --days-forward=2` synchronously refreshes participating-team rosters (once daily) and injuries, then odds, then canonical forecasts. It requires canonical generation enabled, uses an application lock and scheduler overlap/single-server guards, and stops on odds failures. New forecasts preserve previous revisions; no historical games are regenerated.
-
-
-- Daily current-week sync at `07:00`
-- Live scoreboard sync every 5 minutes between `12:00` and `02:00`
-- Game details sync every 30 minutes between `14:00` and `02:00`
-- Grade predictions at `03:00`
-- Evaluate immutable canonical predictions at `03:05` when `PREDICTION_LIFECYCLE_CFB_CANONICAL_PIPELINE=true`
-- Calculate Elo at `03:30`
-- Import FPI at `03:45`
-- Calculate team metrics at `04:00`
-- Generate predictions at `04:30`
-- Generate canonical predictions at `04:35` when `PREDICTION_LIFECYCLE_CFB_CANONICAL_PIPELINE=true`
-- Sync odds every 4 hours between `08:00` and `23:00`
-- Sync injuries every 30 minutes between `08:00` and `23:00`
+- Daily at `03:25` Central: sync the current week. Live scoreboards refresh every five minutes between `10:00` and `02:00`; final-game details refresh every thirty minutes between `14:00` and `02:00`.
+- Grade legacy predictions at `03:00`; canonical evaluation and decision settlement run at `03:05` and `03:10` when canonical generation is enabled.
+- Import FPI at `03:45`. Standalone legacy Elo (`03:30`), metrics (`04:00`), and prediction (`04:30`) jobs are disabled when the canonical pipeline owns those stages.
+- Daily at `04:35`: run the canonical pregame pipeline across the next eight days. Hourly at `:45`, `08:00`–`23:00`: refresh the next two days. The pipeline repairs and normalizes source history, recalculates Elo and metrics, then refreshes markets and forecasts. Explicit non-FBS-only games are outside its forecast scope. Required source/integrity failures remain visible; unavailable odds and weather do not prevent an unpriced forecast.
+- Completed history normalization is reused for unchanged accepted source revisions. Historical game and Elo reads omit large odds payloads.
+- Daily at `04:50`: the CFB operations sentinel validates health. Every hour at `:55`, `healthcheck:validate-data --sport=cfb --if-stale=120 --skip-ai-summary --skip-alerts` retries when no audit has completed in two hours. Each finding is saved as its check finishes; abandoned runs older than two hours are marked interrupted on retry.
+- Sync odds every four hours and injuries every thirty minutes between `08:00` and `23:00`.
+- Canonical health checks inspect published forecasts with markets, flag forecasts older than 24 hours separately from missing forecasts, and compare forecast generation time with actual team-metric revisions. Final-game health requires complete source stats rather than perpetual game-row updates. Distant scheduled games are not subject to the twelve-hour near-kickoff row freshness rule.
 
 ## Maintenance And Non-Sport Jobs
 

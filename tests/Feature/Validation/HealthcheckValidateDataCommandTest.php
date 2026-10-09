@@ -181,6 +181,7 @@ test('healthcheck validate data flags current day final games missing stats', fu
 });
 
 test('injury freshness warns on future refresh timestamps instead of reporting negative age', function () {
+    $this->travelTo('2026-07-08 12:00:00');
     CommandHeartbeat::query()->create([
         'sport' => 'wnba',
         'command' => 'espn:sync-wnba-injuries',
@@ -200,6 +201,7 @@ test('injury freshness warns on future refresh timestamps instead of reporting n
 });
 
 test('injury freshness uses fresh injury rows when command heartbeat is stale', function () {
+    $this->travelTo('2026-07-08 12:00:00');
     $team = WnbaTeam::factory()->create();
     $player = WnbaPlayer::factory()->create([
         'team_id' => $team->id,

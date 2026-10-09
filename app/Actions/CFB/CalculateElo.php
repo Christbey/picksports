@@ -57,6 +57,10 @@ class CalculateElo extends AbstractEloCalculator
 
     public const MODEL_VERSION = 'cfb-elo-2.0.1';
 
+    /** Source result fields required by the integrity hash and calculation, without provider payloads. */
+    public const RESULT_COLUMNS = ['id', 'season', 'week', 'season_type', 'game_date', 'game_time',
+        'home_team_id', 'away_team_id', 'home_score', 'away_score', 'neutral_site', 'status'];
+
     public function fingerprint(Model $game): string
     {
         return hash('sha256', json_encode([
@@ -108,7 +112,7 @@ class CalculateElo extends AbstractEloCalculator
         }
 
         return Cache::lock('cfb-elo-integrity-write', 600)->block(15, fn () => DB::transaction(function () use ($game) {
-            $game = Game::query()->lockForUpdate()->findOrFail($game->id);
+            $game = Game::query()->select(self::RESULT_COLUMNS)->lockForUpdate()->findOrFail($game->id);
             $teams = Team::query()->whereIn('id', [$game->home_team_id, $game->away_team_id])
                 ->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             $home = $teams->get($game->home_team_id);
@@ -147,7 +151,7 @@ class CalculateElo extends AbstractEloCalculator
                     ->orderByDesc('cfb_games.game_date')->orderByDesc('cfb_games.game_time')
                     ->orderByDesc('cfb_games.id')->select('cfb_elo_ratings.*')->first();
                 if ($latest) {
-                    $previousGame = $latest->game;
+                    $previousGame = Game::query()->select(self::RESULT_COLUMNS)->findOrFail($latest->game_id);
                     if ($this->orderKey($previousGame) >= $this->orderKey($game)) {
                         throw new RuntimeException("Out-of-order CFB game {$game->id}; run cfb:rebuild-elo for a chronological candidate.");
                     }

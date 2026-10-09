@@ -32,7 +32,7 @@ class CalculateEloCommand extends AbstractCalculateEloCommand
 
     protected function applyAdditionalAnalyticsFilters(Builder $query): void
     {
-        $query->reorder()->orderBy('season')->orderBy('game_date')->orderBy('game_time')->orderBy('id');
+        $query->select(CalculateElo::RESULT_COLUMNS)->reorder()->orderBy('season')->orderBy('game_date')->orderBy('game_time')->orderBy('id');
     }
 
     public function handle(): int

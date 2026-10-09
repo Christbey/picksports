@@ -4,7 +4,9 @@ namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
 use App\Models\CommandHeartbeat;
+use App\Services\Sports\SeasonStage\SeasonStageService;
 use App\Services\Sports\SportsDateWindowService;
+use App\Services\Validation\CfbValidationCoverage;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -19,6 +21,9 @@ class PipelineOrderCheck implements ValidationCheck
      */
     public function run(string $sport, array $profile): ?array
     {
+        if ($sport === 'cfb' && app(CfbValidationCoverage::class)->usesCanonical()) {
+            return $this->canonicalCfbOrder($profile);
+        }
         if (! Schema::hasTable('command_heartbeats')) {
             return null;
         }
@@ -128,6 +133,38 @@ class PipelineOrderCheck implements ValidationCheck
                 'missing_heartbeats' => array_slice($missingHeartbeats, 0, 5),
             ],
         ];
+    }
+
+    private function canonicalCfbOrder(array $profile): array
+    {
+        $coverage = app(CfbValidationCoverage::class);
+        $context = app(SeasonStageService::class)->context('cfb', null, null, (int) ($profile['window_days'] ?? 7));
+        $games = DB::table('cfb_games')->whereIn('id', $context->activeGameIds)
+            ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_PRE_GAME', 'STATUS_DELAYED'])
+            ->get(['id', 'sport_event_id', 'season', 'home_team_id', 'away_team_id']);
+        $games = $games->filter(fn ($game) => $coverage->requiredTeamIds($game) !== [])->values();
+        $published = $coverage->publishedForGames($games);
+        $violations = [];
+        foreach ($games as $game) {
+            $forecast = $published->get($game->sport_event_id);
+            $metricsUpdated = DB::table('cfb_team_metrics')->where('season', $game->season)
+                ->whereIn('team_id', $coverage->requiredTeamIds($game))->max('updated_at');
+            if (! $forecast || ! $forecast->generated_at
+                || ($metricsUpdated && $forecast->generated_at->lt($metricsUpdated))) {
+                $violations[] = ['game_id' => $game->id,
+                    'reason' => $forecast ? 'metrics_newer_than_forecast' : 'missing_published_forecast',
+                    'prediction_generated_at' => $forecast?->generated_at?->toIso8601String(),
+                    'team_metrics_updated_at' => $metricsUpdated];
+            }
+        }
+
+        return ['check_type' => 'validation_pipeline_order',
+            'status' => $violations === [] ? 'passing' : 'failing',
+            'message' => $violations === [] ? 'Published CFB forecasts consume the latest team metrics.'
+                : count($violations).' CFB game(s) require a canonical forecast after their team metrics.',
+            'recommended_action' => 'cfb:run-pregame-pipeline --days-forward=8 --resume',
+            'metadata' => ['prediction_source' => 'canonical', 'checked_active_games' => $games->count(),
+                'blocking_active_games' => count($violations), 'violations' => array_slice($violations, 0, 5)]];
     }
 
     /**

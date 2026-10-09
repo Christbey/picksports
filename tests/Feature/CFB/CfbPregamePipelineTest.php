@@ -5,7 +5,11 @@ use App\Actions\ESPN\CFB\SyncPlayers;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game;
 use App\Models\CFB\Team;
+use App\Models\CFB\TeamSeasonAffiliation;
 use App\Models\SportEvent;
+use App\Services\CFB\Data\CfbDataReadiness;
+use App\Services\CFB\Data\CfbDriveBuilder;
+use App\Services\CFB\Data\CfbPipelineStage;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -184,4 +188,29 @@ it('shows stage evidence and routes daily canonical generation through validatio
     $this->artisan('cfb:pipeline-status')->assertSuccessful();
     $daily = collect(app(Schedule::class)->events())->first(fn ($e) => $e->description === 'CFB: Generate Canonical Predictions');
     expect($daily->command)->toContain('cfb:run-pregame-pipeline');
+});
+
+it('leaves explicit non FBS only games outside the FBS forecast pipeline', function () {
+    $game = Game::firstOrFail();
+    foreach ([$game->home_team_id, $game->away_team_id] as $teamId) {
+        TeamSeasonAffiliation::create(['team_id' => $teamId, 'season' => 2026,
+            'subdivision' => 'NON_FBS', 'source' => 'cfbd_fbs_membership']);
+    }
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertSuccessful();
+    expect($this->steps->getArrayCopy())->toBe([]);
+});
+
+it('reuses completed historical normalization for unchanged accepted source revisions', function () {
+    $game = Game::firstOrFail();
+    $past = Game::factory()->create(['home_team_id' => $game->home_team_id, 'away_team_id' => $game->away_team_id,
+        'season' => 2026, 'status' => 'STATUS_FINAL', 'game_date' => now()->subWeek()]);
+    $quality = ['ready' => true, 'components' => ['plays' => ['source_hash' => 'accepted-source']]];
+    $this->mock(CfbDataReadiness::class)->shouldReceive('forGame')->andReturn($quality);
+    $this->mock(CfbDriveBuilder::class)->shouldNotReceive('build');
+    app(CfbPipelineStage::class)->run('game:'.$past->id, 'normalize', $quality,
+        fn () => ['state' => 'complete', 'drives' => ['state' => 'complete']]);
+    Artisan::command('cfb:sync-odds {--days=}', fn () => 0);
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertSuccessful();
+    expect(DB::table('cfb_pipeline_steps')->where('scope', 'game:'.$past->id)->where('stage', 'normalize')->value('attempts'))->toBe(1)
+        ->and($this->steps->getArrayCopy())->toContain('generation');
 });

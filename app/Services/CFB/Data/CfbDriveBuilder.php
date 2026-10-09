@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 
 class CfbDriveBuilder
 {
-    public const VERSION = '1';
+    public const VERSION = '2';
 
     public function build(Game $game, bool $onlyChanged = false): array
     {
@@ -19,9 +19,18 @@ class CfbDriveBuilder
             return ['state' => 'blocked', 'reason' => 'no_accepted_play_revision'];
         }
         $plays = Play::where('game_id', $game->id)->where('source_revision', $check->source_hash)->orderBy('sequence_number')->orderBy('id')->get();
+        try {
+            $plays = app(CfbScoringLedger::class)->normalize($game, $plays);
+        } catch (\Throwable $error) {
+            return ['state' => 'blocked', 'reason' => 'unreconciled_scoring_ledger', 'error' => $error->getMessage()];
+        }
         $previous = DB::table('cfb_drives')->where('game_id', $game->id)->where('source_revision', $check->source_hash)->get();
+        $ledgerRevision = GameDataCheck::where('game_id', $game->id)->where('component', 'boxscore')
+            ->where('state', 'complete')->whereNotNull('accepted_at')->latest('accepted_at')->latest('id')->value('source_hash');
         $epaUpdated = $plays->max('epa_calculated_at');
-        if ($onlyChanged && $previous->isNotEmpty() && $previous->every(fn ($d) => $d->quality === 'complete' && data_get(json_decode($d->data, true), 'normalizer_version') === self::VERSION)
+        if ($onlyChanged && $previous->isNotEmpty() && $previous->every(fn ($d) => $d->quality === 'complete'
+            && data_get(json_decode($d->data, true), 'normalizer_version') === self::VERSION
+            && data_get(json_decode($d->data, true), 'score_ledger_revision') === $ledgerRevision)
             && (! $epaUpdated || $epaUpdated->lte(CarbonImmutable::parse($previous->min('updated_at'))))) {
             return ['state' => 'complete', 'drives' => $previous->count(), 'source_revision' => $check->source_hash, 'reused' => true];
         }
@@ -37,7 +46,8 @@ class CfbDriveBuilder
             $provider = data_get($raw, 'drive.id') ?? data_get($raw, 'drive.$ref');
             $offense = $play->possession_team_id;
             $type = strtolower((string) $play->play_type.' '.(string) $play->play_text);
-            $try = (bool) preg_match('/extra point|two.point|2.point|conversion|pat good|pat failed/', $type);
+            // Touchdown descriptions often include the conversion; that is still a scrimmage play.
+            $try = (bool) preg_match('/extra point|two.point|2.point|conversion|pat good|pat failed/', strtolower((string) $play->play_type));
             $kickoff = str_contains($type, 'kickoff') || str_contains($type, 'kick off');
             $noPlay = str_contains($type, 'no play');
             $deltaHome = (int) $play->home_score - $beforeHome;
@@ -125,6 +135,7 @@ class CfbDriveBuilder
         foreach ($drives as $index => $drive) {
             $drive['duration_seconds'] = max(0, $this->seconds($drive['start_clock']) - $this->seconds($drive['end_clock']) + 900 * (($drive['end_period'] ?? $drive['period']) - $drive['period']));
             $drive['normalizer_version'] = self::VERSION;
+            $drive['score_ledger_revision'] = $ledgerRevision;
             $rows[] = ['game_id' => $game->id, 'source_revision' => $check->source_hash, 'drive_key' => (string) $index,
                 'offense_team_id' => $drive['offense_team_id'], 'quality' => $errors ? 'partial' : 'complete', 'data' => json_encode($drive, JSON_THROW_ON_ERROR), 'created_at' => now(), 'updated_at' => now()];
         }

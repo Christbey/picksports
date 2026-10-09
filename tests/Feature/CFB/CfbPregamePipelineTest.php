@@ -209,7 +209,7 @@ it('reuses completed historical normalization for unchanged accepted source revi
     $quality = ['ready' => true, 'components' => ['plays' => ['source_hash' => 'accepted-source']]];
     $this->mock(CfbDataReadiness::class)->shouldReceive('forGame')->andReturn($quality);
     $this->mock(CfbDriveBuilder::class)->shouldNotReceive('build');
-    app(CfbPipelineStage::class)->run('game:'.$past->id, 'normalize', $quality,
+    app(CfbPipelineStage::class)->run('game:'.$past->id, 'normalize', [...$quality, 'normalizer_version' => CfbDriveBuilder::VERSION],
         fn () => ['state' => 'complete', 'drives' => ['state' => 'complete']]);
     Artisan::command('cfb:sync-odds {--days=}', fn () => 0);
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertSuccessful();

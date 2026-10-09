@@ -4,6 +4,7 @@ namespace App\Console\Commands\CFB;
 
 use App\Models\CFB\Game;
 use App\Models\CFB\Play;
+use App\Services\CFB\Data\CfbScoringLedger;
 use App\Services\CFB\TrueEpaCalculator;
 use Illuminate\Console\Command;
 
@@ -45,7 +46,7 @@ class CalculatePlayEpaCommand extends Command
             $query->limit($limit);
         }
 
-        $games = $query->get(['id', 'home_team_id', 'away_team_id', 'season']);
+        $games = $query->get(['id', 'home_team_id', 'away_team_id', 'season', 'status', 'home_score', 'away_score', 'espn_event_id']);
         if ($games->isEmpty()) {
             $this->warn('No matching games found.');
 
@@ -66,6 +67,7 @@ class CalculatePlayEpaCommand extends Command
                 ->orderBy('id')
                 ->get([
                     'id',
+                    'espn_play_id',
                     'game_id',
                     'period',
                     'clock',
@@ -89,6 +91,14 @@ class CalculatePlayEpaCommand extends Command
                 $bar->advance();
 
                 continue;
+            }
+
+            try {
+                $plays = app(CfbScoringLedger::class)->normalize($game, $plays);
+            } catch (\Throwable $error) {
+                $this->error("Game {$game->id}: {$error->getMessage()}");
+
+                return self::FAILURE;
             }
 
             $results = $calculator->calculateForGame(

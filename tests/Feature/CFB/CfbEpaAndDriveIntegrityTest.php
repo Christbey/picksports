@@ -5,10 +5,81 @@ use App\Models\CFB\GameDataCheck;
 use App\Models\CFB\Play;
 use App\Models\CFB\Team;
 use App\Services\CFB\Data\CfbDriveBuilder;
+use App\Services\CFB\Data\CfbScoringLedger;
 use App\Services\CFB\PlayEpaDataService;
 use App\Services\CFB\TrueEpaCalculator;
 use App\Services\Epa\StateBaselineService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+
+function cfbLedgerFixture(array $changes = []): array
+{
+    Storage::fake('local');
+    config()->set('cfb.data.source_disk', 'local');
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+    $game = Game::factory()->create(['home_team_id' => $home->id, 'away_team_id' => $away->id,
+        'status' => 'STATUS_FINAL', 'home_score' => 7, 'away_score' => 0]);
+    $payload = ['header' => ['id' => $game->espn_event_id, 'competitions' => [['status' => ['type' => ['name' => 'STATUS_FINAL']],
+        'competitors' => [['homeAway' => 'home', 'team' => ['id' => $home->espn_id], 'score' => '7'],
+            ['homeAway' => 'away', 'team' => ['id' => $away->espn_id], 'score' => '0']]]]],
+        'scoringPlays' => [['id' => 'td', 'homeScore' => 7, 'awayScore' => 0, 'team' => ['id' => $home->espn_id]]]];
+    $payload = array_replace_recursive($payload, $changes);
+    $json = json_encode($payload, JSON_THROW_ON_ERROR);
+    $hash = hash('sha256', $json);
+    Storage::disk('local')->put('ledger.json', $json);
+    GameDataCheck::create(['game_id' => $game->id, 'component' => 'boxscore', 'source_hash' => $hash,
+        'validator_version' => '2', 'state' => 'complete', 'discrepancies' => [], 'evidence' => [],
+        'source_path' => 'ledger.json', 'accepted_at' => now()]);
+    $playHash = hash('sha256', 'ledger-plays');
+    GameDataCheck::create(['game_id' => $game->id, 'component' => 'plays', 'source_hash' => $playHash,
+        'validator_version' => '2', 'state' => 'complete', 'discrepancies' => [], 'evidence' => [],
+        'source_path' => 'plays.json', 'accepted_at' => now()]);
+    $plays = collect([
+        ['rush', 'Rush', 'Rush for 2 yards', 0],
+        ['td', 'Rushing Touchdown', 'Rush touchdown, extra point good', 7],
+        ['penalty', 'Penalty', 'False start NO PLAY', 6],
+        ['kickoff', 'Kickoff', 'Kickoff touchback', 14],
+        ['next', 'Pass Incompletion', 'Pass incomplete', 7],
+    ])->map(function ($row, $i) use ($game, $home, $playHash) {
+        return Play::create(['game_id' => $game->id, 'espn_play_id' => $row[0], 'sequence_number' => $i,
+            'period' => 1, 'clock' => '10:00', 'play_type' => $row[1], 'play_text' => $row[2],
+            'home_score' => $row[3], 'away_score' => 0, 'possession_team_id' => $home->id,
+            'is_scoring_play' => $row[0] === 'td', 'down' => 1, 'distance' => 10, 'yards_to_endzone' => 75,
+            'yards_gained' => 2, 'source_revision' => $playHash]);
+    });
+
+    return [$game, $plays];
+}
+
+it('reconciles premature and rolled back snapshots from the verified scoring ledger without editing raw plays', function () {
+    [$game, $plays] = cfbLedgerFixture();
+    $normalized = app(CfbScoringLedger::class)->normalize($game, $plays);
+    expect($normalized->pluck('home_score')->all())->toBe([0, 7, 7, 7, 7])
+        ->and($plays->pluck('home_score')->all())->toBe([0, 7, 6, 14, 7])
+        ->and(Play::where('game_id', $game->id)->where('espn_play_id', 'kickoff')->value('home_score'))->toBe(14);
+    $result = app(CfbDriveBuilder::class)->build($game);
+    expect($result['state'])->toBe('complete');
+    $first = json_decode(DB::table('cfb_drives')->where('game_id', $game->id)->orderBy('id')->value('data'), true);
+    expect($first['plays'])->toBe(2)->and($first['offense_points'])->toBe(7);
+});
+
+it('holds a ledger that cannot prove each final score or link every scoring play', function (array $changes) {
+    [$game, $plays] = cfbLedgerFixture($changes);
+    expect(fn () => app(CfbScoringLedger::class)->normalize($game, $plays))->toThrow(RuntimeException::class)
+        ->and(app(CfbDriveBuilder::class)->build($game)['state'])->toBe('blocked');
+})->with([
+    'missing scoring play' => [['scoringPlays' => [['id' => 'missing']]]],
+    'wrong final score' => [['scoringPlays' => [['homeScore' => 6]]]],
+    'wrong event' => [['header' => ['id' => 'other']]],
+    'wrong scoring team' => [['scoringPlays' => [['team' => ['id' => 'other']]]]],
+]);
+
+it('rejects a changed scoring archive even if its final score still agrees', function () {
+    [$game, $plays] = cfbLedgerFixture();
+    Storage::disk('local')->put('ledger.json', '{}');
+    expect(fn () => app(CfbScoringLedger::class)->normalize($game, $plays))->toThrow(RuntimeException::class, 'source hash mismatch');
+});
 
 it('uses only prior state values and does not jump over special teams or halftime', function () {
     $baseline = Mockery::mock(StateBaselineService::class);

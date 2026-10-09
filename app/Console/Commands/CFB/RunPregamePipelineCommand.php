@@ -156,8 +156,8 @@ class RunPregamePipelineCommand extends Command
             }
             foreach ($history as $past) {
                 if (! in_array($past->home_team_id, $historyFailures, true) && ! in_array($past->away_team_id, $historyFailures, true)) {
-                    $processed = app(CfbPipelineStage::class)->run('game:'.$past->id, 'normalize', app(CfbDataReadiness::class)->forGame($past), function () use ($past) {
-                        $code = $this->call('cfb:calculate-play-epa', ['--game_id' => $past->id]);
+                    $processed = app(CfbPipelineStage::class)->run('game:'.$past->id, 'normalize', [...app(CfbDataReadiness::class)->forGame($past), 'normalizer_version' => CfbDriveBuilder::VERSION], function () use ($past) {
+                        $code = $this->call('cfb:calculate-play-epa', ['--game_id' => $past->id, '--rebuild' => true]);
                         $drives = app(CfbDriveBuilder::class)->build($past, true);
 
                         return ['state' => $code === self::SUCCESS && $drives['state'] === 'complete' ? 'complete' : 'failed', 'drives' => $drives];

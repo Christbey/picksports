@@ -4,6 +4,7 @@ namespace App\Console\Commands\CFB;
 
 use App\Actions\CFB\CalculateElo;
 use App\Actions\ESPN\CFB\SyncGameDetails;
+use App\Actions\ESPN\CFB\SyncGameMetadata;
 use App\Actions\ESPN\CFB\SyncPlayerInjuries;
 use App\Actions\ESPN\CFB\SyncPlayers;
 use App\Models\CanonicalPrediction;
@@ -44,11 +45,15 @@ class RunPregamePipelineCommand extends Command
             return self::FAILURE;
         }
         try {
-            $gameColumns = array_merge(CalculateElo::RESULT_COLUMNS, ['sport_event_id', 'updated_at']);
+            $gameColumns = array_merge(CalculateElo::RESULT_COLUMNS, ['sport_event_id', 'updated_at', 'espn_event_id']);
             $games = Game::with(['homeTeam', 'awayTeam'])->select($gameColumns)->where('season', $season)
                 ->when($this->option('game'), fn ($q, $v) => $q->whereKey($v))
                 ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_DELAYED'])
-                ->whereHas('sportEvent', fn ($q) => $q->where('starts_at', '>', now())->where('starts_at', '<=', now()->addDays((int) $days)))
+                ->where(function ($q) use ($days) {
+                    $q->whereHas('sportEvent', fn ($events) => $events->where('starts_at', '>', now())->where('starts_at', '<=', now()->addDays((int) $days)))
+                        ->orWhere(fn ($dates) => $dates->whereDate('game_date', '>=', now()->subDay()->toDateString())
+                            ->whereDate('game_date', '<=', now()->addDays((int) $days)->toDateString()));
+                })
                 ->get();
             $coverage = app(CfbValidationCoverage::class);
             $games = $games->filter(fn ($game) => $coverage->requiredTeamIds($game) !== [])->values();
@@ -61,6 +66,25 @@ class RunPregamePipelineCommand extends Command
                 $this->line(json_encode(['game_ids' => $games->modelKeys(), 'stages' => ['repair', 'ratings', 'metrics', 'forecast', 'price']]));
 
                 return self::SUCCESS;
+            }
+            $metadataFailures = [];
+            foreach ($games as $game) {
+                try {
+                    app(SyncGameMetadata::class)->execute($game);
+                } catch (\Throwable $error) {
+                    report($error);
+                    $metadataFailures[] = $game->id;
+                    $this->warn("Game {$game->id}: unverified kickoff metadata; its forecast remains held.");
+                }
+            }
+            // Reapply the future horizon using confirmed kickoff times, not imported placeholders.
+            $games = Game::select($gameColumns)->with(['homeTeam', 'awayTeam'])
+                ->whereIn('id', $games->modelKeys())
+                ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_PRE_GAME', 'STATUS_DELAYED'])
+                ->whereHas('sportEvent', fn ($q) => $q->where('starts_at', '>', now())->where('starts_at', '<=', now()->addDays((int) $days)))
+                ->get();
+            if ($games->isEmpty()) {
+                return $metadataFailures === [] ? self::SUCCESS : self::FAILURE;
             }
             $ratingsKey = 'cfb:pregame-ratings:v2:'.$season.':'.now('America/Chicago')->toDateString();
             if (! Cache::has($ratingsKey)) {
@@ -164,14 +188,17 @@ class RunPregamePipelineCommand extends Command
 
             $results = [];
             foreach ($games as $game) {
-                $inputs = ['game_updated_at' => $game->updated_at?->toISOString(),
+                $inputs = ['metadata_reliable' => ! in_array($game->id, $metadataFailures, true), 'game_updated_at' => $game->updated_at?->toISOString(),
                     'history' => GameDataCheck::whereIn('game_id', $history->modelKeys())->whereNotNull('accepted_at')->pluck('source_hash')->sort()->values()->all(),
                     // A new hourly source refresh needs a new immutable forecast; --resume only skips completed work within that refresh window.
                     'refresh_window' => now()->format('Y-m-d-H'),
                     'team_revisions' => TeamMetric::whereIn('team_id', [$game->home_team_id, $game->away_team_id])->max('updated_at'),
                     'quote_revision' => MarketQuote::where('sport', 'cfb')->where('game_id', $game->id)->max('id'),
                     'injury_revision' => PlayerInjury::whereIn('team_id', [$game->home_team_id, $game->away_team_id])->max('updated_at')];
-                $results[$game->id] = app(CfbPipelineStage::class)->run('game:'.$game->id, 'forecast', $inputs, function () use ($game, $historyFailures, $teamFailures) {
+                $results[$game->id] = app(CfbPipelineStage::class)->run('game:'.$game->id, 'forecast', $inputs, function () use ($game, $historyFailures, $teamFailures, $metadataFailures) {
+                    if (in_array($game->id, $metadataFailures, true)) {
+                        return ['state' => 'blocked', 'reason' => 'unreliable_kickoff_metadata'];
+                    }
                     if (array_intersect([$game->home_team_id, $game->away_team_id], $teamFailures)) {
                         return ['state' => 'blocked', 'reason' => 'unreliable_team_personnel'];
                     }

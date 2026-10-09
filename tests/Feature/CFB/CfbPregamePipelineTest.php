@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\ESPN\CFB\SyncGameMetadata;
 use App\Actions\ESPN\CFB\SyncPlayerInjuries;
 use App\Actions\ESPN\CFB\SyncPlayers;
 use App\Models\CanonicalPrediction;
@@ -23,6 +24,7 @@ beforeEach(function () {
     $away = Team::factory()->create();
     Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026,
         'home_team_id' => $home->id, 'away_team_id' => $away->id, 'status' => 'STATUS_SCHEDULED']);
+    $this->mock(SyncGameMetadata::class)->shouldReceive('execute')->andReturn(true)->byDefault();
     $this->steps = new ArrayObject;
     $steps = $this->steps;
     $this->mock(SyncPlayers::class)->shouldReceive('execute')->andReturnUsing(function () use ($steps) {
@@ -225,4 +227,13 @@ it('publishes before optional weather and keeps a single game recovery scoped', 
         return 1;
     });
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026, '--game' => $game->id])->assertSuccessful();
+});
+
+it('holds a forecast when its kickoff metadata cannot be verified', function () {
+    app(SyncGameMetadata::class)->shouldReceive('execute')->andThrow(new RuntimeException('Summary unavailable'));
+    Artisan::command('cfb:sync-odds {--days=}', fn () => 0);
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertExitCode(2);
+    expect($this->steps->getArrayCopy())->not->toContain('generation');
+    $result = json_decode(DB::table('cfb_pipeline_steps')->where('stage', 'forecast')->value('result'), true);
+    expect($result['reason'])->toBe('unreliable_kickoff_metadata');
 });

@@ -203,12 +203,19 @@ fresh pregame forecasts, not retrospectively enriched historical records.
 
 ## Historical score snapshot reconciliation
 
-CFB release `1.7.4` records drive normalizer `4`, scoring ledger normalizer `2`,
+CFB release `1.7.5` records drive normalizer `4`, scoring ledger normalizer `3`,
 and the `3-ledger` play validator in its frozen configuration. A contradictory
 intermediate score can be reconstructed only from explicit scoring events in the
 archived, hash-verified final summary. Every event must link to an ordered play,
 identify a game team, and prove its point value and conversion outcome. Both team
 totals must independently reconcile the official final scores.
+
+When a touchdown description omits its conversion, the verified kicker boxscore
+can prove one successful kick per touchdown only if made and attempted PATs both
+equal the team's full touchdown count. Kicker identities must be unique, every
+compound stat must be complete, and kicker points must equal PATs plus three times
+made field goals. Explicit failed or two-point conversions prevent this inference.
+Missing, conflicting, or incomplete kicker rows keep the ledger held.
 
 A complete play feed with a stale terminal score snapshot can be certified against
 that ledger. Missing pages, duplicate IDs, missing scoring plays, and unverified

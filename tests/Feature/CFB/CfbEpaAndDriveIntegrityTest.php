@@ -116,6 +116,35 @@ it('rebuilds a verified game through the isolated normalization command', functi
     expect(DB::table('cfb_drives')->where('game_id', $game->id)->where('quality', 'complete')->exists())->toBeTrue();
 });
 
+it('proves an omitted conversion only from complete successful PAT counts for every touchdown', function () {
+    [$game, $plays] = cfbLedgerFixture();
+    $box = GameDataCheck::where('game_id', $game->id)->where('component', 'boxscore')->firstOrFail();
+    $payload = json_decode(Storage::disk('local')->get($box->source_path), true);
+    $payload['scoringPlays'][0] += ['type' => ['text' => 'Rushing Touchdown'], 'text' => 'Rush for a TD'];
+    $payload['scoringPlays'][0]['homeScore'] = 6;
+    $kicker = ['athlete' => ['id' => '123'], 'stats' => ['1/1', '0/0', '1']];
+    $payload['boxscore']['players'] = [['team' => ['id' => $game->homeTeam->espn_id], 'statistics' => [
+        ['name' => 'kicking', 'labels' => ['XP', 'FG', 'PTS'], 'athletes' => [$kicker]],
+    ]]];
+    $save = function (array $source) use ($box) {
+        $json = json_encode($source, JSON_THROW_ON_ERROR);
+        Storage::disk('local')->put($box->source_path, $json);
+        $box->update(['source_hash' => hash('sha256', $json)]);
+    };
+    $save($payload);
+    expect(app(CfbScoringLedger::class)->normalize($game, $plays)->last()->home_score)->toBe(7);
+    foreach ([['0/1', '0/0', '0'], ['1/1', '0/0', '2'], ['1/2', '0/0', '1'], ['1/1']] as $stats) {
+        $bad = $payload;
+        $bad['boxscore']['players'][0]['statistics'][0]['athletes'][0]['stats'] = $stats;
+        $save($bad);
+        expect(fn () => app(CfbScoringLedger::class)->normalize($game, $plays))->toThrow(RuntimeException::class);
+    }
+    $bad = $payload;
+    $bad['boxscore']['players'][0]['statistics'][0]['athletes'][] = $kicker;
+    $save($bad);
+    expect(fn () => app(CfbScoringLedger::class)->normalize($game, $plays))->toThrow(RuntimeException::class);
+});
+
 it('reconciles overtime touchdowns and observed failed conversions without trusting simultaneous score snapshots', function () {
     [$game] = cfbLedgerFixture();
     $game->update(['home_score' => 41, 'away_score' => 43]);

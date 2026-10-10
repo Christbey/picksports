@@ -11,7 +11,7 @@ use RuntimeException;
 /** Use the archived official scoring ledger; raw play score snapshots remain unchanged. */
 class CfbScoringLedger
 {
-    public const VERSION = '2';
+    public const VERSION = '3';
 
     public function normalize(Game $game, Collection $plays): Collection
     {
@@ -46,6 +46,7 @@ class CfbScoringLedger
             throw new RuntimeException('Invalid scoring ledger.');
         }
         $positions = $plays->values()->pluck('espn_play_id')->flip();
+        $allKickConversions = $this->allKickConversions($payload, $ledger);
         $scores = [];
         $eventScores = [];
         $home = $away = 0;
@@ -72,7 +73,7 @@ class CfbScoringLedger
                 || ! in_array($deltaHome + $deltaAway, [1, 2, 3, 6, 7, 8], true)) {
                 $snapshotsValid = false;
             }
-            $points = $this->explicitEventPoints($entry);
+            $points = $this->explicitEventPoints($entry, $allKickConversions);
             $eventsProven = $eventsProven && $points !== null;
             if ($team === (string) $game->homeTeam->espn_id) {
                 $eventHome += $points ?? 0;
@@ -108,7 +109,7 @@ class CfbScoringLedger
     }
 
     /** Only explicit successful scoring events and observed conversion outcomes qualify. */
-    private function explicitEventPoints(array $entry): ?int
+    private function explicitEventPoints(array $entry, array $allKickConversions = []): ?int
     {
         $type = strtolower((string) data_get($entry, 'type.text', ''));
         $kind = strtolower((string) data_get($entry, 'scoringType.name', ''));
@@ -124,7 +125,7 @@ class CfbScoringLedger
                 return 8;
             }
 
-            return null;
+            return ($allKickConversions[(string) data_get($entry, 'team.id')] ?? false) ? 7 : null;
         }
         if ($type === 'field goal good') {
             return 3;
@@ -141,5 +142,59 @@ class CfbScoringLedger
         }
 
         return null;
+    }
+
+    /** Every touchdown has one successful kick only when the verified box proves N/N PATs for N touchdowns. */
+    private function allKickConversions(array $payload, array $ledger): array
+    {
+        $touchdowns = [];
+        $conflicts = [];
+        foreach ($ledger as $entry) {
+            if (data_get($entry, 'scoringType.name') === 'touchdown'
+                || str_contains(strtolower((string) data_get($entry, 'type.text', '')), 'touchdown')) {
+                $team = (string) data_get($entry, 'team.id');
+                $touchdowns[$team] = ($touchdowns[$team] ?? 0) + 1;
+                $points = $this->explicitEventPoints($entry);
+                if ($points !== null && $points !== 7) {
+                    $conflicts[$team] = true;
+                }
+            }
+        }
+        $proven = [];
+        foreach ($payload['boxscore']['players'] ?? [] as $teamRow) {
+            $team = (string) data_get($teamRow, 'team.id');
+            $categories = collect($teamRow['statistics'] ?? [])->filter(fn ($row) => strtolower($row['name'] ?? '') === 'kicking');
+            $category = $categories->first();
+            $labels = $category['labels'] ?? [];
+            if (! isset($touchdowns[$team]) || isset($conflicts[$team]) || $categories->count() !== 1 || empty($category['athletes'])
+                || count(array_unique($labels)) !== count($labels) || array_diff(['XP', 'FG', 'PTS'], $labels)) {
+                continue;
+            }
+            $made = $attempted = 0;
+            $ids = [];
+            $valid = true;
+            foreach ($category['athletes'] as $athlete) {
+                $id = (string) data_get($athlete, 'athlete.id');
+                $stats = $athlete['stats'] ?? [];
+                if (! ctype_digit($id) || (int) $id <= 0 || isset($ids[$id]) || count($stats) !== count($labels)) {
+                    $valid = false;
+                    break;
+                }
+                $ids[$id] = true;
+                $stats = array_combine($labels, $stats);
+                if (! preg_match('/^(\d+)\/(\d+)$/', (string) $stats['XP'], $xp)
+                    || ! preg_match('/^(\d+)\/(\d+)$/', (string) $stats['FG'], $fg)
+                    || ! ctype_digit((string) $stats['PTS']) || (int) $xp[1] > (int) $xp[2]
+                    || (int) $fg[1] > (int) $fg[2] || (int) $stats['PTS'] !== (int) $xp[1] + 3 * (int) $fg[1]) {
+                    $valid = false;
+                    break;
+                }
+                $made += (int) $xp[1];
+                $attempted += (int) $xp[2];
+            }
+            $proven[$team] = $valid && $made === $touchdowns[$team] && $attempted === $touchdowns[$team];
+        }
+
+        return $proven;
     }
 }

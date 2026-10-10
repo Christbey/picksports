@@ -4,6 +4,8 @@ namespace App\Services\NFL;
 
 class NflSpreadProbability
 {
+    public const MINIMUM_RESIDUALS = 200;
+
     /**
      * Empirical residual distribution. Rounded score margins retain integer-line pushes.
      * This is a shadow estimate, never a calibrated claim or automatic bet approval.
@@ -20,12 +22,14 @@ class NflSpreadProbability
                 ? 'pass_small_edge' : 'directional_lean_unvalidated',
             'cover_probability' => null, 'push_probability' => null, 'loss_probability' => null,
             'conditional_cover_probability' => null, 'expected_profit_per_unit' => null,
-            'sample_size' => count($residuals), 'calibrated' => false, 'bet_eligible' => false];
+            'sample_size' => count($residuals), 'minimum_sample_size' => self::MINIMUM_RESIDUALS,
+            'additional_samples_required' => max(0, self::MINIMUM_RESIDUALS - count($residuals)),
+            'calibrated' => false, 'bet_eligible' => false];
         if (! is_finite($margin) || ! is_finite($homeLine)
             || abs($homeLine * 2 - round($homeLine * 2)) > 0.00001) {
             return [...$base, 'edge_points' => null, 'recommendation' => 'unavailable', 'reason' => 'invalid_margin_or_line'];
         }
-        if ($side === 'none' || count($residuals) < 200) {
+        if ($side === 'none' || count($residuals) < self::MINIMUM_RESIDUALS) {
             return [...$base, 'reason' => $side === 'none' ? 'no_directional_edge' : 'insufficient_prior_residuals'];
         }
         $wins = $pushes = 0;

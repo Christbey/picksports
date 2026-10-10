@@ -162,6 +162,7 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 - The ordered NFL pregame pipeline uses stored markets without fetching odds and verifies fresh prediction snapshots for eligible games. NFL odds monitoring uses the research market expiry (36 hours by default).
 - Grade predictions at `08:30`
 - Evaluate immutable canonical predictions at `08:35` when `PREDICTION_LIFECYCLE_NFL_CANONICAL_PIPELINE=true`
+- Audit frozen NFL spread history at `08:50` with `nfl:validate-spread-models`; record per-version sample shortages and observed performance in `nfl-spread-validation.log`. Successful execution means the audit ran, not that the model is approved. No odds fetch or automatic promotion occurs.
 - Calculate Elo at `09:00`
 - Calculate team metrics at `09:30`
 - Generate predictions at `10:00`

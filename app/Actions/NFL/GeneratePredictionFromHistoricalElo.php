@@ -22,7 +22,7 @@ use App\Services\NFL\NflProSignalLayer;
 use App\Services\NFL\NflQuarterbackStatsSummary;
 use App\Services\NFL\NflRushingMatchup;
 use App\Services\NFL\NflSampleReliability;
-use App\Services\NFL\NflSpreadProbability;
+use App\Services\NFL\NflSpreadAssessmentService;
 use App\Services\NFL\NflTeamHistory;
 use App\Services\NFL\PlayerPositionGradeService;
 use App\Services\NFL\QuarterbackAvailability;
@@ -187,8 +187,6 @@ class GeneratePredictionFromHistoricalElo
             'injury_stage_rounding' => false,
             'selection_basis' => 'published_one_decimal_margin_and_total',
         ];
-        $this->applyAnalysisLayer($game, round($predictedSpread, 1), round($predictedTotal, 1), $winProbability);
-
         $isFinal = (string) $game->status === (string) config('nfl.statuses.final', 'STATUS_FINAL');
         $historicalProfile = $isFinal
             ? (string) config('nfl.predictions.historical_profile', 'configured')
@@ -197,6 +195,7 @@ class GeneratePredictionFromHistoricalElo
             ? '-'.$historicalProfile
             : '';
         $modelVersion = (string) config('nfl.predictions.model_version', 'nfl-historical-elo-v2').'-career-regular-v2-ats-v3'.$profileSuffix;
+        $this->applyAnalysisLayer($game, round($predictedSpread, 1), round($predictedTotal, 1), $winProbability, $modelVersion);
         $featureVersion = (string) config('nfl.predictions.feature_version', 'nfl-pregame-ml-v3');
         $blendVersion = (string) config('nfl.predictions.blend_version', 'nfl-multi-signal-v1').$profileSuffix;
         $baselineOutputs = [
@@ -4267,13 +4266,14 @@ class GeneratePredictionFromHistoricalElo
         return round((float) $homeGrade - (float) $awayGrade, 2);
     }
 
-    protected function applyAnalysisLayer(Game $game, float $predictedSpread, float $predictedTotal, float $winProbability): void
+    protected function applyAnalysisLayer(Game $game, float $predictedSpread, float $predictedTotal, float $winProbability, ?string $modelVersion = null): void
     {
         [$entryMargin, $marketTotal] = $this->extractMarketSpreadAndTotalFromGame($game);
         $this->lastModelMetadata['confidence_basis'] = 'outright_winner';
         $this->lastModelMetadata['spread_assessment'] = $entryMargin === null
             ? ['status' => 'unavailable', 'cover_probability' => null, 'reason' => 'missing_market_line']
-            : app(NflSpreadProbability::class)->estimate([], $predictedSpread, -$entryMargin);
+            : app(NflSpreadAssessmentService::class)->assess($game, $predictedSpread, -$entryMargin,
+                $modelVersion ?? (string) config('nfl.predictions.model_version', 'nfl-historical-elo-v2').'-career-regular-v2-ats-v3');
         // Save a fixed, predeclared benchmark alongside the forecast, never feed it back in.
         $legacyMargin = data_get($this->lastModelMetadata, 'legacy.spread');
         $this->lastModelMetadata['spread_candidates'] = [

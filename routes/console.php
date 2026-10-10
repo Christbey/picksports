@@ -1097,6 +1097,8 @@ $nflCanonicalPipelineEnabled = fn (): bool => $nflInSeason()
     && (bool) config('prediction_lifecycle.canonical_pipeline.nfl', false);
 $scheduleDailySeasonJob("nfl:grade-player-props --season={$fallSeasonYear}", '08:40', $nflInSeason, 'NFL: Grade Player Props');
 $scheduleDailySeasonJob("nfl:evaluate-canonical-predictions --season={$fallSeasonYear}", '08:35', $nflCanonicalPipelineEnabled, 'NFL: Evaluate Canonical Predictions');
+$scheduleDailySeasonJob("nfl:validate-spread-models --from-season=2021 --to-season={$fallSeasonYear} --json", '08:50', $nflInSeason, 'NFL: Validate Frozen Spread History')
+    ->appendOutputTo(storage_path('logs/nfl-spread-validation.log'));
 $nflCanonicalLifecycleMutex = 'nfl-canonical-generation-readiness';
 $nflPregamePipelineEvent->createMutexNameUsing($nflCanonicalLifecycleMutex);
 $nflCanonicalReadinessEvent = $scheduleDailySeasonJob(

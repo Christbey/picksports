@@ -173,3 +173,14 @@ it('schedules bounded single-server weekly model training for MLB and NFL', func
         ->and($nfl?->onOneServer)->toBeTrue()
         ->and($nfl?->runInBackground)->toBeTrue();
 });
+
+it('audits NFL frozen spread validation daily after grading without fetching odds', function () {
+    $event = collect(app(Schedule::class)->events())->first(
+        fn ($event) => $event->description === 'NFL: Validate Frozen Spread History'
+    );
+    expect($event)->not->toBeNull()
+        ->and($event->expression)->toBe('50 8 * * *')
+        ->and($event->onOneServer)->toBeTrue()
+        ->and($event->withoutOverlapping)->toBeTrue()
+        ->and($event->command)->toContain('nfl:validate-spread-models')->not->toContain('sync-odds');
+});

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\NFL;
 
+use App\Services\NFL\NflSpreadProbability;
 use App\Services\NFL\NflSpreadValidationDataset;
 use App\Services\NFL\NflSpreadWalkForward;
 use Illuminate\Console\Command;
@@ -29,6 +30,14 @@ class ValidateSpreadModelsCommand extends Command
         $report = $validator->evaluate($data['rows']);
         $report['scope'] = ['from_season' => $from, 'to_season' => $to, 'games_seen' => $data['games_seen']];
         $report['dataset_exclusions'] = $data['excluded'];
+        $report['calibration_readiness'] = collect($data['rows'])->groupBy('model_version')->map(fn ($rows) => [
+            'completed_frozen_games' => $rows->count(),
+            'minimum_training_games' => NflSpreadProbability::MINIMUM_RESIDUALS,
+            'additional_training_games_required' => max(0, NflSpreadProbability::MINIMUM_RESIDUALS - $rows->count()),
+            'status' => $rows->count() < NflSpreadProbability::MINIMUM_RESIDUALS
+                ? 'insufficient_training_history' : 'held_out_validation_required',
+            'approved' => false,
+        ])->all();
         $report['line_policy'] = 'Frozen observed line, not necessarily closing or freshly fetched; not wager ROI.';
         if (! $this->option('detailed')) {
             unset($report['predictions']);

@@ -8,7 +8,7 @@ use App\Models\PredictionFeatureSnapshot;
 class NflSpreadValidationDataset
 {
     /** Read-only: never regenerate forecasts or fall back to mutable game odds. */
-    public function load(int $fromSeason, int $toSeason): array
+    public function load(int $fromSeason, int $toSeason, ?string $modelVersion = null): array
     {
         $rows = $excluded = [];
         $gamesSeen = 0;
@@ -17,7 +17,7 @@ class NflSpreadValidationDataset
             ->whereBetween('season', [$fromSeason, $toSeason])
             ->whereIn('season_type', ['2', 'regular'])
             ->where('status', 'STATUS_FINAL')
-            ->chunkById(100, function ($games) use (&$rows, &$excluded, &$gamesSeen) {
+            ->chunkById(100, function ($games) use (&$rows, &$excluded, &$gamesSeen, $modelVersion) {
                 $snapshots = PredictionFeatureSnapshot::query()
                     ->select(['id', 'game_id', 'model_version', 'generated_at', 'features_available_at', 'pregame_safe', 'availability_status',
                         'outputs->predicted_spread as model_margin',
@@ -30,6 +30,7 @@ class NflSpreadValidationDataset
                         'model_metadata->legacy->spread as legacy_margin',
                     ])
                     ->where('sport', 'nfl')->where('prediction_table', 'nfl_predictions')
+                    ->when($modelVersion !== null, fn ($query) => $query->where('model_version', $modelVersion))
                     ->where('pregame_safe', true)->where('availability_status', 'observed_pregame')
                     ->whereColumn('features_available_at', '<=', 'generated_at')
                     ->whereIn('game_id', $games->modelKeys())->orderByDesc('generated_at')->orderByDesc('id')

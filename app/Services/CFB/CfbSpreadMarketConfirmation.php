@@ -4,6 +4,7 @@ namespace App\Services\CFB;
 
 use App\Models\CFB\Game;
 use App\Models\MarketQuote;
+use App\Services\CFB\Predictions\CfbStoredPregameQuote;
 use Carbon\CarbonImmutable;
 
 /** Executable quotes are confirmed independently from the historical consensus/CLV series. */
@@ -64,6 +65,7 @@ class CfbSpreadMarketConfirmation
             }
             $opposite = $quotes->first(fn ($other) => $other->game_odds_snapshot_id === $quote->game_odds_snapshot_id
                 && $other->bookmaker_key === $quote->bookmaker_key && $other->side !== $side
+                && CfbStoredPregameQuote::contract($other) === CfbStoredPregameQuote::contract($quote)
                 && is_numeric($other->line) && $line !== null && abs((float) $other->line + $line) < .001
                 && is_numeric($other->price) && abs((float) $other->price) >= 100 && $other->is_pregame);
             $oppositeObserved = $opposite ? $this->timestamp(data_get($opposite->metadata, 'provider_observed_at')) : null;
@@ -77,7 +79,17 @@ class CfbSpreadMarketConfirmation
             $edge = $line === null ? null : round(($side === 'home' ? $modelHomeMargin : -$modelHomeMargin) + $line, 3);
             $entry = ['quote_id' => $quote->id, 'snapshot_id' => $quote->game_odds_snapshot_id,
                 'bookmaker' => $book, 'side' => $side, 'line' => $line, 'price' => $price,
+                'contract' => CfbStoredPregameQuote::contract($quote),
+                'opposite_quote' => $opposite && $oppositeObserved && ! in_array('missing_fresh_paired_spread_quote', $reasons, true) ? [
+                    'quote_id' => $opposite->id, 'snapshot_id' => $opposite->game_odds_snapshot_id,
+                    'bookmaker' => $book, 'side' => $opposite->side, 'line' => (float) $opposite->line,
+                    'price' => (int) $opposite->price, 'contract' => CfbStoredPregameQuote::contract($opposite),
+                    'captured_at' => $opposite->captured_at->toIso8601String(),
+                    'stored_at' => $opposite->created_at->toIso8601String(),
+                    'provider_observed_at' => $oppositeObserved->toIso8601String(),
+                ] : null,
                 'edge_points' => $edge, 'captured_at' => $captured?->toIso8601String(),
+                'stored_at' => $quote->created_at?->toIso8601String(),
                 'provider_observed_at' => $observed?->toIso8601String(),
                 'implied_probability' => is_numeric($quote->implied_probability) ? (float) $quote->implied_probability : null,
                 'no_vig_probability' => is_numeric($quote->no_vig_probability) ? (float) $quote->no_vig_probability : null];

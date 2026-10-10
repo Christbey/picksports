@@ -39,7 +39,11 @@ it('requests actual multiple CFB books and preserves provider quote timestamps',
     $result = app(CfbSpreadMarketConfirmation::class)->assess($game, 'home', 25);
     expect($result['supported'])->toBeTrue()->and($result['confirming_book_count'])->toBe(2)
         ->and($result['best_quote']['bookmaker'])->toBe('fanduel')->and($result['best_quote']['line'])->toBe(-19.5)
-        ->and($result['best_quote']['provider_observed_at'])->not->toBeNull();
+        ->and($result['best_quote']['provider_observed_at'])->not->toBeNull()
+        ->and($result['best_quote']['opposite_quote']['side'])->toBe('away')
+        ->and($result['best_quote']['opposite_quote']['line'])->toBe(19.5)
+        ->and($result['best_quote']['opposite_quote']['price'])->toBe(-110)
+        ->and($result['best_quote']['opposite_quote']['snapshot_id'])->toBe($result['best_quote']['snapshot_id']);
 });
 
 it('requires two distinct books and will not count duplicate quotes as confirmation', function () {

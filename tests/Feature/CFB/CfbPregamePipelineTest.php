@@ -13,6 +13,7 @@ use App\Models\SportEvent;
 use App\Services\CFB\Data\CfbDataReadiness;
 use App\Services\CFB\Data\CfbDriveBuilder;
 use App\Services\CFB\Data\CfbPipelineStage;
+use App\Services\CFB\Data\CfbSharedInputRunner;
 use App\Services\Predictions\CalculationReleaseSelector;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Artisan;
@@ -30,6 +31,11 @@ beforeEach(function () {
         'home_team_id' => $home->id, 'away_team_id' => $away->id, 'status' => 'STATUS_SCHEDULED']);
     $this->mock(SyncGameMetadata::class)->shouldReceive('execute')->andReturn(true)->byDefault();
     $this->steps = new ArrayObject;
+    $this->mock(CfbSharedInputRunner::class)->shouldReceive('run')->andReturnUsing(function ($command, $arguments) {
+        $code = Artisan::call($command, $arguments);
+
+        return ['exit_code' => $code, 'output' => Artisan::output()];
+    });
     $steps = $this->steps;
     $this->mock(SyncPlayers::class)->shouldReceive('execute')->andReturnUsing(function () use ($steps) {
         $steps[] = 'roster';

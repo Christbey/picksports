@@ -16,6 +16,7 @@ use App\Models\MarketQuote;
 use App\Services\CFB\Data\CfbDataReadiness;
 use App\Services\CFB\Data\CfbDriveBuilder;
 use App\Services\CFB\Data\CfbPipelineStage;
+use App\Services\CFB\Data\CfbSharedInputRunner;
 use App\Services\Predictions\CalculationReleaseSelector;
 use App\Services\Validation\CfbValidationCoverage;
 use Illuminate\Console\Command;
@@ -79,6 +80,9 @@ class RunPregamePipelineCommand extends Command
                     $metadataFailures[] = $game->id;
                     $this->warn("Game {$game->id}: unverified kickoff metadata; its forecast remains held.");
                 }
+                $game->unsetRelations();
+                gc_collect_cycles();
+                gc_mem_caches();
             }
             // Reapply the future horizon using confirmed kickoff times, not imported placeholders.
             $games = Game::select($gameColumns)->with(['homeTeam', 'awayTeam'])
@@ -91,12 +95,12 @@ class RunPregamePipelineCommand extends Command
             }
             $ratingsKey = 'cfb:pregame-ratings:v2:'.$season.':'.now('America/Chicago')->toDateString();
             if (! Cache::has($ratingsKey)) {
-                if ($this->call('cfb:sync-season-affiliations', ['--season' => (int) $season]) !== self::SUCCESS) {
+                if ($this->refreshShared('cfb:sync-season-affiliations', ['--season' => (int) $season]) !== self::SUCCESS) {
                     $this->error('Season membership refresh failed; generation stopped.');
 
                     return self::FAILURE;
                 }
-                if ($this->call('cfb:import-fpi', ['--season' => (int) $season,
+                if ($this->refreshShared('cfb:import-fpi', ['--season' => (int) $season,
                     '--week' => (int) $games->min('week'), '--require-data' => true,
                     '--require-complete' => true]) !== self::SUCCESS) {
                     $this->error('Rating/metric refresh failed; generation stopped.');
@@ -107,7 +111,7 @@ class RunPregamePipelineCommand extends Command
             }
             $personnelKey = 'cfb:personnel:v3:'.$season.':'.now('America/Chicago')->toDateString();
             if (! Cache::has($personnelKey)) {
-                if ($this->call('cfb:sync-preseason-team-signals', ['--season' => (int) $season, '--include-coaches' => true, '--include-quarterbacks' => true, '--require-data' => true]) !== self::SUCCESS) {
+                if ($this->refreshShared('cfb:sync-preseason-team-signals', ['--season' => (int) $season, '--include-coaches' => true, '--include-quarterbacks' => true, '--require-data' => true]) !== self::SUCCESS) {
                     $this->error('Personnel source refresh failed; generation stopped.');
 
                     return self::FAILURE;
@@ -194,18 +198,18 @@ class RunPregamePipelineCommand extends Command
                 gc_collect_cycles();
                 gc_mem_caches();
             }
-            if ($this->call('cfb:calculate-elo', ['--season' => (int) $season]) !== self::SUCCESS) {
+            if ($this->refreshShared('cfb:calculate-elo', ['--season' => (int) $season]) !== self::SUCCESS) {
                 $this->error('Elo integrity/update failed; generation stopped.');
 
                 return self::FAILURE;
             }
             // Recompute after Elo and injury updates, including games finalized since the daily refresh.
-            if ($this->call('cfb:calculate-team-metrics', ['--season' => (int) $season]) !== self::SUCCESS) {
+            if ($this->refreshShared('cfb:calculate-team-metrics', ['--season' => (int) $season]) !== self::SUCCESS) {
                 $this->error('Team metric refresh failed; generation stopped.');
 
                 return self::FAILURE;
             }
-            if ($this->call('cfb:sync-odds', ['--days' => (int) $days]) !== self::SUCCESS) {
+            if ($this->refreshShared('cfb:sync-odds', ['--days' => (int) $days]) !== self::SUCCESS) {
                 $this->warn('Partial odds coverage; valid forecasts continue and unpriced markets remain unavailable.');
             }
 
@@ -268,5 +272,15 @@ class RunPregamePipelineCommand extends Command
         } finally {
             $lock->release();
         }
+    }
+
+    private function refreshShared(string $command, array $arguments): int
+    {
+        $result = app(CfbSharedInputRunner::class)->run($command, $arguments);
+        if ($result['output'] !== '') {
+            $this->line($result['output']);
+        }
+
+        return $result['exit_code'] ?? self::FAILURE;
     }
 }

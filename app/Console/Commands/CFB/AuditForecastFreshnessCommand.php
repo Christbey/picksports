@@ -26,7 +26,9 @@ class AuditForecastFreshnessCommand extends Command
         }
         $games = Game::with(['homeTeam', 'awayTeam', 'sportEvent'])->where('season', $options['season'])
             ->where('week', $options['week'])->orderBy('game_date')->orderBy('game_time')->get();
-        $predictions = CanonicalPrediction::with(['markets', 'calculationRun.inputSnapshot'])
+        $predictions = CanonicalPrediction::with(['markets:id,prediction_id',
+            'calculationRun:id,event_input_snapshot_id',
+            'calculationRun.inputSnapshot:id,captured_at,cutoff_at,pregame_safety_status'])
             ->where('sport', 'cfb')->where('phase', 'pregame')->where('publication_state', 'published')
             ->whereIn('sport_event_id', $games->pluck('sport_event_id')->filter())->orderByDesc('revision')
             ->get()->unique('sport_event_id')->keyBy('sport_event_id');

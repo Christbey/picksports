@@ -200,3 +200,23 @@ Regression and integration tests validate policy behavior; they do not establish
 out-of-sample ATS profitability. No model was activated or bet approved by this edit.
 Old snapshots missing provenance fail closed and must be replaced by genuinely
 fresh pregame forecasts, not retrospectively enriched historical records.
+
+## Historical score snapshot reconciliation
+
+CFB release `1.7.4` records drive normalizer `4`, scoring ledger normalizer `2`,
+and the `3-ledger` play validator in its frozen configuration. A contradictory
+intermediate score can be reconstructed only from explicit scoring events in the
+archived, hash-verified final summary. Every event must link to an ordered play,
+identify a game team, and prove its point value and conversion outcome. Both team
+totals must independently reconcile the official final scores.
+
+A complete play feed with a stale terminal score snapshot can be certified against
+that ledger. Missing pages, duplicate IDs, missing scoring plays, and unverified
+terminal states remain held. Reconciled acceptance records retain the raw payload
+and the exact boxscore hash. A changed boxscore invalidates that proof until it is
+verified again; the new proof gets a separate validator revision.
+
+After repair, rerun the full queued pregame pipeline without `--core-only`, then
+audit forecast freshness and inspect the new snapshots' input-quality flags.
+Historical data readiness does not waive market, quarterback, calibration, or
+positive expected-value requirements for a betting recommendation.

@@ -11,6 +11,8 @@ use RuntimeException;
 /** Use the archived official scoring ledger; raw play score snapshots remain unchanged. */
 class CfbScoringLedger
 {
+    public const VERSION = '2';
+
     public function normalize(Game $game, Collection $plays): Collection
     {
         $check = GameDataCheck::where('game_id', $game->id)->where('component', 'boxscore')
@@ -45,7 +47,10 @@ class CfbScoringLedger
         }
         $positions = $plays->values()->pluck('espn_play_id')->flip();
         $scores = [];
+        $eventScores = [];
         $home = $away = 0;
+        $eventHome = $eventAway = 0;
+        $snapshotsValid = $eventsProven = true;
         $previousPosition = -1;
         foreach ($ledger as $entry) {
             $id = (string) ($entry['id'] ?? '');
@@ -59,18 +64,32 @@ class CfbScoringLedger
             $deltaHome = (int) $nextHome - $home;
             $deltaAway = (int) $nextAway - $away;
             $team = (string) data_get($entry, 'team.id');
+            if (! in_array($team, [(string) $game->homeTeam->espn_id, (string) $game->awayTeam->espn_id], true)) {
+                throw new RuntimeException('Scoring ledger contains an unknown scoring team.');
+            }
             if (! (($deltaHome > 0 && $deltaAway === 0 && $team === (string) $game->homeTeam->espn_id)
                 || ($deltaAway > 0 && $deltaHome === 0 && $team === (string) $game->awayTeam->espn_id))
                 || ! in_array($deltaHome + $deltaAway, [1, 2, 3, 6, 7, 8], true)) {
-                throw new RuntimeException('Scoring ledger contains an unsupported scoring transition.');
+                $snapshotsValid = false;
             }
+            $points = $this->explicitEventPoints($entry);
+            $eventsProven = $eventsProven && $points !== null;
+            if ($team === (string) $game->homeTeam->espn_id) {
+                $eventHome += $points ?? 0;
+            } else {
+                $eventAway += $points ?? 0;
+            }
+            $eventScores[$id] = [$eventHome, $eventAway];
             $home = (int) $nextHome;
             $away = (int) $nextAway;
             $scores[$id] = [$home, $away];
             $previousPosition = $position;
         }
-        if ($home !== (int) $game->home_score || $away !== (int) $game->away_score) {
-            throw new RuntimeException('Scoring ledger does not reconcile both final scores.');
+        if (! $snapshotsValid || $home !== (int) $game->home_score || $away !== (int) $game->away_score) {
+            if (! $eventsProven || $eventHome !== (int) $game->home_score || $eventAway !== (int) $game->away_score) {
+                throw new RuntimeException('Scoring ledger does not reconcile both final scores from verified transitions or explicit scoring events.');
+            }
+            $scores = $eventScores;
         }
         $home = $away = 0;
 
@@ -86,5 +105,41 @@ class CfbScoringLedger
 
             return $normalized;
         });
+    }
+
+    /** Only explicit successful scoring events and observed conversion outcomes qualify. */
+    private function explicitEventPoints(array $entry): ?int
+    {
+        $type = strtolower((string) data_get($entry, 'type.text', ''));
+        $kind = strtolower((string) data_get($entry, 'scoringType.name', ''));
+        $text = strtolower((string) ($entry['text'] ?? ''));
+        if ($kind === 'touchdown' || str_contains($type, 'touchdown')) {
+            if (preg_match('/two[- ]point.*conversion.*failed|kick failed|kick no good|extra point.*(?:failed|no good|blocked)/', $text)) {
+                return 6;
+            }
+            if (preg_match('/\([^()]*\bkick\)|extra point good/', $text)) {
+                return 7;
+            }
+            if (preg_match('/two[- ]point.*conversion.*(?:good|successful)/', $text)) {
+                return 8;
+            }
+
+            return null;
+        }
+        if ($type === 'field goal good') {
+            return 3;
+        }
+        if ($type === 'safety') {
+            return 2;
+        }
+        if ($type === 'extra point good') {
+            return 1;
+        }
+        if (in_array($type, ['two point pass', 'two point rush', 'two point run'], true)
+            && str_contains($text, 'conversion') && ! preg_match('/failed|no good|blocked|no play/', $text)) {
+            return 2;
+        }
+
+        return null;
     }
 }

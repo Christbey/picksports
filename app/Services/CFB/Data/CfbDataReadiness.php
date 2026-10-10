@@ -50,8 +50,19 @@ class CfbDataReadiness
         $states = [];
         foreach (['boxscore', 'plays'] as $component) {
             $check = GameDataCheck::where('game_id', $game->id)->where('component', $component)
-                ->where('validator_version', CfbGameDataValidator::VERSION)->orderByDesc('updated_at')->orderByDesc('id')->first();
-            $states[$component] = ['state' => $check?->state ?? 'unverified', 'accepted' => $check?->accepted_at !== null,
+                ->where(function ($query) use ($component) {
+                    $query->where('validator_version', CfbGameDataValidator::VERSION);
+                    if ($component === 'plays') {
+                        $query->orWhere('validator_version', 'like', CfbGameDataValidator::RECONCILED_PLAYS_VERSION.':%');
+                    }
+                })->orderByDesc('updated_at')->orderByDesc('id')->first();
+            $accepted = $check?->accepted_at !== null;
+            if ($check && str_starts_with($check->validator_version, CfbGameDataValidator::RECONCILED_PLAYS_VERSION.':')) {
+                $accepted = $accepted && ($states['boxscore']['accepted'] ?? false)
+                    && data_get($check->evidence, 'score_snapshot_reconciliation.boxscore_source_hash') === $states['boxscore']['source_hash']
+                    && data_get($check->evidence, 'score_snapshot_reconciliation.ledger_version') === CfbScoringLedger::VERSION;
+            }
+            $states[$component] = ['state' => $check?->state ?? 'unverified', 'accepted' => $accepted,
                 'source_hash' => $check?->source_hash, 'discrepancies' => $check?->discrepancies ?? ['not_audited']];
         }
 

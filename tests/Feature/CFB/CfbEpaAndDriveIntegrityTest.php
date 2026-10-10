@@ -1,14 +1,18 @@
 <?php
 
+use App\Actions\ESPN\CFB\SyncPlays;
 use App\Models\CFB\Game;
 use App\Models\CFB\GameDataCheck;
 use App\Models\CFB\Play;
 use App\Models\CFB\Team;
+use App\Services\CFB\Data\CfbDataReadiness;
 use App\Services\CFB\Data\CfbDriveBuilder;
+use App\Services\CFB\Data\CfbGameDataValidator;
 use App\Services\CFB\Data\CfbScoringLedger;
 use App\Services\CFB\PlayEpaDataService;
 use App\Services\CFB\TrueEpaCalculator;
 use App\Services\Epa\StateBaselineService;
+use App\Services\ESPN\CFB\EspnService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
@@ -81,10 +85,102 @@ it('rejects a changed scoring archive even if its final score still agrees', fun
     expect(fn () => app(CfbScoringLedger::class)->normalize($game, $plays))->toThrow(RuntimeException::class, 'source hash mismatch');
 });
 
+it('reconciles contradictory intermediate scores only when every explicit scoring event proves both final totals', function () {
+    [$game, $plays] = cfbLedgerFixture();
+    $game->update(['away_score' => 3]);
+    $check = GameDataCheck::where('game_id', $game->id)->where('component', 'boxscore')->firstOrFail();
+    $payload = json_decode(Storage::disk('local')->get($check->source_path), true);
+    $payload['header']['competitions'][0]['competitors'][1]['score'] = '3';
+    $payload['scoringPlays'] = [
+        ['id' => 'td', 'homeScore' => 7, 'awayScore' => 3, 'team' => ['id' => $game->homeTeam->espn_id],
+            'type' => ['text' => 'Rushing Touchdown'], 'text' => 'Rush touchdown (A. Kicker Kick)'],
+        ['id' => 'kickoff', 'homeScore' => 7, 'awayScore' => 3, 'team' => ['id' => $game->awayTeam->espn_id],
+            'type' => ['text' => 'Field Goal Good'], 'text' => '30 Yd Field Goal'],
+    ];
+    $json = json_encode($payload, JSON_THROW_ON_ERROR);
+    Storage::disk('local')->put($check->source_path, $json);
+    $check->update(['source_hash' => hash('sha256', $json)]);
+    $normalized = app(CfbScoringLedger::class)->normalize($game, $plays);
+    expect($normalized->pluck('away_score')->all())->toBe([0, 0, 0, 3, 3])
+        ->and($normalized->pluck('home_score')->all())->toBe([0, 7, 7, 7, 7]);
+    $payload['scoringPlays'][0]['text'] = 'Rush touchdown (Kick Failed)';
+    $json = json_encode($payload, JSON_THROW_ON_ERROR);
+    Storage::disk('local')->put($check->source_path, $json);
+    $check->update(['source_hash' => hash('sha256', $json)]);
+    expect(fn () => app(CfbScoringLedger::class)->normalize($game, $plays))->toThrow(RuntimeException::class);
+});
+
 it('rebuilds a verified game through the isolated normalization command', function () {
     [$game] = cfbLedgerFixture();
     $this->artisan('cfb:normalize-game', ['--game' => $game->id])->assertSuccessful();
     expect(DB::table('cfb_drives')->where('game_id', $game->id)->where('quality', 'complete')->exists())->toBeTrue();
+});
+
+it('reconciles overtime touchdowns and observed failed conversions without trusting simultaneous score snapshots', function () {
+    [$game] = cfbLedgerFixture();
+    $game->update(['home_score' => 41, 'away_score' => 43]);
+    $box = GameDataCheck::where('game_id', $game->id)->where('component', 'boxscore')->firstOrFail();
+    $payload = json_decode(Storage::disk('local')->get($box->source_path), true);
+    $payload['header']['competitions'][0]['competitors'][0]['score'] = '41';
+    $payload['header']['competitions'][0]['competitors'][1]['score'] = '43';
+    $sides = ['away', 'home', 'home', 'away', 'home', 'away', 'away', 'home', 'away', 'home', 'home', 'away', 'away'];
+    $payload['scoringPlays'] = collect($sides)->map(fn ($side, $index) => [
+        'id' => (string) $index, 'team' => ['id' => $game->{$side.'Team'}->espn_id],
+        'homeScore' => 41, 'awayScore' => 43,
+        'type' => ['text' => $index === 12 ? 'Two Point Pass' : 'Rushing Touchdown'],
+        'text' => $index === 12 ? 'Pass for Two-Point Conversion' : ($index >= 10
+            ? 'Touchdown (Two-Point Pass Conversion Failed)' : 'Touchdown (A Kicker Kick)'),
+    ])->all();
+    $json = json_encode($payload, JSON_THROW_ON_ERROR);
+    Storage::disk('local')->put($box->source_path, $json);
+    $box->update(['source_hash' => hash('sha256', $json)]);
+    $plays = collect($sides)->map(fn ($side, $index) => new Play(['espn_play_id' => (string) $index,
+        'home_score' => 41, 'away_score' => 43]));
+    $normalized = app(CfbScoringLedger::class)->normalize($game, $plays);
+    expect($normalized[8]->home_score)->toBe(28)->and($normalized[8]->away_score)->toBe(35)
+        ->and($normalized->last()->home_score)->toBe(41)->and($normalized->last()->away_score)->toBe(43);
+    $payload['scoringPlays'][12]['text'] .= '. NO PLAY';
+    $json = json_encode($payload, JSON_THROW_ON_ERROR);
+    Storage::disk('local')->put($box->source_path, $json);
+    $box->update(['source_hash' => hash('sha256', $json)]);
+    expect(fn () => app(CfbScoringLedger::class)->normalize($game, $plays))->toThrow(RuntimeException::class);
+});
+
+it('certifies stale terminal score snapshots only with a complete terminal source and a matching verified ledger', function () {
+    [$game] = cfbLedgerFixture();
+    $payload = ['count' => 2, 'items' => [
+        ['id' => 'td', 'homeScore' => 7, 'awayScore' => 0, 'type' => ['text' => 'Rushing Touchdown'],
+            'text' => 'Touchdown', 'period' => ['number' => 1], 'clock' => ['displayValue' => '10:00']],
+        ['id' => 'end', 'homeScore' => 6, 'awayScore' => 0, 'type' => ['text' => 'End of Game'],
+            'text' => 'End of Game', 'period' => ['number' => 4], 'clock' => ['displayValue' => '0:00']],
+    ]];
+    $validator = app(CfbGameDataValidator::class);
+    $result = $validator->plays($payload, $game);
+    expect($result['state'])->toBe('complete')
+        ->and($result['evidence']['score_snapshot_reconciliation']['raw_score_snapshots_preserved'])->toBeTrue();
+    $source = Mockery::mock(EspnService::class);
+    $source->shouldReceive('getPlays')->twice()->andReturn($payload);
+    $sync = new SyncPlays($source);
+    expect($sync->execute((string) $game->espn_event_id))->toBe(2)
+        ->and(Play::where('game_id', $game->id)->where('espn_play_id', 'end')->value('home_score'))->toBe(6)
+        ->and(app(CfbDataReadiness::class)->forGame($game)['ready'])->toBeTrue();
+    $box = GameDataCheck::where('game_id', $game->id)->where('component', 'boxscore')->firstOrFail();
+    $json = json_decode(Storage::disk('local')->get($box->source_path), true);
+    $json['revision'] = 'corrected';
+    $json = json_encode($json, JSON_THROW_ON_ERROR);
+    Storage::disk('local')->put($box->source_path, $json);
+    $box->update(['source_hash' => hash('sha256', $json)]);
+    expect(app(CfbDataReadiness::class)->forGame($game)['ready'])->toBeFalse()
+        ->and($sync->execute((string) $game->espn_event_id))->toBe(2)
+        ->and(app(CfbDataReadiness::class)->forGame($game)['ready'])->toBeTrue();
+    expect(GameDataCheck::where('game_id', $game->id)->where('component', 'plays')
+        ->where('validator_version', 'like', CfbGameDataValidator::RECONCILED_PLAYS_VERSION.':%')->count())->toBe(2);
+    $payload['count'] = 3;
+    expect($validator->plays($payload, $game)['state'])->toBe('partial');
+    $payload['count'] = 2;
+    $payload['items'][1]['text'] = 'Rush';
+    $payload['items'][1]['clock']['displayValue'] = '1:00';
+    expect($validator->plays($payload, $game)['state'])->toBe('partial');
 });
 
 it('retains a ledger verified touchdown when its conversion description contains a no play penalty', function () {

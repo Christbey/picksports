@@ -3,11 +3,15 @@
 namespace App\Services\CFB\Data;
 
 use App\Models\CFB\Game;
+use App\Models\CFB\GameDataCheck;
+use App\Models\CFB\Play;
 
 /** Validates source completeness independently of the existence of imported rows. */
 class CfbGameDataValidator
 {
     public const VERSION = '2';
+
+    public const RECONCILED_PLAYS_VERSION = '3-ledger';
 
     public function boxscore(array $payload, Game $game): array
     {
@@ -111,6 +115,30 @@ class CfbGameDataValidator
             }
         }
 
-        return ['state' => $errors ? 'partial' : 'complete', 'discrepancies' => $errors, 'evidence' => ['plays' => count($items), 'declared_count' => $payload['count'] ?? null]];
+        $evidence = ['plays' => count($items), 'declared_count' => $payload['count'] ?? null];
+        if ($errors === ['final_score_mismatch']) {
+            try {
+                $source = GameDataCheck::where('game_id', $game->id)->where('component', 'boxscore')
+                    ->where('state', 'complete')->whereNotNull('accepted_at')->latest('accepted_at')->latest('id')->first();
+                if ($source) {
+                    $plays = collect($items)->map(fn ($play) => new Play([
+                        'espn_play_id' => (string) $play['id'], 'home_score' => $play['homeScore'] ?? null,
+                        'away_score' => $play['awayScore'] ?? null,
+                    ]));
+                    $normalized = app(CfbScoringLedger::class)->normalize($game, $plays);
+                    if ($normalized->contains(fn ($play) => (bool) $play->scoring_ledger_verified)
+                        && (int) $normalized->last()->home_score === (int) $game->home_score
+                        && (int) $normalized->last()->away_score === (int) $game->away_score) {
+                        $errors = [];
+                        $evidence['score_snapshot_reconciliation'] = ['boxscore_source_hash' => $source->source_hash,
+                            'ledger_version' => CfbScoringLedger::VERSION, 'raw_score_snapshots_preserved' => true];
+                    }
+                }
+            } catch (\Throwable) {
+                // A contradictory ledger or missing score event cannot certify the play source.
+            }
+        }
+
+        return ['state' => $errors ? 'partial' : 'complete', 'discrepancies' => $errors, 'evidence' => $evidence];
     }
 }

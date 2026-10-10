@@ -38,7 +38,10 @@ class SyncPlays extends AbstractSyncPlays
             return 0;
         }
         $validation = app(CfbGameDataValidator::class)->plays($response, $game);
-        $check = app(CfbSourceRevision::class)->record($game, 'plays', $response, $validation);
+        $version = isset($validation['evidence']['score_snapshot_reconciliation'])
+            ? CfbGameDataValidator::RECONCILED_PLAYS_VERSION.':'.substr(hash('sha256', json_encode($validation['evidence']['score_snapshot_reconciliation'], JSON_THROW_ON_ERROR)), 0, 20)
+            : CfbGameDataValidator::VERSION;
+        $check = app(CfbSourceRevision::class)->record($game, 'plays', $response, $validation, validatorVersion: $version);
         if ($validation['state'] !== 'complete' || $check->isCurrentAccepted()) {
             return 0;
         }

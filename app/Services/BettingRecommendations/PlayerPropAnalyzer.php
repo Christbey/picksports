@@ -641,6 +641,9 @@ class PlayerPropAnalyzer
         if ($this->cfbAnalysisProp) {
             $analysis['confidence_decomposition']['cfb_context'] = [
                 'history' => 'prior_reported_current_team_current_or_previous_season',
+                'evidence_policy_version' => 'cfb-prop-evidence-v1',
+                'data_quality_score_basis' => 'shared_history_volume_and_optional_context_not_source_integrity',
+                'score_is_probability' => false,
                 'availability' => 'own_player_and_teammate_workload_holds',
                 'teammate_workload_adjusted' => false,
                 'evidence' => app(CfbPlayerEvidenceService::class)->forProp($this->cfbAnalysisProp),
@@ -659,7 +662,9 @@ class PlayerPropAnalyzer
             confidence: (int) $analysis['confidence'],
             dataQualityScore: $dataQualityScore,
             matchQualityScore: $matchQualityScore,
-            seasonSample: (int) $modelSample,
+            seasonSample: $this->cfbAnalysisProp
+                ? (int) data_get($analysis, 'confidence_decomposition.cfb_context.evidence.windows.this_season.games', 0)
+                : (int) $modelSample,
             coverRecord: $coverRecord
         );
 
@@ -2117,7 +2122,7 @@ class PlayerPropAnalyzer
         }
 
         if ($dataQualityScore < 75) {
-            $reasonCodes[] = 'limited_data_quality';
+            $reasonCodes[] = $this->cfbAnalysisProp ? 'limited_context_coverage' : 'limited_data_quality';
         }
 
         if ($matchQualityScore < 90) {

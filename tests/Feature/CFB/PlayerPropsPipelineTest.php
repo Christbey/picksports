@@ -14,6 +14,7 @@ use App\Models\CFB\Team;
 use App\Models\User;
 use App\Services\BettingRecommendations\CfbPropEligibility;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
+use App\Services\CFB\CfbPlayerEvidenceService;
 use App\Services\ESPN\CFB\EspnService;
 use App\Services\OddsApi\OddsApiService;
 use Carbon\Carbon;
@@ -212,4 +213,21 @@ test('grades college props immediately after final game details ingest player st
     $plays->shouldReceive('execute')->once()->andReturn(1);
     (new SyncGameDetails($service, $stats, $teams, $plays))->execute($this->game->espn_event_id);
     expect($prop->fresh()->graded_at)->not->toBeNull()->and($prop->fresh()->hit_over)->toBeTrue();
+});
+
+test('six recorded college games remain usable when receiving workload data is missing', function () {
+    $prop = ($this->prop)('player_reception_yds', 50.5);
+    for ($i = 1; $i <= 6; $i++) {
+        $game = Game::factory()->create(['home_team_id' => $this->team->id, 'away_team_id' => $this->away->id,
+            'season' => 2026, 'season_type' => 2, 'status' => 'STATUS_FINAL',
+            'game_date' => now()->subDays($i)->toDateString(), 'game_time' => '20:00:00']);
+        PlayerStat::factory()->create(['game_id' => $game->id, 'player_id' => $this->player->id,
+            'team_id' => $this->team->id, 'receiving_yards' => 70, 'receiving_targets' => null]);
+    }
+    $evidence = app(CfbPlayerEvidenceService::class)->forProp($prop);
+    expect($evidence['sample_assessment']['status'])->toBe('usable_current_season')
+        ->and($evidence['sample_assessment']['current_season_games'])->toBe(6)
+        ->and($evidence['workload_coverage']['complete'])->toBeFalse()
+        ->and($evidence['workload_coverage']['reported_games'])->toBe(0)
+        ->and($evidence['workload']['relative_change'])->toBeNull();
 });

@@ -52,3 +52,12 @@ Active unresolved injuries to recently participating teammates in the relevant p
 The report runs independently at :35 each hour, 07:00–23:00 Central during the CFB season, so a failed preparation cannot silently remove the prop section. It saves `cfb/reports/YYYY-MM-DD/daily-board.json` on `cfb.data.source_disk` and prints the report as JSON. Both the :15 prop refresh and :35 report run in the background, record scheduler success/failure heartbeats, and retain command output logs. This is an automatic production report, not automatic wager approval or external messaging. Read quote timestamps and rerun eligibility before acting on a saved report.
 
 Quote import and history preparation now run in separate PHP processes. Preparation has a 512 MB memory limit and 15-minute timeout; a nonzero preparation exit is surfaced as an incomplete board and failed command, rather than treating imported quotes as finished recommendations. The scheduler overlap lease is 60 minutes.
+
+
+## Evidence labels (October 2026 review)
+
+`cfb-prop-evidence-v1` separates history volume from workload coverage. Three to five reported current-season games are early evidence, six to eight are usable current-season evidence, and nine or more are established current-season evidence. Fewer than three current-season games with at least three eligible current-team historical games are a historical fallback. These operational descriptions do not certify source completeness, stable roles, predictive accuracy, or profitability.
+
+The quality tier now uses the actual current-season window count, rather than counting previous-season rows as current-season games. CFB uses `limited_context_coverage` for the shared data-quality score below 75: that score combines sample volume and optional opponent/home-away statistics and must not be described as a source-integrity failure. `workload_coverage` separately reports eligible and reported opportunity rows; missing receiving targets remain unknown.
+
+Recommendation scores and the 60-point board threshold are unchanged. The scoring audit identified shared absolute-yard standard-deviation cutoffs (including the seven-yard high-volatility cutoff), sample caps, and 15-game very-strong tier requirements as candidates for CFB-specific retrospective and prospective validation. Do not simply lower those penalties to manufacture recommendations. A usable sample can still produce a weak signal, and no prop model probability is currently approved as a calibrated betting probability.

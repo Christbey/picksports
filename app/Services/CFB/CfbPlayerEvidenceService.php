@@ -104,7 +104,26 @@ class CfbPlayerEvidenceService
         }
 
         return ['hold_reasons' => array_values(array_unique($holds)), 'windows' => $windows,
+            'sample_assessment' => $this->sampleAssessment($windows['this_season']['games'], $rows->count()),
+            'workload_coverage' => ['reported_games' => $rows->filter(fn ($s) => is_numeric($s->$opportunity))->count(),
+                'eligible_games' => $rows->count(), 'complete' => $rows->every(fn ($s) => is_numeric($s->$opportunity))],
             'workload' => ['field' => $opportunity, 'relative_change' => $change, 'recent_games' => 2, 'baseline_games' => 3],
             'starter_status' => 'not_confirmed', 'teammate_workload_adjusted' => false];
+    }
+
+    /** Describes evidence volume; it does not certify betting probabilities or change holds. */
+    public function sampleAssessment(int $currentSeasonGames, int $eligibleHistoryGames): array
+    {
+        $status = match (true) {
+            $currentSeasonGames >= 9 => 'established_current_season',
+            $currentSeasonGames >= 6 => 'usable_current_season',
+            $currentSeasonGames >= 3 => 'early_current_season',
+            $eligibleHistoryGames >= 3 => 'historical_fallback',
+            default => 'insufficient_history',
+        };
+
+        return ['status' => $status, 'current_season_games' => $currentSeasonGames,
+            'eligible_history_games' => $eligibleHistoryGames, 'usable_current_season_at' => 6,
+            'is_betting_validation' => false];
     }
 }

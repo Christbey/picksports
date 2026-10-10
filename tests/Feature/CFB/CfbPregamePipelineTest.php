@@ -12,6 +12,7 @@ use App\Models\CFB\Team;
 use App\Models\CFB\TeamSeasonAffiliation;
 use App\Models\CommandHeartbeat;
 use App\Models\SportEvent;
+use App\Services\CFB\Data\CfbCfbdTeamBoxscoreSync;
 use App\Services\CFB\Data\CfbDataReadiness;
 use App\Services\CFB\Data\CfbDriveBuilder;
 use App\Services\CFB\Data\CfbPipelineStage;
@@ -262,6 +263,35 @@ it('keeps multi-game recovery scoped to the selected games', function () {
     expect(json_decode(Artisan::output(), true)['game_ids'])->toBe([$game->id]);
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026, '--games' => '1,invalid'])->assertFailed();
 });
+
+it('recovers conflicting primary team yards only after secondary source validation succeeds', function (bool $validSecondary) {
+    $game = Game::firstOrFail();
+    Game::factory()->create(['home_team_id' => $game->home_team_id, 'away_team_id' => $game->away_team_id,
+        'season' => 2026, 'status' => 'STATUS_FINAL', 'game_date' => now()->subWeek()]);
+    $repaired = false;
+    $readiness = $this->mock(CfbDataReadiness::class);
+    $readiness->shouldReceive('forGame')->andReturn(['ready' => false,
+        'components' => ['boxscore' => ['state' => 'partial', 'accepted' => false, 'source_hash' => 'primary',
+            'discrepancies' => ['team_yards_do_not_reconcile']], 'plays' => ['state' => 'complete', 'accepted' => true]]]);
+    // Use a reference so source acceptance changes the gate only after the work succeeds.
+    $readiness->shouldReceive('coreBoxscoreReady')->andReturnUsing(function () use (&$repaired) {
+        return $repaired;
+    });
+    $this->mock(SyncGameDetails::class)->shouldReceive('execute')->andReturn([]);
+    $this->mock(CfbCfbdTeamBoxscoreSync::class)->shouldReceive('execute')->andReturnUsing(function () use (&$repaired, $validSecondary) {
+        if (! $validSecondary) {
+            throw new RuntimeException('Secondary yards disagree');
+        }
+        $repaired = true;
+
+        return ['state' => 'complete'];
+    });
+    $release = new CalculationRelease(['configuration' => ['inputs' => ['validated_historical_play_metrics' => true]]]);
+    $this->mock(CalculationReleaseSelector::class)->shouldReceive('select')->andReturn($release);
+    Artisan::command('cfb:sync-odds {--days=}', fn () => 0);
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026, '--core-only' => true])->assertExitCode($validSecondary ? 0 : 2);
+    expect(in_array('generation', $this->steps->getArrayCopy(), true))->toBe($validSecondary);
+})->with([true, false]);
 
 it('allows flagged core forecasts after failed optional play normalization only under the new release policy', function (bool $fallback) {
     $game = Game::firstOrFail();

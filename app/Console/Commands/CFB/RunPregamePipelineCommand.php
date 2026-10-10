@@ -14,6 +14,7 @@ use App\Models\CFB\GameDataCheck;
 use App\Models\CFB\PlayerInjury;
 use App\Models\CFB\TeamMetric;
 use App\Models\MarketQuote;
+use App\Services\CFB\Data\CfbCfbdTeamBoxscoreSync;
 use App\Services\CFB\Data\CfbDataReadiness;
 use App\Services\CFB\Data\CfbDriveBuilder;
 use App\Services\CFB\Data\CfbPipelineStage;
@@ -173,6 +174,13 @@ class RunPregamePipelineCommand extends Command
                     }, false);
                 }
                 $quality = $readiness->forGame($past);
+                if (! $readiness->coreBoxscoreReady($past)
+                    && collect(data_get($quality, 'components.boxscore.discrepancies', []))
+                        ->contains(fn ($reason) => str_ends_with($reason, 'team_yards_do_not_reconcile'))) {
+                    app(CfbPipelineStage::class)->run('game:'.$past->id, 'core-box-repair',
+                        ['primary_boxscore' => data_get($quality, 'components.boxscore.source_hash')],
+                        fn () => app(CfbCfbdTeamBoxscoreSync::class)->execute($past), false);
+                }
                 if (! $quality['ready']) {
                     $playFailures[] = $past->home_team_id;
                     $playFailures[] = $past->away_team_id;

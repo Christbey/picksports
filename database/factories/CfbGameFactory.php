@@ -20,7 +20,7 @@ class CfbGameFactory extends Factory
     public function definition(): array
     {
         return [
-            'espn_event_id' => $this->faker->unique()->numerify('#########'),
+            'espn_event_id' => (string) $this->faker->unique()->numberBetween(100000000, 999999999),
             'espn_uid' => $this->faker->unique()->numerify('s:20~l:28~e:#########'),
             'season' => $this->faker->numberBetween(2020, 2027),
             'week' => $this->faker->numberBetween(1, 18),

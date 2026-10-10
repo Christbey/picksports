@@ -203,7 +203,7 @@ fresh pregame forecasts, not retrospectively enriched historical records.
 
 ## Historical score snapshot reconciliation
 
-CFB release `1.7.6` records drive normalizer `4`, scoring ledger normalizer `3`,
+CFB release `1.7.7` records drive normalizer `4`, scoring ledger normalizer `3`,
 and the `3-ledger` play validator in its frozen configuration. A contradictory
 intermediate score can be reconstructed only from explicit scoring events in the
 archived, hash-verified final summary. Every event must link to an ordered play,
@@ -229,3 +229,18 @@ After repair, rerun the full queued pregame pipeline without `--core-only`, then
 audit forecast freshness and inspect the new snapshots' input-quality flags.
 Historical data readiness does not waive market, quarterback, calibration, or
 positive expected-value requirements for a betting recommendation.
+
+Reviewed school gamebooks in `config/cfb_official_sources.php` can independently
+resolve quarantined yard totals or an exact missing non-scoring closing possession.
+The importer verifies the full document hash, date, season, teams and final scores.
+Boxscore corrections must reconcile both original player categories; closing-drive
+repairs must match the exact primary anchor, physical play count, net yardage,
+chronology and observed field positions. The original provider archive remains
+quarantined and unchanged. Composite sources identify their provenance explicitly,
+and supplemented play IDs use a `school-` prefix. Unknown values remain unknown.
+
+Official acceptance pins the primary revision and fingerprints the imported raw
+rows. A changed primary source, reviewed document, game identity or imported row
+invalidates the proof. Repairs retry when proof fails, rather than reusing a cached
+successful repair. School-published corrections take precedence over conflicting
+ESPN/CFBD totals only for the exact reviewed records; no general override is enabled.

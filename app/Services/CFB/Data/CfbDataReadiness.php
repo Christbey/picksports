@@ -56,6 +56,12 @@ class CfbDataReadiness
                         $query->orWhere('validator_version', 'like', CfbGameDataValidator::RECONCILED_PLAYS_VERSION.':%');
                     }
                 })->orderByDesc('updated_at')->orderByDesc('id')->first();
+            if ($component === 'boxscore' && ($check?->state !== 'complete' || $check?->accepted_at === null)) {
+                $check = app(CfbOfficialBoxscoreRepair::class)->currentProof($game, $check) ?? $check;
+            }
+            if ($component === 'plays' && ($check?->state !== 'complete' || $check?->accepted_at === null)) {
+                $check = app(CfbOfficialPlayTailRepair::class)->currentProof($game, $check) ?? $check;
+            }
             $accepted = $check?->accepted_at !== null;
             if ($check && str_starts_with($check->validator_version, CfbGameDataValidator::RECONCILED_PLAYS_VERSION.':')) {
                 $accepted = $accepted && ($states['boxscore']['accepted'] ?? false)

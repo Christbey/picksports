@@ -17,6 +17,8 @@ use App\Models\MarketQuote;
 use App\Services\CFB\Data\CfbCfbdTeamBoxscoreSync;
 use App\Services\CFB\Data\CfbDataReadiness;
 use App\Services\CFB\Data\CfbDriveBuilder;
+use App\Services\CFB\Data\CfbOfficialBoxscoreRepair;
+use App\Services\CFB\Data\CfbOfficialPlayTailRepair;
 use App\Services\CFB\Data\CfbPipelineStage;
 use App\Services\CFB\Data\CfbSharedInputRunner;
 use App\Services\Predictions\CalculationReleaseSelector;
@@ -174,6 +176,17 @@ class RunPregamePipelineCommand extends Command
                     }, false);
                 }
                 $quality = $readiness->forGame($past);
+                foreach (['boxscore' => CfbOfficialBoxscoreRepair::class, 'plays' => CfbOfficialPlayTailRepair::class] as $component => $repairClass) {
+                    $repair = app($repairClass);
+                    if (! data_get($quality, 'components.'.$component.'.accepted') && $repair->hasReference($past)) {
+                        $fixed = app(CfbPipelineStage::class)->run('game:'.$past->id, 'official-'.$component,
+                            ['quality' => $quality, 'policy' => $repairClass::VERSION], fn () => $repair->execute($past), false);
+                        if ($fixed['state'] !== 'complete') {
+                            $this->warn("Game {$past->id}: official {$component} proof remains held.");
+                        }
+                        $quality = $readiness->forGame($past);
+                    }
+                }
                 if (! $readiness->coreBoxscoreReady($past)
                     && collect(data_get($quality, 'components.boxscore.discrepancies', []))
                         ->contains(fn ($reason) => str_ends_with($reason, 'team_yards_do_not_reconcile'))) {

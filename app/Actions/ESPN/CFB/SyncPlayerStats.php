@@ -21,10 +21,12 @@ class SyncPlayerStats extends AbstractFootballSyncPlayerStats
 
     protected const PLAYER_STAT_MODEL_CLASS = PlayerStat::class;
 
-    public function execute(array $gameData, Model $game): int
+    public function execute(array $gameData, Model $game, bool $recordSource = true): int
     {
         $validation = app(CfbGameDataValidator::class)->boxscore($gameData, $game);
-        $check = app(CfbSourceRevision::class)->record($game, 'boxscore', $gameData, $validation);
+        if ($recordSource) {
+            app(CfbSourceRevision::class)->record($game, 'boxscore', $gameData, $validation);
+        }
         if ($validation['state'] !== 'complete') {
             return 0;
         }

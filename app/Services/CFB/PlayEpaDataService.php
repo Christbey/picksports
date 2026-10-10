@@ -24,6 +24,7 @@ class PlayEpaDataService
         'timeout' => true,
         'injury timeout' => true,
         'penalty' => true,
+        'kneel down' => true,
     ];
 
     public function isEpaEligiblePlay(object $play): bool

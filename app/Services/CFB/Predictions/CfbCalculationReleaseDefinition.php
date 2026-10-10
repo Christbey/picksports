@@ -4,6 +4,8 @@ namespace App\Services\CFB\Predictions;
 
 use App\Services\CFB\Data\CfbDriveBuilder;
 use App\Services\CFB\Data\CfbGameDataValidator;
+use App\Services\CFB\Data\CfbOfficialBoxscoreRepair;
+use App\Services\CFB\Data\CfbOfficialPlayTailRepair;
 use App\Services\CFB\Data\CfbScoringLedger;
 use App\Services\CFB\Signals\CfbFootballSignalCatalog;
 use App\Services\Predictions\Football\FootballCalculationReleaseDefinition;
@@ -14,7 +16,7 @@ class CfbCalculationReleaseDefinition extends FootballCalculationReleaseDefiniti
 
     public const INPUT_SCHEMA_VERSION = 'cfb-pregame-v1';
 
-    public const SEMANTIC_VERSION = '1.7.6';
+    public const SEMANTIC_VERSION = '1.7.7';
 
     /** @return array<string, mixed> */
     public function configuration(): array
@@ -26,6 +28,8 @@ class CfbCalculationReleaseDefinition extends FootballCalculationReleaseDefiniti
         $configuration['inputs']['historical_play_normalizer_version'] = CfbDriveBuilder::VERSION;
         $configuration['inputs']['scoring_ledger_normalizer_version'] = CfbScoringLedger::VERSION;
         $configuration['inputs']['reconciled_play_validator_version'] = CfbGameDataValidator::RECONCILED_PLAYS_VERSION;
+        $configuration['inputs']['official_boxscore_policy'] = CfbOfficialBoxscoreRepair::VERSION;
+        $configuration['inputs']['official_play_tail_policy'] = CfbOfficialPlayTailRepair::VERSION;
         $configuration['inputs']['point_in_time_elo'] = true;
         $configuration['inputs']['auditable_feature_coverage'] = true;
         $configuration['inputs']['preserve_missing_metrics'] = true;

@@ -41,7 +41,8 @@ class CalculateTeamMetricsCommand extends AbstractFootballTeamMetricsCommand
         }
         $ids = array_values(array_unique(array_map('intval', explode(',', $raw))));
         $season = (int) ($this->option('season') ?? date('Y'));
-        $teams = $this->modifyTeamsQuery(Team::whereIn('id', $ids), $season)->get();
+        $teams = $this->modifyTeamsQuery(Team::whereIn('id', $ids)->whereHas('seasonAffiliations',
+            fn (Builder $query) => $query->where('season', $season)->where('source', 'cfbd_fbs_membership')), $season)->get();
         if (count($ids) > 10 || $teams->count() !== count($ids)) {
             $this->error('Metric batches require at most ten verified FBS teams.');
 

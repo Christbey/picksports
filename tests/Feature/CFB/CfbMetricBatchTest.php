@@ -25,4 +25,7 @@ it('rejects an oversized batch or unverified FBS membership before calculation',
     $this->mock(CalculateTeamMetrics::class)->shouldNotReceive('execute');
     $this->artisan('cfb:calculate-team-metrics', ['--season' => 2026, '--team-ids' => $teams->pluck('id')->implode(',')])->assertFailed();
     $this->artisan('cfb:calculate-team-metrics', ['--season' => 2026, '--team-ids' => (string) $teams[0]->id])->assertFailed();
+    TeamSeasonAffiliation::create(['team_id' => $teams[0]->id, 'season' => 2026,
+        'subdivision' => 'FBS', 'source' => 'team_snapshot']);
+    $this->artisan('cfb:calculate-team-metrics', ['--season' => 2026, '--team-ids' => (string) $teams[0]->id])->assertFailed();
 });

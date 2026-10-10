@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\Validator;
 
 class RunPregamePipelineCommand extends Command
 {
-    protected $signature = 'cfb:run-pregame-pipeline {--season=} {--days-forward=2} {--game=} {--resume} {--dry-run}';
+    protected $signature = 'cfb:run-pregame-pipeline {--season=} {--week=} {--days-forward=2} {--game=} {--resume} {--dry-run}';
 
     protected $description = 'Refresh upcoming CFB injuries and odds before generating immutable forecasts';
 
@@ -48,13 +48,14 @@ class RunPregamePipelineCommand extends Command
             $gameColumns = array_merge(CalculateElo::RESULT_COLUMNS, ['sport_event_id', 'updated_at', 'espn_event_id']);
             $games = Game::with(['homeTeam', 'awayTeam'])->select($gameColumns)->where('season', $season)
                 ->when($this->option('game'), fn ($q, $v) => $q->whereKey($v))
-                ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_DELAYED'])
+                ->when($this->option('week'), fn ($q, $v) => $q->where('week', $v))
+                ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_PRE_GAME', 'STATUS_DELAYED'])
                 ->where(function ($q) use ($days) {
                     $q->whereHas('sportEvent', fn ($events) => $events->where('starts_at', '>', now())->where('starts_at', '<=', now()->addDays((int) $days)))
                         ->orWhere(fn ($dates) => $dates->whereDate('game_date', '>=', now()->subDay()->toDateString())
                             ->whereDate('game_date', '<=', now()->addDays((int) $days)->toDateString()));
                 })
-                ->get();
+                ->orderBy('game_date')->orderBy('game_time')->get();
             $coverage = app(CfbValidationCoverage::class);
             $games = $games->filter(fn ($game) => $coverage->requiredTeamIds($game) !== [])->values();
             if ($games->isEmpty()) {

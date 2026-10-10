@@ -104,9 +104,10 @@ it('refuses concurrent runs and invalid horizons without doing work', function (
 
 it('registers the guarded hourly refresh during the college football season', function () {
     $event = collect(app(Schedule::class)->events())
-        ->first(fn ($e) => str_contains((string) $e->command, 'cfb:run-pregame-pipeline') && str_contains((string) $e->command, '--days-forward=2'));
+        ->first(fn ($e) => $e->description === 'CFB: Refresh Pregame Inputs and Forecasts');
     expect($event)->not->toBeNull()->and($event->expression)->toBe('45 * * * *')
-        ->and($event->withoutOverlapping)->toBeTrue()->and($event->onOneServer)->toBeTrue();
+        ->and($event->withoutOverlapping)->toBeTrue()->and($event->onOneServer)->toBeTrue()
+        ->and($event->command)->toContain('--days-forward=8');
 });
 
 it('resolves the real roster action with the college football ESPN service', function () {

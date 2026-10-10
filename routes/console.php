@@ -1304,7 +1304,7 @@ $cfbSpreadCandidateEvent = Schedule::command($cfbSpreadCandidateCommand)->weekly
     ->appendOutputTo(storage_path('logs/cfb-spread-calibration.log'))->name('CFB: Evaluate Spread Calibration Challenger');
 $attachCommandHeartbeat($cfbSpreadCandidateEvent, $cfbSpreadCandidateCommand, 'CFB: Evaluate Spread Calibration Challenger');
 $scheduleDailySeasonJob("cfb:run-pregame-pipeline --season={$fallSeasonYear} --days-forward=8 --resume", '04:35', $cfbCanonicalPipelineEnabled, 'CFB: Generate Canonical Predictions');
-$cfbPregamePipelineCommand = "cfb:run-pregame-pipeline --season={$fallSeasonYear} --days-forward=2 --resume";
+$cfbPregamePipelineCommand = "cfb:run-pregame-pipeline --season={$fallSeasonYear} --days-forward=8 --resume";
 $cfbPregamePipelineEvent = Schedule::command($cfbPregamePipelineCommand)
     ->hourlyAt(45)
     ->between('08:00', '23:00')

@@ -9,6 +9,7 @@ use App\Models\CFB\PlayerStat;
 use App\Models\CFB\Team;
 use App\Models\NFL\TeamStat;
 use App\Services\CFB\CfbPlayerEvidenceService;
+use App\Services\CFB\CfbPropScoringShadowRecorder;
 use App\Services\NFL\NflPlayerPropCoverage;
 use App\Services\OddsApi\OddsApiService;
 use App\Services\Sports\SportsDateWindowService;
@@ -1517,6 +1518,9 @@ class PlayerPropAnalyzer
         }
         if ($prop->getTable() === 'nfl_player_props') {
             $analysis['confidence_decomposition']['analysis_disposition'] = $this->nflDisposition($prop, 'scored');
+        }
+        if ($prop instanceof PlayerProp) {
+            app(CfbPropScoringShadowRecorder::class)->record($prop, $analysis);
         }
         $prop->forceFill([
             'recommended_side' => $analysis['recommendation'] ?? null,

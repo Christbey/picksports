@@ -90,6 +90,9 @@ it('rebuilds a verified game through the isolated normalization command', functi
 it('retains a ledger verified touchdown when its conversion description contains a no play penalty', function () {
     [$game, $plays] = cfbLedgerFixture();
     $plays[1]->update(['play_text' => 'Rush touchdown, kick attempt good PENALTY Illegal Snap. NO PLAY']);
+    $normalized = app(CfbScoringLedger::class)->normalize($game, $plays);
+    expect(app(PlayEpaDataService::class)->isEpaEligiblePlay($normalized[1]))->toBeTrue()
+        ->and(app(PlayEpaDataService::class)->isEpaEligiblePlay($plays[1]))->toBeFalse();
     $result = app(CfbDriveBuilder::class)->build($game);
     expect($result['state'])->toBe('complete');
     $drives = DB::table('cfb_drives')->where('game_id', $game->id)->get();

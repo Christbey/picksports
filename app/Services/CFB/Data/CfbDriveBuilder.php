@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 
 class CfbDriveBuilder
 {
-    public const VERSION = '3';
+    public const VERSION = '4';
 
     public function build(Game $game, bool $onlyChanged = false): array
     {

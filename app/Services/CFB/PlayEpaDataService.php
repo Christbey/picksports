@@ -38,7 +38,7 @@ class PlayEpaDataService
             return false;
         }
 
-        if (str_contains($playText, 'no play')) {
+        if (str_contains($playText, 'no play') && ! ($play->scoring_ledger_verified ?? false)) {
             return false;
         }
 

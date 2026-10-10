@@ -204,6 +204,9 @@ class AppServiceProvider extends ServiceProvider
         }
 
         $command = $this->renderConsoleCommand($event->command ?? '', $event->input);
+        if (str_starts_with($command, 'cfb:run-pregame-pipeline') && str_contains($command, ' --queued')) {
+            return;
+        }
         if ($command === '' || ! $this->isPipelineHeartbeatCommand($command)) {
             return;
         }

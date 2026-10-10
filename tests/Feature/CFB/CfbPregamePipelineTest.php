@@ -4,11 +4,13 @@ use App\Actions\ESPN\CFB\SyncGameDetails;
 use App\Actions\ESPN\CFB\SyncGameMetadata;
 use App\Actions\ESPN\CFB\SyncPlayerInjuries;
 use App\Actions\ESPN\CFB\SyncPlayers;
+use App\Jobs\CFB\RunPregamePipeline;
 use App\Models\CalculationRelease;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game;
 use App\Models\CFB\Team;
 use App\Models\CFB\TeamSeasonAffiliation;
+use App\Models\CommandHeartbeat;
 use App\Models\SportEvent;
 use App\Services\CFB\Data\CfbDataReadiness;
 use App\Services\CFB\Data\CfbDriveBuilder;
@@ -17,6 +19,7 @@ use App\Services\CFB\Data\CfbSharedInputRunner;
 use App\Services\Predictions\CalculationReleaseSelector;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
@@ -117,7 +120,7 @@ it('registers the guarded hourly refresh during the college football season', fu
         ->first(fn ($e) => $e->description === 'CFB: Refresh Pregame Inputs and Forecasts');
     expect($event)->not->toBeNull()->and($event->expression)->toBe('45 * * * *')
         ->and($event->withoutOverlapping)->toBeTrue()->and($event->onOneServer)->toBeTrue()
-        ->and($event->command)->toContain('--days-forward=8');
+        ->and($event->command)->toContain('--days-forward=8', '--queued');
 });
 
 it('resolves the real roster action with the college football ESPN service', function () {
@@ -263,6 +266,29 @@ it('allows flagged core forecasts after failed optional play normalization only 
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertExitCode($fallback ? 0 : 2);
     expect(in_array('generation', $this->steps->getArrayCopy(), true))->toBe($fallback);
 })->with([true, false]);
+
+it('dispatches the weekly refresh to the bulk queue without claiming completed generation', function () {
+    Bus::fake();
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026, '--week' => 6, '--days-forward' => 8,
+        '--queued' => true, '--core-only' => true])->assertSuccessful();
+    Bus::assertDispatched(RunPregamePipeline::class, fn ($job) => $job->queue === 'sync'
+        && $job->arguments['--week'] === 6 && $job->arguments['--core-only'] === true
+        && ! isset($job->arguments['--queued']));
+    expect($this->steps->getArrayCopy())->toBe([])
+        ->and(CommandHeartbeat::where('command', 'like', 'cfb:run-pregame-pipeline%')->count())->toBe(0);
+});
+
+it('records actual worker completion and preserves partial outcomes', function (int $code, string $state) {
+    Artisan::command('cfb:run-pregame-pipeline {--season=} {--days-forward=}', function () use ($code) {
+        $this->line('Worker result');
+
+        return $code;
+    });
+    $job = new RunPregamePipeline(['--season' => 2026, '--days-forward' => 8]);
+    $job->handle();
+    expect(Cache::get('cfb:pregame:worker-status')['state'])->toBe($state)
+        ->and(Cache::get('cfb:pregame:worker-status')['exit_code'])->toBe($code);
+})->with([[0, 'complete'], [2, 'partial'], [1, 'failed']]);
 
 it('keeps boxscore evidence required during urgent core-only recovery', function (bool $boxReady) {
     $game = Game::firstOrFail();

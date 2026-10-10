@@ -7,6 +7,7 @@ use App\Actions\ESPN\CFB\SyncGameDetails;
 use App\Actions\ESPN\CFB\SyncGameMetadata;
 use App\Actions\ESPN\CFB\SyncPlayerInjuries;
 use App\Actions\ESPN\CFB\SyncPlayers;
+use App\Jobs\CFB\RunPregamePipeline;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game;
 use App\Models\CFB\GameDataCheck;
@@ -26,7 +27,7 @@ use Illuminate\Support\Facades\Validator;
 
 class RunPregamePipelineCommand extends Command
 {
-    protected $signature = 'cfb:run-pregame-pipeline {--season=} {--week=} {--days-forward=2} {--game=} {--resume} {--dry-run} {--core-only : Skip optional play reconstruction; approved release quality checks still apply}';
+    protected $signature = 'cfb:run-pregame-pipeline {--season=} {--week=} {--days-forward=2} {--game=} {--resume} {--dry-run} {--queued : Run on the bulk sync worker} {--core-only : Skip optional play reconstruction; approved release quality checks still apply}';
 
     protected $description = 'Refresh upcoming CFB injuries and odds before generating immutable forecasts';
 
@@ -40,6 +41,15 @@ class RunPregamePipelineCommand extends Command
             $this->error('CFB pipeline requires valid season/horizon and enabled canonical generation.');
 
             return self::FAILURE;
+        }
+        if ($this->option('queued') && ! $this->option('dry-run')) {
+            RunPregamePipeline::dispatch(array_filter(['--season' => (int) $season, '--days-forward' => (int) $days,
+                '--week' => $this->option('week'), '--game' => $this->option('game'),
+                '--resume' => (bool) $this->option('resume'), '--core-only' => (bool) $this->option('core-only')],
+                fn ($value) => $value !== null && $value !== false));
+            $this->info('CFB pregame pipeline dispatched to the bulk sync worker; publication still requires worker completion.');
+
+            return self::SUCCESS;
         }
         $lock = Cache::lock('cfb:pregame-pipeline', 3600);
         if (! $lock->get()) {

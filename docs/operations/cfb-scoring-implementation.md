@@ -33,6 +33,8 @@ For urgent whole-week recovery, `cfb:run-pregame-pipeline --season=2026 --week=6
 
 The weekly orchestrator runs shared refresh commands in separate processes. Team metrics refresh only the required teams in batches of at most ten, avoiding a full-season temporary graph alongside the resident weekly job. Any failed batch stops publication; each game's forecast follows all required batches.
 
+Scheduled pregame refreshes use `--queued` and run on the existing `sync` bulk worker rather than the web/app worker. The season-unique queued job records its actual completion or partial/failure outcome in `cfb:pregame:worker-status`, exposed by `cfb:pipeline-status`. Dispatch alone does not create a generation heartbeat. Urgent queued recovery adds `--queued` to the scoped `--core-only` command above.
+
 The existing hourly refresh cadence remains. The proposed ten-minute freshness objective has not been measured or claimed. Live scoring remains on its existing schedule. Offline training is deliberately not placed on the 512 MB application worker.
 
 ## Deployment sequence

@@ -11,6 +11,7 @@ use function Pest\Laravel\artisan;
 uses()->group('nfl');
 
 it('imports nflverse schedules with closing lines weather coaches and quarterbacks', function () {
+    config(['app.timezone' => 'America/Chicago']);
     Team::factory()->create([
         'abbreviation' => 'KC',
         'location' => 'Kansas City',
@@ -37,6 +38,9 @@ it('imports nflverse schedules with closing lines weather coaches and quarterbac
     $game = Game::query()->where('nflverse_game_id', '2026_01_DEN_KC')->firstOrFail();
 
     expect($game->short_name)->toBe('DEN @ KC')
+        ->and($game->game_date->toDateString())->toBe('2026-09-14')
+        ->and($game->game_time)->toBe('00:20:00')
+        ->and($game->sportEvent->starts_at->utc()->format('Y-m-d H:i:s'))->toBe('2026-09-14 00:20:00')
         ->and($game->season_type)->toBe('2')
         ->and($game->home_score)->toBe(24)
         ->and($game->away_score)->toBe(17)

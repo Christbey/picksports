@@ -179,7 +179,10 @@ class ImportNflverseSchedulesCommand extends Command
 
         $candidates = Game::query()
             ->where('season', $this->intValue($row, 'season'))
-            ->whereDate('game_date', $kickoff->toDateString())
+            ->where(function ($query) use ($kickoff) {
+                $query->whereDate('game_date', $kickoff->copy()->utc()->toDateString())
+                    ->orWhereDate('game_date', $kickoff->toDateString());
+            })
             ->where('home_team_id', $homeTeam->id)
             ->where('away_team_id', $awayTeam->id)
             ->get();
@@ -291,8 +294,10 @@ class ImportNflverseSchedulesCommand extends Command
             'season' => $this->intValue($row, 'season'),
             'week' => $this->intValue($row, 'week') ?? 0,
             'season_type' => $seasonType,
-            'game_date' => $kickoff?->toDateString() ?? $this->stringValue($row, 'gameday'),
-            'game_time' => $kickoff?->format('H:i:s') ?? '00:00:00',
+            // Split game date/time fields are UTC; timestamp columns retain
+            // their existing application-timezone storage convention.
+            'game_date' => $kickoff?->copy()->utc()->toDateString() ?? $this->stringValue($row, 'gameday'),
+            'game_time' => $kickoff?->copy()->utc()->format('H:i:s') ?? '00:00:00',
             'name' => $this->teamDisplayName($awayTeam).' at '.$this->teamDisplayName($homeTeam),
             'short_name' => $awayTeam->abbreviation.' @ '.$homeTeam->abbreviation,
             'home_team_id' => $homeTeam->id,

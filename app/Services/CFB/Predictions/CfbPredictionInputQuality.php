@@ -12,6 +12,9 @@ class CfbPredictionInputQuality
         $flags = data_get($inputs, 'scoring_challenger.promoted', false) ? ['challenger_market_validation_required'] : [];
         $samples = [];
         foreach (['home', 'away'] as $side) {
+            if (data_get($inputs, $side.'.historical_play_quality.state') === 'incomplete') {
+                $flags[] = $side.'_historical_play_data_incomplete';
+            }
             if (data_get($inputs, 'require_versioned_elo', false)
                 && ! data_get($inputs, $side.'.elo_evidence.qualified', false)) {
                 $flags[] = $side.'_unverified_elo_provenance';

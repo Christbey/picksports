@@ -16,14 +16,16 @@ use App\Models\MarketQuote;
 use App\Services\CFB\Data\CfbDataReadiness;
 use App\Services\CFB\Data\CfbDriveBuilder;
 use App\Services\CFB\Data\CfbPipelineStage;
+use App\Services\Predictions\CalculationReleaseSelector;
 use App\Services\Validation\CfbValidationCoverage;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Validator;
 
 class RunPregamePipelineCommand extends Command
 {
-    protected $signature = 'cfb:run-pregame-pipeline {--season=} {--week=} {--days-forward=2} {--game=} {--resume} {--dry-run}';
+    protected $signature = 'cfb:run-pregame-pipeline {--season=} {--week=} {--days-forward=2} {--game=} {--resume} {--dry-run} {--core-only : Skip optional play reconstruction; approved release quality checks still apply}';
 
     protected $description = 'Refresh upcoming CFB injuries and odds before generating immutable forecasts';
 
@@ -138,11 +140,15 @@ class RunPregamePipelineCommand extends Command
                 }
             }
             $historyFailures = [];
+            $playFailures = [];
             $history = Game::select($gameColumns)->where('season', $season)->where('status', 'STATUS_FINAL')
                 ->where(fn ($q) => $q->whereIn('home_team_id', $teams->pluck('id')->all())->orWhereIn('away_team_id', $teams->pluck('id')->all()))->get();
             foreach ($history as $past) {
                 $readiness = app(CfbDataReadiness::class);
-                if (! $readiness->forGame($past)['ready']) {
+                $quality = $readiness->forGame($past);
+                $boxReady = data_get($quality, 'components.boxscore.state') === 'complete'
+                    && data_get($quality, 'components.boxscore.accepted', false);
+                if (! $quality['ready'] && (! $this->option('core-only') || ! $boxReady)) {
                     app(CfbPipelineStage::class)->run('game:'.$past->id, 'repair', ['quality' => $readiness->forGame($past)], function () use ($past, $readiness) {
                         app(SyncGameDetails::class)->execute((string) $past->espn_event_id);
                         $quality = $readiness->forGame($past);
@@ -150,22 +156,38 @@ class RunPregamePipelineCommand extends Command
                         return ['state' => $quality['ready'] ? 'complete' : 'partial', 'quality' => $quality];
                     }, false);
                 }
-                if (! $readiness->forGame($past)['ready']) {
+                $quality = $readiness->forGame($past);
+                if (! $quality['ready']) {
+                    $playFailures[] = $past->home_team_id;
+                    $playFailures[] = $past->away_team_id;
+                }
+                // Verified boxscores are indispensable to the core forecast. Incomplete play
+                // reconstruction holds EPA and the possession challenger, not current core scores.
+                if (data_get($quality, 'components.boxscore.state') !== 'complete'
+                    || ! data_get($quality, 'components.boxscore.accepted', false)) {
                     $historyFailures[] = $past->home_team_id;
                     $historyFailures[] = $past->away_team_id;
                 }
             }
             foreach ($history as $past) {
-                if (! in_array($past->home_team_id, $historyFailures, true) && ! in_array($past->away_team_id, $historyFailures, true)) {
-                    $processed = app(CfbPipelineStage::class)->run('game:'.$past->id, 'normalize', [...app(CfbDataReadiness::class)->forGame($past), 'normalizer_version' => CfbDriveBuilder::VERSION], function () use ($past) {
-                        $code = $this->call('cfb:calculate-play-epa', ['--game_id' => $past->id, '--rebuild' => true]);
-                        $drives = app(CfbDriveBuilder::class)->build($past, true);
+                if ($this->option('core-only')) {
+                    $playFailures[] = $past->home_team_id;
+                    $playFailures[] = $past->away_team_id;
+                } elseif (app(CfbDataReadiness::class)->forGame($past)['ready']
+                    && ! in_array($past->home_team_id, $historyFailures, true) && ! in_array($past->away_team_id, $historyFailures, true)) {
+                    $processed = app(CfbPipelineStage::class)->run('game:'.$past->id, 'normalize', [...app(CfbDataReadiness::class)->forGame($past), 'normalizer_version' => CfbDriveBuilder::VERSION, 'quality_schema' => 2], function () use ($past) {
+                        $worker = Process::path(base_path())->timeout(120)->run([
+                            PHP_BINARY, '-d', 'memory_limit=192M', base_path('artisan'), 'cfb:normalize-game', '--game='.$past->id,
+                        ]);
+                        $result = json_decode(trim($worker->output()), true);
 
-                        return ['state' => $code === self::SUCCESS && $drives['state'] === 'complete' ? 'complete' : 'failed', 'drives' => $drives];
+                        return is_array($result) && isset($result['state']) && ($result['state'] !== 'complete' || $worker->successful()) ? $result
+                            : ['state' => 'failed', 'error' => substr(trim($worker->errorOutput().' '.$worker->output()), 0, 2000), 'exit_code' => $worker->exitCode()];
                     });
                     if ($processed['state'] !== 'complete') {
-                        $historyFailures[] = $past->home_team_id;
-                        $historyFailures[] = $past->away_team_id;
+                        $playFailures[] = $past->home_team_id;
+                        $playFailures[] = $past->away_team_id;
+                        $this->warn("Game {$past->id}: play-derived evidence remains held; verified core forecasts can continue.");
                     }
                 }
                 $past->unsetRelations();
@@ -196,7 +218,7 @@ class RunPregamePipelineCommand extends Command
                     'team_revisions' => TeamMetric::whereIn('team_id', [$game->home_team_id, $game->away_team_id])->max('updated_at'),
                     'quote_revision' => MarketQuote::where('sport', 'cfb')->where('game_id', $game->id)->max('id'),
                     'injury_revision' => PlayerInjury::whereIn('team_id', [$game->home_team_id, $game->away_team_id])->max('updated_at')];
-                $results[$game->id] = app(CfbPipelineStage::class)->run('game:'.$game->id, 'forecast', $inputs, function () use ($game, $historyFailures, $teamFailures, $metadataFailures) {
+                $results[$game->id] = app(CfbPipelineStage::class)->run('game:'.$game->id, 'forecast', $inputs, function () use ($game, $historyFailures, $playFailures, $teamFailures, $metadataFailures) {
                     if (in_array($game->id, $metadataFailures, true)) {
                         return ['state' => 'blocked', 'reason' => 'unreliable_kickoff_metadata'];
                     }
@@ -206,11 +228,16 @@ class RunPregamePipelineCommand extends Command
                     if (array_intersect([$game->home_team_id, $game->away_team_id], $historyFailures)) {
                         return ['state' => 'blocked', 'reason' => 'incomplete_historical_sources'];
                     }
+                    if (array_intersect([$game->home_team_id, $game->away_team_id], $playFailures)
+                        && ! data_get(app(CalculationReleaseSelector::class)->select($game->sportEvent, 'pregame')->configuration,
+                            'inputs.validated_historical_play_metrics', false)) {
+                        return ['state' => 'blocked', 'reason' => 'release_requires_complete_play_history'];
+                    }
                     if (! $game->sportEvent?->starts_at?->isFuture()) {
                         return ['state' => 'blocked', 'reason' => 'kickoff_passed'];
                     }
                     $started = now();
-                    $code = $this->call('cfb:generate-canonical-predictions', ['--game' => $game->id]);
+                    $code = $this->call('cfb:generate-canonical-predictions', ['--game' => $game->id, '--isolate' => true]);
 
                     $output = CanonicalPrediction::where('sport_event_id', $game->sport_event_id)->where('sport', 'cfb')->where('phase', 'pregame')
                         ->where('publication_state', 'published')->where('generated_at', '>=', $started)

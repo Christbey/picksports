@@ -32,7 +32,8 @@ class CfbDriveBuilder
             && data_get(json_decode($d->data, true), 'normalizer_version') === self::VERSION
             && data_get(json_decode($d->data, true), 'score_ledger_revision') === $ledgerRevision)
             && (! $epaUpdated || $epaUpdated->lte(CarbonImmutable::parse($previous->min('updated_at'))))) {
-            return ['state' => 'complete', 'drives' => $previous->count(), 'source_revision' => $check->source_hash, 'reused' => true];
+            return ['state' => 'complete', 'drives' => $previous->count(), 'source_revision' => $check->source_hash,
+                'normalizer_version' => self::VERSION, 'score_ledger_revision' => $ledgerRevision, 'reused' => true];
         }
         $drives = [];
         $current = null;
@@ -147,7 +148,8 @@ class CfbDriveBuilder
             }
         });
 
-        return ['state' => $errors ? 'partial' : 'complete', 'drives' => count($rows), 'source_revision' => $check->source_hash, 'errors' => array_values(array_unique($errors))];
+        return ['state' => $errors ? 'partial' : 'complete', 'drives' => count($rows), 'source_revision' => $check->source_hash,
+            'normalizer_version' => self::VERSION, 'score_ledger_revision' => $ledgerRevision, 'errors' => array_values(array_unique($errors))];
     }
 
     private function seconds(string $clock): int

@@ -81,6 +81,12 @@ it('rejects a changed scoring archive even if its final score still agrees', fun
     expect(fn () => app(CfbScoringLedger::class)->normalize($game, $plays))->toThrow(RuntimeException::class, 'source hash mismatch');
 });
 
+it('rebuilds a verified game through the isolated normalization command', function () {
+    [$game] = cfbLedgerFixture();
+    $this->artisan('cfb:normalize-game', ['--game' => $game->id])->assertSuccessful();
+    expect(DB::table('cfb_drives')->where('game_id', $game->id)->where('quality', 'complete')->exists())->toBeTrue();
+});
+
 it('uses only prior state values and does not jump over special teams or halftime', function () {
     $baseline = Mockery::mock(StateBaselineService::class);
     $baseline->shouldReceive('getMap')->with('cfb', 2026)->andReturn(['1|7-10|71-80' => 2.0]);

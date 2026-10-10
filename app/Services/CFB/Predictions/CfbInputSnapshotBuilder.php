@@ -12,6 +12,7 @@ use App\Models\CFB\TeamMetric;
 use App\Models\SportEvent;
 use App\Services\CFB\CfbPlayerEvidenceService;
 use App\Services\CFB\CfbTeamEvidenceService;
+use App\Services\CFB\Data\CfbHistoricalPlayQuality;
 use App\Services\CFB\Ratings\ResultRatingEvidence;
 use App\Services\CFB\Scoring\CfbScoringChallenger;
 use App\Services\CFB\Signals\CfbFootballSignalEvidence;
@@ -87,6 +88,18 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
                 $sourceTimestamps[$side.'_metric'] = $current->updated_at->toIso8601String();
             } else {
                 $inputs[$side]['metrics'] = null;
+            }
+            if (data_get($release->configuration, 'inputs.validated_historical_play_metrics', false)) {
+                $inputs[$side]['historical_play_quality'] = app(CfbHistoricalPlayQuality::class)
+                    ->forTeam($game, $inputs[$side]['team_id'], $snapshot->capturedAt);
+                if ($inputs[$side]['historical_play_quality']['state'] !== 'complete') {
+                    foreach (['offensive_true_epa_per_play', 'defensive_true_epa_per_play', 'net_true_epa_per_play'] as $field) {
+                        $inputs[$side]['metrics'][$field] = null;
+                        if (isset($inputs[$side]['prior_metrics'])) {
+                            $inputs[$side]['prior_metrics'][$field] = null;
+                        }
+                    }
+                }
             }
             if (data_get($inputs, $side.'.elo_evidence.source_kind') === 'derived_season_initialization') {
                 // Stored absolute injury ratings use mutable team Elo, not this newly regressed baseline.
@@ -165,8 +178,11 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
         }
 
         if (! empty($release->configuration['scoring_challenger']['artifact_id'])) {
-            $inputs['scoring_challenger'] = app(CfbScoringChallenger::class)->capture(
-                $event->cfbGame, $snapshot, $inputs, $release->configuration['scoring_challenger']);
+            $playHistoryHeld = collect(['home', 'away'])->contains(fn ($side) => data_get($inputs, $side.'.historical_play_quality.state') === 'incomplete');
+            $inputs['scoring_challenger'] = $playHistoryHeld
+                ? ['state' => 'unavailable', 'reason' => 'incomplete_historical_play_evidence', 'promoted' => false]
+                : app(CfbScoringChallenger::class)->capture(
+                    $event->cfbGame, $snapshot, $inputs, $release->configuration['scoring_challenger']);
             $sourceTimestamps['scoring_artifact'] = $inputs['scoring_challenger']['artifact_available_at'] ?? null;
         }
 

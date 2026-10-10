@@ -6,11 +6,13 @@ use App\Models\CFB\Game;
 use App\Models\CFB\Team;
 use App\Models\CFB\TeamMetric;
 use App\Models\SportEvent;
+use App\Services\CFB\Data\CfbHistoricalPlayQuality;
 use App\Services\CFB\Predictions\CfbCalculationReleaseDefinition;
 use App\Services\CFB\Predictions\CfbCalculator;
 use App\Services\CFB\Predictions\CfbInputSnapshotBuilder;
 use App\Services\CFB\Predictions\CfbPointInTimeElo;
 use App\Services\CFB\Predictions\CfbPredictionInputQuality;
+use App\Services\CFB\Scoring\CfbScoringChallenger;
 
 it('separates FPI baseline, local feature coverage and uncalibrated market confidence', function () {
     $config = app(CfbCalculationReleaseDefinition::class)->configuration();
@@ -89,4 +91,28 @@ it('accepts same-day prior-season refresh only when observed before kickoff', fu
     $this->travelTo(now()->addHours(2));
     $prior->touch();
     expect($builder->build($event->fresh(), $release)->inputs['home']['prior_metrics'])->toBeNull();
+});
+
+it('excludes unreliable play metrics and the possession challenger while flagging the core forecast', function () {
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+    $event = SportEvent::factory()->create(['sport' => 'cfb', 'season' => 2026, 'starts_at' => now()->addDay()]);
+    Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026, 'week' => 6,
+        'home_team_id' => $home->id, 'away_team_id' => $away->id, 'status' => 'STATUS_SCHEDULED']);
+    foreach ([$home, $away] as $team) {
+        TeamMetric::create(['team_id' => $team->id, 'season' => 2026, 'wins' => 4, 'losses' => 1,
+            'points_per_game' => 28, 'points_allowed_per_game' => 21, 'net_true_epa_per_play' => 9,
+            'calculation_date' => now()->toDateString()]);
+    }
+    $this->mock(CfbHistoricalPlayQuality::class)->shouldReceive('forTeam')->twice()
+        ->andReturn(['state' => 'incomplete', 'held_game_ids' => [123]]);
+    $this->mock(CfbScoringChallenger::class)->shouldNotReceive('capture');
+    $config = app(CfbCalculationReleaseDefinition::class)->configuration();
+    $config['scoring_challenger']['artifact_id'] = 'test-artifact';
+    $release = new CalculationReleaseData('test', 'cfb', 'pregame', 'cfb-pregame-rules', 'rules', '1.7.1', 'test', 'test', 'cfb-pregame-v1', $config);
+    $snapshot = app(CfbInputSnapshotBuilder::class)->build($event, $release);
+    expect($snapshot->inputs['home']['metrics']['net_true_epa_per_play'])->toBeNull()
+        ->and($snapshot->inputs['scoring_challenger']['state'])->toBe('unavailable')
+        ->and(CfbPredictionInputQuality::assess($snapshot->inputs)['qualified'])->toBeFalse()
+        ->and(CfbPredictionInputQuality::assess($snapshot->inputs)['risk_flags'])->toContain('home_historical_play_data_incomplete', 'away_historical_play_data_incomplete');
 });

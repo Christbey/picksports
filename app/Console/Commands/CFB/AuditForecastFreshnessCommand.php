@@ -58,7 +58,8 @@ class AuditForecastFreshnessCommand extends Command
                     $reasons[] = 'stale_forecast';
                 }
                 if (! $snapshot || $snapshot->pregame_safety_status !== 'verified'
-                    || ! $prediction?->published_at || ! $kickoff || $prediction->published_at->gte($kickoff)) {
+                    || ! $prediction?->published_at || ! $kickoff || $prediction->published_at->gte($kickoff)
+                    || ! $snapshot->cutoff_at || ! $snapshot->cutoff_at->equalTo($kickoff)) {
                     $reasons[] = 'unsafe_publication';
                 }
                 foreach (['home', 'away'] as $side) {
@@ -75,6 +76,8 @@ class AuditForecastFreshnessCommand extends Command
                 'generated_at' => $prediction?->generated_at?->toIso8601String(), 'captured_at' => $snapshot?->captured_at?->toIso8601String(),
                 'freshness' => $upcoming ? ($reasons === [] ? 'fresh' : 'held') : 'archived_after_kickoff',
                 'risk_flags' => $reasons,
+                'forecast_quality_flags' => data_get($prediction?->output_metadata, 'input_quality.risk_flags', []),
+                'model_inputs_qualified' => data_get($prediction?->output_metadata, 'input_quality.qualified'),
                 'stale_at_kickoff' => ! $upcoming && $kickoff && (! $prediction?->generated_at || $prediction->generated_at->lt($kickoff->copy()->subHours(24)))];
         }
         $counts = collect($rows)->countBy('freshness')->all();

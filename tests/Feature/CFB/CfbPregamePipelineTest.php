@@ -1,8 +1,10 @@
 <?php
 
+use App\Actions\ESPN\CFB\SyncGameDetails;
 use App\Actions\ESPN\CFB\SyncGameMetadata;
 use App\Actions\ESPN\CFB\SyncPlayerInjuries;
 use App\Actions\ESPN\CFB\SyncPlayers;
+use App\Models\CalculationRelease;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game;
 use App\Models\CFB\Team;
@@ -11,10 +13,12 @@ use App\Models\SportEvent;
 use App\Services\CFB\Data\CfbDataReadiness;
 use App\Services\CFB\Data\CfbDriveBuilder;
 use App\Services\CFB\Data\CfbPipelineStage;
+use App\Services\Predictions\CalculationReleaseSelector;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Process;
 
 beforeEach(function () {
     $this->travelTo(now()->setDate(2026, 9, 18)->startOfDay());
@@ -57,7 +61,7 @@ beforeEach(function () {
         return 0;
     });
     Artisan::command('cfb:sync-game-weather {--season=} {--from-date=} {--days-forward=} {--game-id=} {--force}', fn () => 0);
-    Artisan::command('cfb:generate-canonical-predictions {--season=} {--days-forward=} {--game=}', function () use ($steps) {
+    Artisan::command('cfb:generate-canonical-predictions {--season=} {--days-forward=} {--game=} {--isolate}', function () use ($steps) {
         $steps[] = 'generation';
         $game = Game::findOrFail($this->option('game'));
         $prediction = CanonicalPrediction::factory()->create(['sport' => 'cfb', 'sport_event_id' => $game->sport_event_id,
@@ -182,7 +186,7 @@ it('continues generation after an unavailable optional weather refresh', functio
 
 it('does not mark a skipped forecast complete merely because the command exits successfully', function () {
     Artisan::command('cfb:sync-odds {--days=}', fn () => 0);
-    Artisan::command('cfb:generate-canonical-predictions {--game=}', fn () => 0);
+    Artisan::command('cfb:generate-canonical-predictions {--game=} {--isolate}', fn () => 0);
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertExitCode(2);
     expect(json_decode(DB::table('cfb_pipeline_steps')->where('stage', 'forecast')->value('result'), true)['reason'])->toBe('no_fresh_published_forecast');
 });
@@ -207,10 +211,11 @@ it('reuses completed historical normalization for unchanged accepted source revi
     $game = Game::firstOrFail();
     $past = Game::factory()->create(['home_team_id' => $game->home_team_id, 'away_team_id' => $game->away_team_id,
         'season' => 2026, 'status' => 'STATUS_FINAL', 'game_date' => now()->subWeek()]);
-    $quality = ['ready' => true, 'components' => ['plays' => ['source_hash' => 'accepted-source']]];
+    $quality = ['ready' => true, 'components' => ['plays' => ['source_hash' => 'accepted-source'],
+        'boxscore' => ['state' => 'complete', 'accepted' => true]]];
     $this->mock(CfbDataReadiness::class)->shouldReceive('forGame')->andReturn($quality);
     $this->mock(CfbDriveBuilder::class)->shouldNotReceive('build');
-    app(CfbPipelineStage::class)->run('game:'.$past->id, 'normalize', [...$quality, 'normalizer_version' => CfbDriveBuilder::VERSION],
+    app(CfbPipelineStage::class)->run('game:'.$past->id, 'normalize', [...$quality, 'normalizer_version' => CfbDriveBuilder::VERSION, 'quality_schema' => 2],
         fn () => ['state' => 'complete', 'drives' => ['state' => 'complete']]);
     Artisan::command('cfb:sync-odds {--days=}', fn () => 0);
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertSuccessful();
@@ -238,3 +243,34 @@ it('holds a forecast when its kickoff metadata cannot be verified', function () 
     $result = json_decode(DB::table('cfb_pipeline_steps')->where('stage', 'forecast')->value('result'), true);
     expect($result['reason'])->toBe('unreliable_kickoff_metadata');
 });
+
+it('allows flagged core forecasts after failed optional play normalization only under the new release policy', function (bool $fallback) {
+    $game = Game::firstOrFail();
+    Game::factory()->create(['home_team_id' => $game->home_team_id, 'away_team_id' => $game->away_team_id,
+        'season' => 2026, 'status' => 'STATUS_FINAL', 'game_date' => now()->subWeek()]);
+    $this->mock(CfbDataReadiness::class)->shouldReceive('forGame')->andReturn(['ready' => true,
+        'components' => ['boxscore' => ['state' => 'complete', 'accepted' => true], 'plays' => ['state' => 'complete', 'accepted' => true]]]);
+    Process::fake(['*' => Process::result(output: json_encode(['state' => 'failed', 'drives' => ['state' => 'partial']]), exitCode: 2)]);
+    $release = new CalculationRelease(['configuration' => ['inputs' => ['validated_historical_play_metrics' => $fallback]]]);
+    $this->mock(CalculationReleaseSelector::class)->shouldReceive('select')->andReturn($release);
+    Artisan::command('cfb:sync-odds {--days=}', fn () => 0);
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertExitCode($fallback ? 0 : 2);
+    expect(in_array('generation', $this->steps->getArrayCopy(), true))->toBe($fallback);
+})->with([true, false]);
+
+it('keeps boxscore evidence required during urgent core-only recovery', function (bool $boxReady) {
+    $game = Game::firstOrFail();
+    Game::factory()->create(['home_team_id' => $game->home_team_id, 'away_team_id' => $game->away_team_id,
+        'season' => 2026, 'status' => 'STATUS_FINAL', 'game_date' => now()->subWeek()]);
+    $this->mock(CfbDataReadiness::class)->shouldReceive('forGame')->andReturn(['ready' => false,
+        'components' => ['boxscore' => ['state' => $boxReady ? 'complete' : 'partial', 'accepted' => $boxReady],
+            'plays' => ['state' => 'partial', 'accepted' => false]]]);
+    $this->mock(SyncGameDetails::class)->shouldReceive('execute')->andReturn([]);
+    $release = new CalculationRelease(['configuration' => ['inputs' => ['validated_historical_play_metrics' => true]]]);
+    $this->mock(CalculationReleaseSelector::class)->shouldReceive('select')->andReturn($release);
+    Process::fake();
+    Artisan::command('cfb:sync-odds {--days=}', fn () => 0);
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026, '--core-only' => true])->assertExitCode($boxReady ? 0 : 2);
+    expect(in_array('generation', $this->steps->getArrayCopy(), true))->toBe($boxReady);
+    Process::assertNothingRan();
+})->with([true, false]);

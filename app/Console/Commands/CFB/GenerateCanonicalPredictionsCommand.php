@@ -11,7 +11,7 @@ use RuntimeException;
 
 class GenerateCanonicalPredictionsCommand extends AbstractGenerateCanonicalPredictionsCommand
 {
-    protected $signature = 'cfb:generate-canonical-predictions {--game=} {--season=} {--week=} {--date=} {--days-forward=} {--draft}';
+    protected $signature = 'cfb:generate-canonical-predictions {--game=} {--season=} {--week=} {--date=} {--days-forward=} {--draft} {--isolate}';
 
     protected $description = 'Generate canonical CFB predictions';
 
@@ -19,7 +19,7 @@ class GenerateCanonicalPredictionsCommand extends AbstractGenerateCanonicalPredi
 
     protected function configureBatch(int $count): void
     {
-        $this->isolateGames = $count > 1 && blank($this->option('game'));
+        $this->isolateGames = (bool) $this->option('isolate') || ($count > 1 && blank($this->option('game')));
     }
 
     protected function generateGame(Model $game, object $generator): void
@@ -31,7 +31,7 @@ class GenerateCanonicalPredictionsCommand extends AbstractGenerateCanonicalPredi
         }
         // Each game's large immutable evidence graph gets its own bounded process lifetime.
         // Keep children sequential; --game routes directly to calculation, preventing recursion.
-        $command = [PHP_BINARY, base_path('artisan'), 'cfb:generate-canonical-predictions', '--game='.$game->getKey()];
+        $command = [PHP_BINARY, '-d', 'memory_limit=192M', base_path('artisan'), 'cfb:generate-canonical-predictions', '--game='.$game->getKey()];
         if ($this->option('draft')) {
             $command[] = '--draft';
         }

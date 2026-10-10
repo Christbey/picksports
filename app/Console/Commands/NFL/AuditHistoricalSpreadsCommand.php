@@ -49,11 +49,12 @@ class AuditHistoricalSpreadsCommand extends Command
 
             return self::INVALID;
         }
-        $sourceRows = [];
+        $sourceRows = $sourceRowsByNflverseId = [];
         while (($values = fgetcsv($stream, escape: '')) !== false) {
             if (count($values) === count($header)) {
                 $row = array_combine($header, $values);
                 $sourceRows[$row['espn']][] = $row;
+                $sourceRowsByNflverseId[$row['game_id']][] = $row;
             }
         }
         fclose($stream);
@@ -63,7 +64,7 @@ class AuditHistoricalSpreadsCommand extends Command
         PredictionFeatureSnapshot::query()->where('sport', 'nfl')->where('prediction_table', 'nfl_predictions')
             ->where('availability_status', 'verified_reconstruction')
             ->select(['id', 'game_id', 'model_version', 'game_start_at', 'outputs->predicted_spread as model_margin'])
-            ->orderByDesc('id')->chunk(100, function ($snapshots) use (&$rows, &$excluded, &$clockMismatches, &$seen, $sourceRows, $identity): void {
+            ->orderByDesc('id')->chunk(100, function ($snapshots) use (&$rows, &$excluded, &$clockMismatches, &$seen, $sourceRows, $sourceRowsByNflverseId, $identity): void {
                 $games = Game::query()->with(['homeTeam', 'awayTeam', 'sportEvent'])->whereIn('id', $snapshots->pluck('game_id'))->get()->keyBy('id');
                 foreach ($snapshots as $snapshot) {
                     $key = $snapshot->model_version.':'.$snapshot->game_id;
@@ -72,7 +73,9 @@ class AuditHistoricalSpreadsCommand extends Command
                     }
                     $seen[$key] = true;
                     $game = $games->get($snapshot->game_id);
-                    $matches = $sourceRows[(string) $game?->espn_event_id] ?? [];
+                    $matches = filled($game?->nflverse_game_id)
+                        ? ($sourceRowsByNflverseId[$game->nflverse_game_id] ?? [])
+                        : ($sourceRows[(string) $game?->espn_event_id] ?? []);
                     $reason = match (true) {
                         $game === null => 'missing_game',
                         ! in_array((string) $game->season_type, ['2', 'regular'], true) => 'not_regular_season',

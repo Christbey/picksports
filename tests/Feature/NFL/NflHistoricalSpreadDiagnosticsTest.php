@@ -41,6 +41,11 @@ it('audits archived closing lines with verified game identity and correct spread
         ->and($report['models']['historical']['market_mae'])->toBe(0.5)
         ->and($prediction->fresh()->getAttributes())->toBe($before);
 
+    $game->update(['espn_event_id' => 'nflverse:2024_01_KC_NE', 'nflverse_game_id' => '2024_01_KC_NE']);
+    expect(Artisan::call('nfl:audit-historical-spreads', ['--source-id' => $source->id, '--evaluation-season' => 2024]))->toBe(0);
+    $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    expect($report['matched_games'])->toBe(1);
+
     $game->update(['home_score' => 25]);
     expect(Artisan::call('nfl:audit-historical-spreads', ['--source-id' => $source->id, '--evaluation-season' => 2024]))->toBe(1);
     $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);

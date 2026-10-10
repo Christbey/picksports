@@ -203,7 +203,7 @@ fresh pregame forecasts, not retrospectively enriched historical records.
 
 ## Historical score snapshot reconciliation
 
-CFB release `1.7.5` records drive normalizer `4`, scoring ledger normalizer `3`,
+CFB release `1.7.6` records drive normalizer `4`, scoring ledger normalizer `3`,
 and the `3-ledger` play validator in its frozen configuration. A contradictory
 intermediate score can be reconstructed only from explicit scoring events in the
 archived, hash-verified final summary. Every event must link to an ordered play,
@@ -222,6 +222,8 @@ that ledger. Missing pages, duplicate IDs, missing scoring plays, and unverified
 terminal states remain held. Reconciled acceptance records retain the raw payload
 and the exact boxscore hash. A changed boxscore invalidates that proof until it is
 verified again; the new proof gets a separate validator revision.
+Revalidating an identical accepted play payload preserves already computed EPA;
+changed play payloads still clear derived values before reconstruction.
 
 After repair, rerun the full queued pregame pipeline without `--core-only`, then
 audit forecast freshness and inspect the new snapshots' input-quality flags.

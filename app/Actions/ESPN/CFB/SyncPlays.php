@@ -52,6 +52,17 @@ class SyncPlays extends AbstractSyncPlays
             if ($check->isCurrentAccepted()) {
                 return 0;
             }
+            // A new validation proof for identical raw plays must preserve their computed EPA.
+            $ids = array_map(fn ($raw) => (string) $raw['id'], $response['items']);
+            $priorAcceptance = $check->newQuery()->where('game_id', $game->id)->where('component', 'plays')
+                ->where('source_hash', $check->source_hash)->whereNotNull('accepted_at')->exists();
+            $stored = Play::where('game_id', $game->id);
+            if ($priorAcceptance && (clone $stored)->count() === count($ids)
+                && (clone $stored)->where('source_revision', $check->source_hash)->whereIn('espn_play_id', $ids)->count() === count($ids)) {
+                $check->update(['accepted_at' => now()]);
+
+                return 0;
+            }
             $ids = [];
             foreach ($response['items'] as $index => $raw) {
                 $dto = FootballPlayData::fromEspnResponse($raw, $index);

@@ -199,8 +199,10 @@ it('certifies stale terminal score snapshots only with a complete terminal sourc
     $json = json_encode($json, JSON_THROW_ON_ERROR);
     Storage::disk('local')->put($box->source_path, $json);
     $box->update(['source_hash' => hash('sha256', $json)]);
+    Play::where('game_id', $game->id)->where('espn_play_id', 'td')->update(['true_epa' => 1.25, 'epa_calculated_at' => now()]);
     expect(app(CfbDataReadiness::class)->forGame($game)['ready'])->toBeFalse()
-        ->and($sync->execute((string) $game->espn_event_id))->toBe(2)
+        ->and($sync->execute((string) $game->espn_event_id))->toBe(0)
+        ->and((float) Play::where('game_id', $game->id)->where('espn_play_id', 'td')->value('true_epa'))->toBe(1.25)
         ->and(app(CfbDataReadiness::class)->forGame($game)['ready'])->toBeTrue();
     expect(GameDataCheck::where('game_id', $game->id)->where('component', 'plays')
         ->where('validator_version', 'like', CfbGameDataValidator::RECONCILED_PLAYS_VERSION.':%')->count())->toBe(2);

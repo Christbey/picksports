@@ -222,7 +222,7 @@ it('reuses completed historical normalization for unchanged accepted source revi
         'season' => 2026, 'status' => 'STATUS_FINAL', 'game_date' => now()->subWeek()]);
     $quality = ['ready' => true, 'components' => ['plays' => ['source_hash' => 'accepted-source'],
         'boxscore' => ['state' => 'complete', 'accepted' => true]]];
-    $this->mock(CfbDataReadiness::class)->shouldReceive('forGame')->andReturn($quality);
+    $this->mock(CfbDataReadiness::class)->makePartial()->shouldReceive('forGame')->andReturn($quality);
     $this->mock(CfbDriveBuilder::class)->shouldNotReceive('build');
     app(CfbPipelineStage::class)->run('game:'.$past->id, 'normalize', [...$quality, 'normalizer_version' => CfbDriveBuilder::VERSION, 'quality_schema' => 2],
         fn () => ['state' => 'complete', 'drives' => ['state' => 'complete']]);
@@ -253,11 +253,21 @@ it('holds a forecast when its kickoff metadata cannot be verified', function () 
     expect($result['reason'])->toBe('unreliable_kickoff_metadata');
 });
 
+it('keeps multi-game recovery scoped to the selected games', function () {
+    $game = Game::firstOrFail();
+    $event = SportEvent::factory()->create(['sport' => 'cfb', 'starts_at' => now()->addHours(13)]);
+    Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026,
+        'home_team_id' => $game->home_team_id, 'away_team_id' => $game->away_team_id, 'status' => 'STATUS_SCHEDULED']);
+    Artisan::call('cfb:run-pregame-pipeline', ['--season' => 2026, '--games' => (string) $game->id, '--dry-run' => true]);
+    expect(json_decode(Artisan::output(), true)['game_ids'])->toBe([$game->id]);
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026, '--games' => '1,invalid'])->assertFailed();
+});
+
 it('allows flagged core forecasts after failed optional play normalization only under the new release policy', function (bool $fallback) {
     $game = Game::firstOrFail();
     Game::factory()->create(['home_team_id' => $game->home_team_id, 'away_team_id' => $game->away_team_id,
         'season' => 2026, 'status' => 'STATUS_FINAL', 'game_date' => now()->subWeek()]);
-    $this->mock(CfbDataReadiness::class)->shouldReceive('forGame')->andReturn(['ready' => true,
+    $this->mock(CfbDataReadiness::class)->makePartial()->shouldReceive('forGame')->andReturn(['ready' => true,
         'components' => ['boxscore' => ['state' => 'complete', 'accepted' => true], 'plays' => ['state' => 'complete', 'accepted' => true]]]);
     Process::fake(['*' => Process::result(output: json_encode(['state' => 'failed', 'drives' => ['state' => 'partial']]), exitCode: 2)]);
     $release = new CalculationRelease(['configuration' => ['inputs' => ['validated_historical_play_metrics' => $fallback]]]);
@@ -294,7 +304,7 @@ it('keeps boxscore evidence required during urgent core-only recovery', function
     $game = Game::firstOrFail();
     Game::factory()->create(['home_team_id' => $game->home_team_id, 'away_team_id' => $game->away_team_id,
         'season' => 2026, 'status' => 'STATUS_FINAL', 'game_date' => now()->subWeek()]);
-    $this->mock(CfbDataReadiness::class)->shouldReceive('forGame')->andReturn(['ready' => false,
+    $this->mock(CfbDataReadiness::class)->makePartial()->shouldReceive('forGame')->andReturn(['ready' => false,
         'components' => ['boxscore' => ['state' => $boxReady ? 'complete' : 'partial', 'accepted' => $boxReady],
             'plays' => ['state' => 'partial', 'accepted' => false]]]);
     $this->mock(SyncGameDetails::class)->shouldReceive('execute')->andReturn([]);

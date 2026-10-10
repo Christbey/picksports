@@ -37,7 +37,7 @@ class RunPregamePipeline implements ShouldBeUnique, ShouldQueue
         $code = Artisan::call('cfb:run-pregame-pipeline', $this->arguments);
         Cache::put('cfb:pregame:worker-status', ['state' => $code === 0 ? 'complete' : ($code === 2 ? 'partial' : 'failed'),
             'exit_code' => $code, 'arguments' => $this->arguments, 'started_at' => $started,
-            'completed_at' => now()->toIso8601String(), 'output' => substr(Artisan::output(), -32768)], now()->addDay());
+            'completed_at' => now()->toIso8601String(), 'output' => mb_strcut(Artisan::output(), -32768, null, 'UTF-8')], now()->addDay());
     }
 
     public function failed(?Throwable $error): void

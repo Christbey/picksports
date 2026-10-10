@@ -35,6 +35,8 @@ The weekly orchestrator runs shared refresh commands in separate processes. Team
 
 Scheduled pregame refreshes use `--queued` and run on the existing `sync` bulk worker rather than the web/app worker. The season-unique queued job records its actual completion or partial/failure outcome in `cfb:pregame:worker-status`, exposed by `cfb:pipeline-status`. Dispatch alone does not create a generation heartbeat. Urgent queued recovery adds `--queued` to the scoped `--core-only` command above.
 
+When ESPN team-yard totals conflict with its passing/rushing categories, `cfb:sync-cfbd-team-boxscore --game=ID` can import a separate CFBD team-stat revision. Acceptance requires the exact final event, both mapped team identities and scores, complete required categories, valid conversion counts, and independently reconciled yards. The raw CFBD payload and imported attributes are archived with CFBD provenance. Only the core team-box requirement can use this evidence; ESPN player boxes and plays retain their original quarantine, so play-derived inputs and betting qualification remain held. `--games=ID,ID` scopes queued recovery to affected forecasts without touching other teams' metrics.
+
 The existing hourly refresh cadence remains. The proposed ten-minute freshness objective has not been measured or claimed. Live scoring remains on its existing schedule. Offline training is deliberately not placed on the 512 MB application worker.
 
 ## Deployment sequence

@@ -27,7 +27,7 @@ use Illuminate\Support\Facades\Validator;
 
 class RunPregamePipelineCommand extends Command
 {
-    protected $signature = 'cfb:run-pregame-pipeline {--season=} {--week=} {--days-forward=2} {--game=} {--resume} {--dry-run} {--queued : Run on the bulk sync worker} {--core-only : Skip optional play reconstruction; approved release quality checks still apply}';
+    protected $signature = 'cfb:run-pregame-pipeline {--season=} {--week=} {--days-forward=2} {--game=} {--games= : Comma-separated game IDs for scoped recovery} {--resume} {--dry-run} {--queued : Run on the bulk sync worker} {--core-only : Skip optional play reconstruction; approved release quality checks still apply}';
 
     protected $description = 'Refresh upcoming CFB injuries and odds before generating immutable forecasts';
 
@@ -37,7 +37,8 @@ class RunPregamePipelineCommand extends Command
         $days = $this->option('days-forward');
         if (Validator::make(['season' => $season, 'days' => $days], [
             'season' => 'required|integer|min:2000|max:2100', 'days' => 'required|integer|min:1|max:8',
-        ])->fails() || ! config('prediction_lifecycle.canonical_pipeline.cfb', false)) {
+        ])->fails() || ($this->option('games') && (! preg_match('/^[1-9]\d*(,[1-9]\d*)*$/', (string) $this->option('games')) || $this->option('game')))
+            || ! config('prediction_lifecycle.canonical_pipeline.cfb', false)) {
             $this->error('CFB pipeline requires valid season/horizon and enabled canonical generation.');
 
             return self::FAILURE;
@@ -45,6 +46,7 @@ class RunPregamePipelineCommand extends Command
         if ($this->option('queued') && ! $this->option('dry-run')) {
             RunPregamePipeline::dispatch(array_filter(['--season' => (int) $season, '--days-forward' => (int) $days,
                 '--week' => $this->option('week'), '--game' => $this->option('game'),
+                '--games' => $this->option('games'),
                 '--resume' => (bool) $this->option('resume'), '--core-only' => (bool) $this->option('core-only')],
                 fn ($value) => $value !== null && $value !== false));
             $this->info('CFB pregame pipeline dispatched to the bulk sync worker; publication still requires worker completion.');
@@ -61,6 +63,7 @@ class RunPregamePipelineCommand extends Command
             $gameColumns = array_merge(CalculateElo::RESULT_COLUMNS, ['sport_event_id', 'updated_at', 'espn_event_id']);
             $games = Game::with(['homeTeam', 'awayTeam'])->select($gameColumns)->where('season', $season)
                 ->when($this->option('game'), fn ($q, $v) => $q->whereKey($v))
+                ->when($this->option('games'), fn ($q, $v) => $q->whereKey(array_map('intval', explode(',', $v))))
                 ->when($this->option('week'), fn ($q, $v) => $q->where('week', $v))
                 ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_PRE_GAME', 'STATUS_DELAYED'])
                 ->where(function ($q) use ($days) {
@@ -160,8 +163,7 @@ class RunPregamePipelineCommand extends Command
             foreach ($history as $past) {
                 $readiness = app(CfbDataReadiness::class);
                 $quality = $readiness->forGame($past);
-                $boxReady = data_get($quality, 'components.boxscore.state') === 'complete'
-                    && data_get($quality, 'components.boxscore.accepted', false);
+                $boxReady = $readiness->coreBoxscoreReady($past);
                 if (! $quality['ready'] && (! $this->option('core-only') || ! $boxReady)) {
                     app(CfbPipelineStage::class)->run('game:'.$past->id, 'repair', ['quality' => $readiness->forGame($past)], function () use ($past, $readiness) {
                         app(SyncGameDetails::class)->execute((string) $past->espn_event_id);
@@ -177,8 +179,7 @@ class RunPregamePipelineCommand extends Command
                 }
                 // Verified boxscores are indispensable to the core forecast. Incomplete play
                 // reconstruction holds EPA and the possession challenger, not current core scores.
-                if (data_get($quality, 'components.boxscore.state') !== 'complete'
-                    || ! data_get($quality, 'components.boxscore.accepted', false)) {
+                if (! $readiness->coreBoxscoreReady($past)) {
                     $historyFailures[] = $past->home_team_id;
                     $historyFailures[] = $past->away_team_id;
                 }

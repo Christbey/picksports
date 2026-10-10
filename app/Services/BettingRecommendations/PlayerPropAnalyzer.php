@@ -10,6 +10,7 @@ use App\Models\CFB\Team;
 use App\Models\NFL\TeamStat;
 use App\Services\CFB\CfbPlayerEvidenceService;
 use App\Services\CFB\CfbPropScoringShadowRecorder;
+use App\Services\CFB\CfbRelativeVariabilityPenalty;
 use App\Services\NFL\NflPlayerPropCoverage;
 use App\Services\OddsApi\OddsApiService;
 use App\Services\Sports\SportsDateWindowService;
@@ -23,6 +24,8 @@ use Illuminate\Support\Facades\DB;
 class PlayerPropAnalyzer
 {
     protected const SIGNAL_MODEL_VERSION = 'player-prop-signal-v2';
+
+    public const CFB_MODEL_VERSION = 'cfb-player-prop-v3';
 
     public const NFL_MODEL_VERSION = 'nfl-player-prop-v3';
 
@@ -633,7 +636,7 @@ class PlayerPropAnalyzer
             'home_away_avg' => $homeAwayAvg !== null ? round($homeAwayAvg, 1) : null,
             'consistency' => $consistency,
         ];
-        $analysis['confidence_decomposition']['schema_version'] = $sport === 'NFL' ? self::NFL_MODEL_VERSION : self::SIGNAL_MODEL_VERSION;
+        $analysis['confidence_decomposition']['schema_version'] = $sport === 'NFL' ? self::NFL_MODEL_VERSION : ($sport === 'CFB' ? self::CFB_MODEL_VERSION : self::SIGNAL_MODEL_VERSION);
         if ($sport === 'NFL') {
             $analysis['confidence_decomposition']['history'] = $this->nflHistoryEvidence;
             $analysis['confidence_decomposition']['projection_context'] = $context;
@@ -891,7 +894,12 @@ class PlayerPropAnalyzer
             }
         }
 
-        if ($consistency && isset($consistency['std_dev'])) {
+        $relativePenalty = $prop instanceof PlayerProp
+            ? app(CfbRelativeVariabilityPenalty::class)->assess(
+                $seasonAvg, $consistency,
+                (int) data_get(app(CfbPlayerEvidenceService::class)->forProp($prop), 'windows.this_season.games', 0),
+            ) : null;
+        if (! ($relativePenalty['applied'] ?? false) && $consistency && isset($consistency['std_dev'])) {
             $stdDev = (float) $consistency['std_dev'];
             if ($stdDev <= 3.0) {
                 $confidence += 4;
@@ -904,7 +912,8 @@ class PlayerPropAnalyzer
             }
         }
 
-        $uncertaintyPenalty = $this->uncertaintyPenalty($consistency, $seasonSample);
+        $uncertaintyPenalty = ($relativePenalty['applied'] ?? false)
+            ? $relativePenalty['penalty'] : $this->uncertaintyPenalty($consistency, $seasonSample);
         if ($uncertaintyPenalty > 0) {
             $confidence -= $uncertaintyPenalty;
             $reasoning[] = sprintf('Uncertainty penalty applied: -%d.', $uncertaintyPenalty);
@@ -964,6 +973,7 @@ class PlayerPropAnalyzer
                 'data_quality_score' => $dataQualityScore,
                 'match_quality_score' => $matchQualityScore,
                 'context_factor' => round((float) ($context['combined_factor'] ?? 1.0), 3),
+                ...($relativePenalty !== null ? ['cfb_scoring_policy' => $relativePenalty] : []),
                 'uncertainty_penalty' => $uncertaintyPenalty,
                 'confidence_cap' => $confidenceCap,
             ],
@@ -1580,7 +1590,7 @@ class PlayerPropAnalyzer
         $schemaVersion = data_get($prop->confidence_decomposition, 'schema_version');
 
         if (
-            ! in_array($schemaVersion, $sport === 'NFL' ? (self::nflPregame($game) ? [self::NFL_MODEL_VERSION] : [self::NFL_MODEL_VERSION, self::SIGNAL_MODEL_VERSION]) : [self::SIGNAL_MODEL_VERSION], true)
+            ! in_array($schemaVersion, $sport === 'NFL' ? (self::nflPregame($game) ? [self::NFL_MODEL_VERSION] : [self::NFL_MODEL_VERSION, self::SIGNAL_MODEL_VERSION]) : ($sport === 'CFB' ? [self::CFB_MODEL_VERSION] : [self::SIGNAL_MODEL_VERSION]), true)
             || ! is_array($statSummary)
             || $statSummary === []
             || ! is_array($coverRecord)

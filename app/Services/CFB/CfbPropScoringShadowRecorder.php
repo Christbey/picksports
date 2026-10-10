@@ -21,6 +21,7 @@ class CfbPropScoringShadowRecorder
             'candidate' => $this->candidate($analysis),
             'quote_fetched_at' => $prop->fetched_at->toIso8601String(),
             'quote_source_updated_at' => data_get($prop->raw_data, 'last_update'),
+            'scoring_policy_sha256' => hash_file('sha256', app_path('Services/CFB/CfbRelativeVariabilityPenalty.php')),
             'calculator_sha256' => hash_file('sha256', app_path('Services/BettingRecommendations/PlayerPropAnalyzer.php')),
             'probability_status' => 'uncalibrated', 'recommendations_approved' => false];
         $identity = [$prop->id, $prop->game_id, $prop->player_id, $prop->market, $prop->bookmaker,
@@ -38,6 +39,10 @@ class CfbPropScoringShadowRecorder
     /** Experimental penalty-only comparison; never changes the production signal. */
     public function candidate(array $analysis): array
     {
+        if (data_get($analysis, 'confidence_decomposition.cfb_scoring_policy.applied')) {
+            return ['policy' => CfbRelativeVariabilityPenalty::VERSION, 'status' => 'active_rule',
+                'candidate_score' => $analysis['confidence'] ?? null, 'approved' => false];
+        }
         $std = data_get($analysis, 'confidence_decomposition.stat_summary.consistency.std_dev');
         $mean = data_get($analysis, 'confidence_decomposition.stat_summary.season_avg');
         $games = (int) data_get($analysis, 'confidence_decomposition.cfb_context.evidence.windows.this_season.games', 0);

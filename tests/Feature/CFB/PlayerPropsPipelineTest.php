@@ -187,7 +187,7 @@ test('preparation imports roster before box scores and links previously unknown 
 
 test('expired high-confidence college quotes do not hide eligible lower-ranked picks at the board limit', function () {
     $snapshot = ['recommended_side' => 'Over', 'confidence_score' => 90, 'predicted_over_probability' => 70,
-        'confidence_decomposition' => ['schema_version' => 'player-prop-signal-v2', 'stat_summary' => ['season_avg' => 300], 'cover_record' => ['season' => ['games' => 6]]]];
+        'confidence_decomposition' => ['schema_version' => PlayerPropAnalyzer::CFB_MODEL_VERSION, 'stat_summary' => ['season_avg' => 300], 'cover_record' => ['season' => ['games' => 6]]]];
     $expired = ($this->prop)();
     $expired->update([...$snapshot, 'fetched_at' => now()->subHours(2)]);
     $current = ($this->prop)();
@@ -230,4 +230,22 @@ test('six recorded college games remain usable when receiving workload data is m
         ->and($evidence['workload_coverage']['complete'])->toBeFalse()
         ->and($evidence['workload_coverage']['reported_games'])->toBe(0)
         ->and($evidence['workload']['relative_change'])->toBeNull();
+});
+
+test('college yardage analysis applies one relative variability penalty', function () {
+    for ($i = 1; $i <= 6; $i++) {
+        $game = Game::factory()->create(['home_team_id' => $this->team->id, 'away_team_id' => $this->away->id,
+            'season' => 2026, 'season_type' => 2, 'status' => 'STATUS_FINAL',
+            'game_date' => now()->subDays($i)->toDateString(), 'game_time' => '20:00:00']);
+        PlayerStat::factory()->create(['game_id' => $game->id, 'player_id' => $this->player->id,
+            'team_id' => $this->team->id, 'passing_yards' => 280 + ($i % 2 ? 30 : -30), 'passing_attempts' => 30]);
+    }
+    $prop = ($this->prop)('player_pass_yds', 200.5);
+    app(PlayerPropAnalyzer::class)->analyzeProps(sport: 'CFB', gameFilter: $this->game->id, attachNarratives: false);
+    $data = $prop->fresh()->confidence_decomposition;
+    expect($data['schema_version'])->toBe(PlayerPropAnalyzer::CFB_MODEL_VERSION)
+        ->and($data['cfb_scoring_policy']['applied'])->toBeTrue()
+        ->and($data['cfb_scoring_policy']['current_season_games'])->toBe(6)
+        ->and($data['uncertainty_penalty'])->toBe($data['cfb_scoring_policy']['penalty'])
+        ->and($data['uncertainty_penalty'])->toBeLessThan(3);
 });

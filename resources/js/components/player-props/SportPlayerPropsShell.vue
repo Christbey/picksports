@@ -15,6 +15,7 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import AppLayout from '@/layouts/AppLayout.vue';
 import {
@@ -90,10 +91,36 @@ const recommendations = ref<Recommendation[]>([]);
 const dates = ref<DateOption[]>([]);
 const games = ref<GameOption[]>([]);
 const markets = ref<MarketOption[]>([]);
+const commonMarkets = computed(() => {
+    const keys = [
+        'player_pass_yds',
+        'player_rush_yds',
+        'player_reception_yds',
+        'player_receptions',
+        'player_anytime_td',
+    ];
+    return keys.flatMap((key) =>
+        markets.value.filter((market) => market.value === key),
+    );
+});
 const boardMeta = ref<PlayerPropsMeta | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const visibleLimit = ref(18);
+const playerSearch = ref('');
+const searchedRecommendations = computed(() => {
+    const query = playerSearch.value.trim().toLowerCase();
+    return recommendations.value.filter(
+        (rec) =>
+            !query ||
+            [
+                rec.player.name,
+                rec.player.team,
+                rec.game.home_team,
+                rec.game.away_team,
+            ].some((value) => value?.toLowerCase().includes(query)),
+    );
+});
 const api = useApiV2Client();
 let boardAbortController: AbortController | null = null;
 
@@ -113,7 +140,7 @@ const hasActiveFilters = computed(
 );
 
 const visibleRecommendations = computed(() =>
-    recommendations.value.slice(0, visibleLimit.value),
+    searchedRecommendations.value.slice(0, visibleLimit.value),
 );
 
 const emptyStateTitle = computed(() => {
@@ -211,9 +238,9 @@ const loadBoard = async () => {
                 init: { signal: controller.signal },
             },
         );
+        if (controller.signal.aborted) return;
         if (!payload) {
             error.value = 'Unable to load player props.';
-            recommendations.value = [];
             return;
         }
 
@@ -233,8 +260,6 @@ const loadBoard = async () => {
         if (controller.signal.aborted) return;
         error.value =
             err instanceof Error ? err.message : 'Unable to load player props.';
-        recommendations.value = [];
-        boardMeta.value = null;
     } finally {
         if (boardAbortController === controller) {
             loading.value = false;
@@ -421,7 +446,7 @@ onBeforeUnmount(() => {
                 <p class="text-muted-foreground">
                     {{
                         sport === 'NFL'
-                            ? 'The pick, the price, and how often it covered this line.'
+                            ? 'Highest estimated hit chance first. Compare the history.'
                             : description
                     }}
                 </p>
@@ -502,11 +527,76 @@ onBeforeUnmount(() => {
                 </CardContent>
             </Card>
 
-            <div v-if="loading" class="py-16 text-center">
+            <div
+                v-if="sport === 'NFL'"
+                class="flex flex-wrap items-end justify-between gap-3"
+            >
+                <div class="w-full sm:max-w-xs">
+                    <Label for="prop-player-search"
+                        >Find a player or team</Label
+                    >
+                    <Input
+                        id="prop-player-search"
+                        v-model="playerSearch"
+                        type="search"
+                        placeholder="Search players or teams"
+                        class="mt-2 w-full"
+                        @input="visibleLimit = 18"
+                    />
+                </div>
+                <p class="text-sm text-muted-foreground" role="status">
+                    {{
+                        loading
+                            ? 'Updating board…'
+                            : `${searchedRecommendations.length} props`
+                    }}
+                </p>
+            </div>
+            <p v-if="sport === 'NFL'" class="text-xs text-muted-foreground">
+                Fresh quotes and samples of at least 4 current-season games come
+                first, then estimated hit chance. Higher probability does not
+                necessarily mean better value.
+            </p>
+            <div
+                v-if="sport === 'NFL' && commonMarkets.length"
+                class="flex flex-wrap gap-2"
+                aria-label="Common prop markets"
+            >
+                <Button
+                    v-for="market in commonMarkets"
+                    :key="market.value"
+                    size="sm"
+                    :variant="
+                        selectedMarket === market.value ? 'default' : 'outline'
+                    "
+                    :aria-pressed="selectedMarket === market.value"
+                    @click="
+                        selectedMarket =
+                            selectedMarket === market.value ? '' : market.value;
+                        onMarketChange();
+                    "
+                >
+                    {{ market.label }}
+                </Button>
+            </div>
+            <p
+                v-if="error && recommendations.length"
+                role="alert"
+                class="text-sm text-amber-700 dark:text-amber-300"
+            >
+                {{ error }} Showing the previous results.
+            </p>
+            <div
+                v-if="loading && recommendations.length === 0"
+                class="py-16 text-center"
+            >
                 <p class="text-muted-foreground">Loading player props...</p>
             </div>
 
-            <div v-else-if="error" class="py-16 text-center">
+            <div
+                v-else-if="error && recommendations.length === 0"
+                class="py-16 text-center"
+            >
                 <h3 class="mb-2 text-xl font-semibold tracking-tight">
                     Unable To Load Player Props
                 </h3>
@@ -529,6 +619,12 @@ onBeforeUnmount(() => {
             </div>
 
             <template v-else>
+                <p
+                    v-if="searchedRecommendations.length === 0"
+                    class="py-12 text-center text-muted-foreground"
+                >
+                    No players match your search.
+                </p>
                 <div
                     v-if="sport === 'NFL'"
                     class="grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-3"
@@ -1072,7 +1168,8 @@ onBeforeUnmount(() => {
                 </div>
                 <div
                     v-if="
-                        visibleRecommendations.length < recommendations.length
+                        visibleRecommendations.length <
+                        searchedRecommendations.length
                     "
                     class="flex justify-center"
                 >

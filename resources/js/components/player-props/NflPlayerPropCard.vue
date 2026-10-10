@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
+import PropHitRateStrip from './PropHitRateStrip.vue';
 import { useViewerAccess } from '@/composables/useViewerAccess';
 const { isAdmin } = useViewerAccess();
 import {
@@ -11,7 +12,7 @@ import {
     propFreshness,
     sideProbability,
 } from '@/lib/playerPropPresentation';
-import type { CoverRecord, Recommendation } from '@/lib/playerPropTypes';
+import type { Recommendation } from '@/lib/playerPropTypes';
 
 const props = defineProps<{ rec: Recommendation; nowMs: number }>();
 const history = computed(() => {
@@ -54,8 +55,6 @@ const extraHistory = computed(() => [
         },
     ].filter((row) => row.record != null),
 ]);
-const count = (record: CoverRecord | null | undefined) =>
-    record && record.games > 0 ? `${record.wins}/${record.games}` : 'N/A';
 const freshness = computed(() =>
     propFreshness(props.rec.fetched_at, props.rec.freshness_hours, props.nowMs),
 );
@@ -133,7 +132,7 @@ const result = computed(() => {
                 {{ formatPropTimestamp(rec.fetched_at, rec.game.timezone) }}
             </p>
             <p
-                v-if="isAdmin && freshness !== 'fresh'"
+                v-if="freshness !== 'fresh'"
                 role="status"
                 class="rounded-md border border-amber-500/40 px-3 py-2 text-xs text-amber-800 dark:text-amber-300"
             >
@@ -152,51 +151,37 @@ const result = computed(() => {
                 ><span>Actual: {{ formatPropStat(rec.actual_value) }}</span>
             </p>
 
-            <table class="w-full text-sm">
-                <caption
-                    class="pb-2 text-left text-xs font-medium text-muted-foreground"
-                >
-                    Covered
-                    {{
-                        rec.recommendation.toLowerCase()
-                    }}
-                    {{
-                        rec.line
-                    }}
-                    · wins / games
-                </caption>
-                <thead class="sr-only">
-                    <tr>
-                        <th scope="col">History</th>
-                        <th scope="col">Times covered</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y">
-                    <tr v-for="row in history" :key="row.label">
-                        <th scope="row" class="py-2 text-left font-normal">
-                            {{ row.label }}
-                            <span
-                                v-if="row.year"
-                                class="text-xs text-muted-foreground"
-                                >({{ row.year }})</span
-                            >
-                        </th>
-                        <td class="py-2 text-right font-semibold tabular-nums">
-                            {{ count(row.record) }}
-                            <span
-                                v-if="row.record?.pushes"
-                                class="block text-[11px] font-normal text-muted-foreground"
-                                >{{ row.record.pushes }} push{{
-                                    row.record.pushes === 1 ? '' : 'es'
-                                }}</span
-                            >
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+            <div class="flex items-center justify-between text-sm">
+                <span class="text-muted-foreground">Estimated hit chance</span>
+                <strong class="tabular-nums">{{
+                    sideProbability(
+                        rec.model_over_probability,
+                        rec.recommendation,
+                    )
+                }}</strong>
+            </div>
             <p class="text-[11px] text-muted-foreground">
-                Regular-season history at this line, not past bets. N/A = no
-                sample.
+                Model estimate · not calibrated
+            </p>
+            <div class="flex items-center justify-between text-sm">
+                <span class="text-muted-foreground">Season average</span>
+                <strong class="tabular-nums">{{
+                    formatPropStat(rec.stats.season_avg)
+                }}</strong>
+            </div>
+            <PropHitRateStrip
+                :records="[
+                    { label: 'L5', record: rec.stats.cover_record?.last_5 },
+                    { label: 'L10', record: rec.stats.cover_record?.last_10 },
+                    { label: 'Season', record: rec.stats.cover_record?.season },
+                    {
+                        label: 'H2H',
+                        record: rec.stats.cover_record?.vs_opponent,
+                    },
+                ]"
+            />
+            <p class="text-[11px] text-muted-foreground">
+                Hits at this line · historical results, not win probabilities
             </p>
         </div>
 
@@ -204,7 +189,7 @@ const result = computed(() => {
             <summary
                 class="cursor-pointer px-4 py-3 text-sm font-medium focus-visible:rounded-b-xl focus-visible:outline-2 focus-visible:outline-ring"
             >
-                More details
+                Research & history
             </summary>
             <div class="space-y-4 px-4 pb-4 text-xs">
                 <section class="space-y-2">
@@ -308,7 +293,7 @@ const result = computed(() => {
                     cover a full career. Conference history uses current team
                     membership.
                 </p>
-                <section class="space-y-2 border-t pt-3">
+                <section v-if="isAdmin" class="space-y-2 border-t pt-3">
                     <h3 class="font-semibold">Model details</h3>
                     <p
                         v-if="rec.confidence_decomposition?.probability_method"
@@ -380,7 +365,7 @@ const result = computed(() => {
                     Line updated:
                     {{
                         formatPropTimestamp(rec.fetched_at, rec.game.timezone)
-                    }}. Quote window: {{ rec.freshness_hours ?? 24 }} hours.
+                    }}. Quote window: {{ rec.freshness_hours ?? 36 }} hours.
                 </p>
             </div>
         </details>

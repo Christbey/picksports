@@ -1,3 +1,5 @@
+Read [AGENTS.md](AGENTS.md) for the project owner's sports-analysis workflow: use the PickSports API and stored production data, avoid external sports research unless explicitly requested, and keep analysis separate from engineering work.
+
 <laravel-boost-guidelines>
 === foundation rules ===
 

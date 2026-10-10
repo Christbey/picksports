@@ -425,14 +425,21 @@ class PlayerPropAnalyzer
             ->orderByDesc('confidence_score')
             ->orderByDesc('edge_probability')
             ->orderByDesc('fetched_at')
-            ->when($sport !== 'CFB', fn ($query) => $query->limit(max(1, min($limit, 150))))
+            ->when(! in_array($sport, ['CFB', 'NFL'], true), fn ($query) => $query->limit(max(1, min($limit, 150))))
             ->get();
 
-        $recommendations = $props
+        if ($sport === 'NFL') {
+            $now = now()->getTimestamp();
+            $freshHours = (int) config('validation.thresholds.player_prop_freshness.stale_after_hours_by_sport.nfl', 36);
+            $props = $props->sortByDesc(fn (Model $prop): array => NflPropBoardOrder::key($prop, $now, $freshHours));
+        }
+
+        $recommendations = $props->lazy()
             ->map(fn (Model $prop): ?array => $this->precomputedRecommendationPayload($prop, $sport))
             ->filter()
             ->take(max(1, min($limit, 150)))
-            ->values();
+            ->values()
+            ->collect();
 
         if (strtoupper($sport) === 'NFL') {
             $summaries = app(NflPropSeasonSummary::class)->forProps(

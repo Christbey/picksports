@@ -22,12 +22,20 @@ class ReportFrozenDecisionPerformanceCommand extends Command
         }
         $games = Game::query()->where('season', (int) $this->option('season'))->with('sportEvent')->get()->keyBy('id');
         $rows = BetDecision::query()->where('sport', 'cfb')->where('game_table', 'cfb_games')
-            ->whereIn('game_id', $games->keys())->orderBy('decided_at')->orderBy('id')->get()
+            ->whereIn('game_id', $games->keys())->orderBy('id')->lazyById(50)
             ->map(fn ($decision) => $service->grade($decision, $games->get($decision->game_id)))->all();
         $summary = [];
         foreach (collect($rows)->groupBy(fn ($row) => $row['cohort'].':'.$row['market_type']) as $key => $cohort) {
             $summary[$key] = $service->summarize($cohort->all());
         }
+        // Keep every revision in the audit; the primary performance population has one entry per game.
+        $unique = collect($rows)->filter(fn ($row) => ! in_array('not_a_verified_frozen_pregame_decision', $row['missing'], true))
+            ->sortByDesc(fn ($row) => ($row['decided_at'] ?? '').sprintf('%020d', $row['decision_id']))
+            ->unique(fn ($row) => $row['cohort'].':'.$row['market_type'].':'.$row['game_id']);
+        $primary = $unique->groupBy(fn ($row) => $row['cohort'].':'.$row['market_type'])
+            ->map(fn ($cohort) => $service->summarize($cohort->all()));
+        $byRelease = $unique->groupBy(fn ($row) => ($row['release_version'] ?? 'unknown').':'.$row['cohort'].':'.$row['market_type'])
+            ->map(fn ($cohort) => $service->summarize($cohort->all()));
         $largeSpreads = [];
         foreach (collect($rows)->where('market_type', 'spread')->groupBy(fn ($row) => $row['cohort'].':'.$row['large_spread_bucket']) as $key => $cohort) {
             $largeSpreads[$key] = $service->summarize($cohort->all());
@@ -35,6 +43,8 @@ class ReportFrozenDecisionPerformanceCommand extends Command
         $this->line(json_encode(['season' => (int) $this->option('season'), 'status' => $rows ? 'descriptive_frozen_decision_monitoring' : 'no_frozen_decisions',
             'policy' => 'All stored decisions; each revision retained, correlated observations are not independent wagers. One unit staked per priced decision. Last stored same-market/side pregame quote strictly before kickoff; never consensus or postgame imported quotes.',
             'limitations' => ['Missing decisions cannot be reconstructed retrospectively.', 'Counterfactual and tracked recommendations are not evidence of placed wagers.', 'Missing prices are excluded from return denominators, never imputed.', 'Line CLV is in points; moneyline CLV is implied probability including vig.'],
+            'primary_policy' => 'latest verified frozen pregame decision per game/cohort/market; repeated revisions remain audit-only',
+            'one_decision_per_game_summary' => $primary, 'one_decision_per_game_by_release' => $byRelease,
             'summary' => $summary, 'exclusive_large_spread_summary' => $largeSpreads, 'rows' => $rows], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
 
         return self::SUCCESS;

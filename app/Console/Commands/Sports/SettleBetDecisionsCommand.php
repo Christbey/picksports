@@ -62,13 +62,16 @@ class SettleBetDecisionsCommand extends Command
             ->when($this->option('sport'), fn ($builder) => $builder->where('sport', strtolower((string) $this->option('sport'))))
             ->orderBy('id');
 
-        if ((int) $this->option('limit') > 0) {
-            $query->limit((int) $this->option('limit'));
-        }
+        $limit = max(0, (int) $this->option('limit'));
+        $processed = 0;
 
         $settled = 0;
         $corrected = 0;
-        foreach ($query->get() as $decision) {
+        foreach ($query->lazyById(50) as $decision) {
+            if ($limit > 0 && $processed >= $limit) {
+                break;
+            }
+            $processed++;
             $marketType = $this->marketType($decision);
             $gameModel = $this->gameModels[$decision->sport] ?? null;
             $game = $gameModel === null ? null : $gameModel::query()->find($decision->game_id);
@@ -95,10 +98,8 @@ class SettleBetDecisionsCommand extends Command
             }
 
             $missingCfbPrice = $decision->sport === 'cfb' && (! is_numeric($decision->price) || abs((float) $decision->price) < 100);
-            if ($missingCfbPrice && (! $this->option('regrade-cfb') || ! $decision->settlement()->exists())) {
-                $this->warn("CFB decision {$decision->id} has no valid entry price; return settlement withheld.");
-
-                continue;
+            if ($missingCfbPrice) {
+                $this->warn("CFB decision {$decision->id} has no valid entry price; outcome graded but return excluded.");
             }
 
             $shadowProfit = $missingCfbPrice ? null : ($grade['push']

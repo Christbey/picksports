@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\BetDecision;
+use App\Models\BetSettlement;
 use App\Models\CFB\Game;
 use App\Models\CFB\Team;
 use App\Models\GameOddsSnapshot;
@@ -9,6 +10,7 @@ use App\Services\CFB\CfbMarketMovementSignalService;
 use App\Services\CFB\Predictions\CfbFrozenDecisionPerformance;
 use App\Services\CFB\Predictions\CfbStoredPregameQuote;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 
 function frozenDecisionFixture(array $attributes = []): array
@@ -69,7 +71,11 @@ it('grades pushes and missing-price outcomes without manufacturing returns', fun
         ->and($service->summarize([$row])['priced_decisions'])->toBe(0)
         ->and($service->summarize([$row])['roi_per_unit_staked'])->toBeNull();
     $this->artisan('sports:settle-bet-decisions', ['--sport' => 'cfb'])->assertSuccessful();
-    expect($decision->settlement)->toBeNull();
+    $settlement = $decision->fresh('settlement')->settlement;
+    expect($settlement->result_status)->toBe('push')
+        ->and($settlement->profit_units)->toBeNull()
+        ->and($settlement->metadata['shadow_profit_units'])->toBeNull()
+        ->and($settlement->metadata['exclude_from_return_metrics'])->toBeTrue();
 });
 
 it('does not report hindsight decisions as frozen recommendation performance', function () {
@@ -128,4 +134,37 @@ it('keeps closing quotes within the frozen participant and overtime contract', f
     expect($resolved->id)->toBe($closing->id);
     $closing->metadata = [...$closing->metadata, 'provider_observed_at' => '2026-09-19 17:01:00'];
     expect(CfbStoredPregameQuote::identity($entry))->toBe(CfbStoredPregameQuote::identity($closing));
+});
+
+it('reports one latest verified decision per game and separates release cohorts', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-19 10:00:00'));
+    [$game, $first] = frozenDecisionFixture(['feature_snapshot' => ['release_version' => '1.5.1']]);
+    $this->travelTo(now()->addMinute());
+    $latest = $first->replicate();
+    $latest->forceFill(['decision_hash' => hash('sha256', Str::uuid()), 'decision_run_id' => (string) Str::uuid(),
+        'line' => -30, 'decided_at' => now(), 'locked_at' => now(),
+        'feature_snapshot' => ['release_version' => '1.6.3']])->save();
+    $this->travelTo(CarbonImmutable::parse('2026-09-19 21:00:00'));
+    expect(Artisan::call('cfb:report-frozen-decisions', ['--season' => 2026]))->toBe(0);
+    $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    expect($report['summary']['tracked_recommendation:spread']['graded'])->toBe(2)
+        ->and($report['one_decision_per_game_summary']['tracked_recommendation:spread']['graded'])->toBe(1)
+        ->and($report['one_decision_per_game_summary']['tracked_recommendation:spread']['losses'])->toBe(1)
+        ->and($report['one_decision_per_game_by_release']['1.6.3:tracked_recommendation:spread']['losses'])->toBe(1);
+});
+
+it('respects settlement limits across batches and grades unpriced outcomes without returns', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-19 10:00:00'));
+    [$game, $first] = frozenDecisionFixture(['price' => null]);
+    for ($i = 0; $i < 52; $i++) {
+        $decision = $first->replicate();
+        $decision->forceFill(['decision_hash' => hash('sha256', Str::uuid()),
+            'decision_run_id' => (string) Str::uuid(), 'price' => -110])->save();
+    }
+    $this->travelTo(CarbonImmutable::parse('2026-09-19 21:00:00'));
+    $this->artisan('sports:settle-bet-decisions', ['--sport' => 'cfb', '--limit' => 51])->assertSuccessful();
+    expect(BetSettlement::count())->toBe(51)
+        ->and($first->fresh('settlement')->settlement->profit_units)->toBeNull();
+    $this->artisan('sports:settle-bet-decisions', ['--sport' => 'cfb'])->assertSuccessful();
+    expect(BetSettlement::count())->toBe(53);
 });

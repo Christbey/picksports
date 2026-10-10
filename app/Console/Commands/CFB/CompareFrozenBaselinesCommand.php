@@ -31,8 +31,10 @@ class CompareFrozenBaselinesCommand extends Command
 
                 continue;
             }
-            $snapshot = $event->inputSnapshots()->where('phase', 'pregame')->where('pregame_safety_status', 'verified')
-                ->where('captured_at', '<', $event->starts_at)->orderByDesc('captured_at')->orderByDesc('id')->first();
+            // Sort narrow IDs first; sorting full frozen JSON payloads exhausts MySQL's sort buffer.
+            $snapshotId = $event->inputSnapshots()->where('phase', 'pregame')->where('pregame_safety_status', 'verified')
+                ->where('captured_at', '<', $event->starts_at)->orderByDesc('captured_at')->orderByDesc('id')->value('id');
+            $snapshot = $snapshotId ? $event->inputSnapshots()->find($snapshotId) : null;
             if (! $snapshot || ($snapshot->latest_source_available_at && $snapshot->latest_source_available_at->gt($snapshot->captured_at))) {
                 $excluded['no_safe_frozen_snapshot'] = ($excluded['no_safe_frozen_snapshot'] ?? 0) + 1;
 

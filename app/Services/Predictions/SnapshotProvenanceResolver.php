@@ -2,6 +2,8 @@
 
 namespace App\Services\Predictions;
 
+use App\Models\NFL\Game as NflGame;
+use App\Services\Sports\SportsDateWindowService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -18,7 +20,7 @@ class SnapshotProvenanceResolver
         $gameStartAt = $this->gameStartAt($game);
         $runType = (string) ($snapshot['run_type'] ?? 'prediction');
         $verifiedReconstruction = (bool) ($snapshot['point_in_time_verified'] ?? false);
-        $observedPregame = $gameStartAt !== null && $generatedAt->lte($gameStartAt);
+        $observedPregame = $gameStartAt !== null && $generatedAt->lt($gameStartAt);
 
         $pregameSafe = array_key_exists('pregame_safe', $snapshot)
             ? (bool) $snapshot['pregame_safe']
@@ -52,6 +54,22 @@ class SnapshotProvenanceResolver
 
     public function gameStartAt(Model $game): ?CarbonImmutable
     {
+        if ($game instanceof NflGame) {
+            $canonicalStart = $game->sportEvent?->starts_at;
+            if ($canonicalStart !== null) {
+                return CarbonImmutable::instance($canonicalStart);
+            }
+
+            if (empty($game->game_date) || empty($game->game_time)) {
+                return null;
+            }
+
+            return app(SportsDateWindowService::class)->gameDateTimeUtc(
+                $game->getAttributes()['game_date'] ?? $game->game_date,
+                $game->game_time,
+            );
+        }
+
         if (empty($game->game_date)) {
             return null;
         }

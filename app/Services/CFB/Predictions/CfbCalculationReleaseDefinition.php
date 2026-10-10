@@ -2,6 +2,7 @@
 
 namespace App\Services\CFB\Predictions;
 
+use App\Services\CFB\Data\CfbDriveBuilder;
 use App\Services\CFB\Signals\CfbFootballSignalCatalog;
 use App\Services\Predictions\Football\FootballCalculationReleaseDefinition;
 
@@ -11,7 +12,7 @@ class CfbCalculationReleaseDefinition extends FootballCalculationReleaseDefiniti
 
     public const INPUT_SCHEMA_VERSION = 'cfb-pregame-v1';
 
-    public const SEMANTIC_VERSION = '1.7.1';
+    public const SEMANTIC_VERSION = '1.7.2';
 
     /** @return array<string, mixed> */
     public function configuration(): array
@@ -20,6 +21,7 @@ class CfbCalculationReleaseDefinition extends FootballCalculationReleaseDefiniti
         $configuration['scoring_challenger'] = ['artifact_id' => config('cfb.scoring.artifact_id'), 'mode' => 'shadow_until_promoted'];
         $configuration['inputs']['sample_aware_context'] = true;
         $configuration['inputs']['validated_historical_play_metrics'] = true;
+        $configuration['inputs']['historical_play_normalizer_version'] = CfbDriveBuilder::VERSION;
         $configuration['inputs']['point_in_time_elo'] = true;
         $configuration['inputs']['auditable_feature_coverage'] = true;
         $configuration['inputs']['preserve_missing_metrics'] = true;

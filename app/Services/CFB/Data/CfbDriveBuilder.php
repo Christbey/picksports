@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 
 class CfbDriveBuilder
 {
-    public const VERSION = '2';
+    public const VERSION = '3';
 
     public function build(Game $game, bool $onlyChanged = false): array
     {
@@ -53,6 +53,16 @@ class CfbDriveBuilder
             $noPlay = str_contains($type, 'no play');
             $deltaHome = (int) $play->home_score - $beforeHome;
             $deltaAway = (int) $play->away_score - $beforeAway;
+            $verifiedScore = (bool) $play->getAttribute('scoring_ledger_verified') && ($deltaHome > 0 || $deltaAway > 0);
+            // A conversion penalty may be appended to a valid touchdown description.
+            if ($verifiedScore) {
+                $noPlay = false;
+            }
+            // The ledger identifies the scoring defense even when the feed omits possession.
+            if ($verifiedScore && ! $offense && strtolower((string) $play->play_type) === 'safety'
+                && $deltaHome + $deltaAway === 2) {
+                $offense = $deltaHome > 0 ? $game->away_team_id : $game->home_team_id;
+            }
             if ($deltaHome < 0 || $deltaAway < 0) {
                 $errors[] = 'nonmonotonic_score';
             }

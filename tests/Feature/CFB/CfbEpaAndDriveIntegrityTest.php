@@ -87,6 +87,36 @@ it('rebuilds a verified game through the isolated normalization command', functi
     expect(DB::table('cfb_drives')->where('game_id', $game->id)->where('quality', 'complete')->exists())->toBeTrue();
 });
 
+it('retains a ledger verified touchdown when its conversion description contains a no play penalty', function () {
+    [$game, $plays] = cfbLedgerFixture();
+    $plays[1]->update(['play_text' => 'Rush touchdown, kick attempt good PENALTY Illegal Snap. NO PLAY']);
+    $result = app(CfbDriveBuilder::class)->build($game);
+    expect($result['state'])->toBe('complete');
+    $drives = DB::table('cfb_drives')->where('game_id', $game->id)->get();
+    expect($drives->sum(fn ($drive) => json_decode($drive->data, true)['offense_points']))->toBe(7);
+});
+
+it('attributes a ledger verified safety to the opposing offense when possession is absent', function () {
+    [$game, $plays] = cfbLedgerFixture(['header' => ['competitions' => [['competitors' => [['score' => '2']]]]],
+        'scoringPlays' => [['homeScore' => 2]]]);
+    $game->update(['home_score' => 2]);
+    $plays[1]->update(['play_type' => 'Safety', 'play_text' => 'Team Safety', 'possession_team_id' => null]);
+    $result = app(CfbDriveBuilder::class)->build($game);
+    expect($result['state'])->toBe('complete');
+    $drives = DB::table('cfb_drives')->where('game_id', $game->id)->get()
+        ->map(fn ($drive) => json_decode($drive->data, true));
+    $safety = $drives->first(fn ($drive) => $drive['opponent_points'] === 2);
+    expect($safety['offense_team_id'])->toBe($game->away_team_id)
+        ->and($safety['offense_points'])->toBe(0);
+});
+
+it('keeps an unverified score on a no play description held', function () {
+    [$game, $plays] = cfbLedgerFixture();
+    GameDataCheck::where('game_id', $game->id)->where('component', 'boxscore')->delete();
+    $plays[1]->update(['play_text' => 'Touchdown PENALTY. NO PLAY']);
+    expect(app(CfbDriveBuilder::class)->build($game)['state'])->toBe('partial');
+});
+
 it('uses only prior state values and does not jump over special teams or halftime', function () {
     $baseline = Mockery::mock(StateBaselineService::class);
     $baseline->shouldReceive('getMap')->with('cfb', 2026)->andReturn(['1|7-10|71-80' => 2.0]);

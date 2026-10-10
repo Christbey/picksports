@@ -79,6 +79,7 @@ class CfbScoringLedger
             if (isset($scores[(string) $play->espn_play_id])) {
                 [$home, $away] = $scores[(string) $play->espn_play_id];
                 $normalized->is_scoring_play = true;
+                $normalized->scoring_ledger_verified = true;
             }
             $normalized->home_score = $home;
             $normalized->away_score = $away;

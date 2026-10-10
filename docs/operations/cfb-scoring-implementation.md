@@ -31,6 +31,8 @@ A missing odds feed does not stop score forecasts. Indispensable shared membersh
 
 For urgent whole-week recovery, `cfb:run-pregame-pipeline --season=2026 --week=6 --days-forward=8 --core-only` skips optional play reconstruction while preserving required source repair, current ratings/metrics/personnel, isolated publication, and the approved release's quality exclusions. This does not certify missing play evidence as complete. The normal pipeline continues attempting normalization, and subsequent refreshed forecasts use validated play evidence when available.
 
+The weekly orchestrator runs shared refresh commands in separate processes. Team metrics refresh only the required teams in batches of at most ten, avoiding a full-season temporary graph alongside the resident weekly job. Any failed batch stops publication; each game's forecast follows all required batches.
+
 The existing hourly refresh cadence remains. The proposed ten-minute freshness objective has not been measured or claimed. Live scoring remains on its existing schedule. Offline training is deliberately not placed on the 512 MB application worker.
 
 ## Deployment sequence

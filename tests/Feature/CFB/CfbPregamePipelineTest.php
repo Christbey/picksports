@@ -50,7 +50,7 @@ beforeEach(function () {
         return 0;
     });
     foreach (['cfb:sync-season-affiliations' => 'membership', 'cfb:calculate-elo' => 'elo', 'cfb:calculate-team-metrics' => 'metrics'] as $command => $step) {
-        Artisan::command($command.' {--season=}', function () use ($steps, $step) {
+        Artisan::command($command.' {--season=}'.($step === 'metrics' ? ' {--team-ids=}' : ''), function () use ($steps, $step) {
             $steps[] = $step;
 
             return 0;

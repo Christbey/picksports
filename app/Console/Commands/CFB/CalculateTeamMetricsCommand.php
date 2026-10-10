@@ -23,6 +23,43 @@ class CalculateTeamMetricsCommand extends AbstractFootballTeamMetricsCommand
 
     protected const TEAM_DISPLAY_FIELDS = ['display_name'];
 
+    protected function buildSignature(): string
+    {
+        return parent::buildSignature().' {--team-ids= : Refresh a bounded batch of up to ten team IDs}';
+    }
+
+    public function handle(): int
+    {
+        if (blank($this->option('team-ids'))) {
+            return parent::handle();
+        }
+        $raw = (string) $this->option('team-ids');
+        if ($this->option('team') || ! preg_match('/^\d+(,\d+)*$/', $raw)) {
+            $this->error('Provide only a comma-separated batch of team IDs.');
+
+            return self::FAILURE;
+        }
+        $ids = array_values(array_unique(array_map('intval', explode(',', $raw))));
+        $season = (int) ($this->option('season') ?? date('Y'));
+        $teams = $this->modifyTeamsQuery(Team::whereIn('id', $ids), $season)->get();
+        if (count($ids) > 10 || $teams->count() !== count($ids)) {
+            $this->error('Metric batches require at most ten verified FBS teams.');
+
+            return self::FAILURE;
+        }
+        $action = app(CalculateTeamMetrics::class);
+        foreach ($teams as $team) {
+            if (! $action->execute($team, $season)) {
+                $this->error("Team {$team->id}: required current metrics could not be refreshed.");
+
+                return self::FAILURE;
+            }
+        }
+        $this->info('Refreshed metrics for '.$teams->count().' verified FBS teams.');
+
+        return self::SUCCESS;
+    }
+
     protected function beforeBulkCalculation(object $calculateMetrics, int|string $season): void
     {
         $missing = Team::query()->whereDoesntHave('seasonAffiliations', function (Builder $query) use ($season): void {

@@ -204,10 +204,13 @@ class RunPregamePipelineCommand extends Command
                 return self::FAILURE;
             }
             // Recompute after Elo and injury updates, including games finalized since the daily refresh.
-            if ($this->refreshShared('cfb:calculate-team-metrics', ['--season' => (int) $season]) !== self::SUCCESS) {
-                $this->error('Team metric refresh failed; generation stopped.');
+            $metricTeamIds = $games->flatMap(fn ($game) => $coverage->requiredTeamIds($game))->unique()->values();
+            foreach ($metricTeamIds->chunk(10) as $batch) {
+                if ($this->refreshShared('cfb:calculate-team-metrics', ['--season' => (int) $season, '--team-ids' => $batch->implode(',')]) !== self::SUCCESS) {
+                    $this->error('Team metric refresh failed; generation stopped.');
 
-                return self::FAILURE;
+                    return self::FAILURE;
+                }
             }
             if ($this->refreshShared('cfb:sync-odds', ['--days' => (int) $days]) !== self::SUCCESS) {
                 $this->warn('Partial odds coverage; valid forecasts continue and unpriced markets remain unavailable.');

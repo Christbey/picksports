@@ -71,7 +71,10 @@ test('live cards show scores and outlook without kickoff or duplicate pregame co
     assert.match(html, /71.3%/);
     assert.match(html, /37.2/);
     assert.match(html, /bg-sky-500 motion-safe:animate-pulse/);
-    assert.doesNotMatch(html, /Oct 11|Pregame:|Live read|Home spread|red-/);
+    assert.doesNotMatch(
+        html,
+        /Oct 11|Pregame:|Live read|Home spread|bg-red-500 motion-safe:animate-pulse/,
+    );
 });
 
 test('pregame cards retain kickoff and selection information', async () => {
@@ -90,7 +93,7 @@ test('game center uses blue for live status', async () => {
         ],
     });
     assert.match(html, /text-sky-/);
-    assert.match(html, /P2 8:57/);
+    assert.match(html, /Q2 · 8:57/);
     assert.doesNotMatch(html, /red-/);
 });
 
@@ -129,5 +132,86 @@ test('moneyline selection remains visible when stored recommendation is no play'
         });
         assert.match(html, /Moneyline pick: WSH/);
         assert.doesNotMatch(html, /No pick|No Play|Projected winner/);
+    }
+});
+
+test('football cards and game center show quarters and halftime', async () => {
+    for (const sport of ['nfl', 'cfb']) {
+        for (const game_clock of ['0:00', '00:00', '000', '0.0']) {
+            const game = { ...prediction, sport, is_live: true, game_clock };
+            const html = await render(Card, {
+                prediction: game,
+                sport,
+                href: '/games/1',
+            });
+            assert.match(html, /Halftime/);
+            assert.doesNotMatch(html, /Period 2|Q2/);
+            const strip = await render(Strip, {
+                sports: [{ name: sport, predictions: [game] }],
+            });
+            assert.match(strip, /Halftime/);
+        }
+    }
+    const html = await render(Card, {
+        prediction: { ...prediction, is_live: true },
+        sport: 'nfl',
+        href: '/games/1',
+    });
+    assert.match(html, /Q2 · 8:57/);
+});
+
+test('live indicators show the leader probability and total direction', async () => {
+    for (const [total, direction] of [
+        [37.2, 'Down'],
+        [44.1, 'Up'],
+        [43.2, 'Steady'],
+    ]) {
+        const html = await render(Card, {
+            prediction: {
+                ...prediction,
+                is_live: true,
+                live_predicted_total: total,
+            },
+            href: '/games/1',
+        });
+        assert.match(html, /aria-valuenow="71.3"/);
+        assert.match(html, /width:71.3%/);
+        assert.match(html, new RegExp(` ${direction}</span>`));
+        if (direction === 'Up') assert.match(html, /text-emerald-700/);
+        if (direction === 'Down') assert.match(html, /text-red-700/);
+    }
+    const html = await render(Card, {
+        prediction: {
+            ...prediction,
+            is_live: true,
+            live_win_probability: undefined,
+            live_predicted_total: undefined,
+        },
+        href: '/games/1',
+    });
+    assert.doesNotMatch(html, /win-outlook-meter|total-movement/);
+});
+
+test('period formatting preserves other sports and handles football overtime', async () => {
+    for (const [sport, period, status, clock, expected] of [
+        ['nfl', 1, null, '12:00', 'Q1 · 12:00'],
+        ['cfb', 4, null, '0:00', 'Q4 · 0:00'],
+        ['nfl', 5, null, '5:00', 'OT · 5:00'],
+        ['cfb', 6, null, null, 'OT2'],
+        ['nfl', null, 'STATUS_HALFTIME', null, 'Halftime'],
+        ['nhl', 2, null, '0:00', 'Period 2 · 0:00'],
+    ]) {
+        const html = await render(Card, {
+            prediction: {
+                ...prediction,
+                is_live: true,
+                period,
+                status,
+                game_clock: clock,
+            },
+            sport,
+            href: '/games/1',
+        });
+        assert.ok(html.includes(expected));
     }
 });

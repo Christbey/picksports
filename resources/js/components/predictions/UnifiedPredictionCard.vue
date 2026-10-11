@@ -2,6 +2,9 @@
 import { Link } from '@inertiajs/vue3';
 import {
     Activity,
+    ArrowDownRight,
+    ArrowUpRight,
+    Minus,
     ChevronDown,
     ChevronRight,
     Clock,
@@ -11,6 +14,7 @@ import {
     Radio,
 } from 'lucide-vue-next';
 import { computed, ref, watch } from 'vue';
+import { livePeriodLabel } from '@/lib/liveGamePresentation';
 import { predictionWeather } from '@/lib/predictionWeather';
 import { pregameBetCalls } from '@/lib/pregameBetCalls';
 import SavePickDialog from '@/components/predictions/SavePickDialog.vue';
@@ -403,15 +407,12 @@ function liveGameStateLabel(): string {
         return rawState || 'Live inning';
     }
 
-    const parts = [];
-    if (normalizedLiveState.value.period !== null) {
-        parts.push(`Period ${normalizedLiveState.value.period}`);
-    }
-    if (normalizedLiveState.value.gameClock) {
-        parts.push(normalizedLiveState.value.gameClock);
-    }
-
-    return parts.join(' · ') || 'Live game';
+    return livePeriodLabel(
+        props.sport ?? dashboardType?.sport ?? '',
+        normalizedLiveState.value.period,
+        normalizedLiveState.value.gameClock,
+        normalizedLiveState.value.status,
+    );
 }
 
 function liveScoreContextLabel(): string {
@@ -496,6 +497,28 @@ function liveTotalOutlookValue(): string {
         ? `${away + home} ${unit} scored`
         : 'Model updating';
 }
+
+const liveLeaderProbability = computed(() => {
+    const probability = liveHomeProbability();
+    return probability === null
+        ? null
+        : Math.max(probability, 1 - probability) * 100;
+});
+
+const liveTotalDirection = computed(() => {
+    const live = normalizedLiveState.value.livePredictedTotal;
+    const pregame = props.prediction.predicted_total;
+    if (
+        live === null ||
+        !Number.isFinite(live) ||
+        typeof pregame !== 'number' ||
+        !Number.isFinite(pregame) ||
+        liveForecastStatus()
+    )
+        return null;
+    const movement = live - pregame;
+    return Math.abs(movement) < 0.5 ? 'steady' : movement > 0 ? 'up' : 'down';
+});
 
 function liveTotalOutlookMeta(): string {
     const status = liveForecastStatus();
@@ -1690,7 +1713,7 @@ function saveOptions(): SavePickOption[] {
                                 >
                                     <Activity class="h-4 w-4" />
                                 </div>
-                                <div class="min-w-0">
+                                <div class="min-w-0 flex-1">
                                     <div
                                         class="text-[11px] font-medium text-muted-foreground uppercase"
                                     >
@@ -1698,6 +1721,29 @@ function saveOptions(): SavePickOption[] {
                                     </div>
                                     <div class="truncate text-sm font-semibold">
                                         {{ liveWinOutlookValue() }}
+                                    </div>
+                                    <div
+                                        v-if="liveLeaderProbability !== null"
+                                        role="meter"
+                                        :aria-label="`${liveWinLeaderLabel()} win outlook`"
+                                        :aria-valuenow="
+                                            Number(
+                                                liveLeaderProbability.toFixed(
+                                                    1,
+                                                ),
+                                            )
+                                        "
+                                        aria-valuemin="0"
+                                        aria-valuemax="100"
+                                        class="my-1.5 h-1.5 max-w-56 overflow-hidden rounded-full bg-sky-500/15"
+                                        data-testid="win-outlook-meter"
+                                    >
+                                        <div
+                                            class="h-full rounded-full bg-sky-500 motion-safe:transition-[width]"
+                                            :style="{
+                                                width: `${liveLeaderProbability}%`,
+                                            }"
+                                        />
                                     </div>
                                     <div
                                         class="truncate text-xs text-muted-foreground"
@@ -1719,8 +1765,54 @@ function saveOptions(): SavePickOption[] {
                                     >
                                         Updated total
                                     </div>
-                                    <div class="truncate text-sm font-semibold">
-                                        {{ liveTotalOutlookValue() }}
+                                    <div
+                                        class="flex items-center gap-2 text-sm font-semibold"
+                                    >
+                                        <span>{{
+                                            liveTotalOutlookValue()
+                                        }}</span>
+                                        <span
+                                            v-if="liveTotalDirection"
+                                            data-testid="total-movement"
+                                            class="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                                            :class="
+                                                liveTotalDirection === 'up'
+                                                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                                                    : liveTotalDirection ===
+                                                        'down'
+                                                      ? 'bg-red-500/10 text-red-700 dark:text-red-300'
+                                                      : 'bg-muted text-muted-foreground'
+                                            "
+                                        >
+                                            <ArrowUpRight
+                                                v-if="
+                                                    liveTotalDirection === 'up'
+                                                "
+                                                class="size-3"
+                                                aria-hidden="true"
+                                            />
+                                            <ArrowDownRight
+                                                v-else-if="
+                                                    liveTotalDirection ===
+                                                    'down'
+                                                "
+                                                class="size-3"
+                                                aria-hidden="true"
+                                            />
+                                            <Minus
+                                                v-else
+                                                class="size-3"
+                                                aria-hidden="true"
+                                            />
+                                            {{
+                                                liveTotalDirection === 'up'
+                                                    ? 'Up'
+                                                    : liveTotalDirection ===
+                                                        'down'
+                                                      ? 'Down'
+                                                      : 'Steady'
+                                            }}
+                                        </span>
                                     </div>
                                     <div
                                         class="truncate text-xs text-muted-foreground"

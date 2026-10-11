@@ -2,6 +2,7 @@
 import { Link } from '@inertiajs/vue3';
 import { Activity, Radio } from 'lucide-vue-next';
 import { computed } from 'vue';
+import { livePeriodLabel } from '@/lib/liveGamePresentation';
 import type { DashboardPrediction, DashboardSport } from '@/types';
 
 const props = defineProps<{
@@ -45,8 +46,16 @@ const hasLiveGames = computed(() =>
 
 function statusLabel(game: LiveTile): string {
     if (game.is_live) {
-        if (game.game_clock && game.period) {
-            return `P${game.period} ${game.game_clock}`;
+        if (
+            ['nfl', 'cfb'].includes(game.sport.toLowerCase()) ||
+            (game.game_clock && game.period)
+        ) {
+            return livePeriodLabel(
+                game.sport,
+                game.period ?? null,
+                game.game_clock ?? null,
+                game.status ?? null,
+            );
         }
         if (game.inning_state && /\d/.test(game.inning_state)) {
             return game.inning_state;

@@ -30,6 +30,7 @@ class CanonicalDashboardPredictionResource extends JsonResource
 
         return array_merge($payload, [
             'sport' => strtoupper($this->context->slug),
+            'predicted_spread' => $payload['predicted_spread'] === null ? null : -$payload['predicted_spread'],
             'season_type' => $game->season_type,
             'game' => $game->name,
             'game_time' => $prediction->sportEvent->starts_at?->toIso8601String(),

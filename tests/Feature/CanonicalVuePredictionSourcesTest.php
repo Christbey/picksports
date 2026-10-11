@@ -15,7 +15,7 @@ use App\Services\PerformanceStatistics;
 use Illuminate\Support\Carbon;
 use Inertia\Testing\AssertableInertia as Assert;
 
-function vueCanonicalFixture(string $sport): CanonicalPrediction
+function vueCanonicalFixture(string $sport, float $homeLine = 4.5, float $homeProbability = 0.65): CanonicalPrediction
 {
     $event = SportEvent::factory()->create(['sport' => $sport, 'season' => 2026, 'starts_at' => now()->addHour()]);
     $namespace = strtoupper($sport);
@@ -36,8 +36,8 @@ function vueCanonicalFixture(string $sport): CanonicalPrediction
         'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null,
         'detail_source' => null, 'detail_sport' => null, 'detail_id' => null,
     ]);
-    PredictionMarket::factory()->create(['prediction_id' => $prediction->id, 'selection' => 'home', 'probability' => 0.65]);
-    PredictionMarket::factory()->create(['prediction_id' => $prediction->id, 'market_type' => 'spread', 'selection' => 'home', 'projected_line' => 4.5]);
+    PredictionMarket::factory()->create(['prediction_id' => $prediction->id, 'selection' => 'home', 'probability' => $homeProbability]);
+    PredictionMarket::factory()->create(['prediction_id' => $prediction->id, 'market_type' => 'spread', 'selection' => 'home', 'projected_line' => $homeLine]);
     PredictionMarket::factory()->create(['prediction_id' => $prediction->id, 'market_type' => 'total', 'selection' => 'combined', 'projected_line' => 45.5]);
 
     $prediction->update(['publication_state' => 'published', 'published_at' => now()]);
@@ -63,7 +63,7 @@ it('shows canonical forecasts on the dashboard without legacy predictions', func
         ->assertOk()->assertInertia(fn (Assert $page) => $page
         ->has('sports', 1)->where('sports.0.name', strtoupper($sport))
         ->has('sports.0.predictions', 1)->where('sports.0.predictions.0.id', $prediction->public_id)
-        ->where('sports.0.predictions.0.predicted_spread', 4.5)
+        ->where('sports.0.predictions.0.predicted_spread', -4.5)
         ->where('sports.0.predictions.0.win_probability', 0.65)
         ->where('stats.total_predictions_today', 1));
 
@@ -75,6 +75,7 @@ it('shows canonical forecasts on the dashboard without legacy predictions', func
     $game->update(['status' => 'STATUS_IN_PROGRESS', 'home_score' => 14, 'away_score' => 7]);
     $this->getJson('/api/v2/live-scoreboard')->assertOk()
         ->assertJsonCount(1, 'data.games')->assertJsonPath('data.games.0.id', $prediction->public_id)
+        ->assertJsonPath('data.games.0.predicted_spread', -4.5)
         ->assertJsonPath('data.games.0.is_live', true)->assertJsonPath('data.games.0.home_score', 14);
     $this->getJson('/api/v2/sports/'.$sport.'/games/'.$game->id)->assertOk()
         ->assertJsonPath('data.has_prediction', true);
@@ -123,3 +124,18 @@ it('saves and tracks canonical public IDs without mixing legacy numeric IDs', fu
     $this->getJson('/api/v2/user-bets?'.http_build_query(['prediction_id' => $prediction->public_id, 'prediction_sport' => 'cfb']))
         ->assertNotFound();
 });
+
+it('preserves sportsbook spread signs through the dashboard card convention', function (float $homeLine, float $probability) {
+    config()->set('prediction_lifecycle.canonical_reads.cfb', true);
+    vueCanonicalFixture('cfb', $homeLine, $probability);
+    $response = $this->actingAs(User::factory()->create())->get(route('dashboard'))->assertOk();
+    $prediction = $response->inertiaProps('sports.0.predictions.0');
+
+    expect((float) -$prediction['predicted_spread'])->toBe($homeLine)
+        ->and((float) $prediction['model_bet_context']['model_home_spread'])->toBe($homeLine)
+        ->and($prediction['win_probability'])->toBe($probability);
+})->with([
+    'Pitt home favorite' => [-11.7, 0.875],
+    'West Virginia home underdog' => [3.1, 0.374],
+    'pick em' => [0.0, 0.5],
+]);

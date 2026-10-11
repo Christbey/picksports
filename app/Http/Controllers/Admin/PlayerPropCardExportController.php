@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\Api\V2\CanonicalSportPredictionResource;
 use App\Http\Resources\BettingRecommendationResource;
 use App\Models\CBB\Prediction as CbbPrediction;
 use App\Models\CBB\TournamentForecast as CbbTournamentForecast;
@@ -11,6 +12,9 @@ use App\Models\MLB\Prediction as MlbPrediction;
 use App\Models\NBA\PlayoffForecast as NbaPlayoffForecast;
 use App\Models\NBA\Prediction as NbaPrediction;
 use App\Models\NFL\Prediction as NflPrediction;
+use App\Services\Api\V2\CanonicalPredictionPresentationService;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
+use App\Services\Api\V2\SportContextResolver;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -102,6 +106,13 @@ class PlayerPropCardExportController extends Controller
 
     protected function getPredictionDateOptions(string $sport): array
     {
+        if (config('prediction_lifecycle.canonical_reads.'.strtolower($sport), false)) {
+            $context = app(SportContextResolver::class)->resolve(strtolower($sport));
+
+            return app(CanonicalSportPredictionQuery::class)->availableDates($context)->sortDesc()->take(45)
+                ->map(fn ($date) => ['value' => $date, 'label' => Carbon::parse($date)->format('M j, Y')])->values()->all();
+        }
+
         $modelClass = $this->getPredictionModel($sport);
         $prediction = new $modelClass;
         $table = $prediction->getTable();
@@ -125,6 +136,15 @@ class PlayerPropCardExportController extends Controller
 
     protected function getPredictionGameOptions(string $sport, ?string $dateFilter): array
     {
+        if (config('prediction_lifecycle.canonical_reads.'.strtolower($sport), false)) {
+            return collect($this->canonicalPredictionExports($sport, $dateFilter, null, 80))
+                ->map(fn ($prediction) => [
+                    'id' => $prediction['game_id'],
+                    'label' => $prediction['away_team'].' @ '.$prediction['home_team'],
+                    'date' => $prediction['game']['date'], 'time' => $prediction['game']['time'],
+                ])->unique('id')->values()->all();
+        }
+
         $modelClass = $this->getPredictionModel($sport);
         $query = $modelClass::query()
             ->with(['game.homeTeam', 'game.awayTeam'])
@@ -163,6 +183,10 @@ class PlayerPropCardExportController extends Controller
 
     protected function getPredictionExports(string $sport, ?string $dateFilter, ?int $gameFilter): array
     {
+        if (config('prediction_lifecycle.canonical_reads.'.strtolower($sport), false)) {
+            return $this->canonicalPredictionExports($sport, $dateFilter, $gameFilter, 24);
+        }
+
         $modelClass = $this->getPredictionModel($sport);
         $rows = $modelClass::query()
             ->with(['game.homeTeam', 'game.awayTeam'])
@@ -209,6 +233,33 @@ class PlayerPropCardExportController extends Controller
                 'away_elo' => $prediction->away_elo ?? $prediction->away_team_elo ?? $prediction->away_combined_elo,
                 'pick_side' => $pickSide,
                 'pick_team' => $pickTeam,
+            ];
+        })->values()->all();
+    }
+
+    private function canonicalPredictionExports(string $sport, ?string $date, ?int $game, int $limit): array
+    {
+        $context = app(SportContextResolver::class)->resolve(strtolower($sport));
+        $rows = app(CanonicalSportPredictionQuery::class)->queryForSport($context->slug, array_filter([
+            'from_date' => $date, 'to_date' => $date, 'game_id' => $game,
+        ]))->limit($limit)->get();
+
+        return $rows->map(function ($prediction) use ($context): array {
+            $data = (new CanonicalSportPredictionResource($prediction, $context,
+                app(CanonicalPredictionPresentationService::class)->forPrediction($prediction)))->resolve();
+            $home = data_get($data, 'game.home_team.abbreviation') ?? 'Home';
+            $away = data_get($data, 'game.away_team.abbreviation') ?? 'Away';
+            $probability = $data['home_win_probability'];
+            $pickSide = $probability === null ? null : ($probability >= 0.5 ? 'Home' : 'Away');
+
+            return [
+                'id' => $data['id'], 'game_id' => $data['game_id'], 'home_team' => $home, 'away_team' => $away,
+                'game' => ['home_team' => $home, 'away_team' => $away,
+                    'date' => data_get($data, 'game.game_date'), 'time' => data_get($data, 'game.game_time')],
+                'predicted_spread' => $data['predicted_spread'], 'predicted_total' => $data['predicted_total'],
+                'win_probability' => $probability === null ? null : round($probability * 100, 1),
+                'confidence' => $data['confidence_score'], 'home_elo' => null, 'away_elo' => null,
+                'pick_side' => $pickSide, 'pick_team' => $pickSide === null ? null : ($pickSide === 'Home' ? $home : $away),
             ];
         })->values()->all();
     }

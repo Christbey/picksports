@@ -15,7 +15,7 @@ final class PublicGameSummaryPresenter
         $total = $prediction?->market('total', 'combined');
         $homeName = $game->homeTeam?->displayName ?? 'Unknown Team';
         $awayName = $game->awayTeam?->displayName ?? 'Unknown Team';
-        $homeWinProbability = $homeMoneyline?->probability ?? $prediction?->homeWinProbability ?? 0.5;
+        $homeWinProbability = $homeMoneyline?->probability ?? $prediction?->homeWinProbability;
 
         return [
             'id' => $prediction?->id,
@@ -23,13 +23,13 @@ final class PublicGameSummaryPresenter
             'matchup' => trim($awayName.' at '.$homeName),
             'game_date' => $game->gameDate,
             'status' => $game->status,
-            'pick' => $homeWinProbability >= 0.5 ? $homeName : $awayName,
+            'pick' => $homeWinProbability === null ? null : ($homeWinProbability >= 0.5 ? $homeName : $awayName),
             'home_team_abbreviation' => $game->homeTeam?->abbreviation,
             'away_team_abbreviation' => $game->awayTeam?->abbreviation,
             'predicted_spread' => $spread?->projectedLine ?? $prediction?->predictedSpread,
             'predicted_total' => $total?->projectedLine ?? $prediction?->predictedTotal,
             'confidence_score' => $prediction?->confidenceScore,
-            'home_win_probability' => round($homeWinProbability * 100, 1),
+            'home_win_probability' => $homeWinProbability === null ? null : round($homeWinProbability * 100, 1),
         ];
     }
 }

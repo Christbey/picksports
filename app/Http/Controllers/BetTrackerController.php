@@ -6,6 +6,7 @@ use App\Enums\PredictionSport;
 use App\Http\Resources\UserBetResource;
 use App\Models\UserBet;
 use App\Services\Betting\UserBetPredictionReferenceResolver;
+use App\Support\Betting\UserBetPredictionReference;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -20,22 +21,28 @@ class BetTrackerController extends Controller
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'prediction_id' => ['nullable', 'integer', 'min:1', 'required_with:prediction_sport'],
+            'prediction_id' => ['nullable', 'regex:/^(?:[1-9]\d*|[0-9A-HJKMNP-TV-Z]{26})$/i', 'required_with:prediction_sport'],
             'prediction_sport' => ['nullable', Rule::enum(PredictionSport::class), 'required_with:prediction_id'],
             'prediction_type' => ['prohibited'],
         ]);
         $userId = $request->user()->id;
-        $predictionId = isset($validated['prediction_id']) ? (int) $validated['prediction_id'] : null;
+        $predictionId = $validated['prediction_id'] ?? null;
         $predictionSport = isset($validated['prediction_sport'])
             ? PredictionSport::from($validated['prediction_sport'])
             : null;
 
+        $reference = $predictionId !== null && $predictionSport !== null
+            ? app(UserBetPredictionReferenceResolver::class)->resolve($predictionSport, $predictionId)
+            : null;
+
         $betQuery = UserBet::where('user_id', $userId)
-            ->when($predictionId !== null, fn (Builder $query) => $query->where('prediction_id', $predictionId))
+            ->when($reference !== null, fn (Builder $query) => $query
+                ->where('prediction_id', $reference->predictionId)
+                ->where('prediction_type', $reference->persistenceAttributes()['prediction_type']))
             ->when($predictionSport !== null, fn (Builder $query) => $this->wherePredictionSport($query, $predictionSport));
 
         $bets = $betQuery
-            ->with('sportEvent')
+            ->with(['sportEvent', 'prediction'])
             ->orderBy('placed_at', 'desc')
             ->paginate(20);
 
@@ -45,7 +52,7 @@ class BetTrackerController extends Controller
             'bets' => UserBetResource::collection($bets)->response()->getData(),
             'statistics' => $statistics,
             'tracking' => $predictionId !== null && $predictionSport !== null
-                ? $this->buildPredictionTrackingSummary($predictionId, $predictionSport, $bets)
+                ? $this->buildPredictionTrackingSummary($reference, $bets)
                 : null,
         ]);
     }
@@ -53,7 +60,7 @@ class BetTrackerController extends Controller
     public function store(Request $request, UserBetPredictionReferenceResolver $referenceResolver): UserBetResource
     {
         $validated = $request->validate([
-            'prediction_id' => ['nullable', 'integer', 'min:1', 'required_with:prediction_sport'],
+            'prediction_id' => ['nullable', 'regex:/^(?:[1-9]\d*|[0-9A-HJKMNP-TV-Z]{26})$/i', 'required_with:prediction_sport'],
             'prediction_sport' => ['nullable', Rule::enum(PredictionSport::class), 'required_with:prediction_id'],
             'prediction_type' => ['prohibited'],
             'bet_amount' => 'required|numeric|min:0',
@@ -71,7 +78,7 @@ class BetTrackerController extends Controller
         $predictionReference = isset($validated['prediction_id'], $validated['prediction_sport'])
             ? $referenceResolver->resolve(
                 PredictionSport::from($validated['prediction_sport']),
-                (int) $validated['prediction_id'],
+                $validated['prediction_id'],
             )
             : null;
 
@@ -92,7 +99,7 @@ class BetTrackerController extends Controller
             'placed_at' => $validated['placed_at'] ?? now(),
         ]);
 
-        return new UserBetResource($bet->load('sportEvent'));
+        return new UserBetResource($bet->load(['sportEvent', 'prediction']));
     }
 
     public function update(Request $request, UserBet $bet): UserBetResource
@@ -282,13 +289,13 @@ class BetTrackerController extends Controller
     }
 
     protected function buildPredictionTrackingSummary(
-        int $predictionId,
-        PredictionSport $predictionSport,
+        UserBetPredictionReference $reference,
         LengthAwarePaginator $userBetPaginator,
     ): array {
         $predictionBets = UserBet::query()
-            ->where('prediction_id', $predictionId)
-            ->where(fn (Builder $query) => $this->wherePredictionSport($query, $predictionSport))
+            ->where('prediction_id', $reference->predictionId)
+            ->where('prediction_type', $reference->persistenceAttributes()['prediction_type'])
+            ->where(fn (Builder $query) => $this->wherePredictionSport($query, $reference->sport))
             ->orderByDesc('placed_at')
             ->orderByDesc('id')
             ->get([

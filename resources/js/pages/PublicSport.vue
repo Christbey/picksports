@@ -51,12 +51,12 @@ type TopPlayer = {
 };
 
 type FeaturedPrediction = {
-    id: number;
+    id: number | string;
     game_id?: number | null;
     matchup: string;
     game_date?: string | null;
     status?: string | null;
-    pick: string;
+    pick: string | null;
     home_team_abbreviation?: string | null;
     away_team_abbreviation?: string | null;
     predicted_spread?: number | string | null;

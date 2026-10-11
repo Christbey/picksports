@@ -10,6 +10,7 @@ final readonly class UserBetPredictionReference
         public PredictionSport $sport,
         public int $predictionId,
         public ?int $sportEventId,
+        public ?string $predictionType = null,
     ) {}
 
     /**
@@ -20,7 +21,7 @@ final readonly class UserBetPredictionReference
         return [
             'prediction_sport' => $this->sport->value,
             'prediction_id' => $this->predictionId,
-            'prediction_type' => $this->sport->predictionModelClass(),
+            'prediction_type' => $this->predictionType ?? $this->sport->predictionModelClass(),
             'sport_event_id' => $this->sportEventId,
         ];
     }

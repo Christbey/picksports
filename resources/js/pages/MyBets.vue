@@ -18,7 +18,7 @@ import { type BreadcrumbItem } from '@/types';
 
 interface Bet {
     id: number;
-    prediction_id: number | null;
+    prediction_id: number | string | null;
     prediction_sport: string | null;
     bet_amount: number;
     odds: string;
@@ -119,7 +119,7 @@ async function submitBet() {
             prediction_id:
                 form.value.prediction_id === ''
                     ? null
-                    : Number(form.value.prediction_id),
+                    : form.value.prediction_id,
             prediction_sport:
                 form.value.prediction_id === ''
                     ? null

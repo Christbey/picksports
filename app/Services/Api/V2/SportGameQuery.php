@@ -51,6 +51,18 @@ class SportGameQuery
      */
     public function featuredPredictionSummaries(SportContext $context, int $limit = 5): Collection
     {
+        $canonical = app(CanonicalSportPredictionQuery::class);
+        if ($canonical->supports($context)) {
+            $upcoming = $canonical->queryForSport($context->slug)
+                ->where('sport_events.starts_at', '>=', now())
+                ->reorder()->orderBy('sport_events.starts_at')->limit($limit)->get();
+            $predictions = $upcoming->isNotEmpty() ? $upcoming : $canonical->queryForSport($context->slug)->limit($limit)->get();
+
+            return $predictions->map(fn ($prediction): GameSummary => $this->summaries->fromModel(
+                $context, $prediction->sportEvent->getRelation($context->slug.'Game'), $prediction,
+            ));
+        }
+
         $predictionModel = $context->models['prediction'] ?? null;
         $gameModel = $context->models['game'] ?? null;
 
@@ -107,8 +119,13 @@ class SportGameQuery
         ?Authenticatable $user = null,
         string $relationProfile = 'summary',
     ): LengthAwarePaginator {
-        return $this->query($context, $filters, $user, $relationProfile)
+        $paginator = $this->query($context, $filters, $user, $relationProfile)
             ->paginate($this->perPage($filters, self::DEFAULT_PER_PAGE, self::MAX_PER_PAGE));
+        if ($relationProfile !== 'identity') {
+            $this->attachCanonicalPredictions($context, $paginator->getCollection());
+        }
+
+        return $paginator;
     }
 
     public function find(
@@ -119,17 +136,31 @@ class SportGameQuery
     ): Model {
         $query = $this->query($context, [], $user, $relationProfile);
 
-        if (is_int($game) || ctype_digit($game)) {
-            return $query->findOrFail($game);
+        $resolved = is_int($game) || ctype_digit($game)
+            ? $query->findOrFail($game)
+            : $query->whereHas('sportEvent', function (Builder $eventQuery) use ($context, $game): void {
+                $eventQuery->where('public_id', $game)->where('sport', $context->slug);
+            })->firstOrFail();
+        if ($relationProfile !== 'identity') {
+            $this->attachCanonicalPredictions($context, collect([$resolved]));
         }
 
-        return $query
-            ->whereHas('sportEvent', function (Builder $eventQuery) use ($context, $game): void {
-                $eventQuery
-                    ->where('public_id', $game)
-                    ->where('sport', $context->slug);
-            })
-            ->firstOrFail();
+        return $resolved;
+    }
+
+    /** @param Collection<int, Model> $games */
+    private function attachCanonicalPredictions(SportContext $context, Collection $games): void
+    {
+        $canonical = app(CanonicalSportPredictionQuery::class);
+        if (! $canonical->supports($context) || $games->isEmpty()) {
+            return;
+        }
+        $predictions = $canonical->queryForSport($context->slug)
+            ->whereIn('predictions.sport_event_id', $games->pluck('sport_event_id')->filter())
+            ->withOnly(['markets'])->get()->keyBy('sport_event_id');
+        foreach ($games as $game) {
+            $game->setRelation('prediction', $predictions->get($game->sport_event_id));
+        }
     }
 
     /**

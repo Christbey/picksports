@@ -1282,12 +1282,12 @@ function predictionSport(): string | null {
     return supportedSports.includes(sport) ? sport : null;
 }
 
-function predictionId(): number | null {
+function predictionId(): number | string | null {
     if (predictionType) {
         return predictionType.id;
     }
 
-    return typeof dashboardType?.id === 'number' ? dashboardType.id : null;
+    return dashboardType?.id ?? null;
 }
 
 function predictedSpreadValue(): number | null {

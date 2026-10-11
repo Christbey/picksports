@@ -2,6 +2,7 @@
 
 namespace App\Application\Sports\ReadModels;
 
+use App\Models\CanonicalPrediction;
 use App\Models\MLB\Game as MlbGame;
 use App\Services\Api\V2\SportContext;
 use App\Support\Sports\GameDateTimePresenter;
@@ -131,6 +132,20 @@ final class GameSummaryMapper
 
     private function prediction(Model $prediction): PredictionSummary
     {
+        if ($prediction instanceof CanonicalPrediction) {
+            $markets = $prediction->markets->map(fn ($market): MarketSummary => new MarketSummary(
+                type: $market->market_type, selection: $market->selection,
+                projectedLine: $this->float($market->projected_line), probability: $this->float($market->probability),
+                confidenceScore: $this->float($market->confidence_score),
+            ));
+            $home = $markets->first(fn ($market) => $market->type === 'moneyline' && $market->selection === 'home');
+            $spread = $markets->first(fn ($market) => $market->type === 'spread' && $market->selection === 'home');
+            $total = $markets->first(fn ($market) => $market->type === 'total' && $market->selection === 'combined');
+
+            return new PredictionSummary($prediction->public_id, $spread?->projectedLine, $total?->projectedLine,
+                $home?->confidenceScore, $home?->probability, $markets->all());
+        }
+
         $probability = $this->float($prediction->getAttribute('win_probability')) ?? 0.5;
         $probability = $probability > 1 ? $probability / 100 : $probability;
         $predictedSpread = $this->float($prediction->getAttribute('predicted_spread'));

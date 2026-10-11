@@ -7,6 +7,7 @@ use Database\Factories\UserBetFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class UserBet extends Model
 {
@@ -56,6 +57,11 @@ class UserBet extends Model
     public function sportEvent(): BelongsTo
     {
         return $this->belongsTo(SportEvent::class);
+    }
+
+    public function prediction(): MorphTo
+    {
+        return $this->morphTo();
     }
 
     public function normalizedPredictionSport(): ?PredictionSport

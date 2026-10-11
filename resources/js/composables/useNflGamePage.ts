@@ -168,7 +168,7 @@ export const normalizePrediction = (
         sport: typeof source.sport === 'string' ? source.sport : undefined,
         confidence_context:
             source.confidence_context as NflPagePrediction['confidence_context'],
-        id: toNumber(source.id),
+        id: typeof source.id === 'string' ? source.id : toNumber(source.id),
         game_id: toNumber(source.game_id),
         home_elo: toOptionalNumber(source.home_elo) ?? '',
         away_elo: toOptionalNumber(source.away_elo) ?? '',

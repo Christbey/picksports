@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -89,6 +90,24 @@ class PerformanceStatistics
         $memoKey = implode('|', [$sport, $fromDate, $toDate, $season]);
         if (isset($this->sportStatsMemo[$memoKey])) {
             return $this->sportStatsMemo[$memoKey];
+        }
+
+        if (config("prediction_lifecycle.canonical_reads.{$sport}", false)) {
+            $evaluations = app(CanonicalSportPredictionQuery::class)->queryForSport($sport, array_filter([
+                'from_date' => $fromDate, 'to_date' => $toDate, 'season' => $season,
+            ]))->withOnly(['latestEvaluation'])->whereHas('latestEvaluation')->get()->pluck('latestEvaluation');
+            $winnerSamples = $evaluations->filter(fn ($evaluation) => data_get($evaluation->errors, 'winner_correct') !== null);
+            $spreadErrors = $evaluations->map(fn ($evaluation) => data_get($evaluation->errors, 'spread_absolute_error'))->filter(fn ($error) => is_numeric($error));
+            $totalErrors = $evaluations->map(fn ($evaluation) => data_get($evaluation->errors, 'total_absolute_error'))->filter(fn ($error) => is_numeric($error));
+
+            return $this->sportStatsMemo[$memoKey] = [
+                'total_graded' => $winnerSamples->count(),
+                'winner_correct' => $winnerSamples->filter(fn ($evaluation) => data_get($evaluation->errors, 'winner_correct') === true)->count(),
+                'spread_error_samples' => $spreadErrors->count(),
+                'spread_error_sum' => (float) $spreadErrors->sum(),
+                'total_error_samples' => $totalErrors->count(),
+                'total_error_sum' => (float) $totalErrors->sum(),
+            ];
         }
 
         $table = "{$sport}_predictions";
@@ -232,6 +251,14 @@ class PerformanceStatistics
     {
         if (array_key_exists($sport, $this->latestGradedSeasonMemo)) {
             return $this->latestGradedSeasonMemo[$sport];
+        }
+
+        if (config("prediction_lifecycle.canonical_reads.{$sport}", false)) {
+            $season = app(CanonicalSportPredictionQuery::class)->queryForSport($sport)
+                ->whereHas('latestEvaluation', fn ($query) => $query->whereNotNull('errors->winner_correct'))
+                ->max("{$sport}_games.season");
+
+            return $this->latestGradedSeasonMemo[$sport] = is_numeric($season) ? (int) $season : null;
         }
 
         $table = "{$sport}_predictions";

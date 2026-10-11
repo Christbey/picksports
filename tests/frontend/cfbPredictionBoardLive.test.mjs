@@ -208,8 +208,9 @@ for (const filterMode of ['date', 'seasonWeek']) {
                 config: { sport: 'cfb', filterMode },
             });
             app.provide(ssrContextKey, { modules: new Set() });
-            app.mount({});
+            const instance = app.mount({});
             await flush();
+            assert.equal(instance.$.setupState.predictions[0].id, 'canonical-public-id');
             const initialCalls = filterMode === 'seasonWeek' ? 2 : 1;
             assert.equal(calls.length, initialCalls);
             if (filterMode === 'seasonWeek') {

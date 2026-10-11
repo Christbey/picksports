@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Models\CanonicalPrediction;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -16,15 +17,18 @@ class UserBetResource extends JsonResource
     {
         $predictionSport = $this->resource->normalizedPredictionSport();
 
+        $predictionId = $this->prediction_type === CanonicalPrediction::class
+            ? $this->prediction?->public_id : $this->prediction_id;
+
         return [
             'id' => $this->id,
             'user_id' => $this->user_id,
-            'prediction_id' => $this->prediction_id,
+            'prediction_id' => $predictionId,
             'prediction_sport' => $predictionSport?->value,
             'prediction_reference' => $predictionSport !== null && $this->prediction_id !== null
                 ? [
                     'sport' => $predictionSport->value,
-                    'id' => (int) $this->prediction_id,
+                    'id' => $predictionId,
                     'event_id' => $this->whenLoaded('sportEvent', fn (): ?string => $this->sportEvent?->public_id),
                 ]
                 : null,

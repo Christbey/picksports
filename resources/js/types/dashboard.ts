@@ -9,7 +9,7 @@ import type {
 } from '@/lib/predictionRecommendation';
 
 export interface DashboardPrediction {
-    id: number;
+    id: number | string;
     sport: string;
     game_id: number;
     season_type?: string | number | null;

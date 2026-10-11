@@ -2,6 +2,7 @@
 
 namespace App\Services\Api\V2;
 
+use App\Http\Resources\CanonicalDashboardPredictionResource;
 use App\Http\Resources\DashboardPredictionResource;
 use App\Models\CBB\Prediction as CBBPrediction;
 use App\Models\CFB\Prediction as CFBPrediction;
@@ -35,6 +36,7 @@ class LiveScoreboardPayloadService
         $cacheKey = $this->sportsViewCache->contextHash([
             'date' => now()->toDateString(),
             'viewable_sports' => array_keys($sportConfigs),
+            'canonical_reads' => config('prediction_lifecycle.canonical_reads'),
         ]);
 
         return $this->sportsViewCache->remember(
@@ -125,6 +127,15 @@ class LiveScoreboardPayloadService
             $config['live_statuses'],
             $config['final_statuses'],
         )));
+
+        $context = app(SportContextResolver::class)->resolve(strtolower($sport));
+        $canonical = app(CanonicalSportPredictionQuery::class);
+        if ($canonical->supports($context)) {
+            return $canonical->queryForSport($context->slug, ['from_date' => now()->subDay()->toDateString()])
+                ->whereBetween('sport_events.starts_at', [now()->startOfDay()->utc(), now()->endOfDay()->utc()])
+                ->whereIn($context->slug.'_games.status', $statuses)
+                ->get()->map(fn ($prediction): array => (new CanonicalDashboardPredictionResource($prediction, $context, $config))->resolve());
+        }
 
         $predictions = $config['prediction_model']::with(['game.homeTeam', 'game.awayTeam'])
             ->whereHas('game', function (Builder $query) use ($todayGameScope, $statuses): void {

@@ -308,7 +308,7 @@ export interface PredictionListGame {
 }
 
 export interface PredictionListItem {
-    id: number;
+    id: number | string;
     game_id?: number;
     predicted_spread?: number;
     predicted_total?: number;
@@ -680,7 +680,7 @@ export interface NflPagePrediction {
     scoring_model?: CfbScoringModel | null;
     sport?: string;
     confidence_context?: PredictionSummary['confidence_context'];
-    id: number;
+    id: number | string;
     game_id: number;
     home_elo: number | string;
     away_elo: number | string;

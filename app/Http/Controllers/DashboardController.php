@@ -7,7 +7,9 @@ use App\Actions\NBA\CalculateBettingValue as NBACalculateBettingValue;
 use App\Actions\NFL\CalculateBettingValue as NFLCalculateBettingValue;
 use App\Actions\Sports\CalculateBettingValue as GenericCalculateBettingValue;
 use App\Actions\WNBA\CalculateBettingValue as WNBACalculateBettingValue;
+use App\Http\Resources\CanonicalDashboardPredictionResource;
 use App\Http\Resources\DashboardPredictionResource;
+use App\Models\CanonicalPrediction;
 use App\Models\CBB\Game as CBBGame;
 use App\Models\CBB\Prediction as CBBPrediction;
 use App\Models\CFB\Game as CFBGame;
@@ -24,6 +26,8 @@ use App\Models\WCBB\Game as WCBBGame;
 use App\Models\WCBB\Prediction as WCBBPrediction;
 use App\Models\WNBA\Game as WNBAGame;
 use App\Models\WNBA\Prediction as WNBAPrediction;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
+use App\Services\Api\V2\SportContextResolver;
 use App\Services\MLB\MlbPredictionRecommendationService;
 use App\Support\SportPredictionAccess;
 use App\Support\SportsViewCache;
@@ -57,6 +61,7 @@ class DashboardController extends Controller
             'date' => now()->toDateString(),
             'predictions_per_day' => $predictionsPerDay,
             'viewable_sports' => array_keys($sportConfigs),
+            'canonical_reads' => config('prediction_lifecycle.canonical_reads'),
         ]);
 
         $payload = $this->sportsViewCache->remember(
@@ -227,6 +232,15 @@ class DashboardController extends Controller
 
     private function getPredictionsForSport(string $sport, array $config, \Closure $todayGameScope): Collection
     {
+        $context = app(SportContextResolver::class)->resolve(strtolower($sport));
+        $canonical = app(CanonicalSportPredictionQuery::class);
+        if ($canonical->supports($context)) {
+            return $canonical->queryForSport($context->slug)
+                ->whereBetween('sport_events.starts_at', [now()->startOfDay()->utc(), now()->endOfDay()->utc()])
+                ->get()
+                ->map(fn (CanonicalPrediction $prediction): array => (new CanonicalDashboardPredictionResource($prediction, $context, $config))->resolve());
+        }
+
         $predictions = $config['prediction_model']::with(['game.homeTeam', 'game.awayTeam'])
             ->whereHas('game', $todayGameScope)
             ->get();

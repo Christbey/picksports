@@ -1480,7 +1480,7 @@ class V2OpenApiGenerateCommand extends Command
                     'prediction_sport' => ['prediction_id'],
                 ],
                 'properties' => array_merge($this->userBetWriteProperties(), [
-                    'prediction_id' => ['type' => ['integer', 'null'], 'minimum' => 1],
+                    'prediction_id' => ['oneOf' => [['type' => 'integer', 'minimum' => 1], ['type' => 'string', 'pattern' => '^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$'], ['type' => 'null']]],
                     'prediction_sport' => [
                         'type' => ['string', 'null'],
                         'enum' => ['nba', 'wnba', 'mlb', 'nfl', 'cbb', 'wcbb', 'cfb', null],
@@ -1513,7 +1513,7 @@ class V2OpenApiGenerateCommand extends Command
                 'properties' => [
                     'id' => ['type' => 'integer'],
                     'user_id' => ['type' => 'integer'],
-                    'prediction_id' => ['type' => ['integer', 'null']],
+                    'prediction_id' => ['type' => ['integer', 'string', 'null']],
                     'prediction_sport' => [
                         'type' => ['string', 'null'],
                         'enum' => ['nba', 'wnba', 'mlb', 'nfl', 'cbb', 'wcbb', 'cfb', null],
@@ -1545,7 +1545,7 @@ class V2OpenApiGenerateCommand extends Command
                 'required' => ['sport', 'id', 'event_id'],
                 'properties' => [
                     'sport' => ['type' => 'string', 'enum' => ['nba', 'wnba', 'mlb', 'nfl', 'cbb', 'wcbb', 'cfb']],
-                    'id' => ['type' => 'integer'],
+                    'id' => ['type' => ['integer', 'string']],
                     'event_id' => ['type' => ['string', 'null']],
                 ],
                 'additionalProperties' => false,

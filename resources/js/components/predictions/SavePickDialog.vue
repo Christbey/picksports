@@ -45,7 +45,7 @@ type ApiV2MutationError = {
 
 const props = defineProps<{
     open: boolean;
-    predictionId: number;
+    predictionId: number | string;
     predictionSport: string;
     option: SavePickOption | null;
     existingBet?: ExistingBet | null;

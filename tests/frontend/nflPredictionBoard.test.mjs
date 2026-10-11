@@ -374,3 +374,12 @@ test('admin drawer retries research and refreshes the board after completion', a
         globalThis.fetch = oldFetch;
     }
 });
+
+ test('game page preserves canonical public prediction IDs', async () => {
+    const { normalizePrediction } = await server.ssrLoadModule(
+        '/resources/js/composables/useNflGamePage.ts',
+    );
+    const id = '01m4m3wsha2ps0z054s6935shm';
+    assert.equal(normalizePrediction({ id }).id, id);
+    assert.equal(normalizePrediction({ id: 123 }).id, 123);
+});

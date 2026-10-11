@@ -12,7 +12,7 @@ final readonly class PredictionSummary
         public ?float $predictedSpread,
         public ?float $predictedTotal,
         public ?float $confidenceScore,
-        public float $homeWinProbability,
+        public ?float $homeWinProbability,
         public array $markets,
     ) {}
 

@@ -3,14 +3,24 @@
 namespace App\Services\Betting;
 
 use App\Enums\PredictionSport;
+use App\Models\CanonicalPrediction;
 use App\Models\UserBet;
 use App\Support\Betting\UserBetPredictionReference;
 use Illuminate\Database\Eloquent\Model;
 
 class UserBetPredictionReferenceResolver
 {
-    public function resolve(PredictionSport $sport, int $predictionId): UserBetPredictionReference
+    public function resolve(PredictionSport $sport, int|string $predictionId): UserBetPredictionReference
     {
+        if (! is_numeric($predictionId)) {
+            $prediction = CanonicalPrediction::query()->where('sport', $sport->value)
+                ->where('public_id', $predictionId)->firstOrFail();
+
+            return new UserBetPredictionReference($sport, (int) $prediction->getKey(),
+                (int) $prediction->sport_event_id, CanonicalPrediction::class);
+        }
+
+        $predictionId = (int) $predictionId;
         $modelClass = $sport->predictionModelClass();
 
         /** @var Model|null $prediction */
@@ -40,6 +50,11 @@ class UserBetPredictionReferenceResolver
 
         if ($sport === null) {
             return null;
+        }
+
+        if ($bet->prediction_type === CanonicalPrediction::class) {
+            return new UserBetPredictionReference($sport, (int) $bet->prediction_id,
+                $bet->sport_event_id, CanonicalPrediction::class);
         }
 
         $resolved = $this->resolve($sport, (int) $bet->prediction_id);

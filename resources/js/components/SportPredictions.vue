@@ -272,7 +272,7 @@ const mapV2Prediction = (prediction: ApiV2Prediction): PredictionListItem => {
     const homeWinProbability = numberValue(projection.home_win_probability);
 
     return {
-        id: Number(prediction.id),
+        id: prediction.id,
         ...predictionBoardLiveFields(prediction),
         game_id: numberValue(prediction.game_id),
         predicted_spread: numberValue(projection.predicted_spread),

@@ -215,3 +215,28 @@ test('period formatting preserves other sports and handles football overtime', a
         assert.ok(html.includes(expected));
     }
 });
+
+test('win outlook bar follows the live leader team color with a safe fallback', async () => {
+    for (const [probability, home_color, away_color, expected] of [
+        [0.71, '004c54', '#aa0000', '#004c54'],
+        [0.29, '004c54', '#aa0000', '#aa0000'],
+        [0.71, 'abc', null, '#abc'],
+        [0.71, null, null, null],
+        [0.71, 'invalid', null, null],
+        [0.5, '004c54', '#aa0000', null],
+    ]) {
+        const html = await render(Card, {
+            prediction: {
+                ...prediction,
+                is_live: true,
+                live_win_probability: probability,
+                home_color,
+                away_color,
+            },
+            href: '/games/1',
+        });
+        if (expected) assert.ok(html.includes(`background-color:${expected}`));
+        else assert.doesNotMatch(html, /background-color:/);
+        assert.match(html, /win-outlook-meter/);
+    }
+});

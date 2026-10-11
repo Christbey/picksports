@@ -24,6 +24,8 @@ export interface DashboardPrediction {
     winner_correct?: boolean | null;
     home_logo: string;
     away_logo: string;
+    home_color?: string | null;
+    away_color?: string | null;
     betting_value?: BettingRecommendation[];
     betting_value_debug?: string | null;
     recommendation?: PredictionRecommendation | null;

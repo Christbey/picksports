@@ -99,6 +99,8 @@ test('the dashboard exposes live mlb game state and model movement', function ()
             ->component('Dashboard')
             ->where('sports.0.name', 'MLB')
             ->where('sports.0.predictions.0.is_live', true)
+            ->where('sports.0.predictions.0.home_color', '004c54')
+            ->where('sports.0.predictions.0.away_color', 'aa0000')
             ->where('sports.0.predictions.0.inning', 6)
             ->where('sports.0.predictions.0.inning_state', 'Bottom 6th')
             ->where('sports.0.predictions.0.balls', 2)
@@ -120,11 +122,13 @@ function dashboardMlbPrediction(
         'location' => 'St. Louis',
         'name' => 'Cardinals',
         'abbreviation' => 'A'.substr($gameTime, 0, 2),
+        'color' => 'aa0000',
     ]);
     $homeTeam = MlbTeam::factory()->create([
         'location' => 'Kansas City',
         'name' => 'Royals',
         'abbreviation' => 'H'.substr($gameTime, 0, 2),
+        'color' => '004c54',
     ]);
     $game = MlbGame::factory()->regularSeason()->create([
         'season' => 2026,

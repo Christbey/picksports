@@ -38,6 +38,8 @@ class CanonicalDashboardPredictionResource extends JsonResource
             'away_team' => $game->awayTeam?->abbreviation,
             'home_logo' => $game->homeTeam?->logo_url,
             'away_logo' => $game->awayTeam?->logo_url,
+            'home_color' => $game->homeTeam?->color,
+            'away_color' => $game->awayTeam?->color,
             'is_live' => $isLive,
             'is_final' => $isFinal,
             'home_score' => ($isLive || $isFinal) ? $game->home_score : null,

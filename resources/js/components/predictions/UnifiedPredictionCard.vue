@@ -505,6 +505,21 @@ const liveLeaderProbability = computed(() => {
         : Math.max(probability, 1 - probability) * 100;
 });
 
+const liveWinnerColor = computed(() => {
+    const probability = liveHomeProbability();
+    if (probability === null || probability === 0.5) return null;
+    const home = probability > 0.5;
+    const color = dashboardType
+        ? home
+            ? dashboardType.home_color
+            : dashboardType.away_color
+        : home
+          ? predictionType?.game.home_team.color
+          : predictionType?.game.away_team.color;
+    const hex = color?.trim().replace(/^#/, '');
+    return hex && /^(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(hex) ? `#${hex}` : null;
+});
+
 const liveTotalDirection = computed(() => {
     const live = normalizedLiveState.value.livePredictedTotal;
     const pregame = props.prediction.predicted_total;
@@ -1742,6 +1757,9 @@ function saveOptions(): SavePickOption[] {
                                             class="h-full rounded-full bg-sky-500 motion-safe:transition-[width]"
                                             :style="{
                                                 width: `${liveLeaderProbability}%`,
+                                                backgroundColor:
+                                                    liveWinnerColor ??
+                                                    undefined,
                                             }"
                                         />
                                     </div>

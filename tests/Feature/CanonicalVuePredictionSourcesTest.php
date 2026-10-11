@@ -54,6 +54,9 @@ afterEach(fn () => Carbon::setTestNow());
 it('shows canonical forecasts on the dashboard without legacy predictions', function (string $sport) {
     config()->set("prediction_lifecycle.canonical_reads.{$sport}", true);
     $prediction = vueCanonicalFixture($sport);
+    $game = $prediction->sportEvent->{$sport.'Game'};
+    $game->homeTeam->update(['color' => '004c54']);
+    $game->awayTeam->update(['color' => 'aa0000']);
     CanonicalPrediction::factory()->create([
         'sport' => $sport, 'sport_event_id' => $prediction->sport_event_id,
         'calculation_run_id' => null, 'phase' => 'pregame',
@@ -65,6 +68,8 @@ it('shows canonical forecasts on the dashboard without legacy predictions', func
         ->has('sports.0.predictions', 1)->where('sports.0.predictions.0.id', $prediction->public_id)
         ->where('sports.0.predictions.0.predicted_spread', -4.5)
         ->where('sports.0.predictions.0.win_probability', 0.65)
+        ->where('sports.0.predictions.0.home_color', '004c54')
+        ->where('sports.0.predictions.0.away_color', 'aa0000')
         ->where('stats.total_predictions_today', 1));
 
     $context = app(SportContextResolver::class)->resolve($sport);

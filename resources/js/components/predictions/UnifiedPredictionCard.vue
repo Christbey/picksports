@@ -24,7 +24,6 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-    hasPredictionLiveData,
     isPredictionListItem,
     normalizePredictionLiveState,
 } from '@/composables/usePredictionLiveData';
@@ -38,7 +37,6 @@ import {
     isBetRecommendation,
     isLeanRecommendation,
     isLiveMonitor,
-    pregameRecommendation,
 } from '@/lib/predictionRecommendation';
 import type { DashboardPrediction, PredictionListItem } from '@/types';
 
@@ -235,10 +233,6 @@ function handleHomeLogoError(): void {
     homeLogoErrored.value = true;
 }
 
-function isFavorite(): boolean {
-    return preGameWinProbability() > 0.65;
-}
-
 function weekLabel(): string | null {
     const normalizedSport = (props.sport ?? '').toLowerCase();
     if (!['nfl', 'cfb'].includes(normalizedSport)) {
@@ -353,7 +347,7 @@ function statusBadgeLabel(): string {
 
 function statusBadgeClass(): string {
     if (isLive()) {
-        return 'rounded-full border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-700 dark:text-red-300';
+        return 'rounded-full border border-sky-500/25 bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:text-sky-300';
     }
 
     return dashboardChipClass();
@@ -529,10 +523,6 @@ function preGameTeamLabel(): string {
     return preGameWinProbability() >= 0.5 ? homeTeamLabel() : awayTeamLabel();
 }
 
-function hasLiveData(): boolean {
-    return hasPredictionLiveData(props.prediction);
-}
-
 function isMlbPrediction(): boolean {
     return (props.sport ?? '').toLowerCase() === 'mlb';
 }
@@ -543,32 +533,6 @@ function isNflPrediction(): boolean {
 
 function isCfbPrediction(): boolean {
     return (props.sport ?? '').toLowerCase() === 'cfb';
-}
-
-function marketAwareProjection() {
-    return isMlbPrediction()
-        ? (props.prediction.market_aware_projection ?? null)
-        : null;
-}
-
-function marketAwareSignalLabel(): string {
-    const projection = marketAwareProjection();
-
-    if (!projection) return 'Tracking Only';
-
-    if (projection.agreement_status === 'agrees') {
-        return 'Market-Aligned';
-    }
-
-    if (projection.agreement_status === 'disagrees') {
-        return 'Market Disagree';
-    }
-
-    if (projection.agreement_status === 'market_missing') {
-        return 'Market Missing';
-    }
-
-    return 'Tracking Only';
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -702,38 +666,6 @@ function cfbSignalBadgeClass(tone: CfbSignalBadge['tone']): string {
     return 'border-muted bg-muted/40 text-muted-foreground';
 }
 
-function displayedWinProbability(): number {
-    if (isMlbPrediction()) {
-        return preGameWinProbability();
-    }
-
-    return hasLiveData()
-        ? (liveWinProbability() ?? preGameWinProbability())
-        : preGameWinProbability();
-}
-
-function winProbPercent(): number {
-    const probability = displayedWinProbability();
-
-    return Math.max(0, Math.min(100, probability * 100));
-}
-
-function edgePercent(): number {
-    return winProbPercent() - 50;
-}
-
-function edgeSignalLabel(): string {
-    if (isMlbPrediction()) {
-        return marketAwareSignalLabel();
-    }
-
-    const absEdge = Math.abs(edgePercent());
-    if (absEdge < 2) return 'Toss-up';
-    if (absEdge < 7) return 'Lean model edge';
-    if (absEdge < 14) return 'Playable model edge';
-    return 'Strong model edge';
-}
-
 function predictionAnalysis() {
     return props.prediction.prediction_analysis ?? null;
 }
@@ -789,11 +721,6 @@ function aiBetClassificationLabel(): string | null {
     return labels[classification] ?? formatAnalysisToken(classification);
 }
 
-function trustScoreLabel(): string | null {
-    const trust = predictionAnalysis()?.trust_score;
-    return typeof trust === 'number' ? `${Math.round(trust)} Trust` : null;
-}
-
 function betClassificationLabel(): string | null {
     const classification = predictionAnalysis()?.bet_classification;
     if (!classification) return null;
@@ -823,70 +750,12 @@ function formatAnalysisToken(token: string): string {
         .join(' ');
 }
 
-function bettingValueDebug(): string | null {
-    return dashboardType?.betting_value_debug ?? null;
-}
-
-function bettingValueDebugLabel(): string | null {
-    const reason = bettingValueDebug();
-    if (!reason) return null;
-
-    if (reason.toLowerCase() === 'no odds') {
-        return 'Odds not available';
-    }
-
-    if (reason.toLowerCase() === 'below threshold') {
-        return 'Below signal threshold';
-    }
-
-    return reason;
-}
-
 function valueSignal() {
     return predictionType?.value_signal ?? null;
 }
 
-function hasValueSignal(): boolean {
-    return valueSignal()?.best !== null && valueSignal()?.best !== undefined;
-}
-
 function valueSignalBest() {
     return valueSignal()?.best ?? null;
-}
-
-function valueSignalTitle(): string {
-    const best = valueSignalBest();
-    if (!best?.label) {
-        return 'No qualifying market edge';
-    }
-
-    return best.label.replace(/^Bet\s+/i, '');
-}
-
-function valueSignalMeta(): string | null {
-    const best = valueSignalBest();
-    if (!best) return null;
-
-    const parts = [];
-    if (best.type) {
-        parts.push(formatAnalysisToken(String(best.type)));
-    }
-    if (typeof best.edge === 'number') {
-        const suffix = best.type === 'moneyline' ? '%' : ' pts';
-        parts.push(
-            `Edge ${best.edge > 0 ? '+' : ''}${best.edge.toFixed(1)}${suffix}`,
-        );
-    }
-    if (typeof best.price === 'number') {
-        parts.push(
-            `${best.price > 0 ? '+' : ''}${best.price}${best.bookmaker ? ` · ${best.bookmaker}` : ''}`,
-        );
-    }
-    if (best.grade) {
-        parts.push(`Grade ${best.grade}`);
-    }
-
-    return parts.length ? parts.join(' · ') : null;
 }
 
 function canonicalRecommendation() {
@@ -895,10 +764,6 @@ function canonicalRecommendation() {
 
 function canonicalCandidateRecommendation() {
     return candidateRecommendation(props.prediction);
-}
-
-function canonicalPregameRecommendation() {
-    return pregameRecommendation(props.prediction);
 }
 
 function canonicalRecommendationLabel(): string | null {
@@ -924,13 +789,6 @@ function canonicalRecommendationLabel(): string | null {
     }
 
     return null;
-}
-
-function canonicalPregameEdgeLabel(): string | null {
-    const edge = canonicalPregameRecommendation()?.raw_edge;
-    return typeof edge === 'number'
-        ? `${(edge * 100).toFixed(1)}% raw edge`
-        : null;
 }
 
 function winnerCorrect(): boolean | null {
@@ -1017,7 +875,7 @@ function dashboardCardClass(): string {
     }
 
     if (tone === 'live') {
-        return 'border-red-500/35 bg-red-950/[0.025] ring-1 ring-red-500/10 dark:bg-red-500/[0.045]';
+        return 'border-sky-500/25 bg-card hover:border-sky-500/45';
     }
 
     return 'border-border/70 bg-card/80 hover:border-sky-500/30';
@@ -1029,7 +887,7 @@ function dashboardRailClass(): string {
     if (tone === 'positive') return 'bg-emerald-500';
     if (tone === 'negative') return 'bg-red-500';
     if (tone === 'candidate') return 'bg-sky-500';
-    if (tone === 'live') return 'bg-red-500';
+    if (tone === 'live') return 'bg-sky-500';
 
     return 'bg-slate-500/40';
 }
@@ -1039,20 +897,22 @@ function dashboardChipClass(): string {
 }
 
 function dashboardPrimaryPickLabel(): string {
-    const prefix = isLive()
-        ? 'Pregame'
-        : isNflPrediction()
-          ? 'Moneyline'
-          : 'Pick';
-    const pregamePercent = Math.max(
-        preGameWinProbability() * 100,
-        100 - preGameWinProbability() * 100,
-    );
-
-    return `${prefix}: ${preGameTeamLabel()} ${pregamePercent.toFixed(1)}%`;
+    return `Moneyline pick: ${preGameTeamLabel()}`;
 }
 
-function dashboardSignalLabel(): string {
+function dashboardSignalLabel(): string | null {
+    const classification =
+        predictionAnalysis()?.bet_classification ??
+        aiAnalysis()?.bet_classification;
+    if (
+        classification
+            ?.replaceAll('_', ' ')
+            .toLowerCase()
+            .includes('research hold')
+    ) {
+        return null;
+    }
+
     if (isMlbPrediction()) {
         const recommendation = canonicalRecommendation();
         const candidate = canonicalCandidateRecommendation();
@@ -1075,16 +935,26 @@ function dashboardSignalLabel(): string {
         }
 
         if (isPregame && candidate?.recommendation_type === 'no_play') {
-            return 'Pass';
+            return null;
         }
     }
 
-    return (
+    const label =
         canonicalRecommendationLabel() ??
         betClassificationLabel() ??
-        aiBetClassificationLabel() ??
-        (isFavorite() ? 'Favorite' : 'No signal')
-    );
+        aiBetClassificationLabel();
+
+    return label &&
+        [
+            'Model Bet',
+            'Model Lean',
+            'Bet',
+            'Bettable Edge',
+            'Lean',
+            'Lean Edge',
+        ].includes(label)
+        ? label
+        : null;
 }
 
 function dashboardSignalClass(): string {
@@ -1103,71 +973,14 @@ function dashboardSignalClass(): string {
     }
 
     if (tone === 'live') {
-        return 'border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300';
+        return 'border-border/60 bg-muted/30 text-muted-foreground';
     }
 
     return 'border-muted bg-muted/40 text-muted-foreground';
 }
 
-function dashboardActionTextClass(): string {
-    const tone = dashboardCardTone();
-
-    if (tone === 'positive') return 'text-emerald-600 dark:text-emerald-400';
-    if (tone === 'negative') return 'text-red-600 dark:text-red-400';
-    if (tone === 'candidate') return 'text-sky-600 dark:text-sky-400';
-    if (tone === 'live') return 'text-red-600 dark:text-red-400';
-
-    return 'text-muted-foreground';
-}
-
 function formatSignedNumber(value: number, decimals = 1): string {
     return `${value > 0 ? '+' : ''}${value.toFixed(decimals)}`;
-}
-
-function dashboardFooterContextLabel(): string {
-    if (isFinal() && totalResultLabel()) {
-        return `O/U ${totalResultLabel()}`;
-    }
-
-    if (hasValueSignal()) {
-        return valueSignalMeta()
-            ? `${valueSignalTitle()} · ${valueSignalMeta()}`
-            : valueSignalTitle();
-    }
-
-    if (isMlbPrediction()) {
-        const recommendation = canonicalRecommendation();
-        const candidate = canonicalCandidateRecommendation();
-        const reason = candidate?.no_bet_reason;
-
-        if (
-            recommendation?.prediction_phase === 'pregame' &&
-            candidate?.recommendation_type === 'no_play' &&
-            reason
-        ) {
-            return `Pass · ${formatAnalysisToken(reason)}`;
-        }
-
-        if (
-            ['bet', 'lean'].includes(candidate?.recommendation_type ?? '') &&
-            recommendation?.prediction_phase === 'pregame' &&
-            isPromotionBlocked(props.prediction)
-        ) {
-            const edge = candidate?.raw_edge;
-            const edgeLabel =
-                typeof edge === 'number'
-                    ? ` · ${(edge * 100).toFixed(1)}% raw edge`
-                    : '';
-
-            return `Tracking only${edgeLabel}`;
-        }
-    }
-
-    if (bettingValueDebugLabel()) {
-        return bettingValueDebugLabel()!;
-    }
-
-    return edgeSignalLabel();
 }
 
 function totalPickPillLabel(): string | null {
@@ -1294,12 +1107,6 @@ function predictedSpreadValue(): number | null {
     const spread = props.prediction.predicted_spread;
 
     return typeof spread === 'number' ? Number(spread.toFixed(1)) : null;
-}
-
-function homeSpreadLineValue(): number | null {
-    const spread = predictedSpreadValue();
-
-    return spread !== null ? Number((-spread).toFixed(1)) : null;
 }
 
 function predictedTotalValue(): number | null {
@@ -1485,7 +1292,7 @@ function saveOptions(): SavePickOption[] {
                 >
                     <span
                         v-if="isLive()"
-                        class="size-1.5 rounded-full bg-red-500"
+                        class="size-1.5 rounded-full bg-sky-500"
                     />
                     <span>{{
                         isLive()
@@ -1589,7 +1396,7 @@ function saveOptions(): SavePickOption[] {
             />
             <div class="flex min-w-0 flex-1 flex-col gap-3 pl-1">
                 <p
-                    v-if="valueSignal()?.spread_assessment"
+                    v-if="compact && valueSignal()?.spread_assessment"
                     class="text-xs text-muted-foreground"
                     :title="
                         valueSignal()?.spread_assessment?.risk_flags.join(', ')
@@ -1601,7 +1408,7 @@ function saveOptions(): SavePickOption[] {
                     }}
                 </p>
                 <details
-                    v-if="valueSignal()?.decision_notes?.length"
+                    v-if="compact && valueSignal()?.decision_notes?.length"
                     class="text-xs text-muted-foreground"
                 >
                     <summary class="cursor-pointer">Why this status</summary>
@@ -1615,7 +1422,7 @@ function saveOptions(): SavePickOption[] {
                     </ul>
                 </details>
                 <details
-                    v-if="valueSignal()?.football_signals"
+                    v-if="compact && valueSignal()?.football_signals"
                     class="text-xs text-muted-foreground"
                 >
                     <summary class="cursor-pointer">
@@ -1649,7 +1456,10 @@ function saveOptions(): SavePickOption[] {
                     </ul>
                 </details>
                 <details
-                    v-if="valueSignal()?.signal_contributions?.signals?.length"
+                    v-if="
+                        compact &&
+                        valueSignal()?.signal_contributions?.signals?.length
+                    "
                     class="text-xs text-muted-foreground"
                 >
                     <summary class="cursor-pointer">
@@ -1708,7 +1518,7 @@ function saveOptions(): SavePickOption[] {
                                         <span>{{ awayTeamLabel() }}</span>
                                         <span
                                             v-if="showGameScore()"
-                                            class="font-bold"
+                                            class="text-lg font-bold tabular-nums"
                                         >
                                             {{ awayScore() }}
                                         </span>
@@ -1728,14 +1538,14 @@ function saveOptions(): SavePickOption[] {
                                         <span>{{ homeTeamLabel() }}</span>
                                         <span
                                             v-if="showGameScore()"
-                                            class="font-bold"
+                                            class="text-lg font-bold tabular-nums"
                                         >
                                             {{ homeScore() }}
                                         </span>
                                     </span>
                                 </div>
                                 <span
-                                    v-if="gameDateTimeLabel()"
+                                    v-if="!isLive() && gameDateTimeLabel()"
                                     class="inline-flex items-center gap-1 rounded-full border bg-background/75 px-2.5 py-1 text-xs text-muted-foreground"
                                 >
                                     <Clock class="h-3.5 w-3.5" />
@@ -1753,7 +1563,7 @@ function saveOptions(): SavePickOption[] {
                                 >
                                     <span
                                         v-if="isLive()"
-                                        class="h-1.5 w-1.5 rounded-full bg-red-500 motion-safe:animate-pulse"
+                                        class="h-1.5 w-1.5 rounded-full bg-sky-500 motion-safe:animate-pulse"
                                     />
                                     {{ statusBadgeLabel() }}
                                 </span>
@@ -1765,13 +1575,17 @@ function saveOptions(): SavePickOption[] {
                                 </span>
                             </div>
 
-                            <div class="mt-3 flex flex-wrap items-center gap-2">
+                            <div
+                                v-if="!isLive()"
+                                class="mt-3 flex flex-wrap items-center gap-2"
+                            >
                                 <span
                                     class="rounded-full border border-sky-500/25 bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:text-sky-300"
                                 >
                                     {{ dashboardPrimaryPickLabel() }}
                                 </span>
                                 <span
+                                    v-if="dashboardSignalLabel()"
                                     class="rounded-full border px-2.5 py-1 text-xs font-semibold"
                                     :class="dashboardSignalClass()"
                                 >
@@ -1803,12 +1617,6 @@ function saveOptions(): SavePickOption[] {
                                     O/U {{ totalResultLabel() }}
                                 </span>
                                 <span
-                                    v-if="trustScoreLabel()"
-                                    :class="dashboardChipClass()"
-                                >
-                                    {{ trustScoreLabel() }}
-                                </span>
-                                <span
                                     v-for="badge in cfbSignalBadges()"
                                     :key="badge.label"
                                     class="rounded-full border px-2.5 py-1 text-xs font-semibold"
@@ -1820,40 +1628,23 @@ function saveOptions(): SavePickOption[] {
                         </div>
 
                         <span
-                            class="hidden shrink-0 rounded-full border bg-background/75 px-3 py-1 text-xs font-semibold text-muted-foreground sm:inline-flex"
+                            v-if="isLive()"
+                            class="shrink-0 rounded-full border bg-muted/30 px-3 py-1 text-xs font-medium text-muted-foreground"
                         >
-                            {{ dashboardSignalLabel() }}
+                            {{ dashboardPrimaryPickLabel() }}
                         </span>
                     </div>
 
                     <section
                         v-if="isLive()"
                         data-testid="live-game-insights"
-                        class="overflow-hidden border-y border-red-500/15 bg-red-500/[0.035]"
+                        class="overflow-hidden rounded-xl bg-muted/30"
                         aria-label="Live game insights"
                     >
-                        <div
-                            class="flex items-center justify-between gap-3 px-3 py-2"
-                        >
-                            <div
-                                class="flex items-center gap-2 text-xs font-semibold tracking-wide text-red-700 uppercase dark:text-red-300"
-                            >
-                                <Radio class="h-3.5 w-3.5" />
-                                Live read
-                            </div>
-                            <span class="text-xs text-muted-foreground">
-                                {{ liveScoreContextLabel() }}
-                            </span>
-                        </div>
-
-                        <div
-                            class="grid divide-y divide-border/60 border-t border-red-500/10 sm:grid-cols-3 sm:divide-x sm:divide-y-0"
-                        >
-                            <div
-                                class="flex min-h-16 items-center gap-3 px-3 py-2.5"
-                            >
+                        <div class="grid gap-4 p-3 sm:grid-cols-3 sm:gap-6">
+                            <div class="flex min-w-0 items-start gap-2.5">
                                 <div
-                                    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-background/75 text-red-600 dark:text-red-400"
+                                    class="mt-0.5 flex size-4 shrink-0 items-center justify-center text-sky-600 dark:text-sky-400"
                                 >
                                     <Radio class="h-4 w-4" />
                                 </div>
@@ -1881,10 +1672,10 @@ function saveOptions(): SavePickOption[] {
                                             <span
                                                 v-for="outNumber in 3"
                                                 :key="outNumber"
-                                                class="h-1.5 w-1.5 rounded-full border border-red-500/40"
+                                                class="h-1.5 w-1.5 rounded-full border border-sky-500/40"
                                                 :class="
                                                     outNumber <= gameOuts()!
-                                                        ? 'bg-red-500'
+                                                        ? 'bg-sky-500'
                                                         : 'bg-transparent'
                                                 "
                                             />
@@ -1893,11 +1684,9 @@ function saveOptions(): SavePickOption[] {
                                 </div>
                             </div>
 
-                            <div
-                                class="flex min-h-16 items-center gap-3 px-3 py-2.5"
-                            >
+                            <div class="flex min-w-0 items-start gap-2.5">
                                 <div
-                                    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-background/75 text-sky-600 dark:text-sky-400"
+                                    class="mt-0.5 flex size-4 shrink-0 items-center justify-center text-sky-600 dark:text-sky-400"
                                 >
                                     <Activity class="h-4 w-4" />
                                 </div>
@@ -1918,11 +1707,9 @@ function saveOptions(): SavePickOption[] {
                                 </div>
                             </div>
 
-                            <div
-                                class="flex min-h-16 items-center gap-3 px-3 py-2.5"
-                            >
+                            <div class="flex min-w-0 items-start gap-2.5">
                                 <div
-                                    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-background/75 text-amber-600 dark:text-amber-400"
+                                    class="mt-0.5 flex size-4 shrink-0 items-center justify-center text-muted-foreground"
                                 >
                                     <Gauge class="h-4 w-4" />
                                 </div>
@@ -1945,30 +1732,13 @@ function saveOptions(): SavePickOption[] {
                         </div>
                     </section>
 
-                    <div
-                        class="flex flex-wrap items-center justify-between gap-3 border-t pt-3"
-                    >
-                        <div class="min-w-0 text-xs text-muted-foreground">
-                            {{ dashboardFooterContextLabel() }}
-                            <span v-if="homeSpreadLineValue() !== null">
-                                · Home spread
-                                {{ formatSignedNumber(homeSpreadLineValue()!) }}
-                            </span>
-                            <span v-if="predictedTotalValue() !== null">
-                                · Total {{ predictedTotalValue()!.toFixed(1) }}
-                            </span>
-                            <span v-if="canonicalPregameEdgeLabel()">
-                                · {{ canonicalPregameEdgeLabel() }}
-                            </span>
-                        </div>
-
+                    <div class="flex justify-end">
                         <span
-                            class="inline-flex shrink-0 items-center gap-1 text-xs font-semibold"
-                            :class="dashboardActionTextClass()"
+                            class="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground"
                         >
-                            Open
+                            View game
                             <ChevronRight
-                                class="h-3.5 w-3.5 transition group-hover:translate-x-0.5"
+                                class="size-3.5 transition group-hover:translate-x-0.5"
                             />
                         </span>
                     </div>

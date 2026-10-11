@@ -115,7 +115,7 @@ function liveTrendLabel(game: LiveTile): string | null {
         <div class="mb-3 flex items-center justify-between">
             <div class="flex items-center gap-2">
                 <span
-                    class="inline-flex items-center gap-1.5 rounded-full border border-red-300/60 bg-red-500/12 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-red-700 uppercase dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300"
+                    class="inline-flex items-center gap-1.5 rounded-full border border-sky-300/60 bg-sky-500/12 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-sky-700 uppercase dark:border-sky-500/30 dark:bg-sky-500/20 dark:text-sky-300"
                 >
                     <Radio class="size-3.5" />
                     Live
@@ -146,7 +146,7 @@ function liveTrendLabel(game: LiveTile): string | null {
                         class="text-xs font-semibold"
                         :class="
                             game.is_live
-                                ? 'text-red-600 dark:text-red-400'
+                                ? 'text-sky-600 dark:text-sky-400'
                                 : 'text-muted-foreground'
                         "
                     >

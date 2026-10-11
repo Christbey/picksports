@@ -35,6 +35,13 @@ const api = useApiV2Client();
 const revisions = ref<Revision[]>([]);
 const error = ref('');
 const loading = ref(true);
+const openGroups = ref<string[]>([]);
+const showHistory = ref(false);
+function toggleGroup(group: string): void {
+    openGroups.value = openGroups.value.includes(group)
+        ? openGroups.value.filter((item) => item !== group)
+        : [...openGroups.value, group];
+}
 const reasons = computed(() => [
     ...new Set(
         (revisions.value[0]?.brief.eligibility.reasons ?? []).map(
@@ -60,8 +67,10 @@ onMounted(async () => {
 </script>
 
 <template>
-    <section
+    <form
+        aria-label="Matchup research controls"
         class="min-w-0 rounded-xl border bg-card p-4 text-card-foreground sm:p-5"
+        @submit.prevent
     >
         <h2 class="text-lg font-semibold">Matchup research</h2>
         <p v-if="loading" class="mt-2 text-sm text-muted-foreground">
@@ -77,38 +86,57 @@ onMounted(async () => {
             No researched revision is available yet.
         </p>
         <template v-else>
-            <p class="mt-2 text-sm">
-                {{
-                    gameStatus === 'STATUS_FINAL'
-                        ? 'Archived spread assessment:'
-                        : 'Latest spread assessment:'
-                }}
-                <strong>{{
-                    decisionLabel(revisions[0].brief.eligibility.status)
-                }}</strong>
-            </p>
-            <p class="text-sm text-muted-foreground">
-                {{
-                    gameStatus === 'STATUS_FINAL'
-                        ? 'Pregame research retained for review, not a current recommendation.'
-                        : 'Research approval and forecast values are separate. Any blocking evidence remains listed below.'
-                }}
-            </p>
-            <p class="text-sm text-muted-foreground">
-                Recorded
-                {{ new Date(revisions[0].created_at).toLocaleString() }}.
-                <span :class="mobileCompact ? 'hidden md:inline' : ''"
-                    >Original forecasts are in Forecast history.</span
-                >
-            </p>
-            <ul
-                v-if="revisions[0].brief.eligibility.reasons.length"
-                class="mt-3 list-inside list-disc text-sm"
+            <dl
+                class="mt-3 grid gap-3 rounded-lg bg-muted/30 p-3 sm:grid-cols-2"
             >
-                <li v-for="reason in reasons" :key="reason">
-                    {{ reason }}
-                </li>
-            </ul>
+                <div>
+                    <dt class="text-xs text-muted-foreground">
+                        {{
+                            gameStatus === 'STATUS_FINAL'
+                                ? 'Archived spread assessment'
+                                : 'Latest spread assessment'
+                        }}
+                    </dt>
+                    <dd class="mt-1 text-sm font-semibold">
+                        {{
+                            decisionLabel(revisions[0].brief.eligibility.status)
+                        }}
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-xs text-muted-foreground">Recorded</dt>
+                    <dd class="mt-1 text-sm">
+                        {{ new Date(revisions[0].created_at).toLocaleString() }}
+                    </dd>
+                </div>
+            </dl>
+            <div class="mt-3 text-xs text-muted-foreground">
+                {{
+                    gameStatus === 'STATUS_FINAL'
+                        ? 'Archived pregame assessment'
+                        : 'Spread assessment only · separate from the moneyline pick'
+                }}
+            </div>
+            <table
+                v-if="reasons.length"
+                class="mt-3 w-full text-left text-sm"
+                aria-label="Assessment checks"
+            >
+                <caption class="sr-only">
+                    Evidence requiring review
+                </caption>
+                <tbody class="divide-y divide-border/60">
+                    <tr v-for="reason in reasons" :key="reason">
+                        <th
+                            scope="row"
+                            class="w-16 py-2 pr-3 align-top text-xs font-medium text-muted-foreground"
+                        >
+                            Review
+                        </th>
+                        <td class="py-2">{{ reason }}</td>
+                    </tr>
+                </tbody>
+            </table>
             <details
                 v-if="isAdmin && revisions[0].brief.eligibility.reasons.length"
                 class="mt-2 text-xs text-muted-foreground"
@@ -129,7 +157,7 @@ onMounted(async () => {
                 class="mt-4 gap-3 md:grid-cols-2"
                 :class="mobileCompact ? 'hidden md:grid' : 'grid'"
             >
-                <details
+                <div
                     v-for="group in [
                         'supporting',
                         'opposing',
@@ -139,8 +167,12 @@ onMounted(async () => {
                     :key="group"
                     class="min-w-0 self-start rounded-lg border p-3"
                 >
-                    <summary
-                        class="min-h-11 cursor-pointer content-center font-medium"
+                    <button
+                        type="button"
+                        class="flex min-h-11 w-full items-center justify-between gap-3 text-left font-medium"
+                        :aria-expanded="openGroups.includes(group)"
+                        :aria-controls="`research-${gameId}-${group}`"
+                        @click="toggleGroup(group)"
                     >
                         {{
                             {
@@ -151,61 +183,81 @@ onMounted(async () => {
                                     'Assumptions and unresolved questions',
                             }[group]
                         }}
-                        ({{ revisions[0].brief[group].length }})
-                    </summary>
-                    <p
-                        v-if="!revisions[0].brief[group].length"
-                        class="text-sm text-muted-foreground"
-                    >
-                        No verified entry.
-                    </p>
-                    <ul class="mt-2 space-y-3 text-sm">
-                        <li
-                            v-for="(item, index) in revisions[0].brief[group]"
-                            :key="index"
+                        <span class="text-xs text-muted-foreground"
+                            >{{ revisions[0].brief[group].length }} ·
+                            {{
+                                openGroups.includes(group) ? 'Hide' : 'View'
+                            }}</span
                         >
-                            <p>{{ item.claim }}</p>
-                            <p
-                                v-if="group === 'unresolved'"
-                                class="font-medium"
+                    </button>
+                    <div
+                        v-if="openGroups.includes(group)"
+                        :id="`research-${gameId}-${group}`"
+                    >
+                        <p
+                            v-if="!revisions[0].brief[group].length"
+                            class="text-sm text-muted-foreground"
+                        >
+                            No verified entry.
+                        </p>
+                        <ul class="mt-2 space-y-3 text-sm">
+                            <li
+                                v-for="(item, index) in revisions[0].brief[
+                                    group
+                                ]"
+                                :key="index"
                             >
-                                {{
-                                    item.blocking === false
-                                        ? 'Nonblocking assumption'
-                                        : 'Hold'
-                                }}
-                                ·
-                                {{
-                                    item.scope === 'game' || !item.scope
-                                        ? 'Whole game'
-                                        : item.scope
-                                }}
-                            </p>
-                            <p class="text-muted-foreground">
-                                {{ item.interpretation }}
-                            </p>
-                            <a
-                                v-if="sourceUrl(item.source_url)"
-                                :href="sourceUrl(item.source_url)"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                class="inline-flex min-h-11 items-center underline"
-                                >Source</a
-                            >
-                        </li>
-                    </ul>
-                </details>
+                                <p>{{ item.claim }}</p>
+                                <p
+                                    v-if="group === 'unresolved'"
+                                    class="font-medium"
+                                >
+                                    {{
+                                        item.blocking === false
+                                            ? 'Nonblocking assumption'
+                                            : 'Hold'
+                                    }}
+                                    ·
+                                    {{
+                                        item.scope === 'game' || !item.scope
+                                            ? 'Whole game'
+                                            : item.scope
+                                    }}
+                                </p>
+                                <p class="text-muted-foreground">
+                                    {{ item.interpretation }}
+                                </p>
+                                <a
+                                    v-if="sourceUrl(item.source_url)"
+                                    :href="sourceUrl(item.source_url)"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="inline-flex min-h-11 items-center underline"
+                                    >Source</a
+                                >
+                            </li>
+                        </ul>
+                    </div>
+                </div>
             </div>
-            <details
+            <div
                 class="mt-4 text-sm"
                 :class="mobileCompact ? 'hidden md:block' : ''"
             >
-                <summary
-                    class="min-h-11 cursor-pointer content-center font-medium"
+                <button
+                    type="button"
+                    class="min-h-11 text-left font-medium"
+                    :aria-expanded="showHistory"
+                    :aria-controls="`research-${gameId}-history`"
+                    @click="showHistory = !showHistory"
                 >
                     Forecast history (home minus away margin)
-                </summary>
-                <div class="overflow-x-auto">
+                </button>
+                <div
+                    v-if="showHistory"
+                    :id="`research-${gameId}-history`"
+                    class="overflow-x-auto"
+                >
                     <table class="mt-2 w-full text-left">
                         <thead>
                             <tr>
@@ -244,7 +296,7 @@ onMounted(async () => {
                         </tbody>
                     </table>
                 </div>
-            </details>
+            </div>
         </template>
-    </section>
+    </form>
 </template>

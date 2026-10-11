@@ -209,3 +209,77 @@ test('final summary compares home-minus-away margin and total without grading mu
     assert.doesNotMatch(invalidTotal, />-1.0</);
     assert.match(invalidTotal, /Unavailable/);
 });
+
+test('research renders evidence and history only after their controls are expanded', async () => {
+    const { default: component } = await server.ssrLoadModule(
+        '/resources/js/components/game-page/NflResearchBrief.vue',
+    );
+    const renderResearch = async (expanded) => {
+        const wrapper = {
+            ...component,
+            setup(props, context) {
+                const bindings = component.setup(props, context);
+                bindings.loading.value = false;
+                bindings.revisions.value = [
+                    {
+                        id: 1,
+                        created_at: '2026-10-11T17:00:00Z',
+                        baseline: {
+                            predicted_spread: 2.5,
+                            predicted_total: 43,
+                        },
+                        revised: { predicted_spread: 3, predicted_total: 44 },
+                        brief: {
+                            eligibility: {
+                                status: 'hold',
+                                reasons: ['specialist_tier_does_not_approve'],
+                            },
+                            supporting: [
+                                {
+                                    claim: 'Detailed evidence marker',
+                                    interpretation:
+                                        'Detailed interpretation marker',
+                                    source_url: 'https://example.com/evidence',
+                                },
+                            ],
+                            opposing: [],
+                            prop_angles: [],
+                            unresolved: [],
+                        },
+                    },
+                ];
+                if (expanded) {
+                    bindings.toggleGroup('supporting');
+                    bindings.showHistory.value = true;
+                }
+                return bindings;
+            },
+        };
+        return renderToString(createSSRApp(wrapper, { gameId: 1781 }));
+    };
+    const closed = await renderResearch(false);
+    assert.match(closed, /<form aria-label="Matchup research controls"/);
+    assert.match(closed, /aria-label="Assessment checks"/);
+    assert.match(
+        closed,
+        /The spread did not meet the required approval threshold/,
+    );
+    assert.match(closed, /aria-expanded="false"/);
+    assert.doesNotMatch(
+        closed,
+        /Detailed evidence marker|Detailed interpretation marker|example.com\/evidence|Original margin \/ total/,
+    );
+    const opened = await renderResearch(true);
+    assert.match(opened, /aria-expanded="true"/);
+    assert.match(opened, /Detailed evidence marker/);
+    assert.match(opened, /Detailed interpretation marker/);
+    assert.match(opened, /https:\/\/example.com\/evidence/);
+    assert.match(opened, /Original margin \/ total/);
+    if (process.env.RESEARCH_PREVIEW_PATH) {
+        const { writeFile } = await import('node:fs/promises');
+        await writeFile(
+            process.env.RESEARCH_PREVIEW_PATH,
+            `<!doctype html><html><head><meta charset="utf-8"><title>Game research preview</title><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><nav>Overview · Research · Trends · Roster</nav><main>${closed}</main></body></html>`,
+        );
+    }
+});

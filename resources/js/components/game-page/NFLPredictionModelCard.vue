@@ -5,6 +5,7 @@ import type { NflPagePrediction } from '@/types';
 
 const props = defineProps<{
     prediction: NflPagePrediction;
+    gameStatus?: string;
     awayLabel?: string | null;
     homeLabel?: string | null;
     formatNumber: (
@@ -45,32 +46,35 @@ const winner = computed(() => {
 </script>
 
 <template>
-    <Card class="gap-4 py-4 shadow-none">
+    <Card
+        class="gap-4 rounded-2xl border-border/70 bg-background/60 py-5 shadow-none"
+    >
         <CardHeader class="gap-1 px-5">
             <CardTitle class="text-base tracking-tight"
-                >Prediction Model</CardTitle
+                >Pregame forecast</CardTitle
             >
             <p class="text-xs text-muted-foreground">
-                Pregame forecast · model estimates
+                {{
+                    gameStatus === 'STATUS_IN_PROGRESS' ||
+                    gameStatus === 'STATUS_HALFTIME'
+                        ? 'Before kickoff · these estimates do not update during live play'
+                        : 'Before kickoff · model estimates'
+                }}
             </p>
         </CardHeader>
         <CardContent class="space-y-4 px-5">
             <div
-                class="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-sky-500/25 bg-sky-500/10 px-4 py-4"
+                class="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-muted/30 px-4 py-3"
                 aria-label="Model pick"
             >
                 <div>
                     <p
                         class="text-xs font-semibold tracking-wider text-sky-700 uppercase dark:text-sky-300"
                     >
-                        Model winner
+                        Moneyline pick
                     </p>
-                    <p class="mt-1 text-3xl font-bold tracking-tight">
+                    <p class="mt-1 text-2xl font-semibold tracking-tight">
                         {{ winner?.label ?? 'Pick unavailable' }}
-                    </p>
-                    <p v-if="winner" class="mt-1 text-sm text-muted-foreground">
-                        {{ formatNumber(winner.chance, 1) }}% model win
-                        probability
                     </p>
                 </div>
                 <div
@@ -94,7 +98,7 @@ const winner = computed(() => {
                             {{ homeLabel || 'Home' }} model spread
                         </dt>
                         <dd
-                            class="mt-1 text-3xl font-semibold tracking-tight tabular-nums"
+                            class="mt-1 text-2xl font-semibold tracking-tight tabular-nums"
                         >
                             {{ margin === null ? '—' : formatSpread(-margin) }}
                         </dd>
@@ -107,7 +111,7 @@ const winner = computed(() => {
                             Model total
                         </dt>
                         <dd
-                            class="mt-1 text-3xl font-semibold tracking-tight tabular-nums"
+                            class="mt-1 text-2xl font-semibold tracking-tight tabular-nums"
                         >
                             {{ total === null ? '—' : formatNumber(total) }}
                         </dd>
@@ -120,7 +124,7 @@ const winner = computed(() => {
                     class="border-t border-border/60 pt-4 md:border-t-0 md:border-l md:pt-0 md:pl-8"
                 >
                     <p class="text-xs text-muted-foreground">
-                        Model win probability
+                        Pregame win outlook
                     </p>
                     <div v-if="probability !== null" class="mt-2 space-y-2">
                         <div class="flex items-end justify-between gap-4">

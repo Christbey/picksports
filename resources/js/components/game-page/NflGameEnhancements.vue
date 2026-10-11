@@ -93,6 +93,7 @@ const props = withDefaults(
     <NFLPredictionModelCard
         v-if="section === 'prediction' && prediction"
         :prediction="prediction"
+        :game-status="game?.status"
         :away-label="awayLabel"
         :home-label="homeLabel"
         :format-number="props.formatNumber"

@@ -183,7 +183,7 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
         ->group(function (): void {
             Route::get('/games', [SportGameController::class, 'index'])->name('games.index');
             Route::get('/games/{game}/research', NflResearchController::class)
-                ->middleware(['permission:view-nfl-predictions', 'permission:view-prediction-spread', 'permission:view-prediction-win-probability', 'permission:view-prediction-betting-value'])
+                ->middleware(['admin', 'permission:view-nfl-predictions', 'permission:view-prediction-spread', 'permission:view-prediction-win-probability', 'permission:view-prediction-betting-value'])
                 ->name('games.research.show');
             Route::get('/games/{game}/page', SportGamePageController::class)->name('games.page.show');
             Route::get('/games/{game}/live-snapshot', NflLiveSnapshotController::class)->name('games.live-snapshot.show');

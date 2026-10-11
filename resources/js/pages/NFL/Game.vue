@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import BettingPlanCard from '@/components/game-page/BettingPlanCard.vue';
 import DepthChartCard from '@/components/game-page/DepthChartCard.vue';
 import InjuryReportCard from '@/components/game-page/InjuryReportCard.vue';
@@ -8,6 +8,7 @@ import NflMatchupSignals from '@/components/game-page/NflMatchupSignals.vue';
 import NflMarketHistory from '@/components/game-page/NflMarketHistory.vue';
 import NflGameEnhancements from '@/components/game-page/NflGameEnhancements.vue';
 import SportDetailedGamePage from '@/components/game-page/SportDetailedGamePage.vue';
+import { useViewerAccess } from '@/composables/useViewerAccess';
 import { useNflDetailedGamePage } from '@/composables/useNflDetailedGamePage';
 
 const props = defineProps<{
@@ -28,19 +29,25 @@ const awayInjuries = computed(
 const homeInjuries = computed(
     () => pageProps.value.homeTeam?.active_injuries ?? [],
 );
+const { isAdmin } = useViewerAccess();
 const mobileSection = ref('overview');
+watch(isAdmin, (allowed) => {
+    if (!allowed && mobileSection.value === 'research')
+        mobileSection.value = 'overview';
+});
 const mobileContent = ref<HTMLElement | null>(null);
 const selectSection = async (section: string) => {
+    if (section === 'research' && !isAdmin.value) return;
     mobileSection.value = section;
     await nextTick();
     mobileContent.value?.scrollIntoView({ block: 'start' });
 };
-const mobileSections = {
+const mobileSections = computed(() => ({
     overview: 'Overview',
-    research: 'Research',
+    ...(isAdmin.value ? { research: 'Research' } : {}),
     trends: 'Trends',
     roster: 'Roster',
-};
+}));
 // Keep panels mounted: navigation must not restart polling or fetch research again.
 const sectionClass = (section: string) =>
     mobileSection.value === section
@@ -58,7 +65,8 @@ const sectionClass = (section: string) =>
         <template #afterHero>
             <nav
                 aria-label="Game sections"
-                class="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 grid grid-cols-4 gap-1 rounded-xl border bg-background p-1 shadow-lg md:static md:inset-auto md:mb-4 md:flex md:w-fit md:gap-2 md:shadow-none"
+                :class="isAdmin ? 'grid-cols-4' : 'grid-cols-3'"
+                class="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 grid gap-1 rounded-xl border bg-background p-1 shadow-lg md:static md:inset-auto md:mb-4 md:flex md:w-fit md:gap-2 md:shadow-none"
             >
                 <button
                     v-for="(label, key) in mobileSections"
@@ -144,6 +152,7 @@ const sectionClass = (section: string) =>
 
         <template #afterLinescore>
             <div
+                v-if="isAdmin"
                 :class="
                     mobileSection === 'research'
                         ? 'min-w-0 space-y-3'

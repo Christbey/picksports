@@ -108,13 +108,14 @@ after(async () => {
     await server?.close();
 });
 
-const forecastHtml = async (prediction) => {
+const forecastHtml = async (prediction, gameStatus) => {
     const { default: component } = await server.ssrLoadModule(
         '/resources/js/components/game-page/NFLPredictionModelCard.vue',
     );
     return renderToString(
         createSSRApp(component, {
             prediction,
+            gameStatus,
             awayLabel: 'DET',
             homeLabel: 'BUF',
             formatNumber: (value, decimals = 1) =>
@@ -222,4 +223,16 @@ test('box score renders missing source values explicitly', async () => {
     );
     assert.match(html, /source has not supplied/);
     assert.doesNotMatch(html, /NaN|undefined|Infinity|0%/);
+});
+
+test('pregame forecast stays explicitly labeled during live play', async () => {
+    const html = await forecastHtml(
+        { win_probability: 0.6, predicted_total: 43.2 },
+        'STATUS_IN_PROGRESS',
+    );
+    assert.match(html, /Pregame forecast/);
+    assert.match(html, /do not update during live play/);
+    assert.match(html, /Moneyline pick/);
+    assert.match(html, /Pregame win outlook/);
+    assert.doesNotMatch(html, /60\.0% model win/);
 });

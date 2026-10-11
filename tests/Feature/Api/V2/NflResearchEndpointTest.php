@@ -8,7 +8,7 @@ use App\Models\User;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Permission;
 
-test('v2 research preserves field permission checks independently of sport API access', function (string $missingPermission) {
+test('v2 research denies non-admin users with incomplete prediction permissions', function (string $missingPermission) {
     config(['subscriptions.enforce_tiers' => true, 'subscriptions.tier_bypass_user_ids' => []]);
     $user = User::factory()->create();
     $permissions = ['access-api', 'view-nfl-predictions', 'view-prediction-spread', 'view-prediction-win-probability', 'view-prediction-betting-value'];
@@ -25,7 +25,7 @@ test('v2 research preserves field permission checks independently of sport API a
 
 test('v2 research resolves only nfl games and returns the latest twenty revisions', function () {
     config(['subscriptions.enforce_tiers' => false]);
-    Sanctum::actingAs(User::factory()->create());
+    Sanctum::actingAs(User::factory()->admin()->create());
     $event = SportEvent::factory()->create(['sport' => 'nfl']);
     $game = Game::factory()->create(['sport_event_id' => $event->id, 'home_team_id' => Team::factory(), 'away_team_id' => Team::factory()]);
     for ($i = 0; $i < 21; $i++) {
@@ -48,3 +48,15 @@ test('v2 research resolves only nfl games and returns the latest twenty revision
     $other = SportEvent::factory()->create(['sport' => 'cfb']);
     $this->getJson("/api/v2/sports/nfl/games/{$other->public_id}/research")->assertNotFound();
 });
+
+test('v2 research denies non-admin users even with all prediction permissions or disabled tiers', function (bool $enforceTiers) {
+    config(['subscriptions.enforce_tiers' => $enforceTiers, 'subscriptions.tier_bypass_user_ids' => []]);
+    $user = User::factory()->create();
+    foreach (['access-api', 'view-nfl-predictions', 'view-prediction-spread', 'view-prediction-win-probability', 'view-prediction-betting-value'] as $permission) {
+        Permission::findOrCreate($permission, 'web');
+        $user->givePermissionTo($permission);
+    }
+    Sanctum::actingAs($user);
+    $game = Game::factory()->create(['home_team_id' => Team::factory(), 'away_team_id' => Team::factory()]);
+    $this->getJson("/api/v2/sports/nfl/games/{$game->id}/research")->assertForbidden();
+})->with([true, false]);

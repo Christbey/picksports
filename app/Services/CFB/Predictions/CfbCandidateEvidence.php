@@ -15,6 +15,8 @@ class CfbCandidateEvidence
 
     public function capture(Game $game, CarbonImmutable $asOf, CarbonImmutable $kickoff): array
     {
+        $asOf = $asOf->setTimezone(config('app.timezone'));
+        $kickoff = $kickoff->setTimezone(config('app.timezone'));
         if ($asOf->gte($kickoff)) {
             return ['status' => 'not_pregame'];
         }
@@ -47,6 +49,8 @@ class CfbCandidateEvidence
     /** Retrospective comparison uses only a run already stored by the original capture; never writes. */
     public function historical(Game $game, CarbonImmutable $asOf, CarbonImmutable $kickoff): array
     {
+        $asOf = $asOf->setTimezone(config('app.timezone'));
+        $kickoff = $kickoff->setTimezone(config('app.timezone'));
         $runs = ResultRatingRun::query()->where('season', $game->season)->whereIn('version', [self::VERSION, ResultRatingModel::VERSION])->where('created_at', '<=', $asOf)
             ->where('source_available_at', '<=', $asOf)->orderByDesc('created_at')->orderByDesc('id')->cursor();
         foreach ($runs as $run) {

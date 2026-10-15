@@ -13,6 +13,8 @@ class CfbFrozenMarketEvidence
 
     public function capture(Game $game, CarbonImmutable $asOf, CarbonImmutable $kickoff): array
     {
+        $asOf = $asOf->setTimezone(config('app.timezone'));
+        $kickoff = $kickoff->setTimezone(config('app.timezone'));
         $result = ['version' => self::VERSION, 'captured_at' => $asOf->toIso8601String(),
             'spread' => null, 'total' => null, 'available' => false, 'missing' => []];
         if ($asOf->gte($kickoff)) {

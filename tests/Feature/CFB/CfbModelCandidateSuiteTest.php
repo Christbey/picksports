@@ -246,3 +246,15 @@ it('documents optional CFB comparison fields without requiring them for other sp
         ->and($schema['required'])->not->toContain('comparison_forecasts')
         ->and($schema['properties']['id']['type'])->toContain('string');
 });
+
+it('uses the same stored quote freshness window for UTC and local capture instants', function () {
+    $f = candidateGame();
+    $quotes = candidateQuotes($f, ['captured_at' => $f['asOf']->subHours(34)]);
+    foreach ($quotes as $quote) {
+        $quote->forceFill(['created_at' => $f['asOf']->subHours(34)])->save();
+    }
+    $service = app(CfbFrozenMarketEvidence::class);
+    $local = $service->capture($f['game'], $f['asOf'], $f['event']->starts_at);
+    $utc = $service->capture($f['game'], $f['asOf']->utc(), $f['event']->starts_at->utc());
+    expect($local['available'])->toBeTrue()->and($utc)->toBe($local);
+});

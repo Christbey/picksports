@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CfbForecastComparisons from '@/components/game-page/CfbForecastComparisons.vue';
 import CfbScoringModelCard from '@/components/game-page/CfbScoringModelCard.vue';
 import GamePlayerPropsCard from '@/components/game-page/GamePlayerPropsCard.vue';
 import CfbLiveBettingCard from '@/components/game-page/CfbLiveBettingCard.vue';
@@ -26,6 +27,11 @@ const {
         </template>
 
         <template #afterLinescore>
+            <CfbForecastComparisons
+                :forecasts="
+                    predictionSectionProps.prediction?.comparison_forecasts
+                "
+            />
             <CfbScoringModelCard
                 :model="predictionSectionProps.prediction?.scoring_model"
             />

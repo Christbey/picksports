@@ -1305,6 +1305,8 @@ $cfbSpreadCandidateEvent = Schedule::command($cfbSpreadCandidateCommand)->weekly
     ->when($cfbCanonicalPipelineEnabled)->withoutOverlapping(180)->onOneServer()->runInBackground()
     ->appendOutputTo(storage_path('logs/cfb-spread-calibration.log'))->name('CFB: Evaluate Spread Calibration Challenger');
 $attachCommandHeartbeat($cfbSpreadCandidateEvent, $cfbSpreadCandidateCommand, 'CFB: Evaluate Spread Calibration Challenger');
+$scheduleDailySeasonJob("cfb:review-model-candidates --season={$fallSeasonYear}", '03:40', $cfbCanonicalPipelineEnabled, 'CFB: Review Paired Forecast Candidates')
+    ->appendOutputTo(storage_path('logs/cfb-model-candidates.log'));
 $scheduleDailySeasonJob("cfb:run-pregame-pipeline --season={$fallSeasonYear} --days-forward=8 --resume --queued", '04:35', $cfbCanonicalPipelineEnabled, 'CFB: Generate Canonical Predictions');
 $cfbPregamePipelineCommand = "cfb:run-pregame-pipeline --season={$fallSeasonYear} --days-forward=8 --resume --queued";
 $cfbPregamePipelineEvent = Schedule::command($cfbPregamePipelineCommand)

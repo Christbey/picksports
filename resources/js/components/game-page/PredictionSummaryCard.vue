@@ -132,10 +132,11 @@ const formatSignedHomeSpread = (
                 <div class="ui-surface-subtle p-4 text-center">
                     <div class="text-sm text-muted-foreground">
                         {{
-                            prediction.sport === 'cfb' ||
-                            prediction.sport === 'nfl'
-                                ? 'Win-model confidence'
-                                : 'Confidence'
+                            prediction.sport === 'cfb'
+                                ? 'Win estimate'
+                                : prediction.sport === 'nfl'
+                                  ? 'Win-model confidence'
+                                  : 'Confidence'
                         }}
                     </div>
                     <div

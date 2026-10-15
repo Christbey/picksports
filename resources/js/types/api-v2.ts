@@ -3,7 +3,10 @@ import type {
     MarketAwareProjection,
     PredictionRecommendation,
 } from '@/lib/predictionRecommendation';
-import type { PredictionAnalysisSummary } from './sports';
+import type {
+    CfbComparisonForecasts,
+    PredictionAnalysisSummary,
+} from './sports';
 import type { MlbPeriodModelContext } from './mlb-daily-picks';
 
 export type ApiV2SportSlug =
@@ -229,6 +232,9 @@ export type ApiV2Player = ApiV2PlayerSummary & {
 };
 
 export type ApiV2Prediction = {
+    comparison_forecasts?: CfbComparisonForecasts | null;
+    raw_home_win_probability?: number | null;
+    market_evaluation?: ApiV2Record | null;
     id: ApiV2Id;
     sport: ApiV2SportSlug;
     game_id?: ApiV2Id | null;

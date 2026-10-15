@@ -7,11 +7,15 @@ use App\Models\CanonicalPrediction;
 use App\Models\PredictionEvaluation;
 use App\Models\PredictionMarket;
 use App\Models\SportEventResult;
+use App\Services\CFB\Predictions\CfbCandidateReview;
+use App\Services\CFB\Predictions\CfbForecastCandidates;
 use Illuminate\Support\Facades\DB;
 
 class CanonicalPredictionEvaluator
 {
     public const SCORING_VERSION = 'canonical-v1';
+
+    public const CFB_MARKET_SCORING_VERSION = 'canonical-cfb-candidates-v1';
 
     public const NFL_MARKET_SCORING_VERSION = 'canonical-nfl-market-v2';
 
@@ -38,6 +42,7 @@ class CanonicalPredictionEvaluator
             'prediction_output' => $prediction->output_hash,
             'result' => $result->result_hash,
             'scoring_version' => $scoringVersion,
+            ...($prediction->sport === 'cfb' ? ['cfb_comparison' => $metrics['market_comparison']['cfb_comparison']] : []),
         ]);
 
         return DB::transaction(function () use ($prediction, $result, $metrics, $evaluationHash, $scoringVersion): PredictionEvaluation {
@@ -129,6 +134,14 @@ class CanonicalPredictionEvaluator
             );
         }
 
+        if ($prediction->sport === 'cfb') {
+            $suite = app(CfbCandidateReview::class)->suite($prediction);
+            $marketComparison['cfb_comparison'] = ['version' => CfbForecastCandidates::VERSION,
+                'status' => $suite['status'], 'market' => $suite['market'],
+                'grades' => app(CfbForecastCandidates::class)->grade($suite, $result->home_score, $result->away_score),
+                'approval_status' => 'tracking_only'];
+        }
+
         $teamErrors = [];
         foreach (['home' => $result->home_score, 'away' => $result->away_score] as $side => $score) {
             $market = $prediction->markets->first(fn ($m) => $m->market_type === 'team_total' && $m->selection === $side);
@@ -167,6 +180,10 @@ class CanonicalPredictionEvaluator
 
     private function scoringVersion(CanonicalPrediction $prediction): string
     {
+        if ($prediction->sport === 'cfb') {
+            return self::CFB_MARKET_SCORING_VERSION;
+        }
+
         return $prediction->sport === 'nfl'
             && data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'pregame_market.available') === true
                 ? self::NFL_MARKET_SCORING_VERSION

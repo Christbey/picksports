@@ -273,6 +273,7 @@ const mapV2Prediction = (prediction: ApiV2Prediction): PredictionListItem => {
 
     return {
         id: prediction.id,
+        comparison_forecasts: prediction.comparison_forecasts ?? null,
         ...predictionBoardLiveFields(prediction),
         game_id: numberValue(prediction.game_id),
         predicted_spread: numberValue(projection.predicted_spread),

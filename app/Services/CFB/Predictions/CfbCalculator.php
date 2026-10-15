@@ -16,12 +16,20 @@ class CfbCalculator extends CanonicalFootballCalculator
 {
     public function calculate(EventInputSnapshotData $snapshot, CalculationReleaseData $release): PredictionOutput
     {
-        $baseline = $this->calculateBaseline($snapshot, $release);
-        if (! isset($snapshot->inputs['scoring_challenger'])) {
-            return $baseline;
+        $output = $this->calculateBaseline($snapshot, $release);
+        if (isset($snapshot->inputs['scoring_challenger'])) {
+            $output = app(CfbScoringChallenger::class)->apply($output, $snapshot->inputs['scoring_challenger']);
+        }
+        if (isset($snapshot->inputs['candidate_suite'])) {
+            $line = collect($output->markets)->first(fn ($m) => $m->marketType === 'spread' && $m->selection === 'home')->projectedLine;
+            $total = collect($output->markets)->first(fn ($m) => $m->marketType === 'total')->projectedLine;
+            $suite = app(CfbForecastCandidates::class)->build($line, $total,
+                $snapshot->inputs['candidate_suite']['evidence'], $snapshot->inputs['candidate_suite']['market']);
+
+            return new PredictionOutput($output->markets, [...$output->metadata, 'comparison_forecasts' => $suite], $output->diagnostics, $output->generatedAt);
         }
 
-        return app(CfbScoringChallenger::class)->apply($baseline, $snapshot->inputs['scoring_challenger']);
+        return $output;
     }
 
     private function calculateBaseline(EventInputSnapshotData $snapshot, CalculationReleaseData $release): PredictionOutput

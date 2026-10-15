@@ -179,6 +179,8 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 
 ### CFB
 
+- Daily at `03:40`, after canonical evaluation: `cfb:review-model-candidates` writes the read-only, release-separated paired candidate report to `storage/logs/cfb-model-candidates.log`. It compares only timestamp-safe quotes/history; reports missing paired coverage; preserves source prediction and grading revisions; and never promotes candidates. Release `1.8.0` freezes opponent-adjusted scoring, result-rating, and fixed 50/50 market-blend comparisons alongside the unchanged independent markets for prospective tracking.
+
 - Daily at `03:25` Central: sync the current week. Live scoreboards refresh every five minutes between `10:00` and `02:00`; final-game details refresh every thirty minutes between `14:00` and `02:00`.
 - Grade legacy predictions at `03:00`; canonical evaluation and decision settlement run at `03:05` and `03:10` when canonical generation is enabled.
 - Import FPI at `03:45`. Standalone legacy Elo (`03:30`), metrics (`04:00`), and prediction (`04:30`) jobs are disabled when the canonical pipeline owns those stages.

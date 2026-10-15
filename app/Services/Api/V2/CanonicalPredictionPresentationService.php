@@ -15,11 +15,13 @@ class CanonicalPredictionPresentationService
     {
         $market = $prediction->markets->first(fn ($market): bool => $market->market_type === 'moneyline' && $market->selection === 'home');
         $confidence = is_numeric($market?->confidence_score) ? (float) $market->confidence_score : null;
-        $game = $prediction->sport === 'cfb' ? $prediction->sportEvent?->cfbGame : null;
+        $game = $prediction->sportEvent?->getRelation($prediction->sport.'Game');
 
         return new CanonicalPredictionPresentationData(
             confidenceContext: $this->confidenceContext($prediction, $confidence),
             valueSignal: $game instanceof CfbGame ? $this->cfbValueSignals->forPrediction($prediction, $game) : null,
+            modelBetContext: app(PredictionModelBetContext::class)->forPrediction($prediction, $game),
+            weatherForecast: $game instanceof CfbGame ? app(PredictionWeatherContext::class)->forPrediction($prediction, $game) : null,
         );
     }
 
@@ -29,6 +31,12 @@ class CanonicalPredictionPresentationService
         $level = $this->confidenceLevel($confidence);
         if ($prediction->sport === 'cfb') {
             $quality = CfbPredictionInputQuality::assess((array) ($prediction->calculationRun?->inputSnapshot?->inputs ?? []));
+            if ($quality['qualified']) {
+                return ['label' => 'Uncalibrated win estimate', 'tier' => 'unavailable', 'model_level' => 'unavailable',
+                    'reason_codes' => array_values((array) data_get($prediction->output_metadata, 'reason_codes', [])),
+                    'sample_games' => min($quality['sample_games']), 'team_sample_games' => $quality['sample_games'],
+                    'probability_status' => 'uncalibrated_model_estimate', 'calibrated' => false];
+            }
             if (! $quality['qualified']) {
                 return [
                     'label' => 'Incomplete inputs', 'tier' => 'unavailable', 'model_level' => $level,

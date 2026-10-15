@@ -1026,3 +1026,10 @@ When you change a formula:
 - update this document
 - update or add tests near the owning action/service
 - keep config-driven coefficients documented in the relevant `config/{sport}.php` file
+
+
+## CFB paired forecast candidates
+
+Release 1.8.0 retains the independent projection and freezes a separate `comparison_forecasts` suite. The opponent-adjusted total candidate learns league scoring from prior/current season final results available at capture, uses fixed four-game regularization for offense and defense, and gives prior-season games half weight. It requires 100 distinct history games; missing teams/history remain unavailable. Possession effects are not imputed. Result ratings use exactly the same frozen history; the market blend uses a fixed 50% weight on matched stored sportsbook contracts. None is automatically promoted or treated as an approved bet.
+
+`cfb:review-model-candidates` reports identical-game comparisons per market and release, paired mean errors/uncertainty, direction settlements at frozen quote prices, and release-specific whole-date probability holdouts. Historical replay is distinguished from prospectively frozen candidates. CFB grading now appends versioned `canonical-cfb-candidates-v1` evaluations containing exact quote identity, selected side, price, result, and tracking-only unit profit. Earlier grades and forecasts remain immutable. Raw win estimates are not exposed as confidence percentages; calibrated probability and bet approval require separate evidence.

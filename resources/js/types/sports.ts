@@ -308,6 +308,7 @@ export interface PredictionListGame {
 }
 
 export interface PredictionListItem {
+    comparison_forecasts?: CfbComparisonForecasts | null;
     id: number | string;
     game_id?: number;
     predicted_spread?: number;
@@ -671,6 +672,7 @@ export interface CfbScoringModel {
 }
 
 export interface NflPagePrediction {
+    comparison_forecasts?: CfbComparisonForecasts | null;
     spread_assessment?: {
         recommendation?: string;
         edge_points?: number | null;
@@ -888,4 +890,21 @@ export interface MlbTeamMetricsData {
     strength_of_schedule?: number | null;
     rest_travel_fatigue?: number | null;
     calculation_date?: string | null;
+}
+
+export interface CfbComparisonForecasts {
+    version?: string;
+    status?: string;
+    validated?: boolean;
+    betting_approved?: boolean;
+    models?: Record<
+        string,
+        {
+            home_line: number | null;
+            total: number | null;
+            uses_market: boolean;
+            market_weight?: number;
+        }
+    >;
+    limitations?: string[];
 }

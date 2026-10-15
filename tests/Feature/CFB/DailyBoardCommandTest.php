@@ -7,6 +7,7 @@ use App\Models\CFB\Player;
 use App\Models\CFB\PlayerProp;
 use App\Models\CFB\Team;
 use App\Models\PredictionMarket;
+use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
@@ -27,7 +28,7 @@ test('combined board includes next UTC day games and both forecasts and eligible
     $attributes = ['game_id' => $game->id, 'player_id' => $player->id, 'player_name' => $player->full_name,
         'market' => 'player_pass_yds', 'line' => 200.5, 'over_price' => -110, 'under_price' => -110, 'fetched_at' => now(),
         'recommended_side' => 'Over', 'confidence_score' => 70,
-        'confidence_decomposition' => ['schema_version' => 'player-prop-signal-v2', 'stat_summary' => ['season_avg' => 250], 'cover_record' => ['season' => ['games' => 6]]]];
+        'confidence_decomposition' => ['schema_version' => PlayerPropAnalyzer::CFB_MODEL_VERSION, 'stat_summary' => ['season_avg' => 250], 'cover_record' => ['season' => ['games' => 6]]]];
     $fresh = PlayerProp::create($attributes);
     PlayerProp::create([...$attributes, 'fetched_at' => now()->subHours(2), 'confidence_score' => 95]);
     $this->artisan('cfb:daily-board', ['--date' => '2026-09-26'])->assertSuccessful();

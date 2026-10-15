@@ -6,8 +6,6 @@ use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game;
 use App\Models\PredictionMarket;
 use App\Services\Api\V2\CanonicalPredictionPresentationData;
-use App\Services\Api\V2\PredictionModelBetContext;
-use App\Services\Api\V2\PredictionWeatherContext;
 use App\Services\Api\V2\SportContext;
 use App\Services\CFB\Live\LiveBoardPresentation;
 use App\Support\Sports\GameDateTimePresenter;
@@ -34,7 +32,7 @@ class CanonicalSportPredictionResource extends JsonResource
         $total = $this->market($prediction, 'total', 'combined');
         $homeProbability = $this->number($homeMoneyline?->probability);
         $awayProbability = $this->number($awayMoneyline?->probability);
-        $confidence = $this->number($homeMoneyline?->confidence_score);
+        $confidence = $prediction->sport === 'cfb' ? null : $this->number($homeMoneyline?->confidence_score);
         $evaluation = $prediction->latestEvaluation;
         $confidenceContext = $this->presentation->confidenceContext;
         $valueSignal = $this->presentation->valueSignal;
@@ -75,12 +73,16 @@ class CanonicalSportPredictionResource extends JsonResource
             'public_recommendation' => null,
             'model_bet_context' => [
                 'model_home_spread' => $this->number($homeSpread?->projected_line),
-                ...app(PredictionModelBetContext::class)->forPrediction($prediction, $game),
+                ...$this->presentation->modelBetContext,
             ],
-            'weather_forecast' => $prediction->sport === 'cfb'
-                ? app(PredictionWeatherContext::class)->forPrediction($prediction, $game instanceof Game ? $game : null)
-                : null,
+            'weather_forecast' => $this->presentation->weatherForecast,
             'value_signal' => $valueSignal,
+            ...($prediction->sport === 'cfb' ? [
+                'comparison_forecasts' => array_intersect_key((array) data_get($prediction->output_metadata, 'comparison_forecasts', []),
+                    array_flip(['version', 'status', 'validated', 'betting_approved', 'models', 'limitations'])),
+                'market_evaluation' => data_get($evaluation?->market_comparison, 'cfb_comparison'),
+                'raw_home_win_probability' => $homeProbability,
+            ] : []),
             'market_aware_projection' => null,
             'recommendation' => null,
             'pro_signal_layer' => null,

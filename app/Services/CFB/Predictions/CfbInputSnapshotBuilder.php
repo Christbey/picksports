@@ -177,6 +177,15 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
             $sourceTimestamps['football_signal_evidence'] = $inputs['football_signal_evidence']['latest_source_observed_at'];
         }
 
+        if (data_get($release->configuration, 'candidate_suite.enabled', false)) {
+            $inputs['candidate_suite'] = [
+                'evidence' => app(CfbCandidateEvidence::class)->capture($game, $snapshot->capturedAt, $snapshot->cutoffAt),
+                'market' => app(CfbFrozenMarketEvidence::class)->capture($game, $snapshot->capturedAt, $snapshot->cutoffAt),
+            ];
+            $sourceTimestamps['candidate_history'] = data_get($inputs, 'candidate_suite.evidence.source_available_at');
+            $sourceTimestamps['candidate_market'] = $snapshot->capturedAt->toIso8601String();
+        }
+
         if (! empty($release->configuration['scoring_challenger']['artifact_id'])) {
             $playHistoryHeld = collect(['home', 'away'])->contains(fn ($side) => data_get($inputs, $side.'.historical_play_quality.state') === 'incomplete');
             $inputs['scoring_challenger'] = $playHistoryHeld

@@ -238,3 +238,11 @@ it('keeps independent markets and historical signal weights unchanged when shado
     expect(CfbFootballSignalEvidence::baselineHash($oldConfig))
         ->toBe(CfbFootballSignalEvidence::baselineHash($configuration));
 });
+
+it('documents optional CFB comparison fields without requiring them for other sports', function () {
+    Artisan::call('api:v2-openapi-generate', ['--stdout' => true]);
+    $schema = json_decode(Artisan::output(), true)['components']['schemas']['SportPrediction'];
+    expect($schema['properties'])->toHaveKeys(['comparison_forecasts', 'market_evaluation', 'raw_home_win_probability'])
+        ->and($schema['required'])->not->toContain('comparison_forecasts')
+        ->and($schema['properties']['id']['type'])->toContain('string');
+});

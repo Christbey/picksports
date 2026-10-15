@@ -10578,6 +10578,7 @@
                     "id": {
                         "type": [
                             "integer",
+                            "string",
                             "null"
                         ]
                     },
@@ -10695,6 +10696,26 @@
                             "null"
                         ],
                         "format": "date-time"
+                    },
+                    "comparison_forecasts": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "additionalProperties": true
+                    },
+                    "market_evaluation": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "additionalProperties": true
+                    },
+                    "raw_home_win_probability": {
+                        "type": [
+                            "number",
+                            "null"
+                        ]
                     }
                 },
                 "additionalProperties": false

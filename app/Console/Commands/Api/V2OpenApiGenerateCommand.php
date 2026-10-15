@@ -878,9 +878,6 @@ class V2OpenApiGenerateCommand extends Command
             'game' => $nullableOpenObject,
             'pick' => $openObject,
             'projection' => $openObject,
-            'comparison_forecasts' => $nullableOpenObject,
-            'market_evaluation' => $nullableOpenObject,
-            'raw_home_win_probability' => $nullableNumber,
             'period_insights' => ['type' => 'array', 'items' => $openObject],
             'market_summary' => $openObject,
             'graded_at' => $nullableDateTime,
@@ -888,6 +885,10 @@ class V2OpenApiGenerateCommand extends Command
             'created_at' => $nullableDateTime,
             'updated_at' => $nullableDateTime,
         ]);
+        $sportPrediction['properties']['comparison_forecasts'] = $nullableOpenObject;
+        $sportPrediction['properties']['market_evaluation'] = $nullableOpenObject;
+        $sportPrediction['properties']['raw_home_win_probability'] = $nullableNumber;
+        $sportPrediction['properties']['id'] = ['type' => ['integer', 'string', 'null']];
         $sportStat = $this->fixedObjectSchema([
             'id', 'sport', 'type', 'game_id', 'team_id', 'player_id', 'stat_type',
             'team_type', 'season', 'season_type', 'game_date', 'game', 'team', 'player',

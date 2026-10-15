@@ -52,8 +52,9 @@ class CfbCandidateEvidence
         $asOf = $asOf->setTimezone(config('app.timezone'));
         $kickoff = $kickoff->setTimezone(config('app.timezone'));
         $runs = ResultRatingRun::query()->where('season', $game->season)->whereIn('version', [self::VERSION, ResultRatingModel::VERSION])->where('created_at', '<=', $asOf)
-            ->where('source_available_at', '<=', $asOf)->orderByDesc('created_at')->orderByDesc('id')->cursor();
-        foreach ($runs as $run) {
+            ->where('source_available_at', '<=', $asOf)->orderByDesc('created_at')->orderByDesc('id')->get(['id']);
+        foreach ($runs as $identity) {
+            $run = ResultRatingRun::query()->findOrFail($identity->id);
             $evidence = $this->fromRun($run, $game, $asOf, $kickoff);
             if ($evidence['status'] === 'available') {
                 return $evidence;

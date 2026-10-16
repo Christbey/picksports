@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from picksports_mlb_ml.dependencies import dependency_versions
 from picksports_mlb_ml.artifacts import (
     refresh_artifact_descriptor,
     save_run_artifacts,
@@ -750,21 +751,7 @@ def _package_version() -> str:
 
 
 def _dependency_versions() -> dict[str, str]:
-    versions: dict[str, str] = {}
-    for package in (
-        "joblib",
-        "numpy",
-        "pandas",
-        "pyarrow",
-        "PyYAML",
-        "scikit-learn",
-        "xgboost",
-    ):
-        try:
-            versions[package] = importlib.metadata.version(package)
-        except importlib.metadata.PackageNotFoundError:
-            versions[package] = "unknown"
-    return versions
+    return dependency_versions()
 
 
 def _code_version() -> str:

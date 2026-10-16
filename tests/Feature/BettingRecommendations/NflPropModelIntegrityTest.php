@@ -144,7 +144,7 @@ test('shadow preview uses the daily quote window without writing snapshots or su
     $count = OddsApiPlayerMapping::count();
     $this->analyzer->previewNflGame($this->game);
     expect(OddsApiPlayerMapping::count())->toBe($count);
-    $this->prop->update(['fetched_at' => now()->subHours(25)]);
+    $this->prop->update(['fetched_at' => now()->subHours(37)]);
     expect($this->analyzer->previewNflGame($this->game))->toBe([]);
 });
 

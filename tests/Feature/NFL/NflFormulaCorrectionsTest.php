@@ -35,7 +35,7 @@ it('corrects actual forecast direction without changing the existing total formu
     config(['nfl.predictions.line_matchup.enabled' => true]);
     $game = new Game(['home_team_id' => 1, 'away_team_id' => 2]);
     $run = function (array $home, array $away) use ($game): array {
-        $action = Mockery::mock(GeneratePredictionFromHistoricalElo::class)->makePartial()->shouldAllowMockingProtectedMethods();
+        $action = Mockery::mock(GeneratePredictionFromHistoricalElo::class, [])->makePartial()->shouldAllowMockingProtectedMethods();
         $action->shouldReceive('lineProfile')->with($game, 1)->andReturn($home);
         $action->shouldReceive('lineProfile')->with($game, 2)->andReturn($away);
 
@@ -56,7 +56,7 @@ it('retains precision through the injury stage including a zero adjustment', fun
     $game = new Game(['home_team_id' => 1, 'away_team_id' => 2, 'season' => 2026]);
     $counts = ['out' => 0.0, 'questionable' => 0.0, 'scoped_out' => 0, 'returned_before_game' => 0,
         'unknown_return_skipped' => 0, 'unknown_return_days' => 21, 'nflverse_rows' => 0];
-    $action = Mockery::mock(GeneratePredictionFromHistoricalElo::class)->makePartial()->shouldAllowMockingProtectedMethods();
+    $action = Mockery::mock(GeneratePredictionFromHistoricalElo::class, [])->makePartial()->shouldAllowMockingProtectedMethods();
     $action->shouldReceive('injuryCountsForTeam')->andReturn($counts);
     $result = (new ReflectionMethod($action, 'applyDepthChartInjuryAdjustments'))->invoke($action, $game, 3.549, 0.6, 45.551);
     expect($result)->toBe([3.549, 0.6, 45.551]);
@@ -68,10 +68,10 @@ it('keeps raw outputs but uses published margins for analysis and a new model ve
     $game = new Game(['season' => 2026, 'week' => 3, 'home_team_id' => 1, 'away_team_id' => 2,
         'game_date' => '2026-09-27', 'status' => 'STATUS_SCHEDULED']);
     $game->setRelation('homeTeam', new Team)->setRelation('awayTeam', new Team);
-    $action = Mockery::mock(GeneratePredictionFromHistoricalElo::class)->makePartial()->shouldAllowMockingProtectedMethods();
+    $action = Mockery::mock(GeneratePredictionFromHistoricalElo::class, [])->makePartial()->shouldAllowMockingProtectedMethods();
     $action->shouldReceive('getEloAtDate')->andReturn(1500.0);
     $action->shouldReceive('calculateForecast')->once()->andReturn([3.549, 0.612345, 45.551]);
-    $action->shouldReceive('applyAnalysisLayer')->once()->with($game, 3.5, 45.6, 0.612345);
+    $action->shouldReceive('applyAnalysisLayer')->once()->with($game, 3.5, 45.6, 0.612345, Mockery::type('string'));
     $result = $action->preview($game);
     expect($result['outputs']['predicted_spread'])->toBe(3.5)
         ->and($result['outputs']['predicted_total'])->toBe(45.6)

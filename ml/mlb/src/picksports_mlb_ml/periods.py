@@ -21,6 +21,7 @@ from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
 
 from picksports_mlb_ml.calibration import ProbabilityCalibrator, fit_calibrator
+from picksports_mlb_ml.dependencies import dependency_versions
 from picksports_mlb_ml.hashing import sha256_file, sha256_json
 
 
@@ -693,21 +694,7 @@ def _package_version() -> str:
 
 
 def _dependency_versions() -> dict[str, str]:
-    versions: dict[str, str] = {}
-    for package in (
-        "joblib",
-        "numpy",
-        "pandas",
-        "pyarrow",
-        "PyYAML",
-        "scikit-learn",
-        "xgboost",
-    ):
-        try:
-            versions[package] = importlib.metadata.version(package)
-        except importlib.metadata.PackageNotFoundError:
-            versions[package] = "unknown"
-    return versions
+    return dependency_versions()
 
 
 def _source_hash() -> str:

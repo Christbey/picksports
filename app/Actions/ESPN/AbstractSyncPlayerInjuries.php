@@ -105,22 +105,49 @@ abstract class AbstractSyncPlayerInjuries
         }
 
         DB::transaction(function () use ($teamId, $observedAt, $rows): void {
+            $existingRows = DB::table($this->injuryTable())
+                ->where('team_id', $teamId)
+                ->lockForUpdate()
+                ->get()
+                ->keyBy(fn (object $row): string => $row->player_id.':'.$row->injury_key);
+            $presentKeys = collect($rows)
+                ->mapWithKeys(fn (array $row): array => [$row['player_id'].':'.$row['injury_key'] => true]);
+
             if ($this->injuryPayloadReliable) {
-                DB::table($this->injuryTable())
-                    ->where('team_id', $teamId)
-                    ->where('is_active', true)
-                    ->update([
-                        'is_active' => false,
-                        'updated_at' => $observedAt,
-                    ]);
+                $removedIds = $existingRows
+                    ->filter(fn (object $row, string $key): bool => (bool) $row->is_active && ! $presentKeys->has($key))
+                    ->pluck('id');
+
+                if ($removedIds->isNotEmpty()) {
+                    DB::table($this->injuryTable())
+                        ->whereIn('id', $removedIds)
+                        ->update(['is_active' => false, 'updated_at' => $observedAt]);
+                }
             }
 
-            if ($rows === []) {
+            $changedRows = [];
+            $unchangedIds = [];
+            foreach ($rows as $row) {
+                $existing = $existingRows->get($row['player_id'].':'.$row['injury_key']);
+                if ($existing && $this->currentInjuryMatches($existing, $row)) {
+                    $unchangedIds[] = $existing->id;
+                } else {
+                    $changedRows[] = $row;
+                }
+            }
+
+            if ($unchangedIds !== []) {
+                DB::table($this->injuryTable())
+                    ->whereIn('id', $unchangedIds)
+                    ->update(['updated_at' => $observedAt]);
+            }
+
+            if ($changedRows === []) {
                 return;
             }
 
             DB::table($this->injuryTable())->upsert(
-                $rows,
+                $changedRows,
                 ['player_id', 'injury_key'],
                 [
                     'team_id',
@@ -139,6 +166,47 @@ abstract class AbstractSyncPlayerInjuries
         });
 
         return collect($rows)->where('is_active', true)->count();
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function currentInjuryMatches(object $existing, array $row): bool
+    {
+        foreach ($row as $column => $value) {
+            if (in_array($column, ['created_at', 'updated_at'], true)) {
+                continue;
+            }
+
+            $stored = $existing->{$column};
+            if ($column === 'raw_payload') {
+                if ($this->orderedPayload(json_decode((string) $stored, true)) !== $this->orderedPayload(json_decode((string) $value, true))) {
+                    return false;
+                }
+
+                continue;
+            }
+
+            $prepared = DB::connection()->prepareBindings([$value])[0];
+            if (($stored === null) !== ($prepared === null) || (string) $stored !== (string) $prepared) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function orderedPayload(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        if (! array_is_list($value)) {
+            ksort($value);
+        }
+
+        return array_map($this->orderedPayload(...), $value);
     }
 
     /**

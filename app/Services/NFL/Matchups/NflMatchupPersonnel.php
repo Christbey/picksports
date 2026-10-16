@@ -216,8 +216,9 @@ final class NflMatchupPersonnel
         // This provider stores the complete injury report, not every healthy player.
         // Absence is only negative evidence for an out designation when the report
         // is demonstrably complete and recent; it is never proof of health.
+        $reportPayload = $entries->isEmpty() ? $snapshot?->reportPayload() : null;
         if ($entries->isEmpty() && $snapshot && $snapshot->provider === 'espn'
-            && is_array($snapshot->raw_payload) && count($snapshot->raw_payload) === $snapshot->entry_count
+            && is_array($reportPayload) && count($reportPayload) === $snapshot->entry_count
             && $snapshot->entry_count === $snapshot->entries->count()
             && $snapshot->observed_at->copy()->addDays(7)->gte($kickoff)
             && $snapshot->entries->every(fn ($e) => filled($e->espn_athlete_id) && $e->observed_at?->lte($asOf)

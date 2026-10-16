@@ -10,7 +10,9 @@ use App\Models\NFL\Team;
 use App\Services\NFL\Matchups\NflMatchupPersonnel;
 use App\Services\NFL\Matchups\NflMatchupSignalService;
 use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
+use App\Services\ProviderData\CompressedJsonPayloadStorage;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 function personnelFixture(array $changes = []): array
@@ -117,6 +119,24 @@ it('interprets absence only from a complete fresh injury report and never from m
         expect($row['display_value'])->toBe('No unavailable designation for lead running back');
     }
 })->with([true, false]);
+
+it('preserves as-of personnel results when a complete injury report is archived', function () {
+    config()->set('provider-data.storage.disk', 'personnel-archive-test');
+    Storage::fake('personnel-archive-test');
+    [$target, , , $injury, $entry] = personnelFixture();
+    $entry->delete();
+    $injury->update(['provider' => 'espn', 'entry_count' => 0, 'raw_payload' => []]);
+    $cutoff = CarbonImmutable::parse('2026-09-27T17:00:00Z');
+    $before = app(NflMatchupPersonnel::class)->forGame($target, $cutoff);
+    $manifest = app(CompressedJsonPayloadStorage::class)->archive($injury->raw_payload);
+    $injury->update(['payload_archive' => $manifest, 'raw_payload' => null]);
+    $after = app(NflMatchupPersonnel::class)->forGame($target, $cutoff);
+
+    expect($after)->toBe($before)
+        ->and($after[$target->home_team_id]['rb1_out']['value'])->toBe(0);
+    Storage::disk('personnel-archive-test')->put($manifest['object_key'], 'corrupt');
+    expect(fn () => app(NflMatchupPersonnel::class)->forGame($target, $cutoff))->toThrow(RuntimeException::class);
+});
 
 it('requires a unique timestamped lead receiver and explicit current absence', function () {
     [$target, $charts, , $injury] = personnelFixture();

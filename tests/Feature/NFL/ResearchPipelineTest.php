@@ -675,5 +675,7 @@ it('protects researched prediction details behind existing prediction permission
         Permission::findOrCreate($permission, 'web');
         $user->givePermissionTo($permission);
     }
+    $this->getJson('/api/v2/sports/nfl/games/'.$game->id.'/research')->assertForbidden();
+    $user->forceFill(['is_admin' => true])->save();
     $this->getJson('/api/v2/sports/nfl/games/'.$game->id.'/research')->assertOk()->assertJsonPath('data.game_id', $game->id);
 });

@@ -562,6 +562,7 @@ it('suppresses a CFB spread disagreement when the model has only default inputs'
 });
 
 it('runs canonical football commands and evaluation idempotently', function (array $definition) {
+    $this->freezeTime();
     $fixture = canonicalFootballFixture($definition);
     $sport = $definition['sport'];
     $this->artisan("{$sport}:register-calculation-release", ['--effective-at' => now()->subMinute()->toIso8601String()])->assertSuccessful();

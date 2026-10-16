@@ -8,6 +8,7 @@ import { renderToString } from 'vue/server-renderer';
 
 let server;
 let component;
+let setViewerAdmin;
 before(async () => {
     server = await createServer({
         configFile: false,
@@ -15,13 +16,25 @@ before(async () => {
         server: { middlewareMode: true, hmr: false, ws: false, watch: null },
         optimizeDeps: { noDiscovery: true, include: [] },
         resolve: {
-            alias: {
-                '@': fileURLToPath(
-                    new URL('../../resources/js', import.meta.url),
-                ),
-            },
+            alias: [
+                {
+                    find: '@/composables/useViewerAccess',
+                    replacement: fileURLToPath(
+                        new URL('./fixtures/viewerAccess.mjs', import.meta.url),
+                    ),
+                },
+                {
+                    find: '@',
+                    replacement: fileURLToPath(
+                        new URL('../../resources/js', import.meta.url),
+                    ),
+                },
+            ],
         },
     });
+    ({ setViewerAdmin } = await server.ssrLoadModule(
+        '/tests/frontend/fixtures/viewerAccess.mjs',
+    ));
     component = (
         await server.ssrLoadModule(
             '/resources/js/components/player-props/NflPlayerPropCard.vue',
@@ -80,11 +93,21 @@ const fixture = (extra = {}) => ({
     },
     ...extra,
 });
-const render = (rec = fixture(), nowMs = Date.parse('2026-09-20T16:00:00Z')) =>
-    renderToString(createSSRApp(component, { rec, nowMs }));
+const render = async (
+    rec = fixture(),
+    nowMs = Date.parse('2026-09-20T16:00:00Z'),
+    admin = false,
+) => {
+    setViewerAdmin(admin);
+    try {
+        return await renderToString(createSSRApp(component, { rec, nowMs }));
+    } finally {
+        setViewerAdmin(false);
+    }
+};
 const primary = (html) => html.split('<details')[0];
 
-test('pick, price and exactly five history rows are visible without expanding details', async () => {
+test('pick price and compact history remain visible with detailed history collapsed', async () => {
     const html = await render();
     const front = primary(html);
     for (const value of [
@@ -93,57 +116,66 @@ test('pick, price and exactly five history rows are visible without expanding de
         'Rushing Attempts',
         '-110',
         'Test book',
+        'L5',
+        'L10',
+        'Season',
+        'H2H',
+        '1/1',
+        '4/8',
+        '12:00 PM CDT',
+    ]) {
+        assert.ok(front.includes(value), value);
+    }
+    assert.equal((front.match(/<dt /g) ?? []).length, 4);
+    assert.doesNotMatch(front, /Signal score|Probability edge|Last 17/);
+    assert.equal((html.match(/scope="row"/g) ?? []).length, 5);
+    for (const label of [
         'This season',
-        '(2026)',
         'Last season',
-        '(2025)',
         'All available',
         'vs ATL',
         'vs NFC',
-        '1/1',
-        '11/15',
-        '44/75',
-        '4/8',
-        '33/53',
-        '12:00 PM CDT',
     ])
-        assert.ok(front.includes(value), value);
-    assert.equal((front.match(/scope="row"/g) ?? []).length, 5);
-    assert.doesNotMatch(
-        front,
-        /Pending|Signal score|Probability edge|Quote fetched|Last 17/,
-    );
-    assert.match(html, /<details class=/);
+        assert.ok(html.includes(label), label);
+    assert.match(html, /Research &amp; history/);
     assert.doesNotMatch(html, /<details[^>]*\bopen\b/);
-    assert.match(html, /More details/);
-    assert.match(html, /70\.0%/);
-    assert.match(html, /52\.0%/);
-    assert.match(html, /\+18\.0 pp/);
+    assert.match(front, /70\.0%/);
+    assert.doesNotMatch(html, /52\.0%|\+18\.0 pp|Signal score/);
 });
 
-test('missing history remains five N/A rows, never zero covers', async () => {
+test('missing history stays unavailable instead of reporting zero covers', async () => {
     const rec = fixture();
     rec.stats.cover_record = null;
     rec.stats.season_summary = null;
-    const html = primary(await render(rec));
+    const html = await render(rec);
+    assert.equal((primary(html).match(/—/g) ?? []).length, 4);
     assert.equal((html.match(/scope="row"/g) ?? []).length, 5);
-    assert.equal((html.match(/<td[^>]*>\s*N\/A/g) ?? []).length, 5);
-    assert.doesNotMatch(html, /0\/0|\(2025\)|\(2026\)/);
+    assert.equal((html.match(/<td[^>]*>\s*N\/A/g) ?? []).length, 10);
+    assert.doesNotMatch(html, /0\/0/);
 });
 
-test('new model estimates disclose their history basis and lack of calibration inside details', async () => {
-    const html = await render(
-        fixture({
-            confidence_decomposition: {
-                probability_method: 'discretized_normal_uncalibrated',
-                history: { model_season: 2026, current_season_games: 1 },
-            },
-        }),
+test('uncalibrated estimates stay disclosed while detailed model diagnostics require admin access', async () => {
+    const rec = fixture({
+        confidence_decomposition: {
+            probability_method: 'discretized_normal_uncalibrated',
+            history: { model_season: 2026, current_season_games: 1 },
+        },
+    });
+    const publicHtml = await render(rec);
+    assert.match(primary(publicHtml), /Model estimate · not calibrated/);
+    assert.doesNotMatch(
+        publicHtml,
+        /Model details|Probabilities exclude pushes/,
     );
-    assert.match(html, /Model estimate, not calibrated/);
-    assert.match(html, /Probabilities exclude pushes/);
-    assert.match(html, /Uses 2026 current-team stats; 1 current-season games/);
-    assert.doesNotMatch(primary(html), /not calibrated/);
+    const adminHtml = await render(rec, undefined, true);
+    assert.match(adminHtml, /Model estimate, not calibrated/);
+    assert.match(adminHtml, /Probabilities exclude pushes/);
+    assert.match(
+        adminHtml,
+        /Uses 2026 current-team stats; 1 current-season games/,
+    );
+    assert.match(adminHtml, /52\.0%/);
+    assert.match(adminHtml, /\+18\.0 pp/);
 });
 
 test('zero wins and pushes are explicit; win rate excludes pushes', async () => {
@@ -156,21 +188,23 @@ test('zero wins and pushes are explicit; win rate excludes pushes', async () => 
     assert.match(html, /Games include pushes; win % excludes them/);
 });
 
-test('public quotes show recorded update time without operational warnings', async () => {
+test('quotes disclose recorded update time and stale or unknown availability', async () => {
     const fetched = Date.parse('2026-09-20T15:10:00Z');
     assert.doesNotMatch(
         primary(await render(fixture(), fetched + 86400000)),
         /Quote expired/,
     );
-    assert.doesNotMatch(
+    assert.match(
         primary(await render(fixture(), fetched + 86400001)),
         /Quote expired/,
     );
-    assert.match(primary(await render(fixture(), fetched + 86400001)), /Line updated:/);
-    assert.doesNotMatch(
-        primary(await render(fixture({ fetched_at: null }))),
-        /Quote age unavailable|Line updated:/,
+    assert.match(
+        primary(await render(fixture(), fetched + 86400001)),
+        /Line updated:/,
     );
+    const unknown = primary(await render(fixture({ fetched_at: null })));
+    assert.match(unknown, /Quote age unavailable/);
+    assert.doesNotMatch(unknown, /Line updated:/);
 });
 
 test('settled results remain visible and side aware, with zero actual values retained', async () => {

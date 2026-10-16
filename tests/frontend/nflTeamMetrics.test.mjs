@@ -15,11 +15,23 @@ before(async () => {
         server: { middlewareMode: true, hmr: false, ws: false, watch: null },
         optimizeDeps: { noDiscovery: true, include: [] },
         resolve: {
-            alias: {
-                '@': fileURLToPath(
-                    new URL('../../resources/js', import.meta.url),
-                ),
-            },
+            alias: [
+                {
+                    find: /^@\/actions\/App\/Http\/Controllers\/(?:CBB|MLB|NBA|NFL|WCBB|WNBA)\/TeamController$/,
+                    replacement: fileURLToPath(
+                        new URL(
+                            './fixtures/teamController.mjs',
+                            import.meta.url,
+                        ),
+                    ),
+                },
+                {
+                    find: '@',
+                    replacement: fileURLToPath(
+                        new URL('../../resources/js', import.meta.url),
+                    ),
+                },
+            ],
         },
     });
     component = (

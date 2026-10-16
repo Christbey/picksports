@@ -30,6 +30,13 @@
         <env name="SESSION_DRIVER" value="array"/>
         <env name="SPORTS_ASSETS_DISK" value="local"/>
         <env name="SITE_ASSETS_DISK" value="local"/>
+        <env name="PASSKEYS_ENABLED" value="true" force="true"/>
+        <env name="AI_NFL_GAME_CONTEXT_RESEARCH_ENABLED" value="true" force="true"/>
+        <env name="AI_DAILY_PREDICTION_ANALYSIS_ENABLED" value="true" force="true"/>
+        <env name="AI_DATA_FRESHNESS_REVIEW_ENABLED" value="true" force="true"/>
+        <env name="AI_MARKET_READINESS_REVIEW_ENABLED" value="true" force="true"/>
+        <env name="AI_MODEL_AUDIT_REVIEW_ENABLED" value="true" force="true"/>
+        <env name="AI_PUBLISHING_GUARDRAIL_REVIEW_ENABLED" value="true" force="true"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>

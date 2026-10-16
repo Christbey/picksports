@@ -168,7 +168,7 @@ class AppServiceProvider extends ServiceProvider
         Factory::guessFactoryNamesUsing(function (string $modelName): string {
             $factoryBaseName = collect(explode('\\', Str::after($modelName, 'App\\Models\\')))
                 ->filter()
-                ->map(fn (string $segment): string => Str::studly(Str::lower($segment)))
+                ->map(fn (string $segment): string => Str::studly($segment === strtoupper($segment) ? Str::lower($segment) : $segment))
                 ->implode('');
 
             return 'Database\\Factories\\'.$factoryBaseName.'Factory';

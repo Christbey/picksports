@@ -192,3 +192,24 @@ it('selects the correct cfb schools even when a mascot collision is scanned firs
         ->and($correct->fresh()->odds_api_event_id)->toBe('kansas-rivalry')
         ->and(GameOddsSnapshot::query()->value('game_id'))->toBe($correct->id);
 })->with(['fuzzy matching' => false, 'explicit provider aliases' => true]);
+
+it('preserves full school aliases without changing stored provider labels', function (string $school, string $mascot, string $providerHome) {
+    $start = now('UTC')->addDay()->setTime(17, 0);
+    $game = Game::factory()->create([
+        'home_team_id' => Team::factory()->create(['school' => $school, 'mascot' => $mascot])->id,
+        'away_team_id' => Team::factory()->create(['school' => 'New Mexico', 'mascot' => 'Lobos'])->id,
+        'game_date' => $start->toDateString(), 'game_time' => $start->format('H:i:s'),
+        'status' => 'STATUS_SCHEDULED', 'odds_api_event_id' => null, 'odds_data' => null,
+    ]);
+    $service = m::mock(OddsApiService::class)->makePartial();
+    $service->shouldReceive('getOdds')->once()->with('americanfootball_ncaaf')
+        ->andReturn([cfbOddsEvent('school-alias', $providerHome, 'New Mexico Lobos', $start)]);
+    expect((new SyncOddsForGames($service, app(SportsViewCache::class)))->execute(7))->toBe(1)
+        ->and($game->fresh()->odds_api_event_id)->toBe('school-alias')
+        ->and(data_get($game->fresh()->odds_data, 'home_team'))->toBe($providerHome);
+})->with([
+    'App State' => ['App State', 'Mountaineers', 'Appalachian State Mountaineers'],
+    'UMass' => ['Massachusetts', 'Minutemen', 'UMass Minutemen'],
+    'Hawaii' => ["Hawai'i", 'Rainbow Warriors', 'Hawaii Rainbow Warriors'],
+    'San Jose' => ['San José State', 'Spartans', 'San Jose State Spartans'],
+]);

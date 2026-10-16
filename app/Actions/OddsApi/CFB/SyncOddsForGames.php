@@ -4,6 +4,7 @@ namespace App\Actions\OddsApi\CFB;
 
 use App\Actions\OddsApi\AbstractSyncOddsForGames;
 use App\Models\CFB\Game;
+use App\Models\SportEventProviderMapping;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
@@ -20,7 +21,22 @@ class SyncOddsForGames extends AbstractSyncOddsForGames
         $event['home_team'] = $this->normalizeSchoolLabel((string) $event['home_team']);
         $event['away_team'] = $this->normalizeSchoolLabel((string) $event['away_team']);
 
-        return parent::matchEvent($event, $oddsSportKey, $daysAhead);
+        $game = parent::matchEvent($event, $oddsSportKey, $daysAhead);
+
+        if ($game === null) {
+            return null;
+        }
+
+        $mappedEventId = SportEventProviderMapping::query()
+            ->where('provider', 'odds_api')
+            ->where('provider_event_id', (string) $event['id'])
+            ->value('sport_event_id');
+
+        if ($mappedEventId !== null && (int) $game->sport_event_id !== (int) $mappedEventId) {
+            return null;
+        }
+
+        return $game;
     }
 
     protected function homeTeamNames(Model $game): array

@@ -5,6 +5,8 @@ use App\Models\CFB\Game;
 use App\Models\CFB\Team;
 use App\Models\GameOddsSnapshot;
 use App\Models\OddsApiTeamMapping;
+use App\Models\SportEvent;
+use App\Models\SportEventProviderMapping;
 use App\Services\OddsApi\OddsApiService;
 use App\Support\SportsViewCache;
 use Carbon\CarbonInterface;
@@ -213,3 +215,27 @@ it('preserves full school aliases without changing stored provider labels', func
     'Hawaii' => ["Hawai'i", 'Rainbow Warriors', 'Hawaii Rainbow Warriors'],
     'San Jose' => ['San José State', 'Spartans', 'San Jose State Spartans'],
 ]);
+
+it('respects existing canonical ownership before accepting cfb odds', function (bool $sameOwner) {
+    $event = SportEvent::factory()->create(['sport' => 'cfb']);
+    $owner = $sameOwner ? $event : SportEvent::factory()->create(['sport' => 'cfb']);
+    SportEventProviderMapping::factory()->for($owner)->create([
+        'provider' => 'odds_api', 'provider_event_id' => 'owned-provider-id', 'provider_uid' => null,
+    ]);
+    $start = now('UTC')->addDay()->setTime(17, 0);
+    $game = Game::factory()->create([
+        'sport_event_id' => $event->id,
+        'home_team_id' => Team::factory()->create(['school' => 'Kansas State', 'mascot' => 'Wildcats'])->id,
+        'away_team_id' => Team::factory()->create(['school' => 'Kansas', 'mascot' => 'Jayhawks'])->id,
+        'game_date' => $start->toDateString(), 'game_time' => $start->format('H:i:s'),
+        'status' => 'STATUS_SCHEDULED', 'odds_api_event_id' => null, 'odds_data' => null,
+    ]);
+    $service = m::mock(OddsApiService::class)->makePartial();
+    $service->shouldReceive('getOdds')->once()->with('americanfootball_ncaaf')
+        ->andReturn([cfbOddsEvent('owned-provider-id', 'Kansas State Wildcats', 'Kansas Jayhawks', $start)]);
+    expect((new SyncOddsForGames($service, app(SportsViewCache::class)))->execute(7))->toBe($sameOwner ? 1 : 0)
+        ->and($game->fresh()->sport_event_id)->toBe($event->id)
+        ->and($game->fresh()->odds_api_event_id)->toBe($sameOwner ? 'owned-provider-id' : null)
+        ->and(GameOddsSnapshot::query()->count())->toBe($sameOwner ? 1 : 0)
+        ->and(SportEventProviderMapping::query()->value('sport_event_id'))->toBe($owner->id);
+})->with(['matching canonical owner' => true, 'conflicting canonical owner' => false]);

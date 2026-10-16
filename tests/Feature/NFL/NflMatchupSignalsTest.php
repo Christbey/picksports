@@ -214,7 +214,7 @@ it('excludes target future nonfinal preseason previous season and not-yet-comple
     ] as $overrides) {
         Game::factory()->create(array_merge([
             'home_team_id' => $target->home_team_id, 'away_team_id' => $target->away_team_id,
-            'season' => 2026, 'season_type' => '2', 'status' => 'STATUS_FINAL',
+            'season' => 2026, 'season_type' => '2', 'status' => 'STATUS_FINAL', 'week' => $target->week,
             'game_time' => '17:00:00', 'home_score' => 100, 'away_score' => 100,
         ], $overrides));
     }

@@ -14,15 +14,30 @@ class SyncOddsForGames extends AbstractSyncOddsForGames
 
     protected const MATCH_THRESHOLD = 85.0;
 
-    protected const INCLUDE_ABBREVIATION_IN_TEAM_NAMES = true;
-
     protected function homeTeamNames(Model $game): array
     {
-        return $this->schoolMascotAbbreviationTeamNames($game->homeTeam);
+        return $this->schoolIdentityTeamNames($game->homeTeam);
     }
 
     protected function awayTeamNames(Model $game): array
     {
-        return $this->schoolMascotAbbreviationTeamNames($game->awayTeam);
+        return $this->schoolIdentityTeamNames($game->awayTeam);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function schoolIdentityTeamNames(mixed $team): array
+    {
+        $school = trim((string) ($team->school ?? ''));
+
+        if ($school === '') {
+            return [];
+        }
+
+        return array_values(array_unique([
+            $school,
+            trim($school.' '.($team->mascot ?? '')),
+        ]));
     }
 }

@@ -3,6 +3,8 @@
 use App\Actions\OddsApi\CFB\SyncOddsForGames;
 use App\Models\CFB\Game;
 use App\Models\CFB\Team;
+use App\Models\GameOddsSnapshot;
+use App\Models\OddsApiTeamMapping;
 use App\Services\OddsApi\OddsApiService;
 use App\Support\SportsViewCache;
 use Carbon\CarbonInterface;
@@ -14,7 +16,7 @@ afterEach(function () {
     m::close();
 });
 
-it('matches cfb odds using school mascot and abbreviation names', function () {
+it('matches cfb odds using school and full school mascot names', function () {
     $homeTeam = Team::factory()->create([
         'school' => 'Alabama',
         'mascot' => 'Crimson Tide',
@@ -136,3 +138,57 @@ function cfbOddsEvent(string $id, string $home, string $away, CarbonInterface $s
         ],
     ];
 }
+
+it('does not assign another school matchup based on mascot or abbreviation fragments', function (
+    string $homeSchool, string $homeMascot, string $homeAbbreviation,
+    string $awaySchool, string $awayMascot, string $awayAbbreviation,
+    string $providerHome, string $providerAway,
+) {
+    $start = now('UTC')->addDay()->setTime(17, 0);
+    $game = Game::factory()->create([
+        'home_team_id' => Team::factory()->create(['school' => $homeSchool, 'mascot' => $homeMascot, 'abbreviation' => $homeAbbreviation])->id,
+        'away_team_id' => Team::factory()->create(['school' => $awaySchool, 'mascot' => $awayMascot, 'abbreviation' => $awayAbbreviation])->id,
+        'game_date' => $start->toDateString(), 'game_time' => $start->format('H:i:s'),
+        'status' => 'STATUS_SCHEDULED', 'odds_api_event_id' => null, 'odds_data' => null,
+    ]);
+    $service = m::mock(OddsApiService::class)->makePartial();
+    $service->shouldReceive('getOdds')->once()->with('americanfootball_ncaaf')
+        ->andReturn([cfbOddsEvent('unrelated-event', $providerHome, $providerAway, $start)]);
+    expect((new SyncOddsForGames($service, app(SportsViewCache::class)))->execute(7))->toBe(0)
+        ->and($game->fresh()->odds_api_event_id)->toBeNull()
+        ->and(GameOddsSnapshot::query()->count())->toBe(0);
+})->with([
+    'shared mascot and mascot substring' => ['New Hampshire', 'Wildcats', 'UNH', 'Monmouth', 'Hawks', 'MONM', 'Kansas State Wildcats', 'Kansas Jayhawks'],
+    'missing school identity' => ['', 'Wildcats', 'UNH', '', 'Hawks', 'MONM', 'Kansas State Wildcats', 'Kansas Jayhawks'],
+    'abbreviation substring' => ['Texas', 'Longhorns', 'UT', 'Oklahoma', 'Sooners', 'OU', 'Utah Utes', 'Houston Cougars'],
+]);
+
+it('selects the correct cfb schools even when a mascot collision is scanned first', function (bool $manualMappings) {
+    $start = now('UTC')->addDay()->setTime(17, 0);
+    $wrong = Game::factory()->create([
+        'home_team_id' => Team::factory()->create(['school' => 'New Hampshire', 'mascot' => 'Wildcats', 'abbreviation' => 'UNH'])->id,
+        'away_team_id' => Team::factory()->create(['school' => 'Monmouth', 'mascot' => 'Hawks', 'abbreviation' => 'MONM'])->id,
+        'game_date' => $start->toDateString(), 'game_time' => $start->format('H:i:s'),
+        'status' => 'STATUS_SCHEDULED', 'odds_api_event_id' => null, 'odds_data' => null,
+    ]);
+    $correct = Game::factory()->create([
+        'home_team_id' => Team::factory()->create(['school' => 'Kansas State', 'mascot' => 'Wildcats', 'abbreviation' => 'KSU'])->id,
+        'away_team_id' => Team::factory()->create(['school' => 'Kansas', 'mascot' => 'Jayhawks', 'abbreviation' => 'KU'])->id,
+        'game_date' => $start->toDateString(), 'game_time' => $start->format('H:i:s'),
+        'status' => 'STATUS_SCHEDULED', 'odds_api_event_id' => null, 'odds_data' => null,
+    ]);
+    if ($manualMappings) {
+        foreach (['Kansas State Wildcats', 'Kansas Jayhawks'] as $name) {
+            OddsApiTeamMapping::query()->create([
+                'sport' => 'americanfootball_ncaaf', 'odds_api_team_name' => $name, 'espn_team_name' => $name,
+            ]);
+        }
+    }
+    $service = m::mock(OddsApiService::class)->makePartial();
+    $service->shouldReceive('getOdds')->once()->with('americanfootball_ncaaf')
+        ->andReturn([cfbOddsEvent('kansas-rivalry', 'Kansas State Wildcats', 'Kansas Jayhawks', $start)]);
+    expect((new SyncOddsForGames($service, app(SportsViewCache::class)))->execute(7))->toBe(1)
+        ->and($wrong->fresh()->odds_api_event_id)->toBeNull()
+        ->and($correct->fresh()->odds_api_event_id)->toBe('kansas-rivalry')
+        ->and(GameOddsSnapshot::query()->value('game_id'))->toBe($correct->id);
+})->with(['fuzzy matching' => false, 'explicit provider aliases' => true]);

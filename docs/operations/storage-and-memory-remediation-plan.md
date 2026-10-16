@@ -1,6 +1,6 @@
 # Production storage and memory remediation plan
 
-Status: plan with first local implementation completed; no production configuration changes, deployment, archival, or deletion performed.
+Status: first write optimization and additive archive support deployed; historical reclamation remains pending. See the dated production rollout section at the end for current evidence.
 Evidence date: October 15, 2026, America/Chicago.
 
 ## Objectives
@@ -284,3 +284,16 @@ Before removing database payloads, rollback uses the original reader path and re
 Final acceptance requires healthy authenticated requests, writable database, bounded disk growth, adequate headroom, no OOMs through peak traffic, timely queues, and unchanged prediction/decision/replay results for a representative cross-sport sample.
 
 Reference: MySQL documents additional temporary-space requirements for online schema changes at https://dev.mysql.com/doc/refman/8.0/en/innodb-online-ddl-space-requirements.html.
+
+
+## Production rollout and reclamation follow-up — October 15, 2026
+
+PR #1 was merged and deployed successfully as commit `72205ea29fcd3b71190bdca77757d2f4ec1c401f`, Cloud deployment `depl-a2fe0483-9b7c-4dd9-9afc-6c71312d555c`. Full PHP 8.4 and 8.5 runs each passed 3,553 tests / 30,215 assertions; API contract, frontend, quality and both ML jobs passed. Production archive support and the instant manifest migration are present; the database is writable. The authenticated dashboard loaded successfully after deployment. This deploy reduces injury-current-state write churn; it has not reclaimed historical disk.
+
+The Cloud dashboard now reports 25.9/27 GiB used, about 1.1 GiB free. Production snapshot upper ID was 20,767. The deployed preview selected ten reports totaling 825,972 inline JSON bytes; no upload occurred. Automatic approval review blocked the ten-report apply because the production-payload transfer requires specific user approval. Approval was requested for private PickSports object storage, verified archival, and clearing only duplicate inline payloads. Do not retry that transfer until approval arrives.
+
+A temporary session-only MINIMAL binlog-mode capability probe was denied by existing database permissions; no session/global setting or privilege was changed. FULL row logging remains in effect. Do not grant privileges or bypass this restriction. Archive-manifest updates and duplicate release both generate logs, so batch byte limits are only one control: check dashboard free space between batches and stop on pressure. Do not attempt a multi-GiB rebuild with 1.1 GiB free.
+
+The follow-up `nfl:manage-injury-snapshot-inline-payloads` command supports explicit `--mode=release` and `--mode=restore`, requires an inclusive ID boundary, verifies archives before any change, defaults to verification-only, and requires `--apply` for writes. Default bounds are ten records and 5 MiB of source JSON, with a 32 MiB hard batch maximum. Failed rows are not advanced past; source/manifest/hash changes stop the batch. No object operation occurs under the row lock. Release keeps the archive and all other attributes; restore rehydrates the same JSON values. It never deletes rows or archive objects and registers no schedule. Physical file reclamation is separate from releasing inline values.
+
+Focused archive, release/restore, and personnel-reader suites passed on SQLite and disposable MySQL 8.4.6: 61 tests / 185 assertions on each. The disposable MySQL database was removed. Production release/restore has not run.

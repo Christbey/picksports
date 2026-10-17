@@ -52,12 +52,18 @@ class CfbScoringChallenger
                 return ['state' => 'stale', 'reason' => 'accepted_history_changed', 'artifact_id' => $id];
             }
             $seed = (int) hexdec(substr(hash('sha256', json_encode($evidence).$loaded['record']->artifact_hash), 0, 7));
-            $distribution = app(CfbPossessionScorer::class)->simulate($artifact, $evidence, 50000, $seed);
-
             $reference = null;
-            try {
-                $reference = app(CfbPossessionScorer::class)->simulate($artifact, $evidence, 50000, $seed + 101, true);
-            } catch (\DomainException) { /* Missing original FPI leaves the paired comparison unavailable. */
+            if ((float) ($artifact['fpi_weight'] ?? 0) === 1.0
+                && (float) ($artifact['calibration_temperature'] ?? 1) === 1.0) {
+                // The selected distribution is exactly this reference, including its seed.
+                // Avoid simulating an unused efficiency component and the same reference twice.
+                $distribution = $reference = app(CfbPossessionScorer::class)->simulate($artifact, $evidence, 50000, $seed + 101, true);
+            } else {
+                $distribution = app(CfbPossessionScorer::class)->simulate($artifact, $evidence, 50000, $seed);
+                try {
+                    $reference = app(CfbPossessionScorer::class)->simulate($artifact, $evidence, 50000, $seed + 101, true);
+                } catch (\DomainException) { /* Missing original FPI leaves the paired comparison unavailable. */
+                }
             }
 
             return $this->freeze(['state' => 'ready', 'historical_evaluation_mode' => $artifact['evidence_mode'], 'benchmark_scores' => $reference ? $this->freeze($reference->scores) : null, 'artifact_id' => $id, 'artifact_hash' => $loaded['record']->artifact_hash, 'artifact_available_at' => $loaded['record']->created_at->toIso8601String(),

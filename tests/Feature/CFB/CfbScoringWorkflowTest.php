@@ -1,14 +1,18 @@
 <?php
 
+use App\Application\Predictions\Data\EventInputSnapshotData;
 use App\Application\Predictions\Data\PredictionMarketOutput;
 use App\Application\Predictions\Data\PredictionOutput;
+use App\Models\CFB\Game;
 use App\Models\EpaStateBaseline;
 use App\Models\ModelArtifact;
 use App\Models\ModelRun;
 use App\Services\CFB\CfbEpaBaselineEvidence;
 use App\Services\CFB\Data\CfbPipelineStage;
+use App\Services\CFB\Scoring\CfbPossessionScorer;
 use App\Services\CFB\Scoring\CfbScoringArtifact;
 use App\Services\CFB\Scoring\CfbScoringChallenger;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -89,4 +93,30 @@ it('invalidates reused normalization when the accepted prior-season EPA baseline
     $row->update(['expected_points' => 3.0]);
     $stage->run('game:baseline', 'normalize', ['epa_baseline_available_at' => $evidence->availableAt(2026)], $work);
     expect($calls)->toBe(2)->and($evidence->availableAt(2026))->not->toBe($before);
+});
+
+it('reuses a fully selected untransformed FPI distribution without changing its forecast', function () {
+    $artifact = json_decode(file_get_contents(__DIR__.'/../../Fixtures/cfb-scoring-synthetic.json'), true);
+    $artifact['training_ids'] = [];
+    $artifact['fpi_weight'] = 1.0;
+    $artifact['calibration_temperature'] = 1.0;
+    $artifact['models']['fpi_margin'] = ['coefficients' => ['intercept' => 7.0]];
+    $artifact['models']['fpi_total'] = ['coefficients' => ['intercept' => 52.0]];
+    $record = new ModelArtifact(['artifact_hash' => hash('sha256', 'pure-fpi'), 'status' => 'challenger']);
+    $record->created_at = now();
+    $this->mock(CfbScoringArtifact::class)->shouldReceive('load')->once()->andReturn(['record' => $record, 'payload' => $artifact]);
+    $scorer = Mockery::mock(CfbPossessionScorer::class)->makePartial();
+    $scorer->shouldReceive('simulate')->once()->passthru();
+    app()->instance(CfbPossessionScorer::class, $scorer);
+    $inputs = ['home' => ['metrics' => ['fpi' => 10]], 'away' => ['metrics' => ['fpi' => 3]]];
+    $game = new Game(['home_team_id' => 1, 'away_team_id' => 2, 'season' => 2026, 'neutral_site' => false]);
+    $snapshot = new EventInputSnapshotData('test', $inputs,
+        CarbonImmutable::now(), CarbonImmutable::parse('2026-11-01T18:00:00Z'));
+    $frozen = app(CfbScoringChallenger::class)->capture($game, $snapshot, $inputs, ['artifact_id' => 'test']);
+    expect($frozen['state'])->toBe('ready')->and($frozen['promoted'])->toBeFalse()->and($frozen['fpi_weight'])->toBe(1.0);
+    $original = (new CfbPossessionScorer)->simulate($artifact, $frozen['inputs'], 50000, $frozen['seed']);
+    foreach (['home_points', 'away_points', 'home_margin', 'total', 'home_win_probability'] as $key) {
+        expect($frozen['summary'][$key])->toEqualWithDelta($original->summary()[$key], 1e-8);
+    }
+    expect(array_sum(array_column($frozen['scores'], 'probability')))->toEqualWithDelta(1.0, 1e-6);
 });

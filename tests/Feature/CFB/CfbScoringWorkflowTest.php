@@ -2,8 +2,10 @@
 
 use App\Application\Predictions\Data\PredictionMarketOutput;
 use App\Application\Predictions\Data\PredictionOutput;
+use App\Models\EpaStateBaseline;
 use App\Models\ModelArtifact;
 use App\Models\ModelRun;
+use App\Services\CFB\CfbEpaBaselineEvidence;
 use App\Services\CFB\Data\CfbPipelineStage;
 use App\Services\CFB\Scoring\CfbScoringArtifact;
 use App\Services\CFB\Scoring\CfbScoringChallenger;
@@ -62,4 +64,29 @@ it('verifies artifact content and prevents retrospective research feeding live f
     $artifact->update(['artifact_hash' => hash('sha256', $json)]);
     expect(fn () => app(CfbScoringArtifact::class)->load($artifact->id, now(), true))->toThrow(DomainException::class);
 
+});
+
+it('invalidates reused normalization when the accepted prior-season EPA baseline changes', function () {
+    $this->freezeTime();
+    $row = EpaStateBaseline::create(['sport' => 'cfb', 'season' => 2026, 'source_season' => 2025,
+        'state_key' => 'first-state', 'expected_points' => 2.5, 'sample_size' => 30]);
+    $evidence = app(CfbEpaBaselineEvidence::class);
+    $stage = app(CfbPipelineStage::class);
+    $calls = 0;
+    $work = function () use (&$calls) {
+        $calls++;
+
+        return ['state' => 'complete'];
+    };
+    $before = $evidence->availableAt(2026);
+    $stage->run('game:baseline', 'normalize', ['epa_baseline_available_at' => $before], $work);
+    $invalid = EpaStateBaseline::create(['sport' => 'cfb', 'season' => 2026, 'source_season' => 2026,
+        'state_key' => 'invalid-same-season', 'expected_points' => 99, 'sample_size' => 30]);
+    $invalid->forceFill(['updated_at' => now()->addHour()])->save();
+    $stage->run('game:baseline', 'normalize', ['epa_baseline_available_at' => $evidence->availableAt(2026)], $work);
+    expect($calls)->toBe(1);
+    $this->travel(1)->minutes();
+    $row->update(['expected_points' => 3.0]);
+    $stage->run('game:baseline', 'normalize', ['epa_baseline_available_at' => $evidence->availableAt(2026)], $work);
+    expect($calls)->toBe(2)->and($evidence->availableAt(2026))->not->toBe($before);
 });

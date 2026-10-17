@@ -186,3 +186,20 @@ it('batch loads shared metadata and hides its storage representation from serial
     expect(count(DB::getQueryLog()))->toBe(2);
     DB::disableQueryLog();
 });
+
+it('preserves native JSON object list and numeric types through legacy compaction and restore', function () {
+    $snapshot = sharedMetadataFixture();
+    $json = '{"empty_object":{},"empty_list":[],"nested":{"object":{},"list":[{},[]]},"float":1.0,"integer":1,"padding":"'.str_repeat('source', 500).'"}';
+    PredictionFeatureSnapshot::query()->whereKey($snapshot->id)->toBase()->update(['model_metadata' => $json]);
+    $storage = app(SnapshotMetadataStorage::class);
+    $before = $storage->jsonSignature($json);
+    $options = ['--through-id' => $snapshot->id, '--apply' => true];
+    expect(Artisan::call('sports:compact-snapshot-metadata', $options))->toBe(0);
+    $reference = json_decode($snapshot->fresh()->getRawOriginal('model_metadata'), true);
+    expect($storage->originalJson($reference))->toBe($json)
+        ->and($storage->jsonSignature('{"value":{}}'))->not->toBe($storage->jsonSignature('{"value":[]}'))
+        ->and($storage->jsonSignature('{"value":1.0}'))->not->toBe($storage->jsonSignature('{"value":1}'))
+        ->and(Artisan::call('sports:compact-snapshot-metadata', [...$options, '--restore' => true]))->toBe(0)
+        ->and($snapshot->fresh()->getRawOriginal('model_metadata'))->toBe($json)
+        ->and($storage->jsonSignature($snapshot->fresh()->getRawOriginal('model_metadata')))->toBe($before);
+});

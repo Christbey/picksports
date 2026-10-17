@@ -47,7 +47,8 @@ class CompactSnapshotMetadataCommand extends Command
                     $raw = $snapshot->getRawOriginal('model_metadata');
                     $shared = $storage->isReference($raw === null ? null : json_decode($raw, true, 512, JSON_THROW_ON_ERROR));
                     $metadata = $snapshot->model_metadata;
-                    $json = $metadata === null ? null : $storage->encode($metadata);
+                    $json = $metadata === null ? null : ($shared
+                        ? $storage->originalJson(json_decode($raw, true, 512, JSON_THROW_ON_ERROR), $snapshot->metadataPayload) : $raw);
                     $eligible = $this->option('restore') ? $shared : (! $shared && $json !== null
                         && strlen($json) >= (int) config('snapshot-storage.minimum_json_bytes'));
                     if (! $eligible || ! $this->option('apply')) {
@@ -57,12 +58,16 @@ class CompactSnapshotMetadataCommand extends Command
                     $before = $snapshot->getRawOriginal();
                     unset($before['model_metadata']);
                     $replacement = $this->option('restore') ? $json
-                        : json_encode($storage->store($metadata), JSON_THROW_ON_ERROR);
+                        : json_encode($storage->storeJson($json), JSON_THROW_ON_ERROR);
                     PredictionFeatureSnapshot::query()->whereKey($id)->toBase()->update(['model_metadata' => $replacement]);
                     $fresh = $snapshot->fresh();
                     $other = $fresh->getRawOriginal();
                     unset($other['model_metadata']);
-                    if ($before !== $other || $fresh->model_metadata !== $metadata) {
+                    $freshRaw = $fresh->getRawOriginal('model_metadata');
+                    $freshJson = $this->option('restore') ? $freshRaw
+                        : $storage->originalJson(json_decode($freshRaw, true, 512, JSON_THROW_ON_ERROR), $fresh->metadataPayload);
+                    if ($before !== $other || ! is_array($fresh->model_metadata)
+                        || $storage->jsonSignature($freshJson) !== $storage->jsonSignature($json)) {
                         throw new RuntimeException('Snapshot metadata verification failed; transaction rolled back.');
                     }
 

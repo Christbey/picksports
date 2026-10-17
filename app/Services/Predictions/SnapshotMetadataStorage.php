@@ -33,7 +33,15 @@ class SnapshotMetadataStorage
      */
     public function store(array $metadata): string
     {
-        $json = $this->encode($metadata);
+        return $this->storeJson($this->encode($metadata));
+    }
+
+    public function storeJson(string $json): string
+    {
+        if (strlen($json) > $this->limit()) {
+            throw new RuntimeException('Snapshot metadata exceeds the size limit.');
+        }
+        $this->jsonSignature($json);
         $compressed = gzencode($json, 6);
         if ($compressed === false) {
             throw new RuntimeException('Snapshot metadata compression failed.');
@@ -46,7 +54,7 @@ class SnapshotMetadataStorage
             'compressed_bytes' => strlen($compressed),
             'payload' => base64_encode($compressed),
         ]);
-        if ($this->decode($payload) !== $metadata) {
+        if ($this->decodeJson($payload) !== $json) {
             throw new RuntimeException('Snapshot metadata failed exact read-back verification.');
         }
 
@@ -71,14 +79,44 @@ class SnapshotMetadataStorage
             throw new RuntimeException('Unsupported snapshot metadata value.');
         }
 
-        $hash = substr($value, strlen(self::REFERENCE_PREFIX));
+        return json_decode($this->originalJson($value, $loaded), true, 512, JSON_THROW_ON_ERROR);
+    }
+
+    public function originalJson(string $reference, ?SnapshotMetadataPayload $loaded = null): string
+    {
+        if (! $this->isReference($reference)) {
+            throw new RuntimeException('Unsupported snapshot metadata reference.');
+        }
+        $hash = substr($reference, strlen(self::REFERENCE_PREFIX));
         $payload = $loaded !== null && hash_equals($hash, $loaded->sha256)
             ? $loaded : SnapshotMetadataPayload::query()->find($hash);
         if ($payload === null) {
             throw new RuntimeException('Referenced snapshot metadata is missing.');
         }
 
-        return $this->decode($payload);
+        return $this->decodeJson($payload);
+    }
+
+    public function jsonSignature(string $json): string
+    {
+        $value = json_decode($json, false, 512, JSON_THROW_ON_ERROR);
+        if (! is_array($value) && ! is_object($value)) {
+            throw new RuntimeException('Snapshot metadata must contain an array or object.');
+        }
+
+        return hash('sha256', json_encode($this->canonicalValue($value), JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION));
+    }
+
+    private function canonicalValue(mixed $value): mixed
+    {
+        if (is_object($value)) {
+            $fields = get_object_vars($value);
+            ksort($fields);
+
+            return (object) array_map($this->canonicalValue(...), $fields);
+        }
+
+        return is_array($value) ? array_map($this->canonicalValue(...), $value) : $value;
     }
 
     public function isReference(mixed $value): bool
@@ -99,10 +137,7 @@ class SnapshotMetadataStorage
         return $json;
     }
 
-    /**
-     * @return array<array-key, mixed>
-     */
-    private function decode(SnapshotMetadataPayload $payload): array
+    private function decodeJson(SnapshotMetadataPayload $payload): string
     {
         if ($payload->json_bytes < 1 || $payload->json_bytes > $this->limit()
             || $payload->compressed_bytes < 1 || $payload->compressed_bytes > $this->limit() + 65536
@@ -122,12 +157,9 @@ class SnapshotMetadataStorage
             throw new RuntimeException('Snapshot metadata JSON checksum mismatch.');
         }
 
-        $metadata = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
-        if (! is_array($metadata)) {
-            throw new RuntimeException('Snapshot metadata must contain an array or object.');
-        }
+        $this->jsonSignature($json);
 
-        return $metadata;
+        return $json;
     }
 
     private function limit(): int

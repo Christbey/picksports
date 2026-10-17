@@ -26,10 +26,10 @@ class CfbCalculator extends CanonicalFootballCalculator
             $suite = app(CfbForecastCandidates::class)->build($line, $total,
                 $snapshot->inputs['candidate_suite']['evidence'], $snapshot->inputs['candidate_suite']['market']);
 
-            return new PredictionOutput($output->markets, [...$output->metadata, 'comparison_forecasts' => $suite], $output->diagnostics, $output->generatedAt);
+            $output = new PredictionOutput($output->markets, [...$output->metadata, 'comparison_forecasts' => $suite], $output->diagnostics, $output->generatedAt);
         }
 
-        return $output;
+        return app(CfbForecastCoordinator::class)->apply($output, $snapshot, $release->configuration);
     }
 
     private function calculateBaseline(EventInputSnapshotData $snapshot, CalculationReleaseData $release): PredictionOutput

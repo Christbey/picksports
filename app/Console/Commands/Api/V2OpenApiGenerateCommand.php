@@ -887,6 +887,7 @@ class V2OpenApiGenerateCommand extends Command
         ]);
         $sportPrediction['properties']['comparison_forecasts'] = $nullableOpenObject;
         $sportPrediction['properties']['market_evaluation'] = $nullableOpenObject;
+        $sportPrediction['properties']['forecast_coordination'] = $nullableOpenObject;
         $sportPrediction['properties']['raw_home_win_probability'] = $nullableNumber;
         $sportPrediction['properties']['id'] = ['type' => ['integer', 'string', 'null']];
         $sportStat = $this->fixedObjectSchema([

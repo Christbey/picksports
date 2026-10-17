@@ -34,10 +34,19 @@ class CfbSignalContributionGrader
                 // A paired ablation holds the already fitted corrections fixed while changing one base term.
                 $i['football_signal_evidence']['baseline_hash'] = CfbFootballSignalEvidence::baselineHash($c);
             }
+            $counterfactual = $i !== $snapshot->inputs || $c !== $release->configuration;
+            $calculationConfiguration = $c;
+            if ($counterfactual) {
+                unset($calculationConfiguration['forecast_coordination']);
+            }
             $r = new CalculationReleaseData($release->publicId, $release->sport, $release->phase, $release->calculatorName,
                 $release->releaseType, $release->semanticVersion, $release->codeRevision, $release->configurationHash,
-                $release->inputSchemaVersion, $c);
-            $out = app(CfbCalculator::class)->calculate(new EventInputSnapshotData($snapshot->schema_version, $i, $snapshot->captured_at, $snapshot->cutoff_at), $r);
+                $release->inputSchemaVersion, $calculationConfiguration);
+            $input = new EventInputSnapshotData($snapshot->schema_version, $i, $snapshot->captured_at, $snapshot->cutoff_at);
+            $out = app(CfbCalculator::class)->calculate($input, $r);
+            if ($counterfactual) {
+                $out = app(CfbForecastCoordinator::class)->preview($out, $input, $release->configuration, $c);
+            }
             $markets = collect($out->markets);
 
             return ['spread' => -$markets->first(fn ($m) => $m->marketType === 'spread')->projectedLine,
@@ -80,7 +89,18 @@ class CfbSignalContributionGrader
                     }
                 }
             }
-            $without = $calculate($i, $c);
+            try {
+                $without = $calculate($i, $c);
+            } catch (\InvalidArgumentException $exception) {
+                foreach (['spread' => $actualMargin, 'total' => $actualTotal] as $market => $actual) {
+                    $rows[] = ['signal' => $signal, 'market' => $market, 'full_projection' => $full[$market],
+                        'without_signal' => null, 'contribution_points' => null, 'active' => false, 'actual' => $actual,
+                        'absolute_error_reduction' => null, 'grade' => 'unavailable', 'full_market_result' => null,
+                        'without_market_result' => null, 'reason' => $exception->getMessage()];
+                }
+
+                continue;
+            }
             foreach (['spread' => $actualMargin, 'total' => $actualTotal] as $market => $actual) {
                 $delta = round($full[$market] - $without[$market], 3);
                 $lift = $actual === null ? null : round(abs($without[$market] - $actual) - abs($full[$market] - $actual), 3);

@@ -15,7 +15,7 @@ class CfbFootballSignalEvidence
     public static function baselineHash(array $configuration): string
     {
         // Independent-result forecasts return before applying these FPI-baseline weights.
-        unset($configuration['football_signals'], $configuration['independent_result_rating'], $configuration['candidate_suite']);
+        unset($configuration['football_signals'], $configuration['independent_result_rating'], $configuration['candidate_suite'], $configuration['forecast_coordination']);
 
         return app(CanonicalPayloadHasher::class)->hash($configuration);
     }
@@ -76,6 +76,7 @@ class CfbFootballSignalEvidence
                 // substitute today's team ratings, and never relabel this as a live old forecast.
                 $baselineConfiguration = $configuration;
                 $baselineConfiguration['football_signals']['enabled'] = false;
+                unset($baselineConfiguration['forecast_coordination']);
                 $baselineRelease = new CalculationReleaseData('signal-training-replay', 'cfb', 'pregame',
                     'cfb-pregame-rules', 'rules', 'training-replay', 'frozen-input-replay', $baselineHash,
                     $snapshot->schema_version, $baselineConfiguration);

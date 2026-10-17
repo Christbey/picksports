@@ -28,9 +28,13 @@ class CfbScoringChallenger
                 $catalog = app(CfbScoringFeatures::class)->independentCatalog($catalog);
             }
             $missing = [];
+            $oriented = [];
+            foreach (['home', 'away'] as $side) {
+                $oriented[$side] = CfbFootballSignalCatalog::features($inputs, $side, 'observed_only');
+            }
             foreach ($catalog as $key => $rule) {
                 foreach (['home', 'away'] as $side) {
-                    if (CfbFootballSignalCatalog::evaluate($rule, CfbFootballSignalCatalog::features($inputs, $side, 'observed_only')) === null) {
+                    if (CfbFootballSignalCatalog::evaluate($rule, $oriented[$side]) === null) {
                         $missing[$key] = true;
                     } else {
                         $missing[$key] ??= false;

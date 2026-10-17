@@ -104,10 +104,14 @@ class ExportScoringTrainingCommand extends Command
                 if ($snapshot) {
                     $coverage['frozen_context']++;
                     $signals = CfbFootballSignalJointModel::features($inputs, ['catalog' => $catalog, 'feature_policy' => 'observed_only']);
+                    $oriented = [];
+                    foreach (['home', 'away'] as $side) {
+                        $oriented[$side] = CfbFootballSignalCatalog::features($inputs, $side, 'observed_only');
+                    }
                     foreach ($catalog as $id => $rule) {
                         $states = [];
                         foreach (['home', 'away'] as $side) {
-                            $states[] = CfbFootballSignalCatalog::evaluate($rule, CfbFootballSignalCatalog::features($inputs, $side, 'observed_only'));
+                            $states[] = CfbFootballSignalCatalog::evaluate($rule, $oriented[$side]);
                         }
                         $signalMissing[$id] = in_array(null, $states, true);
                     }

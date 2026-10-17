@@ -8,7 +8,7 @@ import sys
 import unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1]))
-from scoring import train, evaluate, fit, simulate, summary, predict, tilt, select_blend
+from scoring import week, train, evaluate, fit, simulate, summary, predict, tilt, select_blend
 from efficiency import POLICY, drive_performance, pace_features, stadium_features, contextual_features, postgame_expectancy
 from test_scoring import games
 
@@ -28,6 +28,10 @@ def observed_games():
 
 
 class EfficiencyTests(unittest.TestCase):
+    def test_kickoff_week_respects_the_explicit_utc_holdout_boundaries(self):
+        self.assertEqual(week({"kickoff": "2026-10-11T20:00:00-05:00"}), "2026-10-12")
+        self.assertEqual(week({"kickoff": "2026-10-11T18:00:00-05:00"}), "2026-10-05")
+
     def test_success_thresholds_and_explosive_definitions(self):
         plays = [{"kind": "pass", "down": 1, "distance": 10, "yards": 5},
                  {"kind": "rush", "down": 2, "distance": 10, "yards": 7},

@@ -22,6 +22,7 @@ use App\Services\NFL\NflProSignalLayer;
 use App\Services\NFL\NflQuarterbackStatsSummary;
 use App\Services\NFL\NflRushingMatchup;
 use App\Services\NFL\NflSampleReliability;
+use App\Services\NFL\NflSeasonEvidenceWeight;
 use App\Services\NFL\NflSpreadAssessmentService;
 use App\Services\NFL\NflTeamHistory;
 use App\Services\NFL\PlayerPositionGradeService;
@@ -194,10 +195,11 @@ class GeneratePredictionFromHistoricalElo
         $profileSuffix = $historicalProfile !== 'configured' && $historicalProfile !== 'pregame'
             ? '-'.$historicalProfile
             : '';
-        $modelVersion = (string) config('nfl.predictions.model_version', 'nfl-historical-elo-v2').'-career-regular-v2-ats-v3'.$profileSuffix;
+        $adaptationSuffix = config('nfl.predictions.preseason_signal.season_adaptation.enabled', true) ? '-season-adaptive-v1' : '';
+        $modelVersion = (string) config('nfl.predictions.model_version', 'nfl-historical-elo-v2').'-career-regular-v2-ats-v3'.$adaptationSuffix.$profileSuffix;
         $this->applyAnalysisLayer($game, round($predictedSpread, 1), round($predictedTotal, 1), $winProbability, $modelVersion);
         $featureVersion = (string) config('nfl.predictions.feature_version', 'nfl-pregame-ml-v3');
-        $blendVersion = (string) config('nfl.predictions.blend_version', 'nfl-multi-signal-v1').$profileSuffix;
+        $blendVersion = (string) config('nfl.predictions.blend_version', 'nfl-multi-signal-v1').$adaptationSuffix.$profileSuffix;
         $baselineOutputs = [
             'predicted_spread' => round($predictedSpread, 1),
             'predicted_total' => round($predictedTotal, 1),
@@ -1002,6 +1004,15 @@ class GeneratePredictionFromHistoricalElo
             return [$predictedSpread, $winProbability];
         }
 
+        $cutoff = app(SportsDateWindowService::class)->gameDateTimeUtc($game->game_date, $game->game_time);
+        if (config('nfl.predictions.preseason_signal.season_adaptation.enabled', true)
+            && ($cutoff === null || $homeMetric->updated_at === null || $awayMetric->updated_at === null
+                || $homeMetric->updated_at->gt($cutoff) || $awayMetric->updated_at->gt($cutoff))) {
+            $this->lastModelMetadata['preseason_signal']['reason'] = 'metrics_not_available_as_of_kickoff';
+
+            return [$predictedSpread, $winProbability];
+        }
+
         $homeFieldAdvantage = $game->neutral_site
             ? 0
             : (float) config('nfl.elo.home_field_advantage') * (float) config('nfl.predictions.points_per_elo');
@@ -1013,6 +1024,8 @@ class GeneratePredictionFromHistoricalElo
             0.0,
             1.0
         );
+        $adaptation = app(NflSeasonEvidenceWeight::class)->resolve($game, $homeMetric, $awayMetric, $weight);
+        $weight = $adaptation['weight'];
         $blendedSpread = $this->blend($predictedSpread, $signalSpread, $weight);
         $blendedSpread = $this->clamp(
             $blendedSpread,
@@ -1026,6 +1039,7 @@ class GeneratePredictionFromHistoricalElo
             'enabled' => true,
             'applied' => true,
             'weight' => round($weight, 4),
+            'season_adaptation' => $adaptation,
             'predictive_diff' => round($predictiveDiff, 4),
             'signal_spread' => round($signalSpread, 4),
             'blended_spread' => round($blendedSpread, 4),
@@ -4273,7 +4287,7 @@ class GeneratePredictionFromHistoricalElo
         $this->lastModelMetadata['spread_assessment'] = $entryMargin === null
             ? ['status' => 'unavailable', 'cover_probability' => null, 'reason' => 'missing_market_line']
             : app(NflSpreadAssessmentService::class)->assess($game, $predictedSpread, -$entryMargin,
-                $modelVersion ?? (string) config('nfl.predictions.model_version', 'nfl-historical-elo-v2').'-career-regular-v2-ats-v3');
+                $modelVersion ?? (string) config('nfl.predictions.model_version', 'nfl-historical-elo-v2').'-career-regular-v2-ats-v3'.(config('nfl.predictions.preseason_signal.season_adaptation.enabled', true) ? '-season-adaptive-v1' : ''));
         // Save a fixed, predeclared benchmark alongside the forecast, never feed it back in.
         $legacyMargin = data_get($this->lastModelMetadata, 'legacy.spread');
         $this->lastModelMetadata['spread_candidates'] = [

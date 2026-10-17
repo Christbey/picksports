@@ -166,6 +166,7 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 - Calculate Elo at `09:00`
 - Calculate team metrics at `09:30`
 - Generate predictions at `10:00`
+- NFL season-evidence weighting is recalculated inside every historical-Elo forecast (including the pregame pipeline), using completed current-season regular games and covered metric samples. No separate tuning job is required; byes do not advance the evidence weight.
 - Generate canonical predictions at `10:05` when `PREDICTION_LIFECYCLE_NFL_CANONICAL_PIPELINE=true`
 - Settle model decisions at `08:45`
 - Record private shadow decisions at `10:15`

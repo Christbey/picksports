@@ -146,10 +146,26 @@ explicit Week-1-only gate.
 
 ```text
 signal = homePredictiveRating - awayPredictiveRating + hfa*0.09
-m = CM(B(m,signal,0.25))
+n = min(home completed regular games, away completed regular games,
+        home metric games_played, away metric games_played)
+w = max(baseWeight, min(maximumWeight, n / (n + priorGames)))
+m = CM(B(m,signal,w))
 p = P(m)
 t unchanged
 ```
+
+Season adaptation (`NFL_SEASON_ADAPTATION_ENABLED`, default true) runs inside
+every forecast, not a separate training job. Defaults: base weight 0.25,
+prior-equivalent games 2, maximum current-season weight 0.90. These are explicit
+policy settings, not fitted accuracy or probability calibration. With the
+smaller sample at 2/4/5 games, the signal weight is 50%/66.7%/71.4%.
+Only scored final games in the target regular season before kickoff count;
+future result observations, other seasons, preseason/postseason and the target
+itself do not. Metric sample sizes cap evidence when upstream coverage lags;
+byes do not increase it. Metrics missing observation timestamps or updated after
+kickoff are rejected in this mode. Disabling adaptation restores the fixed
+base-weight behavior. Model and blend versions gain `-season-adaptive-v1`, and
+`preseason_signal.season_adaptation` records the exact sample, cutoff and weights.
 
 The predictive ratings are inputs produced upstream, not raw EPA. They may
 already incorporate injuries/continuity. Reusing injury adjustments later can

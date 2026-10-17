@@ -81,6 +81,7 @@ class CanonicalSportPredictionResource extends JsonResource
                 'comparison_forecasts' => array_intersect_key((array) data_get($prediction->output_metadata, 'comparison_forecasts', []),
                     array_flip(['version', 'status', 'validated', 'betting_approved', 'models', 'limitations'])),
                 'market_evaluation' => data_get($evaluation?->market_comparison, 'cfb_comparison'),
+                'forecast_coordination' => data_get($prediction->output_metadata, 'forecast_coordination'),
                 'raw_home_win_probability' => $homeProbability,
             ] : []),
             'market_aware_projection' => null,

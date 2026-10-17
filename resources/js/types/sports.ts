@@ -309,6 +309,7 @@ export interface PredictionListGame {
 
 export interface PredictionListItem {
     comparison_forecasts?: CfbComparisonForecasts | null;
+    forecast_coordination?: Record<string, unknown> | null;
     id: number | string;
     game_id?: number;
     predicted_spread?: number;
@@ -673,6 +674,7 @@ export interface CfbScoringModel {
 
 export interface NflPagePrediction {
     comparison_forecasts?: CfbComparisonForecasts | null;
+    forecast_coordination?: Record<string, unknown> | null;
     spread_assessment?: {
         recommendation?: string;
         edge_points?: number | null;

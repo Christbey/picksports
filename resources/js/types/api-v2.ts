@@ -233,6 +233,7 @@ export type ApiV2Player = ApiV2PlayerSummary & {
 
 export type ApiV2Prediction = {
     comparison_forecasts?: CfbComparisonForecasts | null;
+    forecast_coordination?: Record<string, unknown> | null;
     raw_home_win_probability?: number | null;
     market_evaluation?: ApiV2Record | null;
     id: ApiV2Id;

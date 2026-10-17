@@ -19,6 +19,13 @@ const points = (value: number | null) =>
                     : 'Scoring model under evaluation'
             }}
         </p>
+        <p
+            v-if="model.fpi_weight != null"
+            class="mt-2 text-sm text-muted-foreground"
+        >
+            Selected blend: {{ Math.round(model.fpi_weight * 100) }}% FPI,
+            {{ Math.round((1 - model.fpi_weight) * 100) }}% efficiency model.
+        </p>
         <dl v-if="model.state === 'ready'" class="mt-4 grid grid-cols-3 gap-4">
             <div>
                 <dt class="text-sm text-muted-foreground">Away points</dt>

@@ -148,6 +148,7 @@ class CanonicalSportPredictionResource extends JsonResource
             'away_points' => $this->number($summary['away_points'] ?? null),
             'total' => $this->number($summary['total'] ?? null), 'home_margin' => $this->number($summary['home_margin'] ?? null),
             'probability_status' => $summary['status'] ?? null,
+            'fpi_weight' => $this->number($model['fpi_weight'] ?? null),
             'generated_at' => $prediction->generated_at?->toIso8601String(),
             'artifact_id' => $model['artifact_id'] ?? null,
             'recommendation_status' => 'requires_market_validation'];

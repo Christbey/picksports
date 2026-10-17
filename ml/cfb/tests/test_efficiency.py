@@ -8,7 +8,7 @@ import sys
 import unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1]))
-from scoring import recency_candidates, week, train, evaluate, fit, simulate, summary, predict, tilt, select_blend
+from scoring import regulation_scores, recency_candidates, week, train, evaluate, fit, simulate, summary, predict, tilt, select_blend
 from efficiency import POLICY, drive_performance, pace_features, stadium_features, contextual_features, postgame_expectancy
 from test_scoring import games
 
@@ -16,6 +16,7 @@ from test_scoring import games
 def observed_games():
     rows = games()
     for i, row in enumerate(rows):
+        row["kickoff"] = row["kickoff"].replace("T00:00:00", "T12:00:00")
         row["venue"] = "A" if i%2 else "B"
         row["context"] = {"home": {"qb_changed": i%2, "out_records": i%3}, "away": {"qb_changed": 0}}
         for j, drive in enumerate(row["drives"]):
@@ -28,6 +29,18 @@ def observed_games():
 
 
 class EfficiencyTests(unittest.TestCase):
+    def test_regulation_selection_does_not_require_unobserved_deep_overtime(self):
+        rows=observed_games()
+        model=fit(rows,"2024-08-01T00:00:00+00:00")
+        model["overtime"]=[]
+        row={**rows[0],"game_id":999,"kickoff":"2024-09-01T00:00:00+00:00"}
+        report=evaluate(model,[row],draws=100,regulation_only=True)
+        self.assertEqual(len(report["games"]),1)
+        self.assertEqual(report["target"],"regulation_scores")
+        self.assertEqual(report["games"][0]["actual_total"],sum(regulation_scores(row).values()))
+        self.assertEqual(report["games"][0]["priced_markets"],[])
+        self.assertEqual(summary([{"home":14,"away":14,"probability":1}])["home_win"],.5)
+
     def test_season_decay_is_not_selected_from_an_uninformative_single_season(self):
         rows = observed_games()
         self.assertEqual(recency_candidates(rows, "2024-08-01T00:00:00+00:00"), (1.,))
@@ -97,8 +110,8 @@ class EfficiencyTests(unittest.TestCase):
     def test_real_training_path_freezes_separate_periods_and_remains_a_challenger(self):
         rows = []
         for row in observed_games():
-            for repetition in range(4):
-                rows.append({**row, "game_id": row["game_id"]*10+repetition})
+            for repetition in range(16):
+                rows.append({**row, "game_id": row["game_id"]*100+repetition})
         with tempfile.TemporaryDirectory() as directory:
             data = Path(directory)/"games.jsonl"
             data.write_text("".join(json.dumps(row)+"\n" for row in rows))
@@ -107,8 +120,8 @@ class EfficiencyTests(unittest.TestCase):
                 "as_of": "2024-08-01T00:00:00+00:00", "test_from": "2024-05-20T00:00:00+00:00",
                 "test_until": "2024-06-17T00:00:00+00:00", "feature_policy": POLICY, "signal_families": {}}))
             output = Path(directory)/"model.json"
-            def smaller_evaluation(model, group, draws=2000, benchmark=False):
-                return evaluate(model, group, draws=100, benchmark=benchmark)
+            def smaller_evaluation(model, group, draws=2000, benchmark=False, regulation_only=False):
+                return evaluate(model, group, draws=100, benchmark=benchmark, regulation_only=regulation_only)
             with patch("scoring.evaluate", side_effect=smaller_evaluation):
                 result = train(manifest, output)
             model = json.loads(output.read_text())

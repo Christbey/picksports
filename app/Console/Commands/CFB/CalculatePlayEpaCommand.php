@@ -3,6 +3,7 @@
 namespace App\Console\Commands\CFB;
 
 use App\Models\CFB\Game;
+use App\Models\CFB\GameDataCheck;
 use App\Models\CFB\Play;
 use App\Services\CFB\Data\CfbScoringLedger;
 use App\Services\CFB\TrueEpaCalculator;
@@ -59,10 +60,20 @@ class CalculatePlayEpaCommand extends Command
 
         $playsUpdated = 0;
         $eligibleUpdated = 0;
+        $heldGames = 0;
 
         foreach ($games as $game) {
+            $revision = GameDataCheck::where('game_id', $game->id)->where('component', 'plays')
+                ->whereNotNull('accepted_at')->latest('accepted_at')->latest('id')->first();
+            if (! $revision) {
+                $heldGames++;
+                $bar->advance();
+
+                continue;
+            }
             $plays = Play::query()
                 ->where('game_id', $game->id)
+                ->where('source_revision', $revision->source_hash)
                 ->orderBy('sequence_number')
                 ->orderBy('id')
                 ->get([
@@ -148,6 +159,10 @@ class CalculatePlayEpaCommand extends Command
             $this->info("EPA calculation complete. Plays updated: {$playsUpdated}; eligible: {$eligibleUpdated}");
         }
 
-        return self::SUCCESS;
+        if ($heldGames) {
+            $this->warn("{$heldGames} game(s) held because no accepted play revision exists.");
+        }
+
+        return $heldGames ? 2 : self::SUCCESS;
     }
 }

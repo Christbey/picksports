@@ -23,7 +23,7 @@ def stamp(value):
 
 
 def week(row):
-    date = stamp(row["kickoff"]).date()
+    date = stamp(row["kickoff"]).astimezone(dt.timezone.utc).date()
     return (date - dt.timedelta(days=date.weekday())).isoformat()
 
 

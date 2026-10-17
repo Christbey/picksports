@@ -34,12 +34,12 @@ class CfbScoringFeatures
                 'rest_travel_fatigue' => data_get($inputs, $side.'.metrics.rest_travel_fatigue'),
                 'returning_usage' => ($returning['status'] ?? null) === 'verified' ? data_get($returning, 'values.usage') : null,
                 'talent' => ($talent['status'] ?? null) === 'verified' ? data_get($talent, 'values.talent') : null,
-                'wind_speed_mph' => data_get($inputs, 'signal_context.wind_speed_mph'),
-                'precipitation_inches' => data_get($inputs, 'signal_context.precipitation_inches'),
+                'wind_speed_mph' => data_get($inputs, 'signal_context.is_indoor') === true ? null : data_get($inputs, 'signal_context.wind_speed_mph'),
+                'precipitation_inches' => data_get($inputs, 'signal_context.is_indoor') === true ? null : data_get($inputs, 'signal_context.precipitation_inches'),
             ];
         }
 
-        return $result;
+        return array_map(fn ($values) => array_map(fn ($value) => is_string($value) && is_numeric($value) ? (float) $value : $value, $values), $result);
     }
 
     public function context(array $game, string $side): array

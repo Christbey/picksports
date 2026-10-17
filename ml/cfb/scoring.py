@@ -233,7 +233,7 @@ def rules(season, round_):
     return tries, mandatory_two
 
 
-def simulate(artifact, row, draws=50000, seed=7, signal=True, benchmark=False):
+def simulate(artifact, row, draws=50000, seed=7, signal=True, benchmark=False, regulation_only=False):
     if stamp(row["kickoff"]) <= stamp(artifact["trained_before"]):
         raise ValueError("Artifact must precede target kickoff")
     for side in ("home", "away"):
@@ -291,7 +291,7 @@ def simulate(artifact, row, draws=50000, seed=7, signal=True, benchmark=False):
             points[side] += outcome["points"]
             points[opposite] += outcome["opponent_points"]
         round_ = 1
-        while points["home"] == points["away"]:
+        while not regulation_only and points["home"] == points["away"]:
             tries, two = rules(row["season"],round_)
             eligible = [o for o in ot if rules(o["season"],o["round"]) == (tries,two)]
             if not eligible:
@@ -310,7 +310,7 @@ def simulate(artifact, row, draws=50000, seed=7, signal=True, benchmark=False):
         score_counts[(points["home"],points["away"])] += 1
     distribution=[{"home":h,"away":a,"probability":n/draws} for (h,a),n in sorted(score_counts.items())]
     if not benchmark and artifact.get("fpi_weight",0)>0:
-        reference=simulate(artifact,row,draws,seed+101,signal=False,benchmark=True)
+        reference=simulate(artifact,row,draws,seed+101,signal=False,benchmark=True,regulation_only=regulation_only)
         distribution=mixture(distribution,reference,artifact["fpi_weight"])
     return temper(distribution, 1.0 if benchmark else artifact.get("calibration_temperature",1.0))
 
@@ -373,7 +373,7 @@ def summary(distribution):
     home = sum(r["home"]*r["probability"] for r in distribution)
     away = sum(r["away"]*r["probability"] for r in distribution)
     return {"home":home,"away":away,"margin":home-away,"total":home+away,
-            "home_win":sum(r["probability"] for r in distribution if r["home"]>r["away"])}
+            "home_win":sum(r["probability"]*(1 if r["home"]>r["away"] else .5 if r["home"]==r["away"] else 0) for r in distribution)}
 
 
 def energy(distribution, home, away, seed=71, pairs=2000):
@@ -427,19 +427,37 @@ def priced_outcomes(distribution, row):
     return results
 
 
-def evaluate(model, rows, draws=2000, benchmark=False):
+def regulation_scores(row):
+    points = {"home": 0, "away": 0}
+    for drive in row["drives"]:
+        if drive["period"] > 4:
+            continue
+        offense = str(drive["offense_id"])
+        if offense not in (str(row["home_id"]), str(row["away_id"])):
+            raise ValueError("Unknown regulation offense")
+        side = "home" if offense == str(row["home_id"]) else "away"
+        other = "away" if side == "home" else "home"
+        points[side] += drive["offense_points"]
+        points[other] += drive["opponent_points"]
+    return points
+
+
+def evaluate(model, rows, draws=2000, benchmark=False, regulation_only=False):
     scores, excluded = [], collections.Counter()
     for row in rows:
         try:
-            d=simulate(model,row,draws,seed=int(row["game_id"]),benchmark=benchmark)
+            d=simulate(model,row,draws,seed=int(row["game_id"]),benchmark=benchmark,regulation_only=regulation_only)
+            if regulation_only:
+                points = regulation_scores(row)
+                row = {**row, "home_score": points["home"], "away_score": points["away"]}
         except ValueError as error:
             excluded[str(error)] += 1
             continue
         s=summary(d)
         p=max(1/(2*draws),min(1-1/(2*draws),s["home_win"]))
-        actual=int(row["home_score"]>row["away_score"])
+        actual=.5 if regulation_only and row["home_score"] == row["away_score"] else int(row["home_score"]>row["away_score"])
         scores.append({"game_id":row["game_id"],"week":week(row),"predicted":s, "actual_margin":row["home_score"]-row["away_score"], "actual_total":row["home_score"]+row["away_score"], "home_win":actual,
-            "priced_markets":priced_outcomes(d,row),
+            "priced_markets":[] if regulation_only else priced_outcomes(d,row),
             "score_squared_error":((s['home']-row['home_score'])**2+(s['away']-row['away_score'])**2)/2,
             "score_mae":(abs(s['home']-row['home_score'])+abs(s['away']-row['away_score']))/2,
             "score_bias":((s['home']-row['home_score'])+(s['away']-row['away_score']))/2,
@@ -454,7 +472,7 @@ def evaluate(model, rows, draws=2000, benchmark=False):
             "total_mae":abs(s["total"]-(row["home_score"]+row["away_score"])),
             "margin_crps":crps(d,row["home_score"]-row["away_score"],"margin"),
             "total_crps":crps(d,row["home_score"]+row["away_score"],"total"),
-            "brier":(p-actual)**2,"log_loss":-math.log(p if actual else 1-p)})
+            "brier":(p-actual)**2,"log_loss":-(actual*math.log(p)+(1-actual)*math.log(1-p))})
     def aggregate(group):
         if not group:
             return {'games':0}
@@ -463,7 +481,7 @@ def evaluate(model, rows, draws=2000, benchmark=False):
             **{key:sum(g[key] for g in group)/len(group) for key in fields},'reliability':reliability(group),
             'status':'descriptive_only' if len(group)<50 else 'holdout_diagnostic'}
     cohorts={name:aggregate([g for g in scores if name in g['cohorts']]) for name in sorted({name for g in scores for name in g['cohorts']})}
-    return {"games":scores,"excluded":dict(excluded),"summary":aggregate(scores),"cohorts":cohorts,
+    return {"target":"regulation_scores" if regulation_only else "final_scores","games":scores,"excluded":dict(excluded),"summary":aggregate(scores),"cohorts":cohorts,
         "mean_energy":sum(r["energy"] for r in scores)/len(scores) if scores else None}
 
 
@@ -631,20 +649,22 @@ def train(manifest_path, output, retrospective=False):
     if not test:
         raise ValueError("No games in the requested test period")
     candidates=[]
+    selection_coverage = []
     decays = recency_candidates(rows, start(val_week), retrospective)
     for penalty in (10.,30.,100.):
         for decay in decays:
             model=fit(rows,start(val_week),penalty,decay,retrospective)
-            report=evaluate(model,validation)
-            if report["mean_energy"] is not None:
+            report=evaluate(model,validation,regulation_only=True)
+            selection_coverage.append({"penalty":penalty,"decay":decay,"games":len(report["games"]),"eligible_games":len(validation),"excluded":report["excluded"],"target":"regulation_scores"})
+            if report["mean_energy"] is not None and len(report["games"]) >= 50 and len(report["games"]) >= .8*len(validation):
                 candidates.append((report["mean_energy"],penalty,decay))
     if not candidates:
-        raise ValueError("No evaluable validation games; inspect history and overtime coverage")
+        raise ValueError("No adequately covered validation period: need 50 games and 80% regulation scoring coverage")
     _,penalty,decay=min(candidates, key=lambda value: (value[0], -value[2], value[1]))
     selection_model=fit(rows,start(val_week),penalty,decay,retrospective)
     blend=select_blend(selection_model,validation)
     model=fit(rows,start(calibration_week),penalty,decay,retrospective)
-    model["hyperparameter_selection"] = {"decay_candidates": list(decays), "decay_status": "selected_on_earlier_validation_weeks" if len(decays) > 1 else "equal_season_weight_insufficient_cross_season_evidence"}
+    model["hyperparameter_selection"] = {"validation_target":"regulation_score_energy","coverage":selection_coverage,"decay_candidates": list(decays), "decay_status": "selected_on_earlier_validation_weeks" if len(decays) > 1 else "equal_season_weight_insufficient_cross_season_evidence"}
     model["fpi_weight"]=blend["weight"]
     model["fpi_blend_selection"]=blend
     signal_model,signal_report=fit_signal_residuals(rows,start(calibration_week),penalty,decay,manifest.get("signal_families",{}),retrospective,model.get("fpi_weight",0.0))

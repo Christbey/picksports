@@ -320,3 +320,15 @@ it('trains past-season EPA states from the accepted revision and reconciled scor
     expect($state->sample_size)->toBe(3)->and((float) $state->expected_points)->toEqualWithDelta(14 / 3, .0001)
         ->and($state->source_season)->toBe(2025);
 });
+
+it('does not recalculate EPA for a play outside the accepted source revision', function () {
+    [$game, $plays] = cfbLedgerFixture();
+    $unaccepted = Play::create(['game_id' => $game->id, 'espn_play_id' => 'unaccepted-epa', 'sequence_number' => 0,
+        'period' => 1, 'clock' => '15:00', 'play_type' => 'Rush', 'play_text' => 'Rush for 2 yards',
+        'home_score' => 99, 'away_score' => 0, 'possession_team_id' => $game->home_team_id,
+        'down' => 1, 'distance' => 10, 'yards_to_endzone' => 75, 'yards_gained' => 2,
+        'true_epa' => 77, 'source_revision' => hash('sha256', 'unaccepted-epa')]);
+    $this->artisan('cfb:calculate-play-epa', ['--game_id' => $game->id, '--rebuild' => true])->assertSuccessful();
+    expect((float) $unaccepted->fresh()->true_epa)->toBe(77.0)
+        ->and($plays[0]->fresh()->is_epa_eligible)->toBeTrue();
+});

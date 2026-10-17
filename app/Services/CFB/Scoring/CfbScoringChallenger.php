@@ -60,8 +60,8 @@ class CfbScoringChallenger
             } catch (\DomainException) { /* Missing original FPI leaves the paired comparison unavailable. */
             }
 
-            return ['state' => 'ready', 'historical_evaluation_mode' => $artifact['evidence_mode'], 'benchmark_scores' => $reference?->scores, 'artifact_id' => $id, 'artifact_hash' => $loaded['record']->artifact_hash, 'artifact_available_at' => $loaded['record']->created_at->toIso8601String(),
-                'seed' => $seed, 'inputs' => $evidence, 'summary' => $distribution->summary(), 'scores' => $distribution->scores,
+            return ['state' => 'ready', 'historical_evaluation_mode' => $artifact['evidence_mode'], 'benchmark_scores' => $reference ? $this->freeze($reference->scores) : null, 'artifact_id' => $id, 'artifact_hash' => $loaded['record']->artifact_hash, 'artifact_available_at' => $loaded['record']->created_at->toIso8601String(),
+                'seed' => $seed, 'inputs' => $evidence, 'summary' => $this->freeze($distribution->summary()), 'scores' => $this->freeze($distribution->scores),
                 'feature_policy' => $artifact['feature_policy'] ?? 'legacy',
                 'feature_coverage' => $artifact['feature_coverage'] ?? [],
                 'context_training_coverage' => $artifact['context_training_coverage'] ?? [],
@@ -73,6 +73,13 @@ class CfbScoringChallenger
 
             return ['state' => 'unavailable', 'artifact_id' => $id, 'reason' => $error->getMessage()];
         }
+    }
+
+    /** Stable decimal precision survives native JSON storage and immutable publication hashing. */
+    public function freeze(array $values): array
+    {
+        return array_map(fn ($value) => is_array($value) ? $this->freeze($value)
+            : (is_float($value) ? round($value, 10) : $value), $values);
     }
 
     public function apply(PredictionOutput $baseline, array $frozen): PredictionOutput
@@ -89,7 +96,7 @@ class CfbScoringChallenger
             new PredictionMarketOutput('total', 'combined', projectedLine: $s['total']),
             new PredictionMarketOutput('team_total', 'home', projectedLine: $s['home_points']),
             new PredictionMarketOutput('team_total', 'away', projectedLine: $s['away_points']),
-            new PredictionMarketOutput('moneyline', 'home', probability: $p), new PredictionMarketOutput('moneyline', 'away', probability: 1 - $p)],
+            new PredictionMarketOutput('moneyline', 'home', probability: $p), new PredictionMarketOutput('moneyline', 'away', probability: round(1 - $p, 10))],
             [...$metadata, 'home_margin' => $s['home_margin'], 'input_quality' => [...($baseline->metadata['input_quality'] ?? []), 'qualified' => false, 'risk_flags' => [...($baseline->metadata['input_quality']['risk_flags'] ?? []), 'challenger_market_validation_required']]],
             [...$baseline->diagnostics, 'spread_baseline' => 'opponent_adjusted_possessions', 'projected_total' => $s['total']], $baseline->generatedAt);
     }

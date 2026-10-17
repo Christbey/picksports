@@ -8,81 +8,127 @@ class CsvDataset
 {
     /**
      * @param  iterable<array<string, mixed>>  $rows
+     * @param  array<string, callable(array): mixed>  $derivedColumns
      */
-    public function write(string $path, iterable $rows): int
+    public function write(string $path, iterable $rows, array $derivedColumns = []): int
     {
-        $rows = collect($rows)->values();
-        if ($rows->isEmpty()) {
-            return 0;
+        $spool = tmpfile();
+        if ($spool === false) {
+            throw new \RuntimeException('Unable to create temporary CSV spool.');
         }
-
-        File::ensureDirectoryExists(dirname($path));
         $temporaryPath = null;
         $handle = null;
+        $headers = [];
+        $dataHeaders = [];
+        $seenHeaders = [];
+        $seenDataHeaders = [];
+        $count = 0;
 
         try {
-            $temporaryPath = dirname($path)
-                .'/.'.basename($path)
-                .'.'.bin2hex(random_bytes(16))
-                .'.tmp';
+            foreach ($rows as $row) {
+                $keys = array_keys($row);
+                foreach ($derivedColumns as $name => $callback) {
+                    if (array_key_exists($name, $row)) {
+                        throw new \RuntimeException('Derived CSV column already exists: '.$name);
+                    }
+                }
+                $this->appendHeaders($dataHeaders, $seenDataHeaders, $keys);
+                $this->appendHeaders($headers, $seenHeaders, [...$keys, ...array_keys($derivedColumns)]);
+                $encoded = [];
+                foreach ($row as $name => $value) {
+                    $encoded[base64_encode((string) $name)] = base64_encode($this->stringValue($value));
+                }
+                $line = json_encode($encoded, JSON_THROW_ON_ERROR)."\n";
+                if (fwrite($spool, $line) !== strlen($line)) {
+                    throw new \RuntimeException('Unable to write temporary CSV spool.');
+                }
+                $count++;
+            }
+            if ($count === 0) {
+                return 0;
+            }
+
+            $constants = [];
+            foreach ($derivedColumns as $name => $callback) {
+                $constants[$name] = $this->stringValue($callback($dataHeaders));
+            }
+            File::ensureDirectoryExists(dirname($path));
+            $temporaryPath = dirname($path).'/.'.basename($path).'.'.bin2hex(random_bytes(16)).'.tmp';
             $handle = fopen($temporaryPath, 'xb');
             if ($handle === false) {
                 throw new \RuntimeException("Unable to write temporary CSV file for: {$path}");
             }
-
-            $headers = $rows
-                ->flatMap(fn (array $row): array => array_keys($row))
-                ->unique()
-                ->values()
-                ->all();
-
-            if (fputcsv($handle, $headers) === false) {
-                throw new \RuntimeException("Unable to write CSV headers for: {$path}");
+            if (fputcsv($handle, $headers) === false || ! rewind($spool)) {
+                throw new \RuntimeException('Unable to start CSV publication.');
             }
+            $writtenRows = 0;
+            while (($line = fgets($spool)) !== false) {
+                $encoded = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
+                $values = [];
+                foreach ($headers as $header) {
+                    if (array_key_exists($header, $constants)) {
+                        $values[] = $constants[$header];
 
-            foreach ($rows as $row) {
-                $written = fputcsv($handle, array_map(
-                    fn (string $header): string => $this->stringValue($row[$header] ?? null),
-                    $headers,
-                ));
-
-                if ($written === false) {
+                        continue;
+                    }
+                    $value = base64_decode($encoded[base64_encode((string) $header)] ?? '', true);
+                    if ($value === false) {
+                        throw new \RuntimeException('Invalid CSV spool value.');
+                    }
+                    $values[] = $value;
+                }
+                if (fputcsv($handle, $values) === false) {
                     throw new \RuntimeException("Unable to write CSV row for: {$path}");
                 }
+                $writtenRows++;
             }
-
-            if (! fflush($handle)) {
-                throw new \RuntimeException("Unable to flush CSV file for: {$path}");
+            if (! feof($spool) || $writtenRows !== $count || ! fflush($handle)) {
+                throw new \RuntimeException('CSV spool read or publication flush failed.');
             }
-
             $closed = fclose($handle);
             $handle = null;
-
             if (! $closed) {
                 throw new \RuntimeException("Unable to close CSV file for: {$path}");
             }
-
             clearstatcache(true, $temporaryPath);
             $size = filesize($temporaryPath);
             if ($size === false || $size === 0) {
                 throw new \RuntimeException("CSV file is empty for: {$path}");
             }
-
             if (! @rename($temporaryPath, $path)) {
                 throw new \RuntimeException("Unable to publish CSV file atomically: {$path}");
             }
-
             $temporaryPath = null;
 
-            return $rows->count();
+            return $count;
         } finally {
+            fclose($spool);
             if (is_resource($handle)) {
                 fclose($handle);
             }
-
             if ($temporaryPath !== null && is_file($temporaryPath)) {
                 @unlink($temporaryPath);
             }
+        }
+    }
+
+    /**
+     * @param  array<int, int|string>  $headers
+     * @param  array<string, true>  $seen
+     * @param  array<int, int|string>  $names
+     */
+    private function appendHeaders(array &$headers, array &$seen, array $names): void
+    {
+        $new = [];
+        foreach ($names as $name) {
+            $key = 'header:'.$name;
+            if (! isset($seen[$key])) {
+                $seen[$key] = true;
+                $new[] = $name;
+            }
+        }
+        if ($new !== []) {
+            $headers = array_values(array_unique([...$headers, ...$new], SORT_REGULAR));
         }
     }
 

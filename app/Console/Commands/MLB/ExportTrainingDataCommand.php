@@ -6,8 +6,8 @@ use App\Models\PredictionFeatureSnapshot;
 use App\Services\ML\CsvDataset;
 use App\Services\Predictions\SnapshotEvaluationProjector;
 use Illuminate\Console\Command;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\LazyCollection;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -28,34 +28,29 @@ class ExportTrainingDataCommand extends Command
         $absolutePath = str_starts_with($path, '/')
             ? $path
             : base_path($path);
-        $rows = $this->loadRows();
-
-        if ($rows->isEmpty()) {
-            if (! $this->removeStaleDestination($absolutePath)) {
-                return self::FAILURE;
-            }
-
-            $this->warn('No MLB rows met the requested provenance and target requirements.');
-
-            return self::FAILURE;
-        }
-
-        $datasetSchemaHash = $this->datasetSchemaHash($rows);
-        $rows = $rows->map(fn (array $row): array => [
-            ...$row,
-            'dataset_schema_hash' => $datasetSchemaHash,
-        ]);
-
+        $datasetSchemaHash = null;
         try {
-            $csv->write($absolutePath, $rows);
+            $exported = $csv->write($absolutePath, $this->loadRows(), [
+                'dataset_schema_hash' => function (array $headers) use (&$datasetSchemaHash): string {
+                    return $datasetSchemaHash = $this->stableHash(collect($headers)->sort()->values()->all());
+                },
+            ]);
         } catch (Throwable $exception) {
             $this->error($exception->getMessage());
 
             return self::FAILURE;
         }
+        if ($exported === 0) {
+            if (! $this->removeStaleDestination($absolutePath)) {
+                return self::FAILURE;
+            }
+            $this->warn('No MLB rows met the requested provenance and target requirements.');
+
+            return self::FAILURE;
+        }
 
         $this->info('MLB training data exported.');
-        $this->line('Rows: '.$rows->count());
+        $this->line('Rows: '.$exported);
         $this->line('Pregame proof required: '.((bool) $this->option('include-unsafe') ? 'no (research override)' : 'yes'));
         $this->line('Dataset schema SHA-256: '.$datasetSchemaHash);
         $this->line('Dataset SHA-256: '.hash_file('sha256', $absolutePath));
@@ -82,9 +77,9 @@ class ExportTrainingDataCommand extends Command
     }
 
     /**
-     * @return Collection<int, array<string, mixed>>
+     * @return LazyCollection<int, array<string, mixed>>
      */
-    private function loadRows(): Collection
+    private function loadRows(): LazyCollection
     {
         $query = PredictionFeatureSnapshot::query()
             ->where('prediction_feature_snapshots.sport', 'mlb')
@@ -149,6 +144,8 @@ class ExportTrainingDataCommand extends Command
         }
 
         $canonicalSnapshots = collect();
+        $canonicalRanks = [];
+        $timestampCache = [];
 
         $throughId = PredictionFeatureSnapshot::query()->max('id') ?? 0;
         $query->where('prediction_feature_snapshots.id', '<=', $throughId);
@@ -157,15 +154,12 @@ class ExportTrainingDataCommand extends Command
                 'prediction_feature_snapshots.features_available_at', 'prediction_feature_snapshots.generated_at',
                 'prediction_feature_snapshots.game_start_at'])
             ->reorder()
-            ->lazyById(100, 'prediction_feature_snapshots.id', 'id') as $snapshot) {
+            ->lazyById(500, 'prediction_feature_snapshots.id', 'id') as $snapshot) {
             $canonicalKey = (string) $snapshot->game_id;
-            $current = $canonicalSnapshots->get($canonicalKey);
-
-            if (
-                ! $current instanceof PredictionFeatureSnapshot
-                || $this->isLaterSnapshot($snapshot, $current)
-            ) {
+            $rank = $this->snapshotRank($snapshot, $timestampCache);
+            if (! isset($canonicalRanks[$canonicalKey]) || $rank > $canonicalRanks[$canonicalKey]) {
                 $canonicalSnapshots->put($canonicalKey, $snapshot);
+                $canonicalRanks[$canonicalKey] = $rank;
             }
         }
 
@@ -183,23 +177,22 @@ class ExportTrainingDataCommand extends Command
             $canonicalSnapshots = $canonicalSnapshots->take($limit)->values();
         }
 
-        $rows = collect();
-        foreach ($canonicalSnapshots->chunk(100) as $headers) {
-            $selected = (clone $query)->whereIn('prediction_feature_snapshots.id', $headers->pluck('id'))
-                ->get()->keyBy('id');
-            foreach ($headers as $header) {
-                $snapshot = $selected->get($header->id);
-                if (! $snapshot instanceof PredictionFeatureSnapshot) {
-                    continue;
-                }
-                $row = $this->snapshotRow($snapshot);
-                if ($row !== null) {
-                    $rows->push($row);
+        return LazyCollection::make(function () use ($canonicalSnapshots, $query): \Generator {
+            foreach ($canonicalSnapshots->chunk(100) as $headers) {
+                $selected = (clone $query)->whereIn('prediction_feature_snapshots.id', $headers->pluck('id'))
+                    ->get()->keyBy('id');
+                foreach ($headers as $header) {
+                    $snapshot = $selected->get($header->id);
+                    if (! $snapshot instanceof PredictionFeatureSnapshot) {
+                        continue;
+                    }
+                    $row = $this->snapshotRow($snapshot);
+                    if ($row !== null) {
+                        yield $row;
+                    }
                 }
             }
-        }
-
-        return $rows;
+        });
     }
 
     /**
@@ -324,34 +317,32 @@ class ExportTrainingDataCommand extends Command
             : 'pregame';
     }
 
-    private function isLaterSnapshot(
-        PredictionFeatureSnapshot $candidate,
-        PredictionFeatureSnapshot $current,
-    ): bool {
-        return [
-            $candidate->features_available_at?->getTimestamp() ?? PHP_INT_MIN,
-            $candidate->generated_at?->getTimestamp() ?? PHP_INT_MIN,
-            (int) $candidate->id,
-        ] > [
-            $current->features_available_at?->getTimestamp() ?? PHP_INT_MIN,
-            $current->generated_at?->getTimestamp() ?? PHP_INT_MIN,
-            (int) $current->id,
-        ];
-    }
-
     /**
-     * @param  Collection<int, array<string, mixed>>  $rows
+     * @param  array<string, int>  $timestamps
+     * @return list<int>
      */
-    private function datasetSchemaHash(Collection $rows): string
+    private function snapshotRank(PredictionFeatureSnapshot $snapshot, array &$timestamps): array
     {
-        return $this->stableHash(
-            $rows
-                ->flatMap(fn (array $row): array => array_keys($row))
-                ->unique()
-                ->sort()
-                ->values()
-                ->all()
-        );
+        $rank = [];
+        foreach (['features_available_at', 'generated_at'] as $field) {
+            $raw = $snapshot->getRawOriginal($field);
+            if ($raw === null) {
+                $rank[] = PHP_INT_MIN;
+
+                continue;
+            }
+            $key = $field.':'.$raw;
+            if (! isset($timestamps[$key])) {
+                if (count($timestamps) >= 1024) {
+                    $timestamps = [];
+                }
+                $timestamps[$key] = $snapshot->{$field}->getTimestamp();
+            }
+            $rank[] = $timestamps[$key];
+        }
+        $rank[] = (int) $snapshot->id;
+
+        return $rank;
     }
 
     private function stableHash(mixed $value): string

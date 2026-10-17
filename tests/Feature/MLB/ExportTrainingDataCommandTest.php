@@ -123,7 +123,8 @@ it('exports only trusted canonical mlb snapshots in chronological order', functi
         ->and($rows[0]['feature_schema_hash'])->toHaveLength(64)
         ->and($rows[0]['target_hash'])->toHaveLength(64)
         ->and($rows[0]['row_lineage_hash'])->toHaveLength(64)
-        ->and($rows[0]['dataset_schema_hash'])->toHaveLength(64)
+        ->and($rows[0]['dataset_schema_hash'])->toBe('c91d64f5477e3b287f50ee66dcb4b18364ca5cceb03b600d59c299870e68fe91')
+        ->and(hash('sha256', file($path)[0]))->toBe('8bccdafc77a263e18a897db7a8f6383681800568b27827797582c05a14687d30')
         ->and(mlbExportTemporaryFiles($path))->toBe([]);
 });
 
@@ -381,7 +382,7 @@ it('selects the same latest snapshot across batched out-of-order IDs without met
     $run = app(ModelRunRecorder::class)->forPrediction('mlb', 'rules-v1', 'core-v3', 'baseline-v1');
     $reference = app(SnapshotMetadataStorage::class)->store(['prediction_horizon' => 'Final Pregame']);
     $latest = null;
-    foreach (range(1, 205) as $index) {
+    foreach (range(1, 505) as $index) {
         $snapshot = createMlbExportSnapshot($game, $prediction, $run->id,
             $index === 1 ? '2026-07-04 18:30:00' : '2026-07-04 10:00:00', $index,
             'observed_pregame', true, []);

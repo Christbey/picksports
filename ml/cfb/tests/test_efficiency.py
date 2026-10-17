@@ -118,7 +118,8 @@ class EfficiencyTests(unittest.TestCase):
             manifest = Path(directory)/"manifest.json"
             manifest.write_text(json.dumps({"data_path": str(data), "sha256": hashlib.sha256(data.read_bytes()).hexdigest(),
                 "as_of": "2024-08-01T00:00:00+00:00", "test_from": "2024-05-20T00:00:00+00:00",
-                "test_until": "2024-06-17T00:00:00+00:00", "feature_policy": POLICY, "signal_families": {}}))
+                "test_until": "2024-06-17T00:00:00+00:00", "selection_from":"2024-03-25T00:00:00Z",
+                "calibration_from":"2024-04-22T00:00:00Z", "feature_policy": POLICY, "signal_families": {}}))
             output = Path(directory)/"model.json"
             def smaller_evaluation(model, group, draws=2000, benchmark=False, regulation_only=False):
                 return evaluate(model, group, draws=100, benchmark=benchmark, regulation_only=regulation_only)
@@ -135,6 +136,11 @@ class EfficiencyTests(unittest.TestCase):
             self.assertLess(model["split"]["calibration_week"], model["split"]["test_week"])
             self.assertTrue(all("2024-05-20" <= game["week"] < "2024-06-17" for game in model["holdout"]["games"]))
             invalid = json.loads(manifest.read_text())
+            invalid["calibration_from"] = "2024-06-03T00:00:00Z"
+            manifest.write_text(json.dumps(invalid))
+            with self.assertRaisesRegex(ValueError, "chronological and disjoint"):
+                train(manifest, Path(directory)/"overlap.json")
+            invalid["calibration_from"] = "2024-04-22T00:00:00Z"
             invalid["test_until"] = "2025-06-16T00:00:00+00:00"
             manifest.write_text(json.dumps(invalid))
             with self.assertRaisesRegex(ValueError, "completed Monday"):

@@ -5,6 +5,7 @@ namespace App\Console\Commands\CFB;
 use App\Models\CFB\Game;
 use App\Models\CFB\GameDataCheck;
 use App\Models\CFB\Play;
+use App\Services\CFB\CfbPlayEpaWriter;
 use App\Services\CFB\Data\CfbScoringLedger;
 use App\Services\CFB\TrueEpaCalculator;
 use Illuminate\Console\Command;
@@ -119,6 +120,7 @@ class CalculatePlayEpaCommand extends Command
                 isset($game->season) ? (int) $game->season : null
             );
 
+            $writes = [];
             foreach ($plays as $play) {
                 $result = $results[(int) $play->id] ?? null;
                 if ($result === null) {
@@ -143,10 +145,21 @@ class CalculatePlayEpaCommand extends Command
                 }
 
                 if (! $dryRun) {
-                    Play::query()->where('id', $play->id)->update($payload);
+                    $writes[] = ['id' => (int) $play->id, ...$payload];
                 }
             }
 
+            if (! $dryRun && $writes !== []) {
+                app(CfbPlayEpaWriter::class)->write($game->id, $revision->source_hash, $writes);
+            }
+            $latestRevision = GameDataCheck::where('game_id', $game->id)->where('component', 'plays')
+                ->whereNotNull('accepted_at')->latest('accepted_at')->latest('id')->value('source_hash');
+            if ($latestRevision !== $revision->source_hash) {
+                $this->newLine();
+                $this->error("Game {$game->id}: accepted plays changed during EPA calculation; retry normalization.");
+
+                return 2;
+            }
             $bar->advance();
         }
 

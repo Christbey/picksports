@@ -14,6 +14,7 @@ use App\Models\CFB\GameDataCheck;
 use App\Models\CFB\PlayerInjury;
 use App\Models\CFB\TeamMetric;
 use App\Models\MarketQuote;
+use App\Services\CFB\CfbEpaBaselineEvidence;
 use App\Services\CFB\Data\CfbCfbdTeamBoxscoreSync;
 use App\Services\CFB\Data\CfbDataReadiness;
 use App\Services\CFB\Data\CfbDriveBuilder;
@@ -205,13 +206,18 @@ class RunPregamePipelineCommand extends Command
                     $historyFailures[] = $past->away_team_id;
                 }
             }
+            $epaBaselines = [];
             foreach ($history as $past) {
                 if ($this->option('core-only')) {
                     $playFailures[] = $past->home_team_id;
                     $playFailures[] = $past->away_team_id;
                 } elseif (app(CfbDataReadiness::class)->forGame($past)['ready']
                     && ! in_array($past->home_team_id, $historyFailures, true) && ! in_array($past->away_team_id, $historyFailures, true)) {
-                    $processed = app(CfbPipelineStage::class)->run('game:'.$past->id, 'normalize', [...app(CfbDataReadiness::class)->forGame($past), 'normalizer_version' => CfbDriveBuilder::VERSION, 'quality_schema' => 2], function () use ($past) {
+                    $pastSeason = (int) $past->season;
+                    if (! array_key_exists($pastSeason, $epaBaselines)) {
+                        $epaBaselines[$pastSeason] = app(CfbEpaBaselineEvidence::class)->availableAt($pastSeason);
+                    }
+                    $processed = app(CfbPipelineStage::class)->run('game:'.$past->id, 'normalize', [...app(CfbDataReadiness::class)->forGame($past), 'normalizer_version' => CfbDriveBuilder::VERSION, 'quality_schema' => 2, 'epa_baseline_available_at' => $epaBaselines[$pastSeason]], function () use ($past) {
                         $worker = Process::path(base_path())->timeout(120)->run([
                             PHP_BINARY, '-d', 'memory_limit=192M', base_path('artisan'), 'cfb:normalize-game', '--game='.$past->id,
                         ]);

@@ -643,6 +643,16 @@ def train(manifest_path, output, retrospective=False):
         raise ValueError("Need eight pre-test weeks for separate training, selection and calibration")
     val_week=earlier[int(len(earlier)*.6)]
     calibration_week=earlier[int(len(earlier)*.8)]
+    selection_from, calibration_from = manifest.get("selection_from"), manifest.get("calibration_from")
+    if bool(selection_from) != bool(calibration_from):
+        raise ValueError("Provide both explicit selection and calibration boundaries")
+    if selection_from:
+        boundaries = [stamp(selection_from), stamp(calibration_from)]
+        if any(value.utcoffset() != dt.timedelta(0) or value.weekday() != 0 or value.time() != dt.time(0) for value in boundaries):
+            raise ValueError("Selection and calibration require Monday 00:00 UTC boundaries")
+        val_week, calibration_week = [value.date().isoformat() for value in boundaries]
+        if not val_week < calibration_week < test_week:
+            raise ValueError("Selection, calibration and test periods must be chronological and disjoint")
     start=lambda value:value+"T00:00:00+00:00"
     validation=[r for r in rows if val_week<=week(r)<calibration_week]
     test=[r for r in rows if (window_start <= stamp(r["kickoff"]) < window_end if test_from else (r["season"] == test_season if test_season is not None else week(r) >= test_week))]
@@ -698,7 +708,7 @@ def train(manifest_path, output, retrospective=False):
         "calibration_temperature":calibration["temperature"],"calibration_status":calibration["status"],
         "reliability":model["reliability"],"benchmark_holdout":benchmark,"promotion_report":model["promotion_report"],
         "dataset_hash":manifest["sha256"],"evaluation_artifact_path":evaluation_path,
-        "evaluation_artifact_sha256":hashlib.sha256(evaluation_json.encode()).hexdigest(),"split":{"test_season":test_season,"test_from":test_from,"test_until":test_until,"validation_week":val_week,"calibration_week":calibration_week,"test_week":test_week},
+        "evaluation_artifact_sha256":hashlib.sha256(evaluation_json.encode()).hexdigest(),"split":{"selection_from":selection_from,"calibration_from":calibration_from,"test_season":test_season,"test_from":test_from,"test_until":test_until,"validation_week":val_week,"calibration_week":calibration_week,"test_week":test_week},
         "evaluation_model_trained_before":model["trained_before"],"refit_policy":"fixed_selected_hyperparameters_after_frozen_holdout",
         "holdout":report,"status":"challenger","promotion_allowed":False})
     Path(output).write_text(json.dumps(deployment,sort_keys=True,allow_nan=False))

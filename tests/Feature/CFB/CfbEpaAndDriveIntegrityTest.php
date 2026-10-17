@@ -6,6 +6,7 @@ use App\Models\CFB\GameDataCheck;
 use App\Models\CFB\Play;
 use App\Models\CFB\Team;
 use App\Models\EpaStateBaseline;
+use App\Services\CFB\CfbPlayEpaWriter;
 use App\Services\CFB\Data\CfbDataReadiness;
 use App\Services\CFB\Data\CfbDriveBuilder;
 use App\Services\CFB\Data\CfbGameDataValidator;
@@ -331,4 +332,33 @@ it('does not recalculate EPA for a play outside the accepted source revision', f
     $this->artisan('cfb:calculate-play-epa', ['--game_id' => $game->id, '--rebuild' => true])->assertSuccessful();
     expect((float) $unaccepted->fresh()->true_epa)->toBe(77.0)
         ->and($plays[0]->fresh()->is_epa_eligible)->toBeTrue();
+});
+
+it('batches EPA writes and cannot insert missing plays or cross a source revision', function () {
+    [$game, $plays] = cfbLedgerFixture();
+    $updates = [];
+    foreach ($plays as $play) {
+        $updates[] = ['id' => $play->id, 'is_epa_eligible' => true, 'expected_points_before' => 1.25,
+            'expected_points_after' => 2.5, 'true_epa' => 1.25, 'epa_calculated_at' => now()];
+    }
+    $updates[] = [...$updates[0], 'id' => 999999];
+    $before = Play::count();
+    $writer = app(CfbPlayEpaWriter::class);
+    $writer->write($game->id, hash('sha256', 'wrong-revision'), $updates);
+    expect($plays[0]->fresh()->true_epa)->toBeNull();
+    $writer->write($game->id, $plays[0]->source_revision, $updates);
+    expect((float) $plays[0]->fresh()->true_epa)->toBe(1.25)->and(Play::count())->toBe($before)
+        ->and($plays[0]->fresh()->home_score)->toBe(0);
+});
+
+it('holds normalization if the accepted play revision changes during EPA calculation', function () {
+    [$game, $plays] = cfbLedgerFixture();
+    $this->mock(TrueEpaCalculator::class)->shouldReceive('calculateForGame')->once()->andReturnUsing(function ($selected) use ($game) {
+        GameDataCheck::create(['game_id' => $game->id, 'component' => 'plays', 'source_hash' => hash('sha256', 'new-revision'),
+            'validator_version' => '2', 'state' => 'complete', 'discrepancies' => [], 'evidence' => [],
+            'source_path' => 'new.json', 'accepted_at' => now()]);
+
+        return $selected->mapWithKeys(fn ($play) => [$play->id => ['eligible' => false, 'ep_before' => null, 'ep_after' => null, 'epa' => null]])->all();
+    });
+    $this->artisan('cfb:calculate-play-epa', ['--game_id' => $game->id, '--rebuild' => true])->assertExitCode(2);
 });

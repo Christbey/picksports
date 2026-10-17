@@ -6,9 +6,10 @@ use App\Services\CFB\Scoring\CfbScoringFeatures;
 
 it('distinguishes absent injury coverage and unverified personnel from observed records', function () {
     $service = new CfbScoringFeatures;
-    $context = $service->capture(['home' => ['injuries' => [], 'personnel' => ['components' => ['quarterback' => ['status' => 'unverified', 'values' => ['observed_primary_passer_changed' => true]]]]],
+    $context = $service->capture(['signal_context' => ['is_indoor' => true, 'wind_speed_mph' => 30, 'precipitation_inches' => 1], 'home' => ['injuries' => [], 'personnel' => ['components' => ['quarterback' => ['status' => 'unverified', 'values' => ['observed_primary_passer_changed' => true]]]]],
         'away' => ['injuries' => [['status' => 'out'], ['status' => 'questionable'], ['status' => 'out']]]]);
     expect($context['home']['out_records'])->toBeNull()->and($context['home']['qb_changed'])->toBeNull()
+        ->and($context['home']['wind_speed_mph'])->toBeNull()->and($context['home']['precipitation_inches'])->toBeNull()
         ->and($context['away']['out_records'])->toBe(2)->and($context['away']['questionable_records'])->toBe(1);
     $features = $service->context(['context' => $context], 'home');
     expect($features['context:out_records:missing'])->toBe(1.0)->and($features)->not->toHaveKey('context:out_records');

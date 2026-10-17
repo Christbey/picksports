@@ -94,9 +94,10 @@ class ExportScoringTrainingCommand extends Command
                     continue;
                 }
                 // One original pregame snapshot per game, never rewritten using today's context.
-                $snapshot = EventInputSnapshot::where('sport_event_id', $game->sport_event_id)->where('sport', 'cfb')->where('phase', 'pregame')
+                $snapshotId = EventInputSnapshot::where('sport_event_id', $game->sport_event_id)->where('sport', 'cfb')->where('phase', 'pregame')
                     ->where('captured_at', '<', $kickoff)->where('created_at', '<', $kickoff)
-                    ->where(fn ($q) => $q->whereNull('latest_source_available_at')->orWhere('latest_source_available_at', '<', $kickoff))->latest('captured_at')->first();
+                    ->where(fn ($q) => $q->whereNull('latest_source_available_at')->orWhere('latest_source_available_at', '<', $kickoff))->latest('captured_at')->latest('id')->value('id');
+                $snapshot = $snapshotId ? EventInputSnapshot::find($snapshotId) : null;
                 $inputs = $snapshot?->inputs ?? [];
                 $signals = ['spread' => [], 'total' => []];
                 $signalMissing = [];

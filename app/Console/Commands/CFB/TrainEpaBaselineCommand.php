@@ -3,7 +3,9 @@
 namespace App\Console\Commands\CFB;
 
 use App\Models\CFB\Game;
+use App\Models\CFB\GameDataCheck;
 use App\Services\CFB\Data\CfbDataReadiness;
+use App\Services\CFB\Data\CfbScoringLedger;
 use App\Services\CFB\PlayEpaDataService;
 use App\Services\CFB\TrueEpaCalculator;
 use App\Services\Epa\StateBaselineService;
@@ -23,11 +25,30 @@ class TrainEpaBaselineCommand extends Command
             return self::FAILURE;
         }
         $buckets = [];
+        $acceptedGames = $excludedGames = 0;
         foreach (Game::where('season', $source)->where('status', 'STATUS_FINAL')->lazyById(50) as $game) {
             if (! app(CfbDataReadiness::class)->forGame($game)['ready']) {
+                $excludedGames++;
+
                 continue;
             }
-            $plays = $game->plays()->orderBy('sequence_number')->get();
+            $revision = GameDataCheck::where('game_id', $game->id)->where('component', 'plays')
+                ->whereNotNull('accepted_at')->latest('accepted_at')->latest('id')->first();
+            if (! $revision) {
+                $excludedGames++;
+
+                continue;
+            }
+            try {
+                $plays = $game->plays()->where('source_revision', $revision->source_hash)->orderBy('sequence_number')->orderBy('id')->get();
+                $plays = app(CfbScoringLedger::class)->normalize($game, $plays);
+            } catch (\Throwable $error) {
+                $excludedGames++;
+                $this->warn("Game {$game->id} excluded: {$error->getMessage()}");
+
+                continue;
+            }
+            $acceptedGames++;
             foreach ($plays as $i => $play) {
                 if (! $eligibility->isEpaEligiblePlay($play) || ! $play->possession_team_id || $play->period > 4) {
                     continue;
@@ -62,7 +83,7 @@ class TrainEpaBaselineCommand extends Command
             return self::FAILURE;
         }
         $baselines->replaceSeasonBaseline('cfb', $season, $source, $rows);
-        $this->line(json_encode(['states' => count($rows), 'source_season' => $source, 'season' => $season]));
+        $this->line(json_encode(['states' => count($rows), 'source_season' => $source, 'season' => $season, 'accepted_games' => $acceptedGames, 'excluded_games' => $excludedGames]));
 
         return self::SUCCESS;
     }

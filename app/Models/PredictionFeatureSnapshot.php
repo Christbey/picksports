@@ -2,12 +2,18 @@
 
 namespace App\Models;
 
+use App\Services\Predictions\SnapshotMetadataStorage;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PredictionFeatureSnapshot extends Model
 {
+    protected $with = ['metadataPayload'];
+
+    protected $hidden = ['metadataPayload'];
+
     protected $fillable = [
         'sport',
         'prediction_table',
@@ -46,6 +52,40 @@ class PredictionFeatureSnapshot extends Model
             'source_timestamps' => 'array',
             'lineage_metadata' => 'array',
         ];
+    }
+
+    protected function modelMetadata(): Attribute
+    {
+        return Attribute::get(function (?string $value): ?array {
+            if ($value !== null && str_starts_with($value, '"'.SnapshotMetadataStorage::REFERENCE_PREFIX)) {
+                $this->loadMissing('metadataPayload');
+            }
+
+            return app(SnapshotMetadataStorage::class)->resolve(
+                $value,
+                $this->relationLoaded('metadataPayload') ? $this->getRelation('metadataPayload') : null,
+            );
+        });
+    }
+
+    protected function metadataPayloadHash(): Attribute
+    {
+        return Attribute::get(function (): ?string {
+            $raw = $this->getRawOriginal('model_metadata');
+            if (! is_string($raw) || ! str_starts_with($raw, '"')) {
+                return null;
+            }
+
+            $reference = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+
+            return app(SnapshotMetadataStorage::class)->isReference($reference)
+                ? substr($reference, strlen(SnapshotMetadataStorage::REFERENCE_PREFIX)) : null;
+        });
+    }
+
+    public function metadataPayload(): BelongsTo
+    {
+        return $this->belongsTo(SnapshotMetadataPayload::class, 'metadata_payload_hash', 'sha256');
     }
 
     public function modelRun(): BelongsTo

@@ -150,10 +150,11 @@ class ExportTrainingDataCommand extends Command
 
         $canonicalSnapshots = collect();
 
+        $throughId = PredictionFeatureSnapshot::query()->max('id') ?? 0;
         foreach ($query
-            ->orderBy('prediction_feature_snapshots.generated_at')
-            ->orderBy('prediction_feature_snapshots.id')
-            ->cursor() as $snapshot) {
+            ->where('prediction_feature_snapshots.id', '<=', $throughId)
+            ->reorder()
+            ->lazyById(100, 'prediction_feature_snapshots.id', 'id') as $snapshot) {
             $horizon = $this->predictionHorizon($snapshot);
             $canonicalKey = (string) $snapshot->game_id;
             $current = $canonicalSnapshots->get($canonicalKey);

@@ -13,6 +13,7 @@ use App\Services\CFB\Predictions\CfbCalculator;
 use App\Services\CFB\Predictions\CfbForecastCoordinator;
 use App\Services\CFB\Predictions\CfbSignalContributionGrader;
 use App\Services\CFB\Signals\CfbFootballSignalEvidence;
+use App\Services\Predictions\CanonicalPayloadHasher;
 use Carbon\CarbonImmutable;
 
 function coordinatedFixture(): array
@@ -160,4 +161,14 @@ it('marks infeasible counterfactual diagnostics unavailable without breaking a v
     $offense = collect($graded['signals'])->first(fn ($r) => $r['signal'] === 'offensive_scoring' && $r['market'] === 'total');
     expect($graded['replay_matched'])->toBeTrue()->and($offense['grade'])->toBe('unavailable')
         ->and($offense['without_signal'])->toBeNull();
+});
+
+it('keeps informational evaluation statistics as exact decimals in frozen release configuration', function () {
+    $config = config('cfb_forecast_coordination');
+    foreach ($config['historical_mean_absolute_errors'] as $value) {
+        expect($value)->toBeString()->toMatch('/^\d+\.\d{6}$/');
+    }
+    $hasher = app(CanonicalPayloadHasher::class);
+    expect($hasher->hash(json_decode(json_encode($config, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR)))
+        ->toBe($hasher->hash($config));
 });

@@ -19,10 +19,10 @@ return [
     'historical_accuracy_checks_passed' => true,
     'evaluation_hash' => '40624cfa9fd61ca714ff9717761357a04fc84c4eac573c98e0ea3a96213c3887',
     'historical_mean_absolute_errors' => [
-        'published_margin' => 11.495918367346935,
-        'coordinated_margin' => 11.45648979591837,
-        'published_total' => 11.822448979591838,
-        'coordinated_total' => 11.64938775510204,
+        'published_margin' => '11.495918',
+        'coordinated_margin' => '11.456490',
+        'published_total' => '11.822449',
+        'coordinated_total' => '11.649388',
     ],
     'historical_winner_records' => [
         'published' => [

@@ -40,7 +40,7 @@ class PredictionFeatureSnapshotRecorder
         );
         $provenance = app(SnapshotProvenanceResolver::class)->resolve($game, $snapshot, $generatedAt);
 
-        $featureSnapshot = PredictionFeatureSnapshot::query()->create([
+        $featureSnapshot = (new PredictionFeatureSnapshot)->getConnection()->transaction(fn (): PredictionFeatureSnapshot => PredictionFeatureSnapshot::query()->create([
             'sport' => $sport,
             'prediction_table' => $prediction->getTable(),
             'prediction_id' => (int) $prediction->getKey(),
@@ -53,7 +53,7 @@ class PredictionFeatureSnapshotRecorder
             'features' => $features,
             'outputs' => $outputs,
             'market_context' => $marketContext,
-            'model_metadata' => $modelMetadata,
+            'model_metadata' => app(SnapshotMetadataStorage::class)->prepare($modelMetadata, $sport),
             'feature_hash' => hash('sha256', json_encode([
                 'features' => $features,
                 'outputs' => $outputs,
@@ -61,7 +61,7 @@ class PredictionFeatureSnapshotRecorder
             ])),
             'generated_at' => $generatedAt,
             ...$provenance,
-        ]);
+        ]));
 
         if ($sport === 'nfl' && $game instanceof Game) {
             app(GameDepthChartLinkRecorder::class)->record($game, $featureSnapshot);

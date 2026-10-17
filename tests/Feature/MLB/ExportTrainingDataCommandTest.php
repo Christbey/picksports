@@ -6,8 +6,10 @@ use App\Models\MLB\Team;
 use App\Models\PredictionEvaluation;
 use App\Models\PredictionFeatureSnapshot;
 use App\Services\Predictions\ModelRunRecorder;
+use App\Services\Predictions\SnapshotMetadataStorage;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 uses()->group('mlb', 'commands');
@@ -347,3 +349,55 @@ function mlbExportTemporaryFiles(string $path): array
 {
     return glob(dirname($path).'/.'.basename($path).'.*.tmp') ?: [];
 }
+
+it('exports byte-identical training rows and metadata after snapshot metadata sharing and restore', function () {
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+    $game = createMlbExportGame($home, $away, '2026-07-04 19:10:00');
+    $prediction = createMlbExportPredictionAndEvaluation($game);
+    $run = app(ModelRunRecorder::class)->forPrediction('mlb', 'rules-v1', 'core-v3', 'baseline-v1');
+    $snapshot = createMlbExportSnapshot($game, $prediction, $run->id, '2026-07-04 18:30:00', 2,
+        'observed_pregame', true, ['prediction_horizon' => 'Final Pregame']);
+    $snapshot->update(['model_metadata' => ['diagnostics' => str_repeat('source', 1000), 'prediction_horizon' => 'Final Pregame']]);
+    $path = storage_path('app/ml/tests/mlb_shared_metadata_export.csv');
+    $options = ['--path' => $path, '--include-metadata' => true];
+    expect(Artisan::call('mlb:export-training-data', $options))->toBe(0);
+    $before = file_get_contents($path);
+    $compact = ['--through-id' => $snapshot->id, '--apply' => true];
+
+    expect(Artisan::call('sports:compact-snapshot-metadata', $compact))->toBe(0)
+        ->and(Artisan::call('mlb:export-training-data', $options))->toBe(0)
+        ->and(file_get_contents($path))->toBe($before)
+        ->and(Artisan::call('sports:compact-snapshot-metadata', [...$compact, '--restore' => true]))->toBe(0)
+        ->and(Artisan::call('mlb:export-training-data', $options))->toBe(0)
+        ->and(file_get_contents($path))->toBe($before);
+});
+
+it('selects the same latest snapshot across batched out-of-order IDs without metadata query growth per row', function () {
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+    $game = createMlbExportGame($home, $away, '2026-07-04 19:10:00');
+    $prediction = createMlbExportPredictionAndEvaluation($game);
+    $run = app(ModelRunRecorder::class)->forPrediction('mlb', 'rules-v1', 'core-v3', 'baseline-v1');
+    $reference = app(SnapshotMetadataStorage::class)->store(['prediction_horizon' => 'Final Pregame']);
+    $latest = null;
+    foreach (range(1, 205) as $index) {
+        $snapshot = createMlbExportSnapshot($game, $prediction, $run->id,
+            $index === 1 ? '2026-07-04 18:30:00' : '2026-07-04 10:00:00', $index,
+            'observed_pregame', true, []);
+        $snapshot->update(['model_metadata' => $reference]);
+        $latest ??= $snapshot;
+    }
+    $path = storage_path('app/ml/tests/mlb_batched_metadata_export.csv');
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    expect(Artisan::call('mlb:export-training-data', ['--path' => $path]))->toBe(0);
+    $payloadQueries = collect(DB::getQueryLog())
+        ->filter(fn (array $query): bool => str_contains($query['query'], 'snapshot_metadata_payloads'));
+    DB::disableQueryLog();
+    $rows = readMlbExportCsv($path);
+    expect($rows)->toHaveCount(1)
+        ->and($rows[0]['canonical_snapshot_id'])->toBe((string) $latest->id)
+        ->and($rows[0]['feature_signal'])->toBe('1')
+        ->and($payloadQueries)->toHaveCount(3);
+});

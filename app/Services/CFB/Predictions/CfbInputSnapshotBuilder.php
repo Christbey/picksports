@@ -38,6 +38,7 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
         }
 
         $inputs = $snapshot->inputs;
+        $inputs['event']['venue'] = $event->cfbGame->venue_name ?: $event->cfbGame->venue;
         $inputs['event']['week'] = (int) $event->cfbGame->week;
         $sourceTimestamps = $snapshot->sourceTimestamps;
         $inputs['require_versioned_elo'] = (bool) data_get($release->configuration, 'inputs.point_in_time_elo', false);

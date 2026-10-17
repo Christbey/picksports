@@ -8,7 +8,9 @@ use App\Models\CFB\TeamSeasonAffiliation;
 use App\Models\DatasetExportManifest;
 use App\Models\EventInputSnapshot;
 use App\Models\MarketQuote;
+use App\Services\CFB\Data\CfbDriveBuilder;
 use App\Services\CFB\Predictions\CfbStoredPregameQuote;
+use App\Services\CFB\Scoring\CfbScoringFeatures;
 use App\Services\CFB\Signals\CfbFootballSignalCatalog;
 use App\Services\CFB\Signals\CfbFootballSignalJointModel;
 use Carbon\CarbonImmutable;
@@ -18,7 +20,7 @@ use Illuminate\Support\Facades\Storage;
 
 class ExportScoringTrainingCommand extends Command
 {
-    protected $signature = 'cfb:export-scoring-training {--from-season=} {--to-season=} {--as-of=} {--test-season=} {--output=}';
+    protected $signature = 'cfb:export-scoring-training {--from-season=} {--to-season=} {--as-of=} {--test-season=} {--test-from=} {--test-until=} {--output=}';
 
     protected $description = 'Export accepted source revisions, frozen context, coverage and real availability times for chronological CFB training';
 
@@ -36,6 +38,25 @@ class ExportScoringTrainingCommand extends Command
 
             return self::FAILURE;
         }
+        $testFrom = $this->option('test-from');
+        $testUntil = $this->option('test-until');
+        if (($testFrom || $testUntil) && (! $testFrom || ! $testUntil || $testSeason !== null)) {
+            $this->error('Use either a complete test season or both explicit test-window boundaries.');
+
+            return self::FAILURE;
+        }
+        if ($testFrom && $testUntil) {
+            $start = CarbonImmutable::parse($testFrom)->utc();
+            $end = CarbonImmutable::parse($testUntil)->utc();
+            if ($start->gte($end) || $end->gt($asOf) || $start->dayOfWeekIso !== 1 || $end->dayOfWeekIso !== 1
+                || $start->format('H:i:s') !== '00:00:00' || $end->format('H:i:s') !== '00:00:00') {
+                $this->error('Use completed kickoff weeks bounded by Monday 00:00 UTC, ending before as-of.');
+
+                return self::FAILURE;
+            }
+            $testFrom = $start->toIso8601String();
+            $testUntil = $end->toIso8601String();
+        }
         $path = $this->option('output');
         if (file_exists($path)) {
             $this->error('Exports are immutable; choose a new output path');
@@ -45,7 +66,7 @@ class ExportScoringTrainingCommand extends Command
         $file = fopen($path, 'xb');
         $coverage = ['included' => 0, 'excluded' => [], 'frozen_context' => 0, 'retrospective_labels' => 0];
         $maxId = 0;
-        $catalog = CfbFootballSignalCatalog::all();
+        $catalog = app(CfbScoringFeatures::class)->independentCatalog(CfbFootballSignalCatalog::all());
         try {
             foreach (Game::with('sportEvent')->whereBetween('season', [$from, $to])->where('status', 'STATUS_FINAL')->lazyById(50) as $game) {
                 $kickoff = $game->sportEvent?->starts_at;
@@ -65,7 +86,9 @@ class ExportScoringTrainingCommand extends Command
                     continue;
                 }
                 $drives = DB::table('cfb_drives')->where('game_id', $game->id)->where('source_revision', $checks['plays']->source_hash)->orderBy('id')->get();
-                if ($drives->isEmpty() || $drives->contains(fn ($r) => $r->quality !== 'complete')) {
+                if ($drives->isEmpty() || $drives->contains(fn ($r) => $r->quality !== 'complete'
+                    || data_get(json_decode($r->data, true), 'normalizer_version') !== CfbDriveBuilder::VERSION
+                    || data_get(json_decode($r->data, true), 'score_ledger_revision') !== $checks['boxscore']->source_hash)) {
                     $coverage['excluded']['unverified_drives'] = ($coverage['excluded']['unverified_drives'] ?? 0) + 1;
 
                     continue;
@@ -88,7 +111,7 @@ class ExportScoringTrainingCommand extends Command
                         $signalMissing[$id] = in_array(null, $states, true);
                     }
                 }
-                $available = max($checks['boxscore']->accepted_at, $checks['plays']->accepted_at, CarbonImmutable::parse($drives->max('updated_at')));
+                $available = max($checks['boxscore']->accepted_at, $checks['plays']->accepted_at, CarbonImmutable::parse($drives->max('updated_at')), CarbonImmutable::parse($game->updated_at));
                 if ($available->gt($asOf)) {
                     $coverage['excluded']['derived_after_cutoff'] = ($coverage['excluded']['derived_after_cutoff'] ?? 0) + 1;
 
@@ -108,6 +131,8 @@ class ExportScoringTrainingCommand extends Command
                     'subdivisions' => TeamSeasonAffiliation::where('season', $game->season)->whereIn('team_id', [$game->home_team_id, $game->away_team_id])->pluck('subdivision', 'team_id')->all(),
                     'snapshot_hash' => $snapshot?->content_hash, 'snapshot_available_at' => $snapshot?->captured_at?->toIso8601String(),
                     'fpi' => ['home' => data_get($inputs, 'home.metrics.fpi'), 'away' => data_get($inputs, 'away.metrics.fpi')],
+                    'venue' => data_get($inputs, 'event.venue') ?: ($game->venue_name ?: $game->venue),
+                    'venue_source' => data_get($inputs, 'event.venue') ? 'original_pregame_snapshot' : 'retrospective_game_metadata', 'context' => app(CfbScoringFeatures::class)->capture($inputs),
                     'signals' => $signals, 'signal_missing' => $signalMissing, 'quotes' => $quotes, 'forecast_at' => $forecastAt->toIso8601String(),
                     'drives' => $drives->map(fn ($r) => ['offense_id' => (string) $r->offense_team_id, ...json_decode($r->data, true)])->all()];
                 fwrite($file, json_encode($row, JSON_THROW_ON_ERROR)."\n");
@@ -120,7 +145,7 @@ class ExportScoringTrainingCommand extends Command
         }
         $hash = hash_file('sha256', $path);
         $manifest = ['schema' => 'cfb-scoring-v1', 'sha256' => $hash, 'data_path' => realpath($path), 'as_of' => $asOf->toIso8601String(), 'from_season' => $from, 'to_season' => $to,
-            'test_season' => $testSeason, 'coverage' => $coverage, 'signal_families' => array_map(fn ($r) => $r['family'], $catalog), 'availability_policy' => 'strict_recorded_time; retrospective replay must be labeled separately'];
+            'test_season' => $testSeason, 'test_from' => $testFrom, 'test_until' => $testUntil, 'coverage' => $coverage, 'signal_families' => array_map(fn ($r) => $r['family'], $catalog), 'feature_policy' => CfbScoringFeatures::POLICY, 'availability_policy' => 'strict_recorded_time; retrospective replay must be labeled separately'];
         file_put_contents($path.'.manifest.json', json_encode($manifest, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
         $key = 'cfb/training/'.$hash.'.jsonl';
         $disk = config('cfb.scoring.artifact_disk', 'local');

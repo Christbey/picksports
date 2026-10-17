@@ -60,14 +60,14 @@ class CfbScoringChallenger
             } catch (\DomainException) { /* Missing original FPI leaves the paired comparison unavailable. */
             }
 
-            return ['state' => 'ready', 'historical_evaluation_mode' => $artifact['evidence_mode'], 'benchmark_scores' => $reference ? $this->freeze($reference->scores) : null, 'artifact_id' => $id, 'artifact_hash' => $loaded['record']->artifact_hash, 'artifact_available_at' => $loaded['record']->created_at->toIso8601String(),
+            return $this->freeze(['state' => 'ready', 'historical_evaluation_mode' => $artifact['evidence_mode'], 'benchmark_scores' => $reference ? $this->freeze($reference->scores) : null, 'artifact_id' => $id, 'artifact_hash' => $loaded['record']->artifact_hash, 'artifact_available_at' => $loaded['record']->created_at->toIso8601String(),
                 'seed' => $seed, 'inputs' => $evidence, 'summary' => $this->freeze($distribution->summary()), 'scores' => $this->freeze($distribution->scores),
                 'feature_policy' => $artifact['feature_policy'] ?? 'legacy',
                 'feature_coverage' => $artifact['feature_coverage'] ?? [],
                 'context_training_coverage' => $artifact['context_training_coverage'] ?? [],
                 'context_coverage' => array_map(fn ($values) => array_keys(array_filter($values, fn ($value) => $value !== null)), $evidence['context']),
                 'signal_diagnostics' => $artifact['signal_diagnostics'] ?? [],
-                'promoted' => $loaded['record']->status === 'promoted' && data_get($loaded['record']->promotion_decision, 'forecast_allowed') === true];
+                'promoted' => $loaded['record']->status === 'promoted' && data_get($loaded['record']->promotion_decision, 'forecast_allowed') === true]);
         } catch (\Throwable $error) {
             report($error);
 

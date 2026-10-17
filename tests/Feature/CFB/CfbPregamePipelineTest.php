@@ -12,6 +12,7 @@ use App\Models\CFB\Team;
 use App\Models\CFB\TeamSeasonAffiliation;
 use App\Models\CommandHeartbeat;
 use App\Models\SportEvent;
+use App\Services\CFB\CfbEpaBaselineEvidence;
 use App\Services\CFB\Data\CfbCfbdTeamBoxscoreSync;
 use App\Services\CFB\Data\CfbDataReadiness;
 use App\Services\CFB\Data\CfbDriveBuilder;
@@ -225,7 +226,8 @@ it('reuses completed historical normalization for unchanged accepted source revi
         'boxscore' => ['state' => 'complete', 'accepted' => true]]];
     $this->mock(CfbDataReadiness::class)->makePartial()->shouldReceive('forGame')->andReturn($quality);
     $this->mock(CfbDriveBuilder::class)->shouldNotReceive('build');
-    app(CfbPipelineStage::class)->run('game:'.$past->id, 'normalize', [...$quality, 'normalizer_version' => CfbDriveBuilder::VERSION, 'quality_schema' => 2],
+    app(CfbPipelineStage::class)->run('game:'.$past->id, 'normalize', [...$quality, 'normalizer_version' => CfbDriveBuilder::VERSION, 'quality_schema' => 2,
+        'epa_baseline_available_at' => app(CfbEpaBaselineEvidence::class)->availableAt((int) $past->season)],
         fn () => ['state' => 'complete', 'drives' => ['state' => 'complete']]);
     Artisan::command('cfb:sync-odds {--days=}', fn () => 0);
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertSuccessful();

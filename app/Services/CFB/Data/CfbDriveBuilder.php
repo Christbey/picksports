@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 
 class CfbDriveBuilder
 {
-    public const VERSION = '4';
+    public const VERSION = '5';
 
     public function build(Game $game, bool $onlyChanged = false): array
     {
@@ -91,7 +91,8 @@ class CfbDriveBuilder
 
                 continue;
             }
-            $new = $current === null || $current['half'] !== $half || (! $try && ($current['offense_team_id'] !== $offense || $current['ended'] || ($provider && $current['provider'] && $provider !== $current['provider'])));
+            // Provider references can alternate within a possession; only football transitions end it.
+            $new = $current === null || $current['half'] !== $half || (! $try && ($current['offense_team_id'] !== $offense || $current['ended']));
             if ($new) {
                 if ($current) {
                     $drives[] = $current;

@@ -24,6 +24,9 @@ class CfbScoringChallenger
             $loaded = app(CfbScoringArtifact::class)->load($id, $snapshot->capturedAt, allowResearchShadow: true);
             $artifact = $loaded['payload'];
             $catalog = CfbFootballSignalCatalog::all();
+            if (($artifact['feature_policy'] ?? null) === CfbScoringFeatures::POLICY) {
+                $catalog = app(CfbScoringFeatures::class)->independentCatalog($catalog);
+            }
             $missing = [];
             foreach ($catalog as $key => $rule) {
                 foreach (['home', 'away'] as $side) {
@@ -37,6 +40,7 @@ class CfbScoringChallenger
             $evidence = ['home_id' => (string) $game->home_team_id, 'away_id' => (string) $game->away_team_id,
                 'kickoff' => $snapshot->cutoffAt->toIso8601String(), 'season' => (int) $game->season, 'neutral' => (bool) $game->neutral_site,
                 'fpi' => ['home' => data_get($inputs, 'home.metrics.fpi'), 'away' => data_get($inputs, 'away.metrics.fpi')],
+                'venue' => data_get($inputs, 'event.venue'), 'context' => app(CfbScoringFeatures::class)->capture($inputs),
                 'signals' => CfbFootballSignalJointModel::features($inputs, ['catalog' => $catalog, 'feature_policy' => 'observed_only']), 'signal_missing' => $missing];
             // A corrected accepted training revision requires retraining; do not silently use stale ratings.
             $latest = GameDataCheck::whereIn('game_id', $artifact['training_ids'])->whereNotNull('accepted_at')->max('accepted_at');
@@ -54,6 +58,10 @@ class CfbScoringChallenger
 
             return ['state' => 'ready', 'historical_evaluation_mode' => $artifact['evidence_mode'], 'benchmark_scores' => $reference?->scores, 'artifact_id' => $id, 'artifact_hash' => $loaded['record']->artifact_hash, 'artifact_available_at' => $loaded['record']->created_at->toIso8601String(),
                 'seed' => $seed, 'inputs' => $evidence, 'summary' => $distribution->summary(), 'scores' => $distribution->scores,
+                'feature_policy' => $artifact['feature_policy'] ?? 'legacy',
+                'feature_coverage' => $artifact['feature_coverage'] ?? [],
+                'context_training_coverage' => $artifact['context_training_coverage'] ?? [],
+                'context_coverage' => array_map(fn ($values) => array_keys(array_filter($values, fn ($value) => $value !== null)), $evidence['context']),
                 'signal_diagnostics' => $artifact['signal_diagnostics'] ?? [],
                 'promoted' => $loaded['record']->status === 'promoted' && data_get($loaded['record']->promotion_decision, 'forecast_allowed') === true];
         } catch (\Throwable $error) {

@@ -29,6 +29,8 @@ class CfbPossessionScorer
         }
         $rng = new Randomizer(new Xoshiro256StarStar($seed));
         $models = $artifact['models'];
+        $features = app(CfbScoringFeatures::class);
+        $enhanced = ($artifact['feature_policy'] ?? null) === CfbScoringFeatures::POLICY;
         $pace = [];
         $outcomes = [];
         $means = [];
@@ -47,13 +49,15 @@ class CfbPossessionScorer
             if (! isset($artifact['effective_drives'][$id])) {
                 throw new DomainException('Opponent has no connected observed history');
             }
-            $pace[$side] = max(1, $this->predict($models['pace'], ['team:'.$id => 1]));
+            $pace[$side] = max(1, $this->predict($models['pace'], $enhanced ? $features->pace($game, $side) : ['team:'.$id => 1]));
             $x = ['offense:'.$id => 1, 'defense:'.$opponent => 1, 'home' => (float) ($side === 'home' && ! ($game['neutral'] ?? false))];
+            $x += $enhanced ? $features->stadium($game, $side) : [];
             $efficiency = [];
             foreach ($artifact['efficiency_keys'] ?? ['pass', 'rush'] as $key) {
                 $efficiency[$key.'_eff'] = $this->predict($models[$key], $x);
             }
             $x += $efficiency;
+            $x += $enhanced ? $features->context($game, $side) : [];
             $mean = $this->predict($models['drive'], $x) + $adjust[$side] / $pace[$side];
             if ($benchmark) {
                 $h = $game['fpi']['home'] ?? null;

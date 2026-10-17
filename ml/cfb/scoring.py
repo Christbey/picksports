@@ -13,6 +13,8 @@ import math
 import random
 from pathlib import Path
 
+from efficiency import POLICY, drive_performance, contextual_features, stadium_features, pace_features, number
+
 VERSION = "cfb-possession-v1"
 
 
@@ -74,10 +76,21 @@ def fit(rows, cutoff, penalty=30.0, decay=.8, retrospective=False):
     if len(rows) < 20:
         raise ValueError("Need at least 20 eligible games to fit; retain existing artifact")
     latest = max(r["season"] for r in rows)
-    records = {k: [] for k in ("pass", "rush", "pass_epa", "rush_epa", "pass_success", "rush_success", "pass_explosive", "rush_explosive", "sacks", "drive", "pace")}
+    records = {k: [] for k in ("pass", "rush", "pass_epa", "rush_epa", "pass_success", "rush_success", "pass_explosive", "rush_explosive", "sacks", "drive", "pace", "postgame_performance")}
     samples = collections.Counter()
     outcomes = collections.Counter()
     patterns, pattern_periods, overtime, starts = [], [], [], []
+    postgame_outcomes = collections.Counter()
+    context_support = {}
+    for side in ("home", "away"):
+        for row in rows:
+            for key, value in contextual_features(row, side).items():
+                if not key.endswith(":missing"):
+                    context_support.setdefault(key, []).append(value)
+    supported_context = {key for key, values in context_support.items() if len(values) >= 20 and len(set(values)) >= 2}
+    context_coverage = {key: {"observed_team_games": len(values), "distinct_values": len(set(values)),
+                              "supported": key in supported_context} for key, values in context_support.items()}
+
     for row in rows:
         weight = decay ** (latest - row["season"])
         pattern = []
@@ -90,12 +103,14 @@ def fit(rows, cutoff, penalty=30.0, decay=.8, retrospective=False):
                 overtime.append({"season": row["season"], "round": d["period"]-4,
                                  "points": d["offense_points"], "opponent_points": d["opponent_points"]})
                 continue
+            side = "home" if home else "away"
             x = features(offense, defense, home, row.get("neutral", False))
+            x.update(stadium_features(row, side))
             # Every drive is a distinct observation; sacks belong to dropbacks upstream.
             observations=d.get("play_observations",[])
             if observations:
                 for play in observations:
-                    if not all(isinstance(play.get(key),(int,float)) for key in ("down","distance","yards_to_endzone","yards")):
+                    if not all(number(play.get(key)) for key in ("down","distance","yards_to_endzone","yards")) or play["down"] not in (1,2,3,4) or play["distance"] <= 0 or not 0 < play["yards_to_endzone"] <= 100:
                         continue
                     state={**x,"state_down":play["down"]-1,"state_distance":(play["distance"]-10)/10,
                            "state_field":(play["yards_to_endzone"]-75)/25,
@@ -107,14 +122,20 @@ def fit(rows, cutoff, penalty=30.0, decay=.8, retrospective=False):
                     records[kind+"_explosive"].append((state,float(play["yards"]>=(20 if kind=="pass" else 10)),weight))
                     if kind=="pass":
                         records["sacks"].append((state,float(play.get("sack",False)),weight))
-                    if isinstance(play.get("epa"),(int,float)):
+                    if number(play.get("epa")):
                         records[kind+"_epa"].append((state,play["epa"],weight))
             else:
                 for kind, count, yards in (("pass", d["dropbacks"], d["pass_yards"]),
                                            ("rush", d["rushes"], d["rush_yards"])):
                     if count:
                         records[kind].append((x, yards/count, weight*count))
-            state_x={**x,"late_lead":max(0,d.get("start_margin",0))/7 if d["period"]==4 else 0,
+            performance = drive_performance(d)
+            if performance is not None:
+                records["postgame_performance"].append((performance, d["offense_points"], weight))
+                postgame_outcomes[d["offense_points"]] += weight
+            context = {key: value for key, value in contextual_features(row, side).items()
+                       if key in supported_context or key.removesuffix(":missing") in supported_context}
+            state_x={**x, **context,"late_lead":max(0,d.get("start_margin",0))/7 if d["period"]==4 else 0,
                      "late_trail":max(0,-d.get("start_margin",0))/7 if d["period"]==4 else 0}
             records["drive"].append((state_x, d["offense_points"], weight))
             samples[offense] += weight
@@ -127,9 +148,9 @@ def fit(rows, cutoff, penalty=30.0, decay=.8, retrospective=False):
         patterns.append(pattern)
         pattern_periods.append(periods)
         for side in ("home", "away"):
-            records["pace"].append(({"team:"+str(row[side+"_id"]): 1}, pattern.count(side), weight))
-    models = {name: ridge(data, penalty) for name, data in records.items() if data}
-    efficiency_keys=[key for key in models if key not in ("drive","pace")]
+            records["pace"].append((pace_features(row, side), pattern.count(side), weight))
+    models = {name: ridge(data, penalty) for name, data in records.items() if data and (name != "postgame_performance" or len(data) >= 100)}
+    efficiency_keys=[key for key in models if key not in ("drive","pace","postgame_performance")]
     enriched = [({**x, **{key+"_eff":predict(models[key],x) for key in efficiency_keys}}, y, w) for x,y,w in records["drive"]]
     models["drive"] = ridge(enriched, penalty)
     pace_variance = max(1.0, sum(w*(y-predict(models["pace"],x))**2 for x,y,w in records["pace"])/sum(w for _,_,w in records["pace"]))
@@ -142,6 +163,8 @@ def fit(rows, cutoff, penalty=30.0, decay=.8, retrospective=False):
     return {"schema": VERSION, "trained_before": cutoff, "training_games": len(rows),
             "training_ids": [r["game_id"] for r in rows], "max_source_available_at": max((r["source_available_at"] for r in rows),key=stamp),
             "evidence_mode": "retrospective" if retrospective else "recorded_time",
+            "feature_policy": POLICY, "context_training_coverage": context_coverage, "postgame_outcomes": [{"points": p, "weight": w} for p,w in sorted(postgame_outcomes.items())],
+            "feature_coverage": {key: len(value) for key,value in records.items()},
             "models": models, "efficiency_keys": efficiency_keys, "pace_variance": pace_variance, "effective_drives": dict(samples), "decay": decay,
             "outcomes": [{"points": p, "opponent_points": q, "weight": w} for (p,q),w in sorted(outcomes.items())],
             "patterns": patterns, "pattern_periods": pattern_periods, "overtime": overtime,
@@ -220,10 +243,14 @@ def simulate(artifact, row, draws=50000, seed=7, signal=True, benchmark=False):
         margin = predict(signal_model["spread"], known("spread"))
         total = predict(signal_model["total"], known("total"))
         adjustments = {"home": (total+margin)/2, "away": (total-margin)/2}
-    pace = {side: max(1, predict(artifact["models"]["pace"], {"team:"+str(row[side+"_id"]):1})) for side in ("home","away")}
+    pace = {side: max(1, predict(artifact["models"]["pace"], pace_features(row, side) if artifact.get("feature_policy") == POLICY else {"team:"+str(row[side+"_id"]):1})) for side in ("home","away")}
     for side, opposite in (("home","away"),("away","home")):
         x = features(row[side+"_id"],row[opposite+"_id"],side=="home",row.get("neutral",False))
+        if artifact.get("feature_policy") == POLICY:
+            x.update(stadium_features(row, side))
         x.update({key+"_eff":predict(artifact["models"][key],x) for key in artifact.get("efficiency_keys",["pass","rush"])})
+        if artifact.get("feature_policy") == POLICY:
+            x.update(contextual_features(row, side))
         mean = predict(artifact["models"]["drive"], x)+adjustments[side]/pace[side]
         if benchmark:
             if "fpi_margin" not in artifact["models"]:
@@ -561,6 +588,8 @@ def fit_signal_residuals(rows, cutoff, penalty, decay, families, retrospective=F
 
 def train(manifest_path, output, retrospective=False):
     manifest=json.loads(Path(manifest_path).read_text())
+    if manifest.get("feature_policy") != POLICY:
+        raise ValueError("Re-export accepted sources with the current independent efficiency feature policy")
     content=Path(manifest["data_path"]).read_bytes()
     if hashlib.sha256(content).hexdigest()!=manifest["sha256"]:
         raise ValueError("Dataset hash mismatch")
@@ -573,11 +602,18 @@ def train(manifest_path, output, retrospective=False):
         raise ValueError("Need at least 12 independent kickoff weeks for train/validation/test")
     seasons=sorted({r["season"] for r in rows})
     test_season=manifest.get('test_season')
-    if len(seasons)>1 and test_season is None:
-        raise ValueError('Multi-season exports require an explicit complete test_season')
+    test_from, test_until = manifest.get("test_from"), manifest.get("test_until")
+    if bool(test_from) != bool(test_until) or (test_season is not None and test_from):
+        raise ValueError("Choose a complete test season or both explicit test-window boundaries")
+    if test_from:
+        window_start, window_end, as_of = stamp(test_from), stamp(test_until), stamp(manifest["as_of"])
+        if not window_start < window_end <= as_of or any(value.utcoffset() != dt.timedelta(0) or value.weekday() != 0 or value.time() != dt.time(0) for value in (window_start, window_end)):
+            raise ValueError("Test window requires completed Monday UTC kickoff weeks before as_of")
+    if len(seasons)>1 and test_season is None and not test_from:
+        raise ValueError('Multi-season exports require an explicit complete test season or completed test window')
     if test_season is not None and (test_season not in seasons or stamp(manifest['as_of']) < dt.datetime(test_season+1,3,1,tzinfo=dt.timezone.utc)):
         raise ValueError('Test season must be present and complete before as_of')
-    test_week=min(week(r) for r in rows if r['season']==test_season) if test_season is not None else weeks[int(len(weeks)*.85)]
+    test_week = window_start.date().isoformat() if test_from else (min(week(r) for r in rows if r["season"] == test_season) if test_season is not None else weeks[int(len(weeks)*.85)])
     earlier=[wk for wk in weeks if wk<test_week]
     if len(earlier)<8:
         raise ValueError("Need eight pre-test weeks for separate training, selection and calibration")
@@ -585,7 +621,9 @@ def train(manifest_path, output, retrospective=False):
     calibration_week=earlier[int(len(earlier)*.8)]
     start=lambda value:value+"T00:00:00+00:00"
     validation=[r for r in rows if val_week<=week(r)<calibration_week]
-    test=[r for r in rows if (r['season']==test_season if test_season is not None else week(r)>=test_week)]
+    test=[r for r in rows if (window_start <= stamp(r["kickoff"]) < window_end if test_from else (r["season"] == test_season if test_season is not None else week(r) >= test_week))]
+    if not test:
+        raise ValueError("No games in the requested test period")
     candidates=[]
     for penalty in (10.,30.,100.):
         for decay in (.5,.8,1.):
@@ -626,7 +664,7 @@ def train(manifest_path, output, retrospective=False):
         "signal_model":signal_model,"signal_diagnostics":signal_report,"calibration":calibration,
         "calibration_temperature":calibration["temperature"],"calibration_status":calibration["status"],
         "reliability":model["reliability"],"benchmark_holdout":benchmark,"promotion_report":model["promotion_report"],
-        "dataset_hash":manifest["sha256"],"split":{"test_season":test_season,"validation_week":val_week,"calibration_week":calibration_week,"test_week":test_week},
+        "dataset_hash":manifest["sha256"],"split":{"test_season":test_season,"test_from":test_from,"test_until":test_until,"validation_week":val_week,"calibration_week":calibration_week,"test_week":test_week},
         "evaluation_model_trained_before":model["trained_before"],"refit_policy":"fixed_selected_hyperparameters_after_frozen_holdout",
         "holdout":report,"status":"challenger","promotion_allowed":False})
     Path(output).write_text(json.dumps(deployment,sort_keys=True,allow_nan=False))

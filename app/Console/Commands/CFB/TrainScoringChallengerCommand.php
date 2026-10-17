@@ -4,6 +4,7 @@ namespace App\Console\Commands\CFB;
 
 use App\Models\ModelArtifact;
 use App\Models\ModelRun;
+use App\Services\CFB\Scoring\CfbScoringFeatures;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
@@ -21,8 +22,8 @@ class TrainScoringChallengerCommand extends Command
             return self::FAILURE;
         }
         $manifest = json_decode(file_get_contents($this->option('manifest')), true, 512, JSON_THROW_ON_ERROR);
-        $run = ModelRun::create(['id' => (string) Str::uuid(), 'sport' => 'cfb', 'run_type' => 'training', 'blend_version' => 'cfb-possession-v1', 'model_version' => 'cfb-possession-v1', 'feature_version' => 'cfb-scoring-v1',
-            'config_hash' => hash('sha256', json_encode($manifest)), 'code_version' => 'cfb-possession-v1', 'status' => 'running', 'started_at' => now(), 'parameters' => ['manifest' => $manifest, 'retrospective' => (bool) $this->option('retrospective')]]);
+        $run = ModelRun::create(['id' => (string) Str::uuid(), 'sport' => 'cfb', 'run_type' => 'training', 'blend_version' => 'cfb-possession-v1', 'model_version' => 'cfb-possession-v1', 'feature_version' => CfbScoringFeatures::POLICY,
+            'config_hash' => hash('sha256', json_encode($manifest)), 'code_version' => CfbScoringFeatures::POLICY, 'status' => 'running', 'started_at' => now(), 'parameters' => ['manifest' => $manifest, 'retrospective' => (bool) $this->option('retrospective')]]);
         try {
             $command = [config('cfb.scoring.python', 'python3'), base_path('ml/cfb/scoring.py'), '--manifest', $this->option('manifest'), '--output', $this->option('output')];
             if ($this->option('retrospective')) {
@@ -41,7 +42,7 @@ class TrainScoringChallengerCommand extends Command
                 throw new \RuntimeException('Artifact archive failed');
             }
             $artifact = ModelArtifact::create(['training_run_id' => $run->id, 'sport' => 'cfb', 'market_type' => 'multi_market', 'model_type' => 'cfb_possession',
-                'model_version' => 'cfb-possession-v1', 'feature_version' => 'cfb-scoring-v1', 'dataset_hash' => $manifest['sha256'], 'dataset_path' => $manifest['data_path'],
+                'model_version' => 'cfb-possession-v1', 'feature_version' => CfbScoringFeatures::POLICY, 'dataset_hash' => $manifest['sha256'], 'dataset_path' => $manifest['data_path'],
                 'artifact_path' => $key, 'artifact_disk' => $disk, 'artifact_object_key' => $key, 'artifact_hash' => $hash, 'artifact_size' => strlen($json), 'artifact_content_type' => 'application/json',
                 'status' => 'challenger', 'metrics' => ['holdout' => $payload['holdout'], 'promotion_report' => $payload['promotion_report']],
                 'promotion_decision' => ['allowed' => false, 'reason' => 'requires_independent_validation_and_prospective_shadow']]);

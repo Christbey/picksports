@@ -294,3 +294,13 @@ it('preserves a drive across quarters and reconciles a return touchdown and conv
     expect($rows[0]['plays'])->toBe(2)->and($rows[1]['offense_points'])->toBe(7)->and($rows[1]['kind'])->toBe('return');
     expect($builder->build($game, true)['reused'])->toBeTrue();
 });
+
+it('does not turn alternating provider references into extra possessions', function () {
+    [$game, $plays] = cfbLedgerFixture();
+    $plays[0]->update(['source_state' => ['drive' => ['$ref' => 'provider/drive/1']]]);
+    $plays[1]->update(['source_state' => ['drive' => ['$ref' => 'provider/drive/2']]]);
+    $result = app(CfbDriveBuilder::class)->build($game);
+    expect($result['state'])->toBe('complete')->and($result['normalizer_version'])->toBe('5');
+    $first = json_decode(DB::table('cfb_drives')->where('game_id', $game->id)->orderBy('id')->value('data'), true);
+    expect($first['plays'])->toBe(2)->and($first['offense_points'])->toBe(7);
+});

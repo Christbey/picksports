@@ -399,5 +399,31 @@ it('selects the same latest snapshot across batched out-of-order IDs without met
     expect($rows)->toHaveCount(1)
         ->and($rows[0]['canonical_snapshot_id'])->toBe((string) $latest->id)
         ->and($rows[0]['feature_signal'])->toBe('1')
-        ->and($payloadQueries)->toHaveCount(3);
+        ->and($payloadQueries)->toHaveCount(1);
+});
+
+it('keeps chronological output across multiple winner batches while loading only selected metadata', function () {
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+    $run = app(ModelRunRecorder::class)->forPrediction('mlb', 'rules-v1', 'core-v3', 'baseline-v1');
+    $reference = app(SnapshotMetadataStorage::class)->store(['prediction_horizon' => 'Final Pregame']);
+    $gameIds = [];
+    foreach (range(0, 100) as $index) {
+        $start = Carbon::parse('2026-04-01 19:10:00')->addDays($index);
+        $game = createMlbExportGame($home, $away, $start->toDateTimeString());
+        $prediction = createMlbExportPredictionAndEvaluation($game);
+        $snapshot = createMlbExportSnapshot($game, $prediction, $run->id, $start->subHour()->toDateTimeString(),
+            $index, 'observed_pregame', true, []);
+        $snapshot->update(['model_metadata' => $reference]);
+        $gameIds[] = (string) $game->id;
+    }
+    $path = storage_path('app/ml/tests/mlb_winner_batches.csv');
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    expect(Artisan::call('mlb:export-training-data', ['--path' => $path]))->toBe(0);
+    $payloadQueries = collect(DB::getQueryLog())
+        ->filter(fn (array $query): bool => str_contains($query['query'], 'snapshot_metadata_payloads'));
+    DB::disableQueryLog();
+    expect(array_column(readMlbExportCsv($path), 'game_id'))->toBe($gameIds)
+        ->and($payloadQueries)->toHaveCount(2);
 });

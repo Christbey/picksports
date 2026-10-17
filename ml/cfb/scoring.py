@@ -659,17 +659,23 @@ def train(manifest_path, output, retrospective=False):
     as_of=manifest.get("as_of")
     if not as_of:
         raise ValueError("Export manifest requires an explicit as_of timestamp")
+    evaluation_path = str(output)+".evaluation.json"
+    evaluation_json = json.dumps({**model, "dataset_hash": manifest["sha256"], "status": "research_evaluation_only",
+        "promotion_allowed": False}, sort_keys=True, allow_nan=False)
+    with open(evaluation_path, "x") as evaluation_file:
+        evaluation_file.write(evaluation_json)
     deployment=fit(rows,as_of,penalty,decay,retrospective)
     deployment.update({"fpi_weight":model.get("fpi_weight",0.),"fpi_blend_selection":blend,
         "signal_model":signal_model,"signal_diagnostics":signal_report,"calibration":calibration,
         "calibration_temperature":calibration["temperature"],"calibration_status":calibration["status"],
         "reliability":model["reliability"],"benchmark_holdout":benchmark,"promotion_report":model["promotion_report"],
-        "dataset_hash":manifest["sha256"],"split":{"test_season":test_season,"test_from":test_from,"test_until":test_until,"validation_week":val_week,"calibration_week":calibration_week,"test_week":test_week},
+        "dataset_hash":manifest["sha256"],"evaluation_artifact_path":evaluation_path,
+        "evaluation_artifact_sha256":hashlib.sha256(evaluation_json.encode()).hexdigest(),"split":{"test_season":test_season,"test_from":test_from,"test_until":test_until,"validation_week":val_week,"calibration_week":calibration_week,"test_week":test_week},
         "evaluation_model_trained_before":model["trained_before"],"refit_policy":"fixed_selected_hyperparameters_after_frozen_holdout",
         "holdout":report,"status":"challenger","promotion_allowed":False})
     Path(output).write_text(json.dumps(deployment,sort_keys=True,allow_nan=False))
     return {"artifact":output,"sha256":hashlib.sha256(Path(output).read_bytes()).hexdigest(),
-            "test_games":len(report["games"]),"excluded":report["excluded"],"status":"challenger"}
+            "test_games":len(report["games"]),"evaluation_artifact":evaluation_path,"excluded":report["excluded"],"status":"challenger"}
 
 
 if __name__ == "__main__":

@@ -326,9 +326,9 @@ return [
         | Preseason Signal Blend
         |--------------------------------------------------------------------------
         |
-        | Used when in-season EPA isn't available yet (typical for preseason and
-        | Week 1). Blends the Elo-derived spread with a predictive_rating-derived
-        | spread from the team metrics. predictive_rating already bakes in the
+        | Used when in-season EPA is unavailable. The season-adaptive policy
+        | increases the predictive_rating-derived signal's weight as completed,
+        | covered regular-season games accumulate. predictive_rating includes the
         | offseason adjustment (QB/skill continuity, injuries) computed by
         | HistoricalTeamMetricCalculator.
         |
@@ -336,6 +336,12 @@ return [
         'preseason_signal' => [
             'enabled' => env('NFL_PRESEASON_SIGNAL_ENABLED', true),
             'blend_weight' => env('NFL_PRESEASON_SIGNAL_BLEND_WEIGHT', 0.25),
+            // Explicit prior-strength policy, not a fitted accuracy claim.
+            'season_adaptation' => [
+                'enabled' => env('NFL_SEASON_ADAPTATION_ENABLED', true),
+                'prior_games' => env('NFL_SEASON_ADAPTATION_PRIOR_GAMES', 2),
+                'maximum_weight' => env('NFL_SEASON_ADAPTATION_MAXIMUM_WEIGHT', 0.90),
+            ],
         ],
 
         /*

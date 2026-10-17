@@ -129,3 +129,12 @@ it('never lets the market overturn a team-model winner or decide a team-model ti
     expect($margin == 0 ? $p['home_margin'] == 0 : $p['home_margin'] * $margin > 0)->toBeTrue()
         ->and(abs($p['market_effect_points']['margin']))->toBeLessThanOrEqual(1.0);
 })->with([0.2, -0.2, 0.0]);
+
+it('normalizes derived team scores and disagreement before freezing JSON output hashes', function () {
+    $p = (new CfbForecastCoordinator)->forecast(coordinationInput([
+        'primary_margin' => 11.3, 'primary_total' => 63.0, 'result_margin' => 9.7,
+        'market_margin' => 17.0, 'market_total' => 56.5,
+    ]), coordinationPolicy(['margin_alternative_weight' => 0.0, 'total_alternative_weight' => 0.0]));
+    expect($p['home_points'])->toBe(37.11)->and($p['away_points'])->toBe(25.24)
+        ->and($p['alternative_margin_disagreement'])->toBe(1.6);
+});

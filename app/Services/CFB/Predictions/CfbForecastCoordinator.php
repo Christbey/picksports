@@ -217,12 +217,12 @@ class CfbForecastCoordinator
         $total = round(max(abs($margin), $independentTotal + $totalShift), 3);
 
         return ['version' => self::VERSION, 'home_margin' => $margin, 'home_line' => -$margin, 'total' => $total,
-            'home_points' => ($total + $margin) / 2, 'away_points' => ($total - $margin) / 2,
+            'home_points' => round(($total + $margin) / 2, 4), 'away_points' => round(($total - $margin) / 2, 4),
             'independent_home_margin' => round($independentMargin, 3), 'independent_total' => round($independentTotal, 3),
             'effective_weights' => ['margin_alternative' => $marginWeight, 'total_alternative' => $totalWeight,
                 'margin_market' => $marginMarketWeight, 'total_market' => $totalMarketWeight],
             'market_effect_points' => ['margin' => round($margin - $independentMargin, 3), 'total' => round($total - $independentTotal, 3)],
-            'alternative_margin_disagreement' => $alternativeMargin === null ? null : abs($alternativeMargin - $primaryMargin),
+            'alternative_margin_disagreement' => $alternativeMargin === null ? null : round(abs($alternativeMargin - $primaryMargin), 3),
             'winner_disagreement' => $alternativeMargin !== null && $primaryMargin * $alternativeMargin < 0,
             'fallbacks' => array_values(array_filter([$alternativeMargin === null ? 'missing_result_margin' : null,
                 $alternativeTotal === null ? 'missing_paired_alternative_totals' : null,

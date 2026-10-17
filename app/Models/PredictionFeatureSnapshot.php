@@ -10,9 +10,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PredictionFeatureSnapshot extends Model
 {
-    /** @var array{raw?:string|null,value?:array<array-key,mixed>|null} */
-    private array $resolvedModelMetadata = [];
-
     protected $with = ['metadataPayload'];
 
     protected $hidden = ['metadataPayload'];
@@ -60,17 +57,14 @@ class PredictionFeatureSnapshot extends Model
     protected function modelMetadata(): Attribute
     {
         return Attribute::get(function (?string $value): ?array {
-            if (! array_key_exists('raw', $this->resolvedModelMetadata) || $this->resolvedModelMetadata['raw'] !== $value) {
-                $this->resolvedModelMetadata = [
-                    'raw' => $value,
-                    'value' => app(SnapshotMetadataStorage::class)->resolve(
-                        $value,
-                        $this->relationLoaded('metadataPayload') ? $this->getRelation('metadataPayload') : null,
-                    ),
-                ];
+            if ($value !== null && str_starts_with($value, '"'.SnapshotMetadataStorage::REFERENCE_PREFIX)) {
+                $this->loadMissing('metadataPayload');
             }
 
-            return $this->resolvedModelMetadata['value'];
+            return app(SnapshotMetadataStorage::class)->resolve(
+                $value,
+                $this->relationLoaded('metadataPayload') ? $this->getRelation('metadataPayload') : null,
+            );
         });
     }
 

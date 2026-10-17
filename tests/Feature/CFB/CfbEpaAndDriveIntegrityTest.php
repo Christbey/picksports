@@ -5,6 +5,7 @@ use App\Models\CFB\Game;
 use App\Models\CFB\GameDataCheck;
 use App\Models\CFB\Play;
 use App\Models\CFB\Team;
+use App\Models\EpaStateBaseline;
 use App\Services\CFB\Data\CfbDataReadiness;
 use App\Services\CFB\Data\CfbDriveBuilder;
 use App\Services\CFB\Data\CfbGameDataValidator;
@@ -303,4 +304,19 @@ it('does not turn alternating provider references into extra possessions', funct
     expect($result['state'])->toBe('complete')->and($result['normalizer_version'])->toBe('5');
     $first = json_decode(DB::table('cfb_drives')->where('game_id', $game->id)->orderBy('id')->value('data'), true);
     expect($first['plays'])->toBe(2)->and($first['offense_points'])->toBe(7);
+});
+
+it('trains past-season EPA states from the accepted revision and reconciled scoring ledger', function () {
+    [$game, $plays] = cfbLedgerFixture();
+    $game->update(['season' => 2025]);
+    $plays[3]->update(['down' => 0]);
+    Play::create(['game_id' => $game->id, 'espn_play_id' => 'unaccepted', 'sequence_number' => 0,
+        'period' => 1, 'clock' => '15:00', 'play_type' => 'Rush', 'play_text' => 'Rush for 2 yards',
+        'home_score' => 99, 'away_score' => 0, 'possession_team_id' => $game->home_team_id,
+        'down' => 1, 'distance' => 10, 'yards_to_endzone' => 75, 'yards_gained' => 2, 'source_revision' => hash('sha256', 'unaccepted')]);
+    $this->mock(CfbDataReadiness::class)->shouldReceive('forGame')->once()->andReturn(['ready' => true]);
+    $this->artisan('cfb:train-epa-baseline', ['--season' => 2026, '--source-season' => 2025, '--minimum-state-samples' => 1])->assertSuccessful();
+    $state = EpaStateBaseline::where('sport', 'cfb')->where('season', 2026)->firstOrFail();
+    expect($state->sample_size)->toBe(3)->and((float) $state->expected_points)->toEqualWithDelta(14 / 3, .0001)
+        ->and($state->source_season)->toBe(2025);
 });

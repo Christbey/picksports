@@ -8,7 +8,7 @@ import sys
 import unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1]))
-from scoring import week, train, evaluate, fit, simulate, summary, predict, tilt, select_blend
+from scoring import recency_candidates, week, train, evaluate, fit, simulate, summary, predict, tilt, select_blend
 from efficiency import POLICY, drive_performance, pace_features, stadium_features, contextual_features, postgame_expectancy
 from test_scoring import games
 
@@ -28,6 +28,13 @@ def observed_games():
 
 
 class EfficiencyTests(unittest.TestCase):
+    def test_season_decay_is_not_selected_from_an_uninformative_single_season(self):
+        rows = observed_games()
+        self.assertEqual(recency_candidates(rows, "2024-08-01T00:00:00+00:00"), (1.,))
+        earlier = [{**row, "season": 2023, "kickoff": row["kickoff"].replace("2024", "2023"),
+                    "source_available_at": row["source_available_at"].replace("2024", "2023")} for row in rows]
+        self.assertEqual(recency_candidates(rows+earlier, "2024-08-01T00:00:00+00:00"), (.5, .8, 1.))
+
     def test_kickoff_week_respects_the_explicit_utc_holdout_boundaries(self):
         self.assertEqual(week({"kickoff": "2026-10-11T20:00:00-05:00"}), "2026-10-12")
         self.assertEqual(week({"kickoff": "2026-10-11T18:00:00-05:00"}), "2026-10-05")

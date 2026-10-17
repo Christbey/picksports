@@ -33,6 +33,12 @@ def prior(rows, cutoff, retrospective=False):
             (retrospective or stamp(r["source_available_at"]) < cut)]
 
 
+def recency_candidates(rows, cutoff, retrospective=False):
+    counts = collections.Counter(row["season"] for row in prior(rows, cutoff, retrospective))
+    # A single training season cannot identify a cross-season decay weight.
+    return (.5, .8, 1.) if sum(count >= 20 for count in counts.values()) >= 2 else (1.,)
+
+
 def ridge(records, penalty=30.0, iterations=120):
     """Sparse weighted coordinate descent. Intercept unpenalized, all effects pooled."""
     if not records:
@@ -625,18 +631,20 @@ def train(manifest_path, output, retrospective=False):
     if not test:
         raise ValueError("No games in the requested test period")
     candidates=[]
+    decays = recency_candidates(rows, start(val_week), retrospective)
     for penalty in (10.,30.,100.):
-        for decay in (.5,.8,1.):
+        for decay in decays:
             model=fit(rows,start(val_week),penalty,decay,retrospective)
             report=evaluate(model,validation)
             if report["mean_energy"] is not None:
                 candidates.append((report["mean_energy"],penalty,decay))
     if not candidates:
         raise ValueError("No evaluable validation games; inspect history and overtime coverage")
-    _,penalty,decay=min(candidates)
+    _,penalty,decay=min(candidates, key=lambda value: (value[0], -value[2], value[1]))
     selection_model=fit(rows,start(val_week),penalty,decay,retrospective)
     blend=select_blend(selection_model,validation)
     model=fit(rows,start(calibration_week),penalty,decay,retrospective)
+    model["hyperparameter_selection"] = {"decay_candidates": list(decays), "decay_status": "selected_on_earlier_validation_weeks" if len(decays) > 1 else "equal_season_weight_insufficient_cross_season_evidence"}
     model["fpi_weight"]=blend["weight"]
     model["fpi_blend_selection"]=blend
     signal_model,signal_report=fit_signal_residuals(rows,start(calibration_week),penalty,decay,manifest.get("signal_families",{}),retrospective,model.get("fpi_weight",0.0))
@@ -665,7 +673,7 @@ def train(manifest_path, output, retrospective=False):
     with open(evaluation_path, "x") as evaluation_file:
         evaluation_file.write(evaluation_json)
     deployment=fit(rows,as_of,penalty,decay,retrospective)
-    deployment.update({"fpi_weight":model.get("fpi_weight",0.),"fpi_blend_selection":blend,
+    deployment.update({"hyperparameter_selection": model["hyperparameter_selection"], "fpi_weight":model.get("fpi_weight",0.),"fpi_blend_selection":blend,
         "signal_model":signal_model,"signal_diagnostics":signal_report,"calibration":calibration,
         "calibration_temperature":calibration["temperature"],"calibration_status":calibration["status"],
         "reliability":model["reliability"],"benchmark_holdout":benchmark,"promotion_report":model["promotion_report"],

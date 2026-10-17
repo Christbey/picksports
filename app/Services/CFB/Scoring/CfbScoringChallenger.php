@@ -63,6 +63,7 @@ class CfbScoringChallenger
             return $this->freeze(['state' => 'ready', 'historical_evaluation_mode' => $artifact['evidence_mode'], 'benchmark_scores' => $reference ? $this->freeze($reference->scores) : null, 'artifact_id' => $id, 'artifact_hash' => $loaded['record']->artifact_hash, 'artifact_available_at' => $loaded['record']->created_at->toIso8601String(),
                 'seed' => $seed, 'inputs' => $evidence, 'summary' => $this->freeze($distribution->summary()), 'scores' => $this->freeze($distribution->scores),
                 'feature_policy' => $artifact['feature_policy'] ?? 'legacy',
+                'fpi_weight' => (float) ($artifact['fpi_weight'] ?? 0.0),
                 'feature_coverage' => $artifact['feature_coverage'] ?? [],
                 'context_training_coverage' => $artifact['context_training_coverage'] ?? [],
                 'context_coverage' => array_map(fn ($values) => array_keys(array_filter($values, fn ($value) => $value !== null)), $evidence['context']),

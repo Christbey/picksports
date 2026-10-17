@@ -661,6 +661,7 @@ export interface SportGamePageConfig {
 export type NflPageTeam = GamePageTeam;
 
 export interface CfbScoringModel {
+    fpi_weight?: number | null;
     state: string;
     promoted: boolean;
     home_points: number | null;

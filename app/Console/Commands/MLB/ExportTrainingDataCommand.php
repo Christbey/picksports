@@ -151,11 +151,13 @@ class ExportTrainingDataCommand extends Command
         $canonicalSnapshots = collect();
 
         $throughId = PredictionFeatureSnapshot::query()->max('id') ?? 0;
-        foreach ($query
-            ->where('prediction_feature_snapshots.id', '<=', $throughId)
+        $query->where('prediction_feature_snapshots.id', '<=', $throughId);
+        foreach ((clone $query)
+            ->select(['prediction_feature_snapshots.id', 'prediction_feature_snapshots.game_id',
+                'prediction_feature_snapshots.features_available_at', 'prediction_feature_snapshots.generated_at',
+                'prediction_feature_snapshots.game_start_at'])
             ->reorder()
             ->lazyById(100, 'prediction_feature_snapshots.id', 'id') as $snapshot) {
-            $horizon = $this->predictionHorizon($snapshot);
             $canonicalKey = (string) $snapshot->game_id;
             $current = $canonicalSnapshots->get($canonicalKey);
 
@@ -163,7 +165,6 @@ class ExportTrainingDataCommand extends Command
                 ! $current instanceof PredictionFeatureSnapshot
                 || $this->isLaterSnapshot($snapshot, $current)
             ) {
-                $snapshot->setAttribute('prediction_horizon', $horizon);
                 $canonicalSnapshots->put($canonicalKey, $snapshot);
             }
         }
@@ -175,7 +176,6 @@ class ExportTrainingDataCommand extends Command
                     ?? $snapshot->generated_at?->toIso8601String()
                     ?? '',
                 (int) $snapshot->game_id,
-                (string) $snapshot->prediction_horizon,
             ])
             ->values();
 
@@ -183,101 +183,124 @@ class ExportTrainingDataCommand extends Command
             $canonicalSnapshots = $canonicalSnapshots->take($limit)->values();
         }
 
-        return $canonicalSnapshots->map(function (PredictionFeatureSnapshot $snapshot): ?array {
-            $features = $this->arrayValue($snapshot->features);
-            $outputs = $this->arrayValue($snapshot->outputs);
-            $actuals = $this->arrayValue($snapshot->evaluation_actuals);
-            $actualHomeMargin = data_get($actuals, 'actual_spread');
-            $actualTotal = data_get($actuals, 'actual_total');
-
-            if (! is_numeric($actualHomeMargin) || ! is_numeric($actualTotal)) {
-                return null;
+        $rows = collect();
+        foreach ($canonicalSnapshots->chunk(100) as $headers) {
+            $selected = (clone $query)->whereIn('prediction_feature_snapshots.id', $headers->pluck('id'))
+                ->get()->keyBy('id');
+            foreach ($headers as $header) {
+                $snapshot = $selected->get($header->id);
+                if (! $snapshot instanceof PredictionFeatureSnapshot) {
+                    continue;
+                }
+                $row = $this->snapshotRow($snapshot);
+                if ($row !== null) {
+                    $rows->push($row);
+                }
             }
+        }
 
-            $targetHomeMargin = (float) $actualHomeMargin;
-            $targetTotalPoints = (float) $actualTotal;
-            $projection = app(SnapshotEvaluationProjector::class)->project(
-                $outputs,
-                $actuals,
-                $this->arrayValue($snapshot->market_context),
-            );
-            $errors = $projection['errors'];
-            $marketComparison = $projection['market_comparison'];
-            $targetHash = $this->stableHash([
-                'game_id' => (int) $snapshot->game_id,
-                'actuals' => $actuals,
-            ]);
-            $featureSchemaHash = $this->stableHash([
-                'feature_version' => $snapshot->feature_version,
-                'feature_keys' => collect(array_keys($features))->sort()->values()->all(),
-            ]);
+        return $rows;
+    }
 
-            $row = [
-                'canonical_snapshot_id' => $snapshot->id,
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function snapshotRow(PredictionFeatureSnapshot $snapshot): ?array
+    {
+        $snapshot->setAttribute('prediction_horizon', $this->predictionHorizon($snapshot));
+        $features = $this->arrayValue($snapshot->features);
+        $outputs = $this->arrayValue($snapshot->outputs);
+        $actuals = $this->arrayValue($snapshot->evaluation_actuals);
+        $actualHomeMargin = data_get($actuals, 'actual_spread');
+        $actualTotal = data_get($actuals, 'actual_total');
+
+        if (! is_numeric($actualHomeMargin) || ! is_numeric($actualTotal)) {
+            return null;
+        }
+
+        $targetHomeMargin = (float) $actualHomeMargin;
+        $targetTotalPoints = (float) $actualTotal;
+        $projection = app(SnapshotEvaluationProjector::class)->project(
+            $outputs,
+            $actuals,
+            $this->arrayValue($snapshot->market_context),
+        );
+        $errors = $projection['errors'];
+        $marketComparison = $projection['market_comparison'];
+        $targetHash = $this->stableHash([
+            'game_id' => (int) $snapshot->game_id,
+            'actuals' => $actuals,
+        ]);
+        $featureSchemaHash = $this->stableHash([
+            'feature_version' => $snapshot->feature_version,
+            'feature_keys' => collect(array_keys($features))->sort()->values()->all(),
+        ]);
+
+        $row = [
+            'canonical_snapshot_id' => $snapshot->id,
+            'snapshot_run_id' => $snapshot->snapshot_run_id,
+            'model_run_id' => $snapshot->model_run_id,
+            'config_hash' => $snapshot->model_run_config_hash,
+            'code_version' => $snapshot->model_run_code_version,
+            'game_id' => $snapshot->game_id,
+            'season' => $snapshot->season,
+            'prediction_id' => $snapshot->prediction_id,
+            'prediction_horizon' => $snapshot->prediction_horizon,
+            'model_version' => $snapshot->model_version,
+            'feature_version' => $snapshot->feature_version,
+            'blend_version' => $snapshot->blend_version,
+            'generated_at' => $snapshot->generated_at?->toIso8601String() ?? '',
+            'game_start_at' => $snapshot->game_start_at?->toIso8601String() ?? '',
+            'features_available_at' => $snapshot->features_available_at?->toIso8601String() ?? '',
+            'evaluated_at' => $snapshot->evaluation_evaluated_at,
+            'pregame_safe' => (bool) $snapshot->pregame_safe,
+            'availability_status' => $snapshot->availability_status,
+            'target_home_win' => $targetHomeMargin > 0 ? 1 : 0,
+            'target_home_margin' => $targetHomeMargin,
+            'target_total_points' => $targetTotalPoints,
+            'source_timestamps' => $this->arrayValue($snapshot->source_timestamps),
+            'lineage_metadata' => $this->arrayValue($snapshot->lineage_metadata),
+            'feature_hash' => $snapshot->feature_hash,
+            'feature_schema_hash' => $featureSchemaHash,
+            'target_hash' => $targetHash,
+            'row_lineage_hash' => $this->stableHash([
                 'snapshot_run_id' => $snapshot->snapshot_run_id,
                 'model_run_id' => $snapshot->model_run_id,
-                'config_hash' => $snapshot->model_run_config_hash,
-                'code_version' => $snapshot->model_run_code_version,
-                'game_id' => $snapshot->game_id,
-                'season' => $snapshot->season,
-                'prediction_id' => $snapshot->prediction_id,
+                'game_id' => (int) $snapshot->game_id,
                 'prediction_horizon' => $snapshot->prediction_horizon,
                 'model_version' => $snapshot->model_version,
                 'feature_version' => $snapshot->feature_version,
                 'blend_version' => $snapshot->blend_version,
-                'generated_at' => $snapshot->generated_at?->toIso8601String() ?? '',
-                'game_start_at' => $snapshot->game_start_at?->toIso8601String() ?? '',
-                'features_available_at' => $snapshot->features_available_at?->toIso8601String() ?? '',
-                'evaluated_at' => $snapshot->evaluation_evaluated_at,
-                'pregame_safe' => (bool) $snapshot->pregame_safe,
-                'availability_status' => $snapshot->availability_status,
-                'target_home_win' => $targetHomeMargin > 0 ? 1 : 0,
-                'target_home_margin' => $targetHomeMargin,
-                'target_total_points' => $targetTotalPoints,
-                'source_timestamps' => $this->arrayValue($snapshot->source_timestamps),
-                'lineage_metadata' => $this->arrayValue($snapshot->lineage_metadata),
                 'feature_hash' => $snapshot->feature_hash,
-                'feature_schema_hash' => $featureSchemaHash,
                 'target_hash' => $targetHash,
-                'row_lineage_hash' => $this->stableHash([
-                    'snapshot_run_id' => $snapshot->snapshot_run_id,
-                    'model_run_id' => $snapshot->model_run_id,
-                    'game_id' => (int) $snapshot->game_id,
-                    'prediction_horizon' => $snapshot->prediction_horizon,
-                    'model_version' => $snapshot->model_version,
-                    'feature_version' => $snapshot->feature_version,
-                    'blend_version' => $snapshot->blend_version,
-                    'feature_hash' => $snapshot->feature_hash,
-                    'target_hash' => $targetHash,
-                ]),
-            ];
+            ]),
+        ];
 
-            foreach ($features as $key => $value) {
-                $row["feature_{$key}"] = $value;
-            }
+        foreach ($features as $key => $value) {
+            $row["feature_{$key}"] = $value;
+        }
 
-            foreach ($outputs as $key => $value) {
-                $row["output_{$key}"] = $value;
-            }
+        foreach ($outputs as $key => $value) {
+            $row["output_{$key}"] = $value;
+        }
 
-            foreach ($actuals as $key => $value) {
-                $row["actual_{$key}"] = $value;
-            }
+        foreach ($actuals as $key => $value) {
+            $row["actual_{$key}"] = $value;
+        }
 
-            foreach ($errors as $key => $value) {
-                $row["error_{$key}"] = $value;
-            }
+        foreach ($errors as $key => $value) {
+            $row["error_{$key}"] = $value;
+        }
 
-            foreach ($marketComparison as $key => $value) {
-                $row["market_{$key}"] = $value;
-            }
+        foreach ($marketComparison as $key => $value) {
+            $row["market_{$key}"] = $value;
+        }
 
-            if ($this->option('include-metadata')) {
-                $row['model_metadata'] = $snapshot->model_metadata ?? [];
-            }
+        if ($this->option('include-metadata')) {
+            $row['model_metadata'] = $snapshot->model_metadata ?? [];
+        }
 
-            return $row;
-        })->filter()->values();
+        return $row;
     }
 
     private function predictionHorizon(PredictionFeatureSnapshot $snapshot): string

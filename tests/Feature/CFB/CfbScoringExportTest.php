@@ -24,8 +24,18 @@ it('exports only accepted sources available at the requested cutoff and preserve
         'quality' => 'complete', 'data' => json_encode(['offense_points' => 21, 'opponent_points' => 7, 'period' => 1,
             'normalizer_version' => CfbDriveBuilder::VERSION, 'score_ledger_revision' => str_repeat('a', 64)]), 'created_at' => now(), 'updated_at' => now()]);
     $path = sys_get_temp_dir().'/cfb-export-'.Str::uuid().'.jsonl';
+    $snapshotSortQueries = [];
+    DB::listen(function ($query) use (&$snapshotSortQueries) {
+        if (str_contains($query->sql, 'event_input_snapshots') && str_contains($query->sql, 'order by')) {
+            $snapshotSortQueries[] = $query->sql;
+        }
+    });
     try {
         $this->artisan('cfb:export-scoring-training', ['--from-season' => 2026, '--to-season' => 2026, '--as-of' => now()->addMinute()->toIso8601String(), '--output' => $path])->assertSuccessful();
+        expect($snapshotSortQueries)->not->toBeEmpty();
+        foreach ($snapshotSortQueries as $sql) {
+            expect($sql)->toMatch('/select [\"`]id[\"`] from/');
+        }
         $row = json_decode(trim(file_get_contents($path)), true);
         expect($row['game_id'])->toBe($game->id)->and($row['source_available_at'])->toBe(now()->toIso8601String())
             ->and($row['snapshot_hash'])->toBeNull()

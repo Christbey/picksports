@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Storage;
 
 class ExportScoringTrainingCommand extends Command
 {
-    protected $signature = 'cfb:export-scoring-training {--from-season=} {--to-season=} {--as-of=} {--test-season=} {--test-from=} {--test-until=} {--output=}';
+    protected $signature = 'cfb:export-scoring-training {--from-season=} {--to-season=} {--as-of=} {--test-season=} {--test-from=} {--test-until=} {--after-game-id=0} {--max-games=0} {--output=}';
 
     protected $description = 'Export accepted source revisions, frozen context, coverage and real availability times for chronological CFB training';
 
@@ -57,6 +57,10 @@ class ExportScoringTrainingCommand extends Command
             $testFrom = $start->toIso8601String();
             $testUntil = $end->toIso8601String();
         }
+        $after = max(0, (int) $this->option('after-game-id'));
+        $maximum = max(0, (int) $this->option('max-games'));
+        $scanned = 0;
+        $lastScannedId = $after;
         $path = $this->option('output');
         if (file_exists($path)) {
             $this->error('Exports are immutable; choose a new output path');
@@ -68,7 +72,12 @@ class ExportScoringTrainingCommand extends Command
         $maxId = 0;
         $catalog = app(CfbScoringFeatures::class)->independentCatalog(CfbFootballSignalCatalog::all());
         try {
-            foreach (Game::with('sportEvent')->whereBetween('season', [$from, $to])->where('status', 'STATUS_FINAL')->lazyById(50) as $game) {
+            foreach (Game::with('sportEvent')->whereBetween('season', [$from, $to])->where('status', 'STATUS_FINAL')->where('id', '>', $after)->lazyById(50) as $game) {
+                if ($maximum && $scanned >= $maximum) {
+                    break;
+                }
+                $scanned++;
+                $lastScannedId = $game->id;
                 $kickoff = $game->sportEvent?->starts_at;
                 if (! $kickoff || $kickoff->gte($asOf) || $game->updated_at->gt($asOf)) {
                     $coverage['excluded']['missing_or_future_kickoff'] = ($coverage['excluded']['missing_or_future_kickoff'] ?? 0) + 1;
@@ -97,8 +106,24 @@ class ExportScoringTrainingCommand extends Command
                 $snapshotId = EventInputSnapshot::where('sport_event_id', $game->sport_event_id)->where('sport', 'cfb')->where('phase', 'pregame')
                     ->where('captured_at', '<', $kickoff)->where('created_at', '<', $kickoff)
                     ->where(fn ($q) => $q->whereNull('latest_source_available_at')->orWhere('latest_source_available_at', '<', $kickoff))->latest('captured_at')->latest('id')->value('id');
-                $snapshot = $snapshotId ? EventInputSnapshot::find($snapshotId) : null;
-                $inputs = $snapshot?->inputs ?? [];
+                $columns = ['id', 'content_hash', 'captured_at'];
+                $paths = ['event', 'historical_signals', 'signal_context'];
+                foreach (['home', 'away'] as $side) {
+                    foreach (['elo', 'metrics', 'prior_metrics', 'personnel', 'injuries', 'large_spread_evidence'] as $field) {
+                        $paths[] = $side.'.'.$field;
+                    }
+                }
+                foreach ($paths as $inputPath) {
+                    $columns[] = 'inputs->'.str_replace('.', '->', $inputPath).' as '.str_replace('.', '_', $inputPath);
+                }
+                $snapshot = $snapshotId ? EventInputSnapshot::select($columns)->find($snapshotId) : null;
+                $inputs = [];
+                if ($snapshot) {
+                    foreach ($paths as $inputPath) {
+                        $value = $snapshot->getAttribute(str_replace('.', '_', $inputPath));
+                        data_set($inputs, $inputPath, is_string($value) ? json_decode($value, true, 512, JSON_THROW_ON_ERROR) : $value);
+                    }
+                }
                 $signals = ['spread' => [], 'total' => []];
                 $signalMissing = [];
                 if ($snapshot) {
@@ -150,6 +175,8 @@ class ExportScoringTrainingCommand extends Command
         }
         $hash = hash_file('sha256', $path);
         $manifest = ['schema' => 'cfb-scoring-v1', 'sha256' => $hash, 'data_path' => realpath($path), 'as_of' => $asOf->toIso8601String(), 'from_season' => $from, 'to_season' => $to,
+            'scan' => ['after_game_id' => $after, 'scanned_games' => $scanned, 'last_game_id' => $lastScannedId,
+                'has_more' => Game::whereBetween('season', [$from, $to])->where('status', 'STATUS_FINAL')->where('id', '>', $lastScannedId)->exists()],
             'test_season' => $testSeason, 'test_from' => $testFrom, 'test_until' => $testUntil, 'coverage' => $coverage, 'signal_families' => array_map(fn ($r) => $r['family'], $catalog), 'feature_policy' => CfbScoringFeatures::POLICY, 'availability_policy' => 'strict_recorded_time; retrospective replay must be labeled separately'];
         file_put_contents($path.'.manifest.json', json_encode($manifest, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
         $key = 'cfb/training/'.$hash.'.jsonl';

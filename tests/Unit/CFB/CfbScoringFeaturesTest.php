@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\CFB\Scoring\CfbPossessionScorer;
+use App\Services\CFB\Scoring\CfbScoringChallenger;
 use App\Services\CFB\Scoring\CfbScoringFeatures;
 
 it('distinguishes absent injury coverage and unverified personnel from observed records', function () {
@@ -52,4 +53,15 @@ it('applies learned personnel effects only for the new artifact feature policy',
     $legacy = $scorer->simulate($fixture, $game, 2000, 91)->summary();
     $game['context']['home']['qb_changed'] = 0;
     expect($scorer->simulate($fixture, $game, 2000, 91)->summary())->toBe($legacy);
+});
+
+it('freezes simulation precision without changing probability mass or integer outcomes', function () {
+    $service = new CfbScoringChallenger;
+    $frozen = $service->freeze(['summary' => ['home_points' => 25.240000000000002],
+        'scores' => [['home' => 28, 'away' => 14, 'probability' => .29999999999999993],
+            ['home' => 14, 'away' => 28, 'probability' => .7000000000000001]], 'status' => 'shadow']);
+    expect($frozen['summary']['home_points'])->toBe(25.24)
+        ->and($frozen['scores'][0]['home'])->toBe(28)
+        ->and(array_sum(array_column($frozen['scores'], 'probability')))->toEqualWithDelta(1, 1e-10)
+        ->and(json_encode($frozen))->not->toContain('000000000000002');
 });

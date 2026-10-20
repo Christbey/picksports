@@ -34,6 +34,10 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 
 ### NBA
 
+- Basketball season arguments use the ending year: October 2026 through June 2027 is season `2027`.
+- Check pregame prediction coverage every five minutes, filling only missing forecasts for the next two days. Started games missing forecasts are reported as failures; no retrospective pregame predictions are created. Checks use existing stored inputs and do not fetch odds or props.
+- Daily scoreboard imports run inline before the morning prediction pipeline, so generation does not depend on queued imports finishing first.
+
 - Daily scoreboard sync at `01:00`
 - Live scoreboard sync every 5 minutes between `18:00` and `03:00`
 - Game details sync every 30 minutes between `18:00` and `03:00`
@@ -43,7 +47,7 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 - Calculate team metrics at `04:30`
 - Generate predictions at `05:00`
 - Generate canonical predictions at `05:05` when `PREDICTION_LIFECYCLE_NBA_CANONICAL_PIPELINE=true`
-- Generate playoff forecast at `05:15`
+- Generate playoff forecast at `07:35`
 - Sync odds every 4 hours between `08:00` and `23:00`
 - Sync player props twice daily at `10:00` and `14:00`
 - Sync injuries every 30 minutes between `08:00` and `23:00`
@@ -51,6 +55,9 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 - Run NBA EPA lifecycle jobs via `scheduleEpaLifecycle()`
 
 ### CBB
+
+- Active October–April, including schedule preparation before opening day. Uses the ending-year season and the five-minute pregame coverage check described above.
+- Daily current-week scoreboard import runs inline before prediction generation.
 
 - Sync tournament structure daily at `01:00`
 - Sync teams weekly on Sunday at `01:15`
@@ -66,8 +73,8 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 - Calculate team metrics at `06:00`
 - Generate predictions at `06:30`
 - Generate canonical predictions at `06:35` when `PREDICTION_LIFECYCLE_CBB_CANONICAL_PIPELINE=true`
-- Generate tournament forecast at `07:00`
-- Recalculate tournament outlook at `07:15`
+- Generate tournament forecast at `10:15`
+- Recalculate tournament outlook at `10:25`
 - Sync odds every 4 hours between `08:00` and `23:00`
 - Sync player props twice daily at `12:00` and `17:00`
 - Sync injuries every 30 minutes between `08:00` and `23:00`
@@ -75,6 +82,8 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 - Run CBB EPA lifecycle jobs via `scheduleEpaLifecycle()`
 
 ### WCBB
+
+- Active October–April, with ending-year seasons, inline daily scoreboard imports, and the same five-minute pregame coverage check.
 
 - Sync all team schedules weekly on Sunday at `01:45`
 - Sync teams daily at `02:45`

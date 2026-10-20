@@ -2,6 +2,7 @@
 
 namespace App\Services\Sports;
 
+use App\Support\BasketballSeason;
 use App\Support\CFB\CfbWeek;
 use Carbon\Carbon;
 
@@ -44,7 +45,7 @@ class SportsPipelineRegistry
     }
 
     /**
-     * @return array{reference_date: Carbon, season: int, week: int, current_year: int, fall_season_year: int}
+     * @return array{reference_date: Carbon, season_override: ?int, season: int, week: int, current_year: int, fall_season_year: int}
      */
     public function context(?string $date = null, int|string|null $season = null, int|string|null $week = null): array
     {
@@ -54,6 +55,7 @@ class SportsPipelineRegistry
 
         return [
             'reference_date' => $referenceDate,
+            'season_override' => $season !== null && $season !== '' ? (int) $season : null,
             'season' => $season !== null && $season !== '' ? (int) $season : $fallSeasonYear,
             'week' => $week !== null && $week !== ''
                 ? (int) $week
@@ -64,7 +66,7 @@ class SportsPipelineRegistry
     }
 
     /**
-     * @param  array{reference_date: Carbon, season: int, week: int, current_year: int, fall_season_year: int}  $context
+     * @param  array{reference_date: Carbon, season_override: ?int, season: int, week: int, current_year: int, fall_season_year: int}  $context
      * @return array<int, array{label: string, command: string, arguments: array<string, mixed>}>
      */
     public function pipelineSteps(string $sport, string $mode, array $context): array
@@ -88,7 +90,7 @@ class SportsPipelineRegistry
     }
 
     /**
-     * @param  array{reference_date: Carbon, season: int, week: int, current_year: int, fall_season_year: int}|null  $context
+     * @param  array{reference_date: Carbon, season_override: ?int, season: int, week: int, current_year: int, fall_season_year: int}|null  $context
      * @return array{command: string, arguments: array<string, mixed>}|null
      */
     public function healthcheckCommand(string $sport, string $checkType, ?array $context = null): ?array
@@ -144,7 +146,7 @@ class SportsPipelineRegistry
     }
 
     /**
-     * @param  array{reference_date: Carbon, season: int, week: int, current_year: int, fall_season_year: int}  $context
+     * @param  array{reference_date: Carbon, season_override: ?int, season: int, week: int, current_year: int, fall_season_year: int}  $context
      * @return array{command: string, arguments: array<string, mixed>}|null
      */
     private function predictionStepCommand(string $sport, array $context, string $label): ?array
@@ -153,7 +155,7 @@ class SportsPipelineRegistry
     }
 
     /**
-     * @param  array{reference_date: Carbon, season: int, week: int, current_year: int, fall_season_year: int}  $context
+     * @param  array{reference_date: Carbon, season_override: ?int, season: int, week: int, current_year: int, fall_season_year: int}  $context
      * @return array<int, array{label: string, command: string, arguments: array<string, mixed>}>
      */
     private function syncSteps(string $sport, array $context): array
@@ -287,7 +289,7 @@ class SportsPipelineRegistry
     }
 
     /**
-     * @param  array{reference_date: Carbon, season: int, week: int, current_year: int, fall_season_year: int}  $context
+     * @param  array{reference_date: Carbon, season_override: ?int, season: int, week: int, current_year: int, fall_season_year: int}  $context
      * @return array<int, array{label: string, command: string, arguments: array<string, mixed>}>
      */
     private function predictSteps(string $sport, array $context): array
@@ -384,7 +386,7 @@ class SportsPipelineRegistry
     }
 
     /**
-     * @param  array{reference_date: Carbon, season: int, week: int, current_year: int, fall_season_year: int}  $context
+     * @param  array{reference_date: Carbon, season_override: ?int, season: int, week: int, current_year: int, fall_season_year: int}  $context
      * @return array<int, array{label: string, command: string, arguments: array<string, mixed>}>
      */
     private function liveSteps(string $sport, array $context): array
@@ -434,7 +436,7 @@ class SportsPipelineRegistry
     }
 
     /**
-     * @param  array{reference_date: Carbon, season: int, week: int, current_year: int, fall_season_year: int}  $context
+     * @param  array{reference_date: Carbon, season_override: ?int, season: int, week: int, current_year: int, fall_season_year: int}  $context
      * @return array<int, array{label: string, command: string, arguments: array<string, mixed>}>
      */
     private function aiSteps(string $sport, array $context): array
@@ -467,10 +469,14 @@ class SportsPipelineRegistry
     }
 
     /**
-     * @param  array{reference_date: Carbon, season: int, week: int, current_year: int, fall_season_year: int}  $context
+     * @param  array{reference_date: Carbon, season_override: ?int, season: int, week: int, current_year: int, fall_season_year: int}  $context
      */
     private function seasonForSport(string $sport, array $context): int
     {
+        if (in_array($sport, ['nba', 'cbb', 'wcbb'], true)) {
+            return $context['season_override'] ?? BasketballSeason::forDate($context['reference_date']);
+        }
+
         return in_array($sport, ['mlb', 'wnba'], true)
             ? $context['current_year']
             : $context['fall_season_year'];

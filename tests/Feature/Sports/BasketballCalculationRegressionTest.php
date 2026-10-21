@@ -115,3 +115,128 @@ it('persists the source neutral site flag for basketball games', function (strin
     $game->update(['neutral_site' => false]);
     expect($game->fresh()->neutral_site)->toBeFalse();
 })->with(['nba', 'cbb', 'wcbb']);
+
+it('does not blend home and away venue scoring splits into a neutral site total', function (string $sport) {
+    [$game, $home, $away, $action] = calculationReviewGame($sport);
+    $namespace = strtoupper($sport);
+    $metricClass = "App\\Models\\{$namespace}\\TeamMetric";
+    foreach ([$home, $away] as $team) {
+        $attributes = [
+            'team_id' => $team->id, 'season' => 2027,
+            'offensive_efficiency' => 100, 'defensive_efficiency' => 100,
+            'net_rating' => 0, 'tempo' => $sport === 'nba' ? 100 : 70,
+            'calculation_date' => now(),
+        ];
+        if ($sport === 'nba') {
+            $attributes['season_type'] = '2';
+        }
+        if ($sport !== 'nba') {
+            $attributes += [
+                'home_offensive_efficiency' => 140, 'home_defensive_efficiency' => 140,
+                'away_offensive_efficiency' => 140, 'away_defensive_efficiency' => 140,
+            ];
+        }
+        $metricClass::factory()->create($attributes);
+    }
+    $game->neutral_site = true;
+    config(["{$sport}.prediction.total_venue_efficiency_weight" => 0]);
+    $baseline = (new ReflectionMethod($action, 'makePredictionData'))->invoke(app($action), $game);
+    config(["{$sport}.prediction.total_venue_efficiency_weight" => 0.9]);
+    $weighted = (new ReflectionMethod($action, 'makePredictionData'))->invoke(app($action), $game);
+    expect($weighted['predicted_total'])->toBe($baseline['predicted_total'])
+        ->and($weighted['model_metadata']['total_model']['venue_home_score_component'])->toBeNull()
+        ->and($weighted['model_metadata']['total_model']['venue_away_score_component'])->toBeNull();
+    $game->neutral_site = false;
+    $homeVenue = (new ReflectionMethod($action, 'makePredictionData'))->invoke(app($action), $game);
+    config(["{$sport}.prediction.total_venue_efficiency_weight" => 0]);
+    $withoutVenue = (new ReflectionMethod($action, 'makePredictionData'))->invoke(app($action), $game);
+    expect($homeVenue['predicted_total'])->not->toBe($withoutVenue['predicted_total']);
+})->with(['nba', 'cbb', 'wcbb']);
+
+it('does not let later completed games change an earlier forecast raw stat inputs', function (string $sport) {
+    [$game, $home, $away, $action] = calculationReviewGame($sport);
+    $namespace = strtoupper($sport);
+    $gameClass = "App\\Models\\{$namespace}\\Game";
+    $statClass = "App\\Models\\{$namespace}\\TeamStat";
+    $prior = $gameClass::factory()->create([
+        'home_team_id' => $home->id, 'away_team_id' => $away->id,
+        'season' => 2027, 'status' => 'STATUS_FINAL', 'game_date' => '2026-10-19',
+    ]);
+    foreach ([[$home, 110], [$away, 100]] as [$team, $points]) {
+        $statClass::factory()->create([
+            'game_id' => $prior->id, 'team_id' => $team->id, 'points' => $points, 'possessions' => 100,
+        ]);
+    }
+    $baseline = (new ReflectionMethod($action, 'makePredictionData'))->invoke(app($action), $game);
+    $later = $gameClass::factory()->create([
+        'home_team_id' => $home->id, 'away_team_id' => $away->id,
+        'season' => 2027, 'season_type' => 2, 'status' => 'STATUS_FINAL',
+        'game_date' => '2026-10-23',
+    ]);
+    $statClass::factory()->create([
+        'game_id' => $later->id, 'team_id' => $home->id,
+        'points' => 140, 'possessions' => 100, 'turnovers' => 1, 'rebounds' => 60,
+    ]);
+    $statClass::factory()->create([
+        'game_id' => $later->id, 'team_id' => $away->id,
+        'points' => 80, 'possessions' => 100, 'turnovers' => 30, 'rebounds' => 20,
+    ]);
+    $after = (new ReflectionMethod($action, 'makePredictionData'))->invoke(app($action), $game);
+    expect($after['predicted_spread'])->toBe($baseline['predicted_spread'])
+        ->and($after['predicted_total'])->toBe($baseline['predicted_total']);
+})->with(['nba', 'cbb', 'wcbb']);
+
+it('does not classify a neutral site history row as a home venue sample', function (string $sport) {
+    [$game, $home, $away, $action] = calculationReviewGame($sport);
+    $namespace = strtoupper($sport);
+    $gameClass = "App\\Models\\{$namespace}\\Game";
+    $statClass = "App\\Models\\{$namespace}\\TeamStat";
+    $method = new ReflectionMethod($action, 'getVenueEfficiency');
+    $before = $method->invoke(app($action), $home, 2027, 'home', $game);
+    $past = $gameClass::factory()->create([
+        'home_team_id' => $home->id, 'away_team_id' => $away->id,
+        'season' => 2027, 'status' => 'STATUS_FINAL', 'neutral_site' => true,
+        'game_date' => '2026-10-19',
+    ]);
+    $statClass::factory()->create([
+        'game_id' => $past->id, 'team_id' => $home->id, 'points' => 140, 'possessions' => 100,
+    ]);
+    $statClass::factory()->create([
+        'game_id' => $past->id, 'team_id' => $away->id, 'points' => 80, 'possessions' => 100,
+    ]);
+    expect($method->invoke(app($action), $home, 2027, 'home', $game))->toBe($before);
+    $form = (new ReflectionMethod($action, 'getRecentForm'))->invoke(app($action), $home, 2027, $game);
+    expect($form['net_rating'])->toBe(60.0);
+    $past->update(['neutral_site' => false]);
+    expect($method->invoke(app($action), $home, 2027, 'home', $game)['off'])->toBe(140.0);
+})->with(['nba', 'cbb', 'wcbb']);
+
+it('keeps neutral games in college season metrics but excludes them from stored venue splits', function (string $sport) {
+    [$target, $home, $away] = calculationReviewGame($sport);
+    $namespace = strtoupper($sport);
+    $gameClass = "App\\Models\\{$namespace}\\Game";
+    $statClass = "App\\Models\\{$namespace}\\TeamStat";
+    $action = "App\\Actions\\{$namespace}\\CalculateTeamMetrics";
+    config(["{$sport}.metrics.minimum_games" => 1]);
+    foreach ([[false, false], [true, false], [false, true]] as [$swapped, $neutral]) {
+        $game = $gameClass::factory()->create([
+            'home_team_id' => $swapped ? $away->id : $home->id,
+            'away_team_id' => $swapped ? $home->id : $away->id,
+            'season' => 2027, 'status' => 'STATUS_FINAL',
+            'game_date' => '2026-10-19', 'neutral_site' => $neutral,
+        ]);
+        foreach ([[$home, $neutral ? 100 : 80], [$away, 70]] as [$team, $points]) {
+            $statClass::factory()->create([
+                'game_id' => $game->id, 'team_id' => $team->id,
+                'points' => $points, 'possessions' => 70,
+            ]);
+        }
+    }
+    $metric = app($action)->execute($home, 2027);
+    expect($metric)->not->toBeNull()
+        ->and($metric->games_played)->toBe(3)
+        ->and($metric->home_games)->toBe(1)
+        ->and($metric->away_games)->toBe(1)
+        ->and((float) $metric->offensive_efficiency)->toBe(123.8)
+        ->and((float) $metric->home_offensive_efficiency)->toBe(114.3);
+})->with(['cbb', 'wcbb']);

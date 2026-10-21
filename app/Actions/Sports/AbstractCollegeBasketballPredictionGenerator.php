@@ -71,8 +71,8 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         $homeAwaySplitAdj = $game->neutral_site ? 0.0 : $this->calculateHomeAwaySplitAdjustment($game, $homeMetrics, $awayMetrics);
         $efficiencySpread += $homeAwaySplitAdj * $config['home_away_split_weight'];
 
-        $homeForm = $this->getRecentForm($game->homeTeam, (int) $game->season);
-        $awayForm = $this->getRecentForm($game->awayTeam, (int) $game->season);
+        $homeForm = $this->getRecentForm($game->homeTeam, (int) $game->season, $game);
+        $awayForm = $this->getRecentForm($game->awayTeam, (int) $game->season, $game);
         $homeFormNet = $homeForm['net_rating'];
         $awayFormNet = $awayForm['net_rating'];
         $formSpread = ($homeFormNet - $awayFormNet) / 2 + ($game->neutral_site ? 0 : $config['home_court_points']);
@@ -128,8 +128,8 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         $sport = $this->getSport();
         $config = config("{$sport}.prediction");
         $defaultEfficiency = $config['default_efficiency'];
-        $homeForm = $this->getRecentForm($game->homeTeam, (int) $game->season);
-        $awayForm = $this->getRecentForm($game->awayTeam, (int) $game->season);
+        $homeForm = $this->getRecentForm($game->homeTeam, (int) $game->season, $game);
+        $awayForm = $this->getRecentForm($game->awayTeam, (int) $game->season, $game);
         $recentWeight = (float) ($config['total_recent_efficiency_weight'] ?? 0.35);
         $venueWeight = (float) ($config['total_venue_efficiency_weight'] ?? 0.15);
         $calibration = (array) ($config['total_calibration'] ?? []);
@@ -141,7 +141,8 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             $awayForm,
             $defaultEfficiency,
             $recentWeight,
-            $venueWeight
+            $venueWeight,
+            (bool) $game->neutral_site
         );
         $paceContext = $this->buildTotalPaceContext(
             $game,
@@ -291,7 +292,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
     /**
      * @return array{off_eff: float, def_eff: float, net_rating: float, tempo: float}
      */
-    private function getRecentForm(Model $team, int $season): array
+    private function getRecentForm(Model $team, int $season, Model $game): array
     {
         $sport = $this->getSport();
         $config = config("{$sport}.prediction");
@@ -307,6 +308,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
 
         $recentGames = $gameModel::query()
             ->where('status', 'STATUS_FINAL')
+            ->where('game_date', '<', $game->game_date)
             ->where('season', $season)
             ->where(function ($q) use ($team) {
                 $q->where('home_team_id', $team->id)
@@ -392,8 +394,8 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
 
     private function calculateHomeAwaySplitAdjustment(Model $game, ?Model $homeMetrics, ?Model $awayMetrics): float
     {
-        $homeStats = $this->getVenueEfficiency($game->homeTeam, (int) $game->season, 'home');
-        $awayStats = $this->getVenueEfficiency($game->awayTeam, (int) $game->season, 'away');
+        $homeStats = $this->getVenueEfficiency($game->homeTeam, (int) $game->season, 'home', $game);
+        $awayStats = $this->getVenueEfficiency($game->awayTeam, (int) $game->season, 'away', $game);
 
         $homeSeasonNet = $homeMetrics?->net_rating ?? 0;
         $awaySeasonNet = $awayMetrics?->net_rating ?? 0;
@@ -407,12 +409,12 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
     /**
      * @return array{off: float, def: float, net: float}
      */
-    private function getVenueEfficiency(Model $team, int $season, string $venue): array
+    private function getVenueEfficiency(Model $team, int $season, string $venue, Model $game): array
     {
         $defaultEff = config("{$this->getSport()}.prediction.default_efficiency");
 
         $teamStatModel = $this->getTeamStatModel();
-        $games = $this->completedSeasonGameIdsForTeam($team, $season, $venue);
+        $games = $this->completedSeasonGameIdsForTeam($team, $season, $game, $venue);
 
         if (empty($games)) {
             return ['off' => $defaultEff, 'def' => $defaultEff, 'net' => 0];
@@ -472,16 +474,16 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
 
     private function calculateTurnoverAdjustment(Model $game, array $config): float
     {
-        $homeDiff = $this->getTurnoverDifferential($game->homeTeam, (int) $game->season);
-        $awayDiff = $this->getTurnoverDifferential($game->awayTeam, (int) $game->season);
+        $homeDiff = $this->getTurnoverDifferential($game->homeTeam, (int) $game->season, $game);
+        $awayDiff = $this->getTurnoverDifferential($game->awayTeam, (int) $game->season, $game);
 
         return ($homeDiff - $awayDiff) * $config['turnover_diff_weight'];
     }
 
-    private function getTurnoverDifferential(Model $team, int $season): float
+    private function getTurnoverDifferential(Model $team, int $season, Model $game): float
     {
         $teamStatModel = $this->getTeamStatModel();
-        $games = $this->completedSeasonGameIdsForTeam($team, $season);
+        $games = $this->completedSeasonGameIdsForTeam($team, $season, $game);
 
         if (empty($games)) {
             return 0;
@@ -502,16 +504,16 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
 
     private function calculateReboundAdjustment(Model $game, array $config): float
     {
-        $homeMargin = $this->getReboundMargin($game->homeTeam, (int) $game->season);
-        $awayMargin = $this->getReboundMargin($game->awayTeam, (int) $game->season);
+        $homeMargin = $this->getReboundMargin($game->homeTeam, (int) $game->season, $game);
+        $awayMargin = $this->getReboundMargin($game->awayTeam, (int) $game->season, $game);
 
         return ($homeMargin - $awayMargin) * $config['rebound_margin_weight'];
     }
 
-    private function getReboundMargin(Model $team, int $season): float
+    private function getReboundMargin(Model $team, int $season, Model $game): float
     {
         $teamStatModel = $this->getTeamStatModel();
-        $games = $this->completedSeasonGameIdsForTeam($team, $season);
+        $games = $this->completedSeasonGameIdsForTeam($team, $season, $game);
 
         if (empty($games)) {
             return 0;
@@ -600,7 +602,8 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         array $awayForm,
         float $defaultEfficiency,
         float $recentWeight,
-        float $venueWeight
+        float $venueWeight,
+        bool $neutralSite
     ): array {
         $homeOffEff = $homeMetrics?->offensive_efficiency ?? $defaultEfficiency;
         $homeDefEff = $homeMetrics?->defensive_efficiency ?? $defaultEfficiency;
@@ -617,11 +620,11 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             (float) ($awayMetrics?->rolling_offensive_efficiency ?? $awayForm['off_eff'])
             + (float) ($homeMetrics?->rolling_defensive_efficiency ?? $homeForm['def_eff'])
         ) / 2;
-        $homeVenueScore = $this->pairedVenueScore(
+        $homeVenueScore = $neutralSite ? null : $this->pairedVenueScore(
             $homeMetrics?->home_offensive_efficiency,
             $awayMetrics?->away_defensive_efficiency
         );
-        $awayVenueScore = $this->pairedVenueScore(
+        $awayVenueScore = $neutralSite ? null : $this->pairedVenueScore(
             $awayMetrics?->away_offensive_efficiency,
             $homeMetrics?->home_defensive_efficiency
         );
@@ -781,8 +784,8 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
      */
     private function recentPossessionFactorAdjustments(Model $game, int $season, array $config): array
     {
-        $homeProfile = $this->recentStatProfile($game->homeTeam, $season);
-        $awayProfile = $this->recentStatProfile($game->awayTeam, $season);
+        $homeProfile = $this->recentStatProfile($game->homeTeam, $season, $game);
+        $awayProfile = $this->recentStatProfile($game->awayTeam, $season, $game);
         $weights = (array) ($config['total_factor_weights'] ?? []);
 
         return [
@@ -895,7 +898,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
     /**
      * @return array<string, float|null>
      */
-    private function recentStatProfile(Model $team, int $season): array
+    private function recentStatProfile(Model $team, int $season, Model $game): array
     {
         $sport = $this->getSport();
         $config = config("{$sport}.prediction");
@@ -910,6 +913,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
 
         $recentGames = $gameModel::query()
             ->where('status', 'STATUS_FINAL')
+            ->where('game_date', '<', $game->game_date)
             ->where('season', $season)
             ->where(function ($q) use ($team) {
                 $q->where('home_team_id', $team->id)
@@ -1060,12 +1064,17 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
     /**
      * @return array<int, int>
      */
-    private function completedSeasonGameIdsForTeam(Model $team, int $season, ?string $venue = null): array
+    private function completedSeasonGameIdsForTeam(Model $team, int $season, Model $game, ?string $venue = null): array
     {
         $gameModel = $this->getGameModel();
         $query = $gameModel::query()
             ->where('status', 'STATUS_FINAL')
+            ->where('game_date', '<', $game->game_date)
             ->where('season', $season);
+
+        if (in_array($venue, ['home', 'away'], true)) {
+            $query->where(fn ($query) => $query->whereNull('neutral_site')->orWhere('neutral_site', false));
+        }
 
         if ($venue === 'home') {
             $query->where('home_team_id', $team->id);

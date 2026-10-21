@@ -181,13 +181,18 @@ class NflCanonicalCutoverReadinessService
         $eventIds = $games->pluck('sport_event_id')->map(fn (mixed $id): int => (int) $id)->all();
         $gameIds = $games->modelKeys();
         $canonicalByEvent = CanonicalPrediction::query()
-            ->with('calculationRun.inputSnapshot')
+            ->with([
+                'calculationRun:id,event_input_snapshot_id',
+                'calculationRun.inputSnapshot' => fn ($query) => $query
+                    ->select(['id', 'captured_at', 'inputs->pregame_market as pregame_market'])
+                    ->withCasts(['pregame_market' => 'array']),
+            ])
             ->where('sport', 'nfl')
             ->where('phase', 'pregame')
             ->where('publication_state', 'published')
             ->whereIn('sport_event_id', $eventIds)
             ->orderByDesc('revision')
-            ->get()
+            ->get(['id', 'sport_event_id', 'calculation_run_id'])
             ->unique('sport_event_id')
             ->keyBy('sport_event_id');
         $legacyByGame = Prediction::query()
@@ -219,6 +224,8 @@ class NflCanonicalCutoverReadinessService
         $predictionFreshAfter = now()->subMinutes($maximumPredictionAgeMinutes);
 
         $decisionsByPrediction = BetDecision::query()
+            ->select(['id', 'prediction_id', 'prediction_feature_snapshot_id', 'status', 'decided_at',
+                'market_key', 'is_bet', 'pregame_safe', 'explanation->hold_reason as hold_reason'])
             ->with('featureSnapshot:id,pregame_safe,generated_at')
             ->where('sport', 'nfl')
             ->where('prediction_table', (new Prediction)->getTable())
@@ -264,7 +271,7 @@ class NflCanonicalCutoverReadinessService
                 || $inputSnapshot->captured_at->lt($predictionFreshAfter)) {
                 $stalePredictions[] = (int) $game->getKey();
             }
-            $market = (array) data_get($inputSnapshot?->inputs, 'pregame_market', []);
+            $market = (array) $inputSnapshot?->getAttribute('pregame_market');
             $marketAsOf = $inputSnapshot?->captured_at?->toImmutable();
             $freshAfter = $marketAsOf?->subMinutes($maximumQuoteAgeMinutes);
             $marketCapturedAt = $this->marketCapturedAt($market);
@@ -325,7 +332,7 @@ class NflCanonicalCutoverReadinessService
                 ->whereIn('market_key', $missingKeys)
                 ->reject(fn (BetDecision $decision): bool => $decision->status === 'released_tracking_bet')
                 ->mapWithKeys(fn (BetDecision $decision): array => [
-                    $decision->market_key => data_get($decision->explanation, 'hold_reason'),
+                    $decision->market_key => $decision->getAttribute('hold_reason'),
                 ])
                 ->filter()
                 ->all();

@@ -939,6 +939,8 @@ it('reads only safety metadata from decision snapshots during NFL readiness', fu
     $fixture = nflCanonicalMarketFixture();
     recordNflMarketSnapshot($fixture);
     recordNflLegacyEpaDisposition($fixture);
+    app(NflCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
+    app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
     $connection = PredictionFeatureSnapshot::query()->getConnection();
     $connection->enableQueryLog();
     try {
@@ -946,9 +948,32 @@ it('reads only safety metadata from decision snapshots during NFL readiness', fu
         $snapshotReads = collect($connection->getQueryLog())->pluck('query')
             ->filter(fn (string $sql) => str_contains($sql, 'prediction_feature_snapshots') && ! str_contains($sql, 'nfl_predictions'));
         expect($report['recorded_disposition_event_count'])->toBe(1)
+            ->and($report['immutable_pregame_market_event_count'])->toBe(1)
             ->and($snapshotReads)->toHaveCount(1);
         foreach ($snapshotReads as $sql) {
             expect($sql)->not->toContain('*')->not->toContain('"features"')->not->toContain('"outputs"');
+        }
+        $canonicalReads = collect($connection->getQueryLog())->pluck('query')->filter(
+            function (string $sql): bool {
+                preg_match('/\bfrom ["`]?([a-z_]+)["`]? /i', $sql, $matches);
+
+                return ($matches[1] ?? null) === 'event_input_snapshots';
+            },
+        );
+        expect($canonicalReads)->toHaveCount(1);
+        foreach ($canonicalReads as $sql) {
+            expect($sql)->toContain('pregame_market')->not->toContain('*')->not->toContain('source_timestamps');
+        }
+        $runAndDecisionReads = collect($connection->getQueryLog())->pluck('query')->filter(
+            function (string $sql): bool {
+                preg_match('/\bfrom ["`]?([a-z_]+)["`]? /i', $sql, $matches);
+
+                return in_array($matches[1] ?? null, ['calculation_runs', 'bet_decisions'], true);
+            },
+        );
+        expect($runAndDecisionReads)->toHaveCount(2);
+        foreach ($runAndDecisionReads as $sql) {
+            expect($sql)->not->toContain('*')->not->toContain('diagnostics')->not->toContain('market_snapshot');
         }
     } finally {
         $connection->disableQueryLog();

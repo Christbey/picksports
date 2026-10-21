@@ -28,6 +28,7 @@ it('syncs games from ESPN scoreboard API for a specific date', function () {
                     'competitions' => [
                         [
                             'id' => '401585601',
+                            'neutralSite' => true,
                             'competitors' => [
                                 [
                                     'team' => ['id' => '1'],
@@ -62,6 +63,7 @@ it('syncs games from ESPN scoreboard API for a specific date', function () {
 
     $game = Game::where('espn_event_id', '401585601')->first();
     expect($game)->not->toBeNull()
+        ->neutral_site->toBeTrue()
         ->season->toBe(2026)
         ->week->toBe(15)
         ->home_team_id->toBe($this->homeTeam->id)

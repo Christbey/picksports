@@ -164,6 +164,11 @@ abstract class AbstractPredictionGenerator
         return $prediction;
     }
 
+    protected function appliesPersistedInjuryTotalInternally(): bool
+    {
+        return false;
+    }
+
     /**
      * @return array<string, mixed>|null
      */
@@ -224,7 +229,7 @@ abstract class AbstractPredictionGenerator
             }
         }
 
-        if ($usePersistedTotalInjuryContext) {
+        if ($usePersistedTotalInjuryContext && ! $this->appliesPersistedInjuryTotalInternally()) {
             $predictedTotal = round(
                 $predictedTotal + $this->persistedInjuryTotalAdjustment($homeMetrics, $awayMetrics),
                 1

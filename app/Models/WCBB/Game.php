@@ -38,6 +38,7 @@ class Game extends Model
         'venue_name',
         'venue_city',
         'venue_state',
+        'neutral_site',
         'status',
         'period',
         'game_clock',
@@ -55,6 +56,7 @@ class Game extends Model
     {
         return [
             'game_date' => 'date',
+            'neutral_site' => 'boolean',
             'completed_at' => 'datetime',
             'home_linescores' => 'array',
             'away_linescores' => 'array',

@@ -2,6 +2,7 @@
 
 namespace App\Actions\NFL;
 
+use App\Jobs\NFL\EvaluateShadowPrediction;
 use App\Models\NFL\DepthChartEntry;
 use App\Models\NFL\DepthChartSnapshot;
 use App\Models\NFL\EloRating;
@@ -14,10 +15,11 @@ use App\Models\NFL\Prediction;
 use App\Models\NFL\TeamCoachSeason;
 use App\Models\NFL\TeamMetric;
 use App\Services\NFL\GameWeatherService;
-use App\Services\NFL\NflFullHistoricalShadowInferenceService;
+use App\Services\NFL\NflCalibrationHistory;
 use App\Services\NFL\NflInjuryTotalAdjustment;
 use App\Services\NFL\NflMlFeatureVectorBuilder;
 use App\Services\NFL\NflOddsHistory;
+use App\Services\NFL\NflPredictionPublisher;
 use App\Services\NFL\NflProSignalLayer;
 use App\Services\NFL\NflQuarterbackStatsSummary;
 use App\Services\NFL\NflRushingMatchup;
@@ -28,11 +30,12 @@ use App\Services\NFL\NflTeamHistory;
 use App\Services\NFL\PlayerPositionGradeService;
 use App\Services\NFL\QuarterbackAvailability;
 use App\Services\NFL\Research\RecommendationEligibility;
-use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
 use App\Services\Sports\DepthChartImpactService;
 use App\Services\Sports\SportsDateWindowService;
 use App\Support\NflBetRuleEngine;
+use App\Support\NflModelVersion;
 use App\Support\NflReasonCodeCatalog;
+use App\Support\NflTeamAlignment;
 use App\Support\NflValidatedSignalCombos;
 use App\Support\Odds\MarketSpread;
 use Carbon\CarbonInterface;
@@ -43,47 +46,6 @@ use Illuminate\Support\Facades\DB;
 
 class GeneratePredictionFromHistoricalElo
 {
-    /**
-     * Fallback NFL alignment map for historical rows where ESPN omitted conference/division.
-     *
-     * @var array<string,array{conference:string,division:string}>
-     */
-    protected const NFL_DIVISION_MAP = [
-        'ARI' => ['conference' => 'nfc', 'division' => 'west'],
-        'ATL' => ['conference' => 'nfc', 'division' => 'south'],
-        'BAL' => ['conference' => 'afc', 'division' => 'north'],
-        'BUF' => ['conference' => 'afc', 'division' => 'east'],
-        'CAR' => ['conference' => 'nfc', 'division' => 'south'],
-        'CHI' => ['conference' => 'nfc', 'division' => 'north'],
-        'CIN' => ['conference' => 'afc', 'division' => 'north'],
-        'CLE' => ['conference' => 'afc', 'division' => 'north'],
-        'DAL' => ['conference' => 'nfc', 'division' => 'east'],
-        'DEN' => ['conference' => 'afc', 'division' => 'west'],
-        'DET' => ['conference' => 'nfc', 'division' => 'north'],
-        'GB' => ['conference' => 'nfc', 'division' => 'north'],
-        'HOU' => ['conference' => 'afc', 'division' => 'south'],
-        'IND' => ['conference' => 'afc', 'division' => 'south'],
-        'JAX' => ['conference' => 'afc', 'division' => 'south'],
-        'KC' => ['conference' => 'afc', 'division' => 'west'],
-        'LAC' => ['conference' => 'afc', 'division' => 'west'],
-        'LAR' => ['conference' => 'nfc', 'division' => 'west'],
-        'LV' => ['conference' => 'afc', 'division' => 'west'],
-        'MIA' => ['conference' => 'afc', 'division' => 'east'],
-        'MIN' => ['conference' => 'nfc', 'division' => 'north'],
-        'NE' => ['conference' => 'afc', 'division' => 'east'],
-        'NO' => ['conference' => 'nfc', 'division' => 'south'],
-        'NYG' => ['conference' => 'nfc', 'division' => 'east'],
-        'NYJ' => ['conference' => 'afc', 'division' => 'east'],
-        'PHI' => ['conference' => 'nfc', 'division' => 'east'],
-        'PIT' => ['conference' => 'afc', 'division' => 'north'],
-        'SEA' => ['conference' => 'nfc', 'division' => 'west'],
-        'SF' => ['conference' => 'nfc', 'division' => 'west'],
-        'TB' => ['conference' => 'nfc', 'division' => 'south'],
-        'TEN' => ['conference' => 'afc', 'division' => 'south'],
-        'WAS' => ['conference' => 'nfc', 'division' => 'east'],
-        'WSH' => ['conference' => 'nfc', 'division' => 'east'],
-    ];
-
     /**
      * @var array<string,mixed>
      */
@@ -117,11 +79,13 @@ class GeneratePredictionFromHistoricalElo
         protected ?PlayerPositionGradeService $playerPositionGradeService = null,
         protected ?NflReasonCodeCatalog $reasonCodeCatalog = null,
         protected ?NflProSignalLayer $proSignalLayer = null,
+        protected ?NflCalibrationHistory $calibrationHistory = null,
     ) {
         $this->depthChartImpactService ??= app(DepthChartImpactService::class);
         $this->playerPositionGradeService ??= app(PlayerPositionGradeService::class);
         $this->reasonCodeCatalog ??= app(NflReasonCodeCatalog::class);
         $this->proSignalLayer ??= app(NflProSignalLayer::class);
+        $this->calibrationHistory ??= app(NflCalibrationHistory::class);
     }
 
     public function execute(Game $game): string
@@ -178,11 +142,13 @@ class GeneratePredictionFromHistoricalElo
 
         [$predictedSpread, $winProbability, $predictedTotal] = $this->calculateForecast($game, $legacySpread, $legacyWinProbability, $legacyTotal);
         $confidenceScore = max($winProbability, 1 - $winProbability) * 100;
-        $this->lastModelMetadata['raw_outputs'] = [
+        $this->lastModelMetadata['published_outputs_unrounded'] = [
             'predicted_spread' => $predictedSpread,
             'predicted_total' => $predictedTotal,
             'win_probability' => $winProbability,
         ];
+        $this->lastModelMetadata['raw_outputs'] = $this->lastModelMetadata['published_outputs_unrounded'];
+        $this->lastModelMetadata['raw_output_semantics'] = 'deprecated_alias_of_published_outputs_unrounded_after_market';
         $this->lastModelMetadata['numeric_policy'] = [
             'version' => 'line-direction-injury-precision-v2',
             'injury_stage_rounding' => false,
@@ -196,7 +162,8 @@ class GeneratePredictionFromHistoricalElo
             ? '-'.$historicalProfile
             : '';
         $adaptationSuffix = config('nfl.predictions.preseason_signal.season_adaptation.enabled', true) ? '-season-adaptive-v1' : '';
-        $modelVersion = (string) config('nfl.predictions.model_version', 'nfl-historical-elo-v2').'-career-regular-v2-ats-v3'.$adaptationSuffix.$profileSuffix;
+        $modelVersion = NflModelVersion::current($historicalProfile);
+        $this->lastModelMetadata['model_version_definition'] = NflModelVersion::definition($historicalProfile);
         $this->applyAnalysisLayer($game, round($predictedSpread, 1), round($predictedTotal, 1), $winProbability, $modelVersion);
         $featureVersion = (string) config('nfl.predictions.feature_version', 'nfl-pregame-ml-v3');
         $blendVersion = (string) config('nfl.predictions.blend_version', 'nfl-multi-signal-v1').$adaptationSuffix.$profileSuffix;
@@ -266,30 +233,9 @@ class GeneratePredictionFromHistoricalElo
             ])
             ->all();
 
-        if (! $isFinal) {
-            $shadowInference = app(NflFullHistoricalShadowInferenceService::class)->evaluate(
-                $game,
-                $baselineOutputs,
-                $tabularFeatures,
-            );
-
-            if ($shadowInference !== null) {
-                $this->lastModelMetadata['shadow_inference'] = $shadowInference;
-                $predictionData['model_metadata'] = $this->lastModelMetadata;
-            }
-        }
-
-        $existing = Prediction::query()->where('game_id', $game->id)->first();
-        $prediction = Prediction::query()->updateOrCreate(
-            ['game_id' => $game->id],
-            $predictionData,
-        );
         $pointInTimeVerified = $isFinal && $historicalProfile !== 'configured';
-
-        app(PredictionFeatureSnapshotRecorder::class)->record(
-            $prediction,
+        [$prediction, $snapshot] = app(NflPredictionPublisher::class)->publish(
             $game,
-            'nfl',
             $predictionData,
             [
                 'model_version' => $modelVersion,
@@ -319,6 +265,7 @@ class GeneratePredictionFromHistoricalElo
                 'features' => $mlFeatures,
                 'outputs' => [
                     ...$baselineOutputs,
+                    'calibration_inputs' => $this->lastModelMetadata['calibration_inputs'] ?? [],
                     'baseline_predicted_spread' => $baselineOutputs['predicted_spread'],
                     'baseline_predicted_total' => $baselineOutputs['predicted_total'],
                     'baseline_win_probability' => $baselineOutputs['win_probability'],
@@ -346,12 +293,34 @@ class GeneratePredictionFromHistoricalElo
             ],
         );
 
-        return $existing ? 'updated' : 'created';
+        if (! $isFinal) {
+            try {
+                EvaluateShadowPrediction::dispatch($snapshot->id, $tabularFeatures)->afterCommit();
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
+        }
+
+        return $prediction->wasRecentlyCreated ? 'created' : 'updated';
     }
 
-    /**
-     * @return array{0:float,1:float,2:float}
-     */
+    protected function profilesComplete(array $home, array $away, array $required): bool
+    {
+        foreach ([$home, $away] as $profile) {
+            if (($profile['stat_coverage_complete'] ?? true) === false) {
+                return false;
+            }
+            foreach ($required as $field) {
+                if (! is_numeric($profile[$field] ?? null) || ! is_finite((float) $profile[$field])) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /** @return array{0:float,1:float,2:float} */
     protected function calculateForecast(Game $game, float $predictedSpread, float $winProbability, float $predictedTotal): array
     {
         // Resolve once, before building team profiles. Never blend a backup's
@@ -360,6 +329,12 @@ class GeneratePredictionFromHistoricalElo
             $this->projectedQuarterbacks[$teamId] = $this->qbContextForGame($game, $teamId);
         }
         [$predictedSpread, $winProbability, $predictedTotal] = $this->applyTrueEpaBlend($game, $predictedSpread, $winProbability, $predictedTotal);
+        $this->lastModelMetadata['calibration_corpus'] = [
+            'source' => 'immutable_observed_pregame_snapshots',
+            'model_version' => NflModelVersion::current(),
+            'season_type' => 'regular',
+            'reconstructions_eligible' => false,
+        ];
         foreach ($this->projectedQuarterbacks as $teamId => $quarterback) {
             $side = $teamId === (int) $game->home_team_id ? 'home' : 'away';
             $this->lastModelMetadata['game_depth_charts'][$side] = [
@@ -376,9 +351,18 @@ class GeneratePredictionFromHistoricalElo
         [$predictedSpread, $winProbability, $predictedTotal] = $this->applyContextualFactorsBlend($game, $predictedSpread, $winProbability, $predictedTotal);
         [$predictedSpread, $winProbability, $predictedTotal] = $this->applyActualWeatherBlend($game, $predictedSpread, $winProbability, $predictedTotal);
         [$predictedSpread, $winProbability, $predictedTotal] = $this->applyDepthChartInjuryAdjustments($game, $predictedSpread, $winProbability, $predictedTotal);
+        $this->lastModelMetadata['calibration_inputs']['point'] = [
+            'predicted_spread' => $predictedSpread, 'predicted_total' => $predictedTotal,
+        ];
         [$predictedSpread, $winProbability, $predictedTotal] = $this->applyAdaptivePointCalibration($game, $predictedSpread, $winProbability, $predictedTotal);
         $this->applyPlayerPositionGradeContext($game);
+        $this->lastModelMetadata['pre_market_outputs'] = [
+            'predicted_spread' => $predictedSpread,
+            'predicted_total' => $predictedTotal,
+            'win_probability' => $winProbability,
+        ];
         [$predictedSpread, $winProbability, $predictedTotal] = $this->applyMarketBlend($game, $predictedSpread, $winProbability, $predictedTotal);
+        $this->lastModelMetadata['calibration_inputs']['win_probability'] = ['win_probability' => $winProbability];
         $winProbability = $this->applyAdaptiveWinProbabilityCalibration($game, $winProbability);
         [$predictedSpread, $winProbability, $predictedTotal] = $this->applyAutomatedCalibrationTweaks($game, $predictedSpread, $winProbability, $predictedTotal);
 
@@ -793,6 +777,14 @@ class GeneratePredictionFromHistoricalElo
 
         $home = $this->opponentAdjustedEfficiencyProfile($game, (int) $game->home_team_id);
         $away = $this->opponentAdjustedEfficiencyProfile($game, (int) $game->away_team_id);
+        $required = ['opponent_adjusted_margin', 'yard_diff', 'red_zone_rate_diff', 'third_down_rate_diff'];
+        if (! $this->profilesComplete($home, $away, $required)) {
+            $this->lastModelMetadata['opponent_adjusted_efficiency'] += [
+                'reason' => 'incomplete_statistics', 'home' => $home, 'away' => $away,
+            ];
+
+            return [$predictedSpread, $winProbability, $predictedTotal];
+        }
         $minGames = (int) config('nfl.predictions.opponent_adjusted_efficiency.min_games', 3);
 
         if (($home['games'] ?? 0) < $minGames || ($away['games'] ?? 0) < $minGames) {
@@ -860,6 +852,14 @@ class GeneratePredictionFromHistoricalElo
 
         $home = $this->totalEnvironmentProfile($game, (int) $game->home_team_id);
         $away = $this->totalEnvironmentProfile($game, (int) $game->away_team_id);
+        $required = ['points_for', 'points_against', 'offensive_plays', 'defensive_plays', 'yards_per_play', 'yards_allowed_per_play', 'red_zone_rate', 'red_zone_allowed_rate', 'third_down_rate', 'third_down_allowed_rate', 'turnover_rate', 'takeaway_rate', 'penalty_yards'];
+        if (! $this->profilesComplete($home, $away, $required)) {
+            $this->lastModelMetadata['total_environment'] += [
+                'reason' => 'incomplete_statistics', 'home' => $home, 'away' => $away,
+            ];
+
+            return $predictedTotal;
+        }
         $minGames = (int) config('nfl.predictions.total_environment.min_games', 2);
 
         if (($home['games'] ?? 0) < $minGames || ($away['games'] ?? 0) < $minGames) {
@@ -1074,6 +1074,14 @@ class GeneratePredictionFromHistoricalElo
 
         $home = $this->lineProfile($game, (int) $game->home_team_id);
         $away = $this->lineProfile($game, (int) $game->away_team_id);
+        $required = ['off_sack_allowed_rate', 'def_sack_rate', 'off_rush_yards_per_attempt', 'def_rush_yards_allowed_per_attempt'];
+        if (! $this->profilesComplete($home, $away, $required)) {
+            $this->lastModelMetadata['line_matchup'] += [
+                'reason' => 'incomplete_statistics', 'home' => $home, 'away' => $away,
+            ];
+
+            return [$predictedSpread, $winProbability, $predictedTotal];
+        }
         $minGames = (int) config('nfl.predictions.line_matchup.min_games', 2);
 
         if (($home['games'] ?? 0) < $minGames || ($away['games'] ?? 0) < $minGames) {
@@ -1940,6 +1948,14 @@ class GeneratePredictionFromHistoricalElo
 
         $home = $this->rollingEfficiencyProfile($game, (int) $game->home_team_id);
         $away = $this->rollingEfficiencyProfile($game, (int) $game->away_team_id);
+        $required = ['avg_margin', 'recent_margin', 'yard_diff', 'turnover_diff'];
+        if (! $this->profilesComplete($home, $away, $required)) {
+            $this->lastModelMetadata['rolling_efficiency'] += [
+                'reason' => 'incomplete_statistics', 'home' => $home, 'away' => $away,
+            ];
+
+            return [$predictedSpread, $winProbability, $predictedTotal];
+        }
         $minGames = (int) config('nfl.predictions.rolling_efficiency.min_games', 2);
 
         if (($home['games'] ?? 0) < $minGames || ($away['games'] ?? 0) < $minGames) {
@@ -2133,20 +2149,7 @@ class GeneratePredictionFromHistoricalElo
 
         $lookbackGames = max(1, (int) config('nfl.predictions.adaptive_point_calibration.lookback_games', 384));
         $minSample = max(1, (int) config('nfl.predictions.adaptive_point_calibration.min_sample', 48));
-        $priorPredictions = Prediction::query()
-            ->with('game')
-            ->select('nfl_predictions.*')
-            ->join('nfl_games', 'nfl_games.id', '=', 'nfl_predictions.game_id')
-            ->where('nfl_games.status', 'STATUS_FINAL')
-            ->whereNotNull('nfl_games.home_score')
-            ->whereNotNull('nfl_games.away_score')
-            ->whereDate('nfl_games.game_date', '<', $date->toDateString())
-            ->whereNotNull('nfl_predictions.predicted_spread')
-            ->whereNotNull('nfl_predictions.predicted_total')
-            ->orderByDesc('nfl_games.game_date')
-            ->orderByDesc('nfl_games.id')
-            ->limit($lookbackGames)
-            ->get();
+        $priorPredictions = $this->calibrationHistory->prior($game, NflModelVersion::current(), $lookbackGames, 'point');
 
         if ($priorPredictions->count() < $minSample) {
             $this->lastModelMetadata['adaptive_point_calibration']['reason'] = 'insufficient_prior_predictions';
@@ -2266,19 +2269,7 @@ class GeneratePredictionFromHistoricalElo
         }
 
         $lookbackGames = max(1, (int) config('nfl.predictions.adaptive_win_probability_calibration.lookback_games', 512));
-        $priorPredictions = Prediction::query()
-            ->with('game')
-            ->select('nfl_predictions.*')
-            ->join('nfl_games', 'nfl_games.id', '=', 'nfl_predictions.game_id')
-            ->where('nfl_games.status', 'STATUS_FINAL')
-            ->whereNotNull('nfl_games.home_score')
-            ->whereNotNull('nfl_games.away_score')
-            ->whereDate('nfl_games.game_date', '<', $date->toDateString())
-            ->whereNotNull('nfl_predictions.win_probability')
-            ->orderByDesc('nfl_games.game_date')
-            ->orderByDesc('nfl_games.id')
-            ->limit($lookbackGames)
-            ->get();
+        $priorPredictions = $this->calibrationHistory->prior($game, NflModelVersion::current(), $lookbackGames, 'win_probability')->filter(fn (Prediction $prediction): bool => (float) $prediction->game->home_score !== (float) $prediction->game->away_score)->values();
 
         if ($priorPredictions->isEmpty()) {
             $this->lastModelMetadata['adaptive_win_probability_calibration']['reason'] = 'no_prior_predictions';
@@ -2292,6 +2283,15 @@ class GeneratePredictionFromHistoricalElo
             0.25
         );
         $minBucketSample = max(1, (int) config('nfl.predictions.adaptive_win_probability_calibration.min_bucket_sample', 30));
+        if ($priorPredictions->count() < $minBucketSample) {
+            $this->lastModelMetadata['adaptive_win_probability_calibration'] += [
+                'reason' => 'insufficient_verified_pregame_predictions',
+                'sample' => $priorPredictions->count(),
+                'min_sample' => $minBucketSample,
+            ];
+
+            return $winProbability;
+        }
         $confidence = max($winProbability, 1 - $winProbability);
         $bucketFloor = max(0.5, floor($confidence / $bucketWidth) * $bucketWidth);
         $bucketCeiling = min(1.0, $bucketFloor + $bucketWidth);
@@ -2517,19 +2517,7 @@ class GeneratePredictionFromHistoricalElo
             ];
         }
 
-        $priorPredictions = Prediction::query()
-            ->with('game')
-            ->select('nfl_predictions.*')
-            ->join('nfl_games', 'nfl_games.id', '=', 'nfl_predictions.game_id')
-            ->where('nfl_games.status', 'STATUS_FINAL')
-            ->whereNotNull('nfl_games.home_score')
-            ->whereNotNull('nfl_games.away_score')
-            ->whereDate('nfl_games.game_date', '<', $date->toDateString())
-            ->whereNotNull('nfl_predictions.win_probability')
-            ->orderByDesc('nfl_games.game_date')
-            ->orderByDesc('nfl_games.id')
-            ->limit($lookbackGames)
-            ->get()
+        $priorPredictions = $this->calibrationHistory->prior($game, NflModelVersion::current(), $lookbackGames)
             ->filter(function (Prediction $prediction) use ($trustThreshold): bool {
                 $priorConfidence = max((float) $prediction->win_probability, 1 - (float) $prediction->win_probability);
 
@@ -3529,8 +3517,8 @@ class GeneratePredictionFromHistoricalElo
         $conference = strtolower(trim((string) ($team->conference ?? '')));
         $division = strtolower(trim((string) ($team->division ?? '')));
 
-        if (($conference === '' || $division === '') && isset(self::NFL_DIVISION_MAP[strtoupper((string) ($team->abbreviation ?? ''))])) {
-            $fallback = self::NFL_DIVISION_MAP[strtoupper((string) ($team->abbreviation ?? ''))];
+        if (($conference === '' || $division === '') && isset(NflTeamAlignment::TEAMS[strtoupper((string) ($team->abbreviation ?? ''))])) {
+            $fallback = NflTeamAlignment::TEAMS[strtoupper((string) ($team->abbreviation ?? ''))];
             $conference = $conference !== '' ? $conference : $fallback['conference'];
             $division = $division !== '' ? $division : $fallback['division'];
         }
@@ -3549,7 +3537,7 @@ class GeneratePredictionFromHistoricalElo
             return $conference;
         }
 
-        return self::NFL_DIVISION_MAP[strtoupper((string) ($team->abbreviation ?? ''))]['conference'] ?? null;
+        return NflTeamAlignment::TEAMS[strtoupper((string) ($team->abbreviation ?? ''))]['conference'] ?? null;
     }
 
     protected function teamAbbreviationForId(Game $game, int $teamId): ?string

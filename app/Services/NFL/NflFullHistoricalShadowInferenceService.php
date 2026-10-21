@@ -39,7 +39,16 @@ class NflFullHistoricalShadowInferenceService
             return null;
         }
 
-        $artifact = $this->artifacts->forPath($artifactPath);
+        try {
+            $artifact = $this->artifacts->forPath($artifactPath);
+        } catch (\Throwable $exception) {
+            Log::warning('NFL full-historical shadow artifact lookup failed.', [
+                'game_id' => $game->getKey(),
+                'exception' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
         if (! $artifact
             || $artifact->model_type !== 'nfl_full_historical_profile'
             || ! in_array($artifact->status, ['challenger', 'promotion_eligible', 'promoted'], true)) {

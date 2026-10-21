@@ -15,6 +15,9 @@ use Illuminate\Support\Facades\DB;
 
 class PlayerPositionGradeService
 {
+    /** @var array<int, Collection> */
+    private array $reportPlayerStats = [];
+
     /**
      * @return array<string,mixed>
      */
@@ -26,6 +29,23 @@ class PlayerPositionGradeService
         }
         $depthChart = $this->depthChartState($teamId, $season, $asOf);
         $entries = $depthChart['entries'];
+        $this->reportPlayerStats = [];
+        $playerIds = $entries->pluck('player_id')->filter()->unique()->values();
+        if ($playerIds->isNotEmpty()) {
+            $ranked = DB::table('nfl_player_stats')
+                ->join('nfl_games', 'nfl_games.id', '=', 'nfl_player_stats.game_id')
+                ->whereIn('nfl_player_stats.player_id', $playerIds)
+                ->whereBetween('nfl_games.season', [$season - 2, $season])
+                ->where('nfl_games.status', 'STATUS_FINAL')
+                ->whereDate('nfl_games.game_date', '<', $asOf->toDateString())
+                ->select('nfl_player_stats.*')
+                ->selectRaw('ROW_NUMBER() OVER (PARTITION BY nfl_player_stats.player_id ORDER BY nfl_games.game_date DESC, nfl_games.id DESC, nfl_player_stats.id DESC) AS sample_rank');
+            $byPlayer = DB::query()->fromSub($ranked, 'ranked_player_stats')
+                ->where('sample_rank', '<=', 32)->orderBy('sample_rank')->get()->groupBy('player_id');
+            foreach ($playerIds as $playerId) {
+                $this->reportPlayerStats[(int) $playerId] = $byPlayer->get($playerId, collect());
+            }
+        }
 
         $players = $entries
             ->filter(fn (Model $entry): bool => $entry->player_id !== null)
@@ -393,6 +413,10 @@ class PlayerPositionGradeService
 
     private function playerStatRows(int $playerId, int $season, CarbonInterface $asOf): Collection
     {
+        if (array_key_exists($playerId, $this->reportPlayerStats)) {
+            return $this->reportPlayerStats[$playerId];
+        }
+
         return DB::table('nfl_player_stats')
             ->join('nfl_games', 'nfl_games.id', '=', 'nfl_player_stats.game_id')
             ->where('nfl_player_stats.player_id', $playerId)
@@ -400,8 +424,10 @@ class PlayerPositionGradeService
             ->where('nfl_games.status', 'STATUS_FINAL')
             ->whereDate('nfl_games.game_date', '<', $asOf->toDateString())
             ->orderByDesc('nfl_games.game_date')
+            ->orderByDesc('nfl_games.id')
+            ->orderByDesc('nfl_player_stats.id')
             ->limit(32)
-            ->get();
+            ->get(['nfl_player_stats.*']);
     }
 
     private function qbGrade(Collection $rows): ?array

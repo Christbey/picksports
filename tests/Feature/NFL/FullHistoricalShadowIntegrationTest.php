@@ -10,12 +10,41 @@ use App\Models\NFL\Game;
 use App\Models\NFL\Team;
 use App\Models\PredictionFeatureSnapshot;
 use App\Models\ShadowModelOutput;
+use App\Services\ML\ModelArtifactRegistry;
 use App\Services\NFL\NflModelMonitoringService;
 use App\Services\Predictions\ModelRunRecorder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+
+it('persists the active nfl forecast when an optional shadow artifact lookup fails', function () {
+    config([
+        'nfl_ml.shadow.enabled' => false,
+        'nfl.predictions.model_version' => str_repeat('v', 50),
+        'nfl.predictions.full_historical_shadow.enabled' => true,
+        'nfl.predictions.full_historical_shadow.artifact_path' => 'ml/models/unavailable-shadow.json',
+    ]);
+
+    $this->mock(ModelArtifactRegistry::class)
+        ->shouldReceive('forPath')
+        ->once()
+        ->andThrow(new RuntimeException('Out of sort memory'));
+
+    $game = Game::factory()->create([
+        'home_team_id' => Team::factory()->create()->id,
+        'away_team_id' => Team::factory()->create()->id,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => now()->addDays(2)->toDateString(),
+    ])->fresh(['homeTeam', 'awayTeam']);
+
+    expect(app(GeneratePredictionFromHistoricalElo::class)->execute($game))->toBe('created');
+
+    $prediction = $game->prediction()->firstOrFail();
+    expect(data_get($prediction->model_metadata, 'shadow_inference'))->toBeNull()
+        ->and(strlen($prediction->model_version))->toBeGreaterThan(64)
+        ->and(PredictionFeatureSnapshot::query()->where('prediction_id', $prediction->id)->exists())->toBeTrue();
+});
 
 it('runs the promoted full-historical nfl profile as a tracking-only shadow challenger', function () {
     Carbon::setTestNow('2026-08-01 12:00:00');

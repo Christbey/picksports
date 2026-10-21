@@ -5,6 +5,7 @@ use App\Models\NFL\Game;
 use App\Models\NFL\Team;
 use App\Services\NFL\NflFrozenSpreadReplay;
 use App\Services\NFL\NflRushingMatchup;
+use App\Support\NflModelVersion;
 
 function rushingProfile(float $off = 4.5, float $allowed = 4.5): array
 {
@@ -71,13 +72,13 @@ it('keeps raw outputs but uses published margins for analysis and a new model ve
     $action = Mockery::mock(GeneratePredictionFromHistoricalElo::class)->makePartial()->shouldAllowMockingProtectedMethods();
     $action->shouldReceive('getEloAtDate')->andReturn(1500.0);
     $action->shouldReceive('calculateForecast')->once()->andReturn([3.549, 0.612345, 45.551]);
-    $action->shouldReceive('applyAnalysisLayer')->once()->with($game, 3.5, 45.6, 0.612345);
+    $action->shouldReceive('applyAnalysisLayer')->once()->with($game, 3.5, 45.6, 0.612345, NflModelVersion::current());
     $result = $action->preview($game);
     expect($result['outputs']['predicted_spread'])->toBe(3.5)
         ->and($result['outputs']['predicted_total'])->toBe(45.6)
-        ->and($result['model_metadata']['raw_outputs']['predicted_spread'])->toBe(3.549)
-        ->and($result['model_metadata']['raw_outputs']['predicted_total'])->toBe(45.551)
-        ->and($result['model_version'])->toEndWith('-ats-v3')
+        ->and($result['model_metadata']['published_outputs_unrounded']['predicted_spread'])->toBe(3.549)
+        ->and($result['model_metadata']['published_outputs_unrounded']['predicted_total'])->toBe(45.551)
+        ->and($result['model_version'])->toEndWith('-integrity-v4')
         ->and($result['model_metadata']['numeric_policy']['selection_basis'])->toBe('published_one_decimal_margin_and_total');
 });
 

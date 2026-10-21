@@ -144,6 +144,8 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 
 ### NFL
 
+- Baseline NFL forecasts and their feature snapshots publish in one transaction. Optional `EvaluateShadowPrediction` jobs dispatch after commit on the application queue, with one attempt and a 120-second timeout. A shadow failure cannot roll back the baseline; late shadow jobs cannot overwrite newer forecasts or refresh the baseline timestamp. Shadow observations retain their own records without modifying frozen snapshot inputs or outputs.
+
 - At `07:45` Central during the depth-chart season, `espn:sync-nfl-depth-charts --season=<current> --sync` refreshes all teams daily and waits for completion before reporting success. Each fetch preserves a timestamped observation, allowing recent QB-change comparisons and fresh personnel inputs for the later prediction pipeline. Game links remain tied to the prediction revision that selected the chart.
 
 - At `08:00` Central in season, `nfl:sync-matchup-rosters --season=<current>` validates and archives the free roster release, then refreshes ESPN-to-GSIS mappings. It requires all 32 teams and rejects conflicting quarterback identities before importing.

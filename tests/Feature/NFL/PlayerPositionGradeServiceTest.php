@@ -11,6 +11,8 @@ use App\Models\NFL\PlayerStat;
 use App\Models\NFL\Team;
 use App\Models\NFL\TeamStat;
 use App\Services\NFL\PlayerPositionGradeService;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 it('grades the offensive line as a point-in-time unit with sample confidence', function () {
     $team = Team::query()->create([
@@ -319,4 +321,38 @@ it('computes if-in if-out and expected roster grades from the latest pregame inj
         ->and(data_get($report, 'summary.if_in_grade'))->toBeGreaterThan(data_get($report, 'summary.expected_grade'))
         ->and(data_get($report, 'summary.expected_grade'))->toBeGreaterThan(data_get($report, 'summary.if_out_grade'))
         ->and(data_get($report, 'availability.players.0.usage_source'))->toBe('depth_chart_role_proxy');
+});
+
+it('batches player grading while retaining the latest 32 games for each player', function () {
+    $team = Team::factory()->create();
+    $opponent = Team::factory()->create();
+    $players = Player::factory()->count(4)->create(['team_id' => $team->id, 'position' => 'QB']);
+    foreach ($players as $rank => $player) {
+        DepthChartEntry::query()->create(['team_id' => $team->id, 'player_id' => $player->id,
+            'season' => 2026, 'position_slot_key' => 'QB-'.$rank, 'position_code' => 'QB',
+            'depth_rank' => $rank + 1, 'is_starter' => $rank === 0, 'source_updated_at' => '2026-01-01']);
+    }
+    foreach (range(1, 34) as $index) {
+        $game = Game::factory()->create(['home_team_id' => $team->id, 'away_team_id' => $opponent->id,
+            'game_date' => Carbon::parse('2026-01-01')->addDays($index),
+            'season' => 2026, 'status' => 'STATUS_FINAL']);
+        foreach ($players as $player) {
+            PlayerStat::factory()->create(['game_id' => $game->id, 'team_id' => $team->id, 'player_id' => $player->id,
+                'passing_attempts' => 30, 'passing_yards' => $index <= 2 ? 900 : 210,
+                'passing_touchdowns' => 1, 'interceptions_thrown' => 0, 'sacks_taken' => 2, 'rushing_yards' => 0]);
+        }
+    }
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    $service = app(PlayerPositionGradeService::class);
+    $report = $service->teamReport($team->id, 2026, '2026-10-20');
+    $queries = collect(DB::getQueryLog())
+        ->filter(fn (array $query): bool => str_contains($query['query'], 'nfl_player_stats'));
+    DB::disableQueryLog();
+    expect($queries)->toHaveCount(1)->and($report['players'])->toHaveCount(4);
+    foreach ($report['players'] as $player) {
+        expect($player['sample_games'])->toBe(32)->and($player['components']['ypa'])->toBe(7.0);
+    }
+    // Reusing the service for another team cannot reuse the first team's player sample.
+    expect($service->teamReport($opponent->id, 2026, '2026-10-20')['players'])->toBeEmpty();
 });

@@ -10,6 +10,7 @@ use App\Models\NFL\Play;
 use App\Models\NFL\Team;
 use App\Models\NFL\TeamMetric;
 use App\Services\MetricValidator;
+use App\Support\NflTeamAlignment;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
@@ -18,46 +19,6 @@ class CalculateTeamMetrics
     use CalculatesGridironTeamMetrics;
     use CalculatesTeamTrueEpaFromPlays;
     use FiltersTeamGames;
-
-    /**
-     * Fallback NFL division map for cases where synced conference/division fields are missing.
-     *
-     * @var array<string,array{conference:string,division:string}>
-     */
-    protected const NFL_DIVISION_MAP = [
-        'ARI' => ['conference' => 'nfc', 'division' => 'west'],
-        'ATL' => ['conference' => 'nfc', 'division' => 'south'],
-        'BAL' => ['conference' => 'afc', 'division' => 'north'],
-        'BUF' => ['conference' => 'afc', 'division' => 'east'],
-        'CAR' => ['conference' => 'nfc', 'division' => 'south'],
-        'CHI' => ['conference' => 'nfc', 'division' => 'north'],
-        'CIN' => ['conference' => 'afc', 'division' => 'north'],
-        'CLE' => ['conference' => 'afc', 'division' => 'north'],
-        'DAL' => ['conference' => 'nfc', 'division' => 'east'],
-        'DEN' => ['conference' => 'afc', 'division' => 'west'],
-        'DET' => ['conference' => 'nfc', 'division' => 'north'],
-        'GB' => ['conference' => 'nfc', 'division' => 'north'],
-        'HOU' => ['conference' => 'afc', 'division' => 'south'],
-        'IND' => ['conference' => 'afc', 'division' => 'south'],
-        'JAX' => ['conference' => 'afc', 'division' => 'south'],
-        'KC' => ['conference' => 'afc', 'division' => 'west'],
-        'LAC' => ['conference' => 'afc', 'division' => 'west'],
-        'LAR' => ['conference' => 'nfc', 'division' => 'west'],
-        'LV' => ['conference' => 'afc', 'division' => 'west'],
-        'MIA' => ['conference' => 'afc', 'division' => 'east'],
-        'MIN' => ['conference' => 'nfc', 'division' => 'north'],
-        'NE' => ['conference' => 'afc', 'division' => 'east'],
-        'NO' => ['conference' => 'nfc', 'division' => 'south'],
-        'NYG' => ['conference' => 'nfc', 'division' => 'east'],
-        'NYJ' => ['conference' => 'afc', 'division' => 'east'],
-        'PHI' => ['conference' => 'nfc', 'division' => 'east'],
-        'PIT' => ['conference' => 'afc', 'division' => 'north'],
-        'SEA' => ['conference' => 'nfc', 'division' => 'west'],
-        'SF' => ['conference' => 'nfc', 'division' => 'west'],
-        'TB' => ['conference' => 'nfc', 'division' => 'south'],
-        'TEN' => ['conference' => 'afc', 'division' => 'south'],
-        'WSH' => ['conference' => 'nfc', 'division' => 'east'],
-    ];
 
     public function execute(Team $team, int $season, int|string|null $seasonType = null): ?TeamMetric
     {
@@ -438,7 +399,7 @@ class CalculateTeamMetrics
         $division = $this->canonicalDivisionValue($team->division);
 
         $abbr = strtoupper((string) ($team->abbreviation ?? ''));
-        $fallback = self::NFL_DIVISION_MAP[$abbr] ?? null;
+        $fallback = NflTeamAlignment::TEAMS[$abbr] ?? null;
         if ($conference === null) {
             $conference = $fallback['conference'] ?? null;
         }

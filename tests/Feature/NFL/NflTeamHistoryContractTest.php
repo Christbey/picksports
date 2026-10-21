@@ -48,7 +48,7 @@ function nflHistoryContractFixture(int $week): Game
         'game_date' => $week === 1 ? '2025-09-01' : '2025-09-28']);
 }
 
-it('preserves the historical team profile contract', function (int $week) {
+it('uses regular season history and preserves the shared query budget', function (int $week) {
     config(['nfl.predictions.rolling_efficiency.recent_games' => 2,
         'nfl.predictions.total_environment.recent_games' => 2,
         'nfl.predictions.total_environment.min_games' => 2, 'nfl.predictions.line_matchup.min_games' => 2,
@@ -69,7 +69,34 @@ it('preserves the historical team profile contract', function (int $week) {
     expect(count(DB::getQueryLog()))->toBe($queries);
     DB::disableQueryLog();
     $baseline = json_decode(file_get_contents(base_path('tests/Fixtures/nfl/team-history-contract.json')), true, flags: JSON_THROW_ON_ERROR)[$week];
-    expect(json_encode($profiles))->toBe(json_encode($baseline['profiles']))
+    expect($profiles['lineProfile'])->toEqual($baseline['profiles']['lineProfile']);
+    foreach (['home', 'away'] as $side) {
+        $rolling = $baseline['profiles']['rollingEfficiencyProfile'][$side];
+        $opponent = $baseline['profiles']['opponentAdjustedEfficiencyProfile'][$side];
+        if ($week === 1) {
+            foreach ($rolling as $key => $value) {
+                $rolling[$key] = $key === 'games' ? 0 : null;
+            }
+            foreach ($opponent as $key => $value) {
+                $opponent[$key] = $key === 'games' ? 0 : null;
+            }
+        } else {
+            $rolling['turnover_diff'] = null;
+        }
+        $rolling['stat_coverage_complete'] = $week === 1;
+        $opponent['stat_coverage_complete'] = $week === 1;
+        expect($profiles['rollingEfficiencyProfile'][$side])->toEqual($rolling)
+            ->and($profiles['opponentAdjustedEfficiencyProfile'][$side])->toEqual($opponent);
+        $totals = $profiles['totalEnvironmentProfile'][$side];
+        expect($totals['season_type'])->toBe('regular')
+            ->and($totals['games'])->toBe($week === 1 ? 1 : 3)
+            ->and($totals['offense_games'])->toBe($week === 1 ? 1 : 2)
+            ->and($totals['defense_games'])->toBe($week === 1 ? 1 : 2)
+            ->and($totals['turnover_rate'])->toBeNull()
+            ->and($totals['takeaway_rate'])->toBeNull();
+    }
+    expect($profiles['totalEnvironmentProfile']['home']['points_for'])->toBe($week === 1 ? 10.0 : 16.5)
+        ->and($profiles['totalEnvironmentProfile']['home']['points_against'])->toBe($week === 1 ? 30.0 : 24.5)
         ->and($queries)->toBeLessThan($baseline['queries'])
         ->and($queries)->toBeLessThanOrEqual($week === 1 ? 4 : 8);
 })->with([1, 4]);

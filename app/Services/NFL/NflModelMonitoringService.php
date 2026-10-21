@@ -301,9 +301,9 @@ class NflModelMonitoringService
                 'predicted_total' => $this->floatOrNull($snapshotOutputs['baseline_predicted_total'] ?? null),
             ],
             'challenger_outputs' => [
-                'win_probability' => $this->floatOrNull($snapshotOutputs['challenger_win_probability'] ?? $output->challenger_output),
-                'predicted_spread' => $this->floatOrNull($snapshotOutputs['challenger_predicted_spread'] ?? null),
-                'predicted_total' => $this->floatOrNull($snapshotOutputs['challenger_predicted_total'] ?? null),
+                'win_probability' => $this->floatOrNull($snapshotOutputs['challenger_win_probability'] ?? data_get($output->explanation, 'challenger_outputs.win_probability') ?? $output->challenger_output),
+                'predicted_spread' => $this->floatOrNull($snapshotOutputs['challenger_predicted_spread'] ?? data_get($output->explanation, 'challenger_outputs.predicted_spread')),
+                'predicted_total' => $this->floatOrNull($snapshotOutputs['challenger_predicted_total'] ?? data_get($output->explanation, 'challenger_outputs.predicted_total')),
                 'uncertainty' => $uncertainty,
             ],
             'active_source' => $snapshotOutputs['active_source'] ?? 'baseline',

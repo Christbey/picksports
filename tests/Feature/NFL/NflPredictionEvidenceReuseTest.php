@@ -36,7 +36,7 @@ class NflEvidenceReuseProbe extends GeneratePredictionFromHistoricalElo
         return [$predictedSpread, $winProbability, $predictedTotal];
     }
 
-    protected function applyAnalysisLayer(Game $game, float $predictedSpread, float $predictedTotal, float $winProbability): void
+    protected function applyAnalysisLayer(Game $game, float $predictedSpread, float $predictedTotal, float $winProbability, ?string $modelVersion = null): void
     {
         $this->lastModelMetadata['injury_probe'] = $this->injuryState($game->home_team_id, $game);
         $this->injuryState($game->home_team_id, $game);

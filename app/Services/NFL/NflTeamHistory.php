@@ -31,11 +31,11 @@ class NflTeamHistory
         $stats = array_values(array_filter($rows, fn ($r) => $r['off'] !== null));
         $recent = max(1, (int) config('nfl.predictions.rolling_efficiency.recent_games', 5));
 
-        return ['games' => count($rows),
+        return ['games' => count($rows), 'stat_coverage_complete' => count($stats) === count($rows),
             'avg_margin' => $this->mean($rows, fn ($r) => $r['for'] - $r['against']),
             'recent_margin' => $this->mean(array_slice($rows, -$recent), fn ($r) => $r['for'] - $r['against']),
-            'yard_diff' => $this->mean($stats, fn ($r) => $r['off']['yards'] - $r['def']['yards']),
-            'turnover_diff' => $this->mean($stats, fn ($r) => $r['def']['turnovers'] - $r['off']['turnovers']),
+            'yard_diff' => $this->mean($stats, fn ($r) => $this->difference($r['off']['yards'], $r['def']['yards'])),
+            'turnover_diff' => $this->mean($stats, fn ($r) => $this->difference($r['def']['turnovers'], $r['off']['turnovers'])),
             'points_for' => $this->mean($rows, fn ($r) => $r['for']),
             'points_against' => $this->mean($rows, fn ($r) => $r['against']),
             ...($qbContext === [] ? [] : ['qb_context' => $qbContext]),
@@ -55,11 +55,11 @@ class NflTeamHistory
             return $this->elos[$key] ??= ($this->eloAtDate)($r['opponent'], $r['date']);
         };
 
-        return ['games' => count($rows),
+        return ['games' => count($rows), 'stat_coverage_complete' => count($stats) === count($rows),
             'opponent_adjusted_margin' => $this->mean($rows, fn ($r) => $r['for'] - $r['against'] + ($elo($r) - $default) * $weight),
-            'yard_diff' => $this->mean($stats, fn ($r) => ($r['off']['yards'] - $r['def']['yards']) / 100),
-            'red_zone_rate_diff' => $this->mean($stats, fn ($r) => $r['off']['red_zone_rate'] - $r['def']['red_zone_rate']),
-            'third_down_rate_diff' => $this->mean($stats, fn ($r) => $r['off']['third_down_rate'] - $r['def']['third_down_rate']),
+            'yard_diff' => $this->mean($stats, fn ($r) => $this->difference($r['off']['yards'], $r['def']['yards'], 100)),
+            'red_zone_rate_diff' => $this->mean($stats, fn ($r) => $this->difference($r['off']['red_zone_rate'], $r['def']['red_zone_rate'])),
+            'third_down_rate_diff' => $this->mean($stats, fn ($r) => $this->difference($r['off']['third_down_rate'], $r['def']['third_down_rate'])),
             'avg_opponent_elo' => $this->mean($rows, $elo, 1),
             ...($qbContext === [] ? [] : ['qb_context' => $qbContext]),
         ];
@@ -67,12 +67,11 @@ class NflTeamHistory
 
     public function totals(int $teamId): array
     {
-        // Preserve the existing totals scope (all season types), distinct from regular-season profiles.
         $season = (int) $this->target->season;
-        $rows = $this->rows($teamId, $season, false);
+        $rows = $this->rows($teamId, $season, true);
         $recent = max(1, (int) config('nfl.predictions.total_environment.recent_games', 8));
         if (count($rows) < (int) config('nfl.predictions.total_environment.min_games', 2) && $season > 1900) {
-            $rows = [...array_slice($this->rows($teamId, $season - 1, false), -$recent), ...$rows];
+            $rows = [...array_slice($this->rows($teamId, $season - 1, true), -$recent), ...$rows];
         }
         $sample = array_slice($rows, -$recent);
         $stats = array_values(array_filter($sample, fn ($r) => $r['off'] !== null));
@@ -81,6 +80,10 @@ class NflTeamHistory
         $result = ['games' => count($rows),
             'points_for' => $this->mean($offense, fn ($r) => $r['for']),
             'points_against' => $this->mean($sample, fn ($r) => $r['against']),
+            'offense_games' => count($offense), 'defense_games' => count($sample),
+            'offense_stat_games' => count($offStats), 'defense_stat_games' => count($stats),
+            'stat_coverage_complete' => count($offStats) === count($offense) && count($stats) === count($sample),
+            'season_type' => 'regular',
         ];
         if ($qbContext !== []) {
             $result['games'] = min(count($offStats), count($stats));
@@ -113,15 +116,17 @@ class NflTeamHistory
         $totals = [];
         foreach (['off', 'def'] as $side) {
             foreach (['pass', 'rush', 'rush_yards', 'sacks'] as $field) {
-                $totals[$side][$field] = array_sum(array_map(fn ($r) => $r[$side][$field], $side === 'off' ? $offense : $rows));
+                $values = array_map(fn ($r) => $r[$side][$field], $side === 'off' ? $offense : $rows);
+                $totals[$side][$field] = $values !== [] && count(array_filter($values, 'is_numeric')) === count($values)
+                    ? array_sum($values) : null;
             }
         }
 
         return ['games' => $qbContext === [] ? count($rows) : min(count($offense), count($rows)),
-            'off_sack_allowed_rate' => round($this->rate($totals['off']['sacks'], $totals['off']['pass']), 4),
-            'off_rush_yards_per_attempt' => round($this->rate($totals['off']['rush_yards'], $totals['off']['rush']), 3),
-            'def_sack_rate' => round($this->rate($totals['def']['sacks'], $totals['def']['pass']), 4),
-            'def_rush_yards_allowed_per_attempt' => round($this->rate($totals['def']['rush_yards'], $totals['def']['rush']), 3),
+            'off_sack_allowed_rate' => $this->roundedRate($totals['off']['sacks'], $totals['off']['pass'], 4),
+            'off_rush_yards_per_attempt' => $this->roundedRate($totals['off']['rush_yards'], $totals['off']['rush'], 3),
+            'def_sack_rate' => $this->roundedRate($totals['def']['sacks'], $totals['def']['pass'], 4),
+            'def_rush_yards_allowed_per_attempt' => $this->roundedRate($totals['def']['rush_yards'], $totals['def']['rush'], 3),
             'off_pass_attempts' => $totals['off']['pass'], 'off_rush_attempts' => $totals['off']['rush'],
             'def_pass_attempts' => $totals['def']['pass'], 'def_rush_attempts' => $totals['def']['rush'],
             ...($qbContext === [] ? [] : ['qb_context' => $qbContext]),
@@ -227,28 +232,46 @@ class NflTeamHistory
 
     private function stats(object $stat): array
     {
-        $pass = (int) ($stat->passing_attempts ?? 0);
-        $rush = (int) ($stat->rushing_attempts ?? 0);
-        $sacks = (int) ($stat->sacks_allowed ?? 0);
-        $plays = max(0.0, (float) $pass + $rush + $sacks);
-        $yards = (float) ($stat->total_yards ?? 0);
-        $turnovers = (float) ($stat->interceptions ?? 0) + (float) ($stat->fumbles_lost ?? $stat->fumbles ?? 0);
+        $number = fn (string $field): ?float => is_numeric($stat->{$field}) ? (float) $stat->{$field} : null;
+        $pass = $number('passing_attempts');
+        $rush = $number('rushing_attempts');
+        $sacks = $number('sacks_allowed');
+        $plays = $pass !== null && $rush !== null && $sacks !== null ? $pass + $rush + $sacks : null;
+        $yards = $number('total_yards');
+        $interceptions = $number('interceptions');
+        $fumblesLost = $number('fumbles_lost');
+        $turnovers = $interceptions !== null && $fumblesLost !== null ? $interceptions + $fumblesLost : null;
 
         return ['pass' => $pass, 'rush' => $rush, 'sacks' => $sacks, 'plays' => $plays,
-            'yards' => $yards, 'rush_yards' => (int) ($stat->rushing_yards ?? 0), 'turnovers' => $turnovers,
+            'yards' => $yards, 'rush_yards' => $number('rushing_yards'), 'turnovers' => $turnovers,
             'yards_per_play' => $this->rate($yards, $plays), 'pass_rate' => $this->rate($pass, $plays),
-            'red_zone_rate' => $this->rate((int) ($stat->red_zone_scores ?? 0), (int) ($stat->red_zone_attempts ?? 0)),
-            'third_down_rate' => $this->rate((int) ($stat->third_down_conversions ?? 0), (int) ($stat->third_down_attempts ?? 0)),
-            'turnover_rate' => $this->rate($turnovers, $plays), 'penalty_yards' => (float) ($stat->penalty_yards ?? 0)];
+            'red_zone_rate' => $this->rate($number('red_zone_scores'), $number('red_zone_attempts')),
+            'third_down_rate' => $this->rate($number('third_down_conversions'), $number('third_down_attempts')),
+            'turnover_rate' => $this->rate($turnovers, $plays), 'penalty_yards' => $number('penalty_yards')];
     }
 
-    private function rate(float $numerator, float $denominator): float
+    private function difference(?float $left, ?float $right, float $divisor = 1): ?float
     {
-        return $denominator > 0 ? $numerator / $denominator : 0.0;
+        return $left !== null && $right !== null ? ($left - $right) / $divisor : null;
     }
 
-    private function mean(array $rows, Closure $value, int $precision = 3): float
+    private function rate(?float $numerator, ?float $denominator): ?float
     {
-        return $rows === [] ? 0.0 : round(array_sum(array_map($value, $rows)) / count($rows), $precision);
+        return $numerator !== null && $denominator !== null && $denominator > 0 ? $numerator / $denominator : null;
+    }
+
+    private function roundedRate(?float $numerator, ?float $denominator, int $precision): ?float
+    {
+        $rate = $this->rate($numerator, $denominator);
+
+        return $rate === null ? null : round($rate, $precision);
+    }
+
+    private function mean(array $rows, Closure $value, int $precision = 3): ?float
+    {
+        $values = array_values(array_filter(array_map($value, $rows), 'is_numeric'));
+
+        return $values === [] || count($values) !== count($rows)
+            ? null : round(array_sum($values) / count($values), $precision);
     }
 }

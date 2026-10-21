@@ -336,6 +336,11 @@ return [
         'preseason_signal' => [
             'enabled' => env('NFL_PRESEASON_SIGNAL_ENABLED', true),
             'blend_weight' => env('NFL_PRESEASON_SIGNAL_BLEND_WEIGHT', 0.25),
+            'season_adaptation' => [
+                'enabled' => env('NFL_SEASON_ADAPTATION_ENABLED', true),
+                'prior_games' => 2,
+                'maximum_weight' => 0.90,
+            ],
         ],
 
         /*

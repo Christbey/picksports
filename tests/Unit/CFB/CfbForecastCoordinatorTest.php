@@ -113,6 +113,16 @@ it('rejects duplicate games, future input capture, and incompatible formulas', f
     expect(fn () => (new CfbForecastCoordinationStudy(new CfbForecastCoordinator))->select($rows))->toThrow(InvalidArgumentException::class);
 })->with(['duplicate', 'future', 'formula']);
 
+it('prioritizes correct winners over smaller margin errors when selecting an offline challenger', function () {
+    $rows = array_map(fn ($r) => [...$r, 'primary_margin' => 1.0, 'primary_total' => 200.0,
+        'result_margin' => -100.0, 'result_total' => 200.0, 'opponent_total' => 200.0,
+        'market_margin' => null, 'market_total' => null, 'actual_margin' => -1.0, 'actual_total' => 200.0], coordinationRows());
+    $artifact = (new CfbForecastCoordinationStudy(new CfbForecastCoordinator))->select($rows);
+    expect($artifact['policy']['margin_alternative_weight'])->toBe(0.25)
+        ->and($artifact['selection_objective']['margin'])->toBe('fewest_outright_winner_mistakes_then_margin_mae')
+        ->and($artifact['automatic_release_activation'])->toBeFalse();
+});
+
 it('rejects overlapping validation dates and policy tampering', function () {
     $study = new CfbForecastCoordinationStudy(new CfbForecastCoordinator);
     $artifact = $study->select(coordinationRows());

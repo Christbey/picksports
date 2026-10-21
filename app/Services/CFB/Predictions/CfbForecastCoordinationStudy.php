@@ -8,7 +8,7 @@ use InvalidArgumentException;
 /** Select on earlier dates only; validation and later results can never change the frozen policy. */
 class CfbForecastCoordinationStudy
 {
-    public const VERSION = 'cfb-coordination-study-v2';
+    public const VERSION = 'cfb-coordination-study-v3-winner-first';
 
     public function __construct(private readonly CfbForecastCoordinator $coordinator) {}
 
@@ -28,14 +28,22 @@ class CfbForecastCoordinationStudy
                 foreach ([0.0, 0.25, 0.50, 0.75, 1.0] as $alternativeWeight) {
                     $trial = [...$policy, $target.'_alternative_weight' => $alternativeWeight, $target.'_market_weight' => $marketWeight];
                     $errors = [];
+                    $winnerMistakes = 0;
                     foreach ($complete as $row) {
                         $forecast = $this->coordinator->forecast($row, $trial);
                         $errors[] = abs($forecast[$target === 'margin' ? 'home_margin' : 'total'] - $row['actual_'.$target]);
+                        if ($target === 'margin' && $row['actual_margin'] != 0
+                            && ($forecast['home_margin'] == 0 || (($forecast['home_margin'] > 0) !== ($row['actual_margin'] > 0)))) {
+                            $winnerMistakes++;
+                        }
                     }
                     $mae = array_sum($errors) / count($errors);
-                    $search[$target][] = ['alternative_weight' => $alternativeWeight, 'market_weight' => $marketWeight, 'mae' => $mae];
-                    if ($best === null || $mae < $best['mae'] - 0.01) {
-                        $best = ['mae' => $mae, 'policy' => $trial];
+                    $search[$target][] = ['alternative_weight' => $alternativeWeight, 'market_weight' => $marketWeight,
+                        'winner_mistakes' => $target === 'margin' ? $winnerMistakes : null, 'mae' => $mae];
+                    $better = $best === null || ($target === 'margin' && $winnerMistakes < $best['winner_mistakes'])
+                        || (($target !== 'margin' || $winnerMistakes === $best['winner_mistakes']) && $mae < $best['mae'] - 0.01);
+                    if ($better) {
+                        $best = ['mae' => $mae, 'winner_mistakes' => $winnerMistakes, 'policy' => $trial];
                     }
                 }
             }
@@ -52,7 +60,7 @@ class CfbForecastCoordinationStudy
             'formula_hash' => $complete[0]['formula_hash'],
             'training_hash' => hash('sha256', json_encode($evidence, JSON_THROW_ON_ERROR)),
             'policy_hash' => $this->coordinator->policyHash($policy), 'selection_search' => $search,
-            'selection_objective' => 'mean_absolute_error_no_price_or_profit_objective',
+            'selection_objective' => ['margin' => 'fewest_outright_winner_mistakes_then_margin_mae', 'total' => 'total_mae'],
             'automatic_release_activation' => false, 'probability_status' => 'not_calibrated'];
     }
 
@@ -98,18 +106,21 @@ class CfbForecastCoordinationStudy
         $means = array_map(fn ($v) => $v ? array_sum($v) / count($v) : null, $errors);
         $bias = array_map(fn ($v) => $v ? array_sum($v) / count($v) : null, $biases);
         $n = count($rows);
-        $gates = ['validation_sample' => $n >= 40,
+        $secondary = [
             'margin_not_worse' => $n > 0 && $means['coordinated_margin'] <= $means['published_margin'],
             'total_not_worse' => $n > 0 && $means['coordinated_total'] <= $means['published_total'],
             'some_error_improvement' => $n > 0 && ($means['coordinated_margin'] < $means['published_margin'] || $means['coordinated_total'] < $means['published_total']),
             'margin_bias_not_worse' => $n > 0 && abs($bias['coordinated_margin']) <= abs($bias['published_margin']),
-            'total_bias_not_worse' => $n > 0 && abs($bias['coordinated_total']) <= abs($bias['published_total']),
-            'winner_accuracy_not_worse' => $n > 0 && $winners['coordinated']['win'] >= $winners['published']['win']];
+            'total_bias_not_worse' => $n > 0 && abs($bias['coordinated_total']) <= abs($bias['published_total'])];
+        $gates = ['validation_sample' => $n >= 40,
+            'winner_accuracy_not_worse' => $n > 0 && $winners['coordinated']['win'] >= $winners['published']['win'],
+            'winner_gain_or_secondary_improvement_without_regression' => $n > 0 &&
+                ($winners['coordinated']['win'] > $winners['published']['win'] || ! in_array(false, $secondary, true))];
 
         return ['version' => self::VERSION, 'policy_hash' => $artifact['policy_hash'], 'games' => $n,
             'complete_alternative_games' => count(array_filter($rows, fn ($r) => $this->complete($r))),
             'mean_absolute_errors' => $means, 'mean_predicted_minus_actual_bias' => $bias, 'winner_records' => $winners,
-            'gates' => $gates, 'temporal_validation_passed' => ! in_array(false, $gates, true),
+            'gates' => $gates, 'secondary_score_diagnostics' => $secondary, 'temporal_validation_passed' => ! in_array(false, $gates, true),
             'automatic_release_activation' => false, 'prospectively_validated' => false,
             'limited_forecast_release_eligible' => ! in_array(false, $gates, true), 'reason' => in_array(false, $gates, true)
                 ? 'The candidate fails forecast accuracy checks; retain the published primary forecast.'

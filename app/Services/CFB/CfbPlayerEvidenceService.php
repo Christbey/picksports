@@ -6,48 +6,69 @@ use App\Models\CFB\Game;
 use App\Models\CFB\PlayerInjury;
 use App\Models\CFB\PlayerProp;
 use App\Models\CFB\PlayerStat;
+use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 
 class CfbPlayerEvidenceService
 {
-    public function history(Game $game, int $teamId): Collection
+    public function history(Game $game, int $teamId, ?CarbonInterface $asOf = null): Collection
     {
+        $asOf = $this->cutoff($asOf);
+
         return PlayerStat::with(['game', 'player'])->where('team_id', $teamId)
-            ->whereHas('player', fn ($q) => $q->where('team_id', $teamId))
-            ->whereHas('game', fn ($q) => $q->where('status', 'STATUS_FINAL')
+            ->where('created_at', '<=', $asOf)->where('updated_at', '<=', $asOf)
+            ->whereHas('game', fn ($q) => $q->whereIn('status', ['STATUS_FINAL', 'STATUS_FINAL_OVERTIME'])
                 ->whereIn('season_type', ['2', '3', 'regular', 'postseason'])
                 ->whereBetween('season', [$game->season - 1, $game->season])
+                ->whereDate('game_date', '<=', $asOf->toDateString())
                 ->whereDate('game_date', '<', $game->game_date))
             ->get()->sortByDesc(fn ($row) => $row->game->game_date->format('Y-m-d').' '.$row->game->game_time)->values();
     }
 
-    public function injuries(Game $game, int $teamId): Collection
+    public function injuries(Game $game, int $teamId, ?CarbonInterface $asOf = null): Collection
     {
+        $asOf = $this->cutoff($asOf);
+
         return PlayerInjury::with('player')->where('team_id', $teamId)->where('is_active', true)
-            ->where('updated_at', '<=', now())
-            ->where(fn ($q) => $q->whereNull('source_updated_at')->orWhere('source_updated_at', '<=', now()))
+            ->where('created_at', '<=', $asOf)->where('updated_at', '<=', $asOf)
+            ->where(fn ($q) => $q->whereNull('source_updated_at')->orWhere('source_updated_at', '<=', $asOf))
             ->where(fn ($q) => $q->whereNull('injury_date')->orWhereDate('injury_date', '<=', $game->game_date))
             ->where(fn ($q) => $q->whereNull('return_date')->orWhereDate('return_date', '>=', $game->game_date))
             ->whereRaw("LOWER(status) NOT IN ('active', 'available', 'probable')")->get();
     }
 
     /** The last observed passer is evidence, never a confirmed starter. */
-    public function quarterback(Game $game, int $teamId): array
+    public function quarterback(Game $game, int $teamId, ?CarbonInterface $asOf = null): array
     {
-        $history = $this->history($game, $teamId);
+        $asOf = $this->cutoff($asOf);
+        $history = $this->history($game, $teamId, $asOf);
         $lastGameId = $history->first()?->game_id;
         $passers = $history->where('game_id', $lastGameId)->filter(fn ($s) => (int) $s->passing_attempts > 0)
             ->sortByDesc('passing_attempts')->values();
         $leader = $passers->first();
         $ambiguous = $leader && $passers->count() > 1 && $leader->passing_attempts === $passers[1]->passing_attempts;
-        $injuries = $this->injuries($game, $teamId);
+        $injuries = $this->injuries($game, $teamId, $asOf);
         $conflict = $leader && $injuries->contains('player_id', $leader->player_id);
 
         return ['status' => ! $leader ? 'unknown' : ($conflict || $ambiguous ? 'unresolved' : 'last_observed'),
             'last_observed_player_id' => $leader?->player_id, 'source_game_id' => $lastGameId,
             'confirmed_starter' => false, 'quarterback_hold' => (bool) ($conflict || $ambiguous),
             'injury_coverage' => $injuries->isEmpty() ? 'unknown_or_no_reported_injuries' : 'reported',
-            'replacement_player_id' => null];
+            'replacement_player_id' => null,
+            'as_of' => $asOf->toIso8601String(),
+            'history_record_updated_at' => $history->max('updated_at')?->toIso8601String(),
+            'passer_record_updated_at' => $leader?->updated_at?->toIso8601String(),
+            'source_game_date' => $leader?->game?->game_date?->toIso8601String(),
+            'injury_record_count' => $injuries->count(),
+            'injury_records_updated_at' => $injuries->max('updated_at')?->toIso8601String(),
+            'injury_source_updated_at' => $injuries->max('source_updated_at')?->toIso8601String(),
+            'freshness_interpretation' => 'record_times_are_availability_evidence_not_confirmed_starter_or_healthy_team'];
+    }
+
+    private function cutoff(?CarbonInterface $asOf): CarbonImmutable
+    {
+        return CarbonImmutable::instance($asOf ?? now())->setTimezone(config('app.timezone'));
     }
 
     public function forProp(PlayerProp $prop): array

@@ -16,6 +16,7 @@ use App\Services\CFB\Data\CfbHistoricalPlayQuality;
 use App\Services\CFB\Ratings\ResultRatingEvidence;
 use App\Services\CFB\Scoring\CfbScoringChallenger;
 use App\Services\CFB\Signals\CfbFootballSignalEvidence;
+use App\Services\CFB\Signals\CfbFrozenSignalEvidence;
 use App\Services\Predictions\CanonicalPayloadHasher;
 use App\Services\Predictions\Football\FootballInputSnapshotBuilder;
 use Carbon\CarbonImmutable;
@@ -67,7 +68,10 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
             $inputs[$side]['evidence_windows'] = app(CfbTeamEvidenceService::class)
                 ->forGame($game, $inputs[$side]['team_id']);
             $inputs[$side]['availability'] = app(CfbPlayerEvidenceService::class)
-                ->quarterback($game, $inputs[$side]['team_id']);
+                ->quarterback($game, $inputs[$side]['team_id'], $snapshot->capturedAt);
+            $sourceTimestamps[$side.'_quarterback_history'] = $inputs[$side]['availability']['history_record_updated_at'] ?? null;
+            $sourceTimestamps[$side.'_availability_injury_records'] = $inputs[$side]['availability']['injury_records_updated_at'] ?? null;
+            $sourceTimestamps[$side.'_availability_injury_source'] = $inputs[$side]['availability']['injury_source_updated_at'] ?? null;
             $prior = TeamMetric::where('team_id', $inputs[$side]['team_id'])
                 ->where('season', $event->season - 1)
                 ->where('updated_at', '<=', $snapshot->capturedAt)
@@ -167,15 +171,19 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
                 $sourceTimestamps['signal_'.$key] = $quote?->created_at?->toIso8601String();
             }
             $sourceTimestamps['signal_weather'] = $weather?->updated_at?->toIso8601String();
-            $evidenceKey = 'cfb:football-signal-evidence:'.app(CanonicalPayloadHasher::class)->hash($release->configuration).':'.$release->semanticVersion;
-            $evidence = Cache::get($evidenceKey);
-            if (! is_array($evidence) || ! isset($evidence['as_of'])
-                || CarbonImmutable::parse($evidence['as_of'])->gt($snapshot->capturedAt)) {
-                $evidence = app(CfbFootballSignalEvidence::class)->build($snapshot->capturedAt, $release->configuration);
-                Cache::put($evidenceKey, $evidence, 900);
+            $evidence = app(CfbFrozenSignalEvidence::class)->resolve($release->configuration, $snapshot->capturedAt);
+            if ($evidence === null) {
+                $evidenceKey = 'cfb:football-signal-evidence:'.app(CanonicalPayloadHasher::class)->hash($release->configuration).':'.$release->semanticVersion;
+                $evidence = Cache::get($evidenceKey);
+                if (! is_array($evidence) || ! isset($evidence['as_of'])
+                    || CarbonImmutable::parse($evidence['as_of'])->gt($snapshot->capturedAt)) {
+                    $evidence = app(CfbFootballSignalEvidence::class)->build($snapshot->capturedAt, $release->configuration);
+                    Cache::put($evidenceKey, $evidence, 900);
+                }
             }
             $inputs['football_signal_evidence'] = $evidence;
-            $sourceTimestamps['football_signal_evidence'] = $inputs['football_signal_evidence']['latest_source_observed_at'];
+            $sourceTimestamps['football_signal_evidence'] = $inputs['football_signal_evidence']['latest_source_observed_at'] ?? null;
+            $sourceTimestamps['football_signal_artifact'] = data_get($evidence, 'frozen_artifact.available_at');
         }
 
         if (data_get($release->configuration, 'candidate_suite.enabled', false)) {

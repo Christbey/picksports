@@ -56,6 +56,11 @@ class GeneratePrediction extends AbstractPredictionGenerator
         return $prediction;
     }
 
+    protected function appliesPersistedInjuryTotalInternally(): bool
+    {
+        return true;
+    }
+
     protected function calculatePredictedSpread(
         int $homeElo,
         int $awayElo,
@@ -70,7 +75,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
         $config = config('nba.prediction');
         $oddsMarketAvailability = $this->oddsMarketAvailability($game);
-        $homeCourtAdvantage = config('nba.elo.home_court_advantage');
+        $homeCourtAdvantage = $game->neutral_site ? 0 : config('nba.elo.home_court_advantage');
 
         // 1. ELO spread component
         $eloSpread = ($homeElo + $homeCourtAdvantage - $awayElo) / $config['elo_to_spread_divisor'];
@@ -78,18 +83,18 @@ class GeneratePrediction extends AbstractPredictionGenerator
         // 2. Efficiency spread component
         $homeNetRating = $homeMetrics?->net_rating ?? 0;
         $awayNetRating = $awayMetrics?->net_rating ?? 0;
-        $efficiencySpread = ($homeNetRating - $awayNetRating) / 2 + $config['home_court_points'];
+        $efficiencySpread = ($homeNetRating - $awayNetRating) / 2 + ($game->neutral_site ? 0 : $config['home_court_points']);
 
         // Apply home/away split adjustment
-        $homeAwaySplitAdj = $this->calculateHomeAwaySplitAdjustment($game, $homeMetrics, $awayMetrics);
+        $homeAwaySplitAdj = $game->neutral_site ? 0.0 : $this->calculateHomeAwaySplitAdjustment($game, $homeMetrics, $awayMetrics);
         $efficiencySpread += $homeAwaySplitAdj * $config['home_away_split_weight'];
 
         // 3. Form spread component
-        $homeForm = $this->getRecentForm($game->homeTeam, $game->season);
-        $awayForm = $this->getRecentForm($game->awayTeam, $game->season);
+        $homeForm = $this->getRecentForm($game->homeTeam, $game->season, $game);
+        $awayForm = $this->getRecentForm($game->awayTeam, $game->season, $game);
         $homeFormNet = $homeForm['net_rating'];
         $awayFormNet = $awayForm['net_rating'];
-        $formSpread = ($homeFormNet - $awayFormNet) / 2 + $config['home_court_points'];
+        $formSpread = ($homeFormNet - $awayFormNet) / 2 + ($game->neutral_site ? 0 : $config['home_court_points']);
 
         // 4. Situational adjustments
         $restHome = $this->getRestDays($game->homeTeam, $game);
@@ -120,7 +125,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
         if ($vegasSpread !== null) {
             $finalSpread = ($config['model_weight_with_vegas'] * $modelSpread)
-                + ($config['vegas_weight'] * $vegasSpread);
+                + ($config['vegas_weight'] * MarketSpread::bookmakerHomeLineToHomeMargin($vegasSpread));
         } else {
             $finalSpread = $modelSpread;
         }
@@ -184,8 +189,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $awayOffEff = $awayMetrics?->offensive_efficiency ?? $defaultEfficiency;
         $awayDefEff = $awayMetrics?->defensive_efficiency ?? $defaultEfficiency;
 
-        $homeForm = $this->getRecentForm($game->homeTeam, $game->season);
-        $awayForm = $this->getRecentForm($game->awayTeam, $game->season);
+        $homeForm = $this->getRecentForm($game->homeTeam, $game->season, $game);
+        $awayForm = $this->getRecentForm($game->awayTeam, $game->season, $game);
 
         $homeSeasonScore = ($homeOffEff + $awayDefEff) / 2;
         $awaySeasonScore = ($awayOffEff + $homeDefEff) / 2;
@@ -496,7 +501,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
      *
      * @return array{off_eff: float, def_eff: float, net_rating: float, tempo: float}
      */
-    private function getRecentForm(Team $team, int $season): array
+    private function getRecentForm(Team $team, int $season, Model $game): array
     {
         $config = config('nba.prediction');
         $numGames = $config['recent_form_games'];
@@ -505,7 +510,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $defaultPace = $config['average_pace'];
 
         $recentGames = Game::query()
-            ->whereIn('status', ['STATUS_FINAL', 'STATUS_SCHEDULED', 'STATUS_DELAYED'])
+            ->where('status', 'STATUS_FINAL')
+            ->where('game_date', '<', $game->game_date)
             ->where('season', $season)
             ->where(function ($q) use ($team) {
                 $q->where('home_team_id', $team->id)

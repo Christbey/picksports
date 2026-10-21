@@ -45,6 +45,7 @@ class Game extends Model
         'venue_name',
         'venue_city',
         'venue_state',
+        'neutral_site',
         'broadcast_networks',
         'odds_api_event_id',
         'odds_data',
@@ -55,6 +56,7 @@ class Game extends Model
     {
         return [
             'game_date' => 'datetime',
+            'neutral_site' => 'boolean',
             'completed_at' => 'datetime',
             'home_linescores' => 'array',
             'away_linescores' => 'array',

@@ -178,7 +178,7 @@ return [
         'default_efficiency' => 110.0,
 
         // Logistic function coefficient for win probability
-        // Calibrated so 7-point spread ≈ 70% win probability
+        // Baseline logistic scale; this is not an empirically calibrated probability.
         'spread_to_probability_coefficient' => 3.6,
 
         // Ensemble weights (must sum to 1.0)

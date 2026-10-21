@@ -50,6 +50,7 @@ class Game extends Model
         'venue_name',
         'venue_city',
         'venue_state',
+        'neutral_site',
         'status',
         'period',
         'game_clock',
@@ -67,6 +68,7 @@ class Game extends Model
     {
         return [
             'game_date' => 'date',
+            'neutral_site' => 'boolean',
             'completed_at' => 'datetime',
             'is_ncaa_tournament' => 'boolean',
             'tournament_id' => 'integer',

@@ -79,6 +79,7 @@ class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
             'venue_name' => $dto->venueName,
             'venue_city' => $dto->venueCity,
             'venue_state' => $dto->venueState,
+            'neutral_site' => $dto->neutralSite,
             'broadcast_networks' => $dto->broadcastNetworks,
         ];
     }

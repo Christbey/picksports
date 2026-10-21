@@ -4,6 +4,7 @@ namespace App\Actions\Sports;
 
 use App\Actions\Sports\Concerns\AppliesTrueEpaPredictionBlend;
 use App\Services\NBA\WinProbabilityCalibrationInferenceService;
+use App\Support\Odds\MarketSpread;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPredictionGenerator
@@ -59,22 +60,22 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         $sport = $this->getSport();
         $config = config("{$sport}.prediction");
         $oddsMarketAvailability = $this->oddsMarketAvailability($game);
-        $homeCourtAdvantage = config("{$sport}.elo.home_court_advantage");
+        $homeCourtAdvantage = $game->neutral_site ? 0 : config("{$sport}.elo.home_court_advantage");
 
         $eloSpread = ($homeElo + $homeCourtAdvantage - $awayElo) / $config['elo_to_spread_divisor'];
 
         $homeNetRating = $homeMetrics?->net_rating ?? 0;
         $awayNetRating = $awayMetrics?->net_rating ?? 0;
-        $efficiencySpread = ($homeNetRating - $awayNetRating) / 2 + $config['home_court_points'];
+        $efficiencySpread = ($homeNetRating - $awayNetRating) / 2 + ($game->neutral_site ? 0 : $config['home_court_points']);
 
-        $homeAwaySplitAdj = $this->calculateHomeAwaySplitAdjustment($game, $homeMetrics, $awayMetrics);
+        $homeAwaySplitAdj = $game->neutral_site ? 0.0 : $this->calculateHomeAwaySplitAdjustment($game, $homeMetrics, $awayMetrics);
         $efficiencySpread += $homeAwaySplitAdj * $config['home_away_split_weight'];
 
         $homeForm = $this->getRecentForm($game->homeTeam, (int) $game->season);
         $awayForm = $this->getRecentForm($game->awayTeam, (int) $game->season);
         $homeFormNet = $homeForm['net_rating'];
         $awayFormNet = $awayForm['net_rating'];
-        $formSpread = ($homeFormNet - $awayFormNet) / 2 + $config['home_court_points'];
+        $formSpread = ($homeFormNet - $awayFormNet) / 2 + ($game->neutral_site ? 0 : $config['home_court_points']);
 
         $restHome = $this->getRestDays($game->homeTeam, $game);
         $restAway = $this->getRestDays($game->awayTeam, $game);
@@ -92,7 +93,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
 
         $vegasSpread = $this->getVegasSpread($game);
         $finalSpread = $vegasSpread !== null
-            ? ($config['model_weight_with_vegas'] * $modelSpread) + ($config['vegas_weight'] * $vegasSpread)
+            ? ($config['model_weight_with_vegas'] * $modelSpread) + ($config['vegas_weight'] * MarketSpread::bookmakerHomeLineToHomeMargin($vegasSpread))
             : $modelSpread;
         [$finalSpread, $trueEpaSpreadMeta] = $this->applyTrueEpaSpreadBlend(
             (float) $finalSpread,

@@ -230,14 +230,17 @@ class ModelArtifactRegistry
         }
 
         if (! File::exists($absolutePath)) {
-            $registeredAlias = ModelArtifact::query()
-                ->with('trainingRun')
+            $registeredAliasId = ModelArtifact::query()
                 ->whereHas(
                     'trainingRun',
                     fn ($query) => $query->where('metadata->inference_alias_path', $absolutePath),
                 )
                 ->latest('created_at')
-                ->first();
+                ->value('id');
+
+            $registeredAlias = $registeredAliasId === null
+                ? null
+                : ModelArtifact::query()->with('trainingRun')->find($registeredAliasId);
 
             if (! $registeredAlias instanceof ModelArtifact) {
                 return null;

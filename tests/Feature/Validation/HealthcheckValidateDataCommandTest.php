@@ -33,6 +33,7 @@ use App\Models\ValidationRun;
 use App\Models\WNBA\Player as WnbaPlayer;
 use App\Models\WNBA\Team as WnbaTeam;
 use App\Notifications\ValidationRegressionAlert;
+use App\Support\BasketballSeason;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 
@@ -53,7 +54,7 @@ test('healthcheck validate data persists validation run and completeness finding
     Game::factory()->create([
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,
-        'season' => (int) now()->year,
+        'season' => BasketballSeason::forDate(),
         'status' => 'STATUS_SCHEDULED',
         'game_date' => now()->copy()->addDay(),
         'odds_data' => null,
@@ -63,7 +64,7 @@ test('healthcheck validate data persists validation run and completeness finding
     $finalGame = Game::factory()->create([
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,
-        'season' => (int) now()->year,
+        'season' => BasketballSeason::forDate(),
         'status' => 'STATUS_FINAL',
         'game_date' => now()->copy()->subDay(),
         'home_score' => 112,
@@ -255,7 +256,7 @@ test('healthcheck validate data flags upcoming game page readiness gaps', functi
         'short_name' => 'BOS @ LAL',
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,
-        'season' => (int) now()->year,
+        'season' => BasketballSeason::forDate(),
         'season_type' => 2,
         'status' => 'STATUS_SCHEDULED',
         'game_date' => now()->copy()->addDay(),
@@ -355,7 +356,7 @@ test('healthcheck validate data passes upcoming game page readiness when pregame
         'short_name' => 'BOS @ LAL',
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,
-        'season' => (int) now()->year,
+        'season' => BasketballSeason::forDate(),
         'season_type' => 2,
         'status' => 'STATUS_SCHEDULED',
         'game_date' => now()->copy()->addDay(),
@@ -378,7 +379,7 @@ test('healthcheck validate data passes upcoming game page readiness when pregame
     foreach ([$home, $away] as $team) {
         DB::table('nba_team_metrics')->insert([
             'team_id' => $team->id,
-            'season' => (int) now()->year,
+            'season' => BasketballSeason::forDate(),
             'season_type' => 2,
             'offensive_efficiency' => 115.2,
             'defensive_efficiency' => 111.8,
@@ -415,7 +416,7 @@ test('healthcheck validate data warns when fresh player props have no recommenda
         'short_name' => 'BOS @ LAL',
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,
-        'season' => (int) now()->year,
+        'season' => BasketballSeason::forDate(),
         'status' => 'STATUS_SCHEDULED',
         'game_date' => now()->copy()->addDay(),
         'odds_api_event_id' => 'odds-event-1',
@@ -459,7 +460,7 @@ test('healthcheck validate data warns when fresh player props have no recommenda
 
     expect($finding)->not->toBeNull()
         ->and($finding->status)->toBe('warning')
-        ->and($finding->recommended_action)->toBe('sports:analyze-player-props --sport=nba --season='.now()->year.' --only-missing')
+        ->and($finding->recommended_action)->toBe('sports:analyze-player-props --sport=nba --season='.BasketballSeason::forDate().' --only-missing')
         ->and(data_get($finding->facts, 'games_with_unscored_player_props'))->toBe(1)
         ->and(data_get($finding->facts, 'sample_game_ids'))->toBe([])
         ->and(data_get($finding->facts, 'sample_unscored_game_ids'))->toContain($game->id)

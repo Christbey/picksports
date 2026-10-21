@@ -4,6 +4,7 @@ namespace App\Services\Sports\SeasonStage;
 
 use App\Services\Sports\DateWindow;
 use App\Services\Sports\SportsDateWindowService;
+use App\Support\BasketballSeason;
 use App\Support\SportCatalog;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
@@ -404,6 +405,10 @@ class SeasonStageService
         $date = $asOf instanceof CarbonInterface
             ? CarbonImmutable::instance($asOf)
             : CarbonImmutable::parse($asOf ?: 'now', $this->dates->timezone());
+
+        if (in_array($sport, ['nba', 'cbb', 'wcbb'], true)) {
+            return BasketballSeason::forDate($date);
+        }
 
         return in_array($sport, ['mlb', 'wnba'], true)
             ? (int) $date->year

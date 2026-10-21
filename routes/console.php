@@ -4,6 +4,7 @@ use App\Models\NFL\Game;
 use App\Services\CFB\Predictions\CfbCalculationReleaseDefinition;
 use App\Services\CommandHeartbeatService;
 use App\Services\NFL\Predictions\NflPregameHorizon;
+use App\Support\BasketballSeason;
 use App\Support\CFB\CfbWeek;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -28,8 +29,8 @@ Artisan::command('inspire', function () {
 
 $inSeasonMonths = fn (array $months) => fn () => in_array(now()->month, $months, true);
 $nbaInSeason = $inSeasonMonths([10, 11, 12, 1, 2, 3, 4, 5, 6]); // Oct-Jun
-$cbbInSeason = $inSeasonMonths([11, 12, 1, 2, 3, 4]); // Nov-Apr
-$wcbbInSeason = $inSeasonMonths([11, 12, 1, 2, 3, 4]); // Nov-Apr
+$cbbInSeason = $inSeasonMonths([10, 11, 12, 1, 2, 3, 4]); // Oct-Apr
+$wcbbInSeason = $inSeasonMonths([10, 11, 12, 1, 2, 3, 4]); // Oct-Apr
 $mlbInSeason = $inSeasonMonths([3, 4, 5, 6, 7, 8, 9, 10, 11]); // Mar-Nov
 $wnbaInSeason = $inSeasonMonths([4, 5, 6, 7, 8, 9, 10]); // Apr-Oct
 $nflInSeason = $inSeasonMonths([7, 8, 9, 10, 11, 12, 1, 2]); // Jul-Feb
@@ -39,6 +40,7 @@ $cfbInSeason = $inSeasonMonths([8, 9, 10, 11, 12, 1]); // Aug-Jan
 // Season year helpers
 $currentYear = (int) now()->year;
 $fallSeasonYear = now()->month <= 2 ? $currentYear - 1 : $currentYear;
+$basketballSeasonYear = BasketballSeason::forDate();
 $cfbCurrentRegularSeasonWeek = CfbWeek::productWeekForDate($fallSeasonYear, now());
 
 // Spread provider-heavy jobs across each cadence. The active leagues otherwise
@@ -426,9 +428,22 @@ $scheduleSportPipeline = function (
 |--------------------------------------------------------------------------
 */
 
+foreach (['nba' => $nbaInSeason, 'cbb' => $cbbInSeason, 'wcbb' => $wcbbInSeason] as $sport => $inSeason) {
+    $command = "sports:ensure-basketball-predictions {$sport}";
+    $name = strtoupper($sport).': Ensure Pregame Prediction Coverage';
+    $event = Schedule::command($command)
+        ->everyFiveMinutes()
+        ->when($inSeason)
+        ->name($name)
+        ->onOneServer()
+        ->withoutOverlapping(10)
+        ->runInBackground();
+    $attachCommandHeartbeat($event, $command, $name);
+}
+
 // NBA
 $scheduleSportPipeline(
-    'espn:sync-nba-games-scoreboard --from-date='.date('Y-m-d').' --to-date='.date('Y-m-d', strtotime('+7 days')),
+    'espn:sync-nba-games-scoreboard --sync --from-date='.now('America/Chicago')->toDateString().' --to-date='.now('America/Chicago')->addDays(7)->toDateString(),
     '01:00',
     'NBA: Sync Scoreboard (Today + 7 Days)',
     'espn:sync-nba-games-scoreboard',
@@ -441,7 +456,7 @@ $scheduleSportPipeline(
     'NBA: Sync Game Details',
     'nba',
     'NBA',
-    $fallSeasonYear,
+    $basketballSeasonYear,
     $nbaInSeason,
     [
         'grade-predictions' => '03:30',
@@ -457,7 +472,7 @@ $scheduleSportPipeline(
     'NBA: Sync Player Props'
 );
 $scheduleDailySeasonJob(
-    "nba:generate-playoff-forecast --season={$fallSeasonYear}",
+    "nba:generate-playoff-forecast --season={$basketballSeasonYear}",
     '07:35',
     $nbaInSeason,
     'NBA: Generate Playoff Forecast'
@@ -475,7 +490,7 @@ $scheduleDailySeasonJob(
     'NBA: Refresh Recent Game Details'
 );
 $scheduleOddsSyncWindow(
-    "sports:sync-futures-odds --sport=nba --season={$fallSeasonYear}",
+    "sports:sync-futures-odds --sport=nba --season={$basketballSeasonYear}",
     $nbaInSeason,
     'NBA: Sync Futures Odds'
 );
@@ -487,8 +502,8 @@ $scheduleHalfHourlyWindowJob(
     'NBA: Sync Injuries',
     'injuries',
 );
-$scheduleEpaLifecycle('nba', 'NBA', fn () => $fallSeasonYear, $nbaInSeason);
-$scheduleIncrementalPlayEpa('nba', 'NBA', $fallSeasonYear, $nbaInSeason, 7);
+$scheduleEpaLifecycle('nba', 'NBA', fn () => $basketballSeasonYear, $nbaInSeason);
+$scheduleIncrementalPlayEpa('nba', 'NBA', $basketballSeasonYear, $nbaInSeason, 7);
 $scheduleDailySeasonJob(
     'sports:settle-bet-decisions --sport=nba',
     '03:45',
@@ -504,13 +519,13 @@ $scheduleDailySeasonJob(
 $nbaCanonicalPipelineEnabled = fn (): bool => $nbaInSeason()
     && (bool) config('prediction_lifecycle.canonical_pipeline.nba', false);
 $scheduleDailySeasonJob(
-    "nba:evaluate-canonical-predictions --season={$fallSeasonYear}",
+    "nba:evaluate-canonical-predictions --season={$basketballSeasonYear}",
     '03:35',
     $nbaCanonicalPipelineEnabled,
     'NBA: Evaluate Canonical Predictions'
 );
 $scheduleDailySeasonJob(
-    "nba:generate-canonical-predictions --season={$fallSeasonYear}",
+    "nba:generate-canonical-predictions --season={$basketballSeasonYear}",
     '05:05',
     $nbaCanonicalPipelineEnabled,
     'NBA: Generate Canonical Predictions'
@@ -534,7 +549,7 @@ $cbbTeamSchedulesEvent = Schedule::command('espn:sync-cbb-all-team-schedules')
 $attachCommandHeartbeat($cbbTeamSchedulesEvent, 'espn:sync-cbb-all-team-schedules', 'CBB: Sync All Team Schedules');
 
 $scheduleDailySeasonJob(
-    "cbb:sync-tournament-structure --season={$fallSeasonYear}",
+    "cbb:sync-tournament-structure --season={$basketballSeasonYear}",
     '01:00',
     $cbbInSeason,
     'CBB: Sync Tournament Structure'
@@ -554,7 +569,7 @@ $scheduleDailySeasonJob(
 );
 
 $scheduleSportPipeline(
-    'espn:sync-cbb-current',
+    'espn:sync-cbb-games-scoreboard --sync --from-date='.now('America/Chicago')->toDateString().' --to-date='.now('America/Chicago')->addDays(7)->toDateString(),
     '02:00',
     'CBB: Sync Current Week',
     'espn:sync-cbb-games-scoreboard',
@@ -567,7 +582,7 @@ $scheduleSportPipeline(
     'CBB: Sync Game Details',
     'cbb',
     'CBB',
-    $fallSeasonYear,
+    $basketballSeasonYear,
     $cbbInSeason,
     [
         'grade-predictions' => '05:00',
@@ -585,31 +600,31 @@ $scheduleSportPipeline(
 $cbbCanonicalPipelineEnabled = fn (): bool => $cbbInSeason()
     && (bool) config('prediction_lifecycle.canonical_pipeline.cbb', false);
 $scheduleDailySeasonJob(
-    "cbb:evaluate-canonical-predictions --season={$fallSeasonYear}",
+    "cbb:evaluate-canonical-predictions --season={$basketballSeasonYear}",
     '05:05',
     $cbbCanonicalPipelineEnabled,
     'CBB: Evaluate Canonical Predictions'
 );
 $scheduleDailySeasonJob(
-    "cbb:generate-canonical-predictions --season={$fallSeasonYear}",
+    "cbb:generate-canonical-predictions --season={$basketballSeasonYear}",
     '06:35',
     $cbbCanonicalPipelineEnabled,
     'CBB: Generate Canonical Predictions'
 );
 $scheduleDailySeasonJob(
-    "cbb:generate-tournament-forecast --season={$fallSeasonYear}",
+    "cbb:generate-tournament-forecast --season={$basketballSeasonYear}",
     '10:15',
     $cbbInSeason,
     'CBB: Generate Tournament Forecast'
 );
 $scheduleDailySeasonJob(
-    "cbb:recalculate-tournament-outlook {$fallSeasonYear} --source=scheduled",
+    "cbb:recalculate-tournament-outlook {$basketballSeasonYear} --source=scheduled",
     '10:25',
     $cbbInSeason,
     'CBB: Recalculate Tournament Outlook'
 );
 $scheduleOddsSyncWindow(
-    "sports:sync-futures-odds --sport=cbb --season={$fallSeasonYear}",
+    "sports:sync-futures-odds --sport=cbb --season={$basketballSeasonYear}",
     $cbbInSeason,
     'CBB: Sync Futures Odds'
 );
@@ -621,24 +636,24 @@ $scheduleHalfHourlyWindowJob(
     'CBB: Sync Injuries',
     'injuries',
 );
-$scheduleEpaLifecycle('cbb', 'CBB', fn () => $fallSeasonYear, $cbbInSeason);
-$scheduleIncrementalPlayEpa('cbb', 'CBB', $fallSeasonYear, $cbbInSeason, 12);
+$scheduleEpaLifecycle('cbb', 'CBB', fn () => $basketballSeasonYear, $cbbInSeason);
+$scheduleIncrementalPlayEpa('cbb', 'CBB', $basketballSeasonYear, $cbbInSeason, 12);
 
 // WCBB
-$wcbbTeamSchedulesEvent = Schedule::command("espn:sync-wcbb-schedules --season={$fallSeasonYear}")
+$wcbbTeamSchedulesEvent = Schedule::command("espn:sync-wcbb-schedules --season={$basketballSeasonYear}")
     ->weeklyOn(0, '01:45')
     ->when($wcbbInSeason)
     ->name('WCBB: Sync All Team Schedules')
     ->onOneServer()
     ->withoutOverlapping()
     ->runInBackground();
-$attachCommandHeartbeat($wcbbTeamSchedulesEvent, "espn:sync-wcbb-schedules --season={$fallSeasonYear}", 'WCBB: Sync All Team Schedules');
+$attachCommandHeartbeat($wcbbTeamSchedulesEvent, "espn:sync-wcbb-schedules --season={$basketballSeasonYear}", 'WCBB: Sync All Team Schedules');
 
 $scheduleDailySeasonJob('espn:sync-wcbb-teams', '02:45', $wcbbInSeason, 'WCBB: Sync Teams (Daily)');
 $scheduleDailySeasonJob('espn:sync-wcbb-game-details --lookback-days=7 --days-forward=1 --limit=100 --latest', '03:15', $wcbbInSeason, 'WCBB: Sync Game Details (Daily)');
 
 $scheduleSportPipeline(
-    'espn:sync-wcbb-current',
+    'espn:sync-wcbb-games-scoreboard --sync --from-date='.now('America/Chicago')->toDateString().' --to-date='.now('America/Chicago')->addDays(7)->toDateString(),
     '03:00',
     'WCBB: Sync Current Week',
     'espn:sync-wcbb-games-scoreboard',
@@ -651,7 +666,7 @@ $scheduleSportPipeline(
     'WCBB: Sync Game Details',
     'wcbb',
     'WCBB',
-    $fallSeasonYear,
+    $basketballSeasonYear,
     $wcbbInSeason,
     [
         'grade-predictions' => '03:30',
@@ -665,19 +680,19 @@ $scheduleSportPipeline(
 $wcbbCanonicalPipelineEnabled = fn (): bool => $wcbbInSeason()
     && (bool) config('prediction_lifecycle.canonical_pipeline.wcbb', false);
 $scheduleDailySeasonJob(
-    "wcbb:evaluate-canonical-predictions --season={$fallSeasonYear}",
+    "wcbb:evaluate-canonical-predictions --season={$basketballSeasonYear}",
     '03:35',
     $wcbbCanonicalPipelineEnabled,
     'WCBB: Evaluate Canonical Predictions'
 );
 $scheduleDailySeasonJob(
-    "wcbb:generate-canonical-predictions --season={$fallSeasonYear}",
+    "wcbb:generate-canonical-predictions --season={$basketballSeasonYear}",
     '05:05',
     $wcbbCanonicalPipelineEnabled,
     'WCBB: Generate Canonical Predictions'
 );
 $scheduleDailySeasonJob(
-    "wcbb:generate-tournament-forecast --season={$fallSeasonYear}",
+    "wcbb:generate-tournament-forecast --season={$basketballSeasonYear}",
     '06:35',
     $wcbbInSeason,
     'WCBB: Generate Tournament Forecast'
@@ -690,8 +705,8 @@ $scheduleHalfHourlyWindowJob(
     'WCBB: Sync Injuries',
     'injuries',
 );
-$scheduleEpaLifecycle('wcbb', 'WCBB', fn () => $fallSeasonYear, $wcbbInSeason);
-$scheduleIncrementalPlayEpa('wcbb', 'WCBB', $fallSeasonYear, $wcbbInSeason, 17);
+$scheduleEpaLifecycle('wcbb', 'WCBB', fn () => $basketballSeasonYear, $wcbbInSeason);
+$scheduleIncrementalPlayEpa('wcbb', 'WCBB', $basketballSeasonYear, $wcbbInSeason, 17);
 
 // MLB
 $scheduleSportPipeline(
@@ -911,10 +926,10 @@ $attachCommandHeartbeat($mlbDailyPicksEvent, $mlbDailyPicksCommand, 'MLB: Genera
 $operationsSentinelSchedules = [
     ['sport' => 'wnba', 'label' => 'WNBA', 'season' => $currentYear, 'time' => '02:25', 'in_season' => $wnbaInSeason],
     ['sport' => 'cfb', 'label' => 'CFB', 'season' => $fallSeasonYear, 'time' => '04:50', 'in_season' => $cfbInSeason],
-    ['sport' => 'wcbb', 'label' => 'WCBB', 'season' => $fallSeasonYear, 'time' => '05:45', 'in_season' => $wcbbInSeason],
-    ['sport' => 'nba', 'label' => 'NBA', 'season' => $currentYear, 'time' => '06:45', 'in_season' => $nbaInSeason],
+    ['sport' => 'wcbb', 'label' => 'WCBB', 'season' => $basketballSeasonYear, 'time' => '05:45', 'in_season' => $wcbbInSeason],
+    ['sport' => 'nba', 'label' => 'NBA', 'season' => $basketballSeasonYear, 'time' => '06:45', 'in_season' => $nbaInSeason],
     ['sport' => 'mlb', 'label' => 'MLB', 'season' => $currentYear, 'time' => '07:45', 'in_season' => $mlbInSeason],
-    ['sport' => 'cbb', 'label' => 'CBB', 'season' => $fallSeasonYear, 'time' => '09:15', 'in_season' => $cbbInSeason],
+    ['sport' => 'cbb', 'label' => 'CBB', 'season' => $basketballSeasonYear, 'time' => '09:15', 'in_season' => $cbbInSeason],
     ['sport' => 'nfl', 'label' => 'NFL', 'season' => $fallSeasonYear, 'time' => '10:25', 'in_season' => $nflInSeason],
 ];
 

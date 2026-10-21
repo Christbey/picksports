@@ -9,12 +9,14 @@ use App\Models\User;
 use App\Services\NFL\NflPredictionBoardContext;
 use App\Services\NFL\Research\ResearchPipeline;
 use App\Services\Sports\SportsDateWindowService;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 
 function boardFixture(): array
 {
-    $game = Game::factory()->create(['home_team_id' => Team::factory()->create()->id, 'away_team_id' => Team::factory()->create()->id, 'status' => 'STATUS_SCHEDULED', 'game_date' => now()->addDay()->toDateString(), 'odds_data' => [
+    $kickoff = now()->addDay()->utc();
+    $game = Game::factory()->create(['home_team_id' => Team::factory()->create()->id, 'away_team_id' => Team::factory()->create()->id, 'status' => 'STATUS_SCHEDULED', 'game_date' => $kickoff->toDateString(), 'game_time' => $kickoff->format('H:i:s'), 'odds_data' => [
         'home_team' => 'Home', 'away_team' => 'Away', 'bookmakers' => [['key' => 'draftkings', 'last_update' => now()->toIso8601String(), 'markets' => [
             ['key' => 'spreads', 'outcomes' => [['name' => 'Home', 'point' => -8.5, 'price' => -110], ['name' => 'Away', 'point' => 8.5, 'price' => -110]]],
             ['key' => 'totals', 'outcomes' => [['name' => 'Over', 'point' => 42.5, 'price' => -110], ['name' => 'Under', 'point' => 42.5, 'price' => -110]]],
@@ -241,3 +243,11 @@ it('preserves the research market instead of replacing it with fallback stored o
     $market = app(NflPredictionBoardContext::class)->forPredictions(collect([$prediction]))->get($prediction->id)['market'];
     expect($market['home_spread'])->toBe(-3.5)->and($market['spread_stale'])->toBeFalse();
 });
+
+it('keeps pregame board fixtures in the future across UTC date rollover', function (string $time) {
+    $this->travelTo(Carbon::parse($time, 'America/Chicago'));
+    [$prediction] = boardFixture();
+    $kickoff = app(SportsDateWindowService::class)->gameDateTimeUtc($prediction->game->game_date, $prediction->game->game_time);
+    expect($kickoff->isFuture())->toBeTrue()
+        ->and($kickoff->timestamp - now()->timestamp)->toBe(86400);
+})->with(['2026-10-20 19:55:00', '2026-10-20 23:55:00', '2026-10-21 00:05:00']);

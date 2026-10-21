@@ -166,7 +166,7 @@ class NflCanonicalCutoverReadinessService
             ? CarbonImmutable::parse($cutoverStartedAt)
             : null;
         $games = Game::query()
-            ->with('sportEvent')
+            ->with('sportEvent:id,starts_at')
             ->whereNotNull('sport_event_id')
             ->whereIn('season_type', $this->regularSeasonTypes())
             ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_DELAYED'])
@@ -177,7 +177,7 @@ class NflCanonicalCutoverReadinessService
                 ->when($cutover !== null, fn ($query) => $query->where('starts_at', '>=', $cutover)))
             ->orderBy('game_date')
             ->orderBy('id')
-            ->get();
+            ->get(['id', 'sport_event_id']);
         $eventIds = $games->pluck('sport_event_id')->map(fn (mixed $id): int => (int) $id)->all();
         $gameIds = $games->modelKeys();
         $canonicalByEvent = CanonicalPrediction::query()
@@ -191,6 +191,11 @@ class NflCanonicalCutoverReadinessService
             ->unique('sport_event_id')
             ->keyBy('sport_event_id');
         $legacyByGame = Prediction::query()
+            ->select(['id', 'game_id', 'model_metadata', 'updated_at'])
+            ->addSelect(['latest_safe_feature_snapshot_id' => PredictionFeatureSnapshot::query()
+                ->select('id')->where('sport', 'nfl')->where('prediction_table', (new Prediction)->getTable())
+                ->whereColumn('prediction_id', 'nfl_predictions.id')->where('pregame_safe', true)
+                ->latest('generated_at')->latest('id')->limit(1)])
             ->whereIn('game_id', $gameIds)
             ->get()
             ->keyBy('game_id');
@@ -214,23 +219,17 @@ class NflCanonicalCutoverReadinessService
         $predictionFreshAfter = now()->subMinutes($maximumPredictionAgeMinutes);
 
         $decisionsByPrediction = BetDecision::query()
-            ->with('featureSnapshot')
+            ->with('featureSnapshot:id,pregame_safe,generated_at')
             ->where('sport', 'nfl')
             ->where('prediction_table', (new Prediction)->getTable())
             ->whereIn('prediction_id', $legacyByGame->pluck('id')->filter()->all())
             ->whereIn('status', ['released_tracking_bet', 'held_candidate', 'model_no_bet', 'model_hold'])
             ->get()
             ->groupBy('prediction_id');
-        $latestFeatureSnapshots = PredictionFeatureSnapshot::query()
-            ->where('sport', 'nfl')->where('prediction_table', (new Prediction)->getTable())
-            ->whereIn('prediction_id', $legacyByGame->pluck('id')->filter()->all())
-            ->where('pregame_safe', true)->latest('generated_at')->latest('id')
-            ->get(['id', 'prediction_id'])->unique('prediction_id')->keyBy('prediction_id');
-
         foreach ($games as $game) {
             $legacy = $legacyByGame->get($game->getKey());
             $recordedKeys = $decisionsByPrediction->get($legacy?->getKey(), collect())
-                ->filter(function (BetDecision $decision) use ($game, $legacy, $latestFeatureSnapshots): bool {
+                ->filter(function (BetDecision $decision) use ($game, $legacy): bool {
                     $snapshot = $decision->featureSnapshot;
                     $start = $game->sportEvent?->starts_at;
 
@@ -239,7 +238,7 @@ class NflCanonicalCutoverReadinessService
                         && $snapshot->generated_at !== null && $snapshot->generated_at->lt($start)
                         && $decision->decided_at !== null && $decision->decided_at->lt($start)
                         && ($decision->status === 'released_tracking_bet'
-                            || $snapshot->id === $latestFeatureSnapshots->get($legacy?->id)?->id);
+                            || $snapshot->id === (int) $legacy?->latest_safe_feature_snapshot_id);
                 })->pluck('market_key')->unique()->all();
             if (array_diff(['h2h', 'spreads', 'totals'], $recordedKeys) !== []) {
                 $missingDispositionGameIds[] = (int) $game->getKey();

@@ -914,3 +914,44 @@ it('identifies quarantined custom EPA without mislabeling it missing or permitti
         ->and($report['coverage_blockers'])->toContain('custom_epa_quarantined')
         ->and($report['ready_for_cutover'])->toBeFalse();
 });
+
+it('keeps readiness disposition selection ordered by generation time then snapshot identity', function (string $revision) {
+    $fixture = nflCanonicalMarketFixture();
+    recordNflMarketSnapshot($fixture);
+    $prediction = recordNflLegacyEpaDisposition($fixture);
+    $readiness = app(NflCanonicalCutoverReadinessService::class);
+    expect($readiness->report(2026)['recorded_disposition_event_count'])->toBe(1);
+    $original = PredictionFeatureSnapshot::query()->where('prediction_id', $prediction->id)->latest('id')->firstOrFail();
+    $newer = recordNflPredictionFeatureSnapshot($fixture, $prediction);
+    $newer->update([
+        'generated_at' => $revision === 'older_generation' ? $original->generated_at->copy()->subMinute() : $original->generated_at,
+        'pregame_safe' => $revision !== 'unsafe',
+    ]);
+    $report = $readiness->report(2026);
+    expect($report['recorded_disposition_event_count'])->toBe($revision === 'same_generation' ? 0 : 1);
+    if ($revision === 'same_generation') {
+        app(NflPredictionDispositionRecorder::class)->record($prediction);
+        expect($readiness->report(2026)['recorded_disposition_event_count'])->toBe(1);
+    }
+})->with(['older_generation', 'same_generation', 'unsafe']);
+
+it('reads only safety metadata from decision snapshots during NFL readiness', function () {
+    $fixture = nflCanonicalMarketFixture();
+    recordNflMarketSnapshot($fixture);
+    recordNflLegacyEpaDisposition($fixture);
+    $connection = PredictionFeatureSnapshot::query()->getConnection();
+    $connection->enableQueryLog();
+    try {
+        $report = app(NflCanonicalCutoverReadinessService::class)->report(2026);
+        $snapshotReads = collect($connection->getQueryLog())->pluck('query')
+            ->filter(fn (string $sql) => str_contains($sql, 'prediction_feature_snapshots') && ! str_contains($sql, 'nfl_predictions'));
+        expect($report['recorded_disposition_event_count'])->toBe(1)
+            ->and($snapshotReads)->toHaveCount(1);
+        foreach ($snapshotReads as $sql) {
+            expect($sql)->not->toContain('*')->not->toContain('"features"')->not->toContain('"outputs"');
+        }
+    } finally {
+        $connection->disableQueryLog();
+        $connection->flushQueryLog();
+    }
+});

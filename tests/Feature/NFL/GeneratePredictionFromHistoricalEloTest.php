@@ -17,7 +17,9 @@ use App\Models\NFL\TeamCoachSeason;
 use App\Models\NFL\TeamMetric;
 use App\Models\NFL\TeamStat;
 use App\Models\PredictionFeatureSnapshot;
+use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
 use App\Support\NflBetRuleEngine;
+use App\Support\NflModelVersion;
 use App\Support\NflValidatedSignalCombos;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -99,7 +101,7 @@ it('falls back to legacy elo-only prediction when true epa metrics are unavailab
     expect(data_get($legacy->model_metadata, 'true_epa.enabled'))->toBeFalse()
         ->and(data_get($legacy->model_metadata, 'true_epa.applied'))->toBeFalse()
         ->and(data_get($legacy->model_metadata, 'true_epa.reason'))->toBe('feature_disabled')
-        ->and($legacy->model_version)->toBe('nfl-historical-elo-v2-career-regular-v2-ats-v3-season-adaptive-v1')
+        ->and($legacy->model_version)->toBe(NflModelVersion::current())
         ->and($legacy->feature_version)->toBe('nfl-pregame-ml-v3')
         ->and($legacy->blend_version)->toBe('nfl-multi-signal-v1-season-adaptive-v1')
         ->and(PredictionFeatureSnapshot::query()->where('prediction_id', $legacy->id)->exists())->toBeTrue()
@@ -1594,8 +1596,9 @@ it('adaptively shrinks win probability when similar prior confidence has underpe
             'neutral_site' => false,
         ]);
 
-        Prediction::query()->create([
+        $priorPrediction = Prediction::query()->create([
             'game_id' => $priorGame->id,
+            'model_version' => NflModelVersion::current(),
             'home_elo' => 1575,
             'away_elo' => 1490,
             'predicted_spread' => 5.5,
@@ -1607,6 +1610,23 @@ it('adaptively shrinks win probability when similar prior confidence has underpe
             'winner_correct' => false,
             'graded_at' => now(),
         ]);
+        app(PredictionFeatureSnapshotRecorder::class)->record(
+            $priorPrediction, $priorGame, 'nfl', $priorPrediction->toArray(), [
+                'model_version' => NflModelVersion::current(),
+                'outputs' => [
+                    'predicted_spread' => $priorPrediction->predicted_spread, 'predicted_total' => $priorPrediction->predicted_total,
+                    'win_probability' => $priorPrediction->win_probability,
+                    'calibration_inputs' => [
+                        'point' => ['predicted_spread' => $priorPrediction->predicted_spread, 'predicted_total' => $priorPrediction->predicted_total],
+                        'win_probability' => ['win_probability' => $priorPrediction->win_probability],
+                    ],
+                ],
+                'generated_at' => $priorGame->game_date->copy()->subDay(),
+                'features_available_at' => $priorGame->game_date->copy()->subDay(),
+                'pregame_safe' => true, 'availability_status' => 'observed_pregame',
+                'run_type' => 'pregame_prediction',
+            ],
+        );
     }
 
     app(GeneratePredictionFromHistoricalElo::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
@@ -1619,7 +1639,7 @@ it('adaptively shrinks win probability when similar prior confidence has underpe
         ->and((float) data_get($prediction->model_metadata, 'adaptive_win_probability_calibration.actual_favorite_win_rate'))->toBe(0.0);
 });
 
-it('quarantines mutable-history spread correction while retaining the existing total correction', function () {
+it('calibrates totals from frozen compatible pregame forecasts while keeping spread correction disabled', function () {
     config([
         'nfl.predictions.true_epa.enabled' => false,
         'nfl.predictions.preseason_signal.enabled' => false,
@@ -1662,8 +1682,9 @@ it('quarantines mutable-history spread correction while retaining the existing t
             'neutral_site' => false,
         ]);
 
-        Prediction::query()->create([
+        $priorPrediction = Prediction::query()->create([
             'game_id' => $priorGame->id,
+            'model_version' => NflModelVersion::current(),
             'home_elo' => 1575,
             'away_elo' => 1490,
             'predicted_spread' => 7.0,
@@ -1677,6 +1698,23 @@ it('quarantines mutable-history spread correction while retaining the existing t
             'winner_correct' => false,
             'graded_at' => now(),
         ]);
+        app(PredictionFeatureSnapshotRecorder::class)->record(
+            $priorPrediction, $priorGame, 'nfl', $priorPrediction->toArray(), [
+                'model_version' => NflModelVersion::current(),
+                'outputs' => [
+                    'predicted_spread' => $priorPrediction->predicted_spread, 'predicted_total' => $priorPrediction->predicted_total,
+                    'win_probability' => $priorPrediction->win_probability,
+                    'calibration_inputs' => [
+                        'point' => ['predicted_spread' => $priorPrediction->predicted_spread, 'predicted_total' => $priorPrediction->predicted_total],
+                        'win_probability' => ['win_probability' => $priorPrediction->win_probability],
+                    ],
+                ],
+                'generated_at' => $priorGame->game_date->copy()->subDay(),
+                'features_available_at' => $priorGame->game_date->copy()->subDay(),
+                'pregame_safe' => true, 'availability_status' => 'observed_pregame',
+                'run_type' => 'pregame_prediction',
+            ],
+        );
     }
 
     app(GeneratePredictionFromHistoricalElo::class)->execute($game->fresh(['homeTeam', 'awayTeam']));

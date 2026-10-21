@@ -664,7 +664,7 @@ it('keeps reserve observations separate from injury onset to avoid inventing vac
     expect($packet['availability'][0]['injury_onset_known'])->toBeFalse()->and($packet['availability'][0]['status'])->toBe('Out');
 });
 
-it('protects researched prediction details behind existing prediction permissions', function () {
+it('protects researched prediction details behind admin and prediction permissions', function () {
     config(['subscriptions.enforce_tiers' => true, 'subscriptions.tier_bypass_user_ids' => []]);
     $game = researchGame();
     $this->getJson('/api/v2/sports/nfl/games/'.$game->id.'/research')->assertUnauthorized();

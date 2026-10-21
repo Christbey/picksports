@@ -31,7 +31,8 @@ it('preserves all fifteen ordered forecast stages and each intermediate argument
         $expectation = $action->shouldReceive($method)->once()->with($game, ...$arguments)->ordered();
         if ($method === 'applyPlayerPositionGradeContext') {
             $expectation->andReturnUsing(function () use ($action): void {
-                (new ReflectionProperty($action, 'lastModelMetadata'))->setValue($action, ['player_position_grades' => ['shadow_only' => true]]);
+                $property = new ReflectionProperty($action, 'lastModelMetadata');
+                $property->setValue($action, [...$property->getValue($action), 'player_position_grades' => ['shadow_only' => true]]);
             });
         } else {
             $expectation->andReturn($result);
@@ -40,9 +41,12 @@ it('preserves all fifteen ordered forecast stages and each intermediate argument
 
     $result = (new ReflectionMethod($action, 'calculateForecast'))->invoke($action, $game, 1.0, 0.51, 41.0);
 
+    $metadata = (new ReflectionProperty($action, 'lastModelMetadata'))->getValue($action);
     expect($result)->toBe([13.0, 0.64, 52.0])
-        ->and((new ReflectionProperty($action, 'lastModelMetadata'))->getValue($action))
-        ->toBe(['player_position_grades' => ['shadow_only' => true]]);
+        ->and($metadata['player_position_grades'])->toBe(['shadow_only' => true])
+        ->and($metadata['pre_market_outputs'])->toBe(['predicted_spread' => 11.0, 'predicted_total' => 50.0, 'win_probability' => .61])
+        ->and($metadata['calibration_inputs']['point'])->toBe(['predicted_spread' => 10.0, 'predicted_total' => 49.0])
+        ->and($metadata['calibration_inputs']['win_probability'])->toBe(['win_probability' => .62]);
 });
 
 it('preserves the clamped logistic spread conversion for configured coefficients', function (float $spread, float $coefficient) {

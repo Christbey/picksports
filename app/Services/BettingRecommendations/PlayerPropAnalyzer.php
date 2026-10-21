@@ -308,7 +308,7 @@ class PlayerPropAnalyzer
             $rows = [];
             $config = $this->getSportConfig('NFL');
             $props = \App\Models\NFL\PlayerProp::where('game_id', $game->id)->whereNull('graded_at')
-                ->where('fetched_at', '>=', now()->subHours((int) config('validation.thresholds.player_prop_freshness.stale_after_hours_by_sport.nfl', 24)))->get();
+                ->where('fetched_at', '>=', now()->subHours((int) config('validation.thresholds.player_prop_freshness.stale_after_hours_by_sport.nfl', 36)))->get();
             foreach ($props as $prop) {
                 $prop->setRelation('game', $game);
                 $r = $this->analyzeProp($prop, 3, $config, 'NFL', false);
@@ -771,20 +771,20 @@ class PlayerPropAnalyzer
             // Account for estimation uncertainty without pretending this is fitted calibration.
             $volatility *= sqrt(1 + 1 / max(1, $seasonSample));
         }
-        $parametricOverProbability = $this->probabilityOverLine($projection, $line, $volatility);
-        $simulatedOverProbability = $isNfl ? $parametricOverProbability : $this->simulationOverProbability(
-            mean: $projection,
-            line: $line,
-            stdDev: $volatility,
-            iterations: 300
-        );
-        $modelOverProbability = ($parametricOverProbability * 0.65) + ($simulatedOverProbability * 0.35);
         $pushProbability = 0.0;
         if ($isNfl) {
             $probabilities = $this->nflOutcomeProbabilities($projection, $line, $volatility, (string) $prop->market);
             $pushProbability = $probabilities['push'];
-            // The stored binary probability is conditional on a non-push, matching calibration grading.
             $modelOverProbability = $probabilities['over'] / max(0.000001, 1 - $pushProbability);
+        } else {
+            $parametricOverProbability = $this->probabilityOverLine($projection, $line, $volatility);
+            $simulatedOverProbability = $this->simulationOverProbability(
+                mean: $projection,
+                line: $line,
+                stdDev: $volatility,
+                iterations: 300
+            );
+            $modelOverProbability = ($parametricOverProbability * 0.65) + ($simulatedOverProbability * 0.35);
         }
         $marketOverProbability = $this->fairMarketOverProbability(
             overOdds: $prop->over_price,

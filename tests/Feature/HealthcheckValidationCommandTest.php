@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Healthcheck;
+use App\Support\BasketballSeason;
 use Illuminate\Support\Facades\DB;
 
 use function Pest\Laravel\artisan;
@@ -34,7 +35,7 @@ it('can pass team stat coverage validation when teams have stats for season game
         ]);
     }
 
-    $season = (int) now()->year;
+    $season = BasketballSeason::forDate();
 
     $gameId = DB::table('cbb_games')->insertGetId([
         'espn_event_id' => 'validation-test-game-1',

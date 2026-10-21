@@ -3,6 +3,7 @@
 use App\Actions\Validation\Checks\OddsCompletenessCheck;
 use App\Models\NBA\Game;
 use App\Models\NBA\Team;
+use App\Support\BasketballSeason;
 
 test('odds completeness warns for partial missing provider coverage below the hard fail threshold', function () {
     config()->set('validation.thresholds.odds_completeness.missing_or_stale_fail_pct', 0.50);
@@ -19,7 +20,7 @@ test('odds completeness warns for partial missing provider coverage below the ha
         ->create([
             'home_team_id' => $home->id,
             'away_team_id' => $away->id,
-            'season' => (int) now()->year,
+            'season' => BasketballSeason::forDate(),
             'season_type' => 2,
             'status' => 'STATUS_SCHEDULED',
             'game_date' => $gameDate,
@@ -35,7 +36,7 @@ test('odds completeness warns for partial missing provider coverage below the ha
         ->create([
             'home_team_id' => $home->id,
             'away_team_id' => $away->id,
-            'season' => (int) now()->year,
+            'season' => BasketballSeason::forDate(),
             'season_type' => 2,
             'status' => 'STATUS_SCHEDULED',
             'game_date' => $gameDate,
@@ -68,7 +69,7 @@ test('odds completeness fails when missing or stale odds affect most market read
         ->create([
             'home_team_id' => $home->id,
             'away_team_id' => $away->id,
-            'season' => (int) now()->year,
+            'season' => BasketballSeason::forDate(),
             'season_type' => 2,
             'status' => 'STATUS_SCHEDULED',
             'game_date' => $gameDate,

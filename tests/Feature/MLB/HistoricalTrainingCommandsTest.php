@@ -66,8 +66,8 @@ it('backfills historical mlb predictions and snapshots for completed regular-sea
 });
 
 it('creates verified trusted-core reconstruction snapshots with matching evaluation lineage', function () {
-    $home = Team::factory()->create(['location' => 'Chicago', 'name' => 'Cubs']);
-    $away = Team::factory()->create(['location' => 'St. Louis', 'name' => 'Cardinals']);
+    $home = Team::factory()->create(['location' => 'Chicago', 'name' => 'Cubs', 'abbreviation' => 'CHC']);
+    $away = Team::factory()->create(['location' => 'St. Louis', 'name' => 'Cardinals', 'abbreviation' => 'STL']);
     $homePitcher = Player::factory()->pitcher()->create([
         'team_id' => $home->id,
         'espn_id' => 'trusted-home-pitcher',

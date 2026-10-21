@@ -90,6 +90,10 @@ abstract class AbstractCollegeBasketballCalculateTeamMetrics
         $awayOpponentStats = [];
 
         foreach ($games as $game) {
+            if ($game->neutral_site) {
+                continue;
+            }
+
             $isHome = $game->home_team_id === $team->id;
             $teamStat = $game->teamStats->firstWhere('team_id', $team->id);
             $opponentId = $isHome ? $game->away_team_id : $game->home_team_id;

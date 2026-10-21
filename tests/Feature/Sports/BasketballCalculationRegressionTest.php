@@ -210,3 +210,33 @@ it('does not classify a neutral site history row as a home venue sample', functi
     $past->update(['neutral_site' => false]);
     expect($method->invoke(app($action), $home, 2027, 'home', $game)['off'])->toBe(140.0);
 })->with(['nba', 'cbb', 'wcbb']);
+
+it('keeps neutral games in college season metrics but excludes them from stored venue splits', function (string $sport) {
+    [$target, $home, $away] = calculationReviewGame($sport);
+    $namespace = strtoupper($sport);
+    $gameClass = "App\\Models\\{$namespace}\\Game";
+    $statClass = "App\\Models\\{$namespace}\\TeamStat";
+    $action = "App\\Actions\\{$namespace}\\CalculateTeamMetrics";
+    config(["{$sport}.metrics.minimum_games" => 1]);
+    foreach ([[false, false], [true, false], [false, true]] as [$swapped, $neutral]) {
+        $game = $gameClass::factory()->create([
+            'home_team_id' => $swapped ? $away->id : $home->id,
+            'away_team_id' => $swapped ? $home->id : $away->id,
+            'season' => 2027, 'status' => 'STATUS_FINAL',
+            'game_date' => '2026-10-19', 'neutral_site' => $neutral,
+        ]);
+        foreach ([[$home, $neutral ? 100 : 80], [$away, 70]] as [$team, $points]) {
+            $statClass::factory()->create([
+                'game_id' => $game->id, 'team_id' => $team->id,
+                'points' => $points, 'possessions' => 70,
+            ]);
+        }
+    }
+    $metric = app($action)->execute($home, 2027);
+    expect($metric)->not->toBeNull()
+        ->and($metric->games_played)->toBe(3)
+        ->and($metric->home_games)->toBe(1)
+        ->and($metric->away_games)->toBe(1)
+        ->and((float) $metric->offensive_efficiency)->toBe(123.8)
+        ->and((float) $metric->home_offensive_efficiency)->toBe(114.3);
+})->with(['cbb', 'wcbb']);

@@ -30,15 +30,15 @@ class NflPropParticipation
         $reports = DB::table('nfl_player_injury_snapshots')->whereIn('team_id', $teamIds)
             ->where('observed_at', '>=', Carbon::parse($games->min('game_date'))->subDays(7))
             ->where('observed_at', '<=', $props->pluck('game.game_date')->max())
-            ->orderByDesc('observed_at')->orderByDesc('id')->get(['id', 'team_id', 'observed_at']);
+            ->orderByDesc('observed_at')->orderByDesc('id')->get(['id', 'team_id', 'observed_at', 'source_updated_at']);
         $entries = $reports->isEmpty() ? collect() : DB::table('nfl_player_injury_snapshot_entries as entries')
             ->join('nfl_player_injury_snapshots as reports', 'reports.id', '=', 'entries.snapshot_id')
             ->whereIn('reports.team_id', $teamIds)
             ->whereBetween('reports.observed_at', [$reports->min('observed_at'), $reports->max('observed_at')])
             ->whereIn('entries.player_id', $props->pluck('player_id')->filter()->unique())
-            ->get(['entries.snapshot_id', 'entries.player_id', 'entries.status'])->groupBy('snapshot_id');
+            ->get(['entries.snapshot_id', 'entries.player_id', 'entries.status', 'entries.observed_at', 'entries.source_updated_at'])->groupBy('snapshot_id');
         $reports->each(function ($report) {
-            $report->observed_instant = CarbonImmutable::parse($report->observed_at, 'UTC');
+            $report->observed_instant = CarbonImmutable::parse($report->observed_at, config('app.timezone'));
         });
         $reportsByTeam = $reports->groupBy('team_id');
         $reportCache = [];
@@ -70,8 +70,11 @@ class NflPropParticipation
                         && $r->observed_instant->gte($played->subDays(7)));
                 }
                 $report = $reportCache[$key];
-                $out = $report && collect($entries->get($report->id, []))->contains(fn ($entry) => (int) $entry->player_id === (int) $prop->player_id
-                    && in_array(strtolower(trim($entry->status)), ['out', 'injured reserve', 'ir', 'pup', 'reserve/pup', 'suspended'], true));
+                $out = $report && (! $report->source_updated_at || CarbonImmutable::parse($report->source_updated_at, config('app.timezone'))->lte($played))
+                    && collect($entries->get($report->id, []))->contains(fn ($entry) => (int) $entry->player_id === (int) $prop->player_id
+                        && $entry->observed_at && CarbonImmutable::parse($entry->observed_at, config('app.timezone'))->lte($report->observed_instant)
+                        && (! $entry->source_updated_at || CarbonImmutable::parse($entry->source_updated_at, config('app.timezone'))->lte($played))
+                        && in_array(strtolower(trim((string) $entry->status)), ['out', 'injured reserve', 'ir', 'pup', 'reserve/pup', 'suspended'], true));
                 if ($out) {
                     $unavailable[] = $game->id;
                 } else {

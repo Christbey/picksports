@@ -60,3 +60,20 @@ it('uses the last full report and never later or current injuries to explain an 
         ->and($summary['participation']['unexplained_absence_games'])->toBe(1)
         ->and($summary['games'])->toBe(0)->and($summary['average'])->toBeNull();
 });
+
+it('does not read a same-day local injury observation after kickoff as an earlier UTC report', function () {
+    ($this->past)('2026-09-20'); // 17:00 UTC = noon Chicago.
+    ($this->report)('2026-09-20 12:30:00'); // 17:30 UTC, after kickoff.
+    $summary = ($this->summary)();
+    expect($summary['participation']['confirmed_unavailable_games'])->toBe(0)
+        ->and($summary['participation']['unexplained_absence_games'])->toBe(1);
+});
+
+it('rejects injury source evidence published after the historical kickoff', function () {
+    ($this->past)('2026-09-20');
+    ($this->report)('2026-09-19 10:00:00');
+    PlayerInjurySnapshotEntry::query()->update(['source_updated_at' => '2026-09-20 13:00:00']);
+    $summary = ($this->summary)();
+    expect($summary['participation']['confirmed_unavailable_games'])->toBe(0)
+        ->and($summary['participation']['unexplained_absence_games'])->toBe(1);
+});

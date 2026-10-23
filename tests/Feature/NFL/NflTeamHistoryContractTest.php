@@ -100,3 +100,35 @@ it('uses regular season history and preserves the shared query budget', function
         ->and($queries)->toBeLessThan($baseline['queries'])
         ->and($queries)->toBeLessThanOrEqual($week === 1 ? 4 : 8);
 })->with([1, 4]);
+
+it('reuses loaded team history for venue splits without changing scores or season scope', function (int $week) {
+    $game = nflHistoryContractFixture($week);
+    $action = app(GeneratePredictionFromHistoricalElo::class);
+    (new ReflectionMethod($action, 'rollingEfficiencyProfile'))->invoke($action, $game, $game->home_team_id);
+    $connection = Game::query()->getConnection();
+    $connection->enableQueryLog();
+    $connection->flushQueryLog();
+    try {
+        $venue = new ReflectionMethod($action, 'venueSplitProfile');
+        $home = $venue->invoke($action, $game, $game->home_team_id, true);
+        $away = $venue->invoke($action, $game, $game->away_team_id, false);
+        expect($home)->toBe($week === 1
+            ? ['games' => 1, 'avg_margin' => -28.0, 'points_for' => 7.0, 'points_against' => 35.0]
+            : ['games' => 2, 'avg_margin' => -21.5, 'points_for' => 10.0, 'points_against' => 31.5])
+            ->and($away)->toBe($week === 1
+                ? ['games' => 1, 'avg_margin' => 28.0, 'points_for' => 35.0, 'points_against' => 7.0]
+                : ['games' => 2, 'avg_margin' => 21.5, 'points_for' => 31.5, 'points_against' => 10.0])
+            ->and($connection->getQueryLog())->toBeEmpty();
+    } finally {
+        $connection->disableQueryLog();
+        $connection->flushQueryLog();
+    }
+})->with([1, 4]);
+
+it('retains zero defaults for venue splits with no completed games', function () {
+    $game = Game::factory()->create(['home_team_id' => Team::factory()->create()->id,
+        'away_team_id' => Team::factory()->create()->id, 'season' => 2026, 'game_date' => '2026-09-01']);
+    $venue = new ReflectionMethod(app(GeneratePredictionFromHistoricalElo::class), 'venueSplitProfile');
+    expect($venue->invoke(app(GeneratePredictionFromHistoricalElo::class), $game, $game->home_team_id, true))
+        ->toBe(['games' => 0, 'avg_margin' => 0.0, 'points_for' => 0.0, 'points_against' => 0.0]);
+});

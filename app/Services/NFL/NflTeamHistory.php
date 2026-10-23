@@ -42,6 +42,20 @@ class NflTeamHistory
         ];
     }
 
+    /** Venue context intentionally retains all season types, matching the original generator. */
+    public function venue(int $teamId, bool $home): array
+    {
+        $games = $this->games((int) $this->target->season)
+            ->filter(fn (Game $game) => (int) ($home ? $game->home_team_id : $game->away_team_id) === $teamId)->all();
+        $scored = fn (Game $game): float => (float) ($home ? $game->home_score : $game->away_score);
+        $allowed = fn (Game $game): float => (float) ($home ? $game->away_score : $game->home_score);
+
+        return ['games' => count($games),
+            'avg_margin' => $this->mean($games, fn (Game $game): float => $scored($game) - $allowed($game)) ?? 0.0,
+            'points_for' => $this->mean($games, $scored) ?? 0.0,
+            'points_against' => $this->mean($games, $allowed) ?? 0.0];
+    }
+
     public function opponentAdjusted(int $teamId): array
     {
         $rows = $this->rows($teamId, (int) $this->target->season, true);

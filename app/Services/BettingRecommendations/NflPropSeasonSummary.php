@@ -47,8 +47,9 @@ class NflPropSeasonSummary
             ])
             ->get()->groupBy('player_id');
         $dates = app(SportsDateWindowService::class);
+        $participation = app(NflPropParticipation::class)->forProps($props, $rows);
 
-        return $props->mapWithKeys(function (PlayerProp $prop) use ($rows, $dates, $teams): array {
+        return $props->mapWithKeys(function (PlayerProp $prop) use ($rows, $dates, $teams, $participation): array {
             $game = $prop->game;
             $kickoff = $game ? $dates->gameDateTimeUtc($game->game_date, $game->game_time) : null;
             $fields = self::FIELDS[$prop->market] ?? [];
@@ -87,6 +88,7 @@ class NflPropSeasonSummary
                 'average' => $values->isEmpty() ? null : round($values->avg(), 1),
                 'games' => $values->count(),
                 'missing_stat_games' => $eligible->count() - $values->count(),
+                'participation' => $participation[$prop->id] ?? null,
                 'cover_record' => $records['season'],
                 'records' => $records,
                 'opponent' => $opponent?->abbreviation,

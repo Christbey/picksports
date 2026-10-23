@@ -15,6 +15,7 @@ use App\Services\OddsApi\OddsApiService;
 use App\Support\SportsViewCache;
 
 beforeEach(function () {
+    config(['nfl.props.opportunity_projection_enabled' => true]);
     $this->travelTo('2026-09-20 10:00:00');
     $this->team = Team::factory()->create();
     $this->opponent = Team::factory()->create();
@@ -154,7 +155,7 @@ test('a missing depth chart cannot retain a strong confidence label', function (
 });
 
 test('calibration can isolate the new model from old predictions and exclude pushes', function () {
-    $this->prop->update(['graded_at' => now(), 'hit_over' => true, 'predicted_over_probability' => 80, 'confidence_decomposition' => ['schema_version' => PlayerPropAnalyzer::NFL_MODEL_VERSION]]);
+    $this->prop->update(['graded_at' => now(), 'hit_over' => true, 'predicted_over_probability' => 80, 'confidence_decomposition' => ['schema_version' => PlayerPropAnalyzer::nflModelVersion()]]);
     $old = $this->prop->replicate();
     $old->bookmaker = 'oldbook';
     $old->predicted_over_probability = 1;
@@ -164,7 +165,7 @@ test('calibration can isolate the new model from old predictions and exclude pus
     $push->bookmaker = 'pushbook';
     $push->hit_over = null;
     $push->save();
-    $this->artisan('sports:report-player-props-calibration', ['sport' => 'nfl', '--season' => 2026, '--model-version' => PlayerPropAnalyzer::NFL_MODEL_VERSION, '--min-sample' => 1])
+    $this->artisan('sports:report-player-props-calibration', ['sport' => 'nfl', '--season' => 2026, '--model-version' => PlayerPropAnalyzer::nflModelVersion(), '--min-sample' => 1])
         ->expectsTable(['Sample', 'Brier', 'LogLoss', 'ECE(10-bin)', 'MAE Prob'], [['1', '0.0400', '0.2231', '0.2000', '0.2000']])
         ->assertSuccessful();
 });
@@ -187,3 +188,79 @@ test('quote sync preserves existing NFL snapshots at or after kickoff', function
     expect($action->execute(null, 'americanfootball_nfl'))->toBe(0)
         ->and($this->prop->fresh()->getAttributes())->toBe($before);
 })->with([false, true]);
+
+test('opportunity projections exclude future games and retain their evidence even with no betting edge', function () {
+    for ($i = 1; $i <= 4; $i++) {
+        ($this->history)(2026, sprintf('2026-09-%02d', $i), 15);
+    }
+    $this->prop->update(['over_price' => null, 'under_price' => null, 'narrative_json' => ['summary' => 'Old Over recommendation']]);
+    ($this->analyze)();
+    $before = $this->prop->fresh()->confidence_decomposition;
+    ($this->history)(2026, '2026-09-27', 100);
+    ($this->analyze)();
+    $meta = $this->prop->fresh()->confidence_decomposition;
+    expect(data_get($meta, 'projected_mean'))->toEqual(15)
+        ->and(data_get($meta, 'projection_context.projection.method'))->toBe('recency_weighted_opportunities')
+        ->and(data_get($meta, 'projection_context.projection.games'))->toBe(4)
+        ->and(data_get($meta, 'projected_mean'))->toBe(data_get($before, 'projected_mean'))
+        ->and($this->prop->fresh()->narrative_json)->toBeNull()
+        ->and(data_get($meta, 'analysis_disposition.status'))->toBe('hold')
+        ->and(data_get($meta, 'analysis_disposition.reason'))->toBe('no_edge')
+        ->and(data_get($meta, 'probability_method'))->toBe('overdispersed_count_uncalibrated');
+});
+
+test('partial opportunity fields trigger an explicit full-stat fallback rather than selecting complete high-volume games', function () {
+    $this->prop->update(['market' => 'player_rush_yds', 'line' => 50.5]);
+    for ($i = 1; $i <= 4; $i++) {
+        $game = ($this->history)(2026, sprintf('2026-09-%02d', $i), $i === 4 ? null : 20);
+        PlayerStat::where('game_id', $game->id)->update(['rushing_yards' => $i === 4 ? 0 : 80]);
+    }
+    ($this->analyze)();
+    $meta = $this->prop->fresh()->confidence_decomposition;
+    expect(data_get($meta, 'projection_context.projection.method'))->toBe('recency_weighted_stat_fallback')
+        ->and(data_get($meta, 'projection_context.projection.reason'))->toBe('incomplete_opportunities')
+        ->and(data_get($meta, 'projection_context.projection.games'))->toBe(4)
+        ->and(data_get($meta, 'projected_mean'))->toBeLessThan(60);
+});
+
+test('quarterback rushing does not inherit the opponents team rushing defense multiplier', function () {
+    $this->player->update(['position' => 'QB']);
+    $config = ($this->invoke)('getSportConfig', 'NFL');
+    $context = ($this->invoke)('buildContextAdjustments', $this->game, $this->player->id, $this->team->id, $this->opponent->id, 'player_rush_yds', $config);
+    expect($context['opponent_factor'])->toEqual(1)
+        ->and($context['opponent_evidence']['reason'])->toBe('qb_specific_rushing_defense_unavailable');
+});
+
+test('opportunity projections remain experimental unless explicitly enabled and switching modes invalidates the evaluation', function () {
+    config(['nfl.props.opportunity_projection_enabled' => false]);
+    foreach (['2026-09-01', '2026-09-02', '2026-09-03'] as $date) {
+        ($this->history)(2026, $date, 20);
+    }
+    ($this->analyze)();
+    $meta = $this->prop->fresh()->confidence_decomposition;
+    expect(data_get($meta, 'schema_version'))->toBe(PlayerPropAnalyzer::NFL_MODEL_VERSION)
+        ->and(data_get($meta, 'projection_context.projection.method'))->toBe('legacy_weighted_baseline')
+        ->and(data_get($meta, 'projection_context.opportunity_candidate.status'))->toBe('experimental_not_validated');
+    config(['nfl.props.opportunity_projection_enabled' => true]);
+    expect(PlayerPropAnalyzer::nflModelVersion())->toBe(PlayerPropAnalyzer::NFL_OPPORTUNITY_MODEL_VERSION)
+        ->and(app(NflPlayerPropCoverage::class)->forGame($this->game->id)['unprocessed_quotes'])->toBe(1);
+    ($this->analyze)();
+    expect(data_get($this->prop->fresh()->confidence_decomposition, 'schema_version'))->toBe(PlayerPropAnalyzer::NFL_OPPORTUNITY_MODEL_VERSION);
+});
+
+test('quarterback starter baselines exclude known relief appearances without dropping a low volume actual start', function () {
+    $this->player->update(['position' => 'QB']);
+    $this->prop->update(['market' => 'player_pass_yds', 'line' => 200.5]);
+    foreach (['2025-10-01', '2025-10-08', '2026-09-13'] as $date) {
+        $game = ($this->history)(str_starts_with($date, '2025') ? 2025 : 2026, $date, 5, ['home_qb_name' => $this->player->full_name]);
+        PlayerStat::where('game_id', $game->id)->update(['passing_attempts' => 5, 'passing_yards' => 250]);
+    }
+    $relief = ($this->history)(2026, '2026-09-06', 0, ['home_qb_name' => 'Other Starter']);
+    PlayerStat::where('game_id', $relief->id)->update(['passing_attempts' => 2, 'passing_yards' => 10]);
+    ($this->analyze)();
+    $meta = $this->prop->fresh()->confidence_decomposition;
+    expect(data_get($meta, 'history.current_season_games'))->toBe(1)
+        ->and(data_get($meta, 'history.eligible_history_games'))->toBe(3)
+        ->and(data_get($meta, 'history.role.excluded_game_ids'))->toBe([$relief->id])
+        ->and(data_get($meta, 'stat_summary.season_avg'))->toEqual(250);
+});

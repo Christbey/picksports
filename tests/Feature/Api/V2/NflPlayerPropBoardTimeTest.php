@@ -67,7 +67,7 @@ it('uses the local kickoff date for NFL board defaults, filters, and recommendat
         ->assertJsonPath('data.0.game.kickoff_label', 'Thu, Sep 17, 7:15 PM CDT')
         ->assertJsonPath('data.0.game.starts_at', '2026-09-18T00:15:00+00:00')
         ->assertJsonPath('data.0.fetched_at', now()->subHours(18)->toIso8601String())
-        ->assertJsonPath('data.0.freshness_hours', 36)
+        ->assertJsonPath('data.0.freshness_hours', (int) config('validation.thresholds.player_prop_freshness.stale_after_hours_by_sport.nfl', 36))
         ->assertJsonPath('meta.diagnostics.raw_prop_count', 1);
 
     $this->getJson('/api/v2/sports/nfl/player-props/board?date=2026-09-17')

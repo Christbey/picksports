@@ -84,7 +84,7 @@ test('NFL season comes from the matchup rather than the calendar year and batche
     $summaries = app(NflPropSeasonSummary::class)->forProps($props);
     $queries = DB::getQueryLog();
     DB::disableQueryLog();
-    expect($queries)->toHaveCount(2)
+    expect($queries)->toHaveCount(4)
         ->and($summaries[$prop->id]['season'])->toBe(2025)
         ->and($summaries[$prop->id]['average'])->toBe(12.0)
         ->and($summaries[$other->id]['average'])->toBeNull();

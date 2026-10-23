@@ -225,7 +225,8 @@ class NflCanonicalCutoverReadinessService
 
         $decisionsByPrediction = BetDecision::query()
             ->select(['id', 'prediction_id', 'prediction_feature_snapshot_id', 'status', 'decided_at',
-                'market_key', 'is_bet', 'pregame_safe', 'explanation->hold_reason as hold_reason'])
+                'market_key', 'is_bet', 'pregame_safe'])
+            ->selectRaw("JSON_OBJECT('hold_reason', JSON_EXTRACT(explanation, '$.hold_reason')) AS explanation")
             ->with('featureSnapshot:id,pregame_safe,generated_at')
             ->where('sport', 'nfl')
             ->where('prediction_table', (new Prediction)->getTable())
@@ -332,7 +333,7 @@ class NflCanonicalCutoverReadinessService
                 ->whereIn('market_key', $missingKeys)
                 ->reject(fn (BetDecision $decision): bool => $decision->status === 'released_tracking_bet')
                 ->mapWithKeys(fn (BetDecision $decision): array => [
-                    $decision->market_key => $decision->getAttribute('hold_reason'),
+                    $decision->market_key => data_get($decision->explanation, 'hold_reason'),
                 ])
                 ->filter()
                 ->all();

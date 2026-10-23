@@ -815,6 +815,13 @@ it('persists and reports an explicit hold until every official candidate market 
         ->toBe('exact_fresh_paired_quote_missing')
         ->and($blocked['coverage_blockers'])->toContain('missing_released_candidate_decisions');
 
+    foreach ([null, 'null', 'exact_fresh_paired_quote_missing'] as $reason) {
+        $held->update(['explanation' => [...$held->explanation, 'hold_reason' => $reason]]);
+        $report = app(NflCanonicalCutoverReadinessService::class)->report(2026, daysForward: 8);
+        expect($report['candidate_decision_hold_reasons_by_game'][$fixture['game']->id])
+            ->toBe($reason === null ? [] : ['spreads' => $reason]);
+    }
+
     $this->artisan('sports:settle-bet-decisions', ['--sport' => 'nfl'])
         ->expectsOutput('Settled 0 decision(s).')
         ->assertSuccessful();

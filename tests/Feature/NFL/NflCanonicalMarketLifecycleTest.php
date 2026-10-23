@@ -444,14 +444,15 @@ it('keeps a valid immutable market fresh relative to canonical capture time', fu
 it('prefers provider market observation time over a fresh ingestion timestamp', function () {
     config()->set('nfl_research.market_freshness_minutes', 30);
     $fixture = nflCanonicalMarketFixture();
+    $providerObservedAt = now()->subHours(2)->toIso8601String();
     recordNflMarketSnapshot(
         $fixture,
-        providerObservedAt: now()->subHours(2)->toIso8601String(),
+        providerObservedAt: $providerObservedAt,
     );
     app(NflCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinutes(2)->toImmutable());
 
     expect(data_get(MarketQuote::query()->firstOrFail()->metadata, 'provider_observed_at'))
-        ->toBe(now()->subHours(2)->toIso8601String())
+        ->toBe($providerObservedAt)
         ->and(fn () => app(GenerateCanonicalPrediction::class)->execute($fixture['game']->fresh()))
         ->toThrow(PredictionLifecycleException::class, 'fresh two-sided spread and total quotes');
 });
@@ -815,6 +816,13 @@ it('persists and reports an explicit hold until every official candidate market 
         ->toBe('exact_fresh_paired_quote_missing')
         ->and($blocked['coverage_blockers'])->toContain('missing_released_candidate_decisions');
 
+    foreach ([null, 'null', 'exact_fresh_paired_quote_missing'] as $reason) {
+        $held->update(['explanation' => [...$held->explanation, 'hold_reason' => $reason]]);
+        $report = app(NflCanonicalCutoverReadinessService::class)->report(2026, daysForward: 8);
+        expect($report['candidate_decision_hold_reasons_by_game'][$fixture['game']->id])
+            ->toBe($reason === null ? [] : ['spreads' => $reason]);
+    }
+
     $this->artisan('sports:settle-bet-decisions', ['--sport' => 'nfl'])
         ->expectsOutput('Settled 0 decision(s).')
         ->assertSuccessful();
@@ -914,3 +922,118 @@ it('identifies quarantined custom EPA without mislabeling it missing or permitti
         ->and($report['coverage_blockers'])->toContain('custom_epa_quarantined')
         ->and($report['ready_for_cutover'])->toBeFalse();
 });
+
+it('keeps readiness disposition selection ordered by generation time then snapshot identity', function (string $revision) {
+    $fixture = nflCanonicalMarketFixture();
+    recordNflMarketSnapshot($fixture);
+    $prediction = recordNflLegacyEpaDisposition($fixture);
+    $readiness = app(NflCanonicalCutoverReadinessService::class);
+    expect($readiness->report(2026)['recorded_disposition_event_count'])->toBe(1);
+    $original = PredictionFeatureSnapshot::query()->where('prediction_id', $prediction->id)->latest('id')->firstOrFail();
+    $newer = recordNflPredictionFeatureSnapshot($fixture, $prediction);
+    $newer->update([
+        'generated_at' => $revision === 'older_generation' ? $original->generated_at->copy()->subMinute() : $original->generated_at,
+        'pregame_safe' => $revision !== 'unsafe',
+    ]);
+    $report = $readiness->report(2026);
+    expect($report['recorded_disposition_event_count'])->toBe($revision === 'same_generation' ? 0 : 1);
+    if ($revision === 'same_generation') {
+        app(NflPredictionDispositionRecorder::class)->record($prediction);
+        expect($readiness->report(2026)['recorded_disposition_event_count'])->toBe(1);
+    }
+})->with(['older_generation', 'same_generation', 'unsafe']);
+
+it('reads only safety metadata from decision snapshots during NFL readiness', function () {
+    $fixture = nflCanonicalMarketFixture();
+    recordNflMarketSnapshot($fixture);
+    recordNflLegacyEpaDisposition($fixture);
+    app(NflCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
+    app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
+    $connection = PredictionFeatureSnapshot::query()->getConnection();
+    $connection->enableQueryLog();
+    try {
+        $report = app(NflCanonicalCutoverReadinessService::class)->report(2026);
+        $snapshotReads = collect($connection->getQueryLog())->pluck('query')
+            ->filter(fn (string $sql) => str_contains($sql, 'prediction_feature_snapshots') && ! str_contains($sql, 'nfl_predictions'));
+        expect($report['recorded_disposition_event_count'])->toBe(1)
+            ->and($report['immutable_pregame_market_event_count'])->toBe(1)
+            ->and($snapshotReads)->toHaveCount(1);
+        foreach ($snapshotReads as $sql) {
+            expect($sql)->not->toContain('*')->not->toContain('"features"')->not->toContain('"outputs"');
+        }
+        $canonicalReads = collect($connection->getQueryLog())->pluck('query')->filter(
+            function (string $sql): bool {
+                preg_match('/\bfrom ["`]?([a-z_]+)["`]? /i', $sql, $matches);
+
+                return ($matches[1] ?? null) === 'event_input_snapshots';
+            },
+        );
+        expect($canonicalReads)->toHaveCount(1);
+        foreach ($canonicalReads as $sql) {
+            expect($sql)->toContain('pregame_market')->not->toContain('*')->not->toContain('source_timestamps');
+        }
+        $runAndDecisionReads = collect($connection->getQueryLog())->pluck('query')->filter(
+            function (string $sql): bool {
+                preg_match('/\bfrom ["`]?([a-z_]+)["`]? /i', $sql, $matches);
+
+                return in_array($matches[1] ?? null, ['calculation_runs', 'bet_decisions'], true);
+            },
+        );
+        expect($runAndDecisionReads)->toHaveCount(2);
+        foreach ($runAndDecisionReads as $sql) {
+            expect($sql)->not->toContain('*')->not->toContain('diagnostics')->not->toContain('market_snapshot');
+        }
+    } finally {
+        $connection->disableQueryLog();
+        $connection->flushQueryLog();
+    }
+});
+
+it('preserves decision provenance while skipping unused feature snapshot payloads', function (string $kind) {
+    $fixture = nflCanonicalMarketFixture();
+    recordNflMarketSnapshot($fixture);
+    $prediction = Prediction::factory()->create([
+        'game_id' => $fixture['game']->id,
+        'predicted_spread' => 8.0, 'predicted_total' => 45.0, 'win_probability' => 0.72,
+        'confidence_score' => 72,
+        'model_metadata' => ['analysis_layer' => [
+            'applied' => true, 'bet_classification' => 'bet', 'eligibility' => ['eligible' => true],
+            'calculated_edge' => ['market_spread' => 3.0, 'spread_points' => 5.0],
+            'pro_signal_layer' => ['tier' => 'official_candidate',
+                'recommended_markets' => [['market' => 'spread', 'score' => 82, 'tier' => 'official_candidate']]],
+        ]],
+    ]);
+    $snapshot = recordNflPredictionFeatureSnapshot($fixture, $prediction);
+    if ($kind === 'held') {
+        MarketQuote::query()->where('game_id', $fixture['game']->id)->where('market_key', 'spreads')->where('side', 'away')->delete();
+    }
+    $connection = PredictionFeatureSnapshot::query()->getConnection();
+    $connection->enableQueryLog();
+    try {
+        $decisions = $kind === 'disposition'
+            ? app(NflPredictionDispositionRecorder::class)->record($prediction)
+            : app(NflReleasedBetDecisionRecorder::class)->record($prediction);
+        expect($decisions)->toHaveCount($kind === 'disposition' ? 3 : 1);
+        foreach ($decisions as $decision) {
+            expect($decision->prediction_feature_snapshot_id)->toBe($snapshot->id)
+                ->and($decision->model_run_id)->toBe($snapshot->model_run_id)
+                ->and(data_get($decision->feature_snapshot, 'feature_hash'))->toBe($snapshot->feature_hash);
+            if ($kind === 'disposition') {
+                expect(data_get($decision->feature_snapshot, 'outputs'))->toBe($snapshot->outputs);
+            } else {
+                expect(data_get($decision->feature_snapshot, 'snapshot_run_id'))->toBe($snapshot->snapshot_run_id)
+                    ->and($decision->status)->toBe($kind === 'held' ? 'held_candidate' : 'released_tracking_bet');
+            }
+        }
+        $reads = collect($connection->getQueryLog())->pluck('query')->filter(
+            fn (string $sql) => str_starts_with(strtolower($sql), 'select') && str_contains($sql, 'prediction_feature_snapshots'),
+        );
+        expect($reads)->toHaveCount(1);
+        foreach ($reads as $sql) {
+            expect($sql)->not->toContain('*')->not->toContain('"features"')->not->toContain('"model_metadata"');
+        }
+    } finally {
+        $connection->disableQueryLog();
+        $connection->flushQueryLog();
+    }
+})->with(['candidate', 'held', 'disposition']);

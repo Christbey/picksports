@@ -3206,37 +3206,7 @@ class GeneratePredictionFromHistoricalElo
      */
     protected function venueSplitProfile(Game $game, int $teamId, bool $homeSplit): array
     {
-        $date = $this->asDate($game->game_date);
-        $query = Game::query()
-            ->where('season', (int) $game->season)
-            ->where('status', 'STATUS_FINAL')
-            ->whereNotNull('home_score')
-            ->whereNotNull('away_score')
-            ->when($date, fn ($query) => $query->whereDate('game_date', '<', $date->toDateString()))
-            ->orderBy('game_date')
-            ->orderBy('id');
-
-        $games = $homeSplit
-            ? $query->where('home_team_id', $teamId)->get()
-            : $query->where('away_team_id', $teamId)->get();
-
-        $margins = [];
-        $pointsFor = [];
-        $pointsAgainst = [];
-        foreach ($games as $priorGame) {
-            $teamScore = (float) ($homeSplit ? $priorGame->home_score : $priorGame->away_score);
-            $opponentScore = (float) ($homeSplit ? $priorGame->away_score : $priorGame->home_score);
-            $margins[] = $teamScore - $opponentScore;
-            $pointsFor[] = $teamScore;
-            $pointsAgainst[] = $opponentScore;
-        }
-
-        return [
-            'games' => $games->count(),
-            'avg_margin' => round($this->average($margins), 3),
-            'points_for' => round($this->average($pointsFor), 3),
-            'points_against' => round($this->average($pointsAgainst), 3),
-        ];
+        return $this->teamHistory($game)->venue($teamId, $homeSplit);
     }
 
     /**

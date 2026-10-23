@@ -37,3 +37,15 @@ test('nfl board prioritizes supported fresh side probabilities rather than edge 
 
     expect($sorted->pluck('id')->all())->toBe([2, 3, 1, 5, 6, 7, 4, 8]);
 });
+
+it('ranks price-aware expected return ahead of a higher raw probability', function () {
+    $now = Carbon::parse('2026-10-10T18:00:00-05:00');
+    $make = fn ($id, $probability, $price) => (new PlayerProp)->forceFill([
+        'id' => $id, 'predicted_over_probability' => $probability, 'recommended_side' => 'Over', 'over_price' => $price,
+        'fetched_at' => $now, 'confidence_score' => 70, 'data_quality_score' => 70,
+        'confidence_decomposition' => ['history' => ['current_season_games' => 6]],
+    ]);
+    // 80% at -500 loses money; 60% at +100 has a positive modeled return.
+    $rows = collect([$make(1, 80, -500), $make(2, 60, 100)]);
+    expect($rows->sortByDesc(fn ($prop) => NflPropBoardOrder::key($prop, $now->timestamp, 36))->pluck('id')->all())->toBe([2, 1]);
+});

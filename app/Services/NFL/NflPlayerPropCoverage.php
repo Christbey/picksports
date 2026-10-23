@@ -32,7 +32,7 @@ class NflPlayerPropCoverage
             $metadata = json_decode($prop->confidence_decomposition ?? '{}', true);
             $state = data_get($metadata, 'analysis_disposition', []);
             $evaluatedAt = $state['evaluated_at'] ?? null;
-            $matches = ($state['model_version'] ?? null) === PlayerPropAnalyzer::NFL_MODEL_VERSION
+            $matches = ($state['model_version'] ?? null) === PlayerPropAnalyzer::nflModelVersion()
                 && ($state['quote_fingerprint'] ?? null) === $this->quoteFingerprint($prop)
                 && is_string($evaluatedAt)
                 && now()->parse($evaluatedAt)->gte(now()->subHours($staleHours))

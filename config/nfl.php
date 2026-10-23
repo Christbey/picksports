@@ -1,6 +1,11 @@
 <?php
 
 return [
+    'props' => [
+        // Keep the opportunity candidate in shadow until chronological evaluation supports promotion.
+        'opportunity_projection_enabled' => env('NFL_PROP_OPPORTUNITY_PROJECTION_ENABLED', false),
+    ],
+
     'matchup_win_rate_sources' => [
         2026 => 'https://www.espn.com/nfl/story/_/id/49742016/2026-win-rates-team-player-rankings-pass-rush-run-stop-blocking',
     ],

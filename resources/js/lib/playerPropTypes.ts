@@ -35,6 +35,13 @@ export type Recommendation = {
             average: number | null;
             games: number;
             missing_stat_games: number;
+            participation?: {
+                team_games: number;
+                recorded_games: number;
+                confirmed_unavailable_games: number;
+                unexplained_absence_games: number;
+                other_qb_started_games: number;
+            } | null;
             opponent?: string | null;
             opponent_conference?: string | null;
         } | null;

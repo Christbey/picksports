@@ -41,7 +41,7 @@ class BettingRecommendationResource extends JsonResource
         if ($season !== null) {
             $coverRecord = [
                 ...($coverRecord ?? []),
-                'historical_last_17' => data_get($prop->confidence_decomposition, 'schema_version') === PlayerPropAnalyzer::NFL_MODEL_VERSION ? null : ($coverRecord['season'] ?? null),
+                'historical_last_17' => in_array(data_get($prop->confidence_decomposition, 'schema_version'), [PlayerPropAnalyzer::NFL_MODEL_VERSION, PlayerPropAnalyzer::NFL_OPPORTUNITY_MODEL_VERSION, 'nfl-player-prop-v3'], true) ? null : ($coverRecord['season'] ?? null),
                 ...$season['records'],
             ];
             // Presentation win rates exclude pushes; do not mutate model snapshots.

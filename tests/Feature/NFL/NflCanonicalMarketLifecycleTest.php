@@ -444,14 +444,15 @@ it('keeps a valid immutable market fresh relative to canonical capture time', fu
 it('prefers provider market observation time over a fresh ingestion timestamp', function () {
     config()->set('nfl_research.market_freshness_minutes', 30);
     $fixture = nflCanonicalMarketFixture();
+    $providerObservedAt = now()->subHours(2)->toIso8601String();
     recordNflMarketSnapshot(
         $fixture,
-        providerObservedAt: now()->subHours(2)->toIso8601String(),
+        providerObservedAt: $providerObservedAt,
     );
     app(NflCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinutes(2)->toImmutable());
 
     expect(data_get(MarketQuote::query()->firstOrFail()->metadata, 'provider_observed_at'))
-        ->toBe(now()->subHours(2)->toIso8601String())
+        ->toBe($providerObservedAt)
         ->and(fn () => app(GenerateCanonicalPrediction::class)->execute($fixture['game']->fresh()))
         ->toThrow(PredictionLifecycleException::class, 'fresh two-sided spread and total quotes');
 });

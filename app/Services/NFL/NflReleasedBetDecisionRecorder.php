@@ -62,7 +62,7 @@ class NflReleasedBetDecisionRecorder
             ->where('generated_at', '<', $gameStartAt)
             ->latest('generated_at')
             ->latest('id')
-            ->first();
+            ->first(['id', 'model_run_id', 'snapshot_run_id', 'feature_hash']);
         $decisions = $recommendations
             ->map(fn (array $recommendation): BetDecision => $this->recordMarket(
                 $prediction,

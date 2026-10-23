@@ -980,3 +980,52 @@ it('reads only safety metadata from decision snapshots during NFL readiness', fu
         $connection->flushQueryLog();
     }
 });
+
+it('preserves decision provenance while skipping unused feature snapshot payloads', function (string $kind) {
+    $fixture = nflCanonicalMarketFixture();
+    recordNflMarketSnapshot($fixture);
+    $prediction = Prediction::factory()->create([
+        'game_id' => $fixture['game']->id,
+        'predicted_spread' => 8.0, 'predicted_total' => 45.0, 'win_probability' => 0.72,
+        'confidence_score' => 72,
+        'model_metadata' => ['analysis_layer' => [
+            'applied' => true, 'bet_classification' => 'bet', 'eligibility' => ['eligible' => true],
+            'calculated_edge' => ['market_spread' => 3.0, 'spread_points' => 5.0],
+            'pro_signal_layer' => ['tier' => 'official_candidate',
+                'recommended_markets' => [['market' => 'spread', 'score' => 82, 'tier' => 'official_candidate']]],
+        ]],
+    ]);
+    $snapshot = recordNflPredictionFeatureSnapshot($fixture, $prediction);
+    if ($kind === 'held') {
+        MarketQuote::query()->where('game_id', $fixture['game']->id)->where('market_key', 'spreads')->where('side', 'away')->delete();
+    }
+    $connection = PredictionFeatureSnapshot::query()->getConnection();
+    $connection->enableQueryLog();
+    try {
+        $decisions = $kind === 'disposition'
+            ? app(NflPredictionDispositionRecorder::class)->record($prediction)
+            : app(NflReleasedBetDecisionRecorder::class)->record($prediction);
+        expect($decisions)->toHaveCount($kind === 'disposition' ? 3 : 1);
+        foreach ($decisions as $decision) {
+            expect($decision->prediction_feature_snapshot_id)->toBe($snapshot->id)
+                ->and($decision->model_run_id)->toBe($snapshot->model_run_id)
+                ->and(data_get($decision->feature_snapshot, 'feature_hash'))->toBe($snapshot->feature_hash);
+            if ($kind === 'disposition') {
+                expect(data_get($decision->feature_snapshot, 'outputs'))->toBe($snapshot->outputs);
+            } else {
+                expect(data_get($decision->feature_snapshot, 'snapshot_run_id'))->toBe($snapshot->snapshot_run_id)
+                    ->and($decision->status)->toBe($kind === 'held' ? 'held_candidate' : 'released_tracking_bet');
+            }
+        }
+        $reads = collect($connection->getQueryLog())->pluck('query')->filter(
+            fn (string $sql) => str_starts_with(strtolower($sql), 'select') && str_contains($sql, 'prediction_feature_snapshots'),
+        );
+        expect($reads)->toHaveCount(1);
+        foreach ($reads as $sql) {
+            expect($sql)->not->toContain('*')->not->toContain('"features"')->not->toContain('"model_metadata"');
+        }
+    } finally {
+        $connection->disableQueryLog();
+        $connection->flushQueryLog();
+    }
+})->with(['candidate', 'held', 'disposition']);

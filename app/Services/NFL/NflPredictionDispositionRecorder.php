@@ -37,7 +37,8 @@ class NflPredictionDispositionRecorder
             ->where('sport', 'nfl')->where('prediction_table', $prediction->getTable())
             ->where('prediction_id', $prediction->id)->where('pregame_safe', true)
             ->where('generated_at', '<=', $now)->where('generated_at', '<', $start)
-            ->latest('generated_at')->latest('id')->first();
+            ->latest('generated_at')->latest('id')
+            ->first(['id', 'model_run_id', 'feature_hash', 'outputs']);
         $market = $this->markets->capture($game, $now, $start);
         $analysis = (array) data_get($prediction->model_metadata, 'analysis_layer', []);
         $decisions = collect();

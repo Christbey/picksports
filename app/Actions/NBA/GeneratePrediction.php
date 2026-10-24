@@ -12,7 +12,10 @@ use App\Models\NBA\Team;
 use App\Models\NBA\TeamMetric;
 use App\Models\NBA\TeamStat;
 use App\Services\NBA\WinProbabilityCalibrationInferenceService;
+use App\Services\Sports\SportsDateWindowService;
 use App\Support\Odds\MarketSpread;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 
 class GeneratePrediction extends AbstractPredictionGenerator
@@ -30,6 +33,9 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
     /** @var array<string, mixed> Win probability calibration metadata */
     private array $winProbabilityCalibrationMetadata = [];
+
+    /** @var array<string, Collection<int, Game>> */
+    private array $completedHistory = [];
 
     protected const SPORT_KEY = 'nba';
 
@@ -68,6 +74,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
         ?Model $awayMetrics,
         Model $game
     ): float {
+        $this->completedHistory = [];
         $this->metadata = [];
         $this->trueEpaMetadata = [];
         $this->totalMetadata = [];
@@ -263,12 +270,14 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $calibratedTotal = $rangeAnchor + (($blendedTotal - $rangeAnchor) * $rangeScale) + $baseAdjustment + $highTotalBoost;
         $vegasTotal = $this->extractMarketTotal($game);
         $this->metadata['market_total'] = $vegasTotal !== null ? round($vegasTotal, 2) : null;
-        $highMarketTotalThreshold = (float) ($calibration['high_market_total_threshold'] ?? 235.0);
-        $highMarketTotalBlendWeight = (float) ($calibration['high_market_total_blend_weight'] ?? 0.55);
-        $marketTotalBlendApplied = false;
-        if ($vegasTotal !== null && $vegasTotal >= $highMarketTotalThreshold) {
-            $calibratedTotal = ($calibratedTotal * (1 - $highMarketTotalBlendWeight)) + ($vegasTotal * $highMarketTotalBlendWeight);
-            $marketTotalBlendApplied = true;
+        $highMarketTotalThreshold = (float) ($calibration['high_market_total_threshold'] ?? 229.0);
+        $highMarketTotalBlendWeight = max(0.0, min(1.0, (float) ($calibration['high_market_total_blend_weight'] ?? 0.68)));
+        $marketTransitionPoints = max(1.0, (float) ($calibration['high_market_total_transition_points'] ?? 10.0));
+        $marketBlendFraction = $vegasTotal === null ? 0.0 : max(0.0, min(1.0, ($vegasTotal - $highMarketTotalThreshold) / $marketTransitionPoints));
+        $appliedMarketBlendWeight = $highMarketTotalBlendWeight * $marketBlendFraction;
+        $marketTotalBlendApplied = $appliedMarketBlendWeight > 0.0;
+        if ($marketTotalBlendApplied) {
+            $calibratedTotal = ($calibratedTotal * (1 - $appliedMarketBlendWeight)) + ($vegasTotal * $appliedMarketBlendWeight);
         }
 
         $this->trueEpaMetadata = [...$this->trueEpaMetadata, ...$trueEpaTotalMeta];
@@ -305,6 +314,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'vegas_total' => $vegasTotal !== null ? round($vegasTotal, 3) : null,
             'high_market_total_threshold' => round($highMarketTotalThreshold, 3),
             'high_market_total_blend_weight' => round($highMarketTotalBlendWeight, 3),
+            'high_market_total_transition_points' => round($marketTransitionPoints, 3),
+            'market_total_blend_weight_applied' => round($appliedMarketBlendWeight, 4),
             'market_total_blend_applied' => $marketTotalBlendApplied,
             'calibrated_total' => round($calibratedTotal, 3),
         ];
@@ -509,32 +520,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $defaultEff = $config['default_efficiency'];
         $defaultPace = $config['average_pace'];
 
-        $recentGames = Game::query()
-            ->where('status', 'STATUS_FINAL')
-            ->where('game_date', '<', $game->game_date)
-            ->where('season', $season)
-            ->where(function ($q) use ($team) {
-                $q->where('home_team_id', $team->id)
-                    ->orWhere('away_team_id', $team->id);
-            })
-            ->orderByDesc('game_date')
-            ->limit($numGames)
-            ->pluck('id')
-            ->toArray();
-
-        if (empty($recentGames)) {
-            return $this->defaultRecentForm($defaultEff, $defaultPace);
-        }
-
-        $stats = TeamStat::query()
-            ->where('team_id', $team->id)
-            ->whereIn('game_id', $recentGames)
-            ->join('nba_games', 'nba_team_stats.game_id', '=', 'nba_games.id')
-            ->orderByDesc('nba_games.game_date')
-            ->select('nba_team_stats.*')
-            ->get();
-
-        if ($stats->isEmpty()) {
+        $games = $this->completedGamesForPrediction($team, $game)->take($numGames);
+        if ($games->isEmpty()) {
             return $this->defaultRecentForm($defaultEff, $defaultPace);
         }
 
@@ -543,20 +530,14 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $weightedDefEff = 0;
         $weightedTempo = 0;
 
-        foreach ($stats as $index => $stat) {
+        foreach ($games as $index => $pastGame) {
+            $stat = $pastGame->teamStats->firstWhere('team_id', $team->id);
+            $opponentId = (int) $pastGame->home_team_id === (int) $team->id ? $pastGame->away_team_id : $pastGame->home_team_id;
+            $opponentStat = $pastGame->teamStats->firstWhere('team_id', $opponentId);
             $weight = pow($decay, $index);
-            $possessions = $stat->possessions > 0 ? $stat->possessions : $defaultPace;
+            $possessions = (float) $stat->possessions;
             $offEff = ($stat->points / $possessions) * 100;
-
-            // Get opponent stats for defensive efficiency
-            $opponentStat = TeamStat::query()
-                ->where('game_id', $stat->game_id)
-                ->where('team_id', '!=', $team->id)
-                ->first();
-
-            $defEff = $opponentStat
-                ? ($opponentStat->points / ($opponentStat->possessions > 0 ? $opponentStat->possessions : $defaultPace)) * 100
-                : $defaultEff;
+            $defEff = ($opponentStat->points / $opponentStat->possessions) * 100;
 
             $weightedOffEff += $offEff * $weight;
             $weightedDefEff += $defEff * $weight;
@@ -580,21 +561,34 @@ class GeneratePrediction extends AbstractPredictionGenerator
      */
     private function getRestDays(Team $team, Model $game): ?int
     {
-        $lastGame = Game::query()
-            ->whereIn('status', ['STATUS_FINAL', 'STATUS_SCHEDULED', 'STATUS_DELAYED'])
-            ->where(function ($q) use ($team) {
-                $q->where('home_team_id', $team->id)
-                    ->orWhere('away_team_id', $team->id);
-            })
-            ->where('game_date', '<', $game->game_date)
-            ->orderByDesc('game_date')
-            ->first();
-
-        if (! $lastGame) {
+        $targetStart = $this->gameStart($game);
+        if ($targetStart === null) {
             return null;
         }
 
-        return (int) $lastGame->game_date->diffInDays($game->game_date);
+        $lastGame = Game::query()
+            ->with('sportEvent')
+            ->whereIn('status', ['STATUS_FINAL', 'STATUS_SCHEDULED', 'STATUS_DELAYED'])
+            ->where(fn ($query) => $query->where('home_team_id', $team->id)->orWhere('away_team_id', $team->id))
+            ->where(fn ($query) => $query
+                ->whereDate('game_date', '<=', $targetStart->toDateString())
+                ->orWhereHas('sportEvent', fn ($query) => $query->where('starts_at', '<', $targetStart->setTimezone(config('app.timezone')))))
+            ->whereKeyNot($game->getKey())
+            ->orderByDesc('game_date')
+            ->limit(30)
+            ->get()
+            ->filter(fn (Game $prior) => $this->gameStart($prior)?->lt($targetStart) === true)
+            ->sortByDesc(fn (Game $prior) => $this->gameStart($prior)->getTimestamp())
+            ->first();
+
+        if ($lastGame === null) {
+            return null;
+        }
+
+        $timezone = app(SportsDateWindowService::class)->timezone();
+
+        return (int) $this->gameStart($lastGame)->setTimezone($timezone)->startOfDay()
+            ->diffInDays($targetStart->setTimezone($timezone)->startOfDay());
     }
 
     /**
@@ -824,27 +818,73 @@ class GeneratePrediction extends AbstractPredictionGenerator
      */
     private function completedSeasonGameIdsForTeam(Team $team, int $season, Model $game, ?string $venue = null): array
     {
-        $query = Game::query()
-            ->where('status', 'STATUS_FINAL')
-            ->where('game_date', '<', $game->game_date)
-            ->where('season', $season);
+        return $this->completedGamesForPrediction($team, $game, $venue)->modelKeys();
+    }
 
-        if (in_array($venue, ['home', 'away'], true)) {
-            $query->where(fn ($query) => $query->whereNull('neutral_site')->orWhere('neutral_site', false));
+    /**
+     * @return Collection<int, Game>
+     */
+    private function completedGamesForPrediction(Team $team, Model $game, ?string $venue = null): Collection
+    {
+        $targetStart = $this->gameStart($game);
+        if ($targetStart === null) {
+            return new Collection;
         }
 
-        if ($venue === 'home') {
-            $query->where('home_team_id', $team->id);
-        } elseif ($venue === 'away') {
-            $query->where('away_team_id', $team->id);
-        } else {
-            $query->where(function ($q) use ($team) {
-                $q->where('home_team_id', $team->id)
-                    ->orWhere('away_team_id', $team->id);
-            });
+        $key = implode(':', [$team->id, $game->season, $game->season_type, $targetStart->toIso8601String()]);
+        if (! isset($this->completedHistory[$key])) {
+            $seasonType = (int) ($game->season_type ?: config('nba.season.types.regular', 2));
+            $seasonTypes = $seasonType === (int) config('nba.season.types.postseason', 3)
+                ? [(int) config('nba.season.types.regular', 2), $seasonType]
+                : [$seasonType];
+
+            $this->completedHistory[$key] = Game::query()
+                ->with(['sportEvent', 'teamStats'])
+                ->where('status', 'STATUS_FINAL')
+                ->where('season', $game->season)
+                ->whereIn('season_type', $seasonTypes)
+                ->whereKeyNot($game->getKey())
+                ->where(fn ($query) => $query->where('home_team_id', $team->id)->orWhere('away_team_id', $team->id))
+                ->get()
+                ->filter(function (Game $prior) use ($targetStart): bool {
+                    if ($this->gameStart($prior)?->lt($targetStart) !== true || $prior->teamStats->count() !== 2) {
+                        return false;
+                    }
+
+                    foreach ([$prior->home_team_id, $prior->away_team_id] as $teamId) {
+                        $stat = $prior->teamStats->firstWhere('team_id', $teamId);
+                        if ($stat === null || $stat->points === null || $stat->possessions === null || (float) $stat->possessions <= 0) {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                })
+                ->sortByDesc(fn (Game $prior) => $this->gameStart($prior)->getTimestamp())
+                ->values();
         }
 
-        return $query->pluck('id')->toArray();
+        return $this->completedHistory[$key]->filter(function (Game $prior) use ($team, $venue): bool {
+            if (! in_array($venue, ['home', 'away'], true)) {
+                return true;
+            }
+
+            return ! $prior->neutral_site && (int) $prior->{$venue.'_team_id'} === (int) $team->id;
+        })->values();
+    }
+
+    private function gameStart(Model $game): ?CarbonImmutable
+    {
+        if ($game->sportEvent?->starts_at !== null) {
+            return CarbonImmutable::instance($game->sportEvent->starts_at)->utc();
+        }
+
+        $date = $game->getAttributes()['game_date'] ?? null;
+        if (blank($game->game_time) && is_string($date) && preg_match('/^\d{4}-\d{2}-\d{2}(?: 00:00:00)?$/', $date) === 1) {
+            return null;
+        }
+
+        return app(SportsDateWindowService::class)->gameDateTimeUtc($date, $game->game_time);
     }
 
     /**

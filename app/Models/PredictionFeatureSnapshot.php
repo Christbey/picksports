@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use LogicException;
 
 class PredictionFeatureSnapshot extends Model
 {
@@ -86,6 +87,17 @@ class PredictionFeatureSnapshot extends Model
     public function metadataPayload(): BelongsTo
     {
         return $this->belongsTo(SnapshotMetadataPayload::class, 'metadata_payload_hash', 'sha256');
+    }
+
+    protected static function booted(): void
+    {
+        $immutable = function (self $snapshot): void {
+            if ($snapshot->getOriginal('blend_version') === 'nfl-prop-shadow-v1') {
+                throw new LogicException('NFL prop shadow snapshots are immutable.');
+            }
+        };
+        static::updating($immutable);
+        static::deleting($immutable);
     }
 
     public function modelRun(): BelongsTo

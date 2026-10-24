@@ -2,6 +2,11 @@
 
 return [
     'props' => [
+        'shadow' => [
+            'enabled' => (bool) env('NFL_PROP_SHADOW_ENABLED', false),
+            'bundle_path' => env('NFL_PROP_SHADOW_BUNDLE_PATH', base_path('ml/nfl/config/nfl_prop_shadow_20261023.json')),
+            'bundle_sha256' => env('NFL_PROP_SHADOW_BUNDLE_SHA256', 'bf629101dd5d96d83491778f4550756a8d6625b1f4697f638fd2cee9ef552730'),
+        ],
         // Keep the opportunity candidate in shadow until chronological evaluation supports promotion.
         'opportunity_projection_enabled' => env('NFL_PROP_OPPORTUNITY_PROJECTION_ENABLED', false),
     ],

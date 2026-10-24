@@ -153,6 +153,8 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 
 ### NFL
 
+- Optional frozen prop experiment (`NFL_PROP_SHADOW_ENABLED=true`): snapshot stored quotes at `:15` and `:45` between `08:00` and `23:00` Central, grade at `08:45` daily, and report at `08:55` Monday. Ships with the frozen, hash-pinned seven-market bundle from October 23; `NFL_PROP_SHADOW_BUNDLE_PATH` and `NFL_PROP_SHADOW_BUNDLE_SHA256` can override it together. Captures the first eligible observation within 24 hours of kickoff per player/game/market/bundle; stale, future and in-play observations are excluded. Uses existing snapshot/evaluation tables, never refreshes providers, never retrains or promotes models, and never changes production picks. Missing actuals remain pending; grading preserves the frozen quote and first recorded result.
+
 - Baseline NFL forecasts and their feature snapshots publish in one transaction. Optional `EvaluateShadowPrediction` jobs dispatch after commit on the application queue, with one attempt and a 120-second timeout. A shadow failure cannot roll back the baseline; late shadow jobs cannot overwrite newer forecasts or refresh the baseline timestamp. Shadow observations retain their own records without modifying frozen snapshot inputs or outputs.
 
 - At `07:45` Central during the depth-chart season, `espn:sync-nfl-depth-charts --season=<current> --sync` refreshes all teams daily and waits for completion before reporting success. Each fetch preserves a timestamped observation, allowing recent QB-change comparisons and fresh personnel inputs for the later prediction pipeline. Game links remain tied to the prediction revision that selected the chart.

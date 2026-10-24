@@ -1108,6 +1108,15 @@ $attachCommandHeartbeat(
     $nflPregamePipelineCommand,
     'NFL: Pregame Pipeline',
 );
+$nflPropShadowEnabled = fn (): bool => $nflInSeason() && (bool) config('nfl.props.shadow.enabled', false);
+$nflPropShadowCommand = "nfl:snapshot-prop-shadow --season={$fallSeasonYear}";
+$nflPropShadowEvent = Schedule::command($nflPropShadowCommand)
+    ->cron('15,45 8-23 * * *')->when($nflPropShadowEnabled)
+    ->name('NFL: Snapshot Prop Shadow')->onOneServer()->withoutOverlapping(30);
+$attachCommandHeartbeat($nflPropShadowEvent, $nflPropShadowCommand, 'NFL: Snapshot Prop Shadow');
+$scheduleDailySeasonJob("nfl:grade-prop-shadow --season={$fallSeasonYear}", '08:45', $nflPropShadowEnabled, 'NFL: Grade Prop Shadow');
+$scheduleDailySeasonJob("nfl:report-prop-shadow --season={$fallSeasonYear}", '08:55', $nflPropShadowEnabled, 'NFL: Report Prop Shadow')
+    ->mondays()->appendOutputTo(storage_path('logs/nfl-prop-shadow.log'));
 $nflCanonicalPipelineEnabled = fn (): bool => $nflInSeason()
     && (bool) config('prediction_lifecycle.canonical_pipeline.nfl', false);
 $scheduleDailySeasonJob("nfl:grade-player-props --season={$fallSeasonYear}", '08:40', $nflInSeason, 'NFL: Grade Player Props');

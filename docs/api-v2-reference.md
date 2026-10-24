@@ -439,24 +439,24 @@ NFL has a long offseason. During offseason or pre-schedule windows:
 Use these when validating the API/data path locally or on production:
 
 ```bash
-php8.4 artisan sports:operations-sentinel --sport=nfl --season=2026 --validate-only --skip-ai-review
-php8.4 artisan healthcheck:validate-data --sport=nfl
-php8.4 artisan operations:ai-review --sport=nfl --season=2026 --date=2026-06-14
+php8.5 artisan sports:operations-sentinel --sport=nfl --season=2026 --validate-only --skip-ai-review
+php8.5 artisan healthcheck:validate-data --sport=nfl
+php8.5 artisan operations:ai-review --sport=nfl --season=2026 --date=2026-06-14
 ```
 
 Use these when repairing the data path during an active NFL season:
 
 ```bash
-php8.4 artisan sports:operations-sentinel --sport=nfl --season=2026 --repair --ai
-php8.4 artisan espn:sync-nfl-current
-php8.4 artisan espn:sync-nfl-games-scoreboard
-php8.4 artisan espn:sync-nfl-game-details
-php8.4 artisan espn:sync-nfl-depth-charts --season=2026
-php8.4 artisan espn:sync-nfl-injuries
-php8.4 artisan nfl:sync-game-weather --season=2026 --days-back=0 --days-forward=7 --force
-php8.4 artisan nfl:sync-odds
-php8.4 artisan nfl:sync-player-props
-php8.4 artisan sports:sync-futures-odds --sport=nfl --season=2026
+php8.5 artisan sports:operations-sentinel --sport=nfl --season=2026 --repair --ai
+php8.5 artisan espn:sync-nfl-current
+php8.5 artisan espn:sync-nfl-games-scoreboard
+php8.5 artisan espn:sync-nfl-game-details
+php8.5 artisan espn:sync-nfl-depth-charts --season=2026
+php8.5 artisan espn:sync-nfl-injuries
+php8.5 artisan nfl:sync-game-weather --season=2026 --days-back=0 --days-forward=7 --force
+php8.5 artisan nfl:sync-odds
+php8.5 artisan nfl:sync-player-props
+php8.5 artisan sports:sync-futures-odds --sport=nfl --season=2026
 ```
 
 After any repair pass, rerun validation and inspect representative v2 payloads:

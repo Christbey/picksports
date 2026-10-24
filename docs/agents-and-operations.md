@@ -270,13 +270,13 @@ Default behavior:
 Manual recovery example:
 
 ```bash
-php8.4 artisan sports:operations-sentinel --sport=mlb --from-date=2026-05-31 --to-date=2026-06-02 --season=2026
+php8.5 artisan sports:operations-sentinel --sport=mlb --from-date=2026-05-31 --to-date=2026-06-02 --season=2026
 ```
 
 Stat refresh controls:
 
 ```bash
-php8.4 artisan sports:operations-sentinel --sport=mlb --season=2026 --stat-lookback-days=5 --stat-limit=50
+php8.5 artisan sports:operations-sentinel --sport=mlb --season=2026 --stat-lookback-days=5 --stat-limit=50
 ```
 
 Use `--skip-stats` only when debugging the scoreboard/grade path and intentionally leaving player/team stats untouched.

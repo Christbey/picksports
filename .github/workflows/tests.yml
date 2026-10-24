@@ -32,11 +32,8 @@ jobs:
       - run: node --experimental-strip-types --test tests/frontend/*.test.mjs
 
   ci:
+    name: ci (8.5)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        php-version: ['8.4', '8.5']
 
     steps:
       - name: Checkout code
@@ -45,7 +42,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: ${{ matrix.php-version }}
+          php-version: '8.5'
           tools: composer:v2
           coverage: xdebug
 
@@ -83,7 +80,6 @@ jobs:
         run: composer test:ci
 
       - name: Verify committed API v2 OpenAPI artifact
-        if: matrix.php-version == '8.4'
         run: |
           php artisan api:v2-openapi-generate --output=/tmp/openapi-v2.json
           diff --unified docs/openapi-v2.json /tmp/openapi-v2.json

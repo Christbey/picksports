@@ -38,6 +38,7 @@ const {
             <CfbLiveBettingCard :game-id="gameId" />
             <BettingPlanCard
                 :betting-plan="pageProps.prediction?.narrative?.betting_plan"
+                :prediction="pageProps.prediction"
             />
             <NflGameEnhancements v-bind="analysisSectionProps" />
         </template>

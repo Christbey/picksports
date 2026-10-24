@@ -118,6 +118,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Enable or disable feature-group removal experiments.",
     )
 
+    props_parser = subparsers.add_parser("props-benchmark", help="Offline chronological comparison of player-prop models.")
+    props_parser.add_argument("--input", required=True, help="Trusted prop benchmark JSON samples.")
+    props_parser.add_argument("--output", required=True, help="Aggregate report JSON destination.")
+    props_parser.add_argument("--minimum-training-rows", type=int, default=50)
+    props_parser.add_argument("--seed", type=int, default=42)
+    props_parser.add_argument("--expected-dataset-sha256")
+
+    freeze_parser = subparsers.add_parser("props-freeze", help="Freeze shortlisted prop candidates for prospective PHP shadow inference.")
+    freeze_parser.add_argument("--input", required=True)
+    freeze_parser.add_argument("--output", required=True)
+    freeze_parser.add_argument("--minimum-training-rows", type=int, default=50)
+    freeze_parser.add_argument("--seed", type=int, default=42)
+    freeze_parser.add_argument("--expected-dataset-sha256")
+
     predict_parser = subparsers.add_parser(
         "predict",
         help="Load a saved run and emit the NFL model output contract.",
@@ -139,6 +153,18 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser = build_parser()
     arguments = parser.parse_args(argv)
     try:
+        if arguments.command == "props-freeze":
+            from picksports_nfl_ml.prop_shadow import freeze
+
+            _print_json(freeze(arguments.input, arguments.output, arguments.minimum_training_rows,
+                               arguments.seed, arguments.expected_dataset_sha256))
+            return
+        if arguments.command == "props-benchmark":
+            from picksports_nfl_ml.props import run_benchmark
+
+            _print_json(run_benchmark(arguments.input, arguments.output, arguments.minimum_training_rows,
+                                      arguments.seed, arguments.expected_dataset_sha256))
+            return
         if arguments.command == "validate":
             schema = FeatureSchema.load(arguments.schema)
             frame, dataset_hash = load_immutable_dataset(

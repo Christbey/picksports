@@ -56,3 +56,13 @@ def test_diagnose_cli_exposes_chronological_experiment_controls() -> None:
     assert arguments.target_season == 2024
     assert arguments.training_windows == "expanding,4,5"
     assert arguments.ablations is False
+
+
+def test_prop_benchmark_cli_exposes_fixed_experiment_controls() -> None:
+    arguments = build_parser().parse_args([
+        'props-benchmark', '--input', 'samples.json', '--output', 'report.json',
+        '--minimum-training-rows', '50', '--expected-dataset-sha256', 'abc',
+    ])
+    assert arguments.command == 'props-benchmark'
+    assert arguments.minimum_training_rows == 50
+    assert arguments.expected_dataset_sha256 == 'abc'

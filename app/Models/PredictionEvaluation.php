@@ -45,14 +45,14 @@ class PredictionEvaluation extends Model
     protected static function booted(): void
     {
         static::updating(function (self $evaluation): void {
-            if ($evaluation->getOriginal('canonical_prediction_id') !== null) {
-                throw new LogicException('Canonical prediction evaluations are immutable.');
+            if ($evaluation->getOriginal('canonical_prediction_id') !== null || $evaluation->getOriginal('blend_version') === 'nfl-prop-shadow-v1') {
+                throw new LogicException($evaluation->getOriginal('blend_version') === 'nfl-prop-shadow-v1' ? 'NFL prop shadow evaluations are immutable.' : 'Canonical prediction evaluations are immutable.');
             }
         });
 
         static::deleting(function (self $evaluation): void {
-            if ($evaluation->canonical_prediction_id !== null) {
-                throw new LogicException('Canonical prediction evaluations are immutable.');
+            if ($evaluation->canonical_prediction_id !== null || $evaluation->getOriginal('blend_version') === 'nfl-prop-shadow-v1') {
+                throw new LogicException($evaluation->getOriginal('blend_version') === 'nfl-prop-shadow-v1' ? 'NFL prop shadow evaluations are immutable.' : 'Canonical prediction evaluations are immutable.');
             }
         });
     }

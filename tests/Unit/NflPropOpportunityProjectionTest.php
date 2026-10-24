@@ -35,3 +35,35 @@ it('does not invent receiving volume when every target field is missing', functi
         new PlayerStat(['receptions' => 4]),
     ]), 'player_receptions'))->toBeNull();
 });
+
+it('stabilizes sudden workload changes without altering the existing candidate', function () {
+    $history = collect(range(1, 10))->map(fn ($id) => new PlayerStat([
+        'game_id' => $id, 'rushing_attempts' => $id <= 5 ? 20 : 5,
+        'rushing_yards' => $id <= 5 ? 80 : 20,
+    ]));
+    $service = new NflPropOpportunityProjection;
+    $original = $service->project($history, 'player_rush_yds');
+    $revised = $service->projectStabilized($history, 'player_rush_yds');
+
+    expect($revised['expected_opportunities'])->toBeLessThan($original['expected_opportunities'])
+        ->and($revised['expected_opportunities'])->toBeGreaterThan(5.0)
+        ->and($revised['production_per_opportunity'])->toBe(4.0)
+        ->and($revised['baseline_mean'])->toBeLessThan($original['baseline_mean'])
+        ->and($revised['volume_prior_games'])->toBe(3.0)
+        ->and($revised['status'])->toBe('experimental_not_validated')
+        ->and($service->project($history, 'player_rush_yds'))->toBe($original);
+});
+
+it('preserves constant workloads zero outcomes and missing-volume evidence in the stabilized candidate', function () {
+    $service = new NflPropOpportunityProjection;
+    $constant = collect(range(1, 8))->map(fn ($id) => new PlayerStat([
+        'game_id' => $id, 'receiving_targets' => 8, 'receptions' => 4,
+    ]));
+    expect($service->projectStabilized($constant, 'player_receptions')['baseline_mean'])->toEqualWithDelta(4, 0.000001);
+    $constant->each(fn ($row) => $row->receiving_targets = $row->receptions = 0);
+    expect($service->projectStabilized($constant, 'player_receptions')['baseline_mean'])->toBe(0.0);
+    $constant[0]->receiving_targets = null;
+    expect($service->projectStabilized($constant, 'player_receptions')['missing_opportunity_games'])->toBe(1)
+        ->and($service->projectStabilized(collect([new PlayerStat(['receptions' => 4])]), 'player_receptions'))->toBeNull()
+        ->and($service->projectStabilized($constant, 'player_anytime_td'))->toBeNull();
+});

@@ -9,6 +9,17 @@ class NflPropOpportunityProjection
 {
     public function project(Collection $history, string $market): ?array
     {
+        return $this->calculate($history, $market, 0.0);
+    }
+
+    /** Offline candidate only: stabilize recent volume using three effective games of longer-window volume. */
+    public function projectStabilized(Collection $history, string $market): ?array
+    {
+        return $this->calculate($history, $market, 3.0);
+    }
+
+    private function calculate(Collection $history, string $market, float $volumePriorGames): ?array
+    {
         [$volume, $output] = match ($market) {
             'player_pass_yds' => ['passing_attempts', 'passing_yards'],
             'player_pass_completions' => ['passing_attempts', 'passing_completions'],
@@ -45,9 +56,12 @@ class NflPropOpportunityProjection
             }
         }
         $expected = $volumeWeight > 0 ? $recentVolume / $volumeWeight : $opportunities / $weight;
+        if ($volumePriorGames > 0 && $volumeWeight > 0) {
+            $expected = ($recentVolume + $volumePriorGames * ($opportunities / $weight)) / ($volumeWeight + $volumePriorGames);
+        }
         $efficiency = $opportunities > 0 ? $production / $opportunities : 0.0;
 
-        return [
+        $projection = [
             'method' => 'recency_weighted_opportunities',
             'opportunity_field' => $volume,
             'production_field' => $output,
@@ -60,5 +74,12 @@ class NflPropOpportunityProjection
             'production_per_opportunity' => round($efficiency, 6),
             'baseline_mean' => $expected * $efficiency,
         ];
+        if ($volumePriorGames > 0) {
+            $projection['method'] = 'stabilized_recency_weighted_opportunities';
+            $projection['volume_prior_games'] = $volumePriorGames;
+            $projection['status'] = 'experimental_not_validated';
+        }
+
+        return $projection;
     }
 }

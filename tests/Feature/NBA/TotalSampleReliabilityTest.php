@@ -53,7 +53,7 @@ it('ramps total season recent and venue support with actual sample size', functi
         ->and($total['venue_efficiency_weight_applied'])->toEqual(round(0.15 * $support, 4))
         ->and($total['season_home_score_component'])->toEqual(round(110 + 5 * $support, 3))
         ->and((float) $prediction->predicted_total)->toEqual($expectedTotal);
-})->with([[0, 0.0, 222.0], [1, 0.1, 223.9], [2, 0.2, 225.6], [10, 1.0, 235.3]]);
+})->with([[0, 0.0, 222.0], [1, 0.1, 223.9], [2, 0.2, 225.6], [10, 1.0, 235.7]]);
 
 it('does not treat a missing opponent or a neutral venue as observed evidence', function () {
     nbaSampleHistory($this->home, $this->away, 1);

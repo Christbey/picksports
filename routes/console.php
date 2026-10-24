@@ -429,7 +429,7 @@ $scheduleSportPipeline = function (
 */
 
 foreach (['nba' => $nbaInSeason, 'cbb' => $cbbInSeason, 'wcbb' => $wcbbInSeason] as $sport => $inSeason) {
-    $command = "sports:ensure-basketball-predictions {$sport}";
+    $command = "sports:ensure-basketball-predictions {$sport}".($sport === 'nba' ? ' --days-forward=7' : '');
     $name = strtoupper($sport).': Ensure Pregame Prediction Coverage';
     $event = Schedule::command($command)
         ->everyFiveMinutes()
@@ -442,6 +442,17 @@ foreach (['nba' => $nbaInSeason, 'cbb' => $cbbInSeason, 'wcbb' => $wcbbInSeason]
 }
 
 // NBA
+$nbaRecoveryCommand = 'sports:ensure-basketball-predictions nba --days-forward=7 --refresh-existing';
+$nbaRecoveryName = 'NBA: Recover Metrics and Upcoming Predictions';
+$nbaRecovery = Schedule::command($nbaRecoveryCommand)
+    ->hourlyAt(15)
+    ->when($nbaInSeason)
+    ->name($nbaRecoveryName)
+    ->onOneServer()
+    ->withoutOverlapping(10)
+    ->runInBackground();
+$attachCommandHeartbeat($nbaRecovery, $nbaRecoveryCommand, $nbaRecoveryName);
+
 $scheduleSportPipeline(
     'espn:sync-nba-games-scoreboard --sync --from-date='.now('America/Chicago')->toDateString().' --to-date='.now('America/Chicago')->addDays(7)->toDateString(),
     '01:00',

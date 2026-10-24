@@ -7,6 +7,8 @@ use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
 use App\Models\SportEvent;
+use App\Services\Sports\PipelineCommandRunner;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
@@ -120,4 +122,49 @@ it('uses published canonical coverage when the canonical pipeline is enabled', f
     $this->artisan('sports:ensure-basketball-predictions nba')->assertSuccessful();
     $this->artisan('sports:ensure-basketball-predictions nba')
         ->expectsOutput('Pregame coverage: 0 generated; 0 still missing.')->assertSuccessful();
+});
+
+it('rebuilds ending year NBA metrics before refreshing seven day forecasts and preserves started and final forecasts', function () {
+    $upcoming = coverageGame(['game_date' => '2026-10-27', 'game_time' => '01:00:00']);
+    $existing = Prediction::factory()->create(['game_id' => $upcoming->id, 'predicted_spread' => 4.5]);
+    $started = coverageGame(['game_date' => '2026-10-20', 'game_time' => '16:00:00']);
+    $past = Prediction::factory()->create(['game_id' => $started->id, 'predicted_spread' => 7.5]);
+    $final = coverageGame(['status' => 'STATUS_FINAL']);
+    Prediction::factory()->create(['game_id' => $final->id]);
+    coverageGame(['game_date' => '2026-10-29']);
+    $order = [];
+    $this->mock(PipelineCommandRunner::class)->shouldReceive('call')->twice()
+        ->withArgs(fn ($command, $arguments) => $command === 'nba:calculate-team-metrics'
+            && $arguments['--season'] === 2027 && in_array($arguments['--season-type'], [2, 3], true))
+        ->andReturnUsing(function ($command, $arguments) use (&$order) {
+            $order[] = $arguments['--season-type'];
+
+            return 0;
+        });
+    $this->mock(GeneratePrediction::class)->shouldReceive('execute')->once()
+        ->withArgs(fn ($game, $narratives) => $game->id === $upcoming->id && $narratives === false)
+        ->andReturnUsing(function ($game) use (&$order, $existing) {
+            expect($order)->toBe([2, 3]);
+            $existing->update(['predicted_spread' => 2.5]);
+
+            return $existing;
+        });
+    $this->artisan('sports:ensure-basketball-predictions nba --days-forward=7 --refresh-existing')
+        ->expectsOutput('Pregame coverage: 1 generated; 0 still missing.')->assertSuccessful();
+    expect((float) $existing->fresh()->predicted_spread)->toBe(2.5)
+        ->and((float) $past->fresh()->predicted_spread)->toBe(7.5);
+});
+
+it('does not refresh forecasts when the metric prerequisite fails and releases the recovery lock', function () {
+    coverageGame();
+    $this->mock(PipelineCommandRunner::class)->shouldReceive('call')->once()->andReturn(1);
+    $this->mock(GeneratePrediction::class)->shouldNotReceive('execute');
+    $this->artisan('sports:ensure-basketball-predictions nba --refresh-existing')->assertFailed();
+    $lock = Cache::lock('basketball-prediction-coverage:nba', 600);
+    expect($lock->get())->toBeTrue();
+    $lock->release();
+});
+
+it('rejects NBA recovery flags for college basketball', function () {
+    $this->artisan('sports:ensure-basketball-predictions cbb --refresh-existing')->assertFailed();
 });

@@ -37,6 +37,27 @@ class ResearchRefreshPolicy
             && ($candidateHash === null || data_get($report->raw_payload, 'candidate_hash') === $candidateHash);
     }
 
+    /** Reuse a grounded conditional report without treating it as betting-ready. */
+    public function reusable(?SportsGameContextReport $report, Game $game, string $fingerprint, string $candidateHash): bool
+    {
+        if ($this->current($report, $game, $fingerprint, $candidateHash)) {
+            return true;
+        }
+
+        return $report && $report->status === 'partial'
+            && $report->expires_at?->isFuture()
+            && $report->researched_at?->gt(now()->subMinutes($this->freshnessMinutes($game)))
+            && data_get($report->raw_payload, 'research_fingerprint') === $fingerprint
+            && data_get($report->raw_payload, 'candidate_hash') === $candidateHash
+            && data_get($report->raw_payload, 'analysis_quality.version') === 1
+            && data_get($report->raw_payload, 'analysis_quality.rejected_claims') === 0
+            && data_get($report->raw_payload, 'analysis_quality.unverified_questions') === 0
+            && ! empty(data_get($report->raw_payload, 'decision_research.supporting'))
+            && ! empty(data_get($report->raw_payload, 'decision_research.opposing'))
+            && collect(data_get($report->raw_payload, 'decision_research.unresolved', []))
+                ->contains(fn ($item) => ($item['blocking'] ?? false) && ($item['evidence_status'] ?? null) === 'reference_verified');
+    }
+
     public function fingerprint(Game $game, array $packet): string
     {
         $weather = $game->weather;
@@ -51,7 +72,9 @@ class ResearchRefreshPolicy
         $weatherValues['high_gust'] = is_numeric($weather?->wind_gust_mph) ? $weather->wind_gust_mph >= 24 : null;
 
         return hash('sha256', json_encode([
-            'version' => 1,
+            'version' => 2,
+            'analysis_context_version' => ResearchAnalysisContext::VERSION,
+            'season_evidence' => collect(app(ResearchAnalysisContext::class)->forGame($game, [])['season_evidence'])->except('cutoff_utc')->all(),
             'analysis_mode' => config('nfl_research.web_search_enabled', false) ? 'web_research' : 'supplied_sources',
             'prompt_version' => config('ai.features.nfl_game_context_research.prompt_version'),
             'uncertainty_policy' => ResearchUncertaintyPolicy::VERSION,

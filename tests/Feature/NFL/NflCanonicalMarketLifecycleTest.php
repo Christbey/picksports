@@ -371,8 +371,9 @@ it('verifies only the same bounded generation horizon while reporting historical
         ->and($report['historical_eligible_event_count'])->toBe(2)
         ->and($report['historical_missing_safe_prediction_count'])->toBe(1)
         ->and($report['out_of_horizon_eligible_event_count'])->toBe(1)
-        ->and(Carbon::parse($report['horizon_end_at'])->setTimezone('America/Chicago')->toIso8601String())
-        ->toBe(Carbon::parse($report['horizon_start_at'])->setTimezone('America/Chicago')->addDays(8)->toIso8601String());
+        ->and($report['horizon_days_forward'])->toBe(8)
+        ->and(Carbon::parse($report['horizon_start_at'])->setTimezone(config('app.timezone'))->addDays(8)
+            ->equalTo(Carbon::parse($report['horizon_end_at'])))->toBeTrue();
 
     $this->artisan('nfl:generate-canonical-predictions', [
         '--season' => 2026,

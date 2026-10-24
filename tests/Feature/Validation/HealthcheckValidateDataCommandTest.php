@@ -1152,7 +1152,7 @@ test('healthcheck validate data flags pipeline order violations', function () {
         'command' => 'espn:sync-nba-game-details',
         'status' => 'success',
         'source' => 'schedule',
-        'ran_at' => now(),
+        'ran_at' => now()->subHours(2),
     ]);
 
     CommandHeartbeat::query()->create([
@@ -1160,7 +1160,7 @@ test('healthcheck validate data flags pipeline order violations', function () {
         'command' => 'nba:generate-predictions',
         'status' => 'success',
         'source' => 'schedule',
-        'ran_at' => now()->subHour(),
+        'ran_at' => now()->subHours(3),
     ]);
 
     $this->artisan('healthcheck:validate-data', ['--sport' => 'nba'])
@@ -1175,7 +1175,7 @@ test('healthcheck validate data flags pipeline order violations', function () {
 
     expect($finding)->not->toBeNull()
         ->and($finding->status)->toBe('failing')
-        ->and($finding->recommended_action)->toBe('nba:generate-predictions')
+        ->and($finding->recommended_action)->toBe('sports:ensure-basketball-predictions nba --days-forward=7 --refresh-existing')
         ->and(data_get($finding->facts, 'violations.0.label'))->toBe('details before predictions')
         ->and(data_get($finding->facts, 'violations.0.temporal_scope.blocking_active_games'))->toBe(1);
 });
@@ -1488,4 +1488,41 @@ test('healthcheck validate data notifies admins when a validation run regresses'
         return $notification->run->scope === 'sport:nba'
             && $notification->delta['failing'] >= 1;
     });
+});
+
+test('NBA futures validation uses the ending year in October', function () {
+    $this->travelTo('2026-10-24 12:00:00');
+    DB::table('sports_futures_odds')->insert([
+        'row_key' => 'nba-2027-title', 'sport' => 'nba', 'season' => 2027,
+        'odds_api_sport_key' => 'basketball_nba_championship_winner',
+        'bookmaker' => 'draftkings', 'market_key' => 'championship_winner',
+        'outcome_name' => 'Boston Celtics', 'price' => 500,
+        'fetched_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    $result = app(FuturesOddsFreshnessCheck::class)->run('nba', config('validation.sports.nba'));
+    expect($result['status'])->toBe('passing')->and($result['metadata']['season'])->toBe(2027)
+        ->and($result['metadata']['rows'])->toBe(1);
+});
+
+test('NBA pipeline validation recognizes successful hourly recovery and retains overdue input failures', function () {
+    $this->travelTo('2026-10-24 12:00:00');
+    Game::factory()->create(['season' => 2027, 'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => Team::factory(), 'away_team_id' => Team::factory(),
+        'game_date' => '2026-10-25', 'game_time' => '01:00:00']);
+    foreach (['espn:sync-nba-game-details', 'nba:calculate-team-metrics --season=2027'] as $command) {
+        CommandHeartbeat::query()->create(['sport' => 'nba', 'command' => $command,
+            'status' => 'success', 'source' => 'test', 'ran_at' => now()->subMinutes(30)]);
+    }
+    CommandHeartbeat::query()->create(['sport' => 'nba',
+        'command' => 'sports:ensure-basketball-predictions nba --season=2027 --refresh-existing',
+        'status' => 'success', 'source' => 'recovery', 'ran_at' => now()->subMinutes(20)]);
+    $profile = config('validation.sports.nba');
+    $profile['pipeline_order'] = array_slice($profile['pipeline_order'], 0, 2);
+    $check = app(PipelineOrderCheck::class);
+    expect($check->run('nba', $profile)['status'])->toBe('passing');
+    CommandHeartbeat::query()->create(['sport' => 'nba', 'command' => 'nba:calculate-team-metrics --season=2027',
+        'status' => 'success', 'source' => 'test', 'ran_at' => now()]);
+    expect($check->run('nba', $profile)['status'])->toBe('warning');
+    $this->travel(76)->minutes();
+    expect($check->run('nba', $profile)['status'])->toBe('failing');
 });

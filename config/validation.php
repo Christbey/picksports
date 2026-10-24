@@ -38,7 +38,8 @@ return [
             'injuries_command' => 'espn:sync-nba-injuries',
             'futures_enabled' => true,
             'pipeline_order' => [
-                ['label' => 'details before predictions', 'upstream' => ['espn:sync-nba-game-details%'], 'downstream' => ['nba:generate-predictions%'], 'recommended_action' => 'nba:generate-predictions'],
+                ['label' => 'details before predictions', 'upstream' => ['espn:sync-nba-game-details%'], 'downstream' => ['nba:generate-predictions%', 'sports:ensure-basketball-predictions nba%--refresh-existing%'], 'recommended_action' => 'sports:ensure-basketball-predictions nba --days-forward=7 --refresh-existing', 'refresh_grace_minutes' => 75],
+                ['label' => 'metrics before predictions', 'upstream' => ['nba:calculate-team-metrics%'], 'downstream' => ['nba:generate-predictions%', 'sports:ensure-basketball-predictions nba%--refresh-existing%'], 'recommended_action' => 'sports:ensure-basketball-predictions nba --days-forward=7 --refresh-existing', 'refresh_grace_minutes' => 75],
                 ['label' => 'odds before player props', 'upstream' => ['nba:sync-odds%'], 'downstream' => ['nba:sync-player-props%'], 'recommended_action' => 'nba:sync-player-props'],
             ],
         ],

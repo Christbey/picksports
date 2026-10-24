@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Sports;
 
 use App\Models\CanonicalPrediction;
+use App\Services\CommandHeartbeatService;
 use App\Services\Sports\PipelineCommandRunner;
 use App\Services\Sports\SportsDateWindowService;
 use App\Support\BasketballSeason;
@@ -123,6 +124,14 @@ class EnsureBasketballPredictionsCommand extends Command
                     SportsViewCache::SEGMENT_PREDICTIONS_AVAILABLE_DATES,
                     SportsViewCache::SEGMENT_PREDICTIONS_AVAILABLE_SEASONS,
                 ]);
+            }
+            if ($refresh && $missing === 0) {
+                app(CommandHeartbeatService::class)->recordSuccess(
+                    "sports:ensure-basketball-predictions nba --season={$season} --refresh-existing",
+                    'nba',
+                    'recovery',
+                    ['generated' => $generated],
+                );
             }
             $this->info("Pregame coverage: {$generated} generated; {$missing} still missing.");
 

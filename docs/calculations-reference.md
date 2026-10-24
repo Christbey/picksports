@@ -428,6 +428,10 @@ The total model blends:
 - true-EPA total blend
 - optional market-aware calibration
 
+NBA recent-form and venue inputs use complete paired team statistics from finals strictly before target tipoff. Canonical event start times take precedence over raw UTC date/time fields. Regular-season forecasts exclude preseason and All-Star games; postseason forecasts may use regular-season and postseason history. Rest uses America/Chicago calendar dates, including prior scheduled series games, rather than UTC date differences.
+
+The market-total blend ramps linearly from zero at `high_market_total_threshold` (default 229) to the configured maximum weight (default 0.68) over `high_market_total_transition_points` (default 10). Thus the full blend applies at 239 or higher without a threshold discontinuity. This transition is a rule setting, not an empirically validated calibration. Metadata records both the maximum and actually applied market weight.
+
 ### CBB and WCBB prediction model
 
 Source:

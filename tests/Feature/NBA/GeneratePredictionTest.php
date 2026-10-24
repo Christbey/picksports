@@ -502,7 +502,8 @@ it('uses prior scheduled playoff series games when calculating future rest days'
         'status' => 'STATUS_SCHEDULED',
         'season' => 2026,
         'season_type' => 3,
-        'game_date' => now()->addDays(2),
+        'game_date' => now()->addDays(2)->toDateString(),
+        'game_time' => '23:00:00',
     ]);
 
     $nextSeriesGame = Game::factory()->create([
@@ -511,7 +512,8 @@ it('uses prior scheduled playoff series games when calculating future rest days'
         'status' => 'STATUS_SCHEDULED',
         'season' => 2026,
         'season_type' => 3,
-        'game_date' => now()->addDays(4),
+        'game_date' => now()->addDays(4)->toDateString(),
+        'game_time' => '23:00:00',
     ]);
 
     $prediction = app(GeneratePrediction::class)->execute($nextSeriesGame);

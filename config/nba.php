@@ -271,6 +271,7 @@ return [
             'high_total_slope' => env('NBA_TOTAL_HIGH_TOTAL_SLOPE', 0.25),
             'high_market_total_threshold' => env('NBA_TOTAL_HIGH_MARKET_THRESHOLD', 229.0),
             'high_market_total_blend_weight' => env('NBA_TOTAL_HIGH_MARKET_BLEND_WEIGHT', 0.68),
+            'high_market_total_transition_points' => env('NBA_TOTAL_HIGH_MARKET_TRANSITION_POINTS', 10.0),
         ],
 
         'live_model' => [

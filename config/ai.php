@@ -46,7 +46,7 @@ $config['features'] = [
     ],
     'nfl_game_context_research' => [
         'enabled' => (bool) env('AI_NFL_GAME_CONTEXT_RESEARCH_ENABLED', true),
-        'prompt_version' => env('AI_NFL_GAME_CONTEXT_RESEARCH_PROMPT_VERSION', 'nfl-game-context-research-v2'),
+        'prompt_version' => env('AI_NFL_GAME_CONTEXT_RESEARCH_PROMPT_VERSION', 'nfl-game-context-research-v3'),
         'provider' => env('AI_NFL_GAME_CONTEXT_RESEARCH_PROVIDER', 'openai'),
         'model' => env('AI_NFL_GAME_CONTEXT_RESEARCH_MODEL', 'gpt-5.6-luna'),
         'timeout_seconds' => env('AI_NFL_GAME_CONTEXT_RESEARCH_TIMEOUT_SECONDS', 120),

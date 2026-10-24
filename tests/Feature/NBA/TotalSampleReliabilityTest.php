@@ -114,3 +114,23 @@ it('scales the post model recent adjustment and records every remaining total st
         ->and($total['context_total_adjustment'])->toEqual(-1.32)
         ->and(round($total['rounded_calibrated_total'] + $total['context_total_adjustment'], 1))->toEqual((float) $prediction->predicted_total);
 });
+
+it('does not subtract the generic injury rating loss again from NBA totals', function () {
+    config(['nba.prediction.injury_total_weight' => 0.015]);
+    nbaSampleMetrics($this->home, 0);
+    nbaSampleMetrics($this->away, 0);
+    $baseline = app(GeneratePrediction::class)->preview($this->target);
+    TeamMetric::query()->where('team_id', $this->home->id)->update(['injury_adjusted_team_rating' => 1400]);
+    $injured = app(GeneratePrediction::class)->preview($this->target);
+    expect($injured['predicted_total'])->toEqual($baseline['predicted_total'])
+        ->and(data_get($injured, 'model_metadata.total_model.context_injury_adjustment'))->toEqual(0.0);
+});
+
+it('does not count previous season fallback metrics as current season sample support', function () {
+    foreach ([$this->home, $this->away] as $team) {
+        nbaSampleMetrics($team, 82, ['season' => 2026, 'offensive_efficiency' => 150, 'defensive_efficiency' => 150, 'tempo' => 120]);
+    }
+    $prediction = app(GeneratePrediction::class)->preview($this->target);
+    expect($prediction['predicted_total'])->toEqual(222.0)
+        ->and(data_get($prediction, 'model_metadata.total_model.home_season_support'))->toEqual(0.0);
+});

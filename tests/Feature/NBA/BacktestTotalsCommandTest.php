@@ -5,6 +5,7 @@ use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
 use App\Models\PredictionFeatureSnapshot;
+use App\Models\SportEvent;
 use App\Services\Predictions\ModelRunRecorder;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Artisan;
@@ -82,4 +83,13 @@ it('does not count an exact model market tie as an under bet', function () {
     nbaFrozenTotalSnapshot($this->game, $this->prediction, $this->run->id, attributes: ['outputs' => ['predicted_total' => 230]]);
     Artisan::call('nba:backtest-totals', ['--season' => 2027]);
     expect(Artisan::output())->toContain('Rows: 1', '0-0-0', '0 (0.0%)');
+});
+
+it('validates historical snapshots against canonical tipoff despite a contradictory raw game date', function () {
+    $event = SportEvent::factory()->create(['sport' => 'nba', 'season' => 2027,
+        'starts_at' => CarbonImmutable::parse('2026-10-24T22:00:00Z')->setTimezone(config('app.timezone'))]);
+    $this->game->update(['sport_event_id' => $event->id, 'game_date' => '2026-10-26']);
+    nbaFrozenTotalSnapshot($this->game, $this->prediction, $this->run->id, '2026-10-24T23:00:00Z');
+    Artisan::call('nba:backtest-totals', ['--season' => 2027]);
+    expect(Artisan::output())->toContain('Excluded games without usable pregame evidence: 1');
 });

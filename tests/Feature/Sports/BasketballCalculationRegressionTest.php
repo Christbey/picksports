@@ -138,6 +138,16 @@ it('does not blend home and away venue scoring splits into a neutral site total'
         }
         $metricClass::factory()->create($attributes);
     }
+    if ($sport === 'nba') {
+        $prior = Game::factory()->create([
+            'home_team_id' => $home->id, 'away_team_id' => $away->id,
+            'season' => 2027, 'season_type' => 2, 'status' => 'STATUS_FINAL',
+            'game_date' => '2026-10-19', 'game_time' => '23:00:00',
+        ]);
+        foreach ([$home, $away] as $team) {
+            TeamStat::factory()->create(['game_id' => $prior->id, 'team_id' => $team->id, 'points' => 140, 'possessions' => 100]);
+        }
+    }
     $game->neutral_site = true;
     config(["{$sport}.prediction.total_venue_efficiency_weight" => 0]);
     $baseline = (new ReflectionMethod($action, 'makePredictionData'))->invoke(app($action), $game);

@@ -189,6 +189,7 @@ return [
         // Recent form
         'recent_form_games' => 10,
         'recency_decay' => 0.9,
+        'total_full_weight_games' => 10,
         'total_recent_efficiency_weight' => 0.35,
         'total_venue_efficiency_weight' => 0.15,
         'total_season_tempo_regression_weight' => 0.58,

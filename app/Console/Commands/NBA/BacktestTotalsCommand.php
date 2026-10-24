@@ -2,8 +2,10 @@
 
 namespace App\Console\Commands\NBA;
 
-use App\Actions\NBA\GeneratePrediction;
-use App\Models\NBA\Prediction;
+use App\Models\NBA\Game;
+use App\Models\PredictionFeatureSnapshot;
+use App\Services\Sports\SportsDateWindowService;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 
@@ -12,17 +14,22 @@ class BacktestTotalsCommand extends Command
     protected $signature = 'nba:backtest-totals
         {--season= : Filter by season}
         {--limit=250 : Limit number of most recent graded/final predictions to inspect}
-        {--stored : Use stored predicted totals instead of recomputing with the current model}
+        {--stored : Compatibility flag; evaluation always uses frozen pregame snapshots}
+        {--season-type=2 : Restrict to a season phase (2 regular, 3 postseason)}
         {--detailed : Show biggest misses}';
 
     protected $description = 'Backtest NBA total predictions against market totals and final scores';
+
+    private int $excludedGames = 0;
 
     public function handle(): int
     {
         $rows = $this->loadRows();
 
+        $this->line('Source: frozen pregame forecasts and matching frozen market totals.');
+        $this->line('Excluded games without usable pregame evidence: '.$this->excludedGames);
         if ($rows->isEmpty()) {
-            $this->warn('No final NBA predictions with totals market data found for the selected scope.');
+            $this->warn('No final NBA games with usable frozen pregame totals found for the selected scope.');
 
             return self::SUCCESS;
         }
@@ -72,96 +79,63 @@ class BacktestTotalsCommand extends Command
 
     private function loadRows(): Collection
     {
-        $generator = app(GeneratePrediction::class);
-
-        $query = Prediction::query()
-            ->with(['game.homeTeam', 'game.awayTeam'])
-            ->whereNotNull('predicted_total')
-            ->whereHas('game', function ($query) {
-                $query->where('status', 'STATUS_FINAL')
-                    ->whereNotNull('home_score')
-                    ->whereNotNull('away_score');
-
-                if ($this->option('season')) {
-                    $query->where('season', (int) $this->option('season'));
-                }
-            })
-            ->latest();
-
-        $limit = (int) $this->option('limit');
-        if ($limit > 0) {
-            $query->limit($limit);
-        }
-
-        return $query->get()
-            ->map(function (Prediction $prediction) use ($generator): ?array {
-                $game = $prediction->game;
-                if (! $game) {
-                    return null;
-                }
-
-                $marketTotal = $this->extractMarketTotal($game->odds_data);
-                if ($marketTotal === null) {
-                    return null;
-                }
-
-                $actualTotal = (float) $game->home_score + (float) $game->away_score;
-                $modelTotal = $this->option('stored')
-                    ? (float) $prediction->predicted_total
-                    : $this->recomputedTotal($generator, $game, $prediction);
-                $pick = $modelTotal > $marketTotal ? 'over' : 'under';
-                $result = $actualTotal > $marketTotal
-                    ? 'over'
-                    : ($actualTotal < $marketTotal ? 'under' : 'push');
-
-                return [
-                    'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
-                    'model_total' => $modelTotal,
-                    'market_total' => $marketTotal,
-                    'actual_total' => $actualTotal,
-                    'pick' => $pick,
-                    'result' => $result,
-                    'won' => $pick === $result,
-                    'push' => $result === 'push',
-                    'edge' => abs($modelTotal - $marketTotal),
-                    'model_error' => abs($actualTotal - $modelTotal),
-                ];
-            })
-            ->filter()
-            ->values();
-    }
-
-    private function extractMarketTotal(mixed $oddsData): ?float
-    {
-        if (! is_array($oddsData)) {
-            return null;
-        }
-
-        foreach (($oddsData['bookmakers'] ?? []) as $bookmaker) {
-            foreach (($bookmaker['markets'] ?? []) as $market) {
-                if (($market['key'] ?? null) !== 'totals') {
-                    continue;
-                }
-
-                foreach (($market['outcomes'] ?? []) as $outcome) {
-                    if (($outcome['name'] ?? null) === 'Over' && is_numeric($outcome['point'] ?? null)) {
-                        return (float) $outcome['point'];
-                    }
-                }
+        $this->excludedGames = 0;
+        $games = Game::query()
+            ->with(['homeTeam', 'awayTeam', 'sportEvent'])
+            ->where('status', 'STATUS_FINAL')
+            ->whereNotNull('home_score')
+            ->whereNotNull('away_score')
+            ->where('season_type', (int) $this->option('season-type'))
+            ->when($this->option('season'), fn ($query) => $query->where('season', (int) $this->option('season')))
+            ->get()->keyBy('id');
+        $snapshots = PredictionFeatureSnapshot::query()
+            ->where('sport', 'nba')->where('prediction_table', 'nba_predictions')
+            ->whereIn('game_id', $games->modelKeys())
+            ->where('pregame_safe', true)->whereNotNull('model_run_id')
+            ->where('availability_status', 'observed_pregame')
+            ->whereNotNull('generated_at')->whereNotNull('features_available_at')
+            ->orderByDesc('generated_at')->orderByDesc('id')->get()->groupBy('game_id');
+        $dates = app(SportsDateWindowService::class);
+        $rows = $games->map(function (Game $game) use ($snapshots, $dates): ?array {
+            $start = $game->sportEvent?->starts_at;
+            if ($start === null && filled($game->game_time)) {
+                $start = $dates->gameDateTimeUtc($game->getAttributes()['game_date'] ?? null, $game->game_time);
             }
-        }
+            if ($start === null) {
+                $this->excludedGames++;
 
-        return null;
-    }
+                return null;
+            }
+            $start = CarbonImmutable::instance($start);
+            $snapshot = ($snapshots->get($game->id) ?? collect())->first(function (PredictionFeatureSnapshot $snapshot) use ($start): bool {
+                return $snapshot->generated_at->lt($start) && $snapshot->features_available_at->lte($snapshot->generated_at)
+                    && is_numeric(data_get($snapshot->outputs, 'predicted_total'))
+                    && is_numeric(data_get($snapshot->market_context, 'market_total') ?? data_get($snapshot->outputs, 'market_total'));
+            });
+            if ($snapshot === null) {
+                $this->excludedGames++;
 
-    private function recomputedTotal(GeneratePrediction $generator, object $game, Prediction $prediction): float
-    {
-        $simulatedGame = clone $game;
-        $simulatedGame->status = 'STATUS_SCHEDULED';
+                return null;
+            }
+            $modelTotal = (float) $snapshot->outputs['predicted_total'];
+            $marketTotal = (float) (data_get($snapshot->market_context, 'market_total') ?? data_get($snapshot->outputs, 'market_total'));
+            $actualTotal = (float) $game->home_score + (float) $game->away_score;
+            $pick = $modelTotal > $marketTotal ? 'over' : ($modelTotal < $marketTotal ? 'under' : 'pass');
+            $result = $actualTotal > $marketTotal ? 'over' : ($actualTotal < $marketTotal ? 'under' : 'push');
 
-        $preview = $generator->preview($simulatedGame);
+            return [
+                'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
+                'game_start_at' => $start->getTimestamp(),
+                'snapshot_id' => $snapshot->id,
+                'model_total' => $modelTotal, 'market_total' => $marketTotal, 'actual_total' => $actualTotal,
+                'pick' => $pick, 'result' => $result, 'won' => $pick === $result,
+                'push' => $result === 'push', 'edge' => abs($modelTotal - $marketTotal),
+                'model_error' => abs($actualTotal - $modelTotal),
+            ];
+        })->filter()->sortByDesc('game_start_at')->values();
+        $limit = (int) $this->option('limit');
 
-        return (float) ($preview['predicted_total'] ?? $prediction->predicted_total);
+        return $limit > 0 ? $rows->take($limit)->values() : $rows;
     }
 
     /**
@@ -171,7 +145,7 @@ class BacktestTotalsCommand extends Command
     private function summarize(Collection $rows): array
     {
         $threshold = (float) config('nba.betting.edge_thresholds.total');
-        $recommended = $rows->filter(fn (array $row) => (float) $row['edge'] >= $threshold)->values();
+        $recommended = $rows->filter(fn (array $row) => $row['pick'] !== 'pass' && (float) $row['edge'] >= $threshold)->values();
         $wins = $recommended->where('won', true)->count();
         $pushes = $recommended->where('push', true)->count();
         $losses = $recommended->count() - $wins - $pushes;

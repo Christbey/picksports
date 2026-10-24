@@ -117,7 +117,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $usePersistedTotalInjuryContext = $this->hasPersistedInjuryAdjustedTotal($homeMetrics, $awayMetrics);
         $injurySpreadAdj = $usePersistedSpreadInjuryContext ? 0.0 : $injuryContext['spread_adj'];
         $injuryTotalAdj = $usePersistedTotalInjuryContext
-            ? $this->persistedInjuryTotalAdjustment($homeMetrics, $awayMetrics)
+            ? $this->nbaPersistedInjuryTotalAdjustment($homeMetrics, $awayMetrics)
             : $injuryContext['total_adj'];
 
         // 5. Ensemble blend
@@ -196,6 +196,24 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $awayOffEff = $awayMetrics?->offensive_efficiency ?? $defaultEfficiency;
         $awayDefEff = $awayMetrics?->defensive_efficiency ?? $defaultEfficiency;
 
+        $homeHistory = $this->completedGamesForPrediction($game->homeTeam, $game);
+        $awayHistory = $this->completedGamesForPrediction($game->awayTeam, $game);
+        $sampleTarget = max(1, (int) ($config['total_full_weight_games'] ?? $config['recent_form_games']));
+        $homeSeasonSupport = $this->totalMetricSupport($homeMetrics, $game, $sampleTarget, $homeHistory->count());
+        $awaySeasonSupport = $this->totalMetricSupport($awayMetrics, $game, $sampleTarget, $awayHistory->count());
+        $homeOffEff = $defaultEfficiency + (($homeOffEff - $defaultEfficiency) * $homeSeasonSupport);
+        $homeDefEff = $defaultEfficiency + (($homeDefEff - $defaultEfficiency) * $homeSeasonSupport);
+        $awayOffEff = $defaultEfficiency + (($awayOffEff - $defaultEfficiency) * $awaySeasonSupport);
+        $awayDefEff = $defaultEfficiency + (($awayDefEff - $defaultEfficiency) * $awaySeasonSupport);
+        $homeRecentCount = min($homeHistory->count(), (int) $config['recent_form_games']);
+        $awayRecentCount = min($awayHistory->count(), (int) $config['recent_form_games']);
+        $recentSupport = min(1.0, min($homeRecentCount, $awayRecentCount) / $sampleTarget);
+        $homeVenueCount = $game->neutral_site ? 0 : $this->completedGamesForPrediction($game->homeTeam, $game, 'home')->count();
+        $awayVenueCount = $game->neutral_site ? 0 : $this->completedGamesForPrediction($game->awayTeam, $game, 'away')->count();
+        $venueSupport = min(1.0, min($homeVenueCount, $awayVenueCount) / $sampleTarget);
+        $recentWeight *= $recentSupport;
+        $venueWeight *= $venueSupport;
+
         $homeForm = $this->getRecentForm($game->homeTeam, $game->season, $game);
         $awayForm = $this->getRecentForm($game->awayTeam, $game->season, $game);
 
@@ -228,7 +246,11 @@ class GeneratePrediction extends AbstractPredictionGenerator
         // Blend season tempo with recent form tempo
         $seasonPaceRaw = (($homeMetrics?->tempo ?? $averagePace)
             + ($awayMetrics?->tempo ?? $averagePace)) / 2;
-        $seasonPace = $this->regressTotalPace($seasonPaceRaw, $averagePace, $seasonTempoRegressionWeight);
+        $supportedSeasonPace = $averagePace + (
+            (($homeMetrics?->tempo ?? $averagePace) - $averagePace) * $homeSeasonSupport
+            + (($awayMetrics?->tempo ?? $averagePace) - $averagePace) * $awaySeasonSupport
+        ) / 2;
+        $seasonPace = $this->regressTotalPace($supportedSeasonPace, $averagePace, $seasonTempoRegressionWeight);
 
         $formPaceRaw = ($homeForm['tempo'] + $awayForm['tempo']) / 2;
         $formPace = $this->regressTotalPace($formPaceRaw, $averagePace, $recentTempoRegressionWeight);
@@ -236,7 +258,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $maxRecentPaceDrop = (float) ($calibration['max_recent_pace_drop'] ?? 7.0);
         $recentPaceFloor = max(0.0, $seasonPace - $maxRecentPaceDrop);
         $formPace = max($formPace, $recentPaceFloor);
-        $pace = ($seasonPace + $formPace) / 2;
+        $pace = $seasonPace + (($formPace - $seasonPace) * 0.5 * $recentSupport);
         $paceFloor = (float) ($calibration['pace_floor'] ?? 95.0);
         $paceFloorBlend = (float) ($calibration['pace_floor_blend'] ?? 0.55);
         if ($pace < $paceFloor) {
@@ -282,6 +304,18 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
         $this->trueEpaMetadata = [...$this->trueEpaMetadata, ...$trueEpaTotalMeta];
         $this->totalMetadata = [
+            'sample_policy' => 'linear_support_v1',
+            'full_weight_games' => $sampleTarget,
+            'home_season_support' => round($homeSeasonSupport, 4),
+            'away_season_support' => round($awaySeasonSupport, 4),
+            'home_recent_games' => $homeRecentCount,
+            'away_recent_games' => $awayRecentCount,
+            'home_venue_games' => $homeVenueCount,
+            'away_venue_games' => $awayVenueCount,
+            'recent_support' => round($recentSupport, 4),
+            'venue_support' => round($venueSupport, 4),
+            'recent_efficiency_weight_applied' => round($recentWeight, 4),
+            'venue_efficiency_weight_applied' => round($venueWeight, 4),
             'season_home_score_component' => round($homeSeasonScore, 3),
             'season_away_score_component' => round($awaySeasonScore, 3),
             'recent_home_score_component_raw' => round($rawHomeRecentScore, 3),
@@ -345,6 +379,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
         float $winProbability,
         float $confidenceScore
     ): array {
+        $this->totalMetadata['rounded_calibrated_total'] = round((float) ($this->totalMetadata['calibrated_total'] ?? $predictedTotal), 1);
+        $this->totalMetadata['final_predicted_total'] = $predictedTotal;
+        $this->totalMetadata['post_model_adjustment'] = round($predictedTotal - $this->totalMetadata['rounded_calibrated_total'], 1);
+
         $defaultEfficiency = config('nba.prediction.default_efficiency');
         $calibration = app(WinProbabilityCalibrationInferenceService::class)
             ->calibrate($this->getSport(), $winProbability);
@@ -535,9 +573,9 @@ class GeneratePrediction extends AbstractPredictionGenerator
             $opponentId = (int) $pastGame->home_team_id === (int) $team->id ? $pastGame->away_team_id : $pastGame->home_team_id;
             $opponentStat = $pastGame->teamStats->firstWhere('team_id', $opponentId);
             $weight = pow($decay, $index);
-            $possessions = (float) $stat->possessions;
+            $possessions = $this->historyPossessions($stat);
             $offEff = ($stat->points / $possessions) * 100;
-            $defEff = ($opponentStat->points / $opponentStat->possessions) * 100;
+            $defEff = ($opponentStat->points / $this->historyPossessions($opponentStat)) * 100;
 
             $weightedOffEff += $offEff * $weight;
             $weightedDefEff += $defEff * $weight;
@@ -617,35 +655,17 @@ class GeneratePrediction extends AbstractPredictionGenerator
     private function getVenueEfficiency(Team $team, int $season, string $venue, Model $game): array
     {
         $defaultEff = config('nba.prediction.default_efficiency');
-        $games = $this->completedSeasonGameIdsForTeam($team, $season, $game, $venue);
-
-        if (empty($games)) {
+        $games = $this->completedGamesForPrediction($team, $game, $venue);
+        if ($games->isEmpty()) {
             return ['off' => $defaultEff, 'def' => $defaultEff, 'net' => 0];
         }
 
-        $stats = TeamStat::query()
-            ->where('team_id', $team->id)
-            ->whereIn('game_id', $games)
-            ->get();
-
-        if ($stats->isEmpty()) {
-            return ['off' => $defaultEff, 'def' => $defaultEff, 'net' => 0];
-        }
-
-        $totalPoints = $stats->sum('points');
-        $totalPoss = $stats->sum('possessions');
-
-        $offEff = $totalPoss > 0 ? ($totalPoints / $totalPoss) * 100 : $defaultEff;
-
-        // Opponent stats for defensive efficiency
-        $opponentPoints = TeamStat::query()
-            ->where('team_id', '!=', $team->id)
-            ->whereIn('game_id', $games)
-            ->sum('points');
-        $opponentPoss = TeamStat::query()
-            ->where('team_id', '!=', $team->id)
-            ->whereIn('game_id', $games)
-            ->sum('possessions');
+        $stats = $games->map(fn (Game $prior) => $prior->teamStats->firstWhere('team_id', $team->id));
+        $opponentStats = $games->map(fn (Game $prior) => $prior->teamStats->first(fn (TeamStat $stat) => (int) $stat->team_id !== (int) $team->id));
+        $totalPoss = $stats->sum(fn (TeamStat $stat) => $this->historyPossessions($stat));
+        $offEff = ($stats->sum('points') / $totalPoss) * 100;
+        $opponentPoints = $opponentStats->sum('points');
+        $opponentPoss = $opponentStats->sum(fn (TeamStat $stat) => $this->historyPossessions($stat));
 
         $defEff = $opponentPoss > 0 ? ($opponentPoints / $opponentPoss) * 100 : $defaultEff;
 
@@ -853,7 +873,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
                     foreach ([$prior->home_team_id, $prior->away_team_id] as $teamId) {
                         $stat = $prior->teamStats->firstWhere('team_id', $teamId);
-                        if ($stat === null || $stat->points === null || $stat->possessions === null || (float) $stat->possessions <= 0) {
+                        if ($stat === null || $stat->points === null || $this->historyPossessions($stat) <= 0) {
                             return false;
                         }
                     }
@@ -871,6 +891,51 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
             return ! $prior->neutral_site && (int) $prior->{$venue.'_team_id'} === (int) $team->id;
         })->values();
+    }
+
+    private function historyPossessions(TeamStat $stat): float
+    {
+        if ($stat->possessions !== null) {
+            return max(0.0, (float) $stat->possessions);
+        }
+
+        foreach (['field_goals_attempted', 'offensive_rebounds', 'turnovers', 'free_throws_attempted'] as $field) {
+            if ($stat->{$field} === null || $stat->{$field} < 0) {
+                return 0.0;
+            }
+        }
+
+        return max(0.0, $stat->field_goals_attempted - $stat->offensive_rebounds + $stat->turnovers
+            + ((float) config('nba.possession_coefficient') * $stat->free_throws_attempted));
+    }
+
+    private function totalMetricSupport(?Model $metric, Model $game, int $sampleTarget, int $validGames): float
+    {
+        if ($metric === null || (int) $metric->season !== (int) $game->season) {
+            return 0.0;
+        }
+
+        return min(1.0, min($validGames, max(0, (int) $metric->wins + (int) $metric->losses)) / $sampleTarget);
+    }
+
+    protected function applyContextMetricAdjustments(?Model $homeMetrics, ?Model $awayMetrics, int $homeElo, int $awayElo): array
+    {
+        [$spread] = parent::applyContextMetricAdjustments($homeMetrics, $awayMetrics, $homeElo, $awayElo);
+        $target = max(1, (int) ($this->totalMetadata['full_weight_games'] ?? 10));
+        $homeSupport = min(1.0, (int) ($this->totalMetadata['home_recent_games'] ?? 0) / $target);
+        $awaySupport = min(1.0, (int) ($this->totalMetadata['away_recent_games'] ?? 0) / $target);
+        $recent = (((float) ($homeMetrics?->recent_form_rating ?? 0) * $homeSupport)
+            + ((float) ($awayMetrics?->recent_form_rating ?? 0) * $awaySupport)) * $this->contextWeight('nba', 'recent_total_weight');
+        $fatigue = -(max(0.0, (float) ($homeMetrics?->rest_travel_fatigue ?? 0))
+            + max(0.0, (float) ($awayMetrics?->rest_travel_fatigue ?? 0))) * $this->contextWeight('nba', 'fatigue_total_weight');
+        $total = round($recent + $fatigue, 2);
+        $this->totalMetadata['context_recent_adjustment'] = round($recent, 4);
+        $this->totalMetadata['context_fatigue_adjustment'] = round($fatigue, 4);
+        $this->totalMetadata['context_injury_adjustment'] = 0.0;
+        $this->totalMetadata['context_total_adjustment'] = $total;
+        $this->totalMetadata['post_model_injury_adjustment'] = 0.0;
+
+        return [$spread, $total];
     }
 
     private function gameStart(Model $game): ?CarbonImmutable
@@ -941,7 +1006,15 @@ class GeneratePrediction extends AbstractPredictionGenerator
             || $awayMetrics?->injury_total_adjustment !== null;
     }
 
+    /**
+     * NBA already includes the persisted injury points inside its total model.
+     */
     protected function persistedInjuryTotalAdjustment(?Model $homeMetrics, ?Model $awayMetrics): float
+    {
+        return 0.0;
+    }
+
+    private function nbaPersistedInjuryTotalAdjustment(?Model $homeMetrics, ?Model $awayMetrics): float
     {
         return round(
             (float) ($homeMetrics?->injury_total_adjustment ?? 0.0)

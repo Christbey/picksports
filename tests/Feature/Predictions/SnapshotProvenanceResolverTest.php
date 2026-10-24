@@ -38,3 +38,22 @@ it('does not invent an end-of-day kickoff for NFL games with unknown start times
         ->and($result['availability_status'])->toBe('game_start_unknown')
         ->and($result['pregame_safe'])->toBeFalse();
 });
+
+it('classifies NBA snapshots by actual UTC tipoff rather than local interpretation of raw fields', function (string $generatedAt, bool $safe) {
+    config(['app.timezone' => 'America/Chicago']);
+    $game = new App\Models\NBA\Game(['game_date' => '2026-10-24', 'game_time' => '00:00:00']);
+    $game->setRelation('sportEvent', null);
+    $result = app(SnapshotProvenanceResolver::class)->resolve($game, [], $generatedAt);
+    expect($result['game_start_at']->toIso8601String())->toBe('2026-10-24T00:00:00+00:00')
+        ->and($result['pregame_safe'])->toBe($safe);
+})->with([['2026-10-23T23:59:59Z', true], ['2026-10-24T00:00:00Z', false], ['2026-10-24T01:00:00Z', false]]);
+
+it('honors canonical NBA start and refuses unknown NBA tipoffs', function () {
+    $game = new App\Models\NBA\Game(['game_date' => '2026-10-26', 'game_time' => '22:00:00']);
+    $game->setRelation('sportEvent', new SportEvent(['starts_at' => '2026-10-23T19:00:00-05:00']));
+    $resolver = app(SnapshotProvenanceResolver::class);
+    expect($resolver->resolve($game, [], '2026-10-24T01:00:00Z')['pregame_safe'])->toBeFalse();
+    $game->setRelation('sportEvent', null);
+    $game->game_time = '';
+    expect($resolver->resolve($game, [], '2026-10-24T01:00:00Z')['game_start_at'])->toBeNull();
+});

@@ -1592,13 +1592,13 @@ Because this was a dry-run, remaining null-score counts are expected to stay unc
 The command is expected to fill all reconstructable rows when run against production:
 
 ```bash
-php8.4 artisan mlb:reconcile-final-scores --season=2026
+php8.5 artisan mlb:reconcile-final-scores --season=2026
 ```
 
 Run dry-run first:
 
 ```bash
-php8.4 artisan mlb:reconcile-final-scores --season=2026 --dry-run
+php8.5 artisan mlb:reconcile-final-scores --season=2026 --dry-run
 ```
 
 ### Validation Commands

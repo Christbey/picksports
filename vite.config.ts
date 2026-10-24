@@ -14,8 +14,7 @@ export default defineConfig({
         }),
         tailwindcss(),
         wayfinder({
-            command:
-                '"$(command -v php8.4 || command -v php)" artisan wayfinder:generate',
+            command: 'bash scripts/php85.sh artisan wayfinder:generate',
             formVariants: true,
         }),
         manifestSRI(),

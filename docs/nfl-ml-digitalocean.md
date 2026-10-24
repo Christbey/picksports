@@ -79,7 +79,7 @@ Use the repository post-deployment command as the final Forge deployment step:
 
 ```bash
 cd /home/forge/picksports.app/current
-PHP_BINARY=php8.4 bash scripts/post-deploy.sh
+PHP_BINARY=php8.5 bash scripts/post-deploy.sh
 ```
 
 It migrates the database, verifies both release-matched Python packages, builds

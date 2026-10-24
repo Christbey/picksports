@@ -6,7 +6,7 @@ Use the release-owned deployment helper as the final Forge deployment step:
 
 ```bash
 cd /home/forge/picksports.app/current
-PHP_BINARY=php8.4 bash scripts/post-deploy.sh
+PHP_BINARY=php8.5 bash scripts/post-deploy.sh
 ```
 
 The command migrates the database, reinstalls the release-matched MLB and NFL
@@ -19,7 +19,7 @@ Supervisor's `autorestart=true` and add `--max-time=3600` to every Picksports
 queue worker command, for example:
 
 ```ini
-command=php8.4 /home/forge/picksports.app/current/artisan queue:work database --sleep=3 --daemon --quiet --delay=0 --queue=default --tries=3 --timeout=300 --max-time=3600
+command=php8.5 /home/forge/picksports.app/current/artisan queue:work database --sleep=3 --daemon --quiet --delay=0 --queue=default --tries=3 --timeout=300 --max-time=3600
 ```
 
 Apply the same option to the `sync` queue daemon. This bounds release pinning to

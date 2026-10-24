@@ -344,6 +344,7 @@ it('covers regular and postseason games while excluding preseason from the produ
 });
 
 it('verifies only the same bounded generation horizon while reporting historical gaps separately', function () {
+    $this->travelTo(Carbon::parse('2026-10-24 12:00:00', 'America/Chicago'));
     config()->set('prediction_lifecycle.canonical_pipeline.nfl', true);
     config()->set('nfl.predictions.true_epa.enabled', true);
     config()->set('nfl.predictions.true_epa.backfill_before_generation', true);
@@ -370,7 +371,9 @@ it('verifies only the same bounded generation horizon while reporting historical
         ->and($report['historical_eligible_event_count'])->toBe(2)
         ->and($report['historical_missing_safe_prediction_count'])->toBe(1)
         ->and($report['out_of_horizon_eligible_event_count'])->toBe(1)
-        ->and(Carbon::parse($report['horizon_start_at'])->diffInDays(Carbon::parse($report['horizon_end_at'])))->toBe(8.0);
+        ->and($report['horizon_days_forward'])->toBe(8)
+        ->and(Carbon::parse($report['horizon_start_at'])->setTimezone(config('app.timezone'))->addDays(8)
+            ->equalTo(Carbon::parse($report['horizon_end_at'])))->toBeTrue();
 
     $this->artisan('nfl:generate-canonical-predictions', [
         '--season' => 2026,

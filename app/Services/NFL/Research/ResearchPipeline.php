@@ -119,6 +119,8 @@ class ResearchPipeline
                 'risk_flags' => $report?->risk_flags ?? [],
                 'model_signals' => ['qb' => data_get($preview, 'model_metadata.qb_form'), 'trenches' => data_get($preview, 'model_metadata.line_matchup'), 'injuries' => data_get($preview, 'model_metadata.depth_chart_injuries')],
                 'numeric_adjustment_policy' => 'Existing model weights only; narrative interpretation is not a calibrated adjustment.',
+                'analysis_quality' => data_get($report?->raw_payload, 'analysis_quality', []),
+                'decision_review' => data_get($report?->raw_payload, 'decision_review', []),
                 'source_report_id' => $report?->id,
                 'research_refresh' => ['deferred_reason' => $deferred, 'evidence_current' => $policy->current($report, $game, $fingerprint), 'candidate_current' => $policy->current($report, $game, $fingerprint, $candidateHash)],
                 'source_coverage' => $packet['source_coverage'] ?? [],

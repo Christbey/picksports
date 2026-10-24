@@ -22,10 +22,10 @@ class FuturesOddsFreshnessCheck implements ValidationCheck
             return null;
         }
 
-        $season = (int) now()->year;
+        $season = app(SeasonStageService::class)->context($sport)->season ?? (int) now()->year;
         $staleHours = (int) config('validation.thresholds.futures_odds_freshness.stale_after_hours', 12);
         $minimumRows = (int) config('validation.thresholds.futures_odds_freshness.minimum_rows', 1);
-        $offseasonContext = $this->offseasonContext($sport, $profile);
+        $offseasonContext = $this->offseasonContext($sport, $profile, $season);
         $rows = DB::table('sports_futures_odds')
             ->where('sport', $sport)
             ->where(function ($query) use ($season) {
@@ -84,9 +84,9 @@ class FuturesOddsFreshnessCheck implements ValidationCheck
      * @param  array<string, mixed>  $profile
      * @return array<string, mixed>
      */
-    private function offseasonContext(string $sport, array $profile): array
+    private function offseasonContext(string $sport, array $profile, int $season): array
     {
-        $stage = app(SeasonStageService::class)->context($sport, (int) now()->year);
+        $stage = app(SeasonStageService::class)->context($sport, $season);
         $activeGames = $this->activeGameCount($profile);
 
         return [

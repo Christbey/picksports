@@ -35,7 +35,7 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 ### NBA
 
 - Basketball season arguments use the ending year: October 2026 through June 2027 is season `2027`.
-- Check pregame prediction coverage every five minutes, filling only missing forecasts for the next two days. Started games missing forecasts are reported as failures; no retrospective pregame predictions are created. Checks use existing stored inputs and do not fetch odds or props.
+- Check NBA pregame prediction coverage every five minutes for today plus seven days. At minute 17 of every hour, run inline (away from the five-minute coverage tick and without a detached child) to update ending-year Elo ratings without reapplying already processed games, rebuild regular-season and postseason team metrics, then refresh eligible upcoming forecasts using stored inputs. A failed metric rebuild prevents forecast refresh and fails the recovery heartbeat. Pipeline checks recognize successful recovery and allow 75 minutes for the next hourly refresh; overdue dependencies still fail. Futures validation uses the basketball ending-year season. College coverage remains missing-only for today plus two days. Started games missing forecasts are reported as failures; no retrospective pregame predictions are created. Checks use existing stored inputs and do not fetch odds or props.
 - Daily scoreboard imports run inline before the morning prediction pipeline, so generation does not depend on queued imports finishing first.
 
 - Daily scoreboard sync at `01:00`

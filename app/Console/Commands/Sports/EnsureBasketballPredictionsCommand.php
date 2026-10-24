@@ -3,6 +3,8 @@
 namespace App\Console\Commands\Sports;
 
 use App\Models\CanonicalPrediction;
+use App\Services\CommandHeartbeatService;
+use App\Services\Sports\PipelineCommandRunner;
 use App\Services\Sports\SportsDateWindowService;
 use App\Support\BasketballSeason;
 use App\Support\SportsViewCache;
@@ -19,15 +21,23 @@ class EnsureBasketballPredictionsCommand extends Command
         {sport : nba, cbb, or wcbb}
         {--season= : Ending year of the basketball season}
         {--days-forward=2 : Include games through this many days after today}
-        {--limit=200 : Maximum missing predictions to generate per pass}';
+        {--limit=200 : Maximum predictions to generate per pass}
+        {--refresh-existing : Update NBA ratings and metrics, then refresh upcoming forecasts}';
 
     protected $description = 'Fill missing basketball predictions before tipoff and fail visibly when coverage cannot be repaired';
 
-    public function handle(SportsDateWindowService $dates): int
+    public function handle(SportsDateWindowService $dates, PipelineCommandRunner $runner): int
     {
         $sport = strtolower((string) $this->argument('sport'));
         if (! in_array($sport, ['nba', 'cbb', 'wcbb'], true)) {
             $this->error('Sport must be nba, cbb, or wcbb.');
+
+            return self::FAILURE;
+        }
+
+        $refresh = (bool) $this->option('refresh-existing');
+        if ($refresh && $sport !== 'nba') {
+            $this->error('Existing forecast recovery is supported only for NBA.');
 
             return self::FAILURE;
         }
@@ -49,7 +59,21 @@ class EnsureBasketballPredictionsCommand extends Command
                 ->where('season', $season)
                 ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_DELAYED', 'STATUS_IN_PROGRESS', 'STATUS_FINAL']);
             $dates->applyGameDateWindow($query, $dates->forwardWindow(null, max(0, (int) $this->option('days-forward'))));
-            if ($canonical) {
+            if ($refresh) {
+                $query->with('prediction')->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_DELAYED']);
+                if ($runner->call('nba:calculate-elo', ['--season' => $season, '--no-interaction' => true]) !== self::SUCCESS) {
+                    $this->error('NBA Elo recovery failed; forecasts were not refreshed.');
+
+                    return self::FAILURE;
+                }
+                foreach ([2, 3] as $seasonType) {
+                    if ($runner->call('nba:calculate-team-metrics', ['--season' => $season, '--season-type' => $seasonType, '--no-interaction' => true]) !== self::SUCCESS) {
+                        $this->error('NBA metrics recovery failed; forecasts were not refreshed.');
+
+                        return self::FAILURE;
+                    }
+                }
+            } elseif ($canonical) {
                 $query->whereDoesntHave('sportEvent.predictions', fn ($query) => $query
                     ->where('phase', 'pregame')->where('publication_state', 'published'));
             } else {
@@ -69,6 +93,9 @@ class EnsureBasketballPredictionsCommand extends Command
                 try {
                     if ($tipoff === null || (blank($game->game_time) && $game->sportEvent?->starts_at === null)) {
                         throw new RuntimeException('Tipoff time is unavailable.');
+                    }
+                    if ($refresh && $tipoff->lte(now())) {
+                        continue;
                     }
                     if ($tipoff->lte(now()) || ! in_array($game->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true)) {
                         throw new RuntimeException('Tipoff passed without a pregame prediction; retrospective generation blocked.');
@@ -102,6 +129,14 @@ class EnsureBasketballPredictionsCommand extends Command
                     SportsViewCache::SEGMENT_PREDICTIONS_AVAILABLE_DATES,
                     SportsViewCache::SEGMENT_PREDICTIONS_AVAILABLE_SEASONS,
                 ]);
+            }
+            if ($refresh && $missing === 0) {
+                app(CommandHeartbeatService::class)->recordSuccess(
+                    "sports:ensure-basketball-predictions nba --season={$season} --refresh-existing",
+                    'nba',
+                    'recovery',
+                    ['generated' => $generated],
+                );
             }
             $this->info("Pregame coverage: {$generated} generated; {$missing} still missing.");
 

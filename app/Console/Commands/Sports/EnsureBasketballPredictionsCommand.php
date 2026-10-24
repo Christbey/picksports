@@ -22,7 +22,7 @@ class EnsureBasketballPredictionsCommand extends Command
         {--season= : Ending year of the basketball season}
         {--days-forward=2 : Include games through this many days after today}
         {--limit=200 : Maximum predictions to generate per pass}
-        {--refresh-existing : Rebuild NBA team metrics and refresh upcoming forecasts}';
+        {--refresh-existing : Update NBA ratings and metrics, then refresh upcoming forecasts}';
 
     protected $description = 'Fill missing basketball predictions before tipoff and fail visibly when coverage cannot be repaired';
 
@@ -61,6 +61,11 @@ class EnsureBasketballPredictionsCommand extends Command
             $dates->applyGameDateWindow($query, $dates->forwardWindow(null, max(0, (int) $this->option('days-forward'))));
             if ($refresh) {
                 $query->with('prediction')->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_DELAYED']);
+                if ($runner->call('nba:calculate-elo', ['--season' => $season, '--no-interaction' => true]) !== self::SUCCESS) {
+                    $this->error('NBA Elo recovery failed; forecasts were not refreshed.');
+
+                    return self::FAILURE;
+                }
                 foreach ([2, 3] as $seasonType) {
                     if ($runner->call('nba:calculate-team-metrics', ['--season' => $season, '--season-type' => $seasonType, '--no-interaction' => true]) !== self::SUCCESS) {
                         $this->error('NBA metrics recovery failed; forecasts were not refreshed.');

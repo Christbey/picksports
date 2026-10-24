@@ -37,7 +37,8 @@ it('schedules basketball predictions for the ending year with active preseason c
             ->and($coverage->onOneServer)->toBeTrue()->and($coverage->withoutOverlapping)->toBeTrue();
     }
     $recovery = $events->firstWhere('description', 'NBA: Recover Metrics and Upcoming Predictions');
-    expect($recovery->expression)->toBe('15 * * * *')
+    expect($recovery->expression)->toBe('17 * * * *')
+        ->and($recovery->runInBackground)->toBeFalse()
         ->and($recovery->command)->toContain('--days-forward=7', '--refresh-existing')
         ->and($recovery->filtersPass(app()))->toBeTrue()
         ->and($recovery->onOneServer)->toBeTrue()

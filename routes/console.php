@@ -445,12 +445,11 @@ foreach (['nba' => $nbaInSeason, 'cbb' => $cbbInSeason, 'wcbb' => $wcbbInSeason]
 $nbaRecoveryCommand = 'sports:ensure-basketball-predictions nba --days-forward=7 --refresh-existing';
 $nbaRecoveryName = 'NBA: Recover Metrics and Upcoming Predictions';
 $nbaRecovery = Schedule::command($nbaRecoveryCommand)
-    ->hourlyAt(15)
+    ->hourlyAt(17)
     ->when($nbaInSeason)
     ->name($nbaRecoveryName)
     ->onOneServer()
-    ->withoutOverlapping(10)
-    ->runInBackground();
+    ->withoutOverlapping(10);
 $attachCommandHeartbeat($nbaRecovery, $nbaRecoveryCommand, $nbaRecoveryName);
 
 $scheduleSportPipeline(

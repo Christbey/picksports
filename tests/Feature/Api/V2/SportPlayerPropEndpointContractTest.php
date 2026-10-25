@@ -455,6 +455,7 @@ function createV2PlayerPropContractFixture(
         'season' => 2026,
         'status' => 'STATUS_SCHEDULED',
         'game_date' => $gameDate,
+        ...($gameModel === NflGame::class ? ['game_time' => '17:00:00'] : []),
     ]);
 
     return [$team, $opponent, $player, $game];

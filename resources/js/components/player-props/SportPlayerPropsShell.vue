@@ -29,6 +29,7 @@ import {
 } from '@/lib/playerPropPresentation';
 
 import NflPlayerPropCard from '@/components/player-props/NflPlayerPropCard.vue';
+import NflAllPropsBrowser from './NflAllPropsBrowser.vue';
 import type { CoverRecord, Recommendation } from '@/lib/playerPropTypes';
 
 type DateOption = {
@@ -49,6 +50,7 @@ type MarketOption = {
 };
 
 type PlayerPropsFilters = {
+    view?: 'recommendations' | 'all';
     date: string | null;
     game: string | number | null;
     market: string | null;
@@ -82,6 +84,19 @@ const props = defineProps<{
     description: string;
 }>();
 
+const selectedView = ref<'recommendations' | 'all'>(
+    props.sport === 'NFL' && props.filters.view === 'all'
+        ? 'all'
+        : 'recommendations',
+);
+const switchView = (view: 'recommendations' | 'all') => {
+    selectedView.value = view;
+    updateBrowserUrl({
+        date: selectedDate.value,
+        game: selectedGame.value,
+        market: selectedMarket.value,
+    });
+};
 const selectedDate = ref(props.filters.date || '');
 const selectedGame = ref(
     props.filters.game !== null ? String(props.filters.game) : '',
@@ -214,6 +229,7 @@ const clearFilters = () => {
 const updateBrowserUrl = (filters: PlayerPropsFilters) => {
     const url = new URL(window.location.href);
     url.search = '';
+    if (selectedView.value === 'all') url.searchParams.set('view', 'all');
 
     if (filters.date) url.searchParams.set('date', filters.date);
     if (filters.game !== null && filters.game !== '')
@@ -445,13 +461,37 @@ onBeforeUnmount(() => {
                 </h1>
                 <p class="text-muted-foreground">
                     {{
-                        sport === 'NFL'
-                            ? 'Highest estimated hit chance first. Compare the history.'
-                            : description
+                        sport === 'NFL' && selectedView === 'all'
+                            ? 'Every stored quote, including props without a recommendation.'
+                            : sport === 'NFL'
+                              ? 'Highest estimated hit chance first. Compare the history.'
+                              : description
                     }}
                 </p>
             </div>
 
+            <div
+                v-if="sport === 'NFL'"
+                class="flex gap-2"
+                aria-label="Prop view"
+            >
+                <Button
+                    :variant="
+                        selectedView === 'recommendations'
+                            ? 'default'
+                            : 'outline'
+                    "
+                    :aria-pressed="selectedView === 'recommendations'"
+                    @click="switchView('recommendations')"
+                    >Recommendations</Button
+                >
+                <Button
+                    :variant="selectedView === 'all' ? 'default' : 'outline'"
+                    :aria-pressed="selectedView === 'all'"
+                    @click="switchView('all')"
+                    >All props</Button
+                >
+            </div>
             <Card>
                 <CardContent class="pt-6">
                     <div class="flex min-w-0 flex-wrap items-end gap-4">
@@ -528,7 +568,7 @@ onBeforeUnmount(() => {
             </Card>
 
             <div
-                v-if="sport === 'NFL'"
+                v-if="sport === 'NFL' && selectedView === 'recommendations'"
                 class="flex flex-wrap items-end justify-between gap-3"
             >
                 <div class="w-full sm:max-w-xs">
@@ -552,13 +592,20 @@ onBeforeUnmount(() => {
                     }}
                 </p>
             </div>
-            <p v-if="sport === 'NFL'" class="text-xs text-muted-foreground">
+            <p
+                v-if="sport === 'NFL' && selectedView === 'recommendations'"
+                class="text-xs text-muted-foreground"
+            >
                 Fresh quotes and samples of at least 4 current-season games come
                 first, then estimated hit chance. Higher probability does not
                 necessarily mean better value.
             </p>
             <div
-                v-if="sport === 'NFL' && commonMarkets.length"
+                v-if="
+                    sport === 'NFL' &&
+                    selectedView === 'recommendations' &&
+                    commonMarkets.length
+                "
                 class="flex flex-wrap gap-2"
                 aria-label="Common prop markets"
             >
@@ -580,21 +627,33 @@ onBeforeUnmount(() => {
                 </Button>
             </div>
             <p
-                v-if="error && recommendations.length"
+                v-if="
+                    selectedView === 'recommendations' &&
+                    error &&
+                    recommendations.length
+                "
                 role="alert"
                 class="text-sm text-amber-700 dark:text-amber-300"
             >
                 {{ error }} Showing the previous results.
             </p>
             <div
-                v-if="loading && recommendations.length === 0"
+                v-if="
+                    selectedView === 'recommendations' &&
+                    loading &&
+                    recommendations.length === 0
+                "
                 class="py-16 text-center"
             >
                 <p class="text-muted-foreground">Loading player props...</p>
             </div>
 
             <div
-                v-else-if="error && recommendations.length === 0"
+                v-else-if="
+                    selectedView === 'recommendations' &&
+                    error &&
+                    recommendations.length === 0
+                "
                 class="py-16 text-center"
             >
                 <h3 class="mb-2 text-xl font-semibold tracking-tight">
@@ -604,7 +663,10 @@ onBeforeUnmount(() => {
             </div>
 
             <div
-                v-else-if="recommendations.length === 0"
+                v-else-if="
+                    selectedView === 'recommendations' &&
+                    recommendations.length === 0
+                "
                 class="py-16 text-center"
             >
                 <BarChart3
@@ -618,7 +680,7 @@ onBeforeUnmount(() => {
                 </p>
             </div>
 
-            <template v-else>
+            <template v-else-if="selectedView === 'recommendations'">
                 <p
                     v-if="searchedRecommendations.length === 0"
                     class="py-12 text-center text-muted-foreground"
@@ -820,7 +882,8 @@ onBeforeUnmount(() => {
                                 class="space-y-1 text-xs text-muted-foreground"
                             >
                                 <p>
-                                    Sportsbook: {{ rec.bookmaker || 'Unknown' }}
+                                    Sportsbook:
+                                    {{ rec.bookmaker || 'Unknown' }}
                                 </p>
                                 <p>
                                     Line updated:
@@ -884,7 +947,9 @@ onBeforeUnmount(() => {
                                     <div
                                         class="h-full transition-all"
                                         :class="getConfidenceColor(rec)"
-                                        :style="{ width: `${rec.confidence}%` }"
+                                        :style="{
+                                            width: `${rec.confidence}%`,
+                                        }"
                                     />
                                 </div>
                             </div>
@@ -1178,6 +1243,12 @@ onBeforeUnmount(() => {
                     </Button>
                 </div>
             </template>
+            <NflAllPropsBrowser
+                v-else
+                :date="selectedDate"
+                :game="selectedGame"
+                :market="selectedMarket"
+            />
         </div>
     </AppLayout>
 </template>

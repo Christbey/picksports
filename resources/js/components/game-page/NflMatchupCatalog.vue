@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import NflEpaMatchupContext from './NflEpaMatchupContext.vue';
 import {
+    epaInterpretation,
     matchupCategories,
     defenseEvidenceText,
     matchupChecklist,
@@ -123,7 +125,11 @@ const value = (number: number | null | undefined) =>
                         >#{{ entry.id }} {{ entry.label }}</span
                     >
                     <span class="mt-1 block text-xs text-muted-foreground">{{
-                        signalStatus(entry.status)
+                        entry.signals.some((signal) =>
+                            epaInterpretation(signal),
+                        )
+                            ? 'Efficiency comparison · see both directions'
+                            : signalStatus(entry.status)
                     }}</span>
                 </summary>
                 <div class="space-y-2 pb-2 text-xs text-muted-foreground">
@@ -148,8 +154,13 @@ const value = (number: number | null | undefined) =>
                                 {{ team(signal.defense_team_id) }}
                                 defense:</template
                             >
-                            {{ signalStatus(signal.status) }}
+                            {{
+                                signal.evidence.metric === 'epa'
+                                    ? 'Observed EPA profile'
+                                    : signalStatus(signal.status)
+                            }}
                         </p>
+                        <NflEpaMatchupContext :signal="signal" />
                         <p v-if="signal.evidence.offense.display_value">
                             {{ signal.evidence.offense.display_value }}
                         </p>

@@ -28,7 +28,7 @@ final class NflMatchupSignalService
             ? 'This catalog version supports regular-season target games only.' : null;
         $games = $cutoff === null || $scopeReason !== null ? collect() : $this->priorGames($game, $cutoff, $season);
         [$games, $baseline] = $this->baseline($games, $season, $window);
-        $metrics = $this->metrics($games);
+        $metrics = $this->metrics($games, [(int) $game->home_team_id, (int) $game->away_team_id]);
         foreach (app(NflMatchupWinRates::class)->metrics($games, $cutoff, $season) as $metric => $samples) {
             $metrics[$metric] = $samples;
         }
@@ -65,6 +65,14 @@ final class NflMatchupSignalService
                 $metrics[$metric]['offense'][$teamId] = $sample;
                 if (in_array($metric, ['secondary_out', 'safety_out', 'lb_out', 'cb1_out'], true)) {
                     $metrics[$metric]['defense'][$teamId] = $sample;
+                }
+            }
+        }
+        $context = app(NflEpaMatchupContext::class);
+        foreach (['epa', 'opponent_adjusted_epa', 'pass_epa', 'rush_epa', 'early_epa', 'pressure_rate'] as $metric) {
+            foreach (['offense', 'defense'] as $side) {
+                foreach ($metrics[$metric][$side] ?? [] as $team => $sample) {
+                    $metrics[$metric][$side][$team] = $context->sample($sample, $games);
                 }
             }
         }
@@ -192,7 +200,7 @@ final class NflMatchupSignalService
     }
 
     /** Team metrics use grouped drive and play queries; player metrics load separately. */
-    private function metrics(Collection $games): array
+    private function metrics(Collection $games, array $contextTeams): array
     {
         $buckets = [];
         $targetCounts = [];
@@ -418,6 +426,7 @@ final class NflMatchupSignalService
                         'value' => $count > 0 ? array_sum(array_column($validGames, 'sum')) / $count : null,
                         'games' => count($validGames),
                         'game_ids' => array_keys($validGames),
+                        ...($metric === 'epa' && $eligible && in_array($team, $contextTeams, true) ? ['sampling_interval' => app(NflEpaMatchupContext::class)->uncertainty($validGames), 'recent_three' => app(NflEpaMatchupContext::class)->recent($validGames, $games)] : []),
                         'plays' => $metric === 'points_per_game' ? null : $count,
                         'scheduled_games' => $expectedGames,
                         'eligible' => $eligible,
@@ -613,6 +622,17 @@ final class NflMatchupSignalService
                 'defense_personnel' => $defensePersonnel,
                 'personnel_only' => $personnelOnly,
                 'offense_only' => $offenseOnly,
+                ...($rule['metric'] === 'epa' && $defenseMetric === 'epa' ? ['epa_context' => [
+                    'opponent_adjusted' => [
+                        'offense' => $metrics['opponent_adjusted_epa']['offense'][$offenseId] ?? null,
+                        'defense' => $metrics['opponent_adjusted_epa']['defense'][$defenseId] ?? null,
+                        'definition' => NflMatchupMetricDefinitions::definition('opponent_adjusted_epa'),
+                    ],
+                    'splits' => array_map(fn ($metric) => ['metric' => $metric,
+                        'source' => $metric === 'pressure_rate' ? 'PFR weekly advanced passing via nflverse, verified against play-by-play dropbacks' : 'nflverse pass/run plays including sacks',
+                        'offense' => $metrics[$metric]['offense'][$offenseId] ?? null,
+                        'defense' => $metrics[$metric]['defense'][$defenseId] ?? null], ['pass_epa', 'rush_epa', 'early_epa', 'pressure_rate']),
+                ]] : []),
                 'metric' => $rule['metric'],
                 'offense_metric' => $rule['metric'],
                 'defense_metric' => $defenseMetric,

@@ -20,6 +20,7 @@ class SportPlayerPropIndexRequest extends FormRequest
     {
         return [
             'date' => ['sometimes', 'date'],
+            'search' => ['sometimes', 'string', 'max:100'],
             'from_date' => ['sometimes', 'date'],
             'to_date' => array_filter([
                 'sometimes',
@@ -43,6 +44,7 @@ class SportPlayerPropIndexRequest extends FormRequest
     {
         $filters = $this->safe()->only([
             'date',
+            'search',
             'from_date',
             'to_date',
             'game_id',
@@ -60,7 +62,7 @@ class SportPlayerPropIndexRequest extends FormRequest
             }
         }
 
-        foreach (['date', 'from_date', 'to_date', 'market', 'bookmaker', 'recommended_side'] as $key) {
+        foreach (['search', 'date', 'from_date', 'to_date', 'market', 'bookmaker', 'recommended_side'] as $key) {
             if (array_key_exists($key, $filters)) {
                 $filters[$key] = trim((string) $filters[$key]);
             }

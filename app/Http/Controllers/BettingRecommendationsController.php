@@ -42,6 +42,7 @@ class BettingRecommendationsController extends Controller
     {
         $validated = $request->validate([
             'date' => ['nullable', 'date'],
+            'view' => ['nullable', 'in:recommendations,all'],
             'game' => ['nullable', 'integer'],
             'market' => ['nullable', 'string', 'max:100'],
         ]);
@@ -50,6 +51,7 @@ class BettingRecommendationsController extends Controller
             'sport' => $sport,
             'filters' => [
                 'date' => $validated['date'] ?? null,
+                'view' => $validated['view'] ?? 'recommendations',
                 'game' => isset($validated['game']) ? (int) $validated['game'] : null,
                 'market' => $validated['market'] ?? null,
             ],

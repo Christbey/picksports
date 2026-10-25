@@ -5,6 +5,7 @@ namespace App\Services\Api\V2;
 use App\Models\CFB\Game;
 use App\Services\Api\V2\Concerns\BuildsSportQueries;
 use App\Services\BettingRecommendations\CfbPropEligibility;
+use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -45,6 +46,7 @@ class SportPlayerPropQuery
         return $propModel::query()
             ->when($context->slug === 'cfb' && ($filters['only_ungraded'] ?? false), fn ($q) => $q->where('is_current', true))
             ->with($this->relationsFor($propModel, $context))
+            ->when($filters['search'] ?? null, fn (Builder $query, string $search): Builder => $query->where('player_name', 'like', '%'.$search.'%'))
             ->when(($filters['game_id'] ?? null) && $this->hasColumn($table, 'game_id'), fn (Builder $query): Builder => $query->where('game_id', $filters['game_id']))
             ->when(($filters['player_id'] ?? null) && $this->hasColumn($table, 'player_id'), fn (Builder $query): Builder => $query->where('player_id', $filters['player_id']))
             ->when(($filters['market'] ?? null) && $this->hasColumn($table, 'market'), fn (Builder $query): Builder => $query->where('market', $filters['market']))
@@ -54,7 +56,8 @@ class SportPlayerPropQuery
             ->when($filters['date'] ?? null, fn (Builder $query, string $date): Builder => $this->whereGameDate($query, '=', $date))
             ->when($filters['from_date'] ?? null, fn (Builder $query, string $date): Builder => $this->whereGameDate($query, '>=', $date))
             ->when($filters['to_date'] ?? null, fn (Builder $query, string $date): Builder => $this->whereGameDate($query, '<=', $date))
-            ->orderByDesc($this->hasColumn($table, 'fetched_at') ? "{$table}.fetched_at" : "{$table}.id");
+            ->orderByDesc($this->hasColumn($table, 'fetched_at') ? "{$table}.fetched_at" : "{$table}.id")
+            ->orderByDesc("{$table}.id");
     }
 
     /**
@@ -93,6 +96,12 @@ class SportPlayerPropQuery
         return $query->whereHas('game', function (Builder $query) use ($operator, $date): Builder {
             if ($operator === '=' && $query->getModel() instanceof Game) {
                 return CfbPropEligibility::onDate($query, $date);
+            }
+
+            if ($query->getModel() instanceof \App\Models\NFL\Game && $operator === '=') {
+                $dates = app(SportsDateWindowService::class);
+
+                return $dates->applyGameDateWindow($query, $dates->forDate($date));
             }
 
             return $query->whereDate('game_date', $operator, $date);

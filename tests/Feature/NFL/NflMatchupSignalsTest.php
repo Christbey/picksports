@@ -7,6 +7,7 @@ use App\Models\NFL\PlayerInjurySnapshot;
 use App\Models\NFL\PlayerInjurySnapshotEntry;
 use App\Models\NFL\Prediction;
 use App\Models\NFL\Team;
+use App\Services\NFL\Matchups\NflEpaMatchupContext;
 use App\Services\NFL\Matchups\NflMatchupSignalCatalog;
 use App\Services\NFL\Matchups\NflMatchupSignalService;
 use App\Services\NFL\QuarterbackAvailability;
@@ -1954,4 +1955,37 @@ it('requires the additional passing defense condition without treating a weak pa
         ->and($signal['evidence']['offense']['display_value'])->toContain('passing EPA allowed');
     DB::table('nflverse_pbp_plays')->where('defense_team_id', $teams[0]->id)->where('play_type', 'pass')->update(['epa' => null]);
     expect(matchupSignal($service->build($target), 188, $target->home_team_id)['status'])->toBe('insufficient_data');
+});
+
+it('adds cutoff-scoped EPA context without changing classification or prediction weight', function () {
+    [$target, $teams, $games] = matchupSignalLeague();
+    $result = app(NflMatchupSignalService::class)->build($target);
+    $signal = matchupSignal($result, 1, $target->home_team_id);
+    $sample = $signal['evidence']['offense'];
+    expect($sample['scheduled_games'])->toBe(3)
+        ->and($sample['plays'])->toBe(120)
+        ->and($sample['through_date'])->toBe('2026-09-03')
+        ->and($sample['recent_three']['plays'])->toBe(120)
+        ->and($sample['sampling_interval']['lower'])->toEqualWithDelta($sample['value'], 0.000001)
+        ->and($sample['sampling_interval']['upper'])->toEqualWithDelta($sample['value'], 0.000001)
+        ->and($signal['evidence']['epa_context']['opponent_adjusted']['offense']['eligible'])->toBeTrue()
+        ->and($signal['evidence']['epa_context']['opponent_adjusted']['definition'])->toContain('one-pass')
+        ->and(array_column($signal['evidence']['epa_context']['splits'], 'metric'))->toBe(['pass_epa', 'rush_epa', 'early_epa', 'pressure_rate'])
+        ->and($result['predictive_weight'])->toBe(0);
+    DB::table('nflverse_pbp_plays')->where('nfl_game_id', $games[0]->id)->delete();
+    $incomplete = matchupSignal(app(NflMatchupSignalService::class)->build($target), 1, $target->home_team_id);
+    expect($incomplete['status'])->toBe('insufficient_data')
+        ->and($incomplete['evidence']['offense']['scheduled_games'])->toBe(3)
+        ->and($incomplete['evidence']['offense']['games'])->toBe(2)
+        ->and($incomplete['evidence']['offense'])->not->toHaveKey('sampling_interval');
+});
+
+it('resamples whole games reproducibly and weights recent EPA by plays', function () {
+    $context = app(NflEpaMatchupContext::class);
+    $samples = [1 => ['sum' => 0, 'count' => 30], 2 => ['sum' => 30, 'count' => 30], 3 => ['sum' => 0, 'count' => 90]];
+    $games = collect([1 => (object) ['game_date' => CarbonImmutable::parse('2026-09-01')], 2 => (object) ['game_date' => CarbonImmutable::parse('2026-09-02')], 3 => (object) ['game_date' => CarbonImmutable::parse('2026-09-03')]]);
+    expect($context->uncertainty($samples))->toBe($context->uncertainty($samples))
+        ->and($context->uncertainty($samples)['lower'])->toBeLessThan($context->uncertainty($samples)['upper'])
+        ->and($context->recent($samples, $games)['value'])->toEqualWithDelta(.2, .000001)
+        ->and($context->uncertainty(array_slice($samples, 0, 2)))->toBeNull();
 });

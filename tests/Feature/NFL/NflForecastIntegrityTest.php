@@ -22,6 +22,10 @@ use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
+beforeEach(function () {
+    $this->travelTo('2026-10-25 08:00:00');
+});
+
 function nflIntegrityGame(array $attributes = []): Game
 {
     return Game::factory()->create([

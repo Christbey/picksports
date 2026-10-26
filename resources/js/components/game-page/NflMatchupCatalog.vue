@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import NflEpaMatchupContext from './NflEpaMatchupContext.vue';
+import NflPositionEpaMatchups from './NflPositionEpaMatchups.vue';
 import {
     epaInterpretation,
     matchupCategories,
@@ -58,6 +59,11 @@ const value = (number: number | null | undefined) =>
                 : 'Evaluated matchup comparisons'
         "
     >
+        <NflPositionEpaMatchups
+            v-if="data.matchup.position_epa_matchups"
+            :data="data.matchup.position_epa_matchups"
+            :team-name="team"
+        />
         <h3 class="font-semibold">
             {{ diagnostics ? 'Full checklist' : 'Evaluated matchups' }} ·
             {{ checklist.length }} items

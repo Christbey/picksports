@@ -75,7 +75,9 @@ it('computes split success explosives and situational EPA without guessing missi
     DB::table('nflverse_pbp_plays')->where('play_type', 'run')->update(['yards_gained' => 9]);
     $service = app(NflMatchupSignalService::class);
     $result = $service->build($target);
-    expect($result['summary']['supported_rules'])->toBe(219)
+    expect($result['position_epa_matchups']['directions'][0]['splits'][0]['offense']['eligible'])->toBeTrue()
+        ->and($result['position_epa_matchups']['mode'])->toBe('descriptive_only')
+        ->and($result['summary']['supported_rules'])->toBe(219)
         ->and($result['signals'])->toHaveCount(438)
         ->and(matchupSignal($result, 59, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
         ->and(matchupSignal($result, 61, $target->home_team_id)['evidence']['offense']['value'])->toBe(1.0)
@@ -149,7 +151,7 @@ it('ranks offense higher and EPA allowed lower with grouped queries and independ
         ->and(matchupSignal($result, 51, $target->home_team_id)['status'])->toBe('matched')
         ->and(matchupSignal($result, 101, $target->home_team_id)['status'])->toBe('matched')
         ->and($result['predictive_weight'])->toBe(0)
-        ->and(collect($queries)->filter(fn ($q) => str_contains($q['query'], 'nflverse_pbp_plays')))->toHaveCount(10);
+        ->and(collect($queries)->filter(fn ($q) => str_contains($q['query'], 'nflverse_pbp_plays')))->toHaveCount(11);
     $target->home_team_id = $teams[0]->id;
     $target->away_team_id = $teams[1]->id;
     $result = app(NflMatchupSignalService::class)->build($target);

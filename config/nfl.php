@@ -2,6 +2,7 @@
 
 return [
     'props' => [
+        'probability_experiment_enabled' => (bool) env('NFL_PROP_PROBABILITY_EXPERIMENT_ENABLED', true),
         'shadow' => [
             'enabled' => (bool) env('NFL_PROP_SHADOW_ENABLED', false),
             'bundle_path' => env('NFL_PROP_SHADOW_BUNDLE_PATH', base_path('ml/nfl/config/nfl_prop_shadow_20261023.json')),

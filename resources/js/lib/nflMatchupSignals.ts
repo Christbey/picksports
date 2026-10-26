@@ -1,3 +1,40 @@
+export interface PositionEpaSample {
+    eligible: boolean;
+    epa_per_play: number | null;
+    offensive_success_rate: number | null;
+    plays: number;
+    candidate_plays: number;
+    games: number;
+    expected_team_games: number;
+    games_with_any_plays: number;
+    rank: number | null;
+    league_teams: number;
+    target_mapping_coverage: number | null;
+    reason: string | null;
+}
+
+export interface PositionEpaMatchups {
+    version: string;
+    season: number;
+    definition: string;
+    source: string;
+    limitations: string[];
+    directions: Array<{
+        offense_team_id: number;
+        defense_team_id: number;
+        splits: Array<{
+            split: string;
+            offense: PositionEpaSample | null;
+            defense: PositionEpaSample | null;
+            previous_opponents: {
+                games: number;
+                weighted_epa_allowed: number | null;
+                basis: string;
+            };
+        }>;
+    }>;
+}
+
 export interface MatchupMetricEvidence {
     display_value?: string | null;
     player_name?: string | null;
@@ -71,6 +108,7 @@ export interface NflMatchupSignalData {
     matchup: {
         version: string;
         mode: string;
+        position_epa_matchups?: PositionEpaMatchups | null;
         season: number;
         target_season?: number;
         cutoff_at: string | null;

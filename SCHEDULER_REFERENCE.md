@@ -240,3 +240,8 @@ routes/console.php
 ```
 
 The CFB pregame pipeline now requires a successful daily FPI import and metric recalculation before injuries, odds, and canonical generation. Empty required imports stop generation and retry on the next run. New snapshots record individual rating provenance; missing opponent ratings remain an explicit spread hold.
+
+
+### NFL prospective prop probability evaluation
+
+`nfl:prop-probability-experiment capture --season=YEAR` runs at :25 and :55 from 08:00–23:59 in the existing scheduler timezone, after the :20 pregame pipeline when it runs. It captures only scheduled kickoffs within 24 hours using fresh stored quotes, without provider refreshes or publishing recommendations. The first forecast for each code-version/player/game/market is immutable. `NFL_PROP_PROBABILITY_EXPERIMENT_ENABLED` defaults true and controls these scheduled jobs. Capture uses a single-server overlap lock and heartbeat. Grading runs at 09:05 after ingest; missing actuals stay pending. The daily 09:15 report writes per-market, per-code-version Brier/log-loss and pending counts to `storage/logs/nfl-prop-probabilities.log`. No queue worker or paid AI call is needed. Deployment and future completed outcomes are required for prospective evidence.

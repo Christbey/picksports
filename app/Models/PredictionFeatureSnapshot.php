@@ -92,7 +92,7 @@ class PredictionFeatureSnapshot extends Model
     protected static function booted(): void
     {
         $immutable = function (self $snapshot): void {
-            if (in_array($snapshot->getOriginal('blend_version'), ['nfl-prop-shadow-v1', 'nfl-game-simulation-shadow-v1'], true)) {
+            if (in_array($snapshot->getOriginal('blend_version'), ['nfl-prop-shadow-v1', 'nfl-game-simulation-shadow-v1', 'nfl-prop-probability-v1'], true)) {
                 throw new LogicException('NFL shadow snapshots are immutable.');
             }
         };

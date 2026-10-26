@@ -215,6 +215,7 @@ it('computes if-in if-out and expected roster grades from the latest pregame inj
         'away_team_id' => $opponent->id,
         'season' => 2026,
         'week' => 1,
+        'season_type' => 2,
         'game_date' => '2026-09-01',
         'status' => 'STATUS_FINAL',
         'home_score' => 24,
@@ -335,7 +336,7 @@ it('batches player grading while retaining the latest 32 games for each player',
     foreach (range(1, 34) as $index) {
         $game = Game::factory()->create(['home_team_id' => $team->id, 'away_team_id' => $opponent->id,
             'game_date' => Carbon::parse('2026-01-01')->addDays($index),
-            'season' => 2026, 'status' => 'STATUS_FINAL']);
+            'season' => 2026, 'season_type' => 2, 'status' => 'STATUS_FINAL']);
         foreach ($players as $player) {
             PlayerStat::factory()->create(['game_id' => $game->id, 'team_id' => $team->id, 'player_id' => $player->id,
                 'passing_attempts' => 30, 'passing_yards' => $index <= 2 ? 900 : 210,
@@ -355,4 +356,64 @@ it('batches player grading while retaining the latest 32 games for each player',
     }
     // Reusing the service for another team cannot reuse the first team's player sample.
     expect($service->teamReport($opponent->id, 2026, '2026-10-20')['players'])->toBeEmpty();
+});
+
+it('grades defenders using only this season completed regular season games', function () {
+    $team = Team::factory()->create();
+    $opponent = Team::factory()->create();
+    $player = Player::factory()->create(['team_id' => $team->id, 'position' => 'CB']);
+    DepthChartEntry::create(['team_id' => $team->id, 'player_id' => $player->id, 'season' => 2026,
+        'position_slot_key' => 'CB', 'position_code' => 'CB', 'depth_rank' => 1, 'is_starter' => true,
+        'source_updated_at' => '2026-09-01 12:00:00']);
+    $add = function (array $gameExtra, int $sacks) use ($team, $opponent, $player) {
+        $game = Game::factory()->create(['home_team_id' => $team->id, 'away_team_id' => $opponent->id,
+            'season' => 2026, 'season_type' => 2, 'status' => 'STATUS_FINAL', 'game_date' => '2026-09-20', ...$gameExtra]);
+        PlayerStat::factory()->create(['player_id' => $player->id, 'team_id' => $team->id, 'game_id' => $game->id,
+            'tackles_total' => 4, 'sacks' => $sacks, 'interceptions' => 0, 'passes_defended' => 1, 'fumbles_forced' => 0, 'fumbles_recovered' => 0]);
+    };
+    $read = fn () => app(PlayerPositionGradeService::class)->teamReport($team->id, 2026, '2026-10-25');
+    $add([], 0);
+    $before = $read();
+    foreach ([['season' => 2025, 'game_date' => '2025-09-20'], ['season_type' => 1], ['season_type' => 3],
+        ['status' => 'STATUS_IN_PROGRESS'], ['game_date' => '2026-10-26']] as $extra) {
+        $add($extra, 10);
+    }
+    $after = $read();
+    expect($after['players'])->toBe($before['players'])
+        ->and($after['players'][0]['sample_games'])->toBe(1)
+        ->and($after['grade_basis'])->toBe('current_season_completed_regular_season_only')
+        ->and($after['prior_season_fallback'])->toBeFalse();
+});
+
+it('does not backfill a grade from prior seasons when current season data is absent', function () {
+    $team = Team::factory()->create();
+    $opponent = Team::factory()->create();
+    $player = Player::factory()->create(['team_id' => $team->id, 'position' => 'LB']);
+    DepthChartEntry::create(['team_id' => $team->id, 'player_id' => $player->id, 'season' => 2026,
+        'position_slot_key' => 'LB', 'position_code' => 'LB', 'depth_rank' => 1, 'is_starter' => true,
+        'source_updated_at' => '2026-09-01 12:00:00']);
+    $game = Game::factory()->create(['home_team_id' => $team->id, 'away_team_id' => $opponent->id,
+        'season' => 2025, 'season_type' => 2, 'status' => 'STATUS_FINAL', 'game_date' => '2025-09-20']);
+    PlayerStat::factory()->create(['game_id' => $game->id, 'team_id' => $team->id, 'player_id' => $player->id, 'tackles_total' => 20]);
+    $result = app(PlayerPositionGradeService::class)->teamReport($team->id, 2026, '2026-10-25');
+    expect($result['players'][0]['grade'])->toBeNull()->and($result['players'][0]['sample_games'])->toBe(0);
+});
+
+it('keeps offensive line unit grades within the same regular season too', function () {
+    $team = Team::factory()->create();
+    $opponent = Team::factory()->create();
+    $add = function (int $season, int $type, int $sacks) use ($team, $opponent) {
+        $game = Game::factory()->create(['home_team_id' => $team->id, 'away_team_id' => $opponent->id,
+            'season' => $season, 'season_type' => $type, 'status' => 'STATUS_FINAL', 'game_date' => $season.'-09-20']);
+        TeamStat::factory()->create(['team_id' => $team->id, 'game_id' => $game->id,
+            'passing_attempts' => 35, 'sacks_allowed' => $sacks, 'rushing_attempts' => 25, 'rushing_yards' => 100]);
+    };
+    $add(2026, 2, 1);
+    $service = app(PlayerPositionGradeService::class);
+    $method = new ReflectionMethod($service, 'offensiveLineUnitGrade');
+    $read = fn () => $method->invoke($service, $team->id, 2026, Carbon::parse('2026-10-25'));
+    $before = $read();
+    $add(2025, 2, 20);
+    $add(2026, 1, 20);
+    expect($read())->toBe($before)->and($before['games'])->toBe(1);
 });

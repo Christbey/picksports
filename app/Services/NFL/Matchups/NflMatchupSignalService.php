@@ -88,6 +88,8 @@ final class NflMatchupSignalService
         return [
             'version' => NflMatchupSignalCatalog::VERSION,
             'mode' => 'descriptive_only',
+            'position_epa_matchups' => $window === 'season_to_date' && $scopeReason === null
+                ? app(NflPositionEpaMatchups::class)->build($game, $games) : null,
             'predictive_weight' => 0,
             'season' => $season,
             'target_season' => (int) $game->season,
@@ -143,7 +145,7 @@ final class NflMatchupSignalService
             ->whereIn('status', [config('nfl.statuses.final', 'STATUS_FINAL'), 'final', 'completed'])
             ->where('id', '!=', $game->id)
             ->whereDate('game_date', '<', $cutoff->toDateString())
-            ->get(['id', 'season', 'week', 'home_team_id', 'away_team_id', 'game_date', 'game_time', 'home_score', 'away_score', 'neutral_site'])
+            ->get(['id', 'season', 'season_type', 'status', 'week', 'home_team_id', 'away_team_id', 'game_date', 'game_time', 'home_score', 'away_score', 'neutral_site'])
             ->filter(function (Game $prior) use ($cutoff): bool {
                 $kickoff = $this->dates->gameDateTimeUtc($prior->getRawOriginal('game_date'), $prior->game_time);
                 if ($kickoff === null || $kickoff->greaterThanOrEqualTo($cutoff)) {

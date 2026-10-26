@@ -35,7 +35,8 @@ class PlayerPositionGradeService
             $ranked = DB::table('nfl_player_stats')
                 ->join('nfl_games', 'nfl_games.id', '=', 'nfl_player_stats.game_id')
                 ->whereIn('nfl_player_stats.player_id', $playerIds)
-                ->whereBetween('nfl_games.season', [$season - 2, $season])
+                ->where('nfl_games.season', $season)
+                ->whereIn('nfl_games.season_type', ['2', 'regular'])
                 ->where('nfl_games.status', 'STATUS_FINAL')
                 ->whereDate('nfl_games.game_date', '<', $asOf->toDateString())
                 ->select('nfl_player_stats.*')
@@ -76,6 +77,8 @@ class PlayerPositionGradeService
         return [
             'team_id' => $teamId,
             'season' => $season,
+            'grade_basis' => 'current_season_completed_regular_season_only',
+            'prior_season_fallback' => false,
             'as_of_date' => $asOf->toDateString(),
             'summary' => [
                 'depth_entries' => $entries->count(),
@@ -420,7 +423,8 @@ class PlayerPositionGradeService
         return DB::table('nfl_player_stats')
             ->join('nfl_games', 'nfl_games.id', '=', 'nfl_player_stats.game_id')
             ->where('nfl_player_stats.player_id', $playerId)
-            ->whereBetween('nfl_games.season', [$season - 2, $season])
+            ->where('nfl_games.season', $season)
+            ->whereIn('nfl_games.season_type', ['2', 'regular'])
             ->where('nfl_games.status', 'STATUS_FINAL')
             ->whereDate('nfl_games.game_date', '<', $asOf->toDateString())
             ->orderByDesc('nfl_games.game_date')
@@ -656,7 +660,8 @@ class PlayerPositionGradeService
         $rows = DB::table('nfl_team_stats')
             ->join('nfl_games', 'nfl_games.id', '=', 'nfl_team_stats.game_id')
             ->where('nfl_team_stats.team_id', $teamId)
-            ->whereBetween('nfl_games.season', [$season - 2, $season])
+            ->where('nfl_games.season', $season)
+            ->whereIn('nfl_games.season_type', ['2', 'regular'])
             ->where('nfl_games.status', 'STATUS_FINAL')
             ->whereDate('nfl_games.game_date', '<', $asOf->toDateString())
             ->orderByDesc('nfl_games.game_date')

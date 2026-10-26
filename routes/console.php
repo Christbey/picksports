@@ -1118,6 +1118,15 @@ $attachCommandHeartbeat(
     $nflPregamePipelineCommand,
     'NFL: Pregame Pipeline',
 );
+$nflPropProbabilityEnabled = fn (): bool => $nflInSeason() && (bool) config('nfl.props.probability_experiment_enabled', true);
+$nflProbabilityCapture = "nfl:prop-probability-experiment capture --season={$fallSeasonYear}";
+$nflProbabilityEvent = Schedule::command($nflProbabilityCapture)
+    ->cron('25,55 8-23 * * *')->when($nflPropProbabilityEnabled)
+    ->name('NFL: Capture Prop Probabilities')->onOneServer()->withoutOverlapping(30);
+$attachCommandHeartbeat($nflProbabilityEvent, $nflProbabilityCapture, 'NFL: Capture Prop Probabilities');
+$scheduleDailySeasonJob("nfl:prop-probability-experiment grade --season={$fallSeasonYear}", '09:05', $nflPropProbabilityEnabled, 'NFL: Grade Prop Probabilities');
+$scheduleDailySeasonJob("nfl:prop-probability-experiment report --season={$fallSeasonYear}", '09:15', $nflPropProbabilityEnabled, 'NFL: Report Prop Probabilities')
+    ->appendOutputTo(storage_path('logs/nfl-prop-probabilities.log'));
 $nflPropShadowEnabled = fn (): bool => $nflInSeason() && (bool) config('nfl.props.shadow.enabled', false);
 $nflPropShadowCommand = "nfl:snapshot-prop-shadow --season={$fallSeasonYear}";
 $nflPropShadowEvent = Schedule::command($nflPropShadowCommand)

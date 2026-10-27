@@ -22,6 +22,8 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import AppLayout from '@/layouts/AppLayout.vue';
+import NflEvidenceLeaderboard from '@/components/nfl/NflEvidenceLeaderboard.vue';
+import type { EvidenceLeaderboard } from '@/lib/nflEvidenceLeaderboard';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
 import type { BreadcrumbItem } from '@/types';
 
@@ -219,6 +221,7 @@ const props = defineProps<{
     no_bet_reasons: Array<{ reason: string; count: number }>;
     evaluation_windows: EvaluationWindow[];
     signal_grades: SignalGradeCategory[];
+    evidence_leaderboard: EvidenceLeaderboard;
 }>();
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -295,6 +298,7 @@ function refresh(): void {
             'no_bet_reasons',
             'evaluation_windows',
             'signal_grades',
+            'evidence_leaderboard',
         ],
         onFinish: () => {
             refreshing.value = false;
@@ -497,6 +501,17 @@ function signalIsSelected(row: SignalGradeRow): boolean {
                         </TooltipProvider>
                     </div>
                 </header>
+
+                <NflEvidenceLeaderboard
+                    :report="evidence_leaderboard"
+                    @scope="
+                        (data) =>
+                            router.reload({
+                                data,
+                                only: ['evidence_leaderboard'],
+                            })
+                    "
+                />
 
                 <div
                     v-if="!artifact"

@@ -10,6 +10,11 @@ use Illuminate\Support\Facades\DB;
 
 class NflSignalGradeReportService
 {
+    public function leaderboard(array $filters = []): array
+    {
+        return app(NflEvidenceLeaderboard::class)->report($filters);
+    }
+
     /**
      * @param  array{
      *     from_season?:?int,

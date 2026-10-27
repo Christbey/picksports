@@ -33,7 +33,7 @@ class NflModelMonitoringService
     /**
      * @return array<string, mixed>
      */
-    public function dashboard(?string $artifactId = null): array
+    public function dashboard(?string $artifactId = null, array $evidenceFilters = []): array
     {
         $artifacts = ModelArtifact::query()
             ->with('trainingRun')
@@ -51,6 +51,7 @@ class NflModelMonitoringService
                 'no_bet_reasons' => [],
                 'evaluation_windows' => [],
                 'signal_grades' => $this->signalGradePayload(),
+                'evidence_leaderboard' => $this->signalGrades->leaderboard($evidenceFilters),
             ];
         }
 
@@ -97,6 +98,7 @@ class NflModelMonitoringService
             'no_bet_reasons' => $this->noBetReasons($decisions),
             'evaluation_windows' => array_values((array) ($report['windows'] ?? [])),
             'signal_grades' => $this->signalGradePayload(),
+            'evidence_leaderboard' => $this->signalGrades->leaderboard($evidenceFilters),
         ];
     }
 

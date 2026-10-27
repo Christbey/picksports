@@ -17,6 +17,10 @@ class ReportSignalGradesCommand extends Command
         {--include-unsafe : Include observations not verified as pregame-safe}
         {--sample-unit=game : game for independent outcomes; observation for run diagnostics}
         {--limit=100 : Maximum signal rows}
+        {--leaderboard : Rank prospective evidence using the existing outcome grades}
+        {--model-version= : Exact model version for the evidence leaderboard}
+        {--cohort=all : all, divisional, conference_non_divisional, interconference or unknown}
+        {--validation-from-week=5 : Descriptive later-week window starts here; not an untouched holdout}
         {--json : Emit the full report as JSON}';
 
     protected $description = 'Report settlement-backed NFL signal performance and season stability';
@@ -32,6 +36,39 @@ class ReportSignalGradesCommand extends Command
             $this->error($exception->getMessage());
 
             return self::FAILURE;
+        }
+
+        if ((bool) $this->option('leaderboard')) {
+            if ($this->option('include-unsafe') || $this->option('sample-unit') !== 'game') {
+                $this->error('Evidence leaderboards require safe pregame observations and independent game samples.');
+
+                return self::FAILURE;
+            }
+            foreach (['season', 'from-season', 'to-season'] as $option) {
+                $value = $this->option($option);
+                if ($value !== null && (filter_var($value, FILTER_VALIDATE_INT) === false || (int) $value < 2000 || (int) $value > 2100)) {
+                    $this->error('Season scopes must be integers between 2000 and 2100.');
+
+                    return self::FAILURE;
+                }
+            }
+            $cohort = (string) $this->option('cohort');
+            $week = filter_var($this->option('validation-from-week'), FILTER_VALIDATE_INT);
+            if (! in_array($cohort, ['all', 'divisional', 'conference_non_divisional', 'interconference', 'unknown'], true)
+                || $week === false || $week < 2 || $week > 22) {
+                $this->error('Supply a valid cohort and validation-from-week between 2 and 22.');
+
+                return self::FAILURE;
+            }
+            $report = $reportService->leaderboard([
+                'from_season' => $fromSeason, 'to_season' => $toSeason,
+                'signal_type' => $this->option('signal-type'), 'signal_key' => $this->option('signal-key'),
+                'model_version' => $this->option('model-version'), 'cohort' => $cohort,
+                'validation_from_week' => $week,
+            ]);
+            $this->line(json_encode($report, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT));
+
+            return self::SUCCESS;
         }
 
         $report = $reportService->report([

@@ -57,7 +57,7 @@ it('syncs games from ESPN scoreboard API for a specific date', function () {
         ->expectsOutput('Dispatching NBA games scoreboard sync job for date 20260130...')
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Game::count())->toBe(1);
 
@@ -157,7 +157,7 @@ it('syncs games for today when no date is provided', function () {
         ->expectsOutput("Dispatching NBA games scoreboard sync job for date {$today}...")
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Game::count())->toBe(1);
     expect(Game::first()->espn_event_id)->toBe('401585602');
@@ -173,7 +173,7 @@ it('handles empty scoreboard response', function () {
     artisan('espn:sync-nba-games-scoreboard', ['date' => '20260130'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Game::count())->toBe(0);
 });
@@ -215,7 +215,7 @@ it('updates existing games instead of creating duplicates', function () {
     artisan('espn:sync-nba-games-scoreboard', ['date' => '20260130'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Game::count())->toBe(1);
     expect(Game::first()->home_score)->toBe(110);
@@ -257,7 +257,7 @@ it('reconciles a scheduled game that fell off the scoreboard via the summary end
     artisan('espn:sync-nba-games-scoreboard', ['date' => '20260130'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     $game = Game::where('espn_event_id', '401871332')->first();
     expect($game)->not->toBeNull()
@@ -294,7 +294,7 @@ it('skips games without teams in database', function () {
     artisan('espn:sync-nba-games-scoreboard', ['date' => '20260130'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Game::count())->toBe(0);
 });

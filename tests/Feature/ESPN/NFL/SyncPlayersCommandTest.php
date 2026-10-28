@@ -92,7 +92,7 @@ it('syncs players from ESPN roster API with nested position groups', function ()
         ->assertSuccessful();
 
     // Wait for the queue job to process
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     // Assert players were created in database
     expect(Player::count())->toBe(3);
@@ -130,7 +130,7 @@ it('handles empty roster response', function () {
     artisan('espn:sync-nfl-players', ['teamEspnId' => '22'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Player::count())->toBe(0);
 });
@@ -145,7 +145,7 @@ it('handles missing athletes key in response', function () {
     artisan('espn:sync-nfl-players', ['teamEspnId' => '22'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Player::count())->toBe(0);
 });
@@ -188,7 +188,7 @@ it('updates existing players instead of creating duplicates', function () {
     artisan('espn:sync-nfl-players', ['teamEspnId' => '22'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     // Should still have only 1 player (updated, not duplicated)
     expect(Player::count())->toBe(1);
@@ -245,7 +245,7 @@ it('syncs all teams when no team espn id provided', function () {
         ->expectsOutput('Dispatching NFL players sync job for all teams...')
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Player::count())->toBe(2);
     expect(Player::where('team_id', $this->team->id)->count())->toBe(1);
@@ -281,7 +281,7 @@ it('skips players without an id', function () {
     artisan('espn:sync-nfl-players', ['teamEspnId' => '22'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     // Only the valid player should be saved
     expect(Player::count())->toBe(1);

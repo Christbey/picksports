@@ -75,7 +75,7 @@ it('syncs CBB plays from the complete core plays endpoint', function () {
         ->expectsOutput('Dispatching CBB plays sync job for event 401823525...')
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Play::count())->toBe(2);
     expect(Play::where('espn_play_id', 'summary-truncated-play')->exists())->toBeFalse();

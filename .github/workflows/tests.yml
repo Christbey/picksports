@@ -17,6 +17,10 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   standalone-frontend:
     runs-on: ubuntu-latest
@@ -31,9 +35,16 @@ jobs:
       - run: npm run frontend:build
       - run: node --experimental-strip-types --test tests/frontend/*.test.mjs
 
-  ci:
-    name: ci (8.5)
+  php:
+    name: PHP 8.5 shard ${{ matrix.shard }}/4
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      XDEBUG_MODE: 'off'
 
     steps:
       - name: Checkout code
@@ -44,7 +55,20 @@ jobs:
         with:
           php-version: '8.5'
           tools: composer:v2
-          coverage: xdebug
+          coverage: none
+
+      - name: Locate Composer cache
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-php85-${{ hashFiles('composer.lock') }}
+
+      - name: Verify Xdebug is disabled
+        run: php -r 'if (extension_loaded("xdebug")) { fwrite(STDERR, "Xdebug must be disabled in the PHP test shards.\n"); exit(1); }'
 
       - name: Setup Node
         uses: actions/setup-node@v5
@@ -76,13 +100,53 @@ jobs:
       - name: Build Assets
         run: npm run build
 
+      - name: Record complete test discovery
+        if: matrix.shard == 1
+        run: php vendor/bin/pest --list-tests-xml=storage/framework/testing/full.xml
+
+      - name: Record shard test discovery
+        run: php vendor/bin/pest --shard=${{ matrix.shard }}/4 --list-tests-xml=storage/framework/testing/planned-${{ matrix.shard }}.xml
+
       - name: Tests
-        run: composer test:ci
+        run: composer test:ci -- --shard=${{ matrix.shard }}/4 --log-junit=storage/framework/testing/junit-${{ matrix.shard }}.xml --profile
+
+      - name: Upload PHP test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: php-ci-results-${{ matrix.shard }}
+          path: storage/framework/testing/*.xml
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Verify committed API v2 OpenAPI artifact
+        if: matrix.shard == 1
         run: |
           php artisan api:v2-openapi-generate --output=/tmp/openapi-v2.json
           diff --unified docs/openapi-v2.json /tmp/openapi-v2.json
+
+  ci:
+    name: ci (8.5)
+    needs: php
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download all shard results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: php-ci-results-*
+          path: php-ci-results
+          merge-multiple: true
+      - name: Test suite-completeness guard
+        run: python -m unittest discover -s scripts -p 'test_verify_php_ci_results.py'
+      - name: Verify complete PHP execution
+        run: |
+          python scripts/verify-php-ci-results.py php-ci-results --shards=4 | tee -a "$GITHUB_STEP_SUMMARY"
+          test '${{ needs.php.result }}' = 'success'
 
   ml:
     name: ${{ matrix.package }} ML tests

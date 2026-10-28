@@ -1563,3 +1563,9 @@ $attachCommandHeartbeat(
 // Keep non-FBS opponent results available without mixing their rankings into FBS metrics.
 $scheduleDailySeasonJob('cfb:sync-opponent-history --days=14', '03:05', $cfbInSeason, 'CFB: Refresh Independent Opponent History')
     ->appendOutputTo(storage_path('logs/cfb-opponent-history.log'));
+
+// Check pending admin report scopes; fresh reports are not rebuilt for fifteen minutes.
+$nflMonitorCommand = 'nfl:refresh-model-monitor --limit=3';
+$nflMonitorEvent = Schedule::command($nflMonitorCommand)->everyMinute()->timezone('America/Chicago')
+    ->onOneServer()->withoutOverlapping(20)->runInBackground()->name('NFL: Refresh Admin Monitor Reports');
+$attachCommandHeartbeat($nflMonitorEvent, $nflMonitorCommand, 'NFL: Refresh Admin Monitor Reports');

@@ -103,6 +103,12 @@ class NflModelMonitoringService
         ];
     }
 
+    public function emptyDashboard(): array
+    {
+        return ['artifacts' => [], 'artifact' => null, 'summary' => $this->emptySummary(), 'observations' => [],
+            'no_bet_reasons' => [], 'evaluation_windows' => [], 'signal_grades' => [], 'evidence_leaderboard' => null];
+    }
+
     private function evidencePayload(array $filters): array
     {
         $report = app()->environment('testing')
@@ -121,7 +127,7 @@ class NflModelMonitoringService
      *     windows:list<array<string,mixed>>
      * }>
      */
-    private function signalGradePayload(): array
+    public function signalGradePayload(): array
     {
         return collect(self::SIGNAL_GRADE_CATEGORIES)
             ->map(function (string $label, string $signalType): array {

@@ -10,6 +10,7 @@ use App\Models\NflSignalObservation;
 use App\Models\PredictionFeatureSnapshot;
 use App\Models\ShadowModelOutput;
 use App\Models\User;
+use App\Services\NFL\NflMonitorReportCache;
 use App\Services\NFL\NflSignalGradingService;
 use App\Services\NFL\NflSignalObservationMaterializer;
 use App\Services\Predictions\ModelRunRecorder;
@@ -217,6 +218,7 @@ it('shows nfl artifact lineage, shadow decisions, and settled performance to adm
         ->where('prediction_feature_snapshot_id', $snapshot->id)
         ->each(fn (NflSignalObservation $observation) => app(NflSignalGradingService::class)->grade($observation));
 
+    app(NflMonitorReportCache::class)->refresh();
     $this->actingAs($admin)
         ->get(route('admin.nfl-model-monitoring', ['signals' => 1]))
         ->assertOk()
@@ -263,6 +265,7 @@ it('loads legacy signal grades only when requested by the admin tab', function (
             ->has('signal_grades', 0)
             ->has('evidence_leaderboard')
         );
+    app(NflMonitorReportCache::class)->refresh();
     $this->actingAs($admin)
         ->withHeaders([
             'X-Inertia' => 'true',

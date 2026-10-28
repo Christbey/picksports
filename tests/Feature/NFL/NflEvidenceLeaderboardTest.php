@@ -8,6 +8,7 @@ use App\Models\NflSignalObservation;
 use App\Models\PredictionFeatureSnapshot;
 use App\Models\User;
 use App\Services\NFL\NflEvidenceLeaderboard;
+use App\Services\NFL\NflMonitorReportCache;
 use App\Services\NFL\NflSignalGradeReportService;
 use App\Services\NFL\NflSignalGradingService;
 use App\Services\NFL\NflSignalObservationMaterializer;
@@ -224,6 +225,7 @@ it('exposes the leaderboard through the existing report command and rejects inva
 
 it('exposes the admin leaderboard even without a registered model artifact', function () {
     $this->withoutVite();
+    app(NflMonitorReportCache::class)->refresh();
     $this->actingAs(User::factory()->admin()->create())
         ->get('/admin/nfl-model-monitoring')->assertSuccessful()
         ->assertInertia(fn (AssertableInertia $page) => $page
@@ -242,6 +244,9 @@ it('rejects unsafe and observation-level leaderboard modes', function () {
 it('accepts admin scope filters and validates them', function () {
     $this->withoutVite();
     evidenceGrade(evidenceSnapshot());
+    $cache = app(NflMonitorReportCache::class);
+    $cache->read(null, ['from_season' => 2024, 'to_season' => 2024, 'model_version' => 'nfl-model-v1', 'validation_from_week' => 7]);
+    $cache->refresh();
     $this->actingAs(User::factory()->admin()->create())
         ->get('/admin/nfl-model-monitoring?evidence_season=2024&evidence_model=nfl-model-v1&evidence_week=7')
         ->assertSuccessful()->assertInertia(fn (AssertableInertia $page) => $page

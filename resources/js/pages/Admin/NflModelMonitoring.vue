@@ -221,7 +221,13 @@ const props = defineProps<{
     no_bet_reasons: Array<{ reason: string; count: number }>;
     evaluation_windows: EvaluationWindow[];
     signal_grades: SignalGradeCategory[];
-    evidence_leaderboard: EvidenceLeaderboard;
+    evidence_leaderboard: EvidenceLeaderboard | null;
+    report_status?: {
+        state: string;
+        generated_at: string | null;
+        message: string;
+    };
+    signal_report_generated_at?: string | null;
 }>();
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -291,7 +297,7 @@ function loadSignalGrades(value: string | number): void {
         return;
     signalGradesLoading.value = true;
     router.reload({
-        only: ['signal_grades'],
+        only: ['signal_grades', 'signal_report_generated_at'],
         onFinish: () => {
             signalGradesLoading.value = false;
         },
@@ -332,6 +338,8 @@ function refresh(): void {
             'evaluation_windows',
             ...(props.signal_grades.length > 0 ? ['signal_grades'] : []),
             'evidence_leaderboard',
+            'report_status',
+            'signal_report_generated_at',
         ],
         onFinish: () => {
             refreshing.value = false;
@@ -535,13 +543,27 @@ function signalIsSelected(row: SignalGradeRow): boolean {
                     </div>
                 </header>
 
+                <div
+                    v-if="report_status"
+                    class="rounded-md border p-4 text-sm"
+                    role="status"
+                >
+                    <p>{{ report_status.message }}</p>
+                    <p v-if="report_status.generated_at">
+                        Report generated: {{ report_status.generated_at
+                        }}<span v-if="report_status.state === 'stale'">
+                            · Refresh delayed; showing saved results.</span
+                        >
+                    </p>
+                </div>
                 <NflEvidenceLeaderboard
+                    v-if="evidence_leaderboard"
                     :report="evidence_leaderboard"
                     @scope="
                         (data) =>
                             router.reload({
                                 data,
-                                only: ['evidence_leaderboard'],
+                                only: ['evidence_leaderboard', 'report_status'],
                             })
                     "
                 />
@@ -552,7 +574,11 @@ function signalIsSelected(row: SignalGradeRow): boolean {
                 >
                     <Database class="mx-auto h-8 w-8 text-muted-foreground" />
                     <p class="mt-3 font-semibold">
-                        No NFL model artifacts registered
+                        {{
+                            report_status?.state === 'pending'
+                                ? 'Report is being prepared; model availability has not been checked yet.'
+                                : 'No NFL model artifacts registered'
+                        }}
                     </p>
                 </div>
 
@@ -1488,6 +1514,13 @@ function signalIsSelected(row: SignalGradeRow): boolean {
                         </TabsContent>
 
                         <TabsContent value="signals" class="space-y-5">
+                            <p class="text-sm text-muted-foreground">
+                                {{
+                                    signal_report_generated_at
+                                        ? `Signal report generated: ${signal_report_generated_at}`
+                                        : 'Signal report is being prepared by the scheduled refresh.'
+                                }}
+                            </p>
                             <p
                                 v-if="signalGradesLoading"
                                 class="text-sm text-muted-foreground"

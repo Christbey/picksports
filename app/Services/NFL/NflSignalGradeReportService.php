@@ -113,25 +113,29 @@ class NflSignalGradeReportService
         );
 
         if (($filters['sample_unit'] ?? 'game') !== 'observation') {
-            // Rerunning the model is not another independent game outcome.
-            $query->where(function ($scope) use ($filters): void {
-                // Keep exact settlements from earlier runs; only outcome samples deduplicate.
+            $ranked = DB::table('nfl_signal_observations as candidates')
+                ->select(['candidates.id', 'candidates.game_id', 'candidates.signal_type', 'candidates.signal_key', 'candidates.observed_at'])
+                ->selectRaw('ROW_NUMBER() OVER (PARTITION BY candidates.game_id, candidates.signal_type, candidates.signal_key ORDER BY candidates.observed_at DESC, candidates.id DESC) as sample_rank')
+                ->when((bool) ($filters['pregame_safe'] ?? true), fn ($q) => $q->where('candidates.pregame_safe', true))
+                ->when(! empty($filters['signal_type']), fn ($q) => $q->where('candidates.signal_type', $filters['signal_type']))
+                ->when(! empty($filters['signal_key']), fn ($q) => $q->where('candidates.signal_key', $filters['signal_key']))
+                ->whereExists(fn ($q) => $q->selectRaw('1')->from('nfl_signal_grades as candidate_grade')
+                    ->whereColumn('candidate_grade.nfl_signal_observation_id', 'candidates.id')->where('candidate_grade.evaluation_source', 'outcome'));
+            $latest = DB::query()->fromSub($ranked, 'ranked')->where('sample_rank', 1)
+                ->select(['game_id', 'signal_type', 'signal_key'])
+                ->selectRaw('MAX(id) as id, MAX(observed_at) as observed_at')
+                ->groupBy(['game_id', 'signal_type', 'signal_key']);
+            $query->leftJoinSub($latest, 'latest_graded', function ($join): void {
+                $join->on('latest_graded.game_id', '=', 'nfl_signal_observations.game_id')
+                    ->on('latest_graded.signal_type', '=', 'nfl_signal_observations.signal_type')
+                    ->on('latest_graded.signal_key', '=', 'nfl_signal_observations.signal_key');
+            })->where(function ($scope): void {
+                // Older exact settlements remain counted; newer ungraded rows remain visible.
                 $scope->where('nfl_signal_grades.evaluation_source', 'settlement')
-                    ->orWhereNotExists(function ($newer) use ($filters): void {
-                        $newer->selectRaw('1')->from('nfl_signal_observations as newer')
-                            ->whereColumn('newer.game_id', 'nfl_signal_observations.game_id')
-                            ->whereColumn('newer.signal_type', 'nfl_signal_observations.signal_type')
-                            ->whereColumn('newer.signal_key', 'nfl_signal_observations.signal_key')
-                            ->when((bool) ($filters['pregame_safe'] ?? true), fn ($q) => $q->where('newer.pregame_safe', true))
-                            ->whereExists(fn ($q) => $q->selectRaw('1')->from('nfl_signal_grades as newer_grade')
-                                ->whereColumn('newer_grade.nfl_signal_observation_id', 'newer.id')
-                                ->where('newer_grade.evaluation_source', 'outcome'))
-                            ->where(function ($q): void {
-                                $q->whereColumn('newer.observed_at', '>', 'nfl_signal_observations.observed_at')
-                                    ->orWhere(fn ($q) => $q->whereColumn('newer.observed_at', 'nfl_signal_observations.observed_at')
-                                        ->whereColumn('newer.id', '>', 'nfl_signal_observations.id'));
-                            });
-                    });
+                    ->orWhereNull('latest_graded.id')
+                    ->orWhereColumn('nfl_signal_observations.observed_at', '>', 'latest_graded.observed_at')
+                    ->orWhere(fn ($q) => $q->whereColumn('nfl_signal_observations.observed_at', 'latest_graded.observed_at')
+                        ->whereColumn('nfl_signal_observations.id', '>=', 'latest_graded.id'));
             });
         }
 

@@ -34,7 +34,7 @@ class NflModelMonitoringService
     /**
      * @return array<string, mixed>
      */
-    public function dashboard(?string $artifactId = null, array $evidenceFilters = []): array
+    public function dashboard(?string $artifactId = null, array $evidenceFilters = [], bool $includeLegacyGrades = true): array
     {
         $artifacts = ModelArtifact::query()
             ->with('trainingRun')
@@ -51,7 +51,7 @@ class NflModelMonitoringService
                 'observations' => [],
                 'no_bet_reasons' => [],
                 'evaluation_windows' => [],
-                'signal_grades' => $this->signalGradePayload(),
+                'signal_grades' => $includeLegacyGrades ? $this->signalGradePayload() : [],
                 'evidence_leaderboard' => $this->evidencePayload($evidenceFilters),
             ];
         }
@@ -98,7 +98,7 @@ class NflModelMonitoringService
                 ->all(),
             'no_bet_reasons' => $this->noBetReasons($decisions),
             'evaluation_windows' => array_values((array) ($report['windows'] ?? [])),
-            'signal_grades' => $this->signalGradePayload(),
+            'signal_grades' => $includeLegacyGrades ? $this->signalGradePayload() : [],
             'evidence_leaderboard' => $this->evidencePayload($evidenceFilters),
         ];
     }

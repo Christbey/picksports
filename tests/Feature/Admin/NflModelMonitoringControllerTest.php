@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\BetDecision;
 use App\Models\BetSettlement;
 use App\Models\ModelArtifact;
@@ -217,7 +218,7 @@ it('shows nfl artifact lineage, shadow decisions, and settled performance to adm
         ->each(fn (NflSignalObservation $observation) => app(NflSignalGradingService::class)->grade($observation));
 
     $this->actingAs($admin)
-        ->get(route('admin.nfl-model-monitoring'))
+        ->get(route('admin.nfl-model-monitoring', ['signals' => 1]))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Admin/NflModelMonitoring')
@@ -249,4 +250,28 @@ it('shows nfl artifact lineage, shadow decisions, and settled performance to adm
             ->where('signal_grades.3.signal_type', 'pass_rule')
             ->where('signal_grades.4.signal_type', 'validated_combo')
         );
+});
+
+it('loads legacy signal grades only when requested by the admin tab', function () {
+    $this->withoutVite();
+    $admin = User::factory()->admin()->create();
+    $this->actingAs($admin)
+        ->get(route('admin.nfl-model-monitoring'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/NflModelMonitoring')
+            ->has('signal_grades', 0)
+            ->has('evidence_leaderboard')
+        );
+    $this->actingAs($admin)
+        ->withHeaders([
+            'X-Inertia' => 'true',
+            'X-Inertia-Version' => app(HandleInertiaRequests::class)->version(request()),
+            'X-Inertia-Partial-Component' => 'Admin/NflModelMonitoring',
+            'X-Inertia-Partial-Data' => 'signal_grades',
+        ])
+        ->get(route('admin.nfl-model-monitoring'))
+        ->assertOk()
+        ->assertJsonCount(5, 'props.signal_grades')
+        ->assertJsonMissingPath('props.evidence_leaderboard');
 });

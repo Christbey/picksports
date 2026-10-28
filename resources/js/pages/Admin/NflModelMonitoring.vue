@@ -13,7 +13,7 @@ import {
     RefreshCw,
     ShieldCheck,
 } from 'lucide-vue-next';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
     Tooltip,
@@ -264,6 +264,39 @@ const selectedSignalKeys = ref<Record<string, string>>(
         ]),
     ),
 );
+const signalGradesLoading = ref(false);
+watch(
+    () => props.signal_grades,
+    (categories) => {
+        for (const category of categories) {
+            if (
+                !category.signals.some(
+                    (signal) =>
+                        signal.signal_key ===
+                        selectedSignalKeys.value[category.signal_type],
+                )
+            ) {
+                selectedSignalKeys.value[category.signal_type] =
+                    category.signals[0]?.signal_key ?? '';
+            }
+        }
+    },
+);
+function loadSignalGrades(value: string | number): void {
+    if (
+        value !== 'signals' ||
+        props.signal_grades.length > 0 ||
+        signalGradesLoading.value
+    )
+        return;
+    signalGradesLoading.value = true;
+    router.reload({
+        only: ['signal_grades'],
+        onFinish: () => {
+            signalGradesLoading.value = false;
+        },
+    });
+}
 const activeSignalCategory = computed(
     () =>
         props.signal_grades.find(
@@ -297,7 +330,7 @@ function refresh(): void {
             'observations',
             'no_bet_reasons',
             'evaluation_windows',
-            'signal_grades',
+            ...(props.signal_grades.length > 0 ? ['signal_grades'] : []),
             'evidence_leaderboard',
         ],
         onFinish: () => {
@@ -658,7 +691,11 @@ function signalIsSelected(row: SignalGradeRow): boolean {
                         </div>
                     </section>
 
-                    <Tabs default-value="observations" class="space-y-4">
+                    <Tabs
+                        default-value="observations"
+                        class="space-y-4"
+                        @update:model-value="loadSignalGrades"
+                    >
                         <TabsList
                             class="grid h-auto w-full grid-cols-4 sm:w-auto"
                         >
@@ -1451,6 +1488,12 @@ function signalIsSelected(row: SignalGradeRow): boolean {
                         </TabsContent>
 
                         <TabsContent value="signals" class="space-y-5">
+                            <p
+                                v-if="signalGradesLoading"
+                                class="text-sm text-muted-foreground"
+                            >
+                                Loading signal grades…
+                            </p>
                             <p class="text-sm text-muted-foreground">
                                 Outcome rates use the latest graded pregame
                                 observation per game and signal. Repeated model

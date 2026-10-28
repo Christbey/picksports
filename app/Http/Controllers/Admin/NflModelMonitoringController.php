@@ -27,6 +27,7 @@ class NflModelMonitoringController extends Controller
         return Inertia::render('Admin/NflModelMonitoring', $monitoring->dashboard(
             $request->string('artifact')->trim()->toString() ?: null,
             $evidence,
+            $request->boolean('signals') || in_array('signal_grades', explode(',', (string) $request->header('X-Inertia-Partial-Data')), true),
         ));
     }
 }

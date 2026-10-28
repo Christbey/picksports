@@ -55,11 +55,12 @@ class NflEvidenceLeaderboard
         );
         $ids = DB::query()->fromSub($ranked->toBase(), 'ranked')->where('occurrence_rank', 1)->select('id');
         $groups = [];
+        $contexts = [];
         $selected = $excluded = 0;
         NflSignalObservation::query()->whereIn('id', $ids)
-            ->with(['featureSnapshot:id,features,market_context,model_metadata', 'game.homeTeam', 'game.awayTeam', 'game.sportEvent',
+            ->with(['featureSnapshot:id,features,market_context', 'game.homeTeam', 'game.awayTeam', 'game.sportEvent',
                 'grades' => fn ($q) => $q->where('evaluation_source', 'outcome')])
-            ->chunkById(250, function ($observations) use (&$groups, &$selected, &$excluded, $cohort) {
+            ->chunkById(250, function ($observations) use (&$groups, &$selected, &$excluded, &$contexts, $cohort) {
                 foreach ($observations as $o) {
                     $game = $o->game;
                     $kickoff = app(SnapshotProvenanceResolver::class)->gameStartAt($game);
@@ -74,8 +75,12 @@ class NflEvidenceLeaderboard
                     }
                     $selected++;
                     $state = $o->signal_type === 'matchup_condition' ? data_get($o->signal_payload, 'state', 'unavailable') : 'triggered';
-                    $context = data_get($o->featureSnapshot?->features, 'evidence.context', ['cohort' => $kind]);
-                    $stratum = app(NflEvidenceComparison::class)->stratum($context, $o->featureSnapshot?->market_context ?? [], $o->week);
+                    $contexts[$o->prediction_feature_snapshot_id] ??= [
+                        'context' => data_get($o->featureSnapshot?->features, 'evidence.context', ['cohort' => $kind]),
+                        'market' => $o->featureSnapshot?->market_context ?? [],
+                    ];
+                    $sourceContext = $contexts[$o->prediction_feature_snapshot_id];
+                    $stratum = app(NflEvidenceComparison::class)->stratum($sourceContext['context'], $sourceContext['market'], $o->week);
                     foreach (['winner', 'spread', 'total'] as $market) {
                         $key = implode('|', [$o->signal_type, $o->signal_key, $o->model_version,
                             $o->feature_version, $o->blend_version, $o->config_hash, $o->definition_hash, $o->direction ?? 'context', $market]);

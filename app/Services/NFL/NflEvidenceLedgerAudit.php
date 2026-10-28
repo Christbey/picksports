@@ -22,7 +22,7 @@ class NflEvidenceLedgerAudit
             ->where('pregame_safe', true)->where('availability_status', 'observed_pregame')->where('generated_at', '<=', now())
             ->whereColumn('generated_at', '<', 'game_start_at')->whereColumn('features_available_at', '<=', 'generated_at')
             ->selectRaw('MAX(id)')->groupBy('game_id');
-        $snapshots = PredictionFeatureSnapshot::whereIn('id', $latest)->get()->keyBy('game_id');
+        $snapshots = PredictionFeatureSnapshot::whereIn('id', $latest)->get(['id', 'game_id', 'generated_at', 'game_start_at', 'outputs', 'market_context'])->keyBy('game_id');
         $observations = NflSignalObservation::whereIn('prediction_feature_snapshot_id', $snapshots->pluck('id'))
             ->selectRaw('prediction_feature_snapshot_id, COUNT(*) as observations, MAX(created_at) as materialized_at')
             ->groupBy('prediction_feature_snapshot_id')->get()->keyBy('prediction_feature_snapshot_id');

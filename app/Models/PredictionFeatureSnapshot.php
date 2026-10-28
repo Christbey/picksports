@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\NFL\Game;
 use App\Services\Predictions\SnapshotMetadataStorage;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
@@ -92,12 +93,17 @@ class PredictionFeatureSnapshot extends Model
     protected static function booted(): void
     {
         $immutable = function (self $snapshot): void {
-            if (in_array($snapshot->getOriginal('blend_version'), ['nfl-prop-shadow-v1', 'nfl-game-simulation-shadow-v1', 'nfl-prop-probability-v1'], true)) {
+            if (in_array($snapshot->getOriginal('blend_version'), ['nfl-prop-shadow-v1', 'nfl-game-simulation-shadow-v1', 'nfl-prop-probability-v1', 'nfl-evidence-v1'], true)) {
                 throw new LogicException('NFL shadow snapshots are immutable.');
             }
         };
         static::updating($immutable);
         static::deleting($immutable);
+    }
+
+    public function nflGame(): BelongsTo
+    {
+        return $this->belongsTo(Game::class, 'game_id');
     }
 
     public function modelRun(): BelongsTo

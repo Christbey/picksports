@@ -82,3 +82,36 @@ Acceptance: a released pick explains why the side and price are supported, the s
 ## Immediate next deliverable
 
 Complete Phase 1 reconciliation for the current production model, then implement Phase 2 freezing for a small predefined family (overall/passing EPA and expected-QB/personnel context). Use the same observation and grade tables/services where their contracts fit; extend them with explicit state/version fields only when needed. Do not create another independent scoring pipeline or backfill prospective results from reconstructed evidence.
+
+## Implementation status — October 27, 2026
+
+Engineering support for phases 1–5 is implemented on `codex/nfl-evidence-validation`. This is not a claim that prospective validation or production promotion has completed.
+
+| Phase | Implementation | Outcome-dependent work |
+| --- | --- | --- |
+| 1 | `--reconcile` diagnoses every game/market; admin shows freshness, heartbeat and missingness; bounded 60-second report cache | Resolve actual backlog/source gaps observed in production |
+| 2 | Existing materializer command freezes all catalog states into immutable `nfl-evidence-v1` snapshots, with compact numeric samples and source references; bulk observation inserts | Only captures made before future kickoffs can supply new prospective evidence |
+| 3 | Existing grader scores known states; no-direction outcomes are explicit; leaderboard separates states and supplies coarse matched controls and bounded partial-overlap analysis | Adequate matched/absent comparison coverage must accumulate |
+| 4 | Immutable preregistered artifact protocols fix candidates, offsets, dates, embargo, code/configuration and family budget; expanding later-week reports and week-cluster uncertainty with correction | Actual discovery and confirmation game outcomes; no retrospective period creation |
+| 5 | Same-input additive shadow forecasts and same-input per-candidate ablation previews use the existing artifact/output registry, immutable output hashes, subgroup gates and an explicit deactivate/rollback action; generic promotion rejects these experimental artifacts | Production weighting changes remain out of scope until independently approved calibrated model validation |
+
+Capture runs at :35 during 06:00–23:59 Central, after :20 forecasts, with at most sixteen game captures per run and two captures per game: early (more than 90 minutes before kickoff) and late (within 90 minutes). Fresh verified source forecasts are required. Existing :05/:20/:35/:50 grading handles the new observation type. No provider refresh or paid AI is called.
+
+### Operator commands
+
+- `php artisan nfl:report-signal-grades --reconcile --season=2026`
+- `php artisan nfl:materialize-signal-observations --capture-evidence --season=2026 --limit=16`
+- `php artisan nfl:grade-signal-observations --season=2026 --signal-type=matchup_condition`
+- `php artisan nfl:report-signal-grades --leaderboard --season=2026 --signal-type=matchup_condition`
+- `php artisan nfl:evidence-trial register --spec=/absolute/path/to/protocol.json`
+- `php artisan nfl:evidence-trial report --artifact=<registered-id>`
+- `php artisan nfl:evidence-trial deactivate --artifact=<registered-id>`
+
+A registration specification requires `model_version`, `market` (`winner`, `spread` or `total`), explicit `candidates` mapping catalog keys or frozen atomic source-condition keys to additive offsets, and future ISO timestamps for `discovery_end` and `validation_end`. Discovery must extend at least seven days beyond registration; confirmation begins after a 24-hour embargo and lasts at least seven days. No offsets are learned from confirmation data. Offsets are bounded to 0.03 probability points for winners or one point for margin/total, including the combined adjustment cap. Candidate states unavailable in a capture suppress its shadow forecast rather than becoming zero evidence.
+
+The confirmation report requires at least thirty independent games per period, multiple validation weeks, completed periods with label delay, positive discovery and corrected validation improvement, configuration/code integrity and subgroup coverage without observed regressions. The bounded week-cluster Hoeffding interval is deliberately conservative; the minimum sample counts alone cannot establish confirmation. These trial artifacts are always shadow-only and cannot be promoted through the generic model command. A later production model must satisfy the existing full model/calibration approval process.
+
+Remaining scientific limitations: matched-stratum comparisons are observational; additive residual trials do not ablate original model components; week-cluster bounds assume independent weeks; the overlap scan is bounded; and missing source coverage cannot be invented. Each limitation is retained in the admin report.
+
+
+Capture also freezes the known atomic reason/risk/rule/combination universe from earlier observed definitions and the source prediction, without consulting grades. Known source fields produce explicit matched/absent states; missing source fields remain unavailable. Observation payloads reference detailed values in the immutable snapshot rather than duplicating them. Registration is idempotent for identical specification content. Experimental artifacts are excluded from normal model selection and bet-decision recording, and have an independent retirement action.

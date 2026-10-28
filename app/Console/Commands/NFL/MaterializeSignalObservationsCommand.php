@@ -4,6 +4,7 @@ namespace App\Console\Commands\NFL;
 
 use App\Models\NFL\Game;
 use App\Models\PredictionFeatureSnapshot;
+use App\Services\NFL\NflEvidenceCapture;
 use App\Services\NFL\NflSignalObservationMaterializer;
 use Illuminate\Console\Command;
 use InvalidArgumentException;
@@ -16,6 +17,7 @@ class MaterializeSignalObservationsCommand extends Command
         {--to-season= : Last NFL season to materialize}
         {--snapshot-id=* : Materialize specific prediction feature snapshot IDs}
         {--all-snapshots : Materialize every historical run instead of the latest snapshot per game}
+        {--capture-evidence : Freeze upcoming matchup conditions before kickoff, at most early and late}
         {--limit=0 : Optional snapshot limit}';
 
     protected $description = 'Materialize immutable atomic NFL signal observations from prediction snapshots';
@@ -30,13 +32,24 @@ class MaterializeSignalObservationsCommand extends Command
             return self::FAILURE;
         }
 
+        if ($this->option('capture-evidence')) {
+            if ($fromSeason === null || $fromSeason !== $toSeason || $fromSeason < 2000 || $fromSeason > 2100
+                || $this->option('all-snapshots') || $this->option('snapshot-id')) {
+                $this->error('Evidence capture requires one valid --season and no historical/snapshot overrides.');
+
+                return self::FAILURE;
+            }
+            $this->line(json_encode(app(NflEvidenceCapture::class)->capture($fromSeason, (int) ($this->option('limit') ?: 16)), JSON_THROW_ON_ERROR));
+
+            return self::SUCCESS;
+        }
         $snapshotIds = collect((array) $this->option('snapshot-id'))
             ->map(fn (mixed $id): int => (int) $id)
             ->filter(fn (int $id): bool => $id > 0)
             ->values();
         $query = PredictionFeatureSnapshot::query()
             ->with('modelRun')
-            ->where('sport', 'nfl')
+            ->where('sport', 'nfl')->where('prediction_table', 'nfl_predictions')->when($snapshotIds->isEmpty(), fn ($q) => $q->where('blend_version', '!=', NflEvidenceCapture::POLICY))
             ->when($snapshotIds->isNotEmpty(), fn ($builder) => $builder->whereIn('id', $snapshotIds))
             ->when(
                 $snapshotIds->isEmpty() && ! (bool) $this->option('all-snapshots'),
@@ -44,7 +57,7 @@ class MaterializeSignalObservationsCommand extends Command
                     'id',
                     PredictionFeatureSnapshot::query()
                         ->selectRaw('MAX(id)')
-                        ->where('sport', 'nfl')
+                        ->where('sport', 'nfl')->where('prediction_table', 'nfl_predictions')->where('blend_version', '!=', NflEvidenceCapture::POLICY)
                         ->groupBy('game_id')
                 )
             )

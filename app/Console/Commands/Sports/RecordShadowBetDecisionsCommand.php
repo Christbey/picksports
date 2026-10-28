@@ -7,6 +7,7 @@ use App\Models\MarketQuote;
 use App\Models\ModelArtifact;
 use App\Models\PredictionFeatureSnapshot;
 use App\Models\ShadowModelOutput;
+use App\Services\NFL\NflEvidenceTrialService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
 
@@ -37,6 +38,9 @@ class RecordShadowBetDecisionsCommand extends Command
         foreach ($query->get() as $shadow) {
             $snapshot = $shadow->featureSnapshot;
             $artifact = $shadow->artifact;
+            if ($artifact?->model_type === NflEvidenceTrialService::TYPE) {
+                continue;
+            }
             $market = $this->marketDefinition($sport, $shadow->market_type);
             if (! $snapshot || ! $artifact || $market === null) {
                 continue;

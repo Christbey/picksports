@@ -29,6 +29,15 @@ class ModelRun extends Model
         'metadata',
     ];
 
+    protected static function booted(): void
+    {
+        static::updating(function (self $run): void {
+            if ($run->getOriginal('run_type') === 'evidence_trial' && $run->isDirty(['parameters', 'config_hash', 'code_version', 'model_version', 'feature_version', 'blend_version'])) {
+                throw new \LogicException('Evidence trial protocols are immutable.');
+            }
+        });
+    }
+
     protected function casts(): array
     {
         return [

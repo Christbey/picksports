@@ -1230,6 +1230,12 @@ $scheduleDailySeasonJob(
     $nflInSeason,
     'NFL: Settle Model Decisions'
 );
+$nflEvidenceCaptureCommand = "nfl:materialize-signal-observations --capture-evidence --season={$fallSeasonYear} --limit=16";
+$nflEvidenceCaptureEvent = Schedule::command($nflEvidenceCaptureCommand)
+    ->cron('35 6-23 * * *')->when($nflInSeason)
+    ->name('NFL: Freeze Matchup Evidence')->onOneServer()->withoutOverlapping(15);
+$attachCommandHeartbeat($nflEvidenceCaptureEvent, $nflEvidenceCaptureCommand, 'NFL: Freeze Matchup Evidence');
+
 $nflSignalGradingCommand = "nfl:grade-signal-observations --season={$fallSeasonYear} --limit=1000 --batch-size=250";
 $nflSignalGradingEvent = Schedule::command($nflSignalGradingCommand)
     // A Sunday slate can produce over 27,000 observations. Keep batches small

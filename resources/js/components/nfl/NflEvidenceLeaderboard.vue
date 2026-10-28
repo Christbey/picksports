@@ -21,8 +21,15 @@ const week = ref(props.report.scope.validation_from_week);
 const market = ref('spread');
 const cohort = ref('all');
 const search = ref('');
+const state = ref('present');
 const rows = computed(() =>
-    evidenceRows(props.report, market.value, cohort.value, search.value),
+    evidenceRows(
+        props.report,
+        market.value,
+        cohort.value,
+        search.value,
+        state.value,
+    ),
 );
 const percent = (n: number | null) =>
     n === null ? 'Unavailable' : `${(n * 100).toFixed(1)}%`;
@@ -92,6 +99,106 @@ const label = (text: string) => text.replaceAll('_', ' ');
                 Apply scope
             </button>
         </form>
+        <details v-if="report.operations" class="rounded border p-3 text-sm">
+            <summary class="cursor-pointer font-medium">
+                Pipeline coverage, freshness and shadow trials
+            </summary>
+            <div class="mt-3 grid gap-3 md:grid-cols-2">
+                <div>
+                    <h3 class="font-medium">Last successful ledger activity</h3>
+                    <p
+                        v-for="(time, kind) in report.operations.audit
+                            .freshness"
+                        :key="kind"
+                    >
+                        {{ label(kind) }}: {{ time ?? 'Not yet observed' }}
+                    </p>
+                </div>
+                <div>
+                    <h3 class="font-medium">Grade coverage by market</h3>
+                    <div
+                        v-for="(reasons, kind) in report.operations.audit
+                            .reasons"
+                        :key="kind"
+                    >
+                        <strong>{{ label(kind) }}</strong>
+                        <p v-for="(count, reason) in reasons" :key="reason">
+                            {{ label(reason) }}: {{ count }} games
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <h3 class="mt-3 font-medium">Games needing attention (first 50)</h3>
+            <p
+                v-for="gap in report.operations.audit.games
+                    .filter(
+                        (g) =>
+                            !['graded', 'awaiting_final_result'].includes(
+                                g.reason,
+                            ),
+                    )
+                    .slice(0, 50)"
+                :key="`${gap.game_id}:${gap.market}`"
+            >
+                {{ gap.matchup }} · {{ gap.market }}: {{ label(gap.reason) }} ·
+                quote: {{ label(gap.quote_status) }}
+            </p>
+            <h3 class="mt-3 font-medium">Preregistered shadow trials</h3>
+            <p v-if="!report.operations.trials.length">
+                No trials registered. Confirmation requires a fixed protocol and
+                future game outcomes.
+            </p>
+            <details
+                v-for="trial in report.operations.trials"
+                :key="trial.artifact_id"
+                class="mt-2"
+            >
+                <summary>
+                    {{ trial.protocol?.name ?? trial.artifact_id }} ·
+                    {{ label(trial.status) }}
+                </summary>
+                <p v-for="(period, kind) in trial.periods" :key="kind">
+                    {{ kind }}: {{ period.games }} games /
+                    {{ period.weeks }} weeks · mean improvement
+                    {{ number(period.mean_improvement) }} · corrected lower
+                    bound {{ number(period.simultaneous_lower_bound) }}
+                </p>
+                <p v-for="(passed, check) in trial.checks" :key="check">
+                    {{ label(check) }}:
+                    {{ passed ? 'Passed' : 'Not satisfied' }}
+                </p>
+                <p
+                    v-for="(
+                        periods, candidate
+                    ) in trial.candidate_contributions"
+                    :key="candidate"
+                >
+                    {{ candidate }} removal preview:
+                    <span v-for="(effect, period) in periods" :key="period"
+                        >{{ period }}
+                        {{
+                            number(effect.mean_full_minus_ablated_improvement)
+                        }}
+                        ({{ effect.games }} games) · </span
+                    >Same frozen inputs; proposed additions only.
+                </p>
+                <p>
+                    Shadow only. No automatic promotion or published forecast
+                    changes.
+                </p>
+            </details>
+            <details class="mt-3">
+                <summary>Scheduler heartbeats</summary>
+                <p
+                    v-for="(heartbeat, index) in report.operations.audit
+                        .scheduler_heartbeats"
+                    :key="index"
+                >
+                    {{ heartbeat.command }} · {{ heartbeat.status }} ·
+                    {{ heartbeat.ran_at }}
+                </p>
+            </details>
+        </details>
         <div class="flex flex-wrap gap-3">
             <label class="text-sm"
                 >Market
@@ -117,6 +224,20 @@ const label = (text: string) => text.replaceAll('_', ' ');
                     </option>
                     <option value="interconference">Interconference</option>
                     <option value="unknown">Unknown alignment</option>
+                </select>
+            </label>
+            <label class="text-sm"
+                >Condition state
+                <select
+                    v-model="state"
+                    class="ml-2 rounded border bg-background p-2"
+                >
+                    <option value="present">Matched / triggered</option>
+                    <option value="not_matched">Not matched controls</option>
+                    <option value="unavailable">
+                        Unavailable / unsupported
+                    </option>
+                    <option value="all">All states</option>
                 </select>
             </label>
             <label class="text-sm"
@@ -146,7 +267,7 @@ const label = (text: string) => text.replaceAll('_', ' ');
                 <tbody>
                     <tr
                         v-for="row in rows.slice(0, 50)"
-                        :key="`${row.signal_type}:${row.signal_key}:${row.definition_hash}:${row.config_hash}:${row.direction}:${row.feature_version}:${row.blend_version}`"
+                        :key="`${row.signal_type}:${row.signal_key}:${row.definition_hash}:${row.condition_state}:${row.config_hash}:${row.direction}:${row.feature_version}:${row.blend_version}`"
                         class="border-b align-top"
                     >
                         <td class="max-w-sm p-2">
@@ -165,6 +286,10 @@ const label = (text: string) => text.replaceAll('_', ' ');
                                             'context / model direction'
                                         }}
                                     </p>
+                                    <p>
+                                        State:
+                                        {{ row.condition_state ?? 'triggered' }}
+                                    </p>
                                     <p>Configuration: {{ row.config_hash }}</p>
                                     <p>
                                         Grading basis:
@@ -181,6 +306,48 @@ const label = (text: string) => text.replaceAll('_', ' ');
                                         {{ row.blend_version }}
                                     </p>
                                     <template v-if="cohort === 'all'">
+                                        <p v-if="row.control_comparison">
+                                            Control comparison:
+                                            {{
+                                                row.control_comparison
+                                                    .present_games
+                                            }}
+                                            exposed /
+                                            {{
+                                                row.control_comparison
+                                                    .control_games
+                                            }}
+                                            control games in
+                                            {{
+                                                row.control_comparison
+                                                    .common_strata
+                                            }}
+                                            common strata · improvement
+                                            {{
+                                                number(
+                                                    row.control_comparison
+                                                        .comparison_improvement,
+                                                )
+                                            }}
+                                            ·
+                                            {{
+                                                label(
+                                                    row.control_comparison
+                                                        .status,
+                                                )
+                                            }}. Observational, not causal.
+                                        </p>
+                                        <p
+                                            v-for="overlap in row.partial_overlap"
+                                            :key="overlap.signal_key"
+                                        >
+                                            Overlap: {{ overlap.signal_key }} ·
+                                            {{ overlap.shared_games }} shared
+                                            games ·
+                                            {{ percent(overlap.jaccard) }}
+                                            Jaccard similarity.
+                                        </p>
+
                                         <p>
                                             Before week
                                             {{

@@ -51,6 +51,17 @@ class ModelArtifact extends Model
         'promoted_at',
     ];
 
+    protected static function booted(): void
+    {
+        static::updating(function (self $artifact): void {
+            if ($artifact->getOriginal('model_type') === 'nfl_evidence_trial'
+                && ($artifact->isDirty(['training_run_id', 'artifact_hash', 'artifact_path', 'model_type', 'model_version', 'feature_version', 'market_type'])
+                    || in_array($artifact->status, ['promoted', 'promotion_eligible'], true))) {
+                throw new \LogicException('Evidence trial protocols cannot be rewritten or promoted.');
+            }
+        });
+    }
+
     protected function casts(): array
     {
         return [

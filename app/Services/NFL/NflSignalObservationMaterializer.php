@@ -6,6 +6,7 @@ use App\Models\NFL\Game;
 use App\Models\NflSignalObservation;
 use App\Models\PredictionFeatureSnapshot;
 use App\Support\NflReasonCodeCatalog;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class NflSignalObservationMaterializer
@@ -41,9 +42,10 @@ class NflSignalObservationMaterializer
 
         $signals = $this->signals($snapshot);
         $created = 0;
+        $bulk = [];
 
         foreach ($signals as $signal) {
-            $definitionHash = $this->hashPayload($signal['payload']);
+            $definitionHash = $this->hashPayload($signal['definition'] ?? $signal['payload']);
             $attributes = [
                 'prediction_feature_snapshot_id' => $snapshot->id,
                 'signal_type' => $signal['type'],
@@ -85,10 +87,19 @@ class NflSignalObservationMaterializer
                 'game_start_at' => $snapshot->game_start_at,
             ];
 
+            if ($snapshot->blend_version === NflEvidenceCapture::POLICY) {
+                $bulk[] = [...$attributes, ...$values, 'signal_payload' => json_encode($values['signal_payload'], JSON_THROW_ON_ERROR), 'created_at' => now()];
+
+                continue;
+            }
             $observation = NflSignalObservation::query()->firstOrCreate($attributes, $values);
             if ($observation->wasRecentlyCreated) {
                 $created++;
             }
+        }
+
+        foreach (array_chunk($bulk, 200) as $rows) {
+            $created += DB::table('nfl_signal_observations')->insertOrIgnore($rows);
         }
 
         return [
@@ -114,6 +125,9 @@ class NflSignalObservationMaterializer
      */
     private function signals(PredictionFeatureSnapshot $snapshot): array
     {
+        if ($snapshot->blend_version === NflEvidenceCapture::POLICY) {
+            return $this->evidenceSignals($snapshot);
+        }
         $analysis = data_get($snapshot->model_metadata, 'analysis_layer');
         if (! is_array($analysis)) {
             return [];
@@ -128,6 +142,22 @@ class NflSignalObservationMaterializer
             ->unique(fn (array $signal): string => $signal['type'].'|'.$signal['key'])
             ->values()
             ->all();
+    }
+
+    private function evidenceSignals(PredictionFeatureSnapshot $snapshot): array
+    {
+        if (! hash_equals($snapshot->feature_hash, NflEvidenceCapture::fingerprint($snapshot->features, $snapshot->outputs, $snapshot->market_context))) {
+            throw new InvalidArgumentException('Evidence snapshot integrity check failed.');
+        }
+        $signals = [];
+        foreach (data_get($snapshot->features, 'evidence.conditions', []) as $key => $condition) {
+            $signals[] = ['type' => 'matchup_condition', 'key' => $key, 'label' => $condition['label'],
+                'market_type' => null, 'direction' => null, 'action' => 'context', 'is_actionable' => false,
+                'is_diagnostic' => true, 'requires_market' => false, 'definition' => $condition['definition'],
+                'payload' => ['state' => $condition['state'], 'source_path' => 'features.evidence.conditions.'.$key]];
+        }
+
+        return $signals;
     }
 
     /**

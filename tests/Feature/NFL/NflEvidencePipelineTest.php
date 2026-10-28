@@ -126,6 +126,8 @@ it('keeps condition definitions stable across values/states and grades only know
 it('canonicalizes JSON numbers and rejects tampered evidence', function () {
     expect(NflEvidenceCapture::fingerprint(['a' => 1., 'b' => .123456789], [], []))
         ->toBe(NflEvidenceCapture::fingerprint(['b' => .12345679, 'a' => 1], [], []));
+    expect(NflEvidenceCapture::fingerprint(['qb_status' => ['home', 'away']], [], []))
+        ->not->toBe(NflEvidenceCapture::fingerprint(['qb_status' => ['away', 'home']], [], []));
     $snapshot = pipelineEvidence(pipelineSource());
     DB::table('prediction_feature_snapshots')->where('id', $snapshot->id)->update(['feature_hash' => str_repeat('f', 64)]);
     expect(fn () => app(NflSignalObservationMaterializer::class)->materialize($snapshot->fresh()))->toThrow(InvalidArgumentException::class);

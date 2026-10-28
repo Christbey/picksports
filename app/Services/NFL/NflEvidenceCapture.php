@@ -11,7 +11,6 @@ use App\Services\Predictions\ModelRunRecorder;
 use App\Services\Predictions\SnapshotProvenanceResolver;
 use App\Support\NflModelVersion;
 use App\Support\NflReasonCodeCatalog;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -207,7 +206,14 @@ class NflEvidenceCapture
                 return number_format((float) $value, 8, '.', '');
             }
 
-            return is_array($value) ? Arr::sortRecursive(array_map($normalize, $value)) : $value;
+            if (is_array($value)) {
+                $value = array_map($normalize, $value);
+                if (! array_is_list($value)) {
+                    ksort($value);
+                }
+            }
+
+            return $value;
         };
 
         return hash('sha256', json_encode($normalize([$features, $outputs, $market]), JSON_THROW_ON_ERROR));

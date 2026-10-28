@@ -176,9 +176,7 @@ const label = (text: string) => text.replaceAll('_', ' ');
                     {{ candidate }} removal preview:
                     <span v-for="(effect, period) in periods" :key="period"
                         >{{ period }}
-                        {{
-                            number(effect.mean_full_minus_ablated_improvement)
-                        }}
+                        {{ number(effect.mean_full_minus_ablated_improvement) }}
                         ({{ effect.games }} games) · </span
                     >Same frozen inputs; proposed additions only.
                 </p>

@@ -80,7 +80,7 @@ it('backfills conference and division from standings when WNBA team payload omit
         ->expectsOutput('Dispatching WNBA teams sync job...')
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     $ny = Team::where('espn_id', '101')->first();
     $lv = Team::where('espn_id', '102')->first();

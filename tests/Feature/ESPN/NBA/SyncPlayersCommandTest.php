@@ -71,7 +71,7 @@ it('syncs players from ESPN roster API with flat array', function () {
         ->expectsOutput('Dispatching NBA players sync job for team 1...')
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Player::count())->toBe(3);
 
@@ -102,7 +102,7 @@ it('handles empty roster response', function () {
     artisan('espn:sync-nba-players', ['teamEspnId' => '1'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Player::count())->toBe(0);
 });
@@ -117,7 +117,7 @@ it('handles missing athletes key in response', function () {
     artisan('espn:sync-nba-players', ['teamEspnId' => '1'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Player::count())->toBe(0);
 });
@@ -150,7 +150,7 @@ it('updates existing players instead of creating duplicates', function () {
     artisan('espn:sync-nba-players', ['teamEspnId' => '1'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Player::count())->toBe(1);
     expect(Player::first()->first_name)->toBe('Trae');
@@ -189,7 +189,7 @@ it('syncs all teams when no team espn id provided', function () {
         ->expectsOutput('Dispatching NBA players sync job for all teams...')
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Player::count())->toBe(2);
 });
@@ -217,7 +217,7 @@ it('skips players without an id', function () {
     artisan('espn:sync-nba-players', ['teamEspnId' => '1'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Player::count())->toBe(1);
     expect(Player::first()->first_name)->toBe('Trae');

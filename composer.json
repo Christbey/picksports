@@ -90,7 +90,7 @@
         ],
         "test:ci": [
             "Composer\\Config::disableProcessTimeout",
-            "@php artisan config:clear --ansi",
+            "@php artisan config:clear --ansi @no_additional_args",
             "@php artisan test"
         ],
         "post-autoload-dump": [

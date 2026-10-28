@@ -61,7 +61,7 @@ it('syncs teams from ESPN API', function () {
         ->expectsOutput('Dispatching NBA teams sync job...')
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Team::count())->toBe(2);
 
@@ -96,7 +96,7 @@ it('handles empty teams response', function () {
     artisan('espn:sync-nba-teams')
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Team::count())->toBe(0);
 });
@@ -119,7 +119,7 @@ it('handles missing teams key in response', function () {
     artisan('espn:sync-nba-teams')
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Team::count())->toBe(0);
 });
@@ -163,7 +163,7 @@ it('updates existing teams instead of creating duplicates', function () {
     artisan('espn:sync-nba-teams')
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Team::count())->toBe(1);
     expect(Team::first()->location)->toBe('Atlanta');
@@ -210,7 +210,7 @@ it('skips teams without an id', function () {
     artisan('espn:sync-nba-teams')
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Team::count())->toBe(1);
     expect(Team::first()->abbreviation)->toBe('ATL');
@@ -300,7 +300,7 @@ it('backfills conference and division from standings when team payload omits the
     ]);
 
     artisan('espn:sync-nba-teams')->assertSuccessful();
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     $atl = Team::where('espn_id', '1')->first();
     $den = Team::where('espn_id', '2')->first();

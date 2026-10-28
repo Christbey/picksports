@@ -56,7 +56,7 @@ it('syncs games from ESPN API', function () {
         ->expectsOutput('Dispatching NBA games sync job for Season 2024, Week 1...')
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Game::count())->toBe(1);
 
@@ -80,7 +80,7 @@ it('handles empty games response', function () {
     artisan('espn:sync-nba-games', ['season' => 2024, 'week' => 1])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Game::count())->toBe(0);
 });
@@ -122,7 +122,7 @@ it('updates existing games instead of creating duplicates', function () {
     artisan('espn:sync-nba-games', ['season' => 2024, 'week' => 1])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Game::count())->toBe(1);
     expect(Game::first()->home_score)->toBe(110);
@@ -158,7 +158,7 @@ it('skips games without teams in database', function () {
     artisan('espn:sync-nba-games', ['season' => 2024, 'week' => 1])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Game::count())->toBe(0);
 });

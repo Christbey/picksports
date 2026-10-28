@@ -78,7 +78,7 @@ it('syncs football plays from ESPN API', function () {
         ->expectsOutput('Dispatching NFL plays sync job for event 401631718...')
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Play::count())->toBe(3);
 
@@ -124,7 +124,7 @@ it('handles empty plays response', function () {
     artisan('espn:sync-nfl-plays', ['eventId' => '401631718'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Play::count())->toBe(0);
 });
@@ -139,7 +139,7 @@ it('handles missing items key in response', function () {
     artisan('espn:sync-nfl-plays', ['eventId' => '401631718'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Play::count())->toBe(0);
 });
@@ -172,7 +172,7 @@ it('updates existing plays instead of creating duplicates', function () {
     artisan('espn:sync-nfl-plays', ['eventId' => '401631718'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Play::count())->toBe(1);
     expect(Play::first()->play_text)->toBe('Updated play description');
@@ -205,7 +205,7 @@ it('skips plays without an id', function () {
     artisan('espn:sync-nfl-plays', ['eventId' => '401631718'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Play::count())->toBe(1);
     expect(Play::first()->play_text)->toBe('Valid play');
@@ -233,7 +233,7 @@ it('handles plays with optional fields missing', function () {
     artisan('espn:sync-nfl-plays', ['eventId' => '401631718'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Play::count())->toBe(1);
 

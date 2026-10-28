@@ -140,7 +140,7 @@ it('syncs basketball plays, player stats, and team stats from ESPN API', functio
         ->expectsOutput('Dispatching NBA game details sync job for event 401585601...')
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     // Test plays
     expect(Play::count())->toBe(2);
@@ -232,7 +232,7 @@ it('handles empty plays response', function () {
     artisan('espn:sync-nba-game-details', ['eventId' => '401585601'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Play::count())->toBe(0);
     expect(PlayerStat::count())->toBe(0);
@@ -401,7 +401,7 @@ it('updates existing plays instead of creating duplicates', function () {
     artisan('espn:sync-nba-game-details', ['eventId' => '401585601'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Play::count())->toBe(1);
     expect(Play::first()->play_text)->toBe('Updated play description');
@@ -435,7 +435,7 @@ it('skips plays without an id', function () {
     artisan('espn:sync-nba-game-details', ['eventId' => '401585601'])
         ->assertSuccessful();
 
-    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+    $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0]);
 
     expect(Play::count())->toBe(1);
     expect(Play::first()->play_text)->toBe('Valid play');

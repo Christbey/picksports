@@ -13,7 +13,7 @@ use App\Support\NflModelVersion;
 use App\Support\NflReasonCodeCatalog;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
+use Ramsey\Uuid\Uuid;
 
 class NflEvidenceCapture
 {
@@ -93,7 +93,7 @@ class NflEvidenceCapture
                 $capturedAt = now();
                 $snapshot = DB::transaction(function () use ($source, $game, $kickoff, $features, $run, $capturedAt) {
                     $snapshot = PredictionFeatureSnapshot::create(['sport' => 'nfl', 'prediction_table' => 'nfl_predictions',
-                        'prediction_id' => $source->prediction_id, 'game_id' => $game->id, 'snapshot_run_id' => (string) Str::uuid(),
+                        'prediction_id' => $source->prediction_id, 'game_id' => $game->id, 'snapshot_run_id' => (string) Uuid::uuid5(Uuid::NAMESPACE_URL, 'picksports:'.self::POLICY.':'.$game->id.':'.$features['evidence']['phase']),
                         'model_run_id' => $run->id, 'model_version' => $source->model_version, 'feature_version' => self::POLICY, 'blend_version' => self::POLICY,
                         'features' => $features, 'outputs' => $source->outputs, 'market_context' => $source->market_context,
                         'model_metadata' => ['evidence_only' => true, 'source_snapshot_id' => $source->id],

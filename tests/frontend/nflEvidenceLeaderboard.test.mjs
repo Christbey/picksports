@@ -125,3 +125,66 @@ test('ranks meaningful samples ahead of a perfect one-game record', () => {
         'larger',
     );
 });
+
+test('keeps unmatched and unavailable states out of the default positive-evidence ranking', () => {
+    const data = report([
+        row({ condition_state: 'matched' }),
+        row({ signal_key: 'control', condition_state: 'not_matched' }),
+        row({ signal_key: 'missing', condition_state: 'insufficient_data' }),
+    ]);
+    assert.equal(evidenceRows(data, 'spread', 'all', '').length, 1);
+    assert.equal(
+        evidenceRows(data, 'spread', 'all', '', 'not_matched')[0].signal_key,
+        'control',
+    );
+    assert.equal(
+        evidenceRows(data, 'spread', 'all', '', 'unavailable')[0].signal_key,
+        'missing',
+    );
+    assert.equal(evidenceRows(data, 'spread', 'all', '', 'all').length, 3);
+});
+
+test('renders ledger freshness, pending reasons and trial validation gates', async () => {
+    const data = report([]);
+    data.operations = {
+        audit: {
+            freshness: { last_capture: null },
+            reasons: { spread: { grading_backlog: 2 } },
+            games: [
+                {
+                    game_id: 1,
+                    matchup: 'DAL at PHI',
+                    market: 'spread',
+                    reason: 'missing_market_line',
+                    quote_status: 'missing_observation_time',
+                },
+            ],
+            scheduler_heartbeats: [],
+        },
+        trials: [
+            {
+                artifact_id: 'trial-1',
+                status: 'awaiting_confirmation',
+                promoted: false,
+                periods: {
+                    validation: {
+                        games: 0,
+                        weeks: 0,
+                        mean_improvement: null,
+                        simultaneous_lower_bound: null,
+                    },
+                },
+                checks: { validation_sample: false },
+            },
+        ],
+        phase_status: {},
+    };
+    const html = await renderToString(
+        createSSRApp(component, { report: data }),
+    );
+    assert.match(html, /grading backlog/);
+    assert.match(html, /DAL at PHI/);
+    assert.match(html, /Not yet observed/);
+    assert.match(html, /awaiting confirmation/);
+    assert.match(html, /No automatic promotion/);
+});

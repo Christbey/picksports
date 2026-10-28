@@ -9,6 +9,7 @@ use App\Models\ShadowModelOutput;
 use App\Services\ML\EvaluationReportNormalizer;
 use App\Services\ML\ModelArtifactRegistry;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 
 class NflModelMonitoringService
@@ -37,7 +38,7 @@ class NflModelMonitoringService
     {
         $artifacts = ModelArtifact::query()
             ->with('trainingRun')
-            ->where('sport', 'nfl')
+            ->where('sport', 'nfl')->where('model_type', '!=', NflEvidenceTrialService::TYPE)
             ->latest('created_at')
             ->get();
         $artifact = $this->selectArtifact($artifacts, $artifactId);
@@ -51,7 +52,7 @@ class NflModelMonitoringService
                 'no_bet_reasons' => [],
                 'evaluation_windows' => [],
                 'signal_grades' => $this->signalGradePayload(),
-                'evidence_leaderboard' => $this->signalGrades->leaderboard($evidenceFilters),
+                'evidence_leaderboard' => $this->evidencePayload($evidenceFilters),
             ];
         }
 
@@ -98,8 +99,18 @@ class NflModelMonitoringService
             'no_bet_reasons' => $this->noBetReasons($decisions),
             'evaluation_windows' => array_values((array) ($report['windows'] ?? [])),
             'signal_grades' => $this->signalGradePayload(),
-            'evidence_leaderboard' => $this->signalGrades->leaderboard($evidenceFilters),
+            'evidence_leaderboard' => $this->evidencePayload($evidenceFilters),
         ];
+    }
+
+    private function evidencePayload(array $filters): array
+    {
+        $report = app()->environment('testing')
+            ? $this->signalGrades->leaderboard($filters)
+            : Cache::remember('nfl:evidence:leaderboard:'.hash('sha256', json_encode($filters)), 60, fn () => $this->signalGrades->leaderboard($filters));
+        $report['operations'] = app(NflEvidenceOperations::class)->report($report['scope']['to_season'], $report['scope']['model_version']);
+
+        return $report;
     }
 
     /**

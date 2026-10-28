@@ -84,6 +84,9 @@ class NflSignalGradingService
             return ['created' => 0, 'updated' => 0, 'skipped' => true, 'up_to_date' => false];
         }
 
+        if ($observation->signal_type === 'matchup_condition' && ! app(NflEvidenceTrialService::class)->safe($snapshot)) {
+            return ['created' => 0, 'updated' => 0, 'skipped' => true, 'up_to_date' => false];
+        }
         $created = 0;
         $updated = 0;
         $actualHomeMargin = (float) $game->home_score - (float) $game->away_score;
@@ -236,6 +239,10 @@ class NflSignalGradingService
         float $actualHomeMargin,
         float $actualTotal
     ): array {
+        $evidence = $observation->signal_type === 'matchup_condition';
+        if ($evidence && ! in_array(data_get($observation->signal_payload, 'state'), ['matched', 'not_matched'], true)) {
+            return [];
+        }
         $grades = [];
         $winProbability = $this->probability(data_get($snapshot->outputs, 'win_probability'));
 
@@ -263,7 +270,7 @@ class NflSignalGradingService
                 'evaluation_source' => 'outcome',
                 'market_type' => 'winner',
                 'direction' => $direction,
-                'result_status' => $actualProbability === null ? 'push' : ($actualProbability === 1.0 ? 'win' : 'loss'),
+                'result_status' => $evidence && abs($winProbability - .5) < 1e-9 ? 'no_pick' : ($actualProbability === null ? 'push' : ($actualProbability === 1.0 ? 'win' : 'loss')),
                 'hit' => $actualProbability === null ? null : $actualProbability === 1.0,
                 'model_probability' => $modelProbability,
                 'baseline_probability' => $baselineProbability,
@@ -309,7 +316,7 @@ class NflSignalGradingService
                 'evaluation_source' => 'outcome',
                 'market_type' => 'spread',
                 'direction' => $direction,
-                'result_status' => $hit === null ? 'push' : ($hit ? 'win' : 'loss'),
+                'result_status' => $evidence && abs($predictedHomeMargin - $marketHomeMargin) < 1e-9 ? 'no_pick' : ($hit === null ? 'push' : ($hit ? 'win' : 'loss')),
                 'hit' => $hit,
                 'line' => $marketHomeMargin,
                 'model_value' => $predictedHomeMargin,
@@ -346,7 +353,7 @@ class NflSignalGradingService
                 'evaluation_source' => 'outcome',
                 'market_type' => 'total',
                 'direction' => $direction,
-                'result_status' => $hit === null ? 'push' : ($hit ? 'win' : 'loss'),
+                'result_status' => $evidence && abs($predictedTotal - $marketTotal) < 1e-9 ? 'no_pick' : ($hit === null ? 'push' : ($hit ? 'win' : 'loss')),
                 'hit' => $hit,
                 'line' => $marketTotal,
                 'model_value' => $predictedTotal,
@@ -361,6 +368,14 @@ class NflSignalGradingService
                 ],
             ];
         }
+
+        foreach ($grades as &$grade) {
+            if ($grade['result_status'] === 'no_pick') {
+                $grade['hit'] = null;
+                $grade['metadata']['no_direction'] = true;
+            }
+        }
+        unset($grade);
 
         return $grades;
     }

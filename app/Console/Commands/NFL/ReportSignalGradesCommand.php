@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\NFL;
 
+use App\Services\NFL\NflEvidenceLedgerAudit;
 use App\Services\NFL\NflSignalGradeReportService;
 use Illuminate\Console\Command;
 use InvalidArgumentException;
@@ -17,6 +18,7 @@ class ReportSignalGradesCommand extends Command
         {--include-unsafe : Include observations not verified as pregame-safe}
         {--sample-unit=game : game for independent outcomes; observation for run diagnostics}
         {--limit=100 : Maximum signal rows}
+        {--reconcile : Explain per-game grade coverage and pipeline freshness}
         {--leaderboard : Rank prospective evidence using the existing outcome grades}
         {--model-version= : Exact model version for the evidence leaderboard}
         {--cohort=all : all, divisional, conference_non_divisional, interconference or unknown}
@@ -38,6 +40,16 @@ class ReportSignalGradesCommand extends Command
             return self::FAILURE;
         }
 
+        if ($this->option('reconcile')) {
+            if ($fromSeason === null || $fromSeason !== $toSeason || $fromSeason < 2000 || $fromSeason > 2100) {
+                $this->error('Reconciliation requires one valid --season.');
+
+                return self::FAILURE;
+            }
+            $this->line(json_encode(app(NflEvidenceLedgerAudit::class)->report($fromSeason, $this->option('model-version')), JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT));
+
+            return self::SUCCESS;
+        }
         if ((bool) $this->option('leaderboard')) {
             if ($this->option('include-unsafe') || $this->option('sample-unit') !== 'game') {
                 $this->error('Evidence leaderboards require safe pregame observations and independent game samples.');

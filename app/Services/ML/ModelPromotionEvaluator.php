@@ -3,6 +3,7 @@
 namespace App\Services\ML;
 
 use App\Models\ModelArtifact;
+use App\Services\NFL\NflEvidenceTrialService;
 use Illuminate\Support\Facades\File;
 
 class ModelPromotionEvaluator
@@ -17,6 +18,11 @@ class ModelPromotionEvaluator
      */
     public function evaluate(ModelArtifact $artifact, string $reportPath, array $criteria = []): array
     {
+        if ($artifact->model_type === NflEvidenceTrialService::TYPE) {
+            return ['eligible' => false, 'eligible_markets' => [], 'available_markets' => [], 'markets' => [],
+                'checks' => ['evidence_trial_shadow_only' => false], 'window_count' => 0,
+                'delta_convention' => [], 'promotion_summary' => [], 'criteria' => ['reason' => 'Evidence trials are not calibrated production models.']];
+        }
         $report = json_decode((string) File::get($reportPath), true);
         if (! is_array($report)) {
             throw new \RuntimeException('Rolling evaluation report is invalid.');

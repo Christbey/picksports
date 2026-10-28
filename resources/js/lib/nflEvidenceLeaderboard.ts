@@ -4,6 +4,7 @@ export type EvidenceMetrics = {
     wins: number;
     losses: number;
     pushes: number;
+    no_pick?: number;
     ungraded: number;
     hit_rate: number | null;
     wilson_lower: number | null;
@@ -15,6 +16,19 @@ export type EvidenceMetrics = {
 };
 
 export type EvidenceRow = EvidenceMetrics & {
+    condition_state?: string;
+    control_comparison?: {
+        present_games: number;
+        control_games: number;
+        common_strata: number;
+        comparison_improvement: number | null;
+        status: string;
+    } | null;
+    partial_overlap?: Array<{
+        signal_key: string;
+        shared_games: number;
+        jaccard: number;
+    }>;
     signal_type: string;
     signal_key: string;
     label: string;
@@ -54,6 +68,58 @@ export type EvidenceLeaderboard = {
         grading: string;
         gap: string;
     }>;
+    operations?: {
+        audit: {
+            checked_at: string;
+            reasons: Record<string, Record<string, number>>;
+            freshness: Record<string, string | null>;
+            games: Array<{
+                game_id: number;
+                matchup: string;
+                market: string;
+                reason: string;
+                quote_status: string;
+            }>;
+            scheduler_heartbeats: Array<{
+                command: string;
+                status: string;
+                ran_at: string;
+            }>;
+        };
+        trials: Array<{
+            artifact_id: string;
+            candidate_contributions?: Record<
+                string,
+                Record<
+                    string,
+                    {
+                        games: number;
+                        mean_full_minus_ablated_improvement: number | null;
+                    }
+                >
+            >;
+            protocol?: {
+                name: string;
+                market: string;
+                discovery_end: string;
+                validation_start: string;
+                validation_end: string;
+            };
+            status: string;
+            promoted: boolean;
+            periods?: Record<
+                string,
+                {
+                    games: number;
+                    weeks: number;
+                    mean_improvement: number | null;
+                    simultaneous_lower_bound: number | null;
+                }
+            >;
+            checks?: Record<string, boolean>;
+        }>;
+        phase_status: Record<string, string>;
+    };
     limitations: string[];
 };
 
@@ -62,11 +128,22 @@ export function evidenceRows(
     market: string,
     cohort: string,
     search: string,
+    state = 'present',
 ): EvidenceRow[] {
     const term = search.trim().toLowerCase();
     return report.rows
         .filter(
             (row) =>
+                (state === 'all' ||
+                    (state === 'present'
+                        ? ['triggered', 'matched'].includes(
+                              row.condition_state ?? 'triggered',
+                          )
+                        : state === 'unavailable'
+                          ? !['triggered', 'matched', 'not_matched'].includes(
+                                row.condition_state ?? 'triggered',
+                            )
+                          : row.condition_state === state)) &&
                 row.market === market &&
                 `${row.label} ${row.signal_key}`.toLowerCase().includes(term),
         )

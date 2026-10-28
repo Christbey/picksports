@@ -26,6 +26,18 @@ class ShadowModelOutput extends Model
         'generated_at',
     ];
 
+    protected static function booted(): void
+    {
+        $protect = function (self $output): void {
+            $original = $output->getRawOriginal('explanation');
+            if (data_get(is_string($original) ? json_decode($original, true) : $original, 'evidence_trial')) {
+                throw new \LogicException('Evidence trial outputs are immutable.');
+            }
+        };
+        static::updating($protect);
+        static::deleting($protect);
+    }
+
     protected function casts(): array
     {
         return [

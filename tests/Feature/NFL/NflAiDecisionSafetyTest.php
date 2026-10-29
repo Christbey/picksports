@@ -3,6 +3,7 @@
 use App\Http\Resources\NFL\PredictionResource;
 use App\Models\NFL\Game;
 use App\Models\NFL\Prediction;
+use App\Models\NFL\ResearchRevision;
 use App\Models\NFL\Team;
 use App\Models\SportsAiPredictionAnalysis;
 use App\Models\SportsGameContextReport;
@@ -10,6 +11,7 @@ use App\Models\User;
 use App\Services\Predictions\SportsAiPredictionPayloadBuilder;
 use App\Services\Predictions\SportsAiPublishingDecisionPolicy;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -288,4 +290,44 @@ test('nfl resources withhold ai analysis when its input hash is stale', function
     );
 
     expect($freshData['ai_analysis']['summary'])->toBe('Current deterministic total lean.');
+});
+
+it('keeps the latest game research payload without sorting large JSON columns', function () {
+    $prediction = nflAiSafetyFixture();
+    $attributes = ['game_id' => $prediction->game_id, 'input_hash' => str_repeat('a', 64),
+        'baseline' => [], 'revised' => ['predicted_spread' => 1.0], 'evidence' => [], 'brief' => [],
+        'market' => [], 'created_at' => now()];
+    ResearchRevision::create($attributes);
+    $latest = ResearchRevision::create([...$attributes, 'input_hash' => str_repeat('b', 64),
+        'created_at' => now()->subDay(), 'revised' => ['predicted_spread' => 4.5, 'context' => str_repeat('x', 512_000)],
+        'brief' => ['eligibility' => ['eligible' => false]], 'evidence' => ['unused' => str_repeat('y', 1_000_000)]]);
+    $otherGame = Game::factory()->create(['home_team_id' => Team::factory(), 'away_team_id' => Team::factory()]);
+    ResearchRevision::create([...$attributes, 'game_id' => $otherGame->id, 'input_hash' => str_repeat('c', 64)]);
+
+    DB::enableQueryLog();
+    try {
+        $payload = app(SportsAiPredictionPayloadBuilder::class)->build('nfl', $prediction);
+        $researchQueries = collect(DB::getQueryLog())->pluck('query')->filter(fn (string $sql): bool => str_contains($sql, 'nfl_research_revisions'));
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+
+    expect($payload['researched_revision'])->toEqual($latest->only(['id', 'created_at', 'revised', 'brief']))
+        ->and($payload['researched_revision'])->not->toHaveKeys(['baseline', 'evidence', 'market', 'input_hash'])
+        ->and($researchQueries)->not->toBeEmpty();
+    foreach ($researchQueries as $sql) {
+        $selection = strtolower(explode(' from ', $sql)[0]);
+        $sortsJson = str_contains(strtolower($sql), 'order by')
+            && (str_contains($selection, '*') || str_contains($selection, 'revised') || str_contains($selection, 'brief'));
+        expect($sortsJson)->toBeFalse('Research lookup must not put JSON payloads into a database sort.');
+    }
+});
+
+it('keeps research absent when only a different game has revisions', function () {
+    $prediction = nflAiSafetyFixture();
+    ResearchRevision::create(['game_id' => Game::factory()->create(['home_team_id' => Team::factory(), 'away_team_id' => Team::factory()])->id, 'input_hash' => str_repeat('d', 64),
+        'baseline' => [], 'revised' => [], 'evidence' => [], 'brief' => [], 'market' => [], 'created_at' => now()]);
+
+    expect(app(SportsAiPredictionPayloadBuilder::class)->build('nfl', $prediction)['researched_revision'])->toBeNull();
 });

@@ -7,6 +7,7 @@ use App\Models\NFL\Prediction;
 use App\Models\PredictionFeatureSnapshot;
 use App\Services\ML\ShadowModelOutputRecorder;
 use App\Services\NFL\NflFullHistoricalShadowInferenceService;
+use App\Services\Predictions\PredictionDeliverySource;
 use App\Services\Predictions\SnapshotProvenanceResolver;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -29,6 +30,9 @@ class EvaluateShadowPrediction implements ShouldQueue
      */
     public function handle(NflFullHistoricalShadowInferenceService $inference, ShadowModelOutputRecorder $recorder): void
     {
+        if (app(PredictionDeliverySource::class)->legacyWriterRetired('nfl')) {
+            return;
+        }
         $snapshot = PredictionFeatureSnapshot::query()->find($this->snapshotId);
         if (! $snapshot || $snapshot->sport !== 'nfl' || $snapshot->prediction_table !== 'nfl_predictions') {
             return;

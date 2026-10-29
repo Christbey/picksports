@@ -36,6 +36,7 @@ final class MlbPickCandidateData
         public readonly ?int $teamId = null,
         public readonly ?int $playerId = null,
         public readonly ?CarbonInterface $gameStartAt = null,
+        public readonly ?int $canonicalPredictionId = null,
     ) {}
 
     /**
@@ -47,6 +48,7 @@ final class MlbPickCandidateData
             'season' => $this->season,
             'game_id' => $this->gameId,
             'prediction_id' => $this->predictionId,
+            'canonical_prediction_id' => $this->canonicalPredictionId,
             'team_id' => $this->teamId,
             'player_id' => $this->playerId,
             'market_type' => $this->marketType,

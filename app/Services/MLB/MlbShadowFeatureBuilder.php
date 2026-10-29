@@ -2,6 +2,7 @@
 
 namespace App\Services\MLB;
 
+use App\Application\Sports\ReadModels\CanonicalShadowSnapshot;
 use App\Models\PredictionFeatureSnapshot;
 
 class MlbShadowFeatureBuilder
@@ -9,7 +10,7 @@ class MlbShadowFeatureBuilder
     /**
      * @return array<string, int|float|null>
      */
-    public function build(PredictionFeatureSnapshot $snapshot): array
+    public function build(PredictionFeatureSnapshot|CanonicalShadowSnapshot $snapshot): array
     {
         $features = [];
         foreach ((array) $snapshot->features as $name => $value) {

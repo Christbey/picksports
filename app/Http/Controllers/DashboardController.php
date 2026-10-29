@@ -2,11 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Actions\CBB\CalculateBettingValue as CBBCalculateBettingValue;
-use App\Actions\NBA\CalculateBettingValue as NBACalculateBettingValue;
-use App\Actions\NFL\CalculateBettingValue as NFLCalculateBettingValue;
-use App\Actions\Sports\CalculateBettingValue as GenericCalculateBettingValue;
-use App\Actions\WNBA\CalculateBettingValue as WNBACalculateBettingValue;
 use App\Http\Resources\CanonicalDashboardPredictionResource;
 use App\Http\Resources\DashboardPredictionResource;
 use App\Models\CanonicalPrediction;
@@ -28,7 +23,9 @@ use App\Models\WNBA\Game as WNBAGame;
 use App\Models\WNBA\Prediction as WNBAPrediction;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Api\V2\SportContextResolver;
+use App\Services\BettingRecommendations\GameBettingRecommendationService;
 use App\Services\MLB\MlbPredictionRecommendationService;
+use App\Services\Predictions\LivePredictionStore;
 use App\Support\SportPredictionAccess;
 use App\Support\SportsViewCache;
 use App\Support\TierAccessBypass;
@@ -48,6 +45,7 @@ class DashboardController extends Controller
     public function __construct(
         private readonly SportsViewCache $sportsViewCache,
         private readonly MlbPredictionRecommendationService $mlbRecommendations,
+        private readonly GameBettingRecommendationService $bettingRecommendations,
     ) {}
 
     public function __invoke(): Response
@@ -131,35 +129,30 @@ class DashboardController extends Controller
                 color: 'orange',
                 predictionModel: NBAPrediction::class,
                 gameModel: NBAGame::class,
-                bettingCalculator: NBACalculateBettingValue::class
             ),
             'CBB' => $this->sportConfig(
                 fullName: "Men's College Basketball",
                 color: 'blue',
                 predictionModel: CBBPrediction::class,
                 gameModel: CBBGame::class,
-                bettingCalculator: CBBCalculateBettingValue::class
             ),
             'WCBB' => $this->sportConfig(
                 fullName: "Women's College Basketball",
                 color: 'purple',
                 predictionModel: WCBBPrediction::class,
                 gameModel: WCBBGame::class,
-                bettingCalculator: GenericCalculateBettingValue::class
             ),
             'NFL' => $this->sportConfig(
                 fullName: 'National Football League',
                 color: 'green',
                 predictionModel: NFLPrediction::class,
                 gameModel: NFLGame::class,
-                bettingCalculator: NFLCalculateBettingValue::class
             ),
             'MLB' => $this->sportConfig(
                 fullName: 'Major League Baseball',
                 color: 'orange',
                 predictionModel: MLBPrediction::class,
                 gameModel: MLBGame::class,
-                bettingCalculator: GenericCalculateBettingValue::class,
                 liveStatuses: ['STATUS_IN_PROGRESS', 'STATUS_DELAYED'],
                 liveRemainingField: 'live_outs_remaining',
                 includeInning: true
@@ -169,14 +162,12 @@ class DashboardController extends Controller
                 color: 'blue',
                 predictionModel: CFBPrediction::class,
                 gameModel: CFBGame::class,
-                bettingCalculator: GenericCalculateBettingValue::class
             ),
             'WNBA' => $this->sportConfig(
                 fullName: "Women's National Basketball Association",
                 color: 'purple',
                 predictionModel: WNBAPrediction::class,
                 gameModel: WNBAGame::class,
-                bettingCalculator: WNBACalculateBettingValue::class
             ),
         ];
     }
@@ -202,8 +193,7 @@ class DashboardController extends Controller
      *   live_statuses:array<int,string>,
      *   final_statuses:array<int,string>,
      *   live_remaining_field:string,
-     *   include_inning:bool,
-     *   betting_calculator:class-string|null
+     *   include_inning:bool
      * }
      */
     private function sportConfig(
@@ -211,7 +201,6 @@ class DashboardController extends Controller
         string $color,
         string $predictionModel,
         string $gameModel,
-        ?string $bettingCalculator = null,
         ?array $liveStatuses = null,
         ?array $finalStatuses = null,
         string $liveRemainingField = 'live_seconds_remaining',
@@ -226,7 +215,6 @@ class DashboardController extends Controller
             'final_statuses' => $finalStatuses ?? self::DEFAULT_FINAL_STATUSES,
             'live_remaining_field' => $liveRemainingField,
             'include_inning' => $includeInning,
-            'betting_calculator' => $bettingCalculator,
         ];
     }
 
@@ -235,10 +223,11 @@ class DashboardController extends Controller
         $context = app(SportContextResolver::class)->resolve(strtolower($sport));
         $canonical = app(CanonicalSportPredictionQuery::class);
         if ($canonical->supports($context)) {
-            return $canonical->queryForSport($context->slug)
-                ->whereBetween('sport_events.starts_at', [now()->startOfDay()->utc(), now()->endOfDay()->utc()])
-                ->get()
-                ->map(fn (CanonicalPrediction $prediction): array => (new CanonicalDashboardPredictionResource($prediction, $context, $config))->resolve());
+            $predictions = $canonical->queryForSport($context->slug)
+                ->whereBetween('sport_events.starts_at', [now()->startOfDay()->utc(), now()->endOfDay()->utc()])->get();
+            app(LivePredictionStore::class)->preload($predictions->map(fn ($prediction) => $prediction->sportEvent?->getRelation($context->slug.'Game'))->filter());
+
+            return $predictions->map(fn (CanonicalPrediction $prediction): array => (new CanonicalDashboardPredictionResource($prediction, $context, $config))->resolve());
         }
 
         $predictions = $config['prediction_model']::with(['game.homeTeam', 'game.awayTeam'])
@@ -253,6 +242,8 @@ class DashboardController extends Controller
             })->values();
         }
 
+        app(LivePredictionStore::class)->preload($predictions->pluck('game')->filter());
+
         return $predictions->map(function ($prediction) use ($sport, $config) {
             $resource = DashboardPredictionResource::make($prediction)
                 ->sport($sport)
@@ -260,12 +251,10 @@ class DashboardController extends Controller
                 ->includeInning($config['include_inning'])
                 ->liveRemainingField($config['live_remaining_field']);
 
-            if ($config['betting_calculator']) {
-                $analysis = $this->analyzeBettingValue($prediction->game, $config['betting_calculator'], strtolower($sport));
-                $resource
-                    ->bettingValue($analysis['recommendations'])
-                    ->bettingValueDebug($analysis['debug']);
-            }
+            $analysis = $this->analyzeBettingValue($prediction->game, strtolower($sport));
+            $resource
+                ->bettingValue($analysis['recommendations'])
+                ->bettingValueDebug($analysis['debug']);
 
             if (strtolower($sport) === 'mlb' && $prediction instanceof MLBPrediction) {
                 $resource->recommendation($this->mlbRecommendations->forPrediction($prediction));
@@ -299,7 +288,7 @@ class DashboardController extends Controller
     /**
      * @return array{recommendations:array<int,mixed>|null,debug:string|null}
      */
-    private function analyzeBettingValue(object $game, string $calculatorClass, string $sportKey): array
+    private function analyzeBettingValue(object $game, string $sportKey): array
     {
         $oddsData = $game->odds_data ?? null;
         $bookmakers = is_array($oddsData) ? ($oddsData['bookmakers'] ?? null) : null;
@@ -323,10 +312,7 @@ class DashboardController extends Controller
             ];
         }
 
-        $calculator = app($calculatorClass);
-        $recommendations = $calculatorClass === GenericCalculateBettingValue::class
-            ? $calculator->execute($game, $sportKey)
-            : $calculator->execute($game);
+        $recommendations = $this->bettingRecommendations->forGame($game, $sportKey);
 
         if (is_array($recommendations) && $recommendations !== []) {
             return [

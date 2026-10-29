@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\NBA\GenerateCanonicalPrediction;
+use App\Jobs\Predictions\GeneratePredictionNarrative;
 use App\Models\CalculationRelease;
 use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
@@ -16,6 +17,8 @@ use App\Models\SportEventResult;
 use App\Models\User;
 use App\Services\NBA\Predictions\NbaCalculationReleaseRegistrar;
 use App\Services\NBA\Predictions\NbaCanonicalCutoverReadinessService;
+use App\Support\SportsViewCache;
+use Illuminate\Support\Facades\Bus;
 use Laravel\Sanctum\Sanctum;
 
 /** @return array{event:SportEvent,game:Game,home:Team,away:Team} */
@@ -87,7 +90,10 @@ it('generates a canonical NBA prediction from a frozen release without legacy wr
     );
     config()->set('nba.elo.home_court_advantage', -1000);
 
+    $cache = app(SportsViewCache::class);
+    $cache->remember(SportsViewCache::SEGMENT_PREDICTIONS_INDEX, 'retirement-publication', 600, fn () => 'old');
     $prediction = app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
+    expect($cache->remember(SportsViewCache::SEGMENT_PREDICTIONS_INDEX, 'retirement-publication', 600, fn () => 'new'))->toBe('new');
     $homeMoneyline = $prediction->markets
         ->where('market_type', 'moneyline')
         ->where('selection', 'home')
@@ -212,4 +218,23 @@ it('serves provenance-safe NBA canonical outputs and reports cutover readiness',
     $this->getJson("/api/v2/sports/nba/games/{$fixture['game']->getKey()}/prediction")
         ->assertOk()
         ->assertJsonPath('data.id', $prediction->public_id);
+});
+
+it('queues source-correct narratives after native publication when the legacy writer is retired', function () {
+    Bus::fake();
+    config(['prediction_lifecycle.canonical_pipeline.nba' => true, 'prediction_lifecycle.canonical_reads.nba' => true]);
+    $fixture = canonicalNbaFixture();
+    app(NbaCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
+    $prediction = app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
+    Bus::assertDispatched(GeneratePredictionNarrative::class,
+        fn ($job) => $job->predictionModelClass === CanonicalPrediction::class && $job->predictionId === $prediction->id && $job->sport === 'nba');
+});
+
+it('preserves the coverage repair suppression of narrative work', function () {
+    Bus::fake();
+    config(['prediction_lifecycle.canonical_pipeline.nba' => true, 'prediction_lifecycle.canonical_reads.nba' => true]);
+    $fixture = canonicalNbaFixture();
+    app(NbaCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
+    app(GenerateCanonicalPrediction::class)->execute($fixture['game'], trigger: 'coverage');
+    Bus::assertNotDispatched(GeneratePredictionNarrative::class);
 });

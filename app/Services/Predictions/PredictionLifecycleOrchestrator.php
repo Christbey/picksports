@@ -14,6 +14,7 @@ use App\Models\CanonicalPrediction;
 use App\Models\EventInputSnapshot;
 use App\Models\SportEvent;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -26,6 +27,25 @@ class PredictionLifecycleOrchestrator
         private readonly CanonicalPayloadHasher $hasher,
         private readonly PredictionPublisher $publisher,
     ) {}
+
+    public function generateForGame(
+        Model $game,
+        string $sport,
+        EventInputSnapshotBuilder $snapshotBuilder,
+        SportCalculator $calculator,
+        bool $publish = true,
+        string $trigger = 'scheduled',
+    ): CanonicalPrediction {
+        $event = $game->sportEvent;
+
+        if ($event === null) {
+            throw new PredictionLifecycleException(strtoupper($sport).' canonical generation requires a linked sport event.');
+        }
+
+        return $publish
+            ? $this->generateAndPublish($event, $snapshotBuilder, $calculator, trigger: $trigger)
+            : $this->generate($event, $snapshotBuilder, $calculator, trigger: $trigger);
+    }
 
     public function generate(
         SportEvent $event,

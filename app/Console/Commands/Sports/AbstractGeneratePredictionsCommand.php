@@ -3,6 +3,8 @@
 namespace App\Console\Commands\Sports;
 
 use App\Console\Commands\Concerns\ResolvesRequiredConfig;
+use App\Models\CanonicalPrediction;
+use App\Services\Predictions\PredictionDeliverySource;
 use App\Services\Sports\SeasonStage\SeasonStageService;
 use App\Services\Sports\SportsDateWindowService;
 use App\Support\SportsViewCache;
@@ -116,7 +118,8 @@ abstract class AbstractGeneratePredictionsCommand extends Command
         $this->newLine();
         $this->info($this->topPredictionsHeading());
 
-        $topPredictions = $this->topPredictions();
+        $topPredictions = app(PredictionDeliverySource::class)->legacyWriterRetired($this->sportKey())
+            ? collect() : $this->topPredictions();
 
         if ($topPredictions->isNotEmpty()) {
             $this->table(
@@ -287,6 +290,9 @@ abstract class AbstractGeneratePredictionsCommand extends Command
 
     protected function topPredictions(): Collection
     {
+        if (app(PredictionDeliverySource::class)->legacyWriterRetired($this->sportKey())) {
+            return collect();
+        }
         $predictionModel = $this->predictionModelClass();
 
         return $predictionModel::query()
@@ -319,6 +325,11 @@ abstract class AbstractGeneratePredictionsCommand extends Command
 
     protected function displayPrediction(mixed $prediction): void
     {
+        if ($prediction instanceof CanonicalPrediction) {
+            $this->info("Canonical prediction {$prediction->public_id}: {$prediction->publication_state}");
+
+            return;
+        }
         $game = $prediction->game;
         $homeTeam = $this->formatTeamName($game->homeTeam);
         $awayTeam = $this->formatTeamName($game->awayTeam);
@@ -411,6 +422,10 @@ abstract class AbstractGeneratePredictionsCommand extends Command
      */
     protected function generateActionClass(): string
     {
+        if (app(PredictionDeliverySource::class)->legacyWriterRetired($this->sportKey())) {
+            return 'App\\Actions\\'.strtoupper($this->sportKey()).'\\GenerateCanonicalPrediction';
+        }
+
         return $this->requiredString(static::GENERATE_ACTION_CLASS, 'GENERATE_ACTION_CLASS must be defined.');
     }
 

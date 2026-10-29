@@ -37,36 +37,11 @@ class CanonicalTeamGameEvaluator
     public function evaluate(Model $game, string $sport): ?PredictionEvaluation
     {
         $sport = strtolower(trim($sport));
-        $gameClass = self::GAME_MODELS[$sport] ?? null;
-
-        if ($gameClass === null || ! $game instanceof $gameClass) {
-            throw new \InvalidArgumentException("Canonical team-game evaluation does not support {$sport} game input.");
-        }
-
-        $game->loadMissing('sportEvent');
-        $event = $game->getRelation('sportEvent');
-
-        if ($event === null
-            || $game->getAttribute('status') !== 'STATUS_FINAL'
-            || $game->getAttribute('home_score') === null
-            || $game->getAttribute('away_score') === null
-            || ! $this->hasFinalClock($game->getAttribute('game_clock'))
-            || CarbonImmutable::now('UTC')->lt(CarbonImmutable::parse($event->starts_at)->utc()->addMinutes(self::MINIMUM_FINAL_MINUTES_AFTER_TIP))) {
-            return null;
-        }
-
-        $prediction = CanonicalPrediction::query()
-            ->where('sport_event_id', $event->getKey())
-            ->where('phase', 'pregame')
-            ->whereIn('publication_state', ['published', 'superseded'])
-            ->whereNotNull('published_at')
-            ->where('published_at', '<=', $event->starts_at)
-            ->orderByDesc('revision')
-            ->first();
-
+        $prediction = $this->predictionForGame($game, $sport);
         if ($prediction === null) {
             return null;
         }
+        $event = $game->getRelation('sportEvent');
 
         $result = $this->results->record(
             $event,
@@ -82,6 +57,56 @@ class CanonicalTeamGameEvaluator
         );
 
         return $this->evaluator->evaluate($prediction, $result);
+    }
+
+    public function hasPendingEvaluation(Model $game, string $sport): bool
+    {
+        $prediction = $this->predictionForGame($game, strtolower(trim($sport)));
+        if ($prediction === null) {
+            return false;
+        }
+        $result = $game->getRelation('sportEvent')->results()->orderByDesc('revision')->first();
+        if ($result === null
+            || $result->status !== 'official'
+            || $result->home_score !== (int) $game->home_score
+            || $result->away_score !== (int) $game->away_score) {
+            return true;
+        }
+
+        return ! $this->evaluator->hasCurrentEvaluation($prediction, $result);
+    }
+
+    private function predictionForGame(Model $game, string $sport): ?CanonicalPrediction
+    {
+        $gameClass = self::GAME_MODELS[$sport] ?? null;
+
+        if ($gameClass === null || ! $game instanceof $gameClass) {
+            throw new \InvalidArgumentException("Canonical team-game evaluation does not support {$sport} game input.");
+        }
+
+        $game->loadMissing('sportEvent');
+        $event = $game->getRelation('sportEvent');
+
+        if ($event === null
+            || $event->sport !== $sport
+            || $game->getAttribute('status') !== 'STATUS_FINAL'
+            || $game->getAttribute('home_score') === null
+            || $game->getAttribute('away_score') === null
+            || ! $this->hasFinalClock($game->getAttribute('game_clock'))
+            || CarbonImmutable::now('UTC')->lt(CarbonImmutable::parse($event->starts_at)->utc()->addMinutes(self::MINIMUM_FINAL_MINUTES_AFTER_TIP))) {
+            return null;
+        }
+
+        return CanonicalPrediction::query()
+            ->where('sport_event_id', $event->getKey())
+            ->where('sport', $sport)
+            ->where('phase', 'pregame')
+            ->whereIn('publication_state', ['published', 'superseded'])
+            ->whereNotNull('published_at')
+            ->where('published_at', '<=', $event->starts_at)
+            ->orderByDesc('revision')
+            ->first();
+
     }
 
     private function hasFinalClock(mixed $clock): bool

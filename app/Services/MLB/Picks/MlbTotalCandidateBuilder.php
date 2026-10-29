@@ -2,9 +2,11 @@
 
 namespace App\Services\MLB\Picks;
 
+use App\Application\Sports\ReadModels\BettingForecast;
 use App\Models\MLB\GameWeather;
-use App\Models\MLB\Prediction;
+use App\Services\Predictions\BettingForecastSource;
 use App\Support\MLB\MlbGameStart;
+use Illuminate\Database\Eloquent\Model;
 
 class MlbTotalCandidateBuilder
 {
@@ -13,16 +15,18 @@ class MlbTotalCandidateBuilder
     /**
      * @return list<MlbPickCandidateData>
      */
-    public function build(Prediction $prediction): array
+    public function build(Model|BettingForecast $prediction): array
     {
+        $prediction = $prediction instanceof Model ? app(BettingForecastSource::class)->fromModel($prediction, 'mlb') : $prediction;
+
         $game = $prediction->game;
-        if (! $game || ! is_numeric($prediction->predicted_total)) {
+        if (! $game || ! is_numeric($prediction->predictedTotal)) {
             return [];
         }
 
         $outcomes = $this->markets->totalOutcomes($game, ['totals']);
         $noVig = $this->markets->noVigTotals($outcomes);
-        $correctedTotal = (float) $prediction->predicted_total - (float) config('mlb.picks.total_bias_correction', 1.0);
+        $correctedTotal = (float) $prediction->predictedTotal - (float) config('mlb.picks.total_bias_correction', 1.0);
         $weather = GameWeather::query()->where('game_id', $game->id)->latest('observed_at')->first();
         $rows = [];
 
@@ -54,8 +58,9 @@ class MlbTotalCandidateBuilder
 
             $rows[] = new MlbPickCandidateData(
                 gameId: (int) $game->id,
-                predictionId: (int) $prediction->id,
-                season: (int) $prediction->season,
+                predictionId: $prediction->legacyPredictionId(),
+                canonicalPredictionId: $prediction->canonicalPredictionId(),
+                season: $prediction->season(),
                 marketType: 'total',
                 marketKey: 'totals',
                 side: $side,
@@ -72,7 +77,7 @@ class MlbTotalCandidateBuilder
                 reasonCodes: $reasonCodes,
                 riskFlags: $riskFlags,
                 featureSnapshot: [
-                    'predicted_total' => (float) $prediction->predicted_total,
+                    'predicted_total' => (float) $prediction->predictedTotal,
                     'corrected_projected_total' => $correctedTotal,
                     'total_bias_correction' => (float) config('mlb.picks.total_bias_correction', 1.0),
                     'weather_present' => $weather !== null,

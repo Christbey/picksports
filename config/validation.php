@@ -56,8 +56,8 @@ return [
                 // Predictions consume calculated metrics, not the heartbeat of
                 // every unchanged ESPN poll. Props have their own quote and
                 // scoring freshness check; game odds are not a prop input.
-                ['label' => 'metrics before predictions', 'upstream' => ['nfl:calculate-team-metrics%'], 'downstream' => ['nfl:generate-predictions%'], 'recommended_action' => 'nfl:run-pregame-pipeline', 'refresh_grace_minutes' => 75],
-                ['label' => 'weather before predictions', 'upstream' => ['nfl:sync-game-weather%'], 'downstream' => ['nfl:generate-predictions%'], 'recommended_action' => 'nfl:run-pregame-pipeline', 'refresh_grace_minutes' => 75],
+                ['label' => 'metrics before predictions', 'upstream' => ['nfl:calculate-team-metrics%'], 'downstream' => ['nfl:run-pregame-pipeline%', 'nfl:generate-canonical-predictions%'], 'recommended_action' => 'nfl:run-pregame-pipeline', 'refresh_grace_minutes' => 75],
+                ['label' => 'weather before predictions', 'upstream' => ['nfl:sync-game-weather%'], 'downstream' => ['nfl:run-pregame-pipeline%', 'nfl:generate-canonical-predictions%'], 'recommended_action' => 'nfl:run-pregame-pipeline', 'refresh_grace_minutes' => 75],
             ],
         ],
         'cbb' => [

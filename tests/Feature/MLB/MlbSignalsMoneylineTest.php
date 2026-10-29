@@ -128,7 +128,7 @@ it('treats mlb as moneyline ready when h2h exists without run line or totals', f
         ],
     ]);
 
-    Prediction::query()->create([
+    $livePrediction = Prediction::query()->create([
         'game_id' => $liveGame->id,
         'season' => 2026,
         'season_type' => (string) config('mlb.season.types.regular'),
@@ -160,6 +160,7 @@ it('treats mlb as moneyline ready when h2h exists without run line or totals', f
             ],
         ],
     ]);
+    seedLivePrediction($livePrediction);
 
     $response = $this->getJson('/api/v2/sports/mlb/signals?season=2026&as_of_date=2026-05-23');
 

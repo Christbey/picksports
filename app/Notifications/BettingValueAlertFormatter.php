@@ -2,7 +2,9 @@
 
 namespace App\Notifications;
 
+use App\Application\Sports\ReadModels\PredictionDeliveryContext;
 use App\Models\NotificationTemplate;
+use App\Services\Predictions\PredictionDeliverySource;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Messages\VonageMessage;
@@ -18,6 +20,8 @@ class BettingValueAlertFormatter
         string $recommendation,
         ?NotificationTemplate $template = null,
     ): MailMessage {
+        $prediction = app(PredictionDeliverySource::class)->context($prediction, strtolower($sport));
+
         if ($template) {
             $data = $this->templateData($notifiable, $prediction, $sport, $expectedValue, $recommendation);
 
@@ -42,7 +46,7 @@ class BettingValueAlertFormatter
             ->line("Game Time: {$gameTime}")
             ->line("Recommendation: {$recommendation}")
             ->line("Expected Value: +{$edgePercent}%")
-            ->line("Confidence: {$prediction->confidence_score}%")
+            ->line("Confidence: {$prediction->confidenceScore}%")
             ->action('View Full Analysis', $this->predictionUrl($prediction, $sport))
             ->line('This alert was sent based on your preferences. Manage your alert settings in your account.');
     }
@@ -58,13 +62,15 @@ class BettingValueAlertFormatter
         string $recommendation,
         ?NotificationTemplate $template = null,
     ): array {
+        $prediction = app(PredictionDeliverySource::class)->context($prediction, strtolower($sport));
+
         $game = $prediction->game;
         $payload = [
             'sport' => $sport,
             'game_id' => $game->id,
             'expected_value' => $expectedValue,
             'recommendation' => $recommendation,
-            'confidence' => $prediction->confidence_score,
+            'confidence' => $prediction->confidenceScore,
             'game_time' => $game->game_date->toISOString(),
             'home_team' => $game->homeTeam->name ?? $game->homeTeam->school,
             'away_team' => $game->awayTeam->name ?? $game->awayTeam->school,
@@ -88,6 +94,8 @@ class BettingValueAlertFormatter
         string $recommendation,
         ?NotificationTemplate $template = null,
     ): string {
+        $prediction = app(PredictionDeliverySource::class)->context($prediction, strtolower($sport));
+
         if ($template) {
             $data = $this->templateData($notifiable, $prediction, $sport, $expectedValue, $recommendation);
             $body = trim((string) $template->renderSmsBody($data));
@@ -113,6 +121,8 @@ class BettingValueAlertFormatter
         string $recommendation,
         ?NotificationTemplate $template = null,
     ): VonageMessage {
+        $prediction = app(PredictionDeliverySource::class)->context($prediction, strtolower($sport));
+
         if ($template) {
             $data = $this->templateData($notifiable, $prediction, $sport, $expectedValue, $recommendation);
             $content = trim((string) $template->renderSmsBody($data));
@@ -145,6 +155,8 @@ class BettingValueAlertFormatter
         string $recommendation,
         ?NotificationTemplate $template = null,
     ): array {
+        $prediction = app(PredictionDeliverySource::class)->context($prediction, strtolower($sport));
+
         $game = $prediction->game;
         $homeTeam = $game->homeTeam->name ?? $game->homeTeam->school ?? 'Home Team';
         $awayTeam = $game->awayTeam->name ?? $game->awayTeam->school ?? 'Away Team';
@@ -177,7 +189,7 @@ class BettingValueAlertFormatter
      */
     private function templateData(
         object $notifiable,
-        Model $prediction,
+        PredictionDeliveryContext $prediction,
         string $sport,
         float $expectedValue,
         string $recommendation,
@@ -201,7 +213,7 @@ class BettingValueAlertFormatter
                 'pick_type' => $this->pickType($recommendation),
                 'recommended_pick' => $recommendation,
                 'edge_percentage' => "+{$edgePercent}%",
-                'confidence' => $prediction->confidence_score.'%',
+                'confidence' => $prediction->confidenceScore.'%',
                 'odds' => $this->oddsDisplay($recommendation),
                 'game_time' => $game->game_date->format('g:i A'),
                 'game_date' => $game->game_date->format('M j, Y'),
@@ -256,8 +268,8 @@ class BettingValueAlertFormatter
         };
     }
 
-    private function predictionUrl(Model $prediction, string $sport): string
+    private function predictionUrl(PredictionDeliveryContext $prediction, string $sport): string
     {
-        return url('/'.strtolower($sport).'/predictions/'.$prediction->game_id);
+        return url('/'.strtolower($sport).'/predictions/'.$prediction->game->getKey());
     }
 }

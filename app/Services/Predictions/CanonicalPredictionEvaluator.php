@@ -85,6 +85,15 @@ class CanonicalPredictionEvaluator
         });
     }
 
+    public function hasCurrentEvaluation(CanonicalPrediction $prediction, SportEventResult $result): bool
+    {
+        return PredictionEvaluation::query()
+            ->where('canonical_prediction_id', $prediction->getKey())
+            ->where('sport_event_result_id', $result->getKey())
+            ->where('scoring_version', $this->scoringVersion($prediction))
+            ->exists();
+    }
+
     /** @return array{actuals:array<string,mixed>,errors:array<string,mixed>,market_comparison:array<string,mixed>} */
     private function score(CanonicalPrediction $prediction, SportEventResult $result): array
     {

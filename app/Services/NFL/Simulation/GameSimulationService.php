@@ -2,10 +2,13 @@
 
 namespace App\Services\NFL\Simulation;
 
+use App\Application\Sports\ReadModels\CanonicalShadowSnapshot;
+use App\Models\CanonicalPrediction;
 use App\Models\NFL\Game;
 use App\Models\PredictionEvaluation;
 use App\Models\PredictionFeatureSnapshot;
 use App\Services\NFL\Research\ResearchPipeline;
+use App\Services\Predictions\CanonicalShadowInputs;
 use App\Services\Predictions\SnapshotProvenanceResolver;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -52,7 +55,8 @@ class GameSimulationService
         $seed ??= (int) config('nfl_game_simulation.seed', 20261024);
         $assumptions = [(float) config('nfl_game_simulation.provisional_home_sd', 10),
             (float) config('nfl_game_simulation.provisional_away_sd', 10), (float) config('nfl_game_simulation.provisional_correlation', 0.15)];
-        $features = ['game_context_hash' => self::gameContextHash($game), 'source_snapshot_id' => $source->id, 'source_model_version' => $source->model_version, 'game_identity' => self::gameIdentity($game),
+        $features = ['source_table' => $source instanceof CanonicalShadowSnapshot ? 'predictions' : 'prediction_feature_snapshots',
+            'source_lineage' => $source instanceof CanonicalShadowSnapshot ? $source->lineage : null, 'game_context_hash' => self::gameContextHash($game), 'source_snapshot_id' => $source->id, 'source_model_version' => $source->model_version, 'game_identity' => self::gameIdentity($game),
             'means' => $means, 'basis' => $basis, 'history' => $fit, 'iterations' => $iterations, 'seed' => $seed,
             'provisional' => ! $fitted ? $assumptions : null];
         $outputs = $this->simulator->run($means['margin'], $means['total'], $fitted ? $fit['pairs'] : [], $markets, $iterations, $seed, $fitted ? null : $assumptions);
@@ -96,7 +100,13 @@ class GameSimulationService
                 || $run['features']['provisional'] !== null || count($run['features']['history']['pairs']) < max(2, (int) config('nfl_game_simulation.minimum_history', 200))) {
                 throw new RuntimeException('Simulation capture lacks fitted pregame inputs.');
             }
-            $source = PredictionFeatureSnapshot::lockForUpdate()->findOrFail($run['source_snapshot_id']);
+            $native = ($run['features']['source_table'] ?? null) === 'predictions';
+            $record = $native ? CanonicalPrediction::lockForUpdate()->findOrFail($run['source_snapshot_id']) : null;
+            $source = $native ? app(CanonicalShadowInputs::class)->fromPrediction($record)
+                : PredictionFeatureSnapshot::lockForUpdate()->findOrFail($run['source_snapshot_id']);
+            if ($native && ($source === null || $source->lineage !== ($run['features']['source_lineage'] ?? null))) {
+                throw new RuntimeException('Native source forecast changed or lacks pregame provenance.');
+            }
             if ((int) $source->game_id !== (int) $game->id || ! $source->pregame_safe || $source->availability_status !== 'observed_pregame'
                 || (int) $source->id !== (int) $run['features']['source_snapshot_id'] || $source->model_version !== $run['features']['source_model_version']
                 || ! $source->generated_at?->lte($available) || ! $source->features_available_at?->lte($available)
@@ -105,7 +115,7 @@ class GameSimulationService
                 throw new RuntimeException('Source forecast changed or lacks pregame provenance.');
             }
 
-            return PredictionFeatureSnapshot::create(['snapshot_run_id' => $identity, 'sport' => 'nfl', 'prediction_table' => 'prediction_feature_snapshots',
+            return PredictionFeatureSnapshot::create(['snapshot_run_id' => $identity, 'sport' => 'nfl', 'prediction_table' => $native ? 'predictions' : 'prediction_feature_snapshots',
                 'prediction_id' => $source->id, 'game_id' => $game->id, 'model_version' => ScoreDistributionSimulator::VERSION,
                 'feature_version' => 'paired-score-residuals-v1', 'blend_version' => self::POLICY, 'features' => $run['features'],
                 'outputs' => $run['outputs'], 'market_context' => $run['markets'], 'feature_hash' => $run['hash'],

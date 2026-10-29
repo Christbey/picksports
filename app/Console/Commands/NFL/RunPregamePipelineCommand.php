@@ -3,9 +3,10 @@
 namespace App\Console\Commands\NFL;
 
 use App\Models\NFL\Game;
-use App\Models\PredictionFeatureSnapshot;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\NFL\NflPregamePipelineRunner;
 use App\Services\NFL\Predictions\NflPregameHorizon;
+use App\Services\NFL\Predictions\NflRecommendationInputBuilder;
 use Illuminate\Console\Command;
 
 class RunPregamePipelineCommand extends Command
@@ -15,7 +16,7 @@ class RunPregamePipelineCommand extends Command
         {--date= : Start the eight-day pregame horizon on this business date}
         {--days-forward=8 : Number of days covered by every pipeline step}';
 
-    protected $description = 'Run NFL legacy prediction, canonical prediction, and readiness steps using stored odds';
+    protected $description = 'Run NFL canonical prediction, frozen recommendation evidence, and readiness steps using stored odds';
 
     public function handle(NflPregamePipelineRunner $runner, NflPregameHorizon $horizons): int
     {
@@ -38,7 +39,7 @@ class RunPregamePipelineCommand extends Command
             '--date' => $horizon['date'],
             '--days-forward' => $daysForward,
         ];
-        $startedAt = now()->startOfSecond();
+        $freshAfter = now()->subMinutes(max(1, (int) config('nfl.predictions.pregame_market.maximum_prediction_age_minutes', 360)));
         $expectedGameIds = Game::query()
             ->where('season', $season)
             ->whereIn('season_type', NflPregameHorizon::seasonTypes())
@@ -46,14 +47,6 @@ class RunPregamePipelineCommand extends Command
             ->whereHas('sportEvent', fn ($query) => $query->whereBetween('starts_at', [$horizon['start'], $horizon['end']]))
             ->pluck('id');
         $steps = [
-            [
-                'name' => 'legacy_generation',
-                'command' => 'nfl:generate-predictions',
-                'arguments' => $shared,
-                // One held legacy game must not prevent immutable canonical
-                // observations for the other games; the run still fails.
-                'continue_on_failure' => true,
-            ],
             [
                 'name' => 'canonical_generation_and_readiness',
                 'command' => 'nfl:generate-canonical-predictions',
@@ -80,15 +73,16 @@ class RunPregamePipelineCommand extends Command
             $this->line("NFL pregame step {$name} exited {$exitCode}.");
         });
 
-        $generatedGameIds = PredictionFeatureSnapshot::query()
-            ->where('sport', 'nfl')
-            ->where('prediction_table', 'nfl_predictions')
-            ->whereIn('game_id', $expectedGameIds)
-            ->where('generated_at', '>=', $startedAt)
-            ->pluck('game_id');
+        $generatedEventIds = app(CanonicalSportPredictionQuery::class)->queryForSport('nfl')
+            ->where('predictions.generated_at', '>=', $freshAfter)
+            ->whereHas('calculationRun.inputSnapshot', fn ($query) => $query
+                ->where('captured_at', '>=', $freshAfter)
+                ->where('inputs->recommendation_context->version', NflRecommendationInputBuilder::VERSION))
+            ->pluck('predictions.sport_event_id');
+        $generatedGameIds = Game::query()->whereIn('sport_event_id', $generatedEventIds)->pluck('id');
         $missingGameIds = $expectedGameIds->diff($generatedGameIds);
         if ($missingGameIds->isNotEmpty()) {
-            $this->error('NFL pregame pipeline has no new prediction snapshots for game IDs: '.$missingGameIds->implode(', ').'.');
+            $this->error('NFL pregame pipeline has no current canonical input evidence for game IDs: '.$missingGameIds->implode(', ').'.');
 
             return self::FAILURE;
         }

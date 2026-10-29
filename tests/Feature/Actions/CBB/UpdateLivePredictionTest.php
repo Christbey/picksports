@@ -69,7 +69,7 @@ test('clears stale live data when game is no longer in progress', function () {
 
     expect($result)->toBeNull();
 
-    $prediction->refresh();
+    $prediction = livePredictionFor($prediction);
 
     expect($prediction->live_predicted_spread)->toBeNull()
         ->and($prediction->live_win_probability)->toBeNull()
@@ -93,7 +93,7 @@ test('does not clear live data for scheduled game without prior live data', func
 
     $this->action->execute($game->fresh());
 
-    $prediction->refresh();
+    $prediction = livePredictionFor($prediction);
 
     // Should not have attempted any update since live_seconds_remaining was already null
     expect($prediction->live_seconds_remaining)->toBeNull();
@@ -141,7 +141,7 @@ test('updates live prediction for in-progress game', function () {
         ->and($result['live_predicted_total'])->toBeFloat()
         ->and($result['live_seconds_remaining'])->toBeInt();
 
-    $prediction->refresh();
+    $prediction = livePredictionFor($prediction);
 
     expect($prediction->live_predicted_spread)->not->toBeNull()
         ->and($prediction->live_win_probability)->not->toBeNull()
@@ -446,7 +446,7 @@ test('clears live prediction', function () {
 
     $this->action->clearLivePrediction($prediction);
 
-    $prediction->refresh();
+    $prediction = livePredictionFor($prediction);
 
     expect($prediction->live_predicted_spread)->toBeNull()
         ->and($prediction->live_win_probability)->toBeNull()

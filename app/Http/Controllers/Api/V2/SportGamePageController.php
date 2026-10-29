@@ -4,13 +4,12 @@ namespace App\Http\Controllers\Api\V2;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V2\SportGameResource;
-use App\Http\Resources\Api\V2\SportPredictionResource;
 use App\Http\Resources\Api\V2\SportTeamMetricResource;
 use App\Services\Api\V2\NflGamePageQuery;
 use App\Services\Api\V2\SportContext;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportGameQuery;
-use App\Services\Api\V2\SportPredictionPresentationService;
+use App\Services\Api\V2\SportPredictionReader;
 use App\Services\Api\V2\SportTeamMetricQuery;
 use App\Services\Sports\GameMatchupContextService;
 use App\Support\MLB\MlbGameStart;
@@ -27,7 +26,7 @@ class SportGamePageController extends Controller
         Request $request,
         SportContextResolver $sports,
         SportGameQuery $games,
-        SportPredictionPresentationService $presentations,
+        SportPredictionReader $predictions,
         SportTeamMetricQuery $metrics,
         GameMatchupContextService $matchupContext,
         NflGamePageQuery $nflPage,
@@ -57,12 +56,7 @@ class SportGamePageController extends Controller
             'season_type' => (string) $resolvedGame->getAttribute('season_type'),
         ];
 
-        $prediction = $this->prediction(
-            $context,
-            $resolvedGame,
-            $request,
-            $presentations,
-        );
+        $predictionPayload = $predictions->forLoadedGame($context, $resolvedGame);
         $recentGames = $this->recentGames(
             $context,
             $games,
@@ -75,7 +69,7 @@ class SportGamePageController extends Controller
         return response()->json([
             'data' => [
                 'game' => (new SportGameResource($resolvedGame, $context))->resolve($request),
-                'prediction' => $prediction,
+                'prediction' => isset($predictionPayload['data']) ? $predictionPayload['data']->resolve($request) : null,
                 'recent_games' => $recentGames,
                 'metrics' => [
                     'home' => $this->teamMetric($context, $metrics, $homeTeamId, $metricFilters, $request),
@@ -92,33 +86,10 @@ class SportGamePageController extends Controller
                 'contract' => 'sports.games.page.show',
                 'sport' => $context->slug,
                 'game_id' => (int) $resolvedGame->getKey(),
+                'prediction_source' => $predictionPayload['meta']['prediction_source'] ?? null,
                 'deferred' => ['matchup_trends', 'depth_charts'],
             ],
         ]);
-    }
-
-    /** @return array<string, mixed>|null */
-    private function prediction(
-        SportContext $context,
-        Model $game,
-        Request $request,
-        SportPredictionPresentationService $presentations,
-    ): ?array {
-        $prediction = $game->relationLoaded('prediction')
-            ? $game->getRelation('prediction')
-            : null;
-
-        if (! $prediction instanceof Model) {
-            return null;
-        }
-
-        $prediction->setRelation('game', $game);
-
-        return (new SportPredictionResource(
-            $prediction,
-            $context,
-            $presentations->forPrediction($context, $prediction),
-        ))->resolve($request);
     }
 
     /** @return array{home: array<int, array<string, mixed>>, away: array<int, array<string, mixed>>} */

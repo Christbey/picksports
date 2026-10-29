@@ -6,8 +6,8 @@ use App\DataTransferObjects\ESPN\GameData;
 use App\Events\GameFinalized;
 use App\Models\NBA\Game;
 use App\Models\NBA\PlayerProp;
-use App\Models\NBA\Prediction;
-use Illuminate\Database\Eloquent\Builder;
+use App\Services\Api\V2\SportContextResolver;
+use App\Services\Predictions\CanonicalTeamGameEvaluator;
 use Illuminate\Database\Eloquent\Model;
 
 class GameFinalizationDispatcher
@@ -23,19 +23,6 @@ class GameFinalizationDispatcher
         \App\Models\CFB\Game::class => 'cfb',
         \App\Models\WNBA\Game::class => 'wnba',
         \App\Models\WCBB\Game::class => 'wcbb',
-    ];
-
-    /**
-     * @var array<string, class-string<Model>>
-     */
-    private const PREDICTION_MODEL_BY_SPORT = [
-        'nba' => Prediction::class,
-        'nfl' => \App\Models\NFL\Prediction::class,
-        'mlb' => \App\Models\MLB\Prediction::class,
-        'cbb' => \App\Models\CBB\Prediction::class,
-        'cfb' => \App\Models\CFB\Prediction::class,
-        'wnba' => \App\Models\WNBA\Prediction::class,
-        'wcbb' => \App\Models\WCBB\Prediction::class,
     ];
 
     /**
@@ -84,7 +71,12 @@ class GameFinalizationDispatcher
 
     private function hasUngradedFinalizationWork(Model $game, string $sport): bool
     {
-        $predictionModel = self::PREDICTION_MODEL_BY_SPORT[$sport] ?? null;
+        if ((bool) config("prediction_lifecycle.canonical_pipeline.{$sport}", false)
+            && app(CanonicalTeamGameEvaluator::class)->hasPendingEvaluation($game, $sport)) {
+            return true;
+        }
+
+        $predictionModel = app(SportContextResolver::class)->find($sport)?->models['prediction'] ?? null;
         if ($predictionModel !== null && $this->hasUngradedRows($predictionModel, $game)) {
             return true;
         }
@@ -101,9 +93,7 @@ class GameFinalizationDispatcher
     {
         return $modelClass::query()
             ->where('game_id', $game->getKey())
-            ->where(function (Builder $query): void {
-                $query->whereNull('graded_at');
-            })
+            ->whereNull('graded_at')
             ->exists();
     }
 }

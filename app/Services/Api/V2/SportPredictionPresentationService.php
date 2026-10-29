@@ -9,6 +9,7 @@ use App\Services\MLB\MlbMarketAwareProjectionService;
 use App\Services\MLB\MlbPeriodInsightService;
 use App\Services\MLB\MlbPredictionRecommendationService;
 use App\Services\NFL\NflPredictionBoardContext;
+use App\Services\Predictions\LivePredictionStore;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
@@ -28,6 +29,7 @@ class SportPredictionPresentationService
      */
     public function forPredictions(SportContext $context, Collection $predictions): Collection
     {
+        app(LivePredictionStore::class)->preload($predictions->pluck('game')->filter());
         $snapshots = $this->snapshots->latestForPredictions($predictions);
         $nflBoard = $context->slug === 'nfl' ? app(NflPredictionBoardContext::class)->forPredictions($predictions) : collect();
         $periodInsightsByGame = $context->slug === 'mlb'
@@ -45,20 +47,6 @@ class SportPredictionPresentationService
                 $nflBoard->get($predictionId),
             )];
         });
-    }
-
-    public function forPrediction(SportContext $context, Model $prediction): SportPredictionPresentationData
-    {
-        $snapshot = $this->snapshots
-            ->latestForPredictions(collect([$prediction]))
-            ->get((int) $prediction->getKey());
-        $periodInsights = $context->slug === 'mlb'
-            ? $this->mlbPeriodInsights->forGame($prediction->getRelationValue('game'))
-            : [];
-
-        $nflBoard = $context->slug === 'nfl' ? app(NflPredictionBoardContext::class)->forPredictions(collect([$prediction]))->get($prediction->getKey()) : null;
-
-        return $this->build($context, $prediction, $snapshot, $periodInsights, $nflBoard);
     }
 
     /**

@@ -2,6 +2,7 @@
 
 namespace App\Services\Sports;
 
+use App\Services\Predictions\PredictionDeliverySource;
 use App\Support\BasketballSeason;
 use App\Support\CFB\CfbWeek;
 use Carbon\Carbon;
@@ -308,17 +309,17 @@ class SportsPipelineRegistry
                     '--season' => $season,
                     '--season-type' => config('nba.season.types.postseason', 3),
                 ]),
-                $this->step('Generate predictions', 'nba:generate-predictions', ['--season' => $season]),
+                $this->pregameGenerationStep('nba', $season),
                 $this->step('Generate playoff forecast', 'nba:generate-playoff-forecast', ['--season' => $season]),
             ],
             'nfl' => [
                 $this->step('Grade predictions', 'nfl:grade-predictions', ['--season' => $season]),
                 $this->step('Calculate Elo', 'nfl:calculate-elo', ['--season' => $season]),
                 $this->step('Calculate team metrics', 'nfl:calculate-team-metrics', ['--season' => $season]),
-                $this->step('Generate predictions', 'nfl:generate-predictions', [
+                $this->step('Generate predictions', 'nfl:run-pregame-pipeline', [
                     '--season' => $season,
-                    '--from-date' => $context['reference_date']->toDateString(),
-                    '--to-date' => $context['reference_date']->copy()->addDays(7)->toDateString(),
+                    '--date' => $context['reference_date']->toDateString(),
+                    '--days-forward' => 8,
                 ]),
             ],
             'mlb' => [
@@ -326,7 +327,7 @@ class SportsPipelineRegistry
                 $this->step('Normalize season types', 'mlb:normalize-season-types', ['--season' => $season]),
                 $this->step('Calculate Elo', 'mlb:calculate-elo', ['--season' => $season]),
                 $this->step('Calculate team metrics', 'mlb:calculate-team-metrics', ['--season' => $season]),
-                $this->step('Generate predictions', 'mlb:generate-predictions', ['--season' => $season]),
+                $this->pregameGenerationStep('mlb', $season),
                 $this->step('Generate playoff forecast', 'mlb:generate-playoff-forecast', ['--season' => $season]),
                 $this->step('Generate daily picks', 'mlb:generate-daily-picks', [
                     '--date' => $context['reference_date']->format('Y-m-d'),
@@ -337,7 +338,7 @@ class SportsPipelineRegistry
                 $this->step('Grade predictions', 'cbb:grade-predictions', ['--season' => $season]),
                 $this->step('Calculate Elo', 'cbb:calculate-elo', ['--season' => $season]),
                 $this->step('Calculate team metrics', 'cbb:calculate-team-metrics', ['--season' => $season]),
-                $this->step('Generate predictions', 'cbb:generate-predictions', ['--season' => $season]),
+                $this->pregameGenerationStep('cbb', $season),
                 $this->step('Generate tournament forecast', 'cbb:generate-tournament-forecast', ['--season' => $season]),
                 $this->step('Recalculate tournament outlook', 'cbb:recalculate-tournament-outlook', [
                     'season' => $season,
@@ -348,7 +349,7 @@ class SportsPipelineRegistry
                 $this->step('Grade predictions', 'wcbb:grade-predictions', ['--season' => $season]),
                 $this->step('Calculate Elo', 'wcbb:calculate-elo', ['--season' => $season]),
                 $this->step('Calculate team metrics', 'wcbb:calculate-team-metrics', ['--season' => $season]),
-                $this->step('Generate predictions', 'wcbb:generate-predictions', ['--season' => $season]),
+                $this->pregameGenerationStep('wcbb', $season),
                 $this->step('Generate tournament forecast', 'wcbb:generate-tournament-forecast', ['--season' => $season]),
             ],
             'wnba' => [
@@ -362,7 +363,7 @@ class SportsPipelineRegistry
                     '--season' => $season,
                     '--season-type' => config('wnba.season.types.postseason', 3),
                 ]),
-                $this->step('Generate predictions', 'wnba:generate-predictions', ['--season' => $season]),
+                $this->pregameGenerationStep('wnba', $season),
             ],
             'cfb' => [
                 $this->step('Grade predictions', 'cfb:grade-predictions', ['--season' => $season]),
@@ -379,7 +380,7 @@ class SportsPipelineRegistry
                     '--season' => $season,
                     '--week' => $context['week'],
                 ]),
-                $this->step('Generate predictions', 'cfb:generate-predictions', ['--season' => $season]),
+                $this->pregameGenerationStep('cfb', $season),
             ],
             default => [],
         };
@@ -453,6 +454,15 @@ class SportsPipelineRegistry
                 '--date' => $context['reference_date']->format('Y-m-d'),
             ]),
         ];
+    }
+
+    /** @return array{label: string, command: string, arguments: array<string, mixed>} */
+    private function pregameGenerationStep(string $sport, int $season): array
+    {
+        $command = app(PredictionDeliverySource::class)->legacyWriterRetired($sport)
+            ? "{$sport}:generate-canonical-predictions" : "{$sport}:generate-predictions";
+
+        return $this->step('Generate predictions', $command, ['--season' => $season]);
     }
 
     /**

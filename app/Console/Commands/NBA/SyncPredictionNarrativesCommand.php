@@ -2,8 +2,10 @@
 
 namespace App\Console\Commands\NBA;
 
-use App\Jobs\NBA\GeneratePredictionNarrative as GeneratePredictionNarrativeJob;
-use App\Models\NBA\Prediction;
+use App\Jobs\Predictions\GeneratePredictionNarrative as GeneratePredictionNarrativeJob;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
+use App\Services\Api\V2\SportContextResolver;
+use App\Services\Predictions\BettingForecastSource;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Bus;
@@ -22,16 +24,23 @@ class SyncPredictionNarrativesCommand extends Command
 
     public function handle(): int
     {
-        $query = Prediction::query()->with('game');
-
-        $this->applyFilters($query);
+        $canonical = app(BettingForecastSource::class)->usesCanonical('nba');
+        $model = app(SportContextResolver::class)->resolve('nba')->models['prediction'];
+        $query = $canonical
+            ? app(CanonicalSportPredictionQuery::class)->queryForSport('nba', array_filter([
+                'game_id' => $this->option('game'), 'from_date' => $this->option('from_date'), 'to_date' => $this->option('to_date'),
+            ]))
+            : $model::query()->with('game');
+        if (! $canonical) {
+            $this->applyFilters($query);
+        }
 
         $limit = max(1, (int) $this->option('limit'));
         $force = (bool) $this->option('force');
         $sync = (bool) $this->option('sync');
 
         $predictions = $query
-            ->orderByDesc('updated_at')
+            ->reorder()->orderByDesc($query->getModel()->qualifyColumn('updated_at'))
             ->limit($limit)
             ->get();
 
@@ -52,9 +61,9 @@ class SyncPredictionNarrativesCommand extends Command
 
         foreach ($predictions as $prediction) {
             if ($sync) {
-                Bus::dispatchSync(new GeneratePredictionNarrativeJob((int) $prediction->id, $force));
+                Bus::dispatchSync(new GeneratePredictionNarrativeJob($prediction::class, (int) $prediction->id, 'nba', $force));
             } else {
-                GeneratePredictionNarrativeJob::dispatch((int) $prediction->id, $force);
+                GeneratePredictionNarrativeJob::dispatch($prediction::class, (int) $prediction->id, 'nba', $force);
             }
 
             $bar->advance();

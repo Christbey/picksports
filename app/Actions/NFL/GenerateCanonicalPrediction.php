@@ -2,10 +2,10 @@
 
 namespace App\Actions\NFL;
 
-use App\Exceptions\Predictions\PredictionLifecycleException;
 use App\Models\CanonicalPrediction;
 use App\Models\NFL\Game;
 use App\Services\NFL\Predictions\NflCalculator;
+use App\Services\NFL\Predictions\NflCanonicalDecisionRecorder;
 use App\Services\NFL\Predictions\NflInputSnapshotBuilder;
 use App\Services\Predictions\PredictionLifecycleOrchestrator;
 
@@ -15,12 +15,13 @@ class GenerateCanonicalPrediction
 
     public function execute(Game $game, bool $publish = true, string $trigger = 'scheduled'): CanonicalPrediction
     {
-        if ($game->sportEvent === null) {
-            throw new PredictionLifecycleException('NFL canonical generation requires a linked sport event.');
+        $prediction = $this->orchestrator->generateForGame(
+            $game, 'nfl', $this->snapshotBuilder, $this->calculator, $publish, $trigger,
+        );
+        if ($publish) {
+            app(NflCanonicalDecisionRecorder::class)->record($prediction, $game);
         }
 
-        return $publish
-            ? $this->orchestrator->generateAndPublish($game->sportEvent, $this->snapshotBuilder, $this->calculator, trigger: $trigger)
-            : $this->orchestrator->generate($game->sportEvent, $this->snapshotBuilder, $this->calculator, trigger: $trigger);
+        return $prediction;
     }
 }

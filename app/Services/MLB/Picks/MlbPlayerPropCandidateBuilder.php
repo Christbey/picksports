@@ -2,8 +2,10 @@
 
 namespace App\Services\MLB\Picks;
 
+use App\Application\Sports\ReadModels\BettingForecast;
 use App\Models\MLB\Game;
 use App\Models\MLB\PlayerProp;
+use App\Services\Predictions\BettingForecastSource;
 use App\Support\MLB\MlbGameStart;
 
 class MlbPlayerPropCandidateBuilder
@@ -11,21 +13,23 @@ class MlbPlayerPropCandidateBuilder
     /**
      * @return list<MlbPickCandidateData>
      */
-    public function build(Game $game): array
+    public function build(Game $game, ?BettingForecast $prediction = null): array
     {
+        $prediction ??= app(BettingForecastSource::class)->forGames('mlb', [(int) $game->id])->first();
+
         return PlayerProp::query()
             ->where('game_id', $game->id)
             ->whereNotNull('line')
             ->whereNotNull('over_price')
             ->whereNotNull('under_price')
             ->get()
-            ->map(fn (PlayerProp $prop): ?MlbPickCandidateData => $this->candidate($game, $prop))
+            ->map(fn (PlayerProp $prop): ?MlbPickCandidateData => $this->candidate($game, $prop, $prediction))
             ->filter()
             ->values()
             ->all();
     }
 
-    private function candidate(Game $game, PlayerProp $prop): ?MlbPickCandidateData
+    private function candidate(Game $game, PlayerProp $prop, ?BettingForecast $prediction): ?MlbPickCandidateData
     {
         $overProbability = $this->normalizeProbability($prop->predicted_over_probability);
         $marketOver = $this->normalizeProbability($prop->market_over_probability);
@@ -54,7 +58,8 @@ class MlbPlayerPropCandidateBuilder
 
         return new MlbPickCandidateData(
             gameId: (int) $game->id,
-            predictionId: $game->prediction?->id ? (int) $game->prediction->id : null,
+            predictionId: $prediction?->legacyPredictionId(),
+            canonicalPredictionId: $prediction?->canonicalPredictionId(),
             season: (int) $game->season,
             marketType: 'player_prop',
             marketKey: (string) $prop->market,

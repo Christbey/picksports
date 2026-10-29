@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Sports;
 
 use App\Console\Commands\Concerns\ResolvesRequiredConfig;
+use App\Services\Predictions\PredictionDeliverySource;
 use App\Support\SportsViewCache;
 use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
@@ -35,6 +36,13 @@ abstract class AbstractGenerateSeasonScheduledPredictionsCommand extends Command
             $this->error('The --season option is required.');
 
             return self::FAILURE;
+        }
+
+        $sport = strtolower(strtok($this->commandName(), ':'));
+        if (app(PredictionDeliverySource::class)->legacyWriterRetired($sport)) {
+            return $this->call("{$sport}:generate-canonical-predictions", [
+                '--season' => $season, '--days-forward' => max(0, (int) $this->option('days-forward')),
+            ]);
         }
 
         $this->info("Generating predictions for scheduled games in the {$season} season...");

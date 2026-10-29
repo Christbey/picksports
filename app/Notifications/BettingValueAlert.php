@@ -2,7 +2,10 @@
 
 namespace App\Notifications;
 
+use App\Models\CanonicalPrediction;
 use App\Models\NotificationTemplate;
+use App\Services\BettingRecommendations\GameBettingRecommendationService;
+use App\Services\Predictions\PredictionDeliverySource;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Model;
@@ -19,8 +22,26 @@ class BettingValueAlert extends Notification implements ShouldQueue
         public string $sport,
         public float $expectedValue,
         public string $recommendation,
-        public ?NotificationTemplate $template = null
+        public ?NotificationTemplate $template = null,
+        public ?int $betDecisionId = null,
     ) {}
+
+    public function shouldSend(object $notifiable, string $channel): bool
+    {
+        $source = app(PredictionDeliverySource::class);
+        if (! $this->prediction instanceof CanonicalPrediction) {
+            return ! $source->usesCanonical(strtolower($this->sport));
+        }
+
+        if (! $source->usesCanonical(strtolower($this->sport)) || ! ($this->betDecisionId ?? null)) {
+            return false;
+        }
+        $context = $source->context($this->prediction, strtolower($this->sport));
+
+        return collect(app(GameBettingRecommendationService::class)->forGame($context->game, strtolower($this->sport)))
+            ->contains(fn (array $recommendation): bool => ($recommendation['bet_decision_id'] ?? null) === $this->betDecisionId
+                && ($recommendation['prediction_id'] ?? null) === $this->prediction->public_id);
+    }
 
     public function via(object $notifiable): array
     {

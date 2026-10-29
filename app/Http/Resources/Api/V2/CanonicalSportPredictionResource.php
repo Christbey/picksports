@@ -8,6 +8,8 @@ use App\Models\PredictionMarket;
 use App\Services\Api\V2\CanonicalPredictionPresentationData;
 use App\Services\Api\V2\SportContext;
 use App\Services\CFB\Live\LiveBoardPresentation;
+use App\Services\MLB\MlbRecommendationPresentation;
+use App\Services\Predictions\LivePredictionStore;
 use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -36,6 +38,10 @@ class CanonicalSportPredictionResource extends JsonResource
         $evaluation = $prediction->latestEvaluation;
         $confidenceContext = $this->presentation->confidenceContext;
         $valueSignal = $this->presentation->valueSignal;
+        $live = app(LivePredictionStore::class)->forPrediction($prediction, $this->context->slug);
+        if (! in_array($game?->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD', 'STATUS_SUSPENDED', 'STATUS_DELAYED'], true)) {
+            $live = LivePredictionStore::EMPTY_FIELDS;
+        }
 
         return [
             'id' => $prediction->public_id,
@@ -70,7 +76,7 @@ class CanonicalSportPredictionResource extends JsonResource
                 'home' => data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'home.evidence_windows'),
                 'away' => data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'away.evidence_windows'),
             ] : null,
-            'public_recommendation' => null,
+            'public_recommendation' => app(MlbRecommendationPresentation::class)->summary($this->presentation->recommendation),
             'model_bet_context' => [
                 'model_home_spread' => $this->number($homeSpread?->projected_line),
                 ...$this->presentation->modelBetContext,
@@ -84,8 +90,8 @@ class CanonicalSportPredictionResource extends JsonResource
                 'forecast_coordination' => data_get($prediction->output_metadata, 'forecast_coordination'),
                 'raw_home_win_probability' => $homeProbability,
             ] : []),
-            'market_aware_projection' => null,
-            'recommendation' => null,
+            'market_aware_projection' => $this->presentation->marketAwareProjection,
+            'recommendation' => $this->presentation->recommendation,
             'pro_signal_layer' => null,
             'period_insights' => [],
             'cfb_signal_context' => null,
@@ -113,12 +119,12 @@ class CanonicalSportPredictionResource extends JsonResource
                 'absolute_error' => $this->number(data_get($evaluation->errors, 'total_absolute_error')),
             ],
             'graded_at' => $evaluation?->evaluated_at?->toIso8601String(),
-            'live_predicted_spread' => null,
-            'live_predicted_total' => null,
-            'live_win_probability' => null,
-            'live_seconds_remaining' => null,
-            'live_outs_remaining' => null,
-            'live_updated_at' => null,
+            'live_predicted_spread' => $live['live_predicted_spread'],
+            'live_predicted_total' => $live['live_predicted_total'],
+            'live_win_probability' => $live['live_win_probability'],
+            'live_seconds_remaining' => $live['live_seconds_remaining'],
+            'live_outs_remaining' => $live['live_outs_remaining'],
+            'live_updated_at' => $live['live_updated_at']?->toIso8601String(),
             ...($game instanceof Game
                 ? app(LiveBoardPresentation::class)->forGame($game) : []),
             'depth_chart_context' => null,

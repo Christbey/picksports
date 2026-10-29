@@ -56,14 +56,6 @@ class UpdateLivePrediction extends AbstractFootballUpdateLivePrediction
                     is_numeric($baseline['home_win_probability']) ? (float) $baseline['home_win_probability'] : null,
                 );
             }
-            // Only the live columns are mutable. Pregame and historical snapshots are untouched.
-            $game->prediction()->update([
-                'live_predicted_spread' => $status === 'live' ? $projection['spread'] : null,
-                'live_predicted_total' => $status === 'live' ? $projection['total'] : null,
-                'live_win_probability' => $status === 'live' ? $projection['home_win_probability'] : null,
-                'live_seconds_remaining' => $status === 'live' ? $projection['seconds_remaining'] : null,
-                'live_updated_at' => $status === 'live' ? now() : null,
-            ]);
             $recorder->record($game, $baseline, $projection, $status);
 
             return $status === 'live' ? ['live_predicted_spread' => $projection['spread'], 'live_predicted_total' => $projection['total'],

@@ -6,6 +6,10 @@ use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game as CfbGame;
 use App\Services\CFB\Predictions\CfbCanonicalSpreadValueSignalService;
 use App\Services\CFB\Predictions\CfbPredictionInputQuality;
+use App\Services\MLB\MlbMarketAwareProjectionService;
+use App\Services\MLB\MlbPredictionRecommendationService;
+use App\Services\MLB\MlbRecommendationPresentation;
+use App\Services\Predictions\BettingForecastSource;
 
 class CanonicalPredictionPresentationService
 {
@@ -17,7 +21,14 @@ class CanonicalPredictionPresentationService
         $confidence = is_numeric($market?->confidence_score) ? (float) $market->confidence_score : null;
         $game = $prediction->sportEvent?->getRelation($prediction->sport.'Game');
 
+        $mlbForecast = $prediction->sport === 'mlb'
+            ? app(BettingForecastSource::class)->fromModel($prediction, 'mlb') : null;
+
         return new CanonicalPredictionPresentationData(
+            recommendation: $prediction->sport === 'mlb'
+                ? app(MlbRecommendationPresentation::class)->sanitize(app(MlbPredictionRecommendationService::class)->forPrediction($mlbForecast)) : null,
+            marketAwareProjection: $prediction->sport === 'mlb'
+                ? app(MlbMarketAwareProjectionService::class)->forPrediction($mlbForecast) : null,
             confidenceContext: $this->confidenceContext($prediction, $confidence),
             valueSignal: $game instanceof CfbGame ? $this->cfbValueSignals->forPrediction($prediction, $game) : null,
             modelBetContext: app(PredictionModelBetContext::class)->forPrediction($prediction, $game),

@@ -7,6 +7,7 @@ use App\Models\CFB\Game;
 use App\Models\CFB\LivePredictionSnapshot;
 use App\Services\BettingRecommendations\CfbPropEligibility;
 use App\Services\CFB\Predictions\CfbStoredPregameQuote;
+use App\Services\Predictions\PredictionDeliverySource;
 use Carbon\CarbonInterface;
 
 class LiveSnapshotRecorder
@@ -24,7 +25,7 @@ class LiveSnapshotRecorder
             ->where('phase', 'pregame')->where('publication_state', 'published')
             ->where('generated_at', '<', $kickoff)->where('published_at', '<', $kickoff)
             ->where('created_at', '<', $kickoff)->with('markets')->latest('generated_at')->first();
-        $base = ['baseline_contract' => 'canonical-or-closing-v2', 'prediction_id' => $game->prediction?->id,
+        $base = ['baseline_contract' => 'canonical-or-closing-v2', 'prediction_id' => null,
             'canonical_prediction_id' => $prediction?->id, 'spread' => null, 'total' => null,
             'home_win_probability' => null, 'model_version' => null, 'source' => 'unavailable',
             'captured_at' => now()->toIso8601String()];
@@ -50,9 +51,10 @@ class LiveSnapshotRecorder
                 'home_win_probability' => 1 / (1 + exp((float) $spread->line / 6))];
         }
         // Compatibility only for games not yet linked to the canonical event catalog.
-        $legacy = $game->prediction;
-        if (! $game->sport_event_id && $legacy && $legacy->updated_at->lt($kickoff)) {
-            return [...$base, 'source' => 'legacy_pregame', 'spread' => $legacy->predicted_spread !== null ? (float) $legacy->predicted_spread : null,
+        $context = ! $game->sport_event_id ? app(PredictionDeliverySource::class)->forGame($game, 'cfb') : null;
+        $legacy = $context?->source;
+        if ($legacy && $legacy->updated_at->lt($kickoff)) {
+            return [...$base, 'prediction_id' => $legacy->getKey(), 'source' => 'legacy_pregame', 'spread' => $legacy->predicted_spread !== null ? (float) $legacy->predicted_spread : null,
                 'total' => $legacy->predicted_total !== null ? (float) $legacy->predicted_total : null,
                 'home_win_probability' => $legacy->win_probability !== null ? (float) $legacy->win_probability : null,
                 'model_version' => $legacy->model_version];

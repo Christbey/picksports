@@ -91,6 +91,7 @@ test('the dashboard exposes live mlb game state and model movement', function ()
         'live_outs_remaining' => 10,
         'live_updated_at' => now(),
     ]);
+    seedLivePrediction($prediction);
 
     $this->actingAs($user)
         ->get(route('dashboard'))

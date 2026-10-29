@@ -31,7 +31,7 @@ function nflDependencyHeartbeat(string $command, string $time): void
 test('unchanged detail polling and unrelated game odds do not invalidate NFL derived outputs', function () {
     nflDependencyHeartbeat('nfl:calculate-team-metrics --season=2026', '2026-09-16 09:30:00');
     nflDependencyHeartbeat('nfl:sync-game-weather', '2026-09-16 09:45:00');
-    nflDependencyHeartbeat('nfl:generate-predictions --season=2026', '2026-09-16 10:00:00');
+    nflDependencyHeartbeat('nfl:run-pregame-pipeline --season=2026', '2026-09-16 10:00:00');
     nflDependencyHeartbeat('espn:sync-nfl-game-details', '2026-09-16 13:50:00');
     nflDependencyHeartbeat('nfl:sync-odds', '2026-09-16 13:55:00');
 
@@ -43,7 +43,7 @@ test('unchanged detail polling and unrelated game odds do not invalidate NFL der
 
 test('new NFL inputs remain visible during the bounded refresh window and fail after it', function () {
     nflDependencyHeartbeat('nfl:calculate-team-metrics --season=2026', '2026-09-16 09:30:00');
-    nflDependencyHeartbeat('nfl:generate-predictions --season=2026', '2026-09-16 12:20:00');
+    nflDependencyHeartbeat('nfl:run-pregame-pipeline --season=2026', '2026-09-16 12:20:00');
     nflDependencyHeartbeat('nfl:sync-game-weather', '2026-09-16 13:45:00');
 
     $check = app(PipelineOrderCheck::class);
@@ -54,14 +54,14 @@ test('new NFL inputs remain visible during the bounded refresh window and fail a
     $this->travelTo('2026-09-16 15:01:00');
     expect($check->run('nfl', config('validation.sports.nfl'))['status'])->toBe('failing');
 
-    nflDependencyHeartbeat('nfl:generate-predictions --season=2026', '2026-09-16 15:02:00');
+    nflDependencyHeartbeat('nfl:run-pregame-pipeline --season=2026', '2026-09-16 15:02:00');
     $this->travelTo('2026-09-16 15:03:00');
     expect($check->run('nfl', config('validation.sports.nfl'))['status'])->toBe('passing');
 });
 
 test('repeated weather polling cannot extend grace while NFL prediction generation is broken', function () {
     nflDependencyHeartbeat('nfl:calculate-team-metrics --season=2026', '2026-09-15 09:30:00');
-    nflDependencyHeartbeat('nfl:generate-predictions --season=2026', '2026-09-15 12:20:00');
+    nflDependencyHeartbeat('nfl:run-pregame-pipeline --season=2026', '2026-09-15 12:20:00');
     nflDependencyHeartbeat('nfl:sync-game-weather', '2026-09-16 12:00:00');
     nflDependencyHeartbeat('nfl:sync-game-weather', '2026-09-16 13:45:00');
 

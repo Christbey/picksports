@@ -10,6 +10,7 @@ class SportsAiPredictionAnalysis extends Model
         'sport',
         'game_id',
         'prediction_id',
+        'canonical_prediction_id',
         'game_date',
         'as_of_date',
         'market',
@@ -36,6 +37,7 @@ class SportsAiPredictionAnalysis extends Model
         return [
             'game_id' => 'integer',
             'prediction_id' => 'integer',
+            'canonical_prediction_id' => 'integer',
             'game_date' => 'date',
             'as_of_date' => 'date',
             'raw_payload' => 'array',

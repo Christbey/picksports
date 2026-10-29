@@ -28,6 +28,8 @@ Legacy prediction grading and the existing supported prop graders continue along
 
 MLB probable-pitcher refreshes use the same retirement gate. Post-odds `generate-predictions` at `:30` routes to native generation and retains its original heartbeat. Native MLB generation materializes F3/F5 features from canonical inputs; subsequent tabular/period shadow inference writes explicit native lineage. Deploy `2026_10_28_195953_add_canonical_prediction_to_shadow_model_outputs` first. Native shadow observations remain tracking-only and hold `canonical_shadow_inputs_unvalidated`; existing artifact promotion does not approve the new input contract. Coverage, order, freshness, and monitoring checks use canonical evidence after cutover. Native publication invalidates forecast caches and queues the existing supported narratives after commit; coverage repair keeps narrative work suppressed. Queued legacy NFL shadow jobs do not revive retired writers. Historical corpora and backfill commands are retained.
 
+The scheduled `sports:ai-daily-predictions` publisher follows each sport’s canonical read switch. Native analysis uses verified frozen inputs and a separate `canonical_prediction_id`; legacy analyses retain their original IDs. AI can explain or downgrade stored exact-revision public decisions, and cannot approve a tracking candidate. Changed or withdrawn forecasts and approvals are rechecked before persistence. Deploy `2026_10_29_121751_add_canonical_prediction_to_sports_ai_prediction_analyses` before this code; rollback refuses to discard populated native lineage. Existing schedules, limits, retries, and provider settings are unchanged.
+
 ## Core Scheduling Helpers
 
 The scheduler is organized around shared helpers in `routes/console.php`:

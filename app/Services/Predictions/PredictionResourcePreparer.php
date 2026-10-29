@@ -92,6 +92,7 @@ final class PredictionResourcePreparer
         }
 
         $analyses = SportsAiPredictionAnalysis::query()
+            ->whereNull('canonical_prediction_id')
             ->where('sport', $sport)
             ->whereIn('prediction_id', $predictions->modelKeys())
             ->where('market', 'game')

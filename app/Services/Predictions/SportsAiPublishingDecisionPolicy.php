@@ -25,6 +25,9 @@ class SportsAiPublishingDecisionPolicy
         ?array $publishingGuardrail,
     ): array {
         $guardrailDecision = $this->applyConfiguredGuardrail($analysis, $publishingGuardrail);
+        if (data_get($payload, 'prediction_source.type') === 'canonical') {
+            return $this->canonicalDecision($payload, $analysis, $guardrailDecision);
+        }
 
         if (strtolower($sport) !== 'nfl') {
             return [
@@ -105,6 +108,36 @@ class SportsAiPublishingDecisionPolicy
                 'effective_bet_classification' => $finalClassification,
                 'reasons' => $reasons,
             ],
+        ];
+    }
+
+    private function canonicalDecision(array $payload, array $analysis, array $guardrail): array
+    {
+        $approved = collect(data_get($payload, 'decision_contract.approved_recommendations', []));
+        $requested = $this->recommendation($guardrail['recommendation']);
+        $selected = $approved->firstWhere('type', $requested) ?? $approved->first();
+        $classification = $requested === 'pass' ? 'pass'
+            : $this->lowerClassification($this->classification($guardrail['bet_classification']), $selected ? 'bet' : 'watch');
+        $recommendation = $selected && $requested !== 'pass' && $this->classificationRank($classification) >= 2
+            ? $this->recommendation((string) $selected['type']) : 'pass';
+        $reason = $selected ? 'canonical_exact_revision_decision_required' : 'canonical_public_decision_missing';
+        $notes = ['moneyline' => null, 'spread' => null, 'total' => null, 'props' => null];
+        if ($recommendation !== 'pass') {
+            $notes[$recommendation] = (string) ($selected['recommendation'] ?? 'Stored approved selection.');
+        }
+
+        return [
+            'recommendation' => $recommendation, 'bet_classification' => $classification,
+            'summary' => $recommendation === 'pass'
+                ? 'Canonical forecast context only; no publishable approved betting selection.'
+                : 'Stored approved selection: '.(string) ($selected['recommendation'] ?? $recommendation).'. AI may explain or downgrade this selection.',
+            'risk_flags' => array_values(array_unique([...(array) ($analysis['risk_flags'] ?? []), $reason])),
+            'reason_codes' => array_values(array_unique([...(array) ($analysis['reason_codes'] ?? []), $reason])),
+            'market_notes' => $notes,
+            'enforcement' => [...$guardrail['enforcement'], 'deterministic_contract_applied' => true,
+                'canonical_authority' => 'exact_revision_approved_public_decisions',
+                'bet_decision_id' => $recommendation === 'pass' ? null : ($selected['bet_decision_id'] ?? null),
+                'effective_recommendation' => $recommendation, 'effective_bet_classification' => $classification],
         ];
     }
 

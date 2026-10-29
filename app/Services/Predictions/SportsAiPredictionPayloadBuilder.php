@@ -2,7 +2,9 @@
 
 namespace App\Services\Predictions;
 
+use App\Models\CanonicalPrediction;
 use App\Models\NFL\ResearchRevision;
+use App\Services\BettingRecommendations\GameBettingRecommendationService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Schema;
 use JsonException;
@@ -20,6 +22,9 @@ class SportsAiPredictionPayloadBuilder
     public function build(string $sport, Model $prediction): array
     {
         $sport = strtolower($sport);
+        if ($prediction instanceof CanonicalPrediction) {
+            return $this->canonicalPayload($sport, $prediction);
+        }
         $game = $prediction->getRelationValue('game') ?? $prediction->game;
 
         if ($game) {
@@ -39,20 +44,7 @@ class SportsAiPredictionPayloadBuilder
             'schema_version' => $sport === 'nfl' ? 'sports_ai_prediction_payload_v3' : 'sports_ai_prediction_payload_v2',
             'sport' => $sport,
             'generated_at' => now()->toIso8601String(),
-            'game' => [
-                'id' => $game?->id,
-                'espn_id' => $this->attribute($game, 'espn_id'),
-                'season' => $this->attribute($game, 'season'),
-                'season_type' => $this->attribute($game, 'season_type'),
-                'week' => $this->attribute($game, 'week'),
-                'date' => $game?->game_date?->toDateString(),
-                'time' => $this->attribute($game, 'game_time'),
-                'status' => $this->attribute($game, 'status'),
-                'matchup' => $this->attribute($game, 'short_name') ?: $this->attribute($game, 'name'),
-                'venue' => $this->attribute($game, 'venue_name'),
-                'home_team' => $this->teamPayload($homeTeam),
-                'away_team' => $this->teamPayload($awayTeam),
-            ],
+            'game' => $this->gamePayload($game),
             'calculated_model' => [
                 'pick_side' => $pickSide,
                 'pick_team' => $this->teamName($pickTeam),
@@ -107,6 +99,9 @@ class SportsAiPredictionPayloadBuilder
      */
     public function calculatedEdge(Model $prediction, ?string $sport = null): array
     {
+        if ($prediction instanceof CanonicalPrediction) {
+            return $this->canonicalEdge($prediction);
+        }
         $homeWinProbability = $this->floatAttribute($prediction, 'win_probability');
         $predictedSpread = $this->floatAttribute($prediction, 'predicted_spread');
         $predictedTotal = $this->floatAttribute($prediction, 'predicted_total');
@@ -595,5 +590,82 @@ class SportsAiPredictionPayloadBuilder
         );
 
         return $payload;
+    }
+
+    private function gamePayload(?Model $game): array
+    {
+        $homeTeam = $game?->homeTeam;
+        $awayTeam = $game?->awayTeam;
+
+        return [
+            'id' => $game?->id,
+            'espn_id' => $this->attribute($game, 'espn_id'),
+            'season' => $this->attribute($game, 'season'),
+            'season_type' => $this->attribute($game, 'season_type'),
+            'week' => $this->attribute($game, 'week'),
+            'date' => $game?->game_date?->toDateString(),
+            'time' => $this->attribute($game, 'game_time'),
+            'status' => $this->attribute($game, 'status'),
+            'matchup' => $this->attribute($game, 'short_name') ?: $this->attribute($game, 'name'),
+            'venue' => $this->attribute($game, 'venue_name'),
+            'home_team' => $this->teamPayload($homeTeam),
+            'away_team' => $this->teamPayload($awayTeam),
+        ];
+    }
+
+    private function canonicalPayload(string $sport, CanonicalPrediction $prediction): array
+    {
+        $context = app(PredictionDeliverySource::class)->context($prediction, $sport);
+        $snapshot = app(CanonicalShadowInputs::class)->fromPrediction($prediction);
+        if ($snapshot === null || ! app(PredictionDeliverySource::class)->isSelected($context)) {
+            throw new \LogicException('AI analysis requires the selected verified canonical pregame forecast.');
+        }
+        $game = $context->game;
+        $approved = app(GameBettingRecommendationService::class)->forPrediction($context);
+        $edge = $this->canonicalEdge($prediction);
+        $side = $context->homeWinProbability !== null ? ($context->homeWinProbability >= 0.5 ? 'home' : 'away') : null;
+        $inputs = (array) $prediction->calculationRun?->inputSnapshot?->inputs;
+
+        return [
+            'schema_version' => 'sports_ai_canonical_prediction_payload_v1', 'sport' => $sport,
+            'generated_at' => now()->toIso8601String(),
+            'prediction_source' => ['type' => 'canonical', ...$snapshot->lineage],
+            'game' => $this->gamePayload($game),
+            'calculated_model' => [
+                'pick_side' => $side, 'pick_team' => $side ? $this->teamName($side === 'home' ? $game->homeTeam : $game->awayTeam) : null,
+                'predicted_spread' => $context->predictedSpread, 'predicted_total' => $context->predictedTotal,
+                'home_win_probability' => $context->homeWinProbability,
+                'pick_win_probability' => $context->homeWinProbability !== null ? max($context->homeWinProbability, 1 - $context->homeWinProbability) : null,
+                'confidence_score' => $context->confidenceScore, 'vegas_spread' => $edge['vegas_spread'],
+                'model_version' => $prediction->model_version, 'feature_version' => $snapshot->feature_version,
+                'probability_status' => 'uncalibrated_model_estimate',
+            ],
+            'calculated_edge' => $edge,
+            'decision_contract' => ['schema_version' => 'canonical_public_decision_contract_v1',
+                'authority' => 'exact_revision_approved_public_decisions', 'approved_recommendations' => $approved],
+            'market_context' => ['odds_updated_at' => data_get($inputs, 'pregame_market.captured_at'),
+                'odds_markets' => [], 'market_context' => data_get($inputs, 'pregame_market')],
+            'operational_context' => $this->operationalContextBuilder->build($sport, $game),
+            'external_game_context' => $this->externalGameContextBuilder->build($sport, $game, $prediction),
+            'model_metadata' => (array) $prediction->output_metadata,
+            'recommendation_evidence' => $sport === 'nfl' ? data_get($inputs, 'recommendation_context') : null,
+            'existing_narrative' => null, 'raw_prediction_snapshot' => $snapshot->outputs,
+        ];
+    }
+
+    private function canonicalEdge(CanonicalPrediction $prediction): array
+    {
+        $context = app(PredictionDeliverySource::class)->context($prediction, $prediction->sport);
+        $market = data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'pregame_market.available') === true
+            ? (array) data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'pregame_market.consensus', []) : [];
+        $line = $this->number(data_get($market, 'spread.line'));
+        $total = $this->number(data_get($market, 'total.line'));
+        $margin = $line !== null ? -$line : null;
+
+        return ['sign_convention' => 'positive_home_margin', 'predicted_spread' => $context->predictedSpread,
+            'predicted_total' => $context->predictedTotal, 'home_win_probability' => $context->homeWinProbability,
+            'vegas_spread' => $line, 'market_spread_home_margin' => $margin, 'market_total' => $total,
+            'spread_edge' => $context->predictedSpread !== null && $margin !== null ? round($context->predictedSpread - $margin, 3) : null,
+            'total_edge' => $context->predictedTotal !== null && $total !== null ? round($context->predictedTotal - $total, 3) : null];
     }
 }

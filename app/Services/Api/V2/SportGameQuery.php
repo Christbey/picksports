@@ -177,7 +177,7 @@ class SportGameQuery
 
         return $gameModel::query()
             ->when($context->slug === 'nba', fn (Builder $query): Builder => $query->withoutCompletedPlayoffSeriesPlaceholders())
-            ->with($this->relationsFor($gameModel, $relationProfile))
+            ->with($this->relationsFor($context, $gameModel, $relationProfile))
             ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
             ->when($filters['season'] ?? null, fn (Builder $query, int $season): Builder => $query->where('season', $season))
             ->when($filters['season_type'] ?? null, fn (Builder $query, string $phase): Builder => $query->where('season_type', $phase))
@@ -255,23 +255,21 @@ class SportGameQuery
      * @param  class-string<Model>  $gameModel
      * @return array<int, string>
      */
-    private function relationsFor(string $gameModel, string $profile): array
+    private function relationsFor(SportContext $context, string $gameModel, string $profile): array
     {
         $relations = match ($profile) {
             'identity' => [],
             'recent' => ['homeTeam', 'awayTeam'],
-            'summary' => ['homeTeam', 'awayTeam', 'prediction'],
+            'summary' => ['homeTeam', 'awayTeam'],
             'page' => [
                 'homeTeam',
                 'awayTeam',
-                'prediction',
                 'homeStartingPitcherForecast',
                 'awayStartingPitcherForecast',
             ],
             default => [
                 'homeTeam',
                 'awayTeam',
-                'prediction',
                 'probableHomePitcher',
                 'probableAwayPitcher',
                 'actualHomePitcher',
@@ -284,6 +282,11 @@ class SportGameQuery
                 'awayStartingPitcherForecast.actualPitcher',
             ],
         };
+
+        if (! in_array($profile, ['identity', 'recent'], true)
+            && ! app(CanonicalSportPredictionQuery::class)->supports($context)) {
+            $relations[] = 'prediction';
+        }
 
         // Detail consumers need availability data; list/recent queries stay lean.
         if ($gameModel === Game::class && in_array($profile, ['detail', 'page'], true)) {

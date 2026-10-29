@@ -2,6 +2,7 @@
 
 namespace App\Models\MLB;
 
+use App\Models\CanonicalPrediction;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -12,6 +13,7 @@ class BetFilterResult extends Model
     protected $fillable = [
         'game_id',
         'prediction_id',
+        'canonical_prediction_id',
         'season',
         'season_type',
         'game_date',
@@ -46,6 +48,7 @@ class BetFilterResult extends Model
     {
         return [
             'season' => 'integer',
+            'canonical_prediction_id' => 'integer',
             'game_date' => 'date',
             'as_of_date' => 'date',
             'score' => 'integer',
@@ -77,6 +80,11 @@ class BetFilterResult extends Model
     public function prediction(): BelongsTo
     {
         return $this->belongsTo(Prediction::class);
+    }
+
+    public function canonicalPrediction(): BelongsTo
+    {
+        return $this->belongsTo(CanonicalPrediction::class);
     }
 
     public function team(): BelongsTo

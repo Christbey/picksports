@@ -30,6 +30,8 @@ MLB probable-pitcher refreshes use the same retirement gate. Post-odds `generate
 
 The scheduled `sports:ai-daily-predictions` publisher follows each sport’s canonical read switch. Native analysis uses verified frozen inputs and a separate `canonical_prediction_id`; legacy analyses retain their original IDs. AI can explain or downgrade stored exact-revision public decisions, and cannot approve a tracking candidate. Changed or withdrawn forecasts and approvals are rechecked before persistence. Deploy `2026_10_29_121751_add_canonical_prediction_to_sports_ai_prediction_analyses` before this code; rollback refuses to discard populated native lineage. Existing schedules, limits, retries, and provider settings are unchanged.
 
+The MLB `08:40` `mlb:snapshot-bet-filter` job now follows the canonical read switch through `BettingForecastSource`. Native observations retain verified run/input lineage under a separate prediction foreign key and the existing `canonical_approval_required` tracking hold. Grading uses the observation’s stored native line; historical legacy grading remains available, and reports separate the two sources. Deploy `2026_10_29_153220_add_canonical_prediction_to_mlb_bet_filter_results` before this code. The season gate, cadence, market enablement, and feature switches are unchanged.
+
 ## Core Scheduling Helpers
 
 The scheduler is organized around shared helpers in `routes/console.php`:

@@ -70,7 +70,7 @@ class SportsAiPredictionPayloadBuilder
             'operational_context' => $this->operationalContextBuilder->build($sport, $game),
             'external_game_context' => $externalContext,
             'researched_revision' => $sport === 'nfl' && $game && Schema::hasTable('nfl_research_revisions')
-                ? ResearchRevision::where('game_id', $game->id)->latest('id')->first()?->only(['id', 'created_at', 'revised', 'brief'])
+                ? $this->researchedRevision($game)
                 : null,
             'model_metadata' => $this->modelMetadataPayload($sport, $prediction),
             'existing_narrative' => $this->arrayAttribute($prediction, 'narrative_json'),
@@ -78,6 +78,20 @@ class SportsAiPredictionPayloadBuilder
                 ? $this->compactNflPredictionSnapshot($prediction)
                 : $this->predictionSnapshot($prediction),
         ];
+    }
+
+    /** @return array<string, mixed>|null */
+    private function researchedRevision(Model $game): ?array
+    {
+        // Resolve the latest identity without sorting large JSON research payloads.
+        $revisionId = ResearchRevision::query()->where('game_id', $game->getKey())->max('id');
+        if ($revisionId === null) {
+            return null;
+        }
+
+        $columns = ['id', 'created_at', 'revised', 'brief'];
+
+        return ResearchRevision::query()->find($revisionId, $columns)?->only($columns);
     }
 
     /**

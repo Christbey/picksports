@@ -4,16 +4,8 @@ namespace App\Services\Api\V2;
 
 use App\Http\Resources\CanonicalDashboardPredictionResource;
 use App\Http\Resources\DashboardPredictionResource;
-use App\Models\CBB\Prediction as CBBPrediction;
-use App\Models\CFB\Prediction as CFBPrediction;
-use App\Models\MLB\Prediction as MLBPrediction;
-use App\Models\NBA\Prediction as NBAPrediction;
-use App\Models\NFL\Prediction as NFLPrediction;
 use App\Models\User;
-use App\Models\WCBB\Prediction as WCBBPrediction;
-use App\Models\WNBA\Prediction as WNBAPrediction;
 use App\Services\Predictions\LivePredictionStore;
-use App\Support\SportPredictionAccess;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -22,10 +14,6 @@ use Illuminate\Support\Collection;
 
 class LiveScoreboardPayloadService
 {
-    private const DEFAULT_LIVE_STATUSES = ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'];
-
-    private const DEFAULT_FINAL_STATUSES = ['STATUS_FINAL', 'STATUS_FULL_TIME'];
-
     public function __construct(private readonly SportsViewCache $sportsViewCache) {}
 
     /**
@@ -33,7 +21,7 @@ class LiveScoreboardPayloadService
      */
     public function payload(?User $user): array
     {
-        $sportConfigs = $this->viewableSportConfigs($user);
+        $sportConfigs = app(DashboardSportConfig::class)->viewable($user);
         $cacheKey = $this->sportsViewCache->contextHash([
             'date' => now()->toDateString(),
             'viewable_sports' => array_keys($sportConfigs),
@@ -65,61 +53,6 @@ class LiveScoreboardPayloadService
                 ];
             },
         );
-    }
-
-    private function sportConfigs(): array
-    {
-        return [
-            'NBA' => $this->sportConfig(predictionModel: NBAPrediction::class),
-            'CBB' => $this->sportConfig(predictionModel: CBBPrediction::class),
-            'WCBB' => $this->sportConfig(predictionModel: WCBBPrediction::class),
-            'NFL' => $this->sportConfig(predictionModel: NFLPrediction::class),
-            'MLB' => $this->sportConfig(
-                predictionModel: MLBPrediction::class,
-                liveStatuses: ['STATUS_IN_PROGRESS', 'STATUS_DELAYED'],
-                liveRemainingField: 'live_outs_remaining',
-                includeInning: true,
-            ),
-            'CFB' => $this->sportConfig(predictionModel: CFBPrediction::class),
-            'WNBA' => $this->sportConfig(predictionModel: WNBAPrediction::class),
-        ];
-    }
-
-    private function viewableSportConfigs(?User $user): array
-    {
-        return collect($this->sportConfigs())
-            ->filter(fn (array $config, string $sport): bool => $this->canViewSportPredictions($user, $sport))
-            ->all();
-    }
-
-    private function canViewSportPredictions(?User $user, string $sport): bool
-    {
-        return app(SportPredictionAccess::class)->canView($user, $sport);
-    }
-
-    /**
-     * @return array{
-     *   prediction_model:class-string,
-     *   live_statuses:array<int,string>,
-     *   final_statuses:array<int,string>,
-     *   live_remaining_field:string,
-     *   include_inning:bool
-     * }
-     */
-    private function sportConfig(
-        string $predictionModel,
-        ?array $liveStatuses = null,
-        ?array $finalStatuses = null,
-        string $liveRemainingField = 'live_seconds_remaining',
-        bool $includeInning = false,
-    ): array {
-        return [
-            'prediction_model' => $predictionModel,
-            'live_statuses' => $liveStatuses ?? self::DEFAULT_LIVE_STATUSES,
-            'final_statuses' => $finalStatuses ?? self::DEFAULT_FINAL_STATUSES,
-            'live_remaining_field' => $liveRemainingField,
-            'include_inning' => $includeInning,
-        ];
     }
 
     private function getScoreboardGamesForSport(string $sport, array $config, \Closure $todayGameScope): Collection

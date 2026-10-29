@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\UserAlertPreference;
 use App\Models\UserBet;
 use App\Models\WebPushSubscription;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Api\V2\SportContext;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Settings\FoundingUsersSettingsService;
@@ -374,42 +375,39 @@ class DashboardPayloadInspector
      */
     private function predictionDiagnostics(SportContext $context, string $date): array
     {
-        $predictionModel = $context->models['prediction'] ?? null;
-
-        if (! is_string($predictionModel) || ! is_subclass_of($predictionModel, Model::class)) {
-            return [
-                'available' => false,
-                'for_date' => 0,
-                'total' => 0,
-                'latest_updated_at' => null,
-            ];
-        }
+        $canonical = app(CanonicalSportPredictionQuery::class);
+        $native = $canonical->supports($context);
+        $unavailable = ['available' => false, 'for_date' => 0, 'total' => 0,
+            'latest_updated_at' => null, 'source' => $native ? 'canonical' : 'legacy'];
 
         try {
-            $table = (new $predictionModel)->getTable();
+            if ($native) {
+                if (! Schema::hasTable('predictions')) {
+                    return $unavailable;
+                }
+                $query = $canonical->queryForSport($context->slug)->reorder();
+                $latest = (clone $query)->max('predictions.generated_at');
 
+                return ['available' => true, 'source' => 'canonical',
+                    'for_date' => $canonical->queryForSport($context->slug, ['from_date' => $date, 'to_date' => $date])->reorder()->count(),
+                    'total' => $query->count(),
+                    'latest_updated_at' => $latest ? CarbonImmutable::parse($latest)->toIso8601String() : null];
+            }
+            $predictionModel = $context->models['prediction'] ?? null;
+            if (! is_string($predictionModel) || ! is_subclass_of($predictionModel, Model::class)) {
+                return $unavailable;
+            }
+            $table = (new $predictionModel)->getTable();
             if (! Schema::hasTable($table)) {
-                return [
-                    'available' => false,
-                    'for_date' => 0,
-                    'total' => 0,
-                    'latest_updated_at' => null,
-                ];
+                return $unavailable;
             }
 
-            return [
-                'available' => true,
+            return ['available' => true, 'source' => 'legacy',
                 'for_date' => $this->predictionCountForDate($predictionModel, $date),
                 'total' => $predictionModel::query()->count(),
-                'latest_updated_at' => $this->latestUpdatedAt($predictionModel, $table),
-            ];
+                'latest_updated_at' => $this->latestUpdatedAt($predictionModel, $table)];
         } catch (Throwable) {
-            return [
-                'available' => false,
-                'for_date' => 0,
-                'total' => 0,
-                'latest_updated_at' => null,
-            ];
+            return $unavailable;
         }
     }
 
@@ -494,7 +492,7 @@ class DashboardPayloadInspector
             'games' => $this->contract('games', "/api/v2/sports/{$context->slug}/games", isset($context->models['game'])),
             'teams' => $this->contract('teams', "/api/v2/sports/{$context->slug}/teams", isset($context->models['team'])),
             'players' => $this->contract('players', "/api/v2/sports/{$context->slug}/players", isset($context->models['player'])),
-            'predictions' => $this->contract('predictions', "/api/v2/sports/{$context->slug}/predictions", isset($context->models['prediction'])),
+            'predictions' => $this->contract('predictions', "/api/v2/sports/{$context->slug}/predictions", app(CanonicalSportPredictionQuery::class)->supports($context) || isset($context->models['prediction'])),
             'player_stats' => $this->contract('player_stats', "/api/v2/sports/{$context->slug}/stats/player", isset($context->models['player_stat'])),
             'team_stats' => $this->contract('team_stats', "/api/v2/sports/{$context->slug}/stats/team", isset($context->models['team_stat'])),
             'player_props' => $this->contract('player_props', "/api/v2/sports/{$context->slug}/markets/player-props", isset($context->models['player_prop'])),

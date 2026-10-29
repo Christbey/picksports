@@ -2,6 +2,8 @@
 
 namespace App\Actions\Trends;
 
+use App\Services\Predictions\PredictionDeliverySource;
+use App\Services\Trends\TrendForecastSource;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -57,6 +59,7 @@ abstract class AbstractCalculateTeamTrends
             return ['trends' => [], 'locked' => [], 'sample_size' => 0];
         }
 
+        app(TrendForecastSource::class)->preload($games, $this->sportKey());
         $trends = [];
         $enabledCollectors = config('trends.collectors', []);
 
@@ -197,7 +200,8 @@ abstract class AbstractCalculateTeamTrends
      */
     protected function gameRelations(): array
     {
-        return static::GAME_RELATIONS;
+        return app(PredictionDeliverySource::class)->usesCanonical($this->sportKey())
+            ? array_values(array_diff(static::GAME_RELATIONS, ['prediction'])) : static::GAME_RELATIONS;
     }
 
     protected function usesAnalyticsSeasonTypes(): bool

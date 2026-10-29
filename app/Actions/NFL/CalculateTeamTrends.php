@@ -23,6 +23,8 @@ use App\Actions\Trends\Collectors\StreakTrendCollector;
 use App\Actions\Trends\Collectors\TimeBasedTrendCollector;
 use App\Actions\Trends\Collectors\TotalsTrendCollector;
 use App\Models\NFL\Game;
+use App\Services\Trends\TrendForecastSource;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -36,11 +38,14 @@ class CalculateTeamTrends extends AbstractCalculateTeamTrends
 
     public function evidenceGames(object $team, int $season, string $beforeDate): Collection
     {
-        return $this->baseGamesQuery($team, null, '2', $beforeDate)
+        $games = $this->baseGamesQuery($team, null, '2', $beforeDate)
             ->whereBetween('season', [$season - 3, $season])
             ->whereNotNull('home_score')->whereNotNull('away_score')
             ->with($this->gameRelations())
             ->orderByDesc('game_date')->orderByDesc('game_time')->orderByDesc('id')->get();
+        app(TrendForecastSource::class)->preload($games, 'nfl', CarbonImmutable::parse($beforeDate), strictLegacy: true);
+
+        return $games;
     }
 
     public function leagueEvidenceGames(int $season, string $beforeDate): Collection

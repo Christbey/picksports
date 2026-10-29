@@ -43,35 +43,18 @@ class SituationalTrendCollector extends TrendCollector
         });
 
         if ($primetimeGames->count() >= 3) {
-            $primetimeWins = $primetimeGames->filter(fn ($g) => $this->won($g))->count();
             $messages[] = "The {$this->teamAbbr} are {$this->teamRecord($primetimeGames)} in primetime games";
         }
 
-        $favoriteGames = $this->games->filter(function ($game) {
-            if (! $game->relationLoaded('prediction') || ! $game->prediction) {
-                return false;
-            }
-            $spread = $game->prediction->predicted_spread ?? 0;
-
-            return $this->modelTeamMargin($game) !== null && $this->modelTeamMargin($game) > 0;
-        });
+        $favoriteGames = $this->games->filter(fn ($game): bool => ($this->modelTeamMargin($game) ?? 0) > 0);
 
         if ($favoriteGames->count() >= 3) {
-            $favoriteWins = $favoriteGames->filter(fn ($g) => $this->won($g))->count();
             $messages[] = "The {$this->teamAbbr} are {$this->teamRecord($favoriteGames)} when the Picksports model made them favorites";
         }
 
-        $underdogGames = $this->games->filter(function ($game) {
-            if (! $game->relationLoaded('prediction') || ! $game->prediction) {
-                return false;
-            }
-            $spread = $game->prediction->predicted_spread ?? 0;
-
-            return $this->modelTeamMargin($game) !== null && $this->modelTeamMargin($game) < 0;
-        });
+        $underdogGames = $this->games->filter(fn ($game): bool => ($this->modelTeamMargin($game) ?? 0) < 0);
 
         if ($underdogGames->count() >= 3) {
-            $underdogWins = $underdogGames->filter(fn ($g) => $this->won($g))->count();
             $messages[] = "The {$this->teamAbbr} are {$this->teamRecord($underdogGames)} when the Picksports model made them underdogs";
         }
 

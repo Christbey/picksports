@@ -20,17 +20,17 @@ class TotalsTrendCollector extends TrendCollector
         $avgTotal = $this->games->avg(fn ($g) => $this->totalPoints($g));
         $messages[] = "Games involving the {$this->teamAbbr} average ".number_format($avgTotal, 1)." total {$unit}";
 
-        $gamesWithPrediction = $this->games->filter(fn ($g) => $g->relationLoaded('prediction') && $g->prediction);
+        $gamesWithPrediction = $this->games->filter(fn ($g) => $this->forecast($g) !== null);
 
         if ($gamesWithPrediction->isNotEmpty()) {
             $overs = $gamesWithPrediction->filter(function ($g) {
-                $total = $g->prediction->predicted_total ?? null;
+                $total = $this->forecast($g)?->predictedTotal;
 
                 return $total && $this->totalPoints($g) > $total;
             })->count();
 
             $unders = $gamesWithPrediction->filter(function ($g) {
-                $total = $g->prediction->predicted_total ?? null;
+                $total = $this->forecast($g)?->predictedTotal;
 
                 return $total && $this->totalPoints($g) < $total;
             })->count();

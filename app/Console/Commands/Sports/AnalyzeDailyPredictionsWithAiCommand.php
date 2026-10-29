@@ -2,15 +2,19 @@
 
 namespace App\Console\Commands\Sports;
 
-use App\Models\NBA\Prediction;
+use App\Models\CanonicalPrediction;
 use App\Models\SportsAiPredictionAnalysis;
 use App\Services\AI\SportsAiContentService;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
+use App\Services\Api\V2\SportContextResolver;
+use App\Services\Predictions\PredictionDeliverySource;
 use App\Services\Predictions\SportsAiPredictionPayloadBuilder;
 use App\Services\Predictions\SportsAiPublishingDecisionPolicy;
 use App\Services\Sports\SportsDateWindowService;
 use App\Services\Sports\SportsPipelineRegistry;
 use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Schema;
 
@@ -31,19 +35,6 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
         {--retry-rate-limit-delay=60 : Seconds to wait between rate-limit retries}';
 
     protected $description = 'Send daily prediction payloads through the structured AI analysis layer for one or more sports';
-
-    /**
-     * @var array<string, class-string<Model>>
-     */
-    private array $predictionModels = [
-        'nba' => Prediction::class,
-        'nfl' => \App\Models\NFL\Prediction::class,
-        'mlb' => \App\Models\MLB\Prediction::class,
-        'cbb' => \App\Models\CBB\Prediction::class,
-        'wcbb' => \App\Models\WCBB\Prediction::class,
-        'wnba' => \App\Models\WNBA\Prediction::class,
-        'cfb' => \App\Models\CFB\Prediction::class,
-    ];
 
     public function handle(
         SportsPipelineRegistry $registry,
@@ -77,8 +68,9 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
         $skipped = 0;
         $rateLimited = false;
 
-        if (! $this->option('dry-run') && ! Schema::hasTable('sports_ai_prediction_analyses')) {
-            $this->error('Missing sports_ai_prediction_analyses table. Run php artisan migrate before saving AI analyses.');
+        if (! $this->option('dry-run') && (! Schema::hasTable('sports_ai_prediction_analyses')
+            || ! Schema::hasColumn('sports_ai_prediction_analyses', 'canonical_prediction_id'))) {
+            $this->error('Missing sports_ai_prediction_analyses schema. Run php artisan migrate before saving AI analyses.');
 
             return self::FAILURE;
         }
@@ -104,10 +96,27 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                     break;
                 }
 
-                $payload = $payloadBuilder->build($sport, $prediction);
+                try {
+                    $payload = $payloadBuilder->build($sport, $prediction);
+                } catch (\LogicException $exception) {
+                    if (! $prediction instanceof CanonicalPrediction) {
+                        throw $exception;
+                    }
+                    $skipped++;
+                    $this->warn('  - skipped '.$this->matchup($prediction).' ('.$exception->getMessage().')');
+
+                    continue;
+                }
                 $inputHash = $payloadBuilder->hash($payload);
-                $gameId = (int) ($prediction->game?->id ?? $prediction->game_id ?? 0);
-                $gameDate = $prediction->game?->game_date?->toDateString();
+                $context = app(PredictionDeliverySource::class)->context($prediction, $sport);
+                $gameId = (int) $context->game->id;
+                $gameDate = $context->game->game_date?->toDateString();
+                $identity = [
+                    'sport' => $sport,
+                    'prediction_id' => $prediction instanceof CanonicalPrediction ? null : $prediction->getKey(),
+                    'canonical_prediction_id' => $prediction instanceof CanonicalPrediction ? $prediction->getKey() : null,
+                    'market' => 'game', 'as_of_date' => $asOfDate,
+                ];
                 $operationalContext = $payload['operational_context'] ?? [];
 
                 if ($this->option('dry-run')) {
@@ -123,10 +132,7 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                 }
 
                 $existing = SportsAiPredictionAnalysis::query()
-                    ->where('sport', $sport)
-                    ->where('prediction_id', (int) $prediction->id)
-                    ->where('market', 'game')
-                    ->where('as_of_date', $asOfDate)
+                    ->where($identity)
                     ->first();
 
                 if (! $this->option('force') && $existing && $existing->input_hash === $inputHash) {
@@ -183,6 +189,13 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                     continue;
                 }
 
+                if ($prediction instanceof CanonicalPrediction && ! app(PredictionDeliverySource::class)->isSelected($context)) {
+                    $skipped++;
+                    $this->warn('  - skipped '.$this->matchup($prediction).' (canonical forecast changed during analysis)');
+
+                    continue;
+                }
+
                 $dataFreshness = $aiContentService->generateDataFreshnessAssessment(
                     $payload,
                     provider: $requestedProvider,
@@ -215,6 +228,14 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                     'model_audit' => $modelAudit,
                     'publishing_guardrail' => $publishingGuardrail,
                 ];
+                if ($prediction instanceof CanonicalPrediction
+                    && (! app(PredictionDeliverySource::class)->isSelected($context)
+                        || ! hash_equals($inputHash, $payloadBuilder->hash($payloadBuilder->build($sport, $prediction))))) {
+                    $skipped++;
+                    $this->warn('  - skipped '.$this->matchup($prediction).' (canonical inputs or approval changed during review)');
+
+                    continue;
+                }
                 $publishingDecision = $publishingDecisionPolicy->decide(
                     $sport,
                     $payload,
@@ -225,12 +246,7 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                 [$generatedProvider, $generatedModel] = $this->providerModel((string) ($analysis['generated_by'] ?? ''));
 
                 SportsAiPredictionAnalysis::query()->updateOrCreate(
-                    [
-                        'sport' => $sport,
-                        'prediction_id' => (int) $prediction->id,
-                        'market' => 'game',
-                        'as_of_date' => $asOfDate,
-                    ],
+                    $identity,
                     [
                         'game_id' => $gameId,
                         'game_date' => $gameDate,
@@ -250,6 +266,7 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                         'calculated_edge' => $payloadBuilder->calculatedEdge($prediction, $sport),
                         'metadata' => [
                             'command' => 'sports:ai-daily-predictions',
+                            'prediction_source' => $payload['prediction_source'] ?? ['type' => 'legacy'],
                             'schema_version' => $payload['schema_version'] ?? null,
                             'operational_context_schema_version' => $operationalContext['schema_version'] ?? null,
                             'publication_guardrail_status' => data_get($operationalContext, 'publication_guardrails.status'),
@@ -285,18 +302,24 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
 
         return array_values(array_filter(
             array_unique($sports),
-            fn (string $sport): bool => $registry->supportsSport($sport) && isset($this->predictionModels[$sport])
+            fn (string $sport): bool => $registry->supportsSport($sport) && app(SportContextResolver::class)->find($sport) !== null
         ));
     }
 
-    private function predictionsForSport(string $sport, CarbonInterface $date, CarbonInterface $endDate)
+    private function predictionsForSport(string $sport, CarbonInterface $date, CarbonInterface $endDate): Collection
     {
-        /** @var class-string<Model> $modelClass */
-        $modelClass = $this->predictionModels[$sport];
+        $modelClass = app(SportContextResolver::class)->resolve($sport)->models['prediction'];
         $season = $this->option('season') ?: config("{$sport}.season.default");
         $scheduledStatus = (string) config("{$sport}.statuses.scheduled", 'STATUS_SCHEDULED');
         $dateWindowService = app(SportsDateWindowService::class);
         $window = $dateWindowService->forRange($date, $endDate);
+
+        if (app(PredictionDeliverySource::class)->usesCanonical($sport)) {
+            return app(CanonicalSportPredictionQuery::class)->queryForSport($sport, [
+                'season' => $season ? (int) $season : null,
+                'from_date' => $date->toDateString(), 'to_date' => $endDate->toDateString(),
+            ])->with(['calculationRun.inputSnapshot', 'calculationRun.release'])->where("{$sport}_games.status", $scheduledStatus)->get();
+        }
 
         return $modelClass::query()
             ->with(['game.homeTeam', 'game.awayTeam'])
@@ -310,7 +333,8 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
 
     private function matchup(Model $prediction): string
     {
-        $game = $prediction->game;
+        $game = $prediction instanceof CanonicalPrediction
+            ? $prediction->sportEvent?->getRelation($prediction->sport.'Game') : $prediction->game;
 
         return (string) ($game?->short_name ?: $game?->name ?: 'prediction '.$prediction->id);
     }

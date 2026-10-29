@@ -155,9 +155,10 @@ class ResearchPipeline
     }
 
     /** @return array<string, mixed>|null */
-    private function storedForecast(Game $game): ?array
+    public function storedForecast(Game $game): ?array
     {
-        if (! (bool) config('prediction_lifecycle.canonical_pipeline.nfl', false)) {
+        if (! (bool) config('prediction_lifecycle.canonical_pipeline.nfl', false)
+            && ! (bool) config('prediction_lifecycle.canonical_reads.nfl', false)) {
             return $game->loadMissing('prediction')->getRelation('prediction')?->toArray();
         }
         $prediction = app(CanonicalSportPredictionQuery::class)->queryForSport('nfl', ['game_id' => $game->id])

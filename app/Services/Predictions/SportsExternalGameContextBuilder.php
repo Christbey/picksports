@@ -2,6 +2,7 @@
 
 namespace App\Services\Predictions;
 
+use App\Models\CanonicalPrediction;
 use App\Models\NFL\Game as NflGame;
 use App\Models\SportsGameContextReport;
 use App\Services\NFL\Research\EvidencePacket;
@@ -212,6 +213,11 @@ class SportsExternalGameContextBuilder
 
     private function numericAttribute(?Model $model, string $key): ?float
     {
+        if ($model instanceof CanonicalPrediction) {
+            $context = app(PredictionDeliverySource::class)->context($model, $model->sport);
+
+            return $key === 'predicted_spread' ? $context->predictedSpread : ($key === 'predicted_total' ? $context->predictedTotal : null);
+        }
         if (! $model || ! array_key_exists($key, $model->getAttributes())) {
             return null;
         }

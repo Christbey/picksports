@@ -58,11 +58,13 @@ class NflWebContextResearchService
         $provider ??= (string) config('ai.features.nfl_game_context_research.provider', 'openai');
         $circuitBreaker = app(AiProviderRateLimitCircuitBreaker::class);
         $retryAfter = $circuitBreaker->retryAfterSeconds($provider);
-        $game->loadMissing(['homeTeam', 'awayTeam', 'prediction']);
+        $game->loadMissing(['homeTeam', 'awayTeam']);
         $packet = app(EvidencePacket::class)->forGame($game);
         $policy = app(ResearchRefreshPolicy::class);
         $fingerprint = $policy->fingerprint($game, $packet);
-        $candidate = $game->getAttribute('research_candidate') ?? $game->prediction?->only(['predicted_spread', 'predicted_total', 'win_probability', 'model_metadata']) ?? [];
+        $stored = $game->getAttribute('research_candidate') === null ? app(ResearchPipeline::class)->storedForecast($game) : null;
+        $candidate = $game->getAttribute('research_candidate')
+            ?? (is_array($stored) ? Arr::only($stored, ['predicted_spread', 'predicted_total', 'win_probability', 'model_metadata']) : []);
         // Hash the same full candidate the reviewer checks, before prompt compaction.
         $candidateHash = app(ResearchPipeline::class)->candidateContextHash($candidate);
         $existing = SportsGameContextReport::where('sport', 'nfl')->where('game_id', $game->id)->latest('id')->first();

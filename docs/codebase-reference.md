@@ -101,6 +101,14 @@ CBB tournament outlook reads selected probabilities in one batch; hypothetical m
 
 Historical reconstruction, calibration/training exports, old bet/decision grading, explicitly versioned simulation/shadow observations, and non-persisting previews keep their historical contracts. Those retained records do not require active mutable pregame generation. Legacy calculators and compatibility mode cannot be deleted while these supported historical paths and deployments with legacy reads remain.
 
+## AI analysis and research compatibility retirement
+
+Daily AI analysis selects the same source as `PredictionDeliverySource` across all seven sports. Native payloads use canonical primary markets, verified frozen market inputs and run/input lineage. NFL recommendation evidence stays separate from primary forecasts. `SportsAiPredictionAnalysis.canonical_prediction_id` prevents collisions with historical sport prediction IDs; legacy API enrichment excludes native rows. The publishing policy restricts native betting language to stored exact-revision public decisions and retains AI/guardrail downgrades. It never turns tracking observations into approvals. Source selection and the payload/approval hash are checked again after AI review.
+
+NFL web research shares `ResearchPipeline::storedForecast`, using frozen native recommendation evidence when either the pipeline or read switch is enabled. Native misses retain the missing-baseline hold instead of reading a legacy row. Explicit non-persisting research candidates retain their complete input contract. The unused `NotificationTemplatePreviewService` has been removed; notification delivery and template generation use their existing active services.
+
+Deploy `2026_10_29_121751_add_canonical_prediction_to_sports_ai_prediction_analyses` before this stage. Populated canonical analysis lineage blocks destructive rollback. Historical analyses, legacy compatibility readers, grading/calibration/backtests, queued narrative wrappers, and NBA legacy narrative context still have supported callers and remain available.
+
 ## Remaining writer retirement dependencies
 
 The following code paths still write or require legacy prediction identities. This is a code dependency audit; it does not establish production coverage or authorize disabling a writer.

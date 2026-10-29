@@ -123,6 +123,10 @@ Historical MLB recommendation-readiness/calibration reports, CFB adaptive-calibr
 
 Dashboard and live-scoreboard sport settings now live in `DashboardSportConfig`. Existing sport order, names, colors, permission checks, MLB delayed/inning behavior, day windows, recommendation holds and resource contracts remain intact. Their distinct source queries and serializers are retained. The shared model registry replaces the separate hardcoded dashboard, scoreboard and admin card-export prediction-model mappings. No feature switch, forecast calculation, approval rule or database schema changes in this stage.
 
+## Game delivery legacy-read retirement
+
+`SportGameQuery` selects prediction eager loading through the same per-sport canonical read boundary used to attach forecasts. Canonical game lists, team-game lists, detail responses, and MLB/NFL composite pages no longer fetch mutable sport predictions before replacing them with verified native forecasts. Summary, detail and page relation profiles share one legacy-mode relation declaration. Native gaps remain gaps, including draft, withdrawn and unsafe forecasts; the read switch still restores legacy-mode behavior. Existing resource shapes, season/phase/date filters, permission gates, pitcher context and NFL injury loading remain intact. This stage changes no schema, generation, approval rule or production switch.
+
 ## Remaining writer retirement dependencies
 
 The following code paths still write or require legacy prediction identities. This is a code dependency audit; it does not establish production coverage or authorize disabling a writer.

@@ -2,7 +2,9 @@
 
 namespace App\Actions\Trends;
 
+use App\Application\Sports\ReadModels\BettingForecast;
 use App\Models\MLB\Game as MlbGame;
+use App\Services\Trends\TrendForecastSource;
 use App\Support\MLB\MlbGameScoreResolver;
 use Illuminate\Support\Collection;
 
@@ -17,6 +19,8 @@ abstract class TrendCollector
     protected string $teamAbbr;
 
     protected object $team;
+
+    private ?TrendForecastSource $forecastSource = null;
 
     /** @var array<int|string, array{home:?int,away:?int,complete:bool,source:string}> */
     protected array $resolvedScoreCache = [];
@@ -89,16 +93,16 @@ abstract class TrendCollector
         return $this->formatRecord($wins, $games->count(), $ties);
     }
 
+    protected function forecast(object $game): ?BettingForecast
+    {
+        return ($this->forecastSource ??= app(TrendForecastSource::class))->forGame($game, $this->league);
+    }
+
     protected function modelTeamMargin(object $game): ?float
     {
-        if (! $game->relationLoaded('prediction') || ! is_numeric($game->prediction?->predicted_spread)) {
-            return null;
-        }
-        $spread = (float) $game->prediction->predicted_spread;
-        // NFL stores home-minus-away projected points, not a book handicap.
-        $homeMargin = $this->league === 'nfl' ? $spread : -$spread;
+        $homeMargin = $this->forecast($game)?->predictedSpread;
 
-        return $this->isHome($game) ? $homeMargin : -$homeMargin;
+        return $homeMargin !== null ? ($this->isHome($game) ? $homeMargin : -$homeMargin) : null;
     }
 
     protected function margin(object $game): int

@@ -1084,3 +1084,10 @@ Scoring-model hyperparameters are selected on regulation-score energy with at le
 CFB EPA calculation reads and updates only the accepted play revision, applies reconciled scoring, and holds completion if that revision changes during calculation. Existing play rows are updated in bounded parameterized batches; missing IDs and other revisions are never inserted or updated. Scheduled normalization also fingerprints the prior-season EPA baseline revision, so a new baseline is applied before subsequent metrics and forecast generation.
 
 The scoring challenger freezes its selected `fpi_weight` and exposes it through the CFB game-page resource. The card shows both FPI and efficiency shares explicitly, including a 100% FPI selection; fitting EPA components alone is not described as evidence that they improved the selected forecast. Independent-component comparisons are read-only previews with the same coefficients, calibration and inputs, and do not change production settings or approval status.
+
+
+### Source-aware trend model context
+
+`TrendForecastSource` supplies the existing trend collectors with selected canonical primary margins/totals and frozen home/away Elo after each sport's canonical read cutover. Native margins are normalized to home-minus-away; legacy mode retains the prior trend conventions, including NFL's home-minus-away interpretation and the other existing legacy handicap interpretations. Model comparisons remain comparisons against forecasts, not market ATS records or calibrated betting edges.
+
+Native model context requires the shared verified pregame-input checks, publication strictly before the source game's kickoff, and any supplied evidence cutoff. Withdrawn or ineligible canonical revisions do not fall back to legacy values. NFL profiles retain the legacy rule that a prediction updated at or after its own kickoff or the target cutoff is excluded. These guards affect model/Elo context only; observed final scores, team-stat coverage, season windows, ties, ranks and comparison samples retain their existing calculations.

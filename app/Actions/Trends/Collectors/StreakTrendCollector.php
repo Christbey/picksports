@@ -52,18 +52,13 @@ class StreakTrendCollector extends TrendCollector
         $direction = null;
 
         foreach ($this->games->sortByDesc('game_date') as $game) {
-            if (! $game->relationLoaded('prediction') || ! $game->prediction) {
-                break;
-            }
-
-            $spread = $game->prediction->predicted_spread ?? null;
-            if ($spread === null) {
+            $modelMargin = $this->modelTeamMargin($game);
+            if ($modelMargin === null) {
                 break;
             }
 
             $actualMargin = $this->margin($game);
 
-            $modelMargin = $this->modelTeamMargin($game);
             if (abs($actualMargin - $modelMargin) < 0.00001) {
                 break;
             }

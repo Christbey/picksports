@@ -115,7 +115,7 @@ Deploy `2026_10_29_121751_add_canonical_prediction_to_sports_ai_prediction_analy
 
 Native candidates keep the existing `canonical_approval_required` pass classification and tracking-only metadata. Totals consume the frozen canonical market total; legacy totals retain their metadata contract. Grading can settle a recorded native observation after its forecast is withdrawn or superseded, using the recorded home-margin/total line rather than a mutable legacy baseline. Historical legacy grading retains its original calculation, and source-separated reports avoid pooling historical and native observations. No observation creates a public approval or executed wager. The command reuses the shared American-odds conversion for CLV.
 
-The remaining references reviewed in this stage include historical MLB recommendation-readiness/calibration reports, CFB adaptive-calibration corpora, NFL point-in-time team evidence, and NBA legacy narrative context. These still have supported callers; their historical input contracts are retained rather than relabeled as native evidence.
+Historical MLB recommendation-readiness/calibration reports, CFB adaptive-calibration corpora, and NBA legacy narrative context still have supported callers; their historical input contracts are retained rather than relabeled as native evidence. NFL team evidence now follows the shared trend forecast boundary described below.
 
 ## Remaining writer retirement dependencies
 
@@ -541,6 +541,9 @@ Sport actions:
 
 Important note:
 - trends are calculated from prior games and should use `season`, `season_type`, and `before_date` where relevant
+- `TrendForecastSource` supplies model context to all seven sports. After canonical read cutover, it batches verified published pregame revisions through `CanonicalShadowInputs`, reads frozen primary markets and Elo, and does not query legacy predictions. Missing, withdrawn, unsafe, or kickoff-time publications withhold model context while retaining observed scores and statistics.
+- Native model margins use home-minus-away values. Compatibility mode preserves the existing sport-specific legacy conventions. Collectors no longer access legacy prediction relations directly; totals, streaks, situational comparisons and opponent strength share the same normalized boundary.
+- NFL team profiles apply the same publication cutoff and retain their strict legacy pre-kickoff/recomputation guard. Existing windows, UTC filters, league ranks, field coverage and nonoverlapping comparisons remain unchanged. Outer trend cache keys include canonical read mode to isolate cutovers. Large frozen input graphs are loaded in bounded batches and released after scalar context/lineage extraction.
 
 ## ESPN / Odds Ingest Surface
 

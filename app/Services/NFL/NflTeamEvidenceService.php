@@ -3,6 +3,7 @@
 namespace App\Services\NFL;
 
 use App\Actions\NFL\CalculateTeamTrends;
+use App\Services\Predictions\PredictionDeliverySource;
 use App\Services\Trends\TrendSignalScorer;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -18,16 +19,6 @@ class NflTeamEvidenceService
     {
         $cutoff = Carbon::parse($before, 'UTC')->utc();
         $games = $this->calculator->evidenceGames($team, $season, $cutoff->toIso8601String());
-        // Each historical prediction must predate its own game's kickoff,
-        // not merely the target game. Retrospective reruns are not pregame Elo.
-        foreach ($games as $game) {
-            $sourceKickoff = $game->game_time
-                ? Carbon::parse($game->game_date->toDateString().' '.$game->game_time, 'UTC') : null;
-            if ($game->prediction && (! $sourceKickoff || ! $game->prediction->updated_at
-                || $game->prediction->updated_at->gte($sourceKickoff) || $game->prediction->updated_at->gte($cutoff))) {
-                $game->setRelation('prediction', null);
-            }
-        }
         $sets = $this->windowSamples($games, $season);
         $league = Cache::remember('nfl-team-evidence-ranks-v1:'.$season.':'.$cutoff->timestamp, 120,
             fn () => $this->leagueMetrics($season, $cutoff->toIso8601String()));
@@ -64,7 +55,8 @@ class NflTeamEvidenceService
         return [
             'version' => 'nfl-team-evidence-v1', 'default_window' => 'recent_5',
             'cutoff_at' => $cutoff->toIso8601String(), 'generated_at' => now()->toIso8601String(),
-            'source' => 'nfl_games+nfl_team_stats+eligible_nfl_predictions',
+            'source' => app(PredictionDeliverySource::class)->usesCanonical('nfl')
+                ? 'nfl_games+nfl_team_stats+eligible_canonical_predictions' : 'nfl_games+nfl_team_stats+eligible_nfl_predictions',
             'season_type' => '2', 'windows' => $windows, 'changes' => $changes,
             'comparison_baseline' => $prior,
             'limitations' => [

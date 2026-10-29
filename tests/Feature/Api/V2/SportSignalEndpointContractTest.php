@@ -118,7 +118,7 @@ it('exposes mlb live monitor signals through the v2 signal endpoint', function (
         'short_name' => 'CHC @ STL',
     ]);
 
-    MlbPrediction::query()->create([
+    $prediction = MlbPrediction::query()->create([
         'game_id' => $game->id,
         'season' => 2026,
         'season_type' => (string) config('mlb.season.types.regular'),
@@ -141,6 +141,7 @@ it('exposes mlb live monitor signals through the v2 signal endpoint', function (
         'feature_version' => 'test',
         'blend_version' => 'test',
     ]);
+    seedLivePrediction($prediction);
 
     $this->getJson('/api/v2/sports/mlb/signals?season=2026&as_of_date=2026-06-14')
         ->assertOk()

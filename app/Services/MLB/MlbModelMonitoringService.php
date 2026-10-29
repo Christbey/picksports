@@ -2,6 +2,7 @@
 
 namespace App\Services\MLB;
 
+use App\Application\Sports\ReadModels\CanonicalShadowSnapshot;
 use App\Models\BetDecision;
 use App\Models\MarketQuote;
 use App\Models\MLB\Game;
@@ -15,6 +16,8 @@ use App\Services\ML\ModelArtifactRegistry;
 use App\Services\Predictions\CanonicalShadowInputs;
 use App\Services\Predictions\PredictionDeliverySource;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\File;
@@ -44,7 +47,7 @@ class MlbModelMonitoringService
         );
         $outputs = $artifact
             ? ShadowModelOutput::query()
-                ->with(['featureSnapshot', 'canonicalPrediction.calculationRun.inputSnapshot', 'canonicalPrediction.calculationRun.release', 'canonicalPrediction.sportEvent.mlbGame', 'canonicalPrediction.markets', 'inferenceRun', 'betDecisions.settlement'])
+                ->with(['inferenceRun', 'betDecisions.settlement'])
                 ->where('model_artifact_id', $artifact->id)
                 ->latest('generated_at')
                 ->latest('id')
@@ -53,7 +56,6 @@ class MlbModelMonitoringService
             : collect();
         $metricOutputs = $artifact
             ? ShadowModelOutput::query()
-                ->with('featureSnapshot')
                 ->where('model_artifact_id', $artifact->id)
                 ->whereIn(
                     'game_id',
@@ -61,8 +63,10 @@ class MlbModelMonitoringService
                 )
                 ->get()
             : collect();
+        $this->loadMonitoringSnapshots($outputs);
+        $this->loadMonitoringSnapshots($metricOutputs);
         $decisions = $this->decisionQuery($artifact, $currentSeason)
-            ->with(['settlement', 'shadowOutput.featureSnapshot'])
+            ->with(['settlement', 'shadowOutput'])
             ->get();
         $games = Game::query()
             ->with(['homeTeam', 'awayTeam'])
@@ -414,7 +418,17 @@ class MlbModelMonitoringService
             ->map(function (Collection $weekOutputs, string $weekStart) use ($games): array {
                 $rows = $weekOutputs->map(function (ShadowModelOutput $output) use ($games): array {
                     $game = $games->get($output->game_id);
-                    $snapshotOutputs = (array) $output->featureSnapshot?->outputs;
+                    $snapshot = $this->monitoringSnapshot($output);
+                    $snapshotOutputs = (array) $snapshot?->outputs;
+                    if ($snapshot instanceof CanonicalShadowSnapshot) {
+                        $snapshotOutputs = in_array(ModelArtifact::normalizeMarketType($output->market_type), ['win_probability', 'spread', 'total'], true)
+                            ? [
+                                'baseline_win_probability' => $snapshot->outputs['win_probability'] ?? null,
+                                'baseline_predicted_spread' => $snapshot->outputs['predicted_spread'] ?? null,
+                                'baseline_predicted_total' => $snapshot->outputs['predicted_total'] ?? null,
+                            ]
+                            : [];
+                    }
                     $explanation = (array) $output->explanation;
                     $baselineProbability = $this->floatOrNull(
                         data_get($explanation, 'baseline_outputs.home_win_probability')
@@ -520,6 +534,39 @@ class MlbModelMonitoringService
             ->all();
     }
 
+    /** @param Collection<int, ShadowModelOutput> $outputs */
+    private function loadMonitoringSnapshots(Collection $outputs): void
+    {
+        $legacy = new EloquentCollection($outputs->whereNull('canonical_prediction_id')->all());
+        $legacy->loadMissing(['featureSnapshot' => fn (BelongsTo $query): BelongsTo => $query
+            ->without('metadataPayload')->select(['id', 'outputs', 'pregame_safe', 'feature_hash'])]);
+
+        $native = new EloquentCollection($outputs->whereNotNull('canonical_prediction_id')->all());
+        $native->loadMissing([
+            'canonicalPrediction:id,sport,sport_event_id,calculation_run_id,phase,publication_state,published_at,generated_at,model_version',
+            'canonicalPrediction.markets',
+            'canonicalPrediction.calculationRun:id,event_input_snapshot_id,calculation_release_id,status',
+            'canonicalPrediction.calculationRun.release:id,status',
+            'canonicalPrediction.calculationRun.inputSnapshot:id,sport,sport_event_id,phase,pregame_safety_status,captured_at,cutoff_at,latest_source_available_at,content_hash,schema_version',
+            'canonicalPrediction.sportEvent:id,starts_at',
+            'canonicalPrediction.sportEvent.mlbGame:id,sport_event_id',
+        ]);
+    }
+
+    private function monitoringSnapshot(ShadowModelOutput $output): PredictionFeatureSnapshot|CanonicalShadowSnapshot|null
+    {
+        if ($output->canonical_prediction_id === null) {
+            return $output->featureSnapshot;
+        }
+        $prediction = $output->canonicalPrediction;
+        if ($prediction === null || $prediction->sport !== 'mlb' || $output->sport !== 'mlb') {
+            return null;
+        }
+        $snapshot = app(CanonicalShadowInputs::class)->fromPrediction($prediction);
+
+        return $snapshot !== null && $snapshot->game_id === (int) $output->game_id ? $snapshot : null;
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -527,9 +574,7 @@ class MlbModelMonitoringService
     {
         $decision = $output->betDecisions->sortByDesc('id')->first();
         $settlement = $decision?->settlement;
-        $snapshot = $output->canonical_prediction_id !== null
-            ? ($output->canonicalPrediction ? app(CanonicalShadowInputs::class)->fromPrediction($output->canonicalPrediction) : null)
-            : $output->featureSnapshot;
+        $snapshot = $this->monitoringSnapshot($output);
 
         return [
             'id' => $output->id,

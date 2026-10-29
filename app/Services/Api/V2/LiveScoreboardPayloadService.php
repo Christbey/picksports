@@ -12,6 +12,7 @@ use App\Models\NFL\Prediction as NFLPrediction;
 use App\Models\User;
 use App\Models\WCBB\Prediction as WCBBPrediction;
 use App\Models\WNBA\Prediction as WNBAPrediction;
+use App\Services\Predictions\LivePredictionStore;
 use App\Support\SportPredictionAccess;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Builder;
@@ -131,10 +132,12 @@ class LiveScoreboardPayloadService
         $context = app(SportContextResolver::class)->resolve(strtolower($sport));
         $canonical = app(CanonicalSportPredictionQuery::class);
         if ($canonical->supports($context)) {
-            return $canonical->queryForSport($context->slug, ['from_date' => now()->subDay()->toDateString()])
+            $predictions = $canonical->queryForSport($context->slug, ['from_date' => now()->subDay()->toDateString()])
                 ->whereBetween('sport_events.starts_at', [now()->startOfDay()->utc(), now()->endOfDay()->utc()])
-                ->whereIn($context->slug.'_games.status', $statuses)
-                ->get()->map(fn ($prediction): array => (new CanonicalDashboardPredictionResource($prediction, $context, $config))->resolve());
+                ->whereIn($context->slug.'_games.status', $statuses)->get();
+            app(LivePredictionStore::class)->preload($predictions->map(fn ($prediction) => $prediction->sportEvent?->getRelation($context->slug.'Game'))->filter());
+
+            return $predictions->map(fn ($prediction): array => (new CanonicalDashboardPredictionResource($prediction, $context, $config))->resolve());
         }
 
         $predictions = $config['prediction_model']::with(['game.homeTeam', 'game.awayTeam'])
@@ -143,6 +146,8 @@ class LiveScoreboardPayloadService
                 $query->whereIn('status', $statuses);
             })
             ->get();
+
+        app(LivePredictionStore::class)->preload($predictions->pluck('game')->filter());
 
         return $predictions->map(function ($prediction) use ($sport, $config) {
             return DashboardPredictionResource::make($prediction)

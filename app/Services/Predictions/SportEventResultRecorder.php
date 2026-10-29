@@ -57,20 +57,26 @@ class SportEventResultRecorder
         ): SportEventResult {
             SportEvent::query()->lockForUpdate()->findOrFail($event->getKey());
 
-            $existing = SportEventResult::query()->where('result_hash', $resultHash)->first();
-
-            if ($existing !== null) {
-                if ($existing->sport_event_id !== $event->getKey()) {
-                    throw new PredictionLifecycleException('Event result hash is associated with another event.');
-                }
-
-                return $existing;
-            }
-
             $latest = SportEventResult::query()
                 ->where('sport_event_id', $event->getKey())
                 ->orderByDesc('revision')
                 ->first();
+
+            if ($latest !== null && $latest->status === 'official'
+                && $latest->home_score === $homeScore && $latest->away_score === $awayScore) {
+                return $latest;
+            }
+
+            $existing = SportEventResult::query()->where('result_hash', $resultHash)->first();
+            if ($existing !== null) {
+                if ($existing->sport_event_id !== $event->getKey()) {
+                    throw new PredictionLifecycleException('Event result hash is associated with another event.');
+                }
+                $resultHash = $this->hasher->hash([
+                    'result' => $resultHash,
+                    'supersedes' => $latest?->public_id,
+                ]);
+            }
 
             return SportEventResult::query()->create([
                 'sport_event_id' => $event->getKey(),

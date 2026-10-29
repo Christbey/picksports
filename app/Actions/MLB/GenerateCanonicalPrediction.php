@@ -2,7 +2,6 @@
 
 namespace App\Actions\MLB;
 
-use App\Exceptions\Predictions\PredictionLifecycleException;
 use App\Models\CanonicalPrediction;
 use App\Models\MLB\Game;
 use App\Services\MLB\Predictions\MlbCalculator;
@@ -15,10 +14,8 @@ class GenerateCanonicalPrediction
 
     public function execute(Game $game, bool $publish = true, string $trigger = 'scheduled'): CanonicalPrediction
     {
-        if ($game->sportEvent === null) {
-            throw new PredictionLifecycleException('MLB canonical generation requires a linked sport event.');
-        }
-
-        return $publish ? $this->orchestrator->generateAndPublish($game->sportEvent, $this->snapshotBuilder, $this->calculator, trigger: $trigger) : $this->orchestrator->generate($game->sportEvent, $this->snapshotBuilder, $this->calculator, trigger: $trigger);
+        return $this->orchestrator->generateForGame(
+            $game, 'mlb', $this->snapshotBuilder, $this->calculator, $publish, $trigger,
+        );
     }
 }

@@ -4,7 +4,8 @@ namespace App\Actions\CBB;
 
 use App\Actions\Sports\AbstractAdvancedBasketballUpdateLivePrediction;
 use App\Models\CBB\TeamPossessionMetric;
-use Carbon\Carbon;
+use App\Services\Predictions\LivePredictionStore;
+use Illuminate\Database\Eloquent\Model;
 
 class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePrediction
 {
@@ -25,18 +26,19 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
      */
     public function execute(object $game): ?array
     {
+        if (! $game instanceof Model) {
+            return null;
+        }
+        $store = app(LivePredictionStore::class);
         if (! $this->isGameInProgress($game)) {
-            $prediction = $game->prediction;
-            if ($prediction && $prediction->live_seconds_remaining !== null) {
-                $this->clearLivePrediction($prediction);
-            }
+            $store->clear($game, static::class);
 
             return null;
         }
+        $prediction = $store->baseline($game);
+        if ($prediction === null) {
+            $store->record($game, null, null, 'missing_pregame', static::class);
 
-        $prediction = $game->prediction;
-
-        if (! $prediction) {
             return null;
         }
 
@@ -53,13 +55,7 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
             return null;
         }
 
-        $prediction->update([
-            'live_predicted_spread' => $state['live_predicted_spread'],
-            'live_win_probability' => $state['live_win_probability'],
-            'live_predicted_total' => $state['live_predicted_total'],
-            'live_seconds_remaining' => $state['live_seconds_remaining'],
-            'live_updated_at' => Carbon::now(),
-        ]);
+        $store->record($game, $prediction, $state, 'live', static::class);
 
         return $state;
     }
@@ -79,7 +75,8 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
             $game,
             $secondsRemaining,
             $effectiveGameLength,
-            (float) ($prediction->predicted_total ?? static::DEFAULT_PRE_GAME_TOTAL)
+            (float) ($prediction->predicted_total ?? static::DEFAULT_PRE_GAME_TOTAL),
+            (float) ($prediction->predicted_spread ?? 0)
         );
 
         $liveWinProbability = $this->calculateLiveWinProbability(
@@ -227,7 +224,7 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
         return max($lowerBound, min($upperBound, $liveTotal));
     }
 
-    private function buildLiveContext(object $game, int $secondsRemaining, int $effectiveGameLength, float $preGameTotal): array
+    private function buildLiveContext(object $game, int $secondsRemaining, int $effectiveGameLength, float $preGameTotal, float $preGameSpread): array
     {
         $config = (array) config('cbb.prediction.live_possession', []);
         if (! ($config['enabled'] ?? true)) {
@@ -283,7 +280,7 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
         $efficiencyWeight = (float) ($config['efficiency_margin_weight'] ?? 0.90);
         $pregameMarginWeight = (float) ($config['pregame_margin_weight'] ?? 0.40);
         $expectedRemainingMargin = (($expectedHomePpp - $expectedAwayPpp) * $remainingPossessions * $efficiencyWeight)
-            + (((float) ($game->prediction->predicted_spread ?? 0)) * ($secondsRemaining / max(1, static::TOTAL_GAME_SECONDS)) * $pregameMarginWeight);
+            + ($preGameSpread * ($secondsRemaining / max(1, static::TOTAL_GAME_SECONDS)) * $pregameMarginWeight);
 
         return [
             'remaining_possessions' => round($remainingPossessions, 3),

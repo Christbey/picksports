@@ -3,9 +3,8 @@
 namespace App\Actions\MLB;
 
 use App\Models\MLB\Game;
-use App\Models\MLB\Prediction;
+use App\Services\Predictions\LivePredictionStore;
 use App\Support\MLB\MlbGamePhase;
-use Carbon\Carbon;
 
 class UpdateLivePrediction
 {
@@ -22,18 +21,16 @@ class UpdateLivePrediction
      */
     public function execute(Game $game): ?array
     {
+        $store = app(LivePredictionStore::class);
         if (! $this->isGameInProgress($game)) {
-            $prediction = $game->prediction;
-            if ($prediction && $prediction->live_outs_remaining !== null) {
-                $this->clearLivePrediction($prediction);
-            }
+            $store->clear($game, static::class);
 
             return null;
         }
+        $prediction = $store->baseline($game);
+        if ($prediction === null) {
+            $store->record($game, null, null, 'missing_pregame', static::class);
 
-        $prediction = $game->prediction;
-
-        if (! $prediction) {
             return null;
         }
 
@@ -65,21 +62,15 @@ class UpdateLivePrediction
             $prediction->predicted_total ?? 8
         );
 
-        // Update the prediction record
-        $prediction->update([
-            'live_predicted_spread' => round($livePredictedSpread, 1),
-            'live_win_probability' => round($liveWinProbability, 3),
-            'live_predicted_total' => round($livePredictedTotal, 1),
-            'live_outs_remaining' => $outsRemaining,
-            'live_updated_at' => Carbon::now(),
-        ]);
-
-        return [
+        $values = [
             'live_predicted_spread' => round($livePredictedSpread, 1),
             'live_win_probability' => round($liveWinProbability, 3),
             'live_predicted_total' => round($livePredictedTotal, 1),
             'live_outs_remaining' => $outsRemaining,
         ];
+        $store->record($game, $prediction, $values, 'live', static::class);
+
+        return $values;
     }
 
     protected function isGameInProgress(Game $game): bool
@@ -226,14 +217,9 @@ class UpdateLivePrediction
     /**
      * Clear live prediction data (for completed games).
      */
-    public function clearLivePrediction(Prediction $prediction): void
+    public function clearLivePrediction(object $prediction): void
     {
-        $prediction->update([
-            'live_predicted_spread' => null,
-            'live_win_probability' => null,
-            'live_predicted_total' => null,
-            'live_outs_remaining' => null,
-            'live_updated_at' => null,
-        ]);
+        $store = app(LivePredictionStore::class);
+        $store->clear($store->gameFor($prediction), static::class);
     }
 }

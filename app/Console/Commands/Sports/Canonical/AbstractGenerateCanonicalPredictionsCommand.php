@@ -14,12 +14,12 @@ abstract class AbstractGenerateCanonicalPredictionsCommand extends Command
         $query = $gameClass::query()->with(['sportEvent', 'homeTeam', 'awayTeam'])
             ->whereNotNull('sport_event_id')
             ->whereHas('sportEvent', function ($query) use ($horizon): void {
-                $query->where('starts_at', '>=', $horizon['start'] ?? now());
+                $query->where('starts_at', '>=', now())->where('starts_at', '>=', $horizon['start'] ?? now());
 
                 if ($horizon !== null) {
                     $query->where('starts_at', '<=', $horizon['end']);
                 } elseif ($this->getDefinition()->hasOption('days-forward') && filled($this->option('days-forward'))) {
-                    $query->where('starts_at', '<=', now()->addDays(max(1, (int) $this->option('days-forward'))));
+                    $query->where('starts_at', '<=', now(config('sports.business_timezone', config('app.timezone')))->addDays(max(0, (int) $this->option('days-forward')))->endOfDay()->utc());
                 }
             })
             ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_DELAYED'])

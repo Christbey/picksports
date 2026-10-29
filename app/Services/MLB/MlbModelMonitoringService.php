@@ -9,8 +9,11 @@ use App\Models\ModelArtifact;
 use App\Models\ModelRun;
 use App\Models\PredictionFeatureSnapshot;
 use App\Models\ShadowModelOutput;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\ML\EvaluationReportNormalizer;
 use App\Services\ML\ModelArtifactRegistry;
+use App\Services\Predictions\CanonicalShadowInputs;
+use App\Services\Predictions\PredictionDeliverySource;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -41,7 +44,7 @@ class MlbModelMonitoringService
         );
         $outputs = $artifact
             ? ShadowModelOutput::query()
-                ->with(['featureSnapshot', 'inferenceRun', 'betDecisions.settlement'])
+                ->with(['featureSnapshot', 'canonicalPrediction.calculationRun.inputSnapshot', 'canonicalPrediction.calculationRun.release', 'canonicalPrediction.sportEvent.mlbGame', 'canonicalPrediction.markets', 'inferenceRun', 'betDecisions.settlement'])
                 ->where('model_artifact_id', $artifact->id)
                 ->latest('generated_at')
                 ->latest('id')
@@ -219,6 +222,10 @@ class MlbModelMonitoringService
             ->where('pregame_safe', true)
             ->where('availability_status', 'observed_pregame')
             ->whereIn('game_id', $upcomingIds);
+        if (app(PredictionDeliverySource::class)->usesCanonical('mlb')) {
+            $pregameSnapshots = app(CanonicalSportPredictionQuery::class)->queryForSport('mlb')
+                ->whereIn('mlb_games.id', $upcomingIds)->withOnly([])->reorder();
+        }
         $quotes = MarketQuote::query()
             ->where('sport', 'mlb')
             ->where('game_table', 'mlb_games')
@@ -520,7 +527,9 @@ class MlbModelMonitoringService
     {
         $decision = $output->betDecisions->sortByDesc('id')->first();
         $settlement = $decision?->settlement;
-        $snapshot = $output->featureSnapshot;
+        $snapshot = $output->canonical_prediction_id !== null
+            ? ($output->canonicalPrediction ? app(CanonicalShadowInputs::class)->fromPrediction($output->canonicalPrediction) : null)
+            : $output->featureSnapshot;
 
         return [
             'id' => $output->id,

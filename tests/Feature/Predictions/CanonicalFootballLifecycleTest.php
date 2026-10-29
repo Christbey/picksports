@@ -25,11 +25,10 @@ use App\Services\CFB\CfbPlayerEvidenceService;
 use App\Services\CFB\Predictions\CfbCalculationReleaseRegistrar;
 use App\Services\CFB\Predictions\CfbCanonicalCutoverReadinessService;
 use App\Services\CFB\Predictions\CfbCanonicalSpreadValueSignalService;
-use App\Services\NFL\NflPredictionDispositionRecorder;
 use App\Services\NFL\Predictions\NflCalculationReleaseRegistrar;
 use App\Services\NFL\Predictions\NflCanonicalCutoverReadinessService;
+use App\Services\NFL\Predictions\NflRecommendationInputBuilder;
 use App\Services\OddsApi\GameOddsSnapshotRecorder;
-use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
@@ -159,30 +158,16 @@ function recordCanonicalFootballNflMarket(array $fixture): void
 function prepareNflCanonicalReadinessFixture(array $fixture): void
 {
     recordCanonicalFootballNflMarket($fixture);
-    $prediction = App\Models\NFL\Prediction::factory()->create([
-        'game_id' => $fixture['game']->getKey(),
-        'model_metadata' => [
-            'true_epa' => ['enabled' => true, 'applied' => true, 'reason' => 'applied'],
-            'analysis_layer' => [
-                'applied' => true,
-                'eligibility' => ['status' => 'candidate', 'eligible' => true, 'data_reasons' => []],
-            ],
-        ],
+    $builder = Mockery::mock(NflRecommendationInputBuilder::class);
+    $builder->shouldReceive('capture')->andReturnUsing(fn (): array => [
+        'version' => NflRecommendationInputBuilder::VERSION,
+        'captured_at' => now()->toIso8601String(), 'model_version' => 'fixture-recommendation-v1',
+        'outputs' => ['predicted_spread' => 6.5, 'predicted_total' => 45.0, 'win_probability' => 0.65],
+        'configuration' => ['minimum_spread_edge' => 2.0, 'moneyline_play_enabled' => false],
+        'model_metadata' => ['true_epa' => ['enabled' => true, 'applied' => true, 'reason' => 'applied'],
+            'analysis_layer' => ['applied' => true, 'eligibility' => ['status' => 'candidate', 'eligible' => true, 'data_reasons' => []]]],
     ]);
-    app(PredictionFeatureSnapshotRecorder::class)->record(
-        $prediction,
-        $fixture['game'],
-        'nfl',
-        $prediction->only(['predicted_spread', 'predicted_total', 'win_probability', 'confidence_score', 'model_metadata']),
-        [
-            'run_type' => 'pregame_prediction',
-            'pregame_safe' => true,
-            'availability_status' => 'observed_pregame',
-            'generated_at' => now()->subSecond(),
-            'features_available_at' => now()->subSecond(),
-        ],
-    );
-    app(NflPredictionDispositionRecorder::class)->record($prediction);
+    app()->instance(NflRecommendationInputBuilder::class, $builder);
 }
 
 it('generates reproducible canonical football predictions without legacy writes', function (array $definition) {

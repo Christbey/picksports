@@ -23,7 +23,7 @@ it('fails when an mlb live game has stale live prediction fields', function () {
         'short_name' => 'CHC @ STL',
     ]);
 
-    MlbPrediction::query()->create([
+    $prediction = MlbPrediction::query()->create([
         'game_id' => $game->id,
         'season' => 2026,
         'season_type' => (string) config('mlb.season.types.regular'),
@@ -47,6 +47,7 @@ it('fails when an mlb live game has stale live prediction fields', function () {
         'blend_version' => 'test',
     ]);
 
+    seedLivePrediction($prediction);
     $result = app(LivePredictionFreshnessCheck::class)->run('mlb', config('validation.sports.mlb'));
 
     expect($result)->not->toBeNull()

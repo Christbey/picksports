@@ -522,7 +522,19 @@ The exact MLB spread/total conversions live in:
 - `calculateSpread()`
 - `calculateTotal()`
 
+## Canonical pregame retirement boundary
+
+Retiring mutable pregame writes does not equate the legacy and native calculators. Native generation continues through approved calculation releases and frozen input snapshots; legacy calculators remain for non-persisting previews and historical reconstruction. Both canonical pipeline and read switches must be enabled before active mutable writes are rejected.
+
+MLB F3/F5 live feature construction reads pitcher Elo from the selected verified canonical input snapshot, while historical replay retains legacy provenance. Tabular shadow feature mapping uses frozen native team/pitcher/metric inputs and native primary markets; spread markets are converted from sportsbook home lines to home margins. Missing native inputs do not fall back to legacy snapshots. Native shadow observations carry exact prediction/run/input identifiers and cannot inherit a legacy artifact's betting approval.
+
+NFL simulation residual fitting uses the same canonical release and model version, completed regular-season results mature before the as-of cutoff, and forecasts observed before kickoff. Legacy and native residual corpora are not combined. Minimum history, provisional-preview, integrity, and no-bet rules remain. A native forecast without a separately frozen pre-market basis cannot support that counterfactual.
+
 ## Live Prediction Updates
+
+Live calculation formulas and rounding are unchanged. NBA, CBB, WNBA, WCBB, NFL, and MLB now append observations to `live_prediction_snapshots` through `LivePredictionStore`; CFB retains its existing specialized snapshot stream and no longer mirrors into legacy columns. Each observation records game state, calculator, selected pregame baseline, projection, and observation time. Identical observations are idempotent; delayed older observations do not displace newer state. Inactive or missing-baseline observations hide live fields without mutating pregame predictions.
+
+The per-sport canonical read switch selects the pregame source. Canonical misses do not fall back to legacy forecasts; the baseline is pinned on the first live projection, and withdrawn native baselines fail closed. Existing legacy-mode pregame reads remain at the shared source boundary. Native pregame markets, approvals, and calculation runs stay immutable. Live projections do not grant betting approval. Historical legacy columns remain stored but are no longer the delivery source.
 
 ### Shared football live model
 

@@ -2,8 +2,10 @@
 
 namespace App\Services\MLB\Picks;
 
-use App\Models\MLB\Prediction;
+use App\Application\Sports\ReadModels\BettingForecast;
+use App\Services\Predictions\BettingForecastSource;
 use App\Support\MLB\MlbGameStart;
+use Illuminate\Database\Eloquent\Model;
 
 class MlbMoneylineCandidateBuilder
 {
@@ -12,8 +14,10 @@ class MlbMoneylineCandidateBuilder
     /**
      * @return list<MlbPickCandidateData>
      */
-    public function build(Prediction $prediction): array
+    public function build(Model|BettingForecast $prediction): array
     {
+        $prediction = $prediction instanceof Model ? app(BettingForecastSource::class)->fromModel($prediction, 'mlb') : $prediction;
+
         $game = $prediction->game;
         if (! $game) {
             return [];
@@ -22,8 +26,8 @@ class MlbMoneylineCandidateBuilder
         $outcomes = $this->markets->sideOutcomes($game, ['h2h']);
         $noVig = $this->markets->noVigSides($outcomes);
         $model = [
-            'home' => $this->normalizeProbability($prediction->win_probability),
-            'away' => $prediction->win_probability !== null ? 1 - $this->normalizeProbability($prediction->win_probability) : null,
+            'home' => $this->normalizeProbability($prediction->winProbability),
+            'away' => $prediction->winProbability !== null ? 1 - $this->normalizeProbability($prediction->winProbability) : null,
         ];
         $modelSide = ($model['home'] ?? 0.0) >= ($model['away'] ?? 0.0) ? 'home' : 'away';
         $marketSide = ($noVig['home'] ?? 0.0) >= ($noVig['away'] ?? 0.0) ? 'home' : 'away';
@@ -63,8 +67,9 @@ class MlbMoneylineCandidateBuilder
 
             $rows[] = new MlbPickCandidateData(
                 gameId: (int) $game->id,
-                predictionId: (int) $prediction->id,
-                season: (int) $prediction->season,
+                predictionId: $prediction->legacyPredictionId(),
+                canonicalPredictionId: $prediction->canonicalPredictionId(),
+                season: $prediction->season(),
                 marketType: 'moneyline',
                 marketKey: 'h2h',
                 side: $side,

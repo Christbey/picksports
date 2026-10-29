@@ -2,6 +2,7 @@
 
 namespace App\Models\MLB;
 
+use App\Models\CanonicalPrediction;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -22,6 +23,7 @@ class PickCandidate extends Model
         'season',
         'game_id',
         'prediction_id',
+        'canonical_prediction_id',
         'team_id',
         'player_id',
         'market_type',
@@ -97,6 +99,11 @@ class PickCandidate extends Model
     public function game(): BelongsTo
     {
         return $this->belongsTo(Game::class);
+    }
+
+    public function canonicalPrediction(): BelongsTo
+    {
+        return $this->belongsTo(CanonicalPrediction::class, 'canonical_prediction_id');
     }
 
     public function prediction(): BelongsTo

@@ -2,12 +2,13 @@
 
 namespace App\Actions\Sports;
 
-use App\Jobs\NBA\GeneratePredictionNarrative as GenerateNbaPredictionNarrativeJob;
 use App\Jobs\Predictions\GeneratePredictionNarrative as GenerateGenericPredictionNarrativeJob;
 use App\Services\OddsApi\OddsApiService;
 use App\Services\PlayerStats\NbaPlayerEpaCalculator;
+use App\Services\Predictions\PredictionDeliverySource;
 use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
 use App\Services\Sports\DepthChartImpactService;
+use App\Support\Sports\SeasonTypeCandidates;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -88,6 +89,7 @@ abstract class AbstractPredictionGenerator
      */
     public function execute(Model $game, bool $dispatchNarratives = true): ?Model
     {
+        app(PredictionDeliverySource::class)->assertLegacyWriterAvailable($this->getSport());
         $predictionData = $this->makePredictionData($game);
         if ($predictionData === null) {
             return null;
@@ -124,6 +126,9 @@ abstract class AbstractPredictionGenerator
      */
     public function executeHistorical(Model $game, bool $dispatchNarratives = false, array $snapshotOverrides = []): ?Model
     {
+        if ($game->status !== 'STATUS_FINAL') {
+            app(PredictionDeliverySource::class)->assertLegacyWriterAvailable($this->getSport());
+        }
         $predictionData = $this->makePredictionData($game, allowCompleted: true);
         if ($predictionData === null) {
             return null;
@@ -314,12 +319,6 @@ abstract class AbstractPredictionGenerator
     protected function dispatchNarrativeGeneration(Model $prediction): void
     {
         if (! $this->predictionSupportsNarratives()) {
-            return;
-        }
-
-        if ($this->getSport() === 'nba') {
-            GenerateNbaPredictionNarrativeJob::dispatch((int) $prediction->getKey());
-
             return;
         }
 
@@ -525,40 +524,7 @@ abstract class AbstractPredictionGenerator
      */
     protected function resolveSeasonTypeCandidates(mixed $seasonType): array
     {
-        if ($seasonType === null || $seasonType === '') {
-            return [];
-        }
-
-        $sportSlug = $this->getSport();
-        $typeNames = config("{$sportSlug}.season.type_names", []);
-        $typesByKey = config("{$sportSlug}.season.types", []);
-        $candidates = [$seasonType, (string) $seasonType];
-
-        if (is_string($seasonType) && isset($typeNames[$seasonType])) {
-            $candidates[] = $typeNames[$seasonType];
-        }
-
-        if (is_string($seasonType) && isset($typesByKey[$seasonType])) {
-            $resolved = $typesByKey[$seasonType];
-            $candidates[] = $resolved;
-            $candidates[] = (string) $resolved;
-        }
-
-        if (is_numeric($seasonType)) {
-            $code = (int) $seasonType;
-            $matchedKey = array_search($code, $typesByKey, true);
-            if ($matchedKey !== false) {
-                $candidates[] = (string) $matchedKey;
-                if (isset($typeNames[$matchedKey])) {
-                    $candidates[] = $typeNames[$matchedKey];
-                }
-            }
-        }
-
-        return array_values(array_unique(array_filter(
-            $candidates,
-            fn ($value) => $value !== null && $value !== ''
-        )));
+        return SeasonTypeCandidates::resolve($this->getSport(), $seasonType);
     }
 
     /**

@@ -45,6 +45,7 @@ final class PredictionResourcePreparer
 
         $sport = strtolower($sport);
         $predictions->loadMissing(['game.homeTeam', 'game.awayTeam']);
+        app(LivePredictionStore::class)->preload($predictions->pluck('game')->filter());
         $permissions = $this->permissions($user);
         $analyses = $this->analyses($sport, $predictions, $permissions['betting_value'] ?? false);
 

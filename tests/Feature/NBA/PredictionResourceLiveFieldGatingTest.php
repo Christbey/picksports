@@ -44,6 +44,7 @@ test('hides nba live fields when game is not live', function () {
         'live_updated_at' => now(),
     ])->load('game');
 
+    seedLivePrediction($prediction);
     $request = Request::create('/');
     $request->setUserResolver(fn () => $user);
 
@@ -88,6 +89,7 @@ test('includes nba live fields when game is live', function () {
         'live_updated_at' => now(),
     ])->load('game');
 
+    seedLivePrediction($prediction);
     $request = Request::create('/');
     $request->setUserResolver(fn () => $user);
 

@@ -15,6 +15,7 @@ use App\Models\NFL\Team;
 use App\Models\NFL\TeamStat;
 use App\Services\NFL\NflBettingSignalService;
 use App\Services\NFL\NflProSignalLayer;
+use App\Services\Predictions\BettingForecastSource;
 use App\Services\Trends\TrendSignalScorer;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -124,7 +125,7 @@ it('selects the next scheduled week and never recommends completed or live games
     }
     $service = app(NflBettingSignalService::class);
     $rows = (new ReflectionMethod($service, 'slatePredictionRows'))->invoke($service, 2026, $asOf);
-    expect(collect($rows)->pluck('game_id')->all())->toBe([$ids[2]]);
+    expect(collect($rows)->pluck('game.id')->all())->toBe([$ids[2]]);
     $panelService = Mockery::mock(NflBettingSignalService::class)->makePartial()->shouldAllowMockingProtectedMethods();
     $panelService->shouldReceive('superBowlSignals')->andReturn([]);
     $payload = $panelService->signals(2026, $asOf);
@@ -145,14 +146,14 @@ it('selects spread and total sides from their edges and separates watchlists', f
     $prediction->model_metadata = ['analysis_layer' => $analysis];
     $service = app(NflBettingSignalService::class);
     $method = new ReflectionMethod($service, 'recommendedBets');
-    expect($method->invoke($service, [$prediction])[0])->toMatchArray(['type' => 'spread', 'pick_side' => 'away', 'edge_points' => 3.0]);
+    expect($method->invoke($service, [app(BettingForecastSource::class)->fromModel($prediction, 'nfl')])[0])->toMatchArray(['type' => 'spread', 'pick_side' => 'away', 'edge_points' => 3.0]);
     $analysis['calculated_edge']['total_points'] = -6;
     $prediction->model_metadata = ['analysis_layer' => $analysis];
-    expect($method->invoke($service, [$prediction])[0])->toMatchArray(['type' => 'total', 'pick_side' => 'under', 'edge_points' => 6.0]);
+    expect($method->invoke($service, [app(BettingForecastSource::class)->fromModel($prediction, 'nfl')])[0])->toMatchArray(['type' => 'total', 'pick_side' => 'under', 'edge_points' => 6.0]);
     $analysis['bet_classification'] = 'lean';
     $prediction->model_metadata = ['analysis_layer' => $analysis];
-    expect($method->invoke($service, [$prediction]))->toBe([])
-        ->and($method->invoke($service, [$prediction], true))->toHaveCount(1);
+    expect($method->invoke($service, [app(BettingForecastSource::class)->fromModel($prediction, 'nfl')]))->toBe([])
+        ->and($method->invoke($service, [app(BettingForecastSource::class)->fromModel($prediction, 'nfl')], true))->toHaveCount(1);
 });
 
 it('breaks market streaks at pushes and loads team histories once for all markets', function () {

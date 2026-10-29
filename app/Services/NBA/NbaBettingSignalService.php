@@ -2,10 +2,11 @@
 
 namespace App\Services\NBA;
 
+use App\Application\Sports\ReadModels\BettingForecast;
 use App\Models\NBA\Game;
 use App\Models\NBA\PlayoffForecast;
-use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
+use App\Services\Predictions\BettingForecastSource;
 use App\Services\Sports\FuturesEdgeService;
 use App\Services\Sports\FuturesOddsLookupService;
 use Carbon\CarbonInterface;
@@ -31,6 +32,7 @@ class NbaBettingSignalService
 
         return [
             'season' => $season,
+            'prediction_source' => app(BettingForecastSource::class)->usesCanonical('nba') ? 'canonical' : 'legacy',
             'as_of_date' => $asOfDate->toDateString(),
             'slate_date' => $slateDate?->toDateString(),
             'backend_review' => $this->backendReview(),
@@ -137,7 +139,7 @@ class NbaBettingSignalService
     }
 
     /**
-     * @param  array<int,Prediction>  $predictions
+     * @param  array<int,BettingForecast>  $predictions
      * @return array<string,mixed>
      */
     protected function oddsHealth(array $predictions): array
@@ -153,8 +155,8 @@ class NbaBettingSignalService
             $game = $prediction->game;
             $oddsData = $game?->odds_data;
             $hasMoneyline = $this->extractMarket($oddsData, 'h2h') !== null;
-            $hasSpread = $this->extractMarket($oddsData, 'spreads') !== null || $prediction->vegas_spread !== null;
-            $hasTotal = $this->extractMarket($oddsData, 'totals') !== null || is_numeric(data_get($prediction->model_metadata, 'market_context.market_total'));
+            $hasSpread = $this->extractMarket($oddsData, 'spreads') !== null || $prediction->vegasSpread !== null;
+            $hasTotal = $this->extractMarket($oddsData, 'totals') !== null || is_numeric(data_get($prediction->modelMetadata, 'market_context.market_total'));
 
             $moneyline += $hasMoneyline ? 1 : 0;
             $spreads += $hasSpread ? 1 : 0;
@@ -211,21 +213,14 @@ class NbaBettingSignalService
     }
 
     /**
-     * @return array<int,Prediction>
+     * @return array<int,BettingForecast>
      */
     protected function slatePredictionRows(int $season, CarbonInterface $slateDate): array
     {
-        return Prediction::query()
-            ->with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', function ($query) use ($season, $slateDate): void {
-                $query->where('season', $season)
-                    ->whereDate('game_date', $slateDate->toDateString())
-                    ->where('status', '!=', 'STATUS_FINAL');
-            })
-            ->get()
-            ->filter(fn (Prediction $prediction): bool => $prediction->game !== null)
-            ->values()
-            ->all();
+        $ids = Game::query()->where('season', $season)
+            ->whereDate('game_date', $slateDate->toDateString())->where('status', '!=', 'STATUS_FINAL')->pluck('id')->all();
+
+        return app(BettingForecastSource::class)->forGames('nba', $ids, $season)->all();
     }
 
     /**
@@ -270,7 +265,7 @@ class NbaBettingSignalService
     }
 
     /**
-     * @param  array<int,Prediction>  $predictions
+     * @param  array<int,BettingForecast>  $predictions
      * @return array<int,array<string,mixed>>
      */
     protected function spreadSignals(array $predictions): array
@@ -279,7 +274,7 @@ class NbaBettingSignalService
     }
 
     /**
-     * @param  array<int,Prediction>  $predictions
+     * @param  array<int,BettingForecast>  $predictions
      * @return array<int,array<string,mixed>>
      */
     protected function moneylineSignals(array $predictions): array
@@ -288,7 +283,7 @@ class NbaBettingSignalService
     }
 
     /**
-     * @param  array<int,Prediction>  $predictions
+     * @param  array<int,BettingForecast>  $predictions
      * @return array<int,array<string,mixed>>
      */
     protected function totalSignals(array $predictions): array
@@ -297,11 +292,15 @@ class NbaBettingSignalService
     }
 
     /**
-     * @param  array<int,Prediction>  $predictions
+     * @param  array<int,BettingForecast>  $predictions
      * @return array<int,array<string,mixed>>
      */
     protected function recommendedBets(array $predictions): array
     {
+        if (app(BettingForecastSource::class)->usesCanonical('nba')) {
+            return app(BettingForecastSource::class)->approvedSignalRows($predictions);
+        }
+
         $rows = array_values(array_filter(
             $this->betCandidates($predictions),
             fn (array $row): bool => ! str_starts_with((string) ($row['classification'] ?? ''), 'pass')
@@ -314,7 +313,7 @@ class NbaBettingSignalService
     }
 
     /**
-     * @param  array<int,Prediction>  $predictions
+     * @param  array<int,BettingForecast>  $predictions
      * @return array<string,mixed>
      */
     protected function passSummary(array $predictions): array
@@ -347,7 +346,7 @@ class NbaBettingSignalService
     }
 
     /**
-     * @param  array<int,Prediction>  $predictions
+     * @param  array<int,BettingForecast>  $predictions
      * @return array<int,array<string,mixed>>
      */
     protected function betCandidates(array $predictions): array
@@ -366,7 +365,7 @@ class NbaBettingSignalService
         return $rows;
     }
 
-    protected function candidateForMarket(Prediction $prediction, string $market): ?array
+    protected function candidateForMarket(BettingForecast $prediction, string $market): ?array
     {
         $game = $prediction->game;
         if (! $game) {
@@ -378,6 +377,10 @@ class NbaBettingSignalService
         $riskFlags = $this->riskFlags($prediction, $market);
         $score = $this->candidateScore($prediction, $market, $reasonCodes, $riskFlags);
         $classification = $this->classification($market, $score, $reasonCodes, $riskFlags);
+        if ($prediction->isCanonical()) {
+            $classification = 'pass_canonical_approval_required';
+            $riskFlags[] = 'canonical_approval_required';
+        }
         $noBetReason = str_starts_with($classification, 'pass')
             ? $this->noBetReason($market, $score, $reasonCodes, $riskFlags)
             : null;
@@ -393,13 +396,13 @@ class NbaBettingSignalService
     }
 
     /**
-     * @param  array<int,Prediction>  $predictions
+     * @param  array<int,BettingForecast>  $predictions
      * @return array<int,array<string,mixed>>
      */
     protected function marketRows(array $predictions, string $market): array
     {
         $rows = array_values(array_filter(array_map(
-            fn (Prediction $prediction): ?array => $this->candidateForMarket($prediction, $market),
+            fn (BettingForecast $prediction): ?array => $this->candidateForMarket($prediction, $market),
             $predictions
         )));
 
@@ -411,10 +414,10 @@ class NbaBettingSignalService
     /**
      * @return array<string,mixed>
      */
-    protected function baseGameRow(Prediction $prediction, string $market): array
+    protected function baseGameRow(BettingForecast $prediction, string $market): array
     {
         $game = $prediction->game;
-        $homeWinProbability = (float) $prediction->win_probability;
+        $homeWinProbability = (float) $prediction->winProbability;
         $pickSide = $homeWinProbability >= 0.5 ? 'home' : 'away';
         $pickTeam = $pickSide === 'home' ? $game?->homeTeam : $game?->awayTeam;
         $spreadEdge = $this->spreadEdge($prediction);
@@ -429,12 +432,12 @@ class NbaBettingSignalService
             'pick_side' => $market === 'total' ? $this->totalPickSide($prediction) : $pickSide,
             'team_id' => $market === 'total' ? null : (int) ($pickTeam?->id ?? 0),
             'team_name' => $market === 'total' ? null : $this->teamName($pickTeam),
-            'predicted_spread' => (float) $prediction->predicted_spread,
-            'vegas_spread' => $prediction->vegas_spread !== null ? (float) $prediction->vegas_spread : null,
-            'predicted_total' => (float) $prediction->predicted_total,
+            'predicted_spread' => (float) $prediction->predictedSpread,
+            'vegas_spread' => $prediction->vegasSpread !== null ? (float) $prediction->vegasSpread : null,
+            'predicted_total' => (float) $prediction->predictedTotal,
             'market_total' => $this->marketTotal($prediction),
             'win_probability' => $homeWinProbability,
-            'confidence_score' => (float) $prediction->confidence_score,
+            'confidence_score' => (float) $prediction->confidenceScore,
             'edge_points' => $market === 'spread' ? $spreadEdge : ($market === 'total' ? $totalEdge : null),
             'probability_edge' => $market === 'moneyline' ? ($moneyline['edge'] ?? null) : null,
             'market_price' => $market === 'moneyline' ? ($moneyline['price'] ?? null) : null,
@@ -445,10 +448,10 @@ class NbaBettingSignalService
     /**
      * @return list<string>
      */
-    protected function reasonCodes(Prediction $prediction, string $market): array
+    protected function reasonCodes(BettingForecast $prediction, string $market): array
     {
         $codes = [];
-        $confidence = (float) $prediction->confidence_score;
+        $confidence = (float) $prediction->confidenceScore;
         $spreadEdge = $this->spreadEdge($prediction);
         $totalEdge = $this->totalEdge($prediction);
         $moneyline = $this->moneylineEdge($prediction);
@@ -477,24 +480,24 @@ class NbaBettingSignalService
                 : 'weak_total_edge';
         }
 
-        if (abs((float) ($prediction->home_away_split_adj ?? 0.0)) >= 1.0) {
+        if (abs((float) ($prediction->homeAwaySplitAdjustment ?? 0.0)) >= 1.0) {
             $codes[] = 'home_away_split_signal';
         }
 
-        if (abs((float) ($prediction->turnover_diff_adj ?? 0.0)) >= 1.0) {
+        if (abs((float) ($prediction->turnoverDifferentialAdjustment ?? 0.0)) >= 1.0) {
             $codes[] = 'turnover_edge_signal';
         }
 
-        if (abs((float) ($prediction->rebound_margin_adj ?? 0.0)) >= 1.0) {
+        if (abs((float) ($prediction->reboundMarginAdjustment ?? 0.0)) >= 1.0) {
             $codes[] = 'rebounding_edge_signal';
         }
 
-        if (abs((float) ($prediction->injury_spread_adj ?? 0.0)) >= 1.0) {
+        if (abs((float) ($prediction->injurySpreadAdjustment ?? 0.0)) >= 1.0) {
             $codes[] = 'injury_context_signal';
         }
 
-        $restHome = $prediction->rest_days_home;
-        $restAway = $prediction->rest_days_away;
+        $restHome = $prediction->restDaysHome;
+        $restAway = $prediction->restDaysAway;
         if ($restHome !== null && $restAway !== null && abs((int) $restHome - (int) $restAway) >= 2) {
             $codes[] = 'rest_advantage_signal';
         }
@@ -505,7 +508,7 @@ class NbaBettingSignalService
     /**
      * @return list<string>
      */
-    protected function riskFlags(Prediction $prediction, string $market): array
+    protected function riskFlags(BettingForecast $prediction, string $market): array
     {
         $flags = [];
         $game = $prediction->game;
@@ -532,16 +535,16 @@ class NbaBettingSignalService
             }
         }
 
-        if ((float) ($prediction->confidence_score ?? 0.0) < (float) config('nba.signals.bet_filter.min_confidence', 58)) {
+        if ((float) ($prediction->confidenceScore ?? 0.0) < (float) config('nba.signals.bet_filter.min_confidence', 58)) {
             $flags[] = 'low_confidence_bucket';
         }
 
-        if (((int) ($prediction->home_injuries_questionable ?? 0) + (int) ($prediction->away_injuries_questionable ?? 0)) >= 3) {
+        if (((int) ($prediction->homeInjuriesQuestionable ?? 0) + (int) ($prediction->awayInjuriesQuestionable ?? 0)) >= 3) {
             $flags[] = 'rotation_injury_uncertainty';
         }
 
-        $restHome = $prediction->rest_days_home;
-        $restAway = $prediction->rest_days_away;
+        $restHome = $prediction->restDaysHome;
+        $restAway = $prediction->restDaysAway;
         if (($restHome !== null && (int) $restHome <= 1) || ($restAway !== null && (int) $restAway <= 1)) {
             $flags[] = 'back_to_back_or_low_rest';
         }
@@ -553,10 +556,10 @@ class NbaBettingSignalService
      * @param  list<string>  $reasonCodes
      * @param  list<string>  $riskFlags
      */
-    protected function candidateScore(Prediction $prediction, string $market, array $reasonCodes, array $riskFlags): float
+    protected function candidateScore(BettingForecast $prediction, string $market, array $reasonCodes, array $riskFlags): float
     {
         $score = 20.0;
-        $confidence = (float) $prediction->confidence_score;
+        $confidence = (float) $prediction->confidenceScore;
         $score += max(0.0, ($confidence - 50.0) * 1.2);
 
         if ($market === 'spread' && $this->spreadEdge($prediction) !== null) {
@@ -640,30 +643,30 @@ class NbaBettingSignalService
             : 'market_not_promoted';
     }
 
-    protected function spreadEdge(Prediction $prediction): ?float
+    protected function spreadEdge(BettingForecast $prediction): ?float
     {
-        if (! is_numeric($prediction->vegas_spread)) {
+        if (! is_numeric($prediction->vegasSpread)) {
             return null;
         }
 
-        $marketSpreadModelConvention = -((float) $prediction->vegas_spread);
+        $marketSpreadModelConvention = -((float) $prediction->vegasSpread);
 
-        return round((float) $prediction->predicted_spread - $marketSpreadModelConvention, 2);
+        return round((float) $prediction->predictedSpread - $marketSpreadModelConvention, 2);
     }
 
-    protected function totalEdge(Prediction $prediction): ?float
+    protected function totalEdge(BettingForecast $prediction): ?float
     {
         $marketTotal = $this->marketTotal($prediction);
         if ($marketTotal === null) {
             return null;
         }
 
-        return round((float) $prediction->predicted_total - $marketTotal, 2);
+        return round((float) $prediction->predictedTotal - $marketTotal, 2);
     }
 
-    protected function marketTotal(Prediction $prediction): ?float
+    protected function marketTotal(BettingForecast $prediction): ?float
     {
-        $metadataTotal = data_get($prediction->model_metadata, 'market_context.market_total');
+        $metadataTotal = data_get($prediction->modelMetadata, 'market_context.market_total');
         if (is_numeric($metadataTotal)) {
             return (float) $metadataTotal;
         }
@@ -681,7 +684,7 @@ class NbaBettingSignalService
     /**
      * @return array{edge:?float,price:?float,implied_probability:?float}
      */
-    protected function moneylineEdge(Prediction $prediction): array
+    protected function moneylineEdge(BettingForecast $prediction): array
     {
         $market = $this->extractMarket($prediction->game?->odds_data, 'h2h');
         if ($market === null) {
@@ -699,7 +702,7 @@ class NbaBettingSignalService
             }
         }
 
-        $homeProbability = (float) $prediction->win_probability;
+        $homeProbability = (float) $prediction->winProbability;
         $betHome = $homeProbability >= 0.5;
         $price = $betHome ? $homePrice : $awayPrice;
         if (! is_numeric($price)) {
@@ -716,7 +719,7 @@ class NbaBettingSignalService
         ];
     }
 
-    protected function totalPickSide(Prediction $prediction): string
+    protected function totalPickSide(BettingForecast $prediction): string
     {
         $edge = $this->totalEdge($prediction);
 

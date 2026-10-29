@@ -2,12 +2,14 @@
 
 namespace App\Console\Commands\Sports;
 
+use App\Application\Sports\ReadModels\CanonicalShadowSnapshot;
 use App\Models\BetDecision;
 use App\Models\MarketQuote;
 use App\Models\ModelArtifact;
 use App\Models\PredictionFeatureSnapshot;
 use App\Models\ShadowModelOutput;
 use App\Services\NFL\NflEvidenceTrialService;
+use App\Services\Predictions\CanonicalShadowInputs;
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
 
@@ -25,7 +27,7 @@ class RecordShadowBetDecisionsCommand extends Command
     {
         $sport = strtolower((string) $this->option('sport'));
         $query = ShadowModelOutput::query()
-            ->with(['artifact', 'featureSnapshot'])
+            ->with(['artifact', 'featureSnapshot', 'canonicalPrediction.calculationRun.inputSnapshot', 'canonicalPrediction.sportEvent', 'canonicalPrediction.markets'])
             ->where('sport', $sport)
             ->when($this->option('artifact'), fn ($builder) => $builder->where('model_artifact_id', $this->option('artifact')))
             ->orderBy('id');
@@ -36,7 +38,9 @@ class RecordShadowBetDecisionsCommand extends Command
 
         $created = 0;
         foreach ($query->get() as $shadow) {
-            $snapshot = $shadow->featureSnapshot;
+            $snapshot = $shadow->canonical_prediction_id !== null
+                ? ($shadow->canonicalPrediction ? app(CanonicalShadowInputs::class)->fromPrediction($shadow->canonicalPrediction) : null)
+                : $shadow->featureSnapshot;
             $artifact = $shadow->artifact;
             if ($artifact?->model_type === NflEvidenceTrialService::TYPE) {
                 continue;
@@ -113,7 +117,8 @@ class RecordShadowBetDecisionsCommand extends Command
             $uncertaintyEligible = (! $uncertaintyRequired || $uncertainty !== null)
                 && ($maximumUncertainty === null
                     || ($uncertainty !== null && $uncertainty <= $maximumUncertainty));
-            $isBet = $marketPromotedAtDecisionTime
+            $isBet = ! ($snapshot instanceof CanonicalShadowSnapshot)
+                && $marketPromotedAtDecisionTime
                 && $pregameSafe
                 && $modelProbability !== null
                 && $edge !== null
@@ -126,6 +131,7 @@ class RecordShadowBetDecisionsCommand extends Command
                     && ! $marketPromotedAtDecisionTime
                     ? 'market_model_not_promoted_at_decision_time'
                     : null,
+                $snapshot instanceof CanonicalShadowSnapshot ? 'canonical_shadow_inputs_unvalidated' : null,
                 $snapshot->pregame_safe ? null : 'feature_snapshot_not_pregame_safe',
                 $observedPregame ? null : 'historical_reconstruction_not_bet_eligible',
                 $featuresBeforeStart ? null : 'feature_snapshot_not_before_game_start',
@@ -162,7 +168,7 @@ class RecordShadowBetDecisionsCommand extends Command
                     'model_run_id' => $shadow->inference_run_id,
                     'model_artifact_id' => $artifact->id,
                     'shadow_model_output_id' => $shadow->id,
-                    'prediction_feature_snapshot_id' => $snapshot->id,
+                    'prediction_feature_snapshot_id' => $snapshot instanceof CanonicalShadowSnapshot ? null : $snapshot->id,
                     'game_odds_snapshot_id' => $quote?->game_odds_snapshot_id,
                     'source_table' => 'shadow_model_outputs',
                     'source_id' => $shadow->id,
@@ -223,6 +229,7 @@ class RecordShadowBetDecisionsCommand extends Command
                         'why_not_bet' => $eligibilityReasons,
                     ],
                     'feature_snapshot' => [
+                        'canonical_lineage' => $snapshot instanceof CanonicalShadowSnapshot ? $snapshot->lineage : null,
                         'snapshot_run_id' => $snapshot->snapshot_run_id,
                         'feature_hash' => $snapshot->feature_hash,
                         'features_available_at' => $snapshot->features_available_at?->toIso8601String(),
@@ -397,7 +404,7 @@ class RecordShadowBetDecisionsCommand extends Command
      * @return array{line: ?float, bookmaker: ?string}
      */
     private function modelMarketReference(
-        PredictionFeatureSnapshot $snapshot,
+        PredictionFeatureSnapshot|CanonicalShadowSnapshot $snapshot,
         string $marketType,
         string $side,
     ): array {

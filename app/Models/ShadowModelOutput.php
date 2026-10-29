@@ -12,6 +12,7 @@ class ShadowModelOutput extends Model
         'inference_run_id',
         'model_artifact_id',
         'prediction_feature_snapshot_id',
+        'canonical_prediction_id',
         'sport',
         'game_table',
         'game_id',
@@ -57,6 +58,11 @@ class ShadowModelOutput extends Model
     public function artifact(): BelongsTo
     {
         return $this->belongsTo(ModelArtifact::class, 'model_artifact_id');
+    }
+
+    public function canonicalPrediction(): BelongsTo
+    {
+        return $this->belongsTo(CanonicalPrediction::class);
     }
 
     public function featureSnapshot(): BelongsTo

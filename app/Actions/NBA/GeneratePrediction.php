@@ -4,7 +4,6 @@ namespace App\Actions\NBA;
 
 use App\Actions\Sports\AbstractPredictionGenerator;
 use App\Actions\Sports\Concerns\AppliesTrueEpaPredictionBlend;
-use App\Jobs\NBA\GeneratePredictionNarrative as GeneratePredictionNarrativeJob;
 use App\Models\NBA\Game;
 use App\Models\NBA\PlayerInjury;
 use App\Models\NBA\Prediction;
@@ -49,17 +48,6 @@ class GeneratePrediction extends AbstractPredictionGenerator
     public function preview(Game $game): ?array
     {
         return $this->makePredictionData($game);
-    }
-
-    public function execute(Model $game, bool $dispatchNarratives = true): ?Model
-    {
-        $prediction = parent::execute($game, $dispatchNarratives);
-
-        if ($prediction instanceof Prediction && $dispatchNarratives) {
-            GeneratePredictionNarrativeJob::dispatch($prediction->id);
-        }
-
-        return $prediction;
     }
 
     protected function appliesPersistedInjuryTotalInternally(): bool

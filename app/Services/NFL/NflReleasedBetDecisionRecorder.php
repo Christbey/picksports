@@ -3,7 +3,6 @@
 namespace App\Services\NFL;
 
 use App\Models\BetDecision;
-use App\Models\MarketQuote;
 use App\Models\NFL\Game;
 use App\Models\NFL\Prediction;
 use App\Models\PredictionFeatureSnapshot;
@@ -11,10 +10,11 @@ use App\Services\NFL\Predictions\NflPregameHorizon;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
-use Throwable;
 
 class NflReleasedBetDecisionRecorder
 {
+    public function __construct(private readonly NflCandidateDecisionPolicy $policy) {}
+
     /** @return Collection<int, BetDecision> */
     public function record(Prediction $prediction): Collection
     {
@@ -35,7 +35,7 @@ class NflReleasedBetDecisionRecorder
         $prediction->loadMissing(['game.homeTeam', 'game.awayTeam', 'game.sportEvent']);
         $game = $prediction->game;
         $analysis = (array) data_get($prediction->model_metadata, 'analysis_layer', []);
-        $recommendations = $this->candidateRecommendations($analysis);
+        $recommendations = $this->policy->candidateRecommendations($analysis);
         $candidateMarketKeys = $recommendations->keys()->all();
 
         if (! $game instanceof Game
@@ -91,7 +91,7 @@ class NflReleasedBetDecisionRecorder
         CarbonImmutable $gameStartAt,
         ?PredictionFeatureSnapshot $featureSnapshot,
     ): BetDecision {
-        $selection = $this->selection($prediction, $analysis, $recommendation);
+        $selection = $this->policy->selection($prediction->win_probability !== null ? (float) $prediction->win_probability : null, $analysis, $recommendation);
         if ($selection === null) {
             return $this->recordHold(
                 $prediction,
@@ -129,7 +129,7 @@ class NflReleasedBetDecisionRecorder
             return $existing;
         }
 
-        $quote = $this->entryQuote($game, $selection, $decidedAt, $gameStartAt);
+        $quote = $this->policy->entryQuote($game, $selection, $decidedAt, $gameStartAt);
         if ($quote === null) {
             return $this->recordHold(
                 $prediction,
@@ -209,7 +209,7 @@ class NflReleasedBetDecisionRecorder
                 'market_snapshot' => [
                     ...$quote->toArray(),
                     'immutable_entry_quote' => true,
-                    'maximum_quote_age_minutes' => $this->maximumQuoteAgeMinutes(),
+                    'maximum_quote_age_minutes' => $this->policy->maximumQuoteAgeMinutes(),
                     'model_market_reference_line' => $selection['line'],
                 ],
                 'decided_at' => $decidedAt,
@@ -224,41 +224,7 @@ class NflReleasedBetDecisionRecorder
     {
         $analysis = (array) data_get($prediction->model_metadata, 'analysis_layer', []);
 
-        return $this->candidateRecommendations($analysis)->keys()->all();
-    }
-
-    /**
-     * Model/data consensus identifies candidates, not released wagers. Recording
-     * additionally requires an eligible game, pregame snapshot and exact quote.
-     *
-     * @return Collection<string, array<string, mixed>>
-     */
-    private function candidateRecommendations(array $analysis): Collection
-    {
-        $proSignal = (array) ($analysis['pro_signal_layer'] ?? []);
-
-        if (($analysis['applied'] ?? false) !== true
-            || ($analysis['bet_classification'] ?? null) !== 'bet'
-            || data_get($analysis, 'eligibility.eligible') !== true
-            || ($proSignal['tier'] ?? null) !== 'official_candidate') {
-            return collect();
-        }
-
-        return collect((array) ($proSignal['recommended_markets'] ?? []))
-            ->filter(fn (mixed $recommendation): bool => is_array($recommendation)
-                && ($recommendation['tier'] ?? null) === 'official_candidate')
-            ->filter(fn (array $recommendation): bool => $this->marketKey($recommendation) !== null)
-            ->filter(function (array $recommendation) use ($analysis): bool {
-                if ($this->marketKey($recommendation) !== 'spreads') {
-                    return true;
-                }
-                $edge = data_get($analysis, 'calculated_edge.spread_points');
-
-                return is_numeric($edge) && is_finite((float) $edge)
-                    && abs((float) $edge) >= (float) config('nfl.predictions.analysis_layer.min_spread_edge', 2.0);
-            })
-            ->unique(fn (array $recommendation): string => $this->marketKey($recommendation))
-            ->keyBy(fn (array $recommendation): string => $this->marketKey($recommendation));
+        return $this->policy->candidateRecommendations($analysis)->keys()->all();
     }
 
     /**
@@ -318,7 +284,7 @@ class NflReleasedBetDecisionRecorder
         string $reason,
         ?array $selection = null,
     ): BetDecision {
-        $marketKey = $selection['market_key'] ?? $this->marketKey($recommendation) ?? 'unknown';
+        $marketKey = $selection['market_key'] ?? $this->policy->marketKey($recommendation) ?? 'unknown';
         $marketType = $selection['market_type'] ?? match ($marketKey) {
             'h2h' => 'moneyline',
             'spreads' => 'spread',
@@ -396,7 +362,7 @@ class NflReleasedBetDecisionRecorder
                 ],
                 'market_snapshot' => [
                     'immutable_entry_quote' => false,
-                    'maximum_quote_age_minutes' => $this->maximumQuoteAgeMinutes(),
+                    'maximum_quote_age_minutes' => $this->policy->maximumQuoteAgeMinutes(),
                     'model_market_reference_line' => $line,
                     'hold_reason' => $reason,
                 ],
@@ -405,181 +371,6 @@ class NflReleasedBetDecisionRecorder
                 'game_start_at' => $gameStartAt,
             ],
         );
-    }
-
-    /** @param array<string, mixed> $recommendation */
-    private function marketKey(array $recommendation): ?string
-    {
-        return match (strtolower((string) ($recommendation['market'] ?? ''))) {
-            'winner', 'moneyline', 'h2h' => 'h2h',
-            'spread', 'spreads' => 'spreads',
-            'total', 'totals' => 'totals',
-            default => null,
-        };
-    }
-
-    /**
-     * @param  array<string, mixed>  $analysis
-     * @param  array<string, mixed>  $recommendation
-     * @return array{market_type:string,market_key:string,side:string,line:float|null,edge:float|null,model_probability:float|null}|null
-     */
-    private function selection(Prediction $prediction, array $analysis, array $recommendation): ?array
-    {
-        $market = strtolower((string) ($recommendation['market'] ?? ''));
-        $spreadEdge = $this->number(data_get($analysis, 'calculated_edge.spread_points'));
-        $marketSpread = $this->number(data_get($analysis, 'calculated_edge.market_spread'));
-        $totalEdge = $this->number(data_get($analysis, 'calculated_edge.total_points'));
-        $marketTotal = $this->number(data_get($analysis, 'calculated_edge.market_total'));
-        $homeProbability = $this->number($prediction->win_probability);
-
-        if ($market === 'winner') {
-            if (! (bool) config('nfl.betting.moneyline.play_enabled', false) || $homeProbability === null) {
-                return null;
-            }
-
-            $side = $homeProbability >= 0.5 ? 'home' : 'away';
-
-            return [
-                'market_type' => 'moneyline',
-                'market_key' => 'h2h',
-                'side' => $side,
-                'line' => null,
-                'edge' => null,
-                'model_probability' => $side === 'home' ? $homeProbability : 1 - $homeProbability,
-            ];
-        }
-
-        if ($market === 'spread' && $spreadEdge !== null && $marketSpread !== null) {
-            $side = $spreadEdge >= 0 ? 'home' : 'away';
-
-            return [
-                'market_type' => 'spread',
-                'market_key' => 'spreads',
-                'side' => $side,
-                'line' => $side === 'home' ? -$marketSpread : $marketSpread,
-                'edge' => abs($spreadEdge),
-                'model_probability' => null,
-            ];
-        }
-
-        if ($market === 'total' && $totalEdge !== null && $marketTotal !== null) {
-            return [
-                'market_type' => 'total',
-                'market_key' => 'totals',
-                'side' => $totalEdge >= 0 ? 'over' : 'under',
-                'line' => $marketTotal,
-                'edge' => abs($totalEdge),
-                'model_probability' => null,
-            ];
-        }
-
-        return null;
-    }
-
-    /** @param array{market_type:string,market_key:string,side:string,line:float|null,edge:float|null,model_probability:float|null} $selection */
-    private function entryQuote(
-        Game $game,
-        array $selection,
-        CarbonImmutable $decidedAt,
-        CarbonImmutable $gameStartAt,
-    ): ?MarketQuote {
-        $freshAfter = $decidedAt->subMinutes($this->maximumQuoteAgeMinutes());
-        $query = MarketQuote::query()
-            ->where('sport', 'nfl')
-            ->where('game_table', $game->getTable())
-            ->where('game_id', $game->getKey())
-            ->where('market_key', $selection['market_key'])
-            ->where('side', $selection['side'])
-            ->where('is_pregame', true)
-            ->whereNotNull('price')
-            ->where('captured_at', '>=', $freshAfter)
-            ->where('captured_at', '<=', $decidedAt)
-            ->where('captured_at', '<', $gameStartAt);
-
-        if ($selection['market_type'] !== 'moneyline') {
-            if ($selection['line'] === null) {
-                return null;
-            }
-
-            $query->whereBetween('line', [$selection['line'] - 0.001, $selection['line'] + 0.001]);
-        }
-
-        return $query
-            ->latest('captured_at')
-            ->latest('id')
-            ->get()
-            ->first(fn (MarketQuote $quote): bool => $this->quoteObservedAt($quote)->betweenIncluded($freshAfter, $decidedAt)
-                && $this->hasPairedQuote($quote, $freshAfter, $decidedAt, $gameStartAt));
-    }
-
-    private function hasPairedQuote(
-        MarketQuote $quote,
-        CarbonImmutable $freshAfter,
-        CarbonImmutable $decidedAt,
-        CarbonImmutable $gameStartAt,
-    ): bool {
-        $oppositeSide = match ($quote->side) {
-            'home' => 'away',
-            'away' => 'home',
-            'over' => 'under',
-            'under' => 'over',
-            default => null,
-        };
-
-        if ($oppositeSide === null) {
-            return false;
-        }
-
-        return MarketQuote::query()
-            ->where('game_odds_snapshot_id', $quote->game_odds_snapshot_id)
-            ->where('market_key', $quote->market_key)
-            ->where('side', $oppositeSide)
-            ->where('bookmaker_key', $quote->bookmaker_key)
-            ->where('bookmaker_title', $quote->bookmaker_title)
-            ->whereNotNull('price')
-            ->get()
-            ->contains(fn (MarketQuote $opposite): bool => $this->pairedLinesMatch($quote, $opposite)
-                && $this->quoteObservedAt($opposite)->betweenIncluded($freshAfter, $decidedAt)
-                && $this->quoteObservedAt($opposite)->lt($gameStartAt));
-    }
-
-    private function pairedLinesMatch(MarketQuote $quote, MarketQuote $opposite): bool
-    {
-        if ($quote->market_key === 'h2h') {
-            return true;
-        }
-
-        if (! is_numeric($quote->line) || ! is_numeric($opposite->line)) {
-            return false;
-        }
-
-        return $quote->market_key === 'spreads'
-            ? abs((float) $quote->line + (float) $opposite->line) <= 0.001
-            : abs((float) $quote->line - (float) $opposite->line) <= 0.001;
-    }
-
-    private function maximumQuoteAgeMinutes(): int
-    {
-        return max(1, (int) config('nfl_research.market_freshness_minutes', 2160));
-    }
-
-    private function quoteObservedAt(MarketQuote $quote): CarbonImmutable
-    {
-        $providerObservedAt = data_get($quote->metadata, 'provider_observed_at');
-        if (is_string($providerObservedAt) && $providerObservedAt !== '') {
-            try {
-                return CarbonImmutable::parse($providerObservedAt);
-            } catch (Throwable) {
-                // Fall through to the persisted ingestion timestamp.
-            }
-        }
-
-        return CarbonImmutable::instance($quote->captured_at);
-    }
-
-    private function number(mixed $value): ?float
-    {
-        return is_numeric($value) ? (float) $value : null;
     }
 
     /** @return list<string> */

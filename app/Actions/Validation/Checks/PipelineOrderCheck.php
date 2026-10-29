@@ -4,6 +4,7 @@ namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
 use App\Models\CommandHeartbeat;
+use App\Services\Predictions\PredictionDeliverySource;
 use App\Services\Sports\SeasonStage\SeasonStageService;
 use App\Services\Sports\SportsDateWindowService;
 use App\Services\Validation\CfbValidationCoverage;
@@ -42,6 +43,10 @@ class PipelineOrderCheck implements ValidationCheck
         foreach ($rules as $rule) {
             $upstream = (array) $rule['upstream'];
             $downstream = (array) $rule['downstream'];
+            if (app(PredictionDeliverySource::class)->legacyWriterRetired($sport)
+                && in_array("{$sport}:generate-predictions%", $downstream, true)) {
+                $downstream[] = "{$sport}:generate-canonical-predictions%";
+            }
             $label = (string) ($rule['label'] ?? 'pipeline dependency');
             $ruleSeverity = in_array(($rule['severity'] ?? null), ['warning', 'failing'], true)
                 ? (string) $rule['severity']

@@ -6,6 +6,7 @@ use App\Actions\NFL\UpdateLivePrediction;
 use App\Models\NFL\Game;
 use App\Models\NFL\Prediction;
 use App\Models\NFL\Team;
+use App\Services\Predictions\LivePredictionStore;
 use Illuminate\Support\Facades\DB;
 
 beforeEach(function () {
@@ -40,10 +41,10 @@ test('NFL rejects invalid live states rather than interpreting unknown as zero',
         ->and(app(UpdateLivePrediction::class)->preview($this->game))->toBeNull()
         ->and(app(UpdateLivePrediction::class)->execute($this->game))->toBeNull();
 
-    $this->prediction->refresh();
-    expect($this->prediction->live_win_probability)->toBeNull()
-        ->and($this->prediction->live_seconds_remaining)->toBeNull()
-        ->and($this->prediction->live_updated_at)->toBeNull();
+    $live = livePredictionFor($this->prediction);
+    expect($live->live_win_probability)->toBeNull()
+        ->and($live->live_seconds_remaining)->toBeNull()
+        ->and($live->live_updated_at)->toBeNull();
 })->with([
     'missing clock' => [['game_clock' => null]],
     'blank clock' => [['game_clock' => '']],
@@ -62,6 +63,7 @@ test('NFL rejects invalid live states rather than interpreting unknown as zero',
 ]);
 
 test('NFL preview reads an already loaded snapshot without queries or writes', function () {
+    app(LivePredictionStore::class)->baseline($this->game);
     $before = $this->game->prediction->getAttributes();
     DB::enableQueryLog();
     DB::flushQueryLog();

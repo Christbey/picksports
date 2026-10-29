@@ -9,8 +9,10 @@ use App\Models\NFL\PlayerProp;
 use App\Models\NFL\ResearchRevision;
 use App\Models\SportsGameContextReport;
 use App\Services\AI\AiProviderRateLimitCircuitBreaker;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use App\Services\NFL\NflWebContextResearchService;
+use App\Services\NFL\Predictions\NflRecommendationInputBuilder;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
@@ -24,7 +26,8 @@ class ResearchPipeline
     public function review(Game $game, bool $research = true, bool $forceResearch = false, ?int $requestedBy = null): ?ResearchRevision
     {
         $revision = Cache::lock('nfl-research-game:'.$game->id, 300)->get(function () use ($game, $research, $forceResearch, $requestedBy) {
-            $game->loadMissing(['homeTeam', 'awayTeam', 'prediction']);
+            $game->loadMissing(['homeTeam', 'awayTeam']);
+            $storedForecast = $this->storedForecast($game);
             $kickoff = app(SportsDateWindowService::class)->gameDateTimeUtc($game->game_date, $game->game_time);
             if (! $kickoff
                 || $kickoff->lte(now())
@@ -75,7 +78,7 @@ class ResearchPipeline
             if ($report && $candidateHash !== data_get($report->raw_payload, 'candidate_hash')) {
                 $holds[] = 'research_candidate_changed';
             }
-            if (! $game->prediction) {
+            if ($storedForecast === null) {
                 $holds[] = 'original_prediction_missing';
             }
             $market = $this->quotes($game);
@@ -92,7 +95,7 @@ class ResearchPipeline
             $analysis = data_get($preview, 'model_metadata.analysis_layer', []);
             $eligibility = app(RecommendationEligibility::class)->evaluate($analysis, $preview['model_metadata'], $holds);
             $original = ResearchRevision::where('game_id', $game->id)->oldest('id')->first();
-            $baseline = $original?->baseline ?? $game->prediction?->only(['predicted_spread', 'predicted_total', 'win_probability', 'confidence_score', 'model_version', 'updated_at']) ?? [];
+            $baseline = $original?->baseline ?? ($storedForecast !== null ? Arr::only($storedForecast, ['predicted_spread', 'predicted_total', 'win_probability', 'confidence_score', 'model_version', 'updated_at']) : null) ?? [];
             if ($market === []) {
                 $eligibility = app(RecommendationEligibility::class)->evaluate($analysis, $preview['model_metadata'], [...$holds, 'spread_quote_missing']);
             }
@@ -105,7 +108,7 @@ class ResearchPipeline
             $previous = ResearchRevision::where('game_id', $game->id)->latest('id')->first();
             $brief = [
                 'requested_by' => $requestedBy,
-                'stored_prediction_hash' => $game->prediction ? $this->storedPredictionHash($game->prediction->toArray()) : null,
+                'stored_prediction_hash' => $storedForecast !== null ? $this->storedPredictionHash($storedForecast) : null,
                 'game' => $game->short_name ?: $game->name,
                 'kickoff_at' => $kickoff->toIso8601String(),
                 'eligibility' => $eligibility,
@@ -149,6 +152,26 @@ class ResearchPipeline
         // Laravel returns false for contention; this service returns an optional
         // revision, not a boolean. A concurrent review is not a TypeError.
         return $revision instanceof ResearchRevision ? $revision : null;
+    }
+
+    /** @return array<string, mixed>|null */
+    private function storedForecast(Game $game): ?array
+    {
+        if (! (bool) config('prediction_lifecycle.canonical_pipeline.nfl', false)) {
+            return $game->loadMissing('prediction')->getRelation('prediction')?->toArray();
+        }
+        $prediction = app(CanonicalSportPredictionQuery::class)->queryForSport('nfl', ['game_id' => $game->id])
+            ->withOnly('calculationRun.inputSnapshot')->first();
+        $context = (array) data_get($prediction?->calculationRun?->inputSnapshot?->inputs, 'recommendation_context', []);
+        if ($prediction === null || ($context['version'] ?? null) !== NflRecommendationInputBuilder::VERSION) {
+            return null;
+        }
+
+        return [...(array) ($context['outputs'] ?? []),
+            'model_metadata' => (array) ($context['model_metadata'] ?? []),
+            'model_version' => $context['model_version'] ?? null,
+            'feature_version' => $prediction->feature_version, 'blend_version' => $prediction->blend_version,
+            'updated_at' => $prediction->generated_at?->toIso8601String()];
     }
 
     /** Preserve scoped uncertainty records without array-to-string coercion. */

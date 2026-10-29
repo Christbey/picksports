@@ -11,6 +11,8 @@ use App\Actions\NFL\GradePredictions as NflGradePredictions;
 use App\Actions\WCBB\GradePredictions as WcbbGradePredictions;
 use App\Actions\WNBA\GradePredictions as WnbaGradePredictions;
 use App\Events\GameFinalized;
+use App\Services\Api\V2\SportContextResolver;
+use App\Services\Predictions\CanonicalTeamGameEvaluator;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
@@ -67,6 +69,16 @@ class TriggerGameFinalizationGrading implements ShouldBeUnique, ShouldQueue
         $playerPropSportKey = self::PLAYER_PROP_SPORT_KEY_BY_SPORT[$event->sport] ?? null;
         if ($playerPropSportKey) {
             app(GradePlayerProps::class)->executeForGame($playerPropSportKey, $event->gameId);
+        }
+
+        if ((bool) config("prediction_lifecycle.canonical_pipeline.{$event->sport}", false)) {
+            $gameClass = app(SportContextResolver::class)->find($event->sport)?->models['game'] ?? null;
+            if ($gameClass !== null && $gameClass === $event->gameModelClass) {
+                $game = $gameClass::query()->find($event->gameId);
+                if ($game !== null) {
+                    app(CanonicalTeamGameEvaluator::class)->evaluate($game, $event->sport);
+                }
+            }
         }
     }
 }

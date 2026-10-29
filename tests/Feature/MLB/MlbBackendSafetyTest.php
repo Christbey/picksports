@@ -9,6 +9,7 @@ use App\Models\MLB\Team;
 use App\Models\MLB\TeamMetric;
 use App\Models\PredictionFeatureSnapshot;
 use App\Services\MLB\MlbPredictionRecommendationService;
+use App\Services\Predictions\LivePredictionStore;
 use App\Support\MLB\MlbGamePhase;
 use App\Support\MLB\MlbMarketSpread;
 use Illuminate\Support\Carbon;
@@ -278,13 +279,18 @@ it('clears live prediction fields for delayed games instead of treating them as 
         'live_updated_at' => now(),
     ]);
 
+    seedLivePrediction($prediction);
+    $historical = $prediction->refresh()->getAttributes();
+    expect(livePredictionFor($prediction)->live_win_probability)->toBe(0.75);
     $result = app(UpdateLivePrediction::class)->execute($game->fresh());
 
     expect($result)->toBeNull();
-    $prediction->refresh();
-    expect($prediction->live_win_probability)->toBeNull()
-        ->and($prediction->live_predicted_spread)->toBeNull()
-        ->and($prediction->live_predicted_total)->toBeNull();
+    expect($prediction->fresh()->getAttributes())->toBe($historical)
+        ->and(app(LivePredictionStore::class)->latest($game->fresh())->status)->toBe('inactive');
+    $live = livePredictionFor($prediction->fresh());
+    expect($live->live_win_probability)->toBeNull()
+        ->and($live->live_predicted_spread)->toBeNull()
+        ->and($live->live_predicted_total)->toBeNull();
 });
 
 it('documents mlb market spread sign conversion', function () {

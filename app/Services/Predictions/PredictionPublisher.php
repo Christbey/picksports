@@ -3,8 +3,10 @@
 namespace App\Services\Predictions;
 
 use App\Exceptions\Predictions\PredictionLifecycleException;
+use App\Jobs\Predictions\GeneratePredictionNarrative;
 use App\Models\CanonicalPrediction;
 use App\Models\PredictionMarket;
+use App\Support\SportsViewCache;
 use Illuminate\Support\Facades\DB;
 
 class PredictionPublisher
@@ -60,6 +62,21 @@ class PredictionPublisher
                 'publication_state' => 'published',
                 'published_at' => now(),
             ]);
+
+            DB::afterCommit(static function () use ($prediction): void {
+                app(SportsViewCache::class)->bustSegments([
+                    SportsViewCache::SEGMENT_DASHBOARD,
+                    SportsViewCache::SEGMENT_LIVE_SCOREBOARD,
+                    SportsViewCache::SEGMENT_PREDICTIONS_INDEX,
+                    SportsViewCache::SEGMENT_PREDICTIONS_BY_GAME,
+                    SportsViewCache::SEGMENT_PREDICTIONS_AVAILABLE_DATES,
+                    SportsViewCache::SEGMENT_PREDICTIONS_AVAILABLE_SEASONS,
+                ]);
+                if ($prediction->sport !== 'nfl' && $prediction->calculationRun?->trigger !== 'coverage'
+                    && app(PredictionDeliverySource::class)->legacyWriterRetired($prediction->sport)) {
+                    GeneratePredictionNarrative::dispatch(CanonicalPrediction::class, $prediction->id, $prediction->sport);
+                }
+            });
 
             return $prediction->fresh(['markets', 'calculationRun.release', 'calculationRun.inputSnapshot']);
         });

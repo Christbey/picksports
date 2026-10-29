@@ -2,15 +2,15 @@
 
 namespace App\Services\Predictions;
 
-use App\Actions\NBA\CalculateBettingValue;
 use App\Actions\NBA\CalculateTeamTrends;
-use App\Models\MLB\Prediction as MlbPrediction;
+use App\Models\CanonicalPrediction;
 use App\Models\NBA\Game;
-use App\Models\NBA\Prediction;
 use App\Services\AI\SportsAiContentService;
+use App\Services\BettingRecommendations\GameBettingRecommendationService;
 use App\Services\MLB\MlbBettingSignalService;
 use App\Services\NBA\NbaGameContextLayerService;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use JsonException;
 use Throwable;
@@ -37,11 +37,15 @@ class PredictionNarrativeService
      * @param  array<string, mixed>|null  $trendSnapshot
      */
     public function forNba(
-        Prediction $prediction,
+        Model $prediction,
         ?Game $game = null,
         bool $allowOpenAi = true,
         ?array $trendSnapshot = null
     ): array {
+        if ($prediction instanceof CanonicalPrediction) {
+            return $this->canonicalNarrative($prediction, 'nba');
+        }
+
         $game ??= $prediction->game;
         if ($game) {
             $game->loadMissing(['homeTeam', 'awayTeam']);
@@ -75,8 +79,11 @@ class PredictionNarrativeService
         bool $allowOpenAi = true
     ): array {
         $sport = strtolower($sport);
+        if ($prediction instanceof CanonicalPrediction) {
+            return $this->canonicalNarrative($prediction, $sport);
+        }
 
-        if ($sport === 'nba' && $prediction instanceof Prediction) {
+        if ($sport === 'nba') {
             return $this->forNba($prediction, $game instanceof Game ? $game : null, $allowOpenAi);
         }
 
@@ -96,8 +103,12 @@ class PredictionNarrativeService
         return $openAiNarrative ?? $templateNarrative;
     }
 
-    public function inputHashForNba(Prediction $prediction, ?Game $game = null): string
+    public function inputHashForNba(Model $prediction, ?Game $game = null): string
     {
+        if ($prediction instanceof CanonicalPrediction) {
+            return hash('sha256', json_encode($this->canonicalNarrative($prediction, 'nba'), JSON_THROW_ON_ERROR));
+        }
+
         $game ??= $prediction->game;
         if ($game) {
             $game->loadMissing(['homeTeam', 'awayTeam']);
@@ -134,7 +145,7 @@ class PredictionNarrativeService
             'form_spread_component' => (float) ($prediction->form_spread_component ?? 0),
             'vegas_spread' => $prediction->vegas_spread !== null ? (float) $prediction->vegas_spread : null,
             'context_layer' => $game instanceof Game
-                ? app(NbaGameContextLayerService::class)->analyze($game, $prediction, $this->resolveBestBet($game))
+                ? app(NbaGameContextLayerService::class)->analyze($game, $prediction, $this->resolveBestBet($game, $prediction))
                 : null,
         ];
 
@@ -147,9 +158,13 @@ class PredictionNarrativeService
 
     public function inputHashForSport(Model $prediction, ?Model $game = null, string $sport = 'nba'): string
     {
+        if ($prediction instanceof CanonicalPrediction) {
+            return hash('sha256', json_encode($this->canonicalNarrative($prediction, $sport), JSON_THROW_ON_ERROR));
+        }
+
         $sport = strtolower($sport);
 
-        if ($sport === 'nba' && $prediction instanceof Prediction) {
+        if ($sport === 'nba') {
             return $this->inputHashForNba($prediction, $game instanceof Game ? $game : null);
         }
 
@@ -221,7 +236,7 @@ class PredictionNarrativeService
     /**
      * @param  array<string, mixed>|null  $trendSnapshot
      */
-    private function templateForNba(Prediction $prediction, ?Game $game = null, ?array $trendSnapshot = null): array
+    private function templateForNba(Model $prediction, ?Game $game = null, ?array $trendSnapshot = null): array
     {
         $homeName = $this->teamName($game?->homeTeam, 'Home team');
         $awayName = $this->teamName($game?->awayTeam, 'Away team');
@@ -273,7 +288,7 @@ class PredictionNarrativeService
         $modelVsMarketEdgeTeam = $marketEdge !== null
             ? (($marketEdge >= 0) ? $homeName : $awayName)
             : null;
-        $bestBet = $this->resolveBestBet($game);
+        $bestBet = $this->resolveBestBet($game, $prediction);
         $contextLayer = $game instanceof Game
             ? app(NbaGameContextLayerService::class)->analyze($game, $prediction, $bestBet)
             : [];
@@ -557,7 +572,7 @@ class PredictionNarrativeService
      * @param  array<string, mixed>|null  $trendSnapshot
      */
     private function generateWithOpenAiForNba(
-        Prediction $prediction,
+        Model $prediction,
         ?Game $game = null,
         ?array $trendSnapshot = null
     ): ?array {
@@ -578,7 +593,7 @@ class PredictionNarrativeService
                     $homeName,
                     $awayName,
                     $trendSnapshot,
-                    $game instanceof Game ? app(NbaGameContextLayerService::class)->analyze($game, $prediction, $this->resolveBestBet($game)) : []
+                    $game instanceof Game ? app(NbaGameContextLayerService::class)->analyze($game, $prediction, $this->resolveBestBet($game, $prediction)) : []
                 ),
                 provider: 'openai',
                 model: $model,
@@ -594,7 +609,7 @@ class PredictionNarrativeService
                 'risk_note' => $decoded['risk_note'],
                 'generated_by' => $decoded['generated_by'],
                 'betting_plan' => $decoded['betting_plan'] ?? $this->buildBettingPlan(
-                    bestBet: $this->resolveBestBet($game),
+                    bestBet: $this->resolveBestBet($game, $prediction),
                     pickedTeam: $pickedTeam,
                     spread: (float) $prediction->predicted_spread,
                     confidence: (float) $prediction->confidence_score,
@@ -614,9 +629,9 @@ class PredictionNarrativeService
                         ((float) ($prediction->home_off_eff ?? 0) - (float) ($prediction->home_def_eff ?? 0))
                         - ((float) ($prediction->away_off_eff ?? 0) - (float) ($prediction->away_def_eff ?? 0))
                     ),
-                    contextLayer: $game instanceof Game ? app(NbaGameContextLayerService::class)->analyze($game, $prediction, $this->resolveBestBet($game)) : []
+                    contextLayer: $game instanceof Game ? app(NbaGameContextLayerService::class)->analyze($game, $prediction, $this->resolveBestBet($game, $prediction)) : []
                 ),
-                'context_layer' => $game instanceof Game ? app(NbaGameContextLayerService::class)->analyze($game, $prediction, $this->resolveBestBet($game)) : [],
+                'context_layer' => $game instanceof Game ? app(NbaGameContextLayerService::class)->analyze($game, $prediction, $this->resolveBestBet($game, $prediction)) : [],
                 'social_caption' => $decoded['social_caption'] ?? null,
             ];
         } catch (Throwable $exception) {
@@ -651,6 +666,51 @@ class PredictionNarrativeService
             provider: 'openai',
             model: $model,
         );
+    }
+
+    /** @return array<string, mixed> */
+    private function canonicalNarrative(CanonicalPrediction $prediction, string $sport): array
+    {
+        $source = app(BettingForecastSource::class);
+        $forecast = $source->fromModel($prediction, strtolower($sport));
+        if ($forecast->game === null) {
+            return [
+                'summary' => 'Forecast unavailable.', 'key_points' => [],
+                'risk_note' => 'A verified published forecast is required.',
+                'generated_by' => 'template:canonical-v1',
+                'betting_plan' => ['bet_pick' => 'No bet / pass.', 'reasoning' => 'Forecast unavailable.'],
+                'social_caption' => null,
+            ];
+        }
+        $home = $this->teamName($forecast->game->homeTeam, 'Home team');
+        $away = $this->teamName($forecast->game->awayTeam, 'Away team');
+        $homePick = $forecast->winProbability >= 0.5;
+        $team = $homePick ? $home : $away;
+        $probability = $homePick ? $forecast->winProbability : 1 - $forecast->winProbability;
+        $approved = $source->approvedSignalRows([$forecast]);
+        $best = $approved[0] ?? null;
+        $summary = sprintf('%s lean: %s (%s model win probability).', strtoupper($sport), $team, $this->percent($probability));
+
+        $narrative = [
+            'summary' => $summary,
+            'key_points' => [
+                'Projected home margin: '.$this->signedNumber($forecast->predictedSpread).'.',
+                'Projected total: '.$this->number($forecast->predictedTotal).'.',
+            ],
+            'risk_note' => 'Model estimates are not guarantees. A forecast lean alone does not establish a playable bet.',
+            'generated_by' => 'template:canonical-v1',
+            'betting_plan' => [
+                'bet_pick' => $best !== null ? $best['recommendation'].' ('.$this->formatOddsText($best['market_price']).').' : 'No bet / pass.',
+                'reasoning' => $best !== null ? ($best['reasoning'] ?? 'Stored approved public decision for this forecast revision.') : 'No approved public decision is available for this forecast revision.',
+            ],
+            'social_caption' => $summary,
+            'prediction_public_id' => $prediction->public_id,
+            'prediction_revision' => $prediction->revision,
+            'approved_decision_ids' => array_column($approved, 'bet_decision_id'),
+        ];
+        $hash = hash('sha256', json_encode($narrative, JSON_THROW_ON_ERROR));
+
+        return Cache::get('prediction-narrative:canonical:'.$prediction->public_id.':'.$hash, $narrative);
     }
 
     private function shouldUseOpenAi(string $sport = 'nba'): bool
@@ -861,7 +921,7 @@ class PredictionNarrativeService
      */
     private function genericBettingPlanContext(Model $prediction, string $sport): array
     {
-        if ($sport !== 'mlb' || ! $prediction instanceof MlbPrediction) {
+        if ($sport !== 'mlb' || $prediction instanceof CanonicalPrediction) {
             return [];
         }
 
@@ -979,7 +1039,7 @@ class PredictionNarrativeService
      * @param  array<string, mixed>|null  $trendSnapshot
      */
     private function buildNbaPrompt(
-        Prediction $prediction,
+        Model $prediction,
         string $homeName,
         string $awayName,
         ?array $trendSnapshot = null,
@@ -1478,16 +1538,13 @@ class PredictionNarrativeService
     /**
      * @return array{recommendation:string,reasoning:string,odds_text:string,type:string}|null
      */
-    private function resolveBestBet(?Game $game): ?array
+    private function resolveBestBet(?Game $game, Model $prediction): ?array
     {
-        if (! $game || ! $game->relationLoaded('prediction')) {
-            $game?->loadMissing('prediction');
-        }
-        if (! $game || ! $game->prediction) {
+        if (! $game) {
             return null;
         }
 
-        $recommendations = app(CalculateBettingValue::class)->execute($game);
+        $recommendations = app(GameBettingRecommendationService::class)->forPrediction(app(PredictionDeliverySource::class)->context($prediction, 'nba', $game));
         if (! is_array($recommendations) || $recommendations === []) {
             return null;
         }

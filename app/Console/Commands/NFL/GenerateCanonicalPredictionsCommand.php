@@ -7,10 +7,12 @@ use App\Console\Commands\Sports\Canonical\AbstractGenerateCanonicalPredictionsCo
 use App\Models\NFL\Game;
 use App\Services\NFL\Predictions\NflCanonicalCutoverReadinessService;
 use App\Services\NFL\Predictions\NflPregameHorizon;
+use App\Services\Sports\SportsDateWindowService;
+use Carbon\CarbonImmutable;
 
 class GenerateCanonicalPredictionsCommand extends AbstractGenerateCanonicalPredictionsCommand
 {
-    protected $signature = 'nfl:generate-canonical-predictions {--game=} {--season=} {--date=} {--days-forward=8} {--draft} {--verify-readiness}';
+    protected $signature = 'nfl:generate-canonical-predictions {--game=} {--season=} {--date=} {--days-forward=8} {--from-date=} {--to-date=} {--draft} {--verify-readiness}';
 
     protected $description = 'Generate canonical NFL predictions';
 
@@ -63,6 +65,15 @@ class GenerateCanonicalPredictionsCommand extends AbstractGenerateCanonicalPredi
     /** @return array{start: mixed, end: mixed} */
     protected function generationHorizon(): array
     {
+        if (filled($this->option('from-date')) || filled($this->option('to-date'))) {
+            $dates = app(SportsDateWindowService::class);
+            $start = $this->option('from-date') ?: now($dates->timezone())->toDateString();
+            $end = $this->option('to-date') ?: CarbonImmutable::parse($start, $dates->timezone())->addDays((int) $this->option('days-forward'))->toDateString();
+            $window = $dates->forRange($start, $end);
+
+            return ['start' => $window->utcStart, 'end' => $window->utcEnd];
+        }
+
         return app(NflPregameHorizon::class)->resolve(
             filled($this->option('date')) ? (string) $this->option('date') : null,
             (int) $this->option('days-forward'),

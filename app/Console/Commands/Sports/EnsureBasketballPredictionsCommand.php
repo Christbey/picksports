@@ -3,7 +3,9 @@
 namespace App\Console\Commands\Sports;
 
 use App\Models\CanonicalPrediction;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\CommandHeartbeatService;
+use App\Services\Predictions\PredictionDeliverySource;
 use App\Services\Sports\PipelineCommandRunner;
 use App\Services\Sports\SportsDateWindowService;
 use App\Support\BasketballSeason;
@@ -73,6 +75,10 @@ class EnsureBasketballPredictionsCommand extends Command
                         return self::FAILURE;
                     }
                 }
+            } elseif ($canonical && app(PredictionDeliverySource::class)->usesCanonical($sport)) {
+                $query->whereNotIn($query->getModel()->getTable().'.id',
+                    app(CanonicalSportPredictionQuery::class)->queryForSport($sport)
+                        ->reorder()->select("{$sport}_games.id"));
             } elseif ($canonical) {
                 $query->whereDoesntHave('sportEvent.predictions', fn ($query) => $query
                     ->where('phase', 'pregame')->where('publication_state', 'published'));

@@ -2,21 +2,45 @@
 
 namespace App\Services\MLB;
 
+use App\Application\Sports\ReadModels\BettingForecast;
 use App\Models\MLB\Game;
 use App\Models\MLB\PlayoffForecast;
-use App\Models\MLB\Prediction;
 use App\Models\MLB\Team;
+use App\Services\Predictions\BettingForecastSource;
 use App\Services\Sports\FuturesEdgeService;
 use App\Services\Sports\FuturesOddsLookupService;
 use App\Services\Sports\SportsDateWindowService;
 use App\Support\MLB\MlbMarketSpread;
 use App\Support\Odds\AmericanOdds;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 class MlbBettingSignalService
 {
     public const FILTER_VERSION = 'selective_mlb_bet_filter_v1';
+
+    /** @var array<int, BettingForecast|null> */
+    private array $historyForecasts = [];
+
+    private function primeHistoryForecasts(Collection $games): void
+    {
+        $missing = $games->filter(fn (Game $game): bool => ! array_key_exists($game->id, $this->historyForecasts));
+        $forecasts = app(BettingForecastSource::class)->historyForGames($missing, 'mlb');
+        foreach ($missing as $game) {
+            $this->historyForecasts[$game->id] = $forecasts->get($game->id);
+        }
+    }
+
+    private function historyForecast(Game $game): ?BettingForecast
+    {
+        if (! array_key_exists($game->id, $this->historyForecasts)) {
+            $this->historyForecasts[$game->id] = app(BettingForecastSource::class)->forGame($game, 'mlb');
+        }
+
+        return $this->historyForecasts[$game->id];
+    }
 
     public function __construct(
         protected FuturesOddsLookupService $futuresOddsLookup,
@@ -29,6 +53,8 @@ class MlbBettingSignalService
      */
     public function signals(int $season, ?CarbonInterface $asOfDate = null): array
     {
+        $this->historyForecasts = [];
+
         $asOfDate ??= now();
         $slateDate = $this->targetSlateDate($season, $asOfDate);
         $slatePredictions = $slateDate !== null ? $this->slatePredictionRows($season, $slateDate) : [];
@@ -36,6 +62,7 @@ class MlbBettingSignalService
 
         return [
             'season' => $season,
+            'prediction_source' => app(BettingForecastSource::class)->usesCanonical('mlb') ? 'canonical' : 'legacy',
             'as_of_date' => $asOfDate->toDateString(),
             'slate_date' => $slateDate?->toDateString(),
             'backend_review' => $this->backendReview(),
@@ -47,9 +74,12 @@ class MlbBettingSignalService
             'totals' => $this->totalSignals($slatePredictions),
             'ballpark' => $this->ballparkSignals($slatePredictions),
             'live' => $this->liveSignals($season, $asOfDate),
+            'live_coverage_status' => 'separate_live_snapshots',
             'bet_filter' => $this->betFilterSummary(),
             'moneyline_readiness' => $this->moneylineReadiness($slatePredictions),
-            'recommended_bets' => $this->publicRecommendedBets($candidateBets),
+            'recommended_bets' => app(BettingForecastSource::class)->usesCanonical('mlb')
+                ? app(BettingForecastSource::class)->approvedSignalRows($slatePredictions)
+                : $this->publicRecommendedBets($candidateBets),
             'shadow_recommended_bets' => $candidateBets,
             'pass_summary' => $this->passSummary($slatePredictions),
             'streaks' => $this->streakSignals($season, $asOfDate),
@@ -112,7 +142,7 @@ class MlbBettingSignalService
     }
 
     /**
-     * @param  array<int,Prediction>  $predictions
+     * @param  array<int,BettingForecast>  $predictions
      * @return array<string,mixed>
      */
     protected function oddsHealth(array $predictions): array
@@ -128,8 +158,8 @@ class MlbBettingSignalService
             $game = $prediction->game;
             $oddsData = $game?->odds_data;
             $hasH2h = $this->extractMarket($oddsData, 'h2h') !== null;
-            $hasSpreads = $this->extractMarket($oddsData, 'spreads') !== null || $prediction->vegas_spread !== null;
-            $hasTotals = $this->extractMarket($oddsData, 'totals') !== null || is_numeric(data_get($prediction->model_metadata, 'market_context.market_total'));
+            $hasSpreads = $this->extractMarket($oddsData, 'spreads') !== null || $prediction->vegasSpread !== null;
+            $hasTotals = $this->extractMarket($oddsData, 'totals') !== null || is_numeric(data_get($prediction->modelMetadata, 'market_context.market_total'));
 
             $h2h += $hasH2h ? 1 : 0;
             $spreads += $hasSpreads ? 1 : 0;
@@ -193,21 +223,14 @@ class MlbBettingSignalService
     }
 
     /**
-     * @return array<int,Prediction>
+     * @return array<int,BettingForecast>
      */
     protected function slatePredictionRows(int $season, CarbonInterface $slateDate): array
     {
-        return Prediction::query()
-            ->with(['game.homeTeam', 'game.awayTeam'])
-            ->where('season', $season)
-            ->whereHas('game', function ($query) use ($slateDate): void {
-                $query->whereDate('game_date', $slateDate->toDateString())
-                    ->where('status', config('mlb.statuses.scheduled'));
-            })
-            ->get()
-            ->filter(fn (Prediction $prediction): bool => $prediction->game !== null)
-            ->values()
-            ->all();
+        $ids = Game::query()->whereDate('game_date', $slateDate->toDateString())
+            ->where('status', config('mlb.statuses.scheduled'))->pluck('id')->all();
+
+        return app(BettingForecastSource::class)->forGames('mlb', $ids, $season)->all();
     }
 
     /**
@@ -292,14 +315,14 @@ class MlbBettingSignalService
     }
 
     /**
-     * @param  array<int,Prediction>  $predictions
+     * @param  array<int,BettingForecast>  $predictions
      * @return array<int,array<string,mixed>>
      */
     protected function moneylineSignals(array $predictions): array
     {
-        $signals = array_map(function (Prediction $prediction): array {
+        $signals = array_map(function (BettingForecast $prediction): array {
             $game = $prediction->game;
-            $homeWinProbability = (float) $prediction->win_probability;
+            $homeWinProbability = (float) $prediction->winProbability;
             $pickSide = $homeWinProbability >= 0.5 ? 'home' : 'away';
             $pickTeam = $pickSide === 'home' ? $game->homeTeam : $game->awayTeam;
 
@@ -312,7 +335,7 @@ class MlbBettingSignalService
                 'team_id' => (int) ($pickTeam?->id ?? 0),
                 'team_name' => $this->teamName($pickTeam),
                 'win_probability' => round(max($homeWinProbability, 1 - $homeWinProbability), 4),
-                'confidence_score' => (float) $prediction->confidence_score,
+                'confidence_score' => (float) $prediction->confidenceScore,
                 'reason_codes' => $this->predictionReasonCodes($prediction, 'moneyline_signal'),
             ];
         }, $predictions);
@@ -324,7 +347,7 @@ class MlbBettingSignalService
     }
 
     /**
-     * @param  array<int,Prediction>  $predictions
+     * @param  array<int,BettingForecast>  $predictions
      * @return array<int,array<string,mixed>>
      */
     protected function runLineSignals(array $predictions): array
@@ -332,7 +355,7 @@ class MlbBettingSignalService
         $signals = [];
 
         foreach ($predictions as $prediction) {
-            if ($prediction->vegas_spread === null) {
+            if ($prediction->vegasSpread === null) {
                 continue;
             }
 
@@ -353,8 +376,8 @@ class MlbBettingSignalService
                 'pick_side' => $pickSide,
                 'team_id' => (int) ($pickTeam?->id ?? 0),
                 'team_name' => $this->teamName($pickTeam),
-                'predicted_spread' => (float) $prediction->predicted_spread,
-                'vegas_spread' => (float) $prediction->vegas_spread,
+                'predicted_spread' => (float) $prediction->predictedSpread,
+                'vegas_spread' => (float) $prediction->vegasSpread,
                 'edge_runs' => round(abs($edge), 2),
                 'reason_codes' => $this->predictionReasonCodes($prediction, $pickSide.'_run_line_edge'),
             ];
@@ -366,7 +389,7 @@ class MlbBettingSignalService
     }
 
     /**
-     * @param  array<int,Prediction>  $predictions
+     * @param  array<int,BettingForecast>  $predictions
      * @return array<int,array<string,mixed>>
      */
     protected function totalSignals(array $predictions): array
@@ -374,12 +397,12 @@ class MlbBettingSignalService
         $signals = [];
 
         foreach ($predictions as $prediction) {
-            $marketTotal = data_get($prediction->model_metadata, 'market_context.market_total');
+            $marketTotal = data_get($prediction->modelMetadata, 'market_context.market_total');
             if (! is_numeric($marketTotal)) {
                 continue;
             }
 
-            $edge = (float) $prediction->predicted_total - (float) $marketTotal;
+            $edge = (float) $prediction->predictedTotal - (float) $marketTotal;
             if (abs($edge) < (float) config('mlb.signals.total_min_edge', 0.75)) {
                 continue;
             }
@@ -391,7 +414,7 @@ class MlbBettingSignalService
                 'game_date' => $game->game_date?->toDateString(),
                 'matchup' => (string) ($game->short_name ?: $game->name),
                 'pick_side' => $edge > 0 ? 'over' : 'under',
-                'predicted_total' => (float) $prediction->predicted_total,
+                'predicted_total' => (float) $prediction->predictedTotal,
                 'market_total' => (float) $marketTotal,
                 'edge_runs' => round(abs($edge), 2),
                 'reason_codes' => $this->predictionReasonCodes($prediction, $edge > 0 ? 'total_over_edge' : 'total_under_edge'),
@@ -404,7 +427,7 @@ class MlbBettingSignalService
     }
 
     /**
-     * @param  array<int,Prediction>  $predictions
+     * @param  array<int,BettingForecast>  $predictions
      * @return array<int,array<string,mixed>>
      */
     protected function ballparkSignals(array $predictions): array
@@ -417,14 +440,14 @@ class MlbBettingSignalService
                 continue;
             }
 
-            $parkContext = (array) data_get($prediction->model_metadata, 'park_context', []);
+            $parkContext = (array) data_get($prediction->modelMetadata, 'park_context', []);
             $venueName = (string) ($parkContext['venue_name'] ?? $game->venue_name ?? '');
             if ($venueName === '') {
                 continue;
             }
 
             $totalAdjustment = (float) ($parkContext['total_adjustment'] ?? 0.0);
-            $pickSide = ((float) $prediction->win_probability) >= 0.5 ? 'home' : 'away';
+            $pickSide = ((float) $prediction->winProbability) >= 0.5 ? 'home' : 'away';
             $pickTeam = $pickSide === 'home' ? $game->homeTeam : $game->awayTeam;
             $weatherSignal = (string) ($parkContext['weather_signal'] ?? 'weather_not_available');
 
@@ -443,8 +466,8 @@ class MlbBettingSignalService
                 'win_signal' => (string) ($parkContext['win_signal'] ?? $this->ballparkWinSignal($totalAdjustment)),
                 'weather_signal' => $weatherSignal,
                 'total_adjustment' => round($totalAdjustment, 2),
-                'predicted_total' => (float) $prediction->predicted_total,
-                'confidence_score' => (float) $prediction->confidence_score,
+                'predicted_total' => (float) $prediction->predictedTotal,
+                'confidence_score' => (float) $prediction->confidenceScore,
                 'reason_codes' => $this->ballparkReasonCodes($totalAdjustment, $weatherSignal),
             ];
         }
@@ -470,18 +493,11 @@ class MlbBettingSignalService
             config('mlb.statuses.in_progress'),
         ]));
 
-        $query = Prediction::query()
-            ->with(['game.homeTeam', 'game.awayTeam'])
-            ->where('season', $season)
-            ->whereHas('game', function ($query) use ($liveStatuses, $window): void {
-                $query->whereIn('status', $liveStatuses);
-                $this->dateWindows->applyGameDateWindow($query, $window);
-            });
+        $ids = Game::query()->whereIn('status', $liveStatuses)
+            ->tap(fn ($query) => $this->dateWindows->applyGameDateWindow($query, $window))->pluck('id')->all();
 
-        return $query
-            ->get()
-            ->filter(fn (Prediction $prediction): bool => $prediction->game !== null)
-            ->map(fn (Prediction $prediction): array => $this->liveSignalRow($prediction))
+        return app(BettingForecastSource::class)->forGames('mlb', $ids, $season, live: true)
+            ->map(fn (BettingForecast $prediction): array => $this->liveSignalRow($prediction))
             ->sortByDesc(fn (array $row): float => (float) ($row['live_probability_delta'] ?? 0.0))
             ->values()
             ->take(12)
@@ -491,18 +507,18 @@ class MlbBettingSignalService
     /**
      * @return array<string,mixed>
      */
-    protected function liveSignalRow(Prediction $prediction): array
+    protected function liveSignalRow(BettingForecast $prediction): array
     {
         $game = $prediction->game;
-        $liveWinProbability = $prediction->live_win_probability !== null
-            ? (float) $prediction->live_win_probability
+        $liveWinProbability = $prediction->liveWinProbability !== null
+            ? (float) $prediction->liveWinProbability
             : null;
-        $pregameWinProbability = $prediction->win_probability !== null
-            ? (float) $prediction->win_probability
+        $pregameWinProbability = $prediction->winProbability !== null
+            ? (float) $prediction->winProbability
             : null;
         $pickSide = ($liveWinProbability ?? $pregameWinProbability ?? 0.5) >= 0.5 ? 'home' : 'away';
         $pickTeam = $pickSide === 'home' ? $game?->homeTeam : $game?->awayTeam;
-        $updatedAt = $prediction->live_updated_at ? Carbon::parse($prediction->live_updated_at) : null;
+        $updatedAt = $prediction->liveUpdatedAt ? Carbon::parse($prediction->liveUpdatedAt) : null;
         $staleMinutes = (int) config('mlb.signals.live_stale_minutes', 6);
         $isStale = $updatedAt === null || $updatedAt->lt(now()->subMinutes($staleMinutes));
         $probabilityDelta = $liveWinProbability !== null && $pregameWinProbability !== null
@@ -525,9 +541,9 @@ class MlbBettingSignalService
             'pregame_win_probability' => $pregameWinProbability !== null ? round($pregameWinProbability, 4) : null,
             'live_win_probability' => $liveWinProbability !== null ? round($liveWinProbability, 4) : null,
             'live_probability_delta' => $probabilityDelta !== null ? round($probabilityDelta, 4) : null,
-            'live_predicted_spread' => $prediction->live_predicted_spread !== null ? (float) $prediction->live_predicted_spread : null,
-            'live_predicted_total' => $prediction->live_predicted_total !== null ? (float) $prediction->live_predicted_total : null,
-            'live_outs_remaining' => $prediction->live_outs_remaining !== null ? (int) $prediction->live_outs_remaining : null,
+            'live_predicted_spread' => $prediction->livePredictedSpread !== null ? (float) $prediction->livePredictedSpread : null,
+            'live_predicted_total' => $prediction->livePredictedTotal !== null ? (float) $prediction->livePredictedTotal : null,
+            'live_outs_remaining' => $prediction->liveOutsRemaining !== null ? (int) $prediction->liveOutsRemaining : null,
             'live_updated_at' => $updatedAt?->toIso8601String(),
             'is_stale' => $isStale,
             'signal' => $this->liveSignalLabel($prediction, $isStale, $probabilityDelta),
@@ -536,16 +552,16 @@ class MlbBettingSignalService
         ];
     }
 
-    protected function liveSignalLabel(Prediction $prediction, bool $isStale, ?float $probabilityDelta): string
+    protected function liveSignalLabel(BettingForecast $prediction, bool $isStale, ?float $probabilityDelta): string
     {
         $status = (string) ($prediction->game?->status ?? '');
 
         return match (true) {
-            $prediction->live_win_probability === null => 'live_model_missing',
+            $prediction->liveWinProbability === null => 'live_model_missing',
             $isStale => 'stale_live_model',
             $status === config('mlb.statuses.delayed') => 'delayed_game_monitor',
             ($probabilityDelta ?? 0.0) >= 0.20 => 'major_live_swing',
-            max((float) $prediction->live_win_probability, 1 - (float) $prediction->live_win_probability) >= 0.75 => 'live_control',
+            max((float) $prediction->liveWinProbability, 1 - (float) $prediction->liveWinProbability) >= 0.75 => 'live_control',
             default => 'live_monitor',
         };
     }
@@ -553,19 +569,19 @@ class MlbBettingSignalService
     /**
      * @return list<string>
      */
-    protected function liveSignalReasons(Prediction $prediction, bool $isStale, ?float $probabilityDelta): array
+    protected function liveSignalReasons(BettingForecast $prediction, bool $isStale, ?float $probabilityDelta): array
     {
         $reasons = ['live_prediction_monitor'];
 
-        if ($prediction->live_win_probability !== null) {
+        if ($prediction->liveWinProbability !== null) {
             $reasons[] = 'live_win_probability_available';
         }
 
-        if ($prediction->live_predicted_spread !== null) {
+        if ($prediction->livePredictedSpread !== null) {
             $reasons[] = 'live_spread_available';
         }
 
-        if ($prediction->live_predicted_total !== null) {
+        if ($prediction->livePredictedTotal !== null) {
             $reasons[] = 'live_total_available';
         }
 
@@ -584,9 +600,9 @@ class MlbBettingSignalService
         return array_values(array_unique($reasons));
     }
 
-    protected function runLineEdge(Prediction $prediction): float
+    protected function runLineEdge(BettingForecast $prediction): float
     {
-        return MlbMarketSpread::edgeRuns((float) $prediction->predicted_spread, (float) $prediction->vegas_spread);
+        return MlbMarketSpread::edgeRuns((float) $prediction->predictedSpread, (float) $prediction->vegasSpread);
     }
 
     /**
@@ -634,7 +650,7 @@ class MlbBettingSignalService
     }
 
     /**
-     * @param  array<int,Prediction>  $predictions
+     * @param  array<int,BettingForecast>  $predictions
      * @return array<string,mixed>
      */
     protected function moneylineReadiness(array $predictions): array
@@ -708,7 +724,7 @@ class MlbBettingSignalService
     }
 
     /**
-     * @param  array<int,Prediction>  $predictions
+     * @param  array<int,BettingForecast>  $predictions
      * @return array<int,array<string,mixed>>
      */
     protected function recommendedBets(array $predictions): array
@@ -730,7 +746,7 @@ class MlbBettingSignalService
     }
 
     /**
-     * @param  array<int,Prediction>  $predictions
+     * @param  array<int,BettingForecast>  $predictions
      * @return array<int,array<string,mixed>>
      */
     protected function candidateRecommendedBets(array $predictions): array
@@ -802,7 +818,7 @@ class MlbBettingSignalService
     }
 
     /**
-     * @param  array<int,Prediction>  $predictions
+     * @param  array<int,BettingForecast>  $predictions
      * @return array<string,mixed>
      */
     protected function passSummary(array $predictions): array
@@ -844,20 +860,30 @@ class MlbBettingSignalService
     /**
      * @return array<int,array<string,mixed>>
      */
-    public function betCandidatesForPrediction(Prediction $prediction, bool $enabledOnly = true, bool $includePasses = true): array
+    public function betCandidatesForPrediction(Model|BettingForecast $prediction, bool $enabledOnly = true, bool $includePasses = true): array
     {
+        $prediction = $prediction instanceof Model ? app(BettingForecastSource::class)->fromModel($prediction, 'mlb') : $prediction;
+
         $candidates = [];
 
         if (! $enabledOnly || (bool) config('mlb.signals.bet_filter.moneyline_enabled', true)) {
             $candidates[] = $this->moneylineBetCandidate($prediction);
         }
 
-        if ((! $enabledOnly || (bool) config('mlb.signals.bet_filter.run_line_enabled', false)) && $prediction->vegas_spread !== null) {
+        if ((! $enabledOnly || (bool) config('mlb.signals.bet_filter.run_line_enabled', false)) && $prediction->vegasSpread !== null) {
             $candidates[] = $this->runLineBetCandidate($prediction);
         }
 
-        if ((! $enabledOnly || (bool) config('mlb.signals.bet_filter.total_enabled', false)) && is_numeric(data_get($prediction->model_metadata, 'market_context.market_total'))) {
+        if ((! $enabledOnly || (bool) config('mlb.signals.bet_filter.total_enabled', false)) && is_numeric(data_get($prediction->modelMetadata, 'market_context.market_total'))) {
             $candidates[] = $this->totalBetCandidate($prediction);
+        }
+
+        if ($prediction->isCanonical()) {
+            $candidates = array_map(fn (?array $candidate): ?array => $candidate === null ? null : [
+                ...$candidate, 'classification' => 'pass',
+                'no_bet_reason' => 'canonical_approval_required',
+                'risk_flags' => array_values(array_unique([...(array) ($candidate['risk_flags'] ?? []), 'canonical_approval_required'])),
+            ], $candidates);
         }
 
         return array_values(array_filter(
@@ -869,17 +895,17 @@ class MlbBettingSignalService
     /**
      * @return array<string,mixed>|null
      */
-    protected function moneylineBetCandidate(Prediction $prediction): ?array
+    protected function moneylineBetCandidate(BettingForecast $prediction): ?array
     {
         $game = $prediction->game;
         if (! $game) {
             return null;
         }
 
-        $homeWinProbability = (float) $prediction->win_probability;
+        $homeWinProbability = (float) $prediction->winProbability;
         $pickSide = $homeWinProbability >= 0.5 ? 'home' : 'away';
         $pickTeam = $pickSide === 'home' ? $game->homeTeam : $game->awayTeam;
-        $edgeRuns = abs((float) $prediction->predicted_spread);
+        $edgeRuns = abs((float) $prediction->predictedSpread);
         $modelProbability = max($homeWinProbability, 1 - $homeWinProbability);
         $marketPrice = $this->moneylinePrice($prediction, $pickSide);
         $prices = $this->moneylinePrices($prediction);
@@ -933,9 +959,9 @@ class MlbBettingSignalService
             'market_favorite_side' => $marketFavoriteSide,
             'probability_edge' => $probabilityEdge !== null ? round($probabilityEdge, 4) : null,
             'no_vig_edge' => $noVigEdge !== null ? round($noVigEdge, 4) : null,
-            'confidence_score' => (float) $prediction->confidence_score,
+            'confidence_score' => (float) $prediction->confidenceScore,
             'edge_runs' => round($edgeRuns, 2),
-            'model_line' => round((float) $prediction->predicted_spread, 2),
+            'model_line' => round((float) $prediction->predictedSpread, 2),
             'reason_codes' => array_values(array_unique([...$codes, ...$reasons])),
             'risk_flags' => array_values(array_unique($riskFlags)),
         ], $score);
@@ -944,7 +970,7 @@ class MlbBettingSignalService
     /**
      * @return array<string,mixed>|null
      */
-    protected function runLineBetCandidate(Prediction $prediction): ?array
+    protected function runLineBetCandidate(BettingForecast $prediction): ?array
     {
         $game = $prediction->game;
         if (! $game) {
@@ -974,11 +1000,11 @@ class MlbBettingSignalService
             'pick_side' => $pickSide,
             'team_id' => (int) ($pickTeam?->id ?? 0),
             'team_name' => $this->teamName($pickTeam),
-            'predicted_spread' => (float) $prediction->predicted_spread,
-            'vegas_spread' => (float) $prediction->vegas_spread,
-            'model_line' => round((float) $prediction->predicted_spread, 2),
-            'market_line' => round(MlbMarketSpread::marketLineFromHomeSpread((float) $prediction->vegas_spread), 2),
-            'confidence_score' => (float) $prediction->confidence_score,
+            'predicted_spread' => (float) $prediction->predictedSpread,
+            'vegas_spread' => (float) $prediction->vegasSpread,
+            'model_line' => round((float) $prediction->predictedSpread, 2),
+            'market_line' => round(MlbMarketSpread::marketLineFromHomeSpread((float) $prediction->vegasSpread), 2),
+            'confidence_score' => (float) $prediction->confidenceScore,
             'edge_runs' => round($edgeRuns, 2),
             'reason_codes' => array_values(array_unique([...$codes, ...$reasons])),
             'risk_flags' => array_values(array_unique($riskFlags)),
@@ -988,15 +1014,15 @@ class MlbBettingSignalService
     /**
      * @return array<string,mixed>|null
      */
-    protected function totalBetCandidate(Prediction $prediction): ?array
+    protected function totalBetCandidate(BettingForecast $prediction): ?array
     {
         $game = $prediction->game;
-        $marketTotal = data_get($prediction->model_metadata, 'market_context.market_total');
+        $marketTotal = data_get($prediction->modelMetadata, 'market_context.market_total');
         if (! $game || ! is_numeric($marketTotal)) {
             return null;
         }
 
-        $edge = (float) $prediction->predicted_total - (float) $marketTotal;
+        $edge = (float) $prediction->predictedTotal - (float) $marketTotal;
         $edgeRuns = abs($edge);
         $pickSide = $edge > 0 ? 'over' : 'under';
         $codes = $this->predictionReasonCodes($prediction, $pickSide.'_total_bet_filter');
@@ -1021,11 +1047,11 @@ class MlbBettingSignalService
             'game_date' => $game->game_date?->toDateString(),
             'matchup' => (string) ($game->short_name ?: $game->name),
             'pick_side' => $pickSide,
-            'predicted_total' => (float) $prediction->predicted_total,
+            'predicted_total' => (float) $prediction->predictedTotal,
             'market_total' => (float) $marketTotal,
-            'model_line' => round((float) $prediction->predicted_total, 2),
+            'model_line' => round((float) $prediction->predictedTotal, 2),
             'market_line' => round((float) $marketTotal, 2),
-            'confidence_score' => (float) $prediction->confidence_score,
+            'confidence_score' => (float) $prediction->confidenceScore,
             'edge_runs' => round($edgeRuns, 2),
             'reason_codes' => array_values(array_unique([...$codes, ...$reasons])),
             'risk_flags' => array_values(array_unique($riskFlags)),
@@ -1036,12 +1062,12 @@ class MlbBettingSignalService
      * @param  list<string>  $codes
      * @return array{0:int,1:list<string>,2:list<string>}
      */
-    protected function baseBetScore(Prediction $prediction, string $pickSide, array $codes): array
+    protected function baseBetScore(BettingForecast $prediction, string $pickSide, array $codes): array
     {
         $score = 30;
         $reasons = ['selective_bet_filter_applied'];
         $riskFlags = [];
-        $confidence = (float) $prediction->confidence_score;
+        $confidence = (float) $prediction->confidenceScore;
 
         if ($confidence >= (float) config('mlb.signals.bet_filter.strong_confidence', 60)) {
             $score += 20;
@@ -1184,7 +1210,7 @@ class MlbBettingSignalService
         return (string) $riskFlags[0];
     }
 
-    protected function moneylinePrice(Prediction $prediction, string $pickSide): ?int
+    protected function moneylinePrice(BettingForecast $prediction, string $pickSide): ?int
     {
         $prices = $this->moneylinePrices($prediction);
 
@@ -1194,7 +1220,7 @@ class MlbBettingSignalService
     /**
      * @return array{home:?int,away:?int}
      */
-    protected function moneylinePrices(Prediction $prediction): array
+    protected function moneylinePrices(BettingForecast $prediction): array
     {
         $game = $prediction->game;
         $market = $this->extractMarket($game?->odds_data, 'h2h');
@@ -1249,7 +1275,7 @@ class MlbBettingSignalService
     /**
      * @return list<string>
      */
-    protected function oddsTimestampRiskFlags(Prediction $prediction): array
+    protected function oddsTimestampRiskFlags(BettingForecast $prediction): array
     {
         $updatedAt = $prediction->game?->odds_updated_at;
         if ($updatedAt === null) {
@@ -1264,7 +1290,7 @@ class MlbBettingSignalService
     /**
      * @return list<string>
      */
-    protected function contextRiskFlags(Prediction $prediction, ?int $marketPrice): array
+    protected function contextRiskFlags(BettingForecast $prediction, ?int $marketPrice): array
     {
         $flags = [];
 
@@ -1272,7 +1298,7 @@ class MlbBettingSignalService
             $flags[] = 'missing_market_context';
         }
 
-        if ((string) data_get($prediction->model_metadata, 'actual_weather.reason') === 'missing_weather_row') {
+        if ((string) data_get($prediction->modelMetadata, 'actual_weather.reason') === 'missing_weather_row') {
             $flags[] = 'missing_weather';
         }
 
@@ -1333,9 +1359,9 @@ class MlbBettingSignalService
     /**
      * @return list<string>
      */
-    protected function predictionReasonCodes(Prediction $prediction, string $baseCode): array
+    protected function predictionReasonCodes(BettingForecast $prediction, string $baseCode): array
     {
-        $metadata = (array) ($prediction->model_metadata ?? []);
+        $metadata = (array) ($prediction->modelMetadata ?? []);
         $codes = [$baseCode];
         $pitcherInputs = (array) data_get($metadata, 'pitcher_inputs', []);
         $situational = (array) data_get($metadata, 'situational_context', []);
@@ -1510,7 +1536,6 @@ class MlbBettingSignalService
     protected function teamResultStreak(int $season, int $teamId, CarbonInterface $asOfDate, ?string $market): ?array
     {
         $games = Game::query()
-            ->with('prediction')
             ->where('season', $season)
             ->where('status', 'STATUS_FINAL')
             ->whereDate('game_date', '<=', $asOfDate->toDateString())
@@ -1521,6 +1546,8 @@ class MlbBettingSignalService
             ->orderByDesc('id')
             ->limit(16)
             ->get();
+
+        $this->primeHistoryForecasts($games);
 
         $streakKey = null;
         $length = 0;
@@ -1581,13 +1608,13 @@ class MlbBettingSignalService
 
     protected function runLineResult(Game $game, int $teamId): ?string
     {
-        $prediction = $game->prediction;
-        if (! $prediction || $prediction->vegas_spread === null || $game->home_score === null || $game->away_score === null) {
+        $prediction = $this->historyForecast($game);
+        if (! $prediction || $prediction->vegasSpread === null || $game->home_score === null || $game->away_score === null) {
             return null;
         }
 
         $homeMargin = (int) $game->home_score - (int) $game->away_score;
-        $marketHomeMargin = -1 * (float) $prediction->vegas_spread;
+        $marketHomeMargin = -1 * (float) $prediction->vegasSpread;
         $homeCovered = $homeMargin > $marketHomeMargin;
 
         return ($game->home_team_id === $teamId) === $homeCovered ? 'cover' : 'failed_cover';
@@ -1595,7 +1622,8 @@ class MlbBettingSignalService
 
     protected function totalResult(Game $game): ?string
     {
-        $marketTotal = data_get($game->prediction?->model_metadata, 'market_context.market_total');
+        $forecast = $this->historyForecast($game);
+        $marketTotal = $forecast?->isCanonical() ? $forecast->marketTotal : data_get($forecast?->modelMetadata, 'market_context.market_total');
         if ($game->home_score === null || $game->away_score === null || ! is_numeric($marketTotal)) {
             return null;
         }

@@ -7,5 +7,5 @@ final readonly class CanonicalPredictionPresentationData
     /** @param array<string, mixed> $confidenceContext
      * @param  array<string, mixed>|null  $valueSignal
      */
-    public function __construct(public array $confidenceContext, public ?array $valueSignal, public array $modelBetContext = [], public ?array $weatherForecast = null) {}
+    public function __construct(public array $confidenceContext, public ?array $valueSignal, public array $modelBetContext = [], public ?array $weatherForecast = null, public ?array $recommendation = null, public ?array $marketAwareProjection = null) {}
 }

@@ -4,6 +4,7 @@ use App\Models\NFL\Game;
 use App\Services\CFB\Predictions\CfbCalculationReleaseDefinition;
 use App\Services\CommandHeartbeatService;
 use App\Services\NFL\Predictions\NflPregameHorizon;
+use App\Services\Predictions\PredictionDeliverySource;
 use App\Support\BasketballSeason;
 use App\Support\CFB\CfbWeek;
 use Illuminate\Foundation\Inspiring;
@@ -398,7 +399,9 @@ $scheduleSportPipeline = function (
         $scheduleDailySeasonJob(
             "{$sportCommandPrefix}:{$stage} --season={$season}",
             $time,
-            fn (): bool => $inSeason() && ! ($sportCommandPrefix === 'cfb'
+            fn (): bool => $inSeason()
+                && ! ($stage === 'generate-predictions' && app(PredictionDeliverySource::class)->legacyWriterRetired($sportCommandPrefix))
+                && ! ($sportCommandPrefix === 'cfb'
                 && config('prediction_lifecycle.canonical_pipeline.cfb', false)
                 && in_array($stage, ['calculate-elo', 'calculate-team-metrics', 'generate-predictions'], true)),
             "{$sportLabel}: ".Str::headline($stage)
@@ -762,7 +765,7 @@ $scheduleSportPipeline(
 $scheduleDailySeasonJob(
     "mlb:generate-predictions --season={$currentYear} --days-forward=2",
     '06:00',
-    $mlbInSeason,
+    fn (): bool => $mlbInSeason() && ! app(PredictionDeliverySource::class)->legacyWriterRetired('mlb'),
     'MLB: Generate Predictions',
 );
 $mlbCanonicalPipelineEnabled = fn (): bool => $mlbInSeason()

@@ -2,6 +2,10 @@
 
 namespace App\Jobs\Predictions;
 
+use App\Models\CanonicalPrediction;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
+use App\Services\Api\V2\SportContextResolver;
+use App\Services\Predictions\BettingForecastSource;
 use App\Services\Predictions\PredictionNarrativeService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -10,6 +14,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 
 class GeneratePredictionNarrative implements ShouldBeUnique, ShouldQueue
 {
@@ -39,18 +44,34 @@ class GeneratePredictionNarrative implements ShouldBeUnique, ShouldQueue
 
     public function handle(PredictionNarrativeService $narrativeService): void
     {
-        if (! class_exists($this->predictionModelClass)) {
+        $expected = app(SportContextResolver::class)->resolve($this->sport)->models['prediction'];
+        if (! in_array($this->predictionModelClass, [$expected, CanonicalPrediction::class], true)) {
+            return;
+        }
+        if ($this->predictionModelClass === CanonicalPrediction::class) {
+            if (! app(BettingForecastSource::class)->usesCanonical($this->sport)) {
+                return;
+            }
+            $prediction = app(CanonicalSportPredictionQuery::class)->queryForSport($this->sport)
+                ->whereKey($this->predictionId)->first();
+            if ($prediction === null) {
+                return;
+            }
+            $hash = $narrativeService->inputHashForSport($prediction, null, $this->sport);
+            $key = 'prediction-narrative:canonical:'.$prediction->public_id.':'.$hash;
+            if ($this->force || ! Cache::has($key)) {
+                $narrative = $narrativeService->forSport($prediction, null, $this->sport, true);
+                if (app(CanonicalSportPredictionQuery::class)->queryForSport($this->sport)->whereKey($prediction->id)->exists()) {
+                    Cache::put($key, $narrative, now()->addDay());
+                }
+            }
+
             return;
         }
 
         /** @var class-string<Model> $modelClass */
-        $modelClass = $this->predictionModelClass;
-
-        /** @var Model|null $prediction */
-        $prediction = $modelClass::query()
-            ->with(['game.homeTeam', 'game.awayTeam'])
-            ->find($this->predictionId);
-
+        $modelClass = $expected;
+        $prediction = $modelClass::query()->with(['game.homeTeam', 'game.awayTeam'])->find($this->predictionId);
         if (! $prediction || ! $prediction->game) {
             return;
         }
@@ -66,7 +87,9 @@ class GeneratePredictionNarrative implements ShouldBeUnique, ShouldQueue
         }
 
         $startedAt = microtime(true);
-        $narrative = $narrativeService->forSport($prediction, $prediction->game, $this->sport, true);
+        $narrative = $this->sport === 'nba'
+            ? $narrativeService->forNba($prediction, $prediction->game, true, $narrativeService->buildNbaTrendSnapshot($prediction->game))
+            : $narrativeService->forSport($prediction, $prediction->game, $this->sport, true);
         $latencyMs = (int) round((microtime(true) - $startedAt) * 1000);
 
         $generatedBy = (string) ($narrative['generated_by'] ?? '');

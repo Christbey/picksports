@@ -2,8 +2,10 @@
 
 namespace App\Services\MLB;
 
-use App\Models\MLB\Prediction;
+use App\Application\Sports\ReadModels\BettingForecast;
+use App\Services\Predictions\BettingForecastSource;
 use App\Support\MLB\MlbGamePhase;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 class MlbPredictionRecommendationService
@@ -15,17 +17,17 @@ class MlbPredictionRecommendationService
     /**
      * @return array<string,mixed>
      */
-    public function forPrediction(Prediction $prediction): array
+    public function forPrediction(Model|BettingForecast $prediction): array
     {
-        $prediction->loadMissing(['game.homeTeam', 'game.awayTeam']);
+        $source = app(BettingForecastSource::class);
+        $prediction = $prediction instanceof BettingForecast ? $prediction : $source->fromModel($prediction, 'mlb');
+        $prediction->game?->loadMissing(['homeTeam', 'awayTeam']);
 
         $game = $prediction->game;
         $phase = $this->predictionPhase((string) ($game?->status ?? ''));
-        $candidates = $this->signals->betCandidatesForPrediction(
-            $prediction,
-            enabledOnly: true,
-            includePasses: true,
-        );
+        $candidates = $prediction->isCanonical()
+            ? $source->approvedSignalRows([$prediction])
+            : $this->signals->betCandidatesForPrediction($prediction, enabledOnly: true, includePasses: true);
         $primaryCandidate = $this->primaryCandidate($candidates);
         $candidateRecommendation = $this->normalizeCandidate($primaryCandidate, 'pregame', $prediction, applyCalibrationGuard: false);
         $publicPregameRecommendation = $this->normalizeCandidate($primaryCandidate, 'pregame', $prediction, applyCalibrationGuard: true);
@@ -95,7 +97,7 @@ class MlbPredictionRecommendationService
      * @param  array<string,mixed>|null  $candidate
      * @return array<string,mixed>
      */
-    private function normalizeCandidate(?array $candidate, string $phase, Prediction $prediction, bool $applyCalibrationGuard = true): array
+    private function normalizeCandidate(?array $candidate, string $phase, BettingForecast $prediction, bool $applyCalibrationGuard = true): array
     {
         if ($candidate === null) {
             return $this->emptyRecommendation($phase);
@@ -134,6 +136,7 @@ class MlbPredictionRecommendationService
         };
 
         return [
+            ...($prediction->isCanonical() ? ['bet_decision_id' => $candidate['bet_decision_id'], 'prediction_public_id' => $prediction->source->public_id] : []),
             'recommendation_type' => $recommendationType,
             'market_type' => $candidate['type'] ?? null,
             'recommendation_strength' => $this->recommendationStrength($classification, $score),
@@ -154,8 +157,8 @@ class MlbPredictionRecommendationService
             'risk_flags' => array_values(array_unique($riskFlags)),
             'block_reasons' => array_values(array_unique($blockReasons)),
             'no_bet_reason' => $noBetReason,
-            'odds_updated_at' => $this->oddsUpdatedAt($prediction),
-            'odds_fresh' => $this->oddsFresh($prediction),
+            'odds_updated_at' => $prediction->isCanonical() ? ($candidate['odds_updated_at'] ?? null) : $this->oddsUpdatedAt($prediction),
+            'odds_fresh' => $prediction->isCanonical() ? true : $this->oddsFresh($prediction),
         ];
     }
 
@@ -165,7 +168,7 @@ class MlbPredictionRecommendationService
      * @param  array<int,array<string,mixed>>  $allCandidates
      * @return array<string,mixed>
      */
-    private function recommendationEnvelope(array $publicRecommendation, array $candidateRecommendation, array $allCandidates, Prediction $prediction): array
+    private function recommendationEnvelope(array $publicRecommendation, array $candidateRecommendation, array $allCandidates, BettingForecast $prediction): array
     {
         $promotion = $this->promotionStatus($publicRecommendation, $candidateRecommendation, $prediction);
 
@@ -185,7 +188,7 @@ class MlbPredictionRecommendationService
      * @param  array<string,mixed>  $candidateRecommendation
      * @return array<string,mixed>
      */
-    private function promotionStatus(array $publicRecommendation, array $candidateRecommendation, Prediction $prediction): array
+    private function promotionStatus(array $publicRecommendation, array $candidateRecommendation, BettingForecast $prediction): array
     {
         $candidateType = (string) ($candidateRecommendation['recommendation_type'] ?? 'no_play');
         $publicType = (string) ($publicRecommendation['recommendation_type'] ?? 'no_play');
@@ -202,7 +205,7 @@ class MlbPredictionRecommendationService
             $phase !== 'pregame' => 'not_applicable',
             ! $candidatePromotable => 'not_applicable',
             $blockReasons !== [] => 'blocked',
-            $calibrationGuardEnabled && ! $promotionsValidated => 'blocked',
+            ! $prediction->isCanonical() && $calibrationGuardEnabled && ! $promotionsValidated => 'blocked',
             default => 'enabled',
         };
 
@@ -217,6 +220,7 @@ class MlbPredictionRecommendationService
             'promotions_validated' => $promotionsValidated,
             'calibration_guard_enabled' => $calibrationGuardEnabled,
             'validated_for_promotion' => $status === 'enabled',
+            ...($prediction->isCanonical() ? ['approval_source' => 'stored_public_decision'] : []),
             'block_reasons' => array_values(array_unique($blockReasons)),
             'game_phase' => $this->predictionPhase((string) ($prediction->game?->status ?? '')),
         ];
@@ -246,8 +250,12 @@ class MlbPredictionRecommendationService
         return $reasons;
     }
 
-    private function calibrationGuardBlocksPromotion(Prediction $prediction, string $phase, string $classification): bool
+    private function calibrationGuardBlocksPromotion(BettingForecast $prediction, string $phase, string $classification): bool
     {
+        if ($prediction->isCanonical()) {
+            return false;
+        }
+
         if (! in_array($classification, ['bet', 'lean'], true)) {
             return false;
         }
@@ -270,10 +278,10 @@ class MlbPredictionRecommendationService
     /**
      * @return array<string,mixed>
      */
-    private function monitorRecommendation(Prediction $prediction, string $phase): array
+    private function monitorRecommendation(BettingForecast $prediction, string $phase): array
     {
-        $riskFlags = [];
-        $updatedAt = $prediction->live_updated_at ? Carbon::parse($prediction->live_updated_at) : null;
+        $riskFlags = $prediction->isCanonical() ? ['canonical_live_projection_unavailable'] : [];
+        $updatedAt = $prediction->liveUpdatedAt ? Carbon::parse($prediction->liveUpdatedAt) : null;
 
         if ($updatedAt === null || $updatedAt->lt(now()->subMinutes((int) config('mlb.signals.live_stale_minutes', 6)))) {
             $riskFlags[] = 'live_model_stale';
@@ -289,7 +297,7 @@ class MlbPredictionRecommendationService
             'pick_side' => null,
             'team_id' => null,
             'team_name' => null,
-            'model_probability' => $prediction->live_win_probability !== null ? round((float) $prediction->live_win_probability, 4) : null,
+            'model_probability' => $prediction->liveWinProbability !== null ? round((float) $prediction->liveWinProbability, 4) : null,
             'market_price' => null,
             'raw_implied_probability' => null,
             'no_vig_implied_probability' => null,
@@ -307,13 +315,13 @@ class MlbPredictionRecommendationService
     /**
      * @return array<string,mixed>
      */
-    private function noPlayRecommendation(Prediction $prediction, string $phase, string $reason): array
+    private function noPlayRecommendation(BettingForecast $prediction, string $phase, string $reason): array
     {
         return [
             ...$this->emptyRecommendation($phase),
             'reason_codes' => [$reason],
-            'model_probability' => $prediction->win_probability !== null
-                ? round(max((float) $prediction->win_probability, 1 - (float) $prediction->win_probability), 4)
+            'model_probability' => $prediction->winProbability !== null
+                ? round(max((float) $prediction->winProbability, 1 - (float) $prediction->winProbability), 4)
                 : null,
             'no_bet_reason' => $reason,
         ];
@@ -364,14 +372,14 @@ class MlbPredictionRecommendationService
         };
     }
 
-    private function oddsUpdatedAt(Prediction $prediction): ?string
+    private function oddsUpdatedAt(BettingForecast $prediction): ?string
     {
         $updatedAt = $prediction?->game?->odds_updated_at;
 
         return $updatedAt ? Carbon::parse($updatedAt)->toIso8601String() : null;
     }
 
-    private function oddsFresh(Prediction $prediction): bool
+    private function oddsFresh(BettingForecast $prediction): bool
     {
         $updatedAt = $this->oddsUpdatedAt($prediction);
         if ($updatedAt === null) {

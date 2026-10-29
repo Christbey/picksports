@@ -2,7 +2,6 @@
 
 namespace App\Actions\CFB;
 
-use App\Exceptions\Predictions\PredictionLifecycleException;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game;
 use App\Services\CFB\CfbReleasedBetDecisionRecorder;
@@ -16,13 +15,10 @@ class GenerateCanonicalPrediction
 
     public function execute(Game $game, bool $publish = true, string $trigger = 'scheduled'): CanonicalPrediction
     {
-        if ($game->sportEvent === null) {
-            throw new PredictionLifecycleException('CFB canonical generation requires a linked sport event.');
-        }
+        $prediction = $this->orchestrator->generateForGame(
+            $game, 'cfb', $this->snapshotBuilder, $this->calculator, $publish, $trigger,
+        );
 
-        $prediction = $publish
-            ? $this->orchestrator->generateAndPublish($game->sportEvent, $this->snapshotBuilder, $this->calculator, trigger: $trigger)
-            : $this->orchestrator->generate($game->sportEvent, $this->snapshotBuilder, $this->calculator, trigger: $trigger);
         if ($publish) {
             app(CfbReleasedBetDecisionRecorder::class)->record($prediction, $game);
         }

@@ -9,6 +9,7 @@ use App\Services\NFL\NflPredictionDispositionRecorder;
 use App\Services\NFL\NflReleasedBetDecisionRecorder;
 use App\Services\NFL\NflTrueEpaReadinessService;
 use App\Services\NFL\Predictions\NflPregameHorizon;
+use App\Services\Predictions\PredictionDeliverySource;
 use App\Services\Sports\SportsDateWindowService;
 use App\Support\SportsViewCache;
 use Illuminate\Console\Command;
@@ -30,6 +31,16 @@ class GeneratePredictionsCommand extends Command
         NflReleasedBetDecisionRecorder $betDecisionRecorder,
         NflPredictionDispositionRecorder $dispositionRecorder,
     ): int {
+        if (app(PredictionDeliverySource::class)->legacyWriterRetired('nfl')) {
+            $arguments = [];
+            foreach (['season', 'date', 'days-forward', 'from-date', 'to-date'] as $option) {
+                if (filled($this->option($option))) {
+                    $arguments['--'.$option] = $this->option($option);
+                }
+            }
+
+            return $this->call('nfl:generate-canonical-predictions', $arguments);
+        }
         $generatePrediction = app(GeneratePredictionFromHistoricalElo::class);
 
         // Build query for upcoming games

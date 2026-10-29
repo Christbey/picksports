@@ -25,12 +25,6 @@ it('uses one bounded horizon and never fetches odds during prediction generation
         ->withArgs(function (array $steps, callable $afterStep): bool {
             expect($steps)->toBe([
                 [
-                    'name' => 'legacy_generation',
-                    'command' => 'nfl:generate-predictions',
-                    'arguments' => ['--season' => 2026, '--date' => '2026-09-15', '--days-forward' => 8],
-                    'continue_on_failure' => true,
-                ],
-                [
                     'name' => 'canonical_generation_and_readiness',
                     'command' => 'nfl:generate-canonical-predictions',
                     'arguments' => [
@@ -64,7 +58,7 @@ it('uses one bounded horizon and never fetches odds during prediction generation
         ->assertSuccessful();
 });
 
-it('rejects a successful process that did not generate a new snapshot for an eligible game', function () {
+it('rejects a successful process without safe current canonical input evidence for an eligible game', function () {
     config()->set('prediction_lifecycle.canonical_pipeline.nfl', true);
     $event = SportEvent::factory()->create([
         'sport' => 'nfl', 'season' => 2026, 'season_type' => '2',
@@ -80,6 +74,6 @@ it('rejects a successful process that did not generate a new snapshot for an eli
     $runner->shouldReceive('run')->once()->andReturn(['successful' => true, 'failed_step' => null, 'exit_code' => 0]);
     app()->instance(NflPregamePipelineRunner::class, $runner);
     $this->artisan('nfl:run-pregame-pipeline', ['--season' => 2026])
-        ->expectsOutputToContain('no new prediction snapshots for game IDs: '.$game->id)
+        ->expectsOutputToContain('no current canonical input evidence for game IDs: '.$game->id)
         ->assertFailed();
 });

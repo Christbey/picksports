@@ -2,15 +2,16 @@
 
 namespace App\Services;
 
+use App\Application\Sports\ReadModels\PredictionDeliveryContext;
 use App\Http\Resources\BettingRecommendationResource;
 use App\Mail\DailyPredictionsDigestMail;
 use App\Models\DailyDigestSend;
-use App\Models\NBA\Prediction;
 use App\Models\User;
 use App\Services\AI\SportsAiContentService;
 use App\Services\BettingRecommendations\GameBettingRecommendationService;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
-use App\Support\TierAccessBypass;
+use App\Services\Predictions\PredictionDeliverySource;
+use App\Support\SportCatalog;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
@@ -20,18 +21,9 @@ use Illuminate\Support\Facades\Mail;
 
 class DailyDigestService
 {
-    /**
-     * @var array<string, array<string, class-string<Model>|bool>>
-     */
-    private const SPORT_MAP = [
-        'nba' => ['prediction_model' => Prediction::class, 'player_props' => true],
-        'nfl' => ['prediction_model' => \App\Models\NFL\Prediction::class, 'player_props' => true],
-        'cbb' => ['prediction_model' => \App\Models\CBB\Prediction::class, 'player_props' => true],
-        'wcbb' => ['prediction_model' => \App\Models\WCBB\Prediction::class, 'player_props' => false],
-        'mlb' => ['prediction_model' => \App\Models\MLB\Prediction::class, 'player_props' => true],
-        'cfb' => ['prediction_model' => \App\Models\CFB\Prediction::class, 'player_props' => false],
-        'wnba' => ['prediction_model' => \App\Models\WNBA\Prediction::class, 'player_props' => true],
-    ];
+    private const SPORT_ORDER = ['nba', 'nfl', 'cbb', 'wcbb', 'mlb', 'cfb', 'wnba'];
+
+    private const PLAYER_PROP_SPORTS = ['nba', 'nfl', 'cbb', 'mlb', 'wnba'];
 
     private const DIGEST_CONFIDENCE_FLOOR = 50.0;
 
@@ -52,8 +44,8 @@ class DailyDigestService
     public function __construct(
         private readonly GameBettingRecommendationService $gameBettingRecommendationService,
         private readonly PlayerPropAnalyzer $playerPropAnalyzer,
-        private readonly TierAccessBypass $tierAccessBypass,
         private readonly SportsAiContentService $sportsAiContentService,
+        private readonly PredictionDeliverySource $predictions,
     ) {}
 
     public function sendDueDigests(?CarbonInterface $now = null): int
@@ -240,11 +232,11 @@ class DailyDigestService
      */
     private function eligibleSports(): Collection
     {
-        $configuredSports = config('alerts.daily_digest.sports', array_keys(self::SPORT_MAP));
+        $configuredSports = config('alerts.daily_digest.sports', self::SPORT_ORDER);
 
         return collect(is_array($configuredSports) ? $configuredSports : [])
             ->map(fn (mixed $sport) => strtolower((string) $sport))
-            ->filter(fn (string $sport) => array_key_exists($sport, self::SPORT_MAP))
+            ->filter(fn (string $sport) => in_array($sport, SportCatalog::ALL, true))
             ->unique()
             ->values();
     }
@@ -265,38 +257,19 @@ class DailyDigestService
         return is_string($user->email) && trim($user->email) !== '';
     }
 
-    private function canAccessSport(User $user, string $sport): bool
-    {
-        if ($this->tierAccessBypass->shouldBypassTierChecks($user)) {
-            return true;
-        }
-
-        return $user->canAccessSport($sport);
-    }
-
     /**
      * @return array<int, array<string, mixed>>
      */
     private function predictionPoolForSport(string $sport, CarbonInterface $now): array
     {
-        $cacheKey = $sport.'|'.$now->toDateString();
+        $cacheKey = $sport.'|'.$now->toDateString().'|'.(int) $this->predictions->usesCanonical($sport);
 
         if (array_key_exists($cacheKey, $this->predictionPoolCache)) {
             return $this->predictionPoolCache[$cacheKey];
         }
 
-        /** @var class-string<Model> $modelClass */
-        $modelClass = self::SPORT_MAP[$sport]['prediction_model'];
-
-        $predictions = $modelClass::query()
-            ->whereHas('game', function ($query) use ($now) {
-                $query->whereDate('game_date', $now->toDateString())
-                    ->whereNotIn('status', ['STATUS_FINAL', 'final']);
-            })
-            ->with(['game.homeTeam', 'game.awayTeam', 'game.prediction'])
-            ->limit(30)
-            ->get()
-            ->map(fn (Model $prediction) => $this->transformPrediction($sport, $prediction))
+        $predictions = $this->predictions->forDigest($sport, $now)
+            ->map(fn (PredictionDeliveryContext $prediction) => $this->transformPrediction($sport, $prediction))
             ->filter()
             ->sort(function (array $a, array $b): int {
                 $edgeCompare = ((float) ($b['edge'] ?? 0)) <=> ((float) ($a['edge'] ?? 0));
@@ -324,7 +297,7 @@ class DailyDigestService
             return $this->playerPropPoolCache[$cacheKey];
         }
 
-        if ((self::SPORT_MAP[$sport]['player_props'] ?? false) !== true) {
+        if (! in_array($sport, self::PLAYER_PROP_SPORTS, true)) {
             return $this->playerPropPoolCache[$cacheKey] = [];
         }
 
@@ -364,23 +337,24 @@ class DailyDigestService
     /**
      * @return array<string, mixed>|null
      */
-    private function transformPrediction(string $sport, Model $prediction): ?array
+    private function transformPrediction(string $sport, PredictionDeliveryContext $prediction): ?array
     {
         $game = $prediction->game;
 
-        if (! $game || ! $game->homeTeam || ! $game->awayTeam) {
+        if (! $game || ! $game->homeTeam || ! $game->awayTeam
+            || ($prediction->isCanonical() && $prediction->homeWinProbability === null)) {
             return null;
         }
 
         $awayTeam = (string) ($game->awayTeam->abbreviation ?? $game->awayTeam->school ?? $game->awayTeam->name ?? 'Away');
         $homeTeam = (string) ($game->homeTeam->abbreviation ?? $game->homeTeam->school ?? $game->homeTeam->name ?? 'Home');
-        $homeWinProbability = max(0, min(1, (float) ($prediction->win_probability ?? 0)));
+        $homeWinProbability = max(0, min(1, (float) ($prediction->homeWinProbability ?? 0)));
         $awayWinProbability = max(0, min(1, 1 - $homeWinProbability));
-        $topRecommendation = $this->topRecommendation($sport, $game)
+        $topRecommendation = $this->topRecommendation($prediction)
             ?? $this->modelLeanRecommendation($awayTeam, $homeTeam, $awayWinProbability, $homeWinProbability);
 
         $pickConfidence = $this->displayConfidence($prediction, $topRecommendation, $awayWinProbability, $homeWinProbability);
-        $spread = $prediction->predicted_spread !== null ? (float) $prediction->predicted_spread : null;
+        $spread = $prediction->predictedSpread !== null ? (float) $prediction->predictedSpread : null;
         $scheduledAt = $this->scheduledAt($game);
         $pickType = (string) ($topRecommendation['type'] ?? 'pick');
         $betLabel = (string) ($topRecommendation['bet_label'] ?? $this->cleanPickLabel((string) ($topRecommendation['recommendation'] ?? 'Model lean')));
@@ -392,13 +366,15 @@ class DailyDigestService
             'bet_label' => $betLabel,
             'classification' => $pickType === 'model_lean' ? 'Watchlist' : 'Bettable edge',
             'market_note' => $pickType === 'model_lean'
-                ? 'Waiting on market odds before bet classification.'
+                ? ($prediction->isCanonical()
+                    ? 'No approved public betting decision for this forecast.'
+                    : 'Waiting on market odds before bet classification.')
                 : 'Market edge detected by the betting-value layer.',
             'confidence' => $pickConfidence,
             'edge' => round((float) ($topRecommendation['edge'] ?? 0), 1),
             'pick_type' => $pickType,
             'predicted_spread' => $spread,
-            'predicted_total' => $prediction->predicted_total !== null ? (float) $prediction->predicted_total : null,
+            'predicted_total' => $prediction->predictedTotal !== null ? (float) $prediction->predictedTotal : null,
             'game_time' => $scheduledAt?->format('M j, g:i A'),
             'url' => url("/{$sport}/games/{$game->id}"),
         ];
@@ -407,9 +383,9 @@ class DailyDigestService
     /**
      * @return array<string, mixed>|null
      */
-    private function topRecommendation(string $sport, Model $game): ?array
+    private function topRecommendation(PredictionDeliveryContext $prediction): ?array
     {
-        return collect($this->gameBettingRecommendationService->forGame($game, $sport))
+        return collect($this->gameBettingRecommendationService->forPrediction($prediction))
             ->filter(fn (array $recommendation) => is_numeric($recommendation['edge'] ?? null))
             ->filter(fn (array $recommendation) => trim((string) ($recommendation['recommendation'] ?? '')) !== '')
             ->filter(fn (array $recommendation) => (float) $recommendation['edge'] > 0)
@@ -455,12 +431,12 @@ class DailyDigestService
     /**
      * @param  array<string, mixed>  $recommendation
      */
-    private function displayConfidence(Model $prediction, array $recommendation, float $awayWinProbability, float $homeWinProbability): float
+    private function displayConfidence(PredictionDeliveryContext $prediction, array $recommendation, float $awayWinProbability, float $homeWinProbability): float
     {
         $storedConfidence = (float) ($recommendation['confidence'] ?? 0);
 
         if ($storedConfidence <= 0) {
-            $storedConfidence = (float) ($prediction->confidence_score ?? 0);
+            $storedConfidence = (float) ($prediction->confidenceScore ?? 0);
         }
 
         $derivedConfidence = max($awayWinProbability, $homeWinProbability) * 100;

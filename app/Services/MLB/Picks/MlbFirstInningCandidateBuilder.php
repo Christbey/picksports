@@ -2,9 +2,11 @@
 
 namespace App\Services\MLB\Picks;
 
+use App\Application\Sports\ReadModels\BettingForecast;
 use App\Models\MLB\GameWeather;
-use App\Models\MLB\Prediction;
+use App\Services\Predictions\BettingForecastSource;
 use App\Support\MLB\MlbGameStart;
+use Illuminate\Database\Eloquent\Model;
 
 class MlbFirstInningCandidateBuilder
 {
@@ -13,10 +15,16 @@ class MlbFirstInningCandidateBuilder
     /**
      * @return list<MlbPickCandidateData>
      */
-    public function build(Prediction $prediction): array
+    public function build(Model|BettingForecast $prediction): array
     {
+        $prediction = $prediction instanceof Model ? app(BettingForecastSource::class)->fromModel($prediction, 'mlb') : $prediction;
+
+        if ($prediction->isCanonical() && ($prediction->homePitcherElo === null || $prediction->awayPitcherElo === null)) {
+            return [];
+        }
+
         $game = $prediction->game;
-        if (! $game || ! is_numeric($prediction->predicted_total)) {
+        if (! $game || ! is_numeric($prediction->predictedTotal)) {
             return [];
         }
 
@@ -57,8 +65,9 @@ class MlbFirstInningCandidateBuilder
 
             $rows[] = new MlbPickCandidateData(
                 gameId: (int) $game->id,
-                predictionId: (int) $prediction->id,
-                season: (int) $prediction->season,
+                predictionId: $prediction->legacyPredictionId(),
+                canonicalPredictionId: $prediction->canonicalPredictionId(),
+                season: $prediction->season(),
                 marketType: 'first_inning_total',
                 marketKey: 'totals_1st_1_innings',
                 side: $side,
@@ -79,9 +88,9 @@ class MlbFirstInningCandidateBuilder
                 featureSnapshot: [
                     'yrfi_probability' => round($yrfiProbability, 4),
                     'nrfi_probability' => round(1 - $yrfiProbability, 4),
-                    'full_game_projected_total' => (float) $prediction->predicted_total,
-                    'home_pitcher_elo' => (float) ($prediction->home_pitcher_elo ?? 1500),
-                    'away_pitcher_elo' => (float) ($prediction->away_pitcher_elo ?? 1500),
+                    'full_game_projected_total' => (float) $prediction->predictedTotal,
+                    'home_pitcher_elo' => (float) ($prediction->homePitcherElo ?? 1500),
+                    'away_pitcher_elo' => (float) ($prediction->awayPitcherElo ?? 1500),
                 ],
                 marketSnapshot: $outcome,
                 gameStartAt: MlbGameStart::for($game),
@@ -91,17 +100,17 @@ class MlbFirstInningCandidateBuilder
         return $rows;
     }
 
-    private function yrfiProbability(Prediction $prediction): float
+    private function yrfiProbability(BettingForecast $prediction): float
     {
         $baseline = (float) config('mlb.picks.first_inning.base_yrfi_probability', 0.50);
         $referenceTotal = (float) config('mlb.picks.first_inning.reference_total', 8.5);
         $totalWeight = (float) config('mlb.picks.first_inning.total_probability_per_run', 0.025);
         $pitcherWeight = (float) config('mlb.picks.first_inning.pitcher_probability_per_100_elo', 0.025);
-        $correctedTotal = (float) $prediction->predicted_total
+        $correctedTotal = (float) $prediction->predictedTotal
             - (float) config('mlb.picks.total_bias_correction', 1.0);
         $averagePitcherElo = (
-            (float) ($prediction->home_pitcher_elo ?? 1500)
-            + (float) ($prediction->away_pitcher_elo ?? 1500)
+            (float) ($prediction->homePitcherElo ?? 1500)
+            + (float) ($prediction->awayPitcherElo ?? 1500)
         ) / 2;
 
         $probability = $baseline

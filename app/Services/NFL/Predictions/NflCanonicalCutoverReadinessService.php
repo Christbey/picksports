@@ -3,11 +3,9 @@
 namespace App\Services\NFL\Predictions;
 
 use App\Models\BetDecision;
-use App\Models\CanonicalPrediction;
 use App\Models\NFL\Game;
-use App\Models\NFL\Prediction;
-use App\Models\PredictionFeatureSnapshot;
-use App\Services\NFL\NflReleasedBetDecisionRecorder;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
+use App\Services\NFL\NflCandidateDecisionPolicy;
 use App\Services\Predictions\CanonicalSportCutoverReadinessService;
 use Carbon\CarbonImmutable;
 use Throwable;
@@ -17,7 +15,7 @@ class NflCanonicalCutoverReadinessService
     public function __construct(
         private readonly CanonicalSportCutoverReadinessService $readiness,
         private readonly NflPregameHorizon $horizons,
-        private readonly NflReleasedBetDecisionRecorder $decisionRecorder,
+        private readonly NflCandidateDecisionPolicy $decisionPolicy,
     ) {}
 
     /** @return array<string,mixed> */
@@ -110,7 +108,7 @@ class NflCanonicalCutoverReadinessService
             ...$report,
             ...$configuration,
             ...$slateCoverage,
-            'true_epa_authority' => 'legacy_nfl_prediction_recommendation_layer',
+            'true_epa_authority' => 'canonical_frozen_recommendation_context',
             'canonical_true_epa_role' => 'not_applied_to_canonical_forecast',
             'horizon_date' => $horizon['date'],
             'horizon_days_forward' => $horizon['days_forward'],
@@ -139,14 +137,14 @@ class NflCanonicalCutoverReadinessService
             in_array('no_upcoming_regular_season_slate', $blockers, true) => 'Verify the upcoming regular-season slate, canonical event identity, and kickoff timestamps.',
             in_array('zero_safe_canonical_predictions', $blockers, true) => 'Generate safe canonical predictions for every eligible upcoming regular-season event, then rerun readiness.',
             in_array('custom_epa_quarantined', $blockers, true) => 'Keep canonical reader cutover disabled while custom EPA is quarantined; this is an intentional model exclusion, not missing play data.',
-            in_array('missing_true_epa_disposition', $blockers, true) => 'Run legacy NFL prediction generation and require true EPA to be applied or explicitly held with missing_true_epa for every slate game.',
-            in_array('true_epa_holds_present', $blockers, true) => 'Backfill true EPA for every explicitly held slate game, rerun legacy predictions, and require zero missing_true_epa holds before cutover.',
+            in_array('missing_true_epa_disposition', $blockers, true) => 'Run canonical NFL generation and require true EPA to be applied or explicitly held with missing_true_epa for every slate game.',
+            in_array('true_epa_holds_present', $blockers, true) => 'Backfill true EPA for every explicitly held slate game, rerun canonical generation, and require zero missing_true_epa holds before cutover.',
             in_array('missing_immutable_pregame_market', $blockers, true) => 'Refresh odds and regenerate canonical NFL predictions so every slate game freezes a fresh immutable pregame spread and total.',
             in_array('missing_spread_quote_coverage', $blockers, true) => 'Refresh two-sided spread quotes and regenerate canonical NFL predictions for the incomplete slate games.',
             in_array('missing_total_quote_coverage', $blockers, true) => 'Refresh two-sided total quotes and regenerate canonical NFL predictions for the incomplete slate games.',
-            in_array('missing_released_candidate_decisions', $blockers, true) => 'Resolve every official-candidate market to an exact fresh paired quote, rerun legacy generation, and require a released tracking decision for every candidate market.',
-            in_array('stale_pregame_predictions', $blockers, true) => 'Run the ordered NFL pregame pipeline to refresh stale legacy and canonical forecasts before publishing recommendations.',
-            in_array('missing_market_dispositions', $blockers, true) => 'Regenerate legacy NFL forecasts to persist an immutable released, pass, or hold disposition for all three markets on every slate game.',
+            in_array('missing_released_candidate_decisions', $blockers, true) => 'Resolve every official-candidate market to an exact fresh paired quote, rerun canonical generation, and require a released tracking decision for every candidate market.',
+            in_array('stale_pregame_predictions', $blockers, true) => 'Run the ordered NFL pregame pipeline to refresh stale canonical forecasts before publishing recommendations.',
+            in_array('missing_market_dispositions', $blockers, true) => 'Regenerate canonical NFL forecasts to persist an immutable released, pass, or hold disposition for all three markets on every slate game.',
             default => 'Backfill missing safe predictions and evaluations, then rerun this report.',
         };
     }
@@ -180,30 +178,18 @@ class NflCanonicalCutoverReadinessService
             ->get(['id', 'sport_event_id']);
         $eventIds = $games->pluck('sport_event_id')->map(fn (mixed $id): int => (int) $id)->all();
         $gameIds = $games->modelKeys();
-        $canonicalByEvent = CanonicalPrediction::query()
-            ->with([
+        $canonicalByEvent = app(CanonicalSportPredictionQuery::class)->queryForSport('nfl')
+            ->withOnly([
                 'calculationRun:id,event_input_snapshot_id',
                 'calculationRun.inputSnapshot' => fn ($query) => $query
-                    ->select(['id', 'captured_at', 'inputs->pregame_market as pregame_market'])
-                    ->withCasts(['pregame_market' => 'array']),
+                    ->select(['id', 'captured_at', 'pregame_safety_status', 'inputs->pregame_market as pregame_market',
+                        'inputs->recommendation_context as recommendation_context'])
+                    ->withCasts(['pregame_market' => 'array', 'recommendation_context' => 'array']),
             ])
-            ->where('sport', 'nfl')
-            ->where('phase', 'pregame')
-            ->where('publication_state', 'published')
-            ->whereIn('sport_event_id', $eventIds)
-            ->orderByDesc('revision')
-            ->get(['id', 'sport_event_id', 'calculation_run_id'])
-            ->unique('sport_event_id')
-            ->keyBy('sport_event_id');
-        $legacyByGame = Prediction::query()
-            ->select(['id', 'game_id', 'model_metadata', 'updated_at'])
-            ->addSelect(['latest_safe_feature_snapshot_id' => PredictionFeatureSnapshot::query()
-                ->select('id')->where('sport', 'nfl')->where('prediction_table', (new Prediction)->getTable())
-                ->whereColumn('prediction_id', 'nfl_predictions.id')->where('pregame_safe', true)
-                ->latest('generated_at')->latest('id')->limit(1)])
-            ->whereIn('game_id', $gameIds)
-            ->get()
-            ->keyBy('game_id');
+            ->where('predictions.published_at', '<=', now())
+            ->whereIn('predictions.sport_event_id', $eventIds)
+            ->select(['predictions.id', 'predictions.sport_event_id', 'predictions.calculation_run_id', 'predictions.generated_at', 'predictions.published_at'])
+            ->get()->unique('sport_event_id')->keyBy('sport_event_id');
 
         $epaApplied = [];
         $epaHeld = [];
@@ -224,34 +210,37 @@ class NflCanonicalCutoverReadinessService
         $predictionFreshAfter = now()->subMinutes($maximumPredictionAgeMinutes);
 
         $decisionsByPrediction = BetDecision::query()
-            ->select(['id', 'prediction_id', 'prediction_feature_snapshot_id', 'status', 'decided_at',
-                'market_key', 'is_bet', 'pregame_safe'])
+            ->select(['id', 'prediction_id', 'status', 'decided_at', 'market_key', 'is_bet', 'pregame_safe',
+                'feature_snapshot->event_input_snapshot_id as canonical_input_snapshot_id',
+                'feature_snapshot->calculation_run_id as canonical_calculation_run_id'])
             ->selectRaw("JSON_OBJECT('hold_reason', JSON_EXTRACT(explanation, '$.hold_reason')) AS explanation")
-            ->with('featureSnapshot:id,pregame_safe,generated_at')
-            ->where('sport', 'nfl')
-            ->where('prediction_table', (new Prediction)->getTable())
-            ->whereIn('prediction_id', $legacyByGame->pluck('id')->filter()->all())
+            ->where('sport', 'nfl')->where('prediction_table', 'predictions')
+            ->where('game_table', 'nfl_games')->whereIn('game_id', $gameIds)
+            ->whereIn('prediction_id', $canonicalByEvent->pluck('id')->all())
             ->whereIn('status', ['released_tracking_bet', 'held_candidate', 'model_no_bet', 'model_hold'])
-            ->get()
-            ->groupBy('prediction_id');
+            ->get()->groupBy('prediction_id');
         foreach ($games as $game) {
-            $legacy = $legacyByGame->get($game->getKey());
-            $recordedKeys = $decisionsByPrediction->get($legacy?->getKey(), collect())
-                ->filter(function (BetDecision $decision) use ($game, $legacy): bool {
-                    $snapshot = $decision->featureSnapshot;
+            $canonical = $canonicalByEvent->get($game->sport_event_id);
+            $inputSnapshot = $canonical?->calculationRun?->inputSnapshot;
+            $context = (array) $inputSnapshot?->getAttribute('recommendation_context');
+            $metadata = ($context['version'] ?? null) === NflRecommendationInputBuilder::VERSION
+                ? (array) ($context['model_metadata'] ?? []) : [];
+            $predictionDecisions = $decisionsByPrediction->get($canonical?->getKey(), collect())
+                ->filter(function (BetDecision $decision) use ($game, $canonical, $inputSnapshot): bool {
                     $start = $game->sportEvent?->starts_at;
 
-                    return $snapshot?->pregame_safe === true
-                        && $start !== null
-                        && $snapshot->generated_at !== null && $snapshot->generated_at->lt($start)
-                        && $decision->decided_at !== null && $decision->decided_at->lt($start)
-                        && ($decision->status === 'released_tracking_bet'
-                            || $snapshot->id === (int) $legacy?->latest_safe_feature_snapshot_id);
-                })->pluck('market_key')->unique()->all();
+                    return $inputSnapshot?->pregame_safety_status === 'verified'
+                        && $start !== null && $inputSnapshot->captured_at?->lt($start)
+                        && (int) $decision->canonical_input_snapshot_id === $inputSnapshot->id
+                        && (string) $decision->canonical_calculation_run_id === (string) $canonical?->calculation_run_id
+                        && $decision->pregame_safe && $decision->decided_at !== null
+                        && $decision->decided_at->lte(now()) && $decision->decided_at->lt($start)
+                        && $decision->decided_at->gte($canonical->published_at);
+                });
+            $recordedKeys = $predictionDecisions->pluck('market_key')->unique()->all();
             if (array_diff(['h2h', 'spreads', 'totals'], $recordedKeys) !== []) {
                 $missingDispositionGameIds[] = (int) $game->getKey();
             }
-            $metadata = $legacy instanceof Prediction ? (array) $legacy->model_metadata : [];
             if (data_get($metadata, 'true_epa.applied') === true) {
                 $epaApplied[] = (int) $game->getKey();
             } elseif (data_get($metadata, 'true_epa.enabled') === false && data_get($metadata, 'true_epa.quarantined') === true) {
@@ -262,14 +251,8 @@ class NflCanonicalCutoverReadinessService
                 $epaMissing[] = (int) $game->getKey();
             }
 
-            $canonical = $canonicalByEvent->get($game->sport_event_id);
-            $inputSnapshot = $canonical instanceof CanonicalPrediction
-                ? $canonical->calculationRun?->inputSnapshot
-                : null;
-            if ($legacy?->updated_at === null
-                || $legacy->updated_at->lt($predictionFreshAfter)
-                || $inputSnapshot?->captured_at === null
-                || $inputSnapshot->captured_at->lt($predictionFreshAfter)) {
+            if ($canonical?->generated_at === null || $canonical->generated_at->lt($predictionFreshAfter)
+                || $inputSnapshot?->captured_at === null || $inputSnapshot->captured_at->lt($predictionFreshAfter)) {
                 $stalePredictions[] = (int) $game->getKey();
             }
             $market = (array) $inputSnapshot?->getAttribute('pregame_market');
@@ -299,18 +282,13 @@ class NflCanonicalCutoverReadinessService
                 $immutableMarket[] = (int) $game->getKey();
             }
 
-            if (! $legacy instanceof Prediction) {
-                continue;
-            }
-
-            $candidateKeys = $this->decisionRecorder->candidateMarketKeys($legacy);
+            $candidateKeys = $this->decisionPolicy->candidateRecommendations((array) ($metadata['analysis_layer'] ?? []), (array) ($context['configuration'] ?? []))->keys()->all();
             if ($candidateKeys === []) {
                 continue;
             }
 
             $candidateGameIds[] = (int) $game->getKey();
             $candidateMarketCount += count($candidateKeys);
-            $predictionDecisions = $decisionsByPrediction->get($legacy->getKey(), collect());
             $releasedKeys = $predictionDecisions
                 ->filter(fn (BetDecision $decision): bool => $decision->status === 'released_tracking_bet'
                     && $decision->is_bet
@@ -342,7 +320,7 @@ class NflCanonicalCutoverReadinessService
         return [
             'slate_event_count' => $games->count(),
             'slate_game_ids' => $games->modelKeys(),
-            'legacy_prediction_event_count' => $legacyByGame->count(),
+            'canonical_prediction_event_count' => $canonicalByEvent->count(),
             'recorded_disposition_event_count' => count($gameIds) - count($missingDispositionGameIds),
             'missing_disposition_game_ids' => $missingDispositionGameIds,
             'true_epa_applied_event_count' => count($epaApplied),

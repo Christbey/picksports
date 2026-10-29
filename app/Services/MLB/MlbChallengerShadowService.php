@@ -2,12 +2,15 @@
 
 namespace App\Services\MLB;
 
+use App\Application\Sports\ReadModels\CanonicalShadowSnapshot;
 use App\Models\MLB\Game;
 use App\Models\ModelArtifact;
 use App\Models\PredictionFeatureSnapshot;
 use App\Models\ShadowModelOutput;
 use App\Services\ML\ShadowArtifactSelector;
+use App\Services\Predictions\CanonicalShadowInputs;
 use App\Services\Predictions\ModelRunRecorder;
+use App\Services\Predictions\PredictionDeliverySource;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -162,6 +165,9 @@ class MlbChallengerShadowService
      */
     private function canonicalSnapshots(?int $gameId, int $limit): Collection
     {
+        if (app(PredictionDeliverySource::class)->usesCanonical('mlb')) {
+            return app(CanonicalShadowInputs::class)->forGames('mlb', $gameId, $limit);
+        }
         $query = PredictionFeatureSnapshot::query()
             ->where('sport', 'mlb')
             ->where('prediction_table', 'mlb_predictions')
@@ -183,13 +189,13 @@ class MlbChallengerShadowService
             ->groupBy('game_id')
             ->map(
                 fn (Collection $group): PredictionFeatureSnapshot => $group
-                    ->sortByDesc(fn (PredictionFeatureSnapshot $snapshot): array => [
+                    ->sortByDesc(fn (PredictionFeatureSnapshot|CanonicalShadowSnapshot $snapshot): array => [
                         $snapshot->generated_at?->getTimestamp() ?? 0,
                         $snapshot->id,
                     ])
                     ->first(),
             )
-            ->sortBy(fn (PredictionFeatureSnapshot $snapshot): array => [
+            ->sortBy(fn (PredictionFeatureSnapshot|CanonicalShadowSnapshot $snapshot): array => [
                 $snapshot->game_start_at?->getTimestamp() ?? PHP_INT_MAX,
                 $snapshot->game_id,
             ])
@@ -214,7 +220,7 @@ class MlbChallengerShadowService
         return true;
     }
 
-    private function pitchersReady(PredictionFeatureSnapshot $snapshot, Game $game): bool
+    private function pitchersReady(PredictionFeatureSnapshot|CanonicalShadowSnapshot $snapshot, Game $game): bool
     {
         $capturedHomeId = $this->capturedPitcherId($snapshot, 'home');
         $capturedAwayId = $this->capturedPitcherId($snapshot, 'away');
@@ -229,7 +235,7 @@ class MlbChallengerShadowService
             && hash_equals($capturedAwayId, $currentAwayId);
     }
 
-    private function capturedPitcherId(PredictionFeatureSnapshot $snapshot, string $side): string
+    private function capturedPitcherId(PredictionFeatureSnapshot|CanonicalShadowSnapshot $snapshot, string $side): string
     {
         return trim((string) (
             data_get($snapshot->features, "{$side}_probable_pitcher_espn_id")
@@ -243,7 +249,7 @@ class MlbChallengerShadowService
      */
     private function recordOutputs(
         ModelArtifact $artifact,
-        PredictionFeatureSnapshot $snapshot,
+        PredictionFeatureSnapshot|CanonicalShadowSnapshot $snapshot,
         array $output,
     ): int {
         $inferenceRun = $this->runs->forPrediction(
@@ -290,7 +296,7 @@ class MlbChallengerShadowService
             $shadow = ShadowModelOutput::query()->firstOrCreate(
                 [
                     'model_artifact_id' => $artifact->id,
-                    'prediction_feature_snapshot_id' => $snapshot->id,
+                    ...($snapshot instanceof CanonicalShadowSnapshot ? $snapshot->identity() : ['prediction_feature_snapshot_id' => $snapshot->id]),
                     'market_type' => $marketType,
                 ],
                 [
@@ -305,6 +311,7 @@ class MlbChallengerShadowService
                     'output_delta' => $challenger - $baseline,
                     'status' => $promoted ? 'promoted_shadow' : 'shadow',
                     'explanation' => [
+                        'canonical_lineage' => $snapshot instanceof CanonicalShadowSnapshot ? $snapshot->lineage : null,
                         'artifact_id' => $artifact->id,
                         'artifact_hash' => $artifact->artifact_hash,
                         'artifact_status' => $artifact->status,

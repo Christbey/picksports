@@ -2,50 +2,28 @@
 
 namespace App\Services;
 
-use App\Models\NFL\Game;
-use App\Models\NFL\Prediction;
+use App\Application\Sports\ReadModels\PredictionDeliveryContext;
 use App\Models\User;
 use App\Models\UserAlertSent;
 use App\Notifications\BettingValueAlert;
 use App\Services\BettingRecommendations\GameBettingRecommendationService;
-use Illuminate\Database\Eloquent\Model;
+use App\Services\Predictions\PredictionDeliverySource;
 
 class AlertService
 {
-    protected const SPORTS_MODELS = [
-        'nfl' => ['game' => Game::class, 'prediction' => Prediction::class],
-        'nba' => ['game' => \App\Models\NBA\Game::class, 'prediction' => \App\Models\NBA\Prediction::class],
-        'cbb' => ['game' => \App\Models\CBB\Game::class, 'prediction' => \App\Models\CBB\Prediction::class],
-        'wcbb' => ['game' => \App\Models\WCBB\Game::class, 'prediction' => \App\Models\WCBB\Prediction::class],
-        'mlb' => ['game' => \App\Models\MLB\Game::class, 'prediction' => \App\Models\MLB\Prediction::class],
-        'cfb' => ['game' => \App\Models\CFB\Game::class, 'prediction' => \App\Models\CFB\Prediction::class],
-        'wnba' => ['game' => \App\Models\WNBA\Game::class, 'prediction' => \App\Models\WNBA\Prediction::class],
-    ];
+    private const SPORT_ORDER = ['nfl', 'nba', 'cbb', 'wcbb', 'mlb', 'cfb', 'wnba'];
 
     public function __construct(
         private readonly NotificationTemplateDefaultService $templateDefaultService,
         private readonly GameBettingRecommendationService $gameBettingRecommendationService,
+        private readonly PredictionDeliverySource $predictions,
     ) {}
 
     public function checkForValueOpportunities(string $sport): int
     {
         $sport = strtolower($sport);
 
-        if (! isset(self::SPORTS_MODELS[$sport])) {
-            return 0;
-        }
-
-        $models = self::SPORTS_MODELS[$sport];
-        $predictionModel = $models['prediction'];
-
-        $predictions = $predictionModel::query()
-            ->with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', function ($query) {
-                $query->where('game_date', '>', now())
-                    ->whereNotNull('odds_data')
-                    ->where('status', '!=', 'completed');
-            })
-            ->get();
+        $predictions = $this->predictions->forAlerts($sport);
 
         $alertsSent = 0;
 
@@ -57,7 +35,8 @@ class AlertService
                     $prediction,
                     $sport,
                     $opportunity['expected_value'],
-                    $opportunity['recommendation']
+                    $opportunity['recommendation'],
+                    $opportunity['bet_decision_id'] ?? null,
                 );
             }
         }
@@ -65,18 +44,17 @@ class AlertService
         return $alertsSent;
     }
 
-    protected function analyzeOpportunities(Model $prediction): array
+    protected function analyzeOpportunities(PredictionDeliveryContext $prediction): array
     {
         $game = $prediction->game;
-        if (! $game || ! $game->odds_data) {
+        if (! $prediction->isCanonical() && ! $game->odds_data) {
             return [];
         }
 
-        $sport = strtolower($this->inferSportFromPrediction($prediction));
-
-        return collect($this->gameBettingRecommendationService->forGame($game, $sport))
+        return collect($this->gameBettingRecommendationService->forPrediction($prediction))
             ->filter(fn (array $recommendation) => is_numeric($recommendation['edge'] ?? null))
             ->map(fn (array $recommendation) => [
+                'bet_decision_id' => $recommendation['bet_decision_id'] ?? null,
                 'expected_value' => round((float) $recommendation['edge'], 2),
                 'recommendation' => (string) ($recommendation['recommendation'] ?? 'No recommendation available'),
             ])
@@ -85,18 +63,7 @@ class AlertService
             ->all();
     }
 
-    protected function inferSportFromPrediction(Model $prediction): string
-    {
-        foreach (self::SPORTS_MODELS as $sport => $models) {
-            if (($models['prediction'] ?? null) === $prediction::class) {
-                return $sport;
-            }
-        }
-
-        return '';
-    }
-
-    protected function sendAlertsToUsers(Model $prediction, string $sport, float $expectedValue, string $recommendation): int
+    protected function sendAlertsToUsers(PredictionDeliveryContext $prediction, string $sport, float $expectedValue, string $recommendation, ?int $betDecisionId = null): int
     {
         // Find the notification template
         $template = $this->templateDefaultService->resolve('betting_value_alert');
@@ -140,11 +107,12 @@ class AlertService
 
             // Send the notification
             $user->notify(new BettingValueAlert(
-                $prediction,
+                $prediction->source,
                 $sport,
                 $expectedValue,
                 $recommendation,
-                $template
+                $template,
+                $betDecisionId,
             ));
 
             // Record that alert was sent for tier limit tracking
@@ -152,8 +120,8 @@ class AlertService
                 'user_id' => $user->id,
                 'sport' => strtolower($sport),
                 'alert_type' => 'betting_value',
-                'prediction_id' => $prediction->id,
-                'prediction_type' => get_class($prediction),
+                'prediction_id' => $prediction->source->getKey(),
+                'prediction_type' => $prediction->source::class,
                 'expected_value' => $expectedValue,
                 'sent_at' => now(),
             ]);
@@ -168,7 +136,7 @@ class AlertService
     {
         $results = [];
 
-        foreach (array_keys(self::SPORTS_MODELS) as $sport) {
+        foreach (self::SPORT_ORDER as $sport) {
             $results[$sport] = $this->checkForValueOpportunities($sport);
         }
 

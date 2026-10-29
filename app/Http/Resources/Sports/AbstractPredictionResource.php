@@ -3,6 +3,7 @@
 namespace App\Http\Resources\Sports;
 
 use App\Models\User;
+use App\Services\Predictions\LivePredictionStore;
 use App\Services\Predictions\PredictionResourcePresentationData;
 use App\Services\Predictions\PredictionResourcePresentationStore;
 use App\Support\PredictionFieldAccess;
@@ -12,6 +13,9 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 abstract class AbstractPredictionResource extends JsonResource
 {
+    /** @var array<string, mixed>|null */
+    private ?array $liveFields = null;
+
     /**
      * @return array<int, string>
      */
@@ -100,6 +104,14 @@ abstract class AbstractPredictionResource extends JsonResource
         return $data;
     }
 
+    /** @return array<string, mixed> */
+    private function liveFields(): array
+    {
+        return $this->liveFields ??= app(LivePredictionStore::class)->forPrediction(
+            $this->resource, explode('_', $this->resource->getTable())[0],
+        );
+    }
+
     /**
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
@@ -107,12 +119,13 @@ abstract class AbstractPredictionResource extends JsonResource
     protected function appendLiveSpreadFields(array $data): array
     {
         $isLive = $this->isLivePrediction();
+        $live = $this->liveFields();
 
-        $data['live_predicted_spread'] = $isLive && $this->live_predicted_spread !== null
-            ? (float) $this->live_predicted_spread
+        $data['live_predicted_spread'] = $isLive && $live['live_predicted_spread'] !== null
+            ? (float) $live['live_predicted_spread']
             : null;
-        $data['live_predicted_total'] = $isLive && $this->live_predicted_total !== null
-            ? (float) $this->live_predicted_total
+        $data['live_predicted_total'] = $isLive && $live['live_predicted_total'] !== null
+            ? (float) $live['live_predicted_total']
             : null;
 
         return $data;
@@ -125,12 +138,13 @@ abstract class AbstractPredictionResource extends JsonResource
     protected function appendLiveWinProbabilityFields(array $data, string $remainingField = 'live_seconds_remaining'): array
     {
         $isLive = $this->isLivePrediction();
+        $live = $this->liveFields();
 
-        $data['live_win_probability'] = $isLive && $this->live_win_probability !== null
-            ? (float) $this->live_win_probability
+        $data['live_win_probability'] = $isLive && $live['live_win_probability'] !== null
+            ? (float) $live['live_win_probability']
             : null;
-        $data[$remainingField] = $isLive ? $this->{$remainingField} : null;
-        $data['live_updated_at'] = $isLive ? $this->live_updated_at?->toIso8601String() : null;
+        $data[$remainingField] = $isLive ? $live[$remainingField] : null;
+        $data['live_updated_at'] = $isLive ? $live['live_updated_at']?->toIso8601String() : null;
 
         return $data;
     }

@@ -6,6 +6,7 @@ use App\Models\CBB\Game;
 use App\Models\CBB\Team;
 use App\Models\CBB\TournamentForecast;
 use App\Models\CBB\TournamentStateSnapshot;
+use App\Services\Predictions\BettingForecastSource;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -28,6 +29,9 @@ class RecalculateTournamentOutlook
     /** @var array<string, float> */
     private array $probabilityCache = [];
 
+    /** @var array<int, float|null> */
+    private array $storedProbabilities = [];
+
     /** @var array<string, int|null> */
     private array $teamResolutionCache = [];
 
@@ -43,6 +47,9 @@ class RecalculateTournamentOutlook
     ): TournamentStateSnapshot {
         $asOf ??= now();
         $games = $this->tournamentGames($season);
+        $this->storedProbabilities = app(BettingForecastSource::class)
+            ->forGames('cbb', $games->pluck('id')->all())
+            ->mapWithKeys(fn ($forecast): array => [$forecast->game->id => $forecast->winProbability])->all();
         $field = $this->actualField($games, $season);
         $actualFieldByTeam = $field['teams'];
         $placeholderFieldRows = $field['placeholders'];
@@ -89,7 +96,7 @@ class RecalculateTournamentOutlook
     private function tournamentGames(int $season): Collection
     {
         return Game::query()
-            ->with(['homeTeam', 'awayTeam', 'prediction'])
+            ->with(['homeTeam', 'awayTeam'])
             ->where('season', $season)
             ->where('season_type', (int) config('cbb.season.types.postseason'))
             ->where('is_ncaa_tournament', true)
@@ -404,10 +411,11 @@ class RecalculateTournamentOutlook
 
     private function matchupWinProbability(?Game $game, int $leftTeamId, int $rightTeamId, int $season): float
     {
-        if ($game && $game->prediction) {
+        $storedProbability = $game ? ($this->storedProbabilities[$game->id] ?? null) : null;
+        if ($storedProbability !== null) {
             $homeId = (int) ($game->home_team_id ?? 0);
             $awayId = (int) ($game->away_team_id ?? 0);
-            $homeWinProbability = (float) $game->prediction->win_probability;
+            $homeWinProbability = $storedProbability;
 
             if ($homeId === $leftTeamId && $awayId === $rightTeamId) {
                 return $homeWinProbability;

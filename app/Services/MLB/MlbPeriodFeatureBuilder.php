@@ -5,6 +5,8 @@ namespace App\Services\MLB;
 use App\Models\MarketQuote;
 use App\Models\MLB\Game;
 use App\Models\PredictionFeatureSnapshot;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
+use App\Services\Predictions\PredictionDeliverySource;
 use App\Support\MLB\MlbGameStart;
 use App\Support\MLB\MlbLineScores;
 use Illuminate\Support\Carbon;
@@ -72,7 +74,9 @@ class MlbPeriodFeatureBuilder
             ->get();
 
         $states = $this->replay($history);
-        $trustedPitchers = $this->trustedPitcherFeatures($snapshot);
+        $trustedPitchers = app(PredictionDeliverySource::class)->usesCanonical('mlb')
+            ? ($this->nativePitcherFeaturesByGame([$game->id])[$game->id] ?? [])
+            : $this->trustedPitcherFeatures($snapshot);
         $features = [];
 
         foreach (self::MARKETS as $marketType => $innings) {
@@ -125,7 +129,8 @@ class MlbPeriodFeatureBuilder
             ->orderBy('id')
             ->get();
 
-        $trustedPitchers = $this->trustedPitcherFeaturesByGame($targetIds);
+        $trustedPitchers = app(PredictionDeliverySource::class)->usesCanonical('mlb')
+            ? $this->nativePitcherFeaturesByGame($targetIds) : $this->trustedPitcherFeaturesByGame($targetIds);
         $states = [];
         $featuresByGame = [];
         $season = null;
@@ -448,6 +453,29 @@ class MlbPeriodFeatureBuilder
             'away' => ['games' => 0, 'wins' => 0, 'losses' => 0, 'ties' => 0],
             'last_start' => null,
         ];
+    }
+
+    /** @param list<int> $gameIds @return array<int, array<string, float>> */
+    private function nativePitcherFeaturesByGame(array $gameIds): array
+    {
+        return app(CanonicalSportPredictionQuery::class)->queryForSport('mlb')
+            ->whereIn('mlb_games.id', $gameIds)->get()->mapWithKeys(function ($prediction): array {
+                $game = $prediction->sportEvent?->mlbGame;
+                $snapshot = $prediction->calculationRun?->inputSnapshot;
+                if (! $game || ! $snapshot || ! $snapshot->captured_at || ! $snapshot->cutoff_at
+                    || $snapshot->captured_at->gt($snapshot->cutoff_at)) {
+                    return [];
+                }
+                $features = [];
+                foreach (['home', 'away'] as $side) {
+                    $elo = data_get($snapshot->inputs, "pitching.{$side}.elo");
+                    if (is_numeric($elo)) {
+                        $features["feature_{$side}_pitcher_elo"] = (float) $elo;
+                    }
+                }
+
+                return [$game->id => $features];
+            })->all();
     }
 
     /**

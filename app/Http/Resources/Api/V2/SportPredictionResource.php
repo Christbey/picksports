@@ -5,6 +5,8 @@ namespace App\Http\Resources\Api\V2;
 use App\Models\PredictionFeatureSnapshot;
 use App\Services\Api\V2\SportContext;
 use App\Services\Api\V2\SportPredictionPresentationData;
+use App\Services\MLB\MlbRecommendationPresentation;
+use App\Services\Predictions\LivePredictionStore;
 use App\Services\Sports\SportsDateWindowService;
 use App\Support\MLB\MlbGamePhase;
 use App\Support\Sports\GameDateTimePresenter;
@@ -697,64 +699,12 @@ class SportPredictionResource extends JsonResource
             return null;
         }
 
-        return $this->sanitizeMlbRecommendationPayload($this->presentation->recommendation);
+        return app(MlbRecommendationPresentation::class)->sanitize($this->presentation->recommendation);
     }
 
-    /**
-     * @param  array<string,mixed>  $payload
-     * @return array<string,mixed>
-     */
-    private function sanitizeMlbRecommendationPayload(array $payload): array
-    {
-        $sanitized = [];
-
-        foreach ($payload as $key => $value) {
-            $publicKey = match ($key) {
-                'raw_implied_probability' => 'market_implied_probability',
-                'raw_edge' => 'market_edge',
-                default => is_string($key) ? $key : (string) $key,
-            };
-
-            if ($this->isRawPayloadKey($publicKey)) {
-                continue;
-            }
-
-            $sanitized[$publicKey] = is_array($value)
-                ? $this->sanitizeMlbRecommendationPayload($value)
-                : $value;
-        }
-
-        return $sanitized;
-    }
-
-    private function isRawPayloadKey(string $key): bool
-    {
-        return $key === 'raw' || str_starts_with($key, 'raw_') || str_contains($key, '_raw');
-    }
-
-    /**
-     * @return array<string,mixed>|null
-     */
     private function publicRecommendation(): ?array
     {
-        $recommendation = $this->recommendation();
-
-        if ($recommendation === null) {
-            return null;
-        }
-
-        $public = (array) ($recommendation['public'] ?? $recommendation);
-        $promotion = (array) ($recommendation['promotion'] ?? []);
-        $type = (string) ($public['recommendation_type'] ?? 'no_play');
-
-        return [
-            'type' => $type,
-            'label' => $type === 'no_play' ? 'No betting recommendation' : $this->recommendationLabel($type),
-            'is_bet' => ($public['is_bet'] ?? false) === true,
-            'is_lean' => $type === 'lean' && ($public['prediction_phase'] ?? null) === 'pregame',
-            'promotion_blocked' => ($promotion['status'] ?? null) === 'blocked',
-            'block_reasons' => array_values((array) ($promotion['block_reasons'] ?? [])),
-        ];
+        return app(MlbRecommendationPresentation::class)->summary($this->recommendation());
     }
 
     /**
@@ -771,16 +721,6 @@ class SportPredictionResource extends JsonResource
     private function marketAwareProjection(): ?array
     {
         return $this->context->slug === 'mlb' ? $this->presentation->marketAwareProjection : null;
-    }
-
-    private function recommendationLabel(string $type): string
-    {
-        return match ($type) {
-            'bet' => 'Model bet',
-            'lean' => 'Model lean',
-            'monitor' => 'Live monitor',
-            default => str($type)->replace('_', ' ')->title()->toString(),
-        };
     }
 
     /**
@@ -888,7 +828,7 @@ class SportPredictionResource extends JsonResource
 
     private function liveAttribute(string $key): mixed
     {
-        return $this->isLivePrediction() ? $this->attribute($key) : null;
+        return $this->isLivePrediction() ? (app(LivePredictionStore::class)->forPrediction($this->resource, $this->context->slug)[$key] ?? null) : null;
     }
 
     private function liveFloatAttribute(string $key): ?float

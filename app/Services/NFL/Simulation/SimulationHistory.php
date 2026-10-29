@@ -2,16 +2,28 @@
 
 namespace App\Services\NFL\Simulation;
 
+use App\Application\Sports\ReadModels\CanonicalShadowSnapshot;
 use App\Models\NFL\Game;
 use App\Models\PredictionFeatureSnapshot;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
+use App\Services\Predictions\CanonicalShadowInputs;
+use App\Services\Predictions\PredictionDeliverySource;
 use App\Services\Predictions\SnapshotProvenanceResolver;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 
 class SimulationHistory
 {
-    public function source(Game $game, CarbonInterface $asOf): ?PredictionFeatureSnapshot
+    public function source(Game $game, CarbonInterface $asOf): PredictionFeatureSnapshot|CanonicalShadowSnapshot|null
     {
+        if (app(PredictionDeliverySource::class)->usesCanonical('nfl')) {
+            $prediction = app(CanonicalSportPredictionQuery::class)->queryForSport('nfl', ['game_id' => $game->id])
+                ->withOnly(['markets', 'calculationRun.inputSnapshot', 'calculationRun.release', 'sportEvent.nflGame'])
+                ->where('predictions.generated_at', '<=', $asOf)
+                ->where('predictions.generated_at', '>=', $asOf->copy()->subHours((int) config('nfl_game_simulation.forecast_max_age_hours', 36)))->first();
+
+            return $prediction ? app(CanonicalShadowInputs::class)->fromPrediction($prediction) : null;
+        }
         $asOf = $asOf->copy()->setTimezone(config('app.timezone'));
         $kickoff = app(SnapshotProvenanceResolver::class)->gameStartAt($game)?->setTimezone(config('app.timezone'));
         if (! $kickoff) {
@@ -25,8 +37,11 @@ class SimulationHistory
             ->latest('id')->first();
     }
 
-    public function fit(Game $target, PredictionFeatureSnapshot $source, string $basis, CarbonInterface $asOf): array
+    public function fit(Game $target, PredictionFeatureSnapshot|CanonicalShadowSnapshot $source, string $basis, CarbonInterface $asOf): array
     {
+        if ($source instanceof CanonicalShadowSnapshot) {
+            return $this->nativeFit($target, $source, $basis, $asOf);
+        }
         $asOf = $asOf->copy()->setTimezone(config('app.timezone'));
         $mature = $asOf->copy()->subHours((int) config('nfl_game_simulation.result_maturity_hours', 24));
         $limit = min(1024, max(1, (int) config('nfl_game_simulation.history_limit', 512)));
@@ -65,7 +80,7 @@ class SimulationHistory
             'mature_before' => $mature->toIso8601String(), 'model_version' => $source->model_version, 'feature_version' => $source->feature_version, 'blend_version' => $source->blend_version, 'basis' => $basis];
     }
 
-    public function means(PredictionFeatureSnapshot $snapshot, string $basis): ?array
+    public function means(PredictionFeatureSnapshot|CanonicalShadowSnapshot $snapshot, string $basis): ?array
     {
         $values = $basis === 'pre_market' ? data_get($snapshot->model_metadata, 'pre_market_outputs', []) : $snapshot->outputs;
         $m = $values['predicted_spread'] ?? null;
@@ -75,6 +90,39 @@ class SimulationHistory
         }
 
         return ['margin' => (float) $m, 'total' => (float) $t];
+    }
+
+    private function nativeFit(Game $target, CanonicalShadowSnapshot $source, string $basis, CarbonInterface $asOf): array
+    {
+        $mature = $asOf->copy()->subHours((int) config('nfl_game_simulation.result_maturity_hours', 24));
+        $limit = min(1024, max(1, (int) config('nfl_game_simulation.history_limit', 512)));
+        $predictions = app(CanonicalSportPredictionQuery::class)->queryForSport('nfl')
+            ->withOnly(['markets', 'calculationRun.inputSnapshot', 'calculationRun.release', 'sportEvent.nflGame'])
+            ->where('nfl_games.id', '!=', $target->id)->where('nfl_games.status', 'STATUS_FINAL')
+            ->whereIn('nfl_games.season_type', ['2', 'regular'])->whereNotNull('nfl_games.home_score')->whereNotNull('nfl_games.away_score')
+            ->where('nfl_games.result_updated_at', '<=', $mature)->where('sport_events.starts_at', '<', $mature)
+            ->where('predictions.generated_at', '<=', $asOf)->where('predictions.model_version', $source->model_version)
+            ->whereHas('calculationRun', fn ($query) => $query->where('calculation_release_id', $source->lineage['calculation_release_id']))
+            ->reorder()->orderByDesc('sport_events.starts_at')->limit($limit)->get();
+        $pairs = $ids = $gameIds = $versions = [];
+        foreach ($predictions as $prediction) {
+            $snapshot = app(CanonicalShadowInputs::class)->fromPrediction($prediction);
+            $game = $prediction->sportEvent?->nflGame;
+            $means = $snapshot ? $this->means($snapshot, $basis) : null;
+            if (! $snapshot || ! $game || ! $means || $game->home_score < 0 || $game->away_score < 0
+                || $game->home_score > 200 || $game->away_score > 200 || $snapshot->features_available_at->gt($asOf)) {
+                continue;
+            }
+            $pairs[] = [$game->home_score - ($means['total'] + $means['margin']) / 2,
+                $game->away_score - ($means['total'] - $means['margin']) / 2];
+            $ids[] = $snapshot->id;
+            $gameIds[] = $game->id;
+            $versions[] = $game->result_updated_at->toIso8601String();
+        }
+
+        return ['pairs' => $pairs, 'snapshot_ids' => $ids, 'game_ids' => $gameIds, 'result_versions' => $versions,
+            'source_table' => 'predictions', 'cutoff' => $asOf->toIso8601String(), 'mature_before' => $mature->toIso8601String(),
+            'model_version' => $source->model_version, 'feature_version' => $source->feature_version, 'blend_version' => $source->blend_version, 'basis' => $basis];
     }
 
     private function observed(): Builder

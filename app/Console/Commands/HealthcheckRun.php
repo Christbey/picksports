@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\CommandHeartbeat;
 use App\Models\Healthcheck;
+use App\Services\Predictions\PredictionDeliverySource;
 use App\Support\SportCatalog;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
@@ -134,7 +135,9 @@ class HealthcheckRun extends Command
         $this->evaluateCommandFreshness(
             sport: $sport,
             checkType: 'heartbeat_prediction_pipeline',
-            commandPatterns: ["{$sport}:generate-predictions%", "{$sport}:grade-predictions%"],
+            commandPatterns: app(PredictionDeliverySource::class)->legacyWriterRetired($sport)
+                ? ["{$sport}:generate-canonical-predictions%", "{$sport}:evaluate-canonical-predictions%", "{$sport}:run-pregame-pipeline%"]
+                : ["{$sport}:generate-predictions%", "{$sport}:grade-predictions%"],
             warningAfterMinutes: $thresholds['warning'],
             failingAfterMinutes: $thresholds['failing'],
             label: 'prediction pipeline',

@@ -3,6 +3,7 @@
 namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Sports\SeasonStage\SeasonStageService;
 use App\Services\Validation\CfbValidationCoverage;
 use Illuminate\Database\Eloquent\Model;
@@ -26,7 +27,8 @@ class PredictionCompletenessCheck implements ValidationCheck
         $stageContext = app(SeasonStageService::class)->context($sport, null, null, $windowDays);
 
         $coverage = app(CfbValidationCoverage::class);
-        $canonicalMode = $sport === 'cfb' && $coverage->usesCanonical();
+        $canonicalMode = (bool) config("prediction_lifecycle.canonical_pipeline.{$sport}", false)
+            || (bool) config("prediction_lifecycle.canonical_reads.{$sport}", false);
         $query = $gameModel::query()
             ->when(! $canonicalMode, fn ($query) => $query->with('prediction'))
             ->whereIn('id', $stageContext->activeGameIds)
@@ -37,7 +39,11 @@ class PredictionCompletenessCheck implements ValidationCheck
         if ($sport === 'cfb') {
             $games = $games->filter(fn ($game) => $coverage->requiredTeamIds($game) !== [])->values();
         }
-        $canonical = $sport === 'cfb' && $coverage->usesCanonical() ? $coverage->publishedForGames($games) : null;
+        $canonical = $canonicalMode
+            ? ($sport === 'cfb' ? $coverage->publishedForGames($games)
+                : app(CanonicalSportPredictionQuery::class)->queryForSport($sport)
+                    ->whereIn("{$sport}_games.id", $games->pluck('id'))->withOnly([])->get()->keyBy('sport_event_id'))
+            : null;
         $totalGames = $games->count();
         $missingGames = $games->filter(fn (Model $game) => $canonical !== null ? ! $canonical->has($game->sport_event_id) : $game->prediction === null)->values();
         $staleGames = $canonical !== null ? $games->filter(function ($game) use ($canonical) {
@@ -69,7 +75,9 @@ class PredictionCompletenessCheck implements ValidationCheck
             'status' => $status,
             'severity' => $status,
             'message' => $message,
-            'recommended_action' => $canonical !== null ? 'cfb:run-pregame-pipeline --days-forward=8 --resume' : "{$sport}:generate-predictions",
+            'recommended_action' => $canonical !== null
+                ? ($sport === 'cfb' ? 'cfb:run-pregame-pipeline --days-forward=8 --resume' : "{$sport}:generate-canonical-predictions")
+                : "{$sport}:generate-predictions",
             'metadata' => [
                 'window_days' => $windowDays,
                 'season_stage' => $stageContext->toArray(),

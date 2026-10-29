@@ -3,6 +3,7 @@
 namespace App\Services\NFL\Predictions;
 
 use App\Application\Predictions\Data\CalculationReleaseData;
+use App\Application\Predictions\Data\EventInputSnapshotData;
 use App\Exceptions\Predictions\PredictionLifecycleException;
 use App\Models\NFL\Game;
 use App\Models\NFL\PlayerInjury;
@@ -16,7 +17,25 @@ class NflInputSnapshotBuilder extends FootballInputSnapshotBuilder
 {
     private ?string $marketCapturedAt = null;
 
-    public function __construct(private readonly NflPregameMarketSnapshot $marketSnapshot) {}
+    private ?array $recommendationContext = null;
+
+    public function __construct(private readonly NflPregameMarketSnapshot $marketSnapshot, private readonly NflRecommendationInputBuilder $recommendations) {}
+
+    public function build(SportEvent $event, CalculationReleaseData $release): EventInputSnapshotData
+    {
+        $this->recommendationContext = null;
+        $game = $event->nflGame()->with(['homeTeam', 'awayTeam'])->first();
+        if ($event->sport === 'nfl' && $release->sport === 'nfl' && $release->phase === 'pregame'
+            && $game instanceof Game && $game->homeTeam !== null && $game->awayTeam !== null && in_array($game->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true)
+            && $event->starts_at?->isFuture()) {
+            $this->recommendationContext = $this->recommendations->capture($game);
+        }
+        try {
+            return parent::build($event, $release);
+        } finally {
+            $this->recommendationContext = null;
+        }
+    }
 
     protected function sport(): string
     {
@@ -87,7 +106,10 @@ class NflInputSnapshotBuilder extends FootballInputSnapshotBuilder
             ));
         }
 
-        return ['pregame_market' => $market];
+        $context = $this->recommendationContext;
+        unset($context['captured_at']);
+
+        return ['pregame_market' => $market, 'recommendation_context' => $context];
     }
 
     /** @return array<string, string|null> */

@@ -4,7 +4,8 @@ namespace App\Actions\Sports;
 
 use App\Actions\Sports\Concerns\CalculatesFootballLiveProbability;
 use App\Actions\Sports\Concerns\ManagesTimedLivePredictions;
-use Carbon\Carbon;
+use App\Services\Predictions\LivePredictionStore;
+use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractFootballUpdateLivePrediction
 {
@@ -28,18 +29,19 @@ abstract class AbstractFootballUpdateLivePrediction
      */
     public function execute(object $game): ?array
     {
+        if (! $game instanceof Model) {
+            return null;
+        }
+        $store = app(LivePredictionStore::class);
         if (! $this->isGameInProgress($game)) {
-            $prediction = $game->prediction;
-            if ($prediction && $prediction->live_seconds_remaining !== null) {
-                $this->clearLivePrediction($prediction);
-            }
+            $store->clear($game, static::class);
 
             return null;
         }
+        $prediction = $store->baseline($game);
+        if ($prediction === null) {
+            $store->record($game, null, null, 'missing_pregame', static::class);
 
-        $prediction = $game->prediction;
-
-        if (! $prediction) {
             return null;
         }
 
@@ -72,20 +74,15 @@ abstract class AbstractFootballUpdateLivePrediction
             $prediction->predicted_total ?? self::DEFAULT_PRE_GAME_TOTAL
         );
 
-        $prediction->update([
-            'live_predicted_spread' => round($livePredictedSpread, 1),
-            'live_win_probability' => round($liveWinProbability, 3),
-            'live_predicted_total' => round($livePredictedTotal, 1),
-            'live_seconds_remaining' => $secondsRemaining,
-            'live_updated_at' => Carbon::now(),
-        ]);
-
-        return [
+        $values = [
             'live_predicted_spread' => round($livePredictedSpread, 1),
             'live_win_probability' => round($liveWinProbability, 3),
             'live_predicted_total' => round($livePredictedTotal, 1),
             'live_seconds_remaining' => $secondsRemaining,
         ];
+        $store->record($game, $prediction, $values, 'live', static::class);
+
+        return $values;
     }
 
     protected function isGameInProgress(object $game): bool

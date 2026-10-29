@@ -3,9 +3,11 @@
 namespace App\Console\Commands\MLB;
 
 use App\Actions\ESPN\MLB\SyncGamesFromScoreboard;
+use App\Actions\MLB\GenerateCanonicalPrediction;
 use App\Actions\MLB\GeneratePrediction;
 use App\Models\MLB\Game;
 use App\Services\MLB\MlbStartingPitcherProjectionService;
+use App\Services\Predictions\PredictionDeliverySource;
 use App\Support\SportsViewCache;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
@@ -112,7 +114,9 @@ class RefreshProbablePitchersCommand extends Command
                 continue;
             }
             try {
-                if ($generate->execute($game)) {
+                $writer = app(PredictionDeliverySource::class)->legacyWriterRetired('mlb')
+                    ? app(GenerateCanonicalPrediction::class) : $generate;
+                if ($writer->execute($game)) {
                     $regenerated++;
                 }
             } catch (Throwable $e) {

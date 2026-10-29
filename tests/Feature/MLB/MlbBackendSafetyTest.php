@@ -280,7 +280,7 @@ it('clears live prediction fields for delayed games instead of treating them as 
     ]);
 
     seedLivePrediction($prediction);
-    $historical = $prediction->getAttributes();
+    $historical = $prediction->refresh()->getAttributes();
     expect(livePredictionFor($prediction)->live_win_probability)->toBe(0.75);
     $result = app(UpdateLivePrediction::class)->execute($game->fresh());
 

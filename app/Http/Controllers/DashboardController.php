@@ -5,28 +5,14 @@ namespace App\Http\Controllers;
 use App\Http\Resources\CanonicalDashboardPredictionResource;
 use App\Http\Resources\DashboardPredictionResource;
 use App\Models\CanonicalPrediction;
-use App\Models\CBB\Game as CBBGame;
-use App\Models\CBB\Prediction as CBBPrediction;
-use App\Models\CFB\Game as CFBGame;
-use App\Models\CFB\Prediction as CFBPrediction;
 use App\Models\Healthcheck;
-use App\Models\MLB\Game as MLBGame;
 use App\Models\MLB\Prediction as MLBPrediction;
-use App\Models\NBA\Game as NBAGame;
-use App\Models\NBA\Prediction as NBAPrediction;
-use App\Models\NFL\Game as NFLGame;
-use App\Models\NFL\Prediction as NFLPrediction;
-use App\Models\User;
-use App\Models\WCBB\Game as WCBBGame;
-use App\Models\WCBB\Prediction as WCBBPrediction;
-use App\Models\WNBA\Game as WNBAGame;
-use App\Models\WNBA\Prediction as WNBAPrediction;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
+use App\Services\Api\V2\DashboardSportConfig;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\BettingRecommendations\GameBettingRecommendationService;
 use App\Services\MLB\MlbPredictionRecommendationService;
 use App\Services\Predictions\LivePredictionStore;
-use App\Support\SportPredictionAccess;
 use App\Support\SportsViewCache;
 use App\Support\TierAccessBypass;
 use Illuminate\Database\Eloquent\Builder;
@@ -38,10 +24,6 @@ use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    private const DEFAULT_LIVE_STATUSES = ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'];
-
-    private const DEFAULT_FINAL_STATUSES = ['STATUS_FINAL', 'STATUS_FULL_TIME'];
-
     public function __construct(
         private readonly SportsViewCache $sportsViewCache,
         private readonly MlbPredictionRecommendationService $mlbRecommendations,
@@ -54,7 +36,7 @@ class DashboardController extends Controller
         $predictionsPerDay = app(TierAccessBypass::class)->shouldBypassTierChecks($user)
             ? null
             : ($user->subscriptionTier()?->features['predictions_per_day'] ?? null);
-        $sportConfigs = $this->viewableSportConfigs($user);
+        $sportConfigs = app(DashboardSportConfig::class)->viewable($user);
         $cacheKey = $this->sportsViewCache->contextHash([
             'date' => now()->toDateString(),
             'predictions_per_day' => $predictionsPerDay,
@@ -119,103 +101,6 @@ class DashboardController extends Controller
             'sports' => $payload['sports'],
             'stats' => $payload['stats'],
         ]);
-    }
-
-    private function sportConfigs(): array
-    {
-        return [
-            'NBA' => $this->sportConfig(
-                fullName: 'National Basketball Association',
-                color: 'orange',
-                predictionModel: NBAPrediction::class,
-                gameModel: NBAGame::class,
-            ),
-            'CBB' => $this->sportConfig(
-                fullName: "Men's College Basketball",
-                color: 'blue',
-                predictionModel: CBBPrediction::class,
-                gameModel: CBBGame::class,
-            ),
-            'WCBB' => $this->sportConfig(
-                fullName: "Women's College Basketball",
-                color: 'purple',
-                predictionModel: WCBBPrediction::class,
-                gameModel: WCBBGame::class,
-            ),
-            'NFL' => $this->sportConfig(
-                fullName: 'National Football League',
-                color: 'green',
-                predictionModel: NFLPrediction::class,
-                gameModel: NFLGame::class,
-            ),
-            'MLB' => $this->sportConfig(
-                fullName: 'Major League Baseball',
-                color: 'orange',
-                predictionModel: MLBPrediction::class,
-                gameModel: MLBGame::class,
-                liveStatuses: ['STATUS_IN_PROGRESS', 'STATUS_DELAYED'],
-                liveRemainingField: 'live_outs_remaining',
-                includeInning: true
-            ),
-            'CFB' => $this->sportConfig(
-                fullName: 'College Football',
-                color: 'blue',
-                predictionModel: CFBPrediction::class,
-                gameModel: CFBGame::class,
-            ),
-            'WNBA' => $this->sportConfig(
-                fullName: "Women's National Basketball Association",
-                color: 'purple',
-                predictionModel: WNBAPrediction::class,
-                gameModel: WNBAGame::class,
-            ),
-        ];
-    }
-
-    private function viewableSportConfigs(?User $user): array
-    {
-        return collect($this->sportConfigs())
-            ->filter(fn (array $config, string $sport): bool => $this->canViewSportPredictions($user, $sport))
-            ->all();
-    }
-
-    private function canViewSportPredictions(?User $user, string $sport): bool
-    {
-        return app(SportPredictionAccess::class)->canView($user, $sport);
-    }
-
-    /**
-     * @return array{
-     *   full_name:string,
-     *   color:string,
-     *   prediction_model:class-string,
-     *   game_model:class-string,
-     *   live_statuses:array<int,string>,
-     *   final_statuses:array<int,string>,
-     *   live_remaining_field:string,
-     *   include_inning:bool
-     * }
-     */
-    private function sportConfig(
-        string $fullName,
-        string $color,
-        string $predictionModel,
-        string $gameModel,
-        ?array $liveStatuses = null,
-        ?array $finalStatuses = null,
-        string $liveRemainingField = 'live_seconds_remaining',
-        bool $includeInning = false,
-    ): array {
-        return [
-            'full_name' => $fullName,
-            'color' => $color,
-            'prediction_model' => $predictionModel,
-            'game_model' => $gameModel,
-            'live_statuses' => $liveStatuses ?? self::DEFAULT_LIVE_STATUSES,
-            'final_statuses' => $finalStatuses ?? self::DEFAULT_FINAL_STATUSES,
-            'live_remaining_field' => $liveRemainingField,
-            'include_inning' => $includeInning,
-        ];
     }
 
     private function getPredictionsForSport(string $sport, array $config, \Closure $todayGameScope): Collection

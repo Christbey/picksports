@@ -5,13 +5,9 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V2\CanonicalSportPredictionResource;
 use App\Http\Resources\BettingRecommendationResource;
-use App\Models\CBB\Prediction as CbbPrediction;
 use App\Models\CBB\TournamentForecast as CbbTournamentForecast;
 use App\Models\MLB\PlayoffForecast as MlbPlayoffForecast;
-use App\Models\MLB\Prediction as MlbPrediction;
 use App\Models\NBA\PlayoffForecast as NbaPlayoffForecast;
-use App\Models\NBA\Prediction as NbaPrediction;
-use App\Models\NFL\Prediction as NflPrediction;
 use App\Services\Api\V2\CanonicalPredictionPresentationService;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Api\V2\SportContextResolver;
@@ -95,13 +91,7 @@ class PlayerPropCardExportController extends Controller
 
     protected function getPredictionModel(string $sport): string
     {
-        return match ($sport) {
-            'NBA' => NbaPrediction::class,
-            'NFL' => NflPrediction::class,
-            'MLB' => MlbPrediction::class,
-            'CBB' => CbbPrediction::class,
-            default => NbaPrediction::class,
-        };
+        return app(SportContextResolver::class)->resolve(strtolower($sport))->models['prediction'];
     }
 
     protected function getPredictionDateOptions(string $sport): array

@@ -2,11 +2,16 @@
 
 namespace App\Console\Commands\MLB;
 
+use App\Application\Sports\ReadModels\BettingForecast;
 use App\Models\GameOddsSnapshot;
 use App\Models\MLB\BetFilterResult;
 use App\Models\MLB\Game;
 use App\Models\MLB\Prediction;
 use App\Services\MLB\MlbBettingSignalService;
+use App\Services\Predictions\BettingForecastSource;
+use App\Services\Predictions\CanonicalShadowInputs;
+use App\Services\Predictions\PredictionDeliverySource;
+use App\Support\Odds\AmericanOdds;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 
@@ -60,28 +65,38 @@ class SnapshotBetFilterCommand extends Command
             return;
         }
 
-        $predictions = Prediction::query()
-            ->with(['game.homeTeam', 'game.awayTeam'])
-            ->where('season', $season)
-            ->whereHas('game', function ($query) use ($slateDate): void {
-                $query->whereDate('game_date', $slateDate->toDateString())
-                    ->where('status', '!=', 'STATUS_FINAL');
-            })
-            ->get();
+        $gameIds = Game::query()
+            ->whereDate('game_date', $slateDate->toDateString())
+            ->where('status', '!=', 'STATUS_FINAL')->pluck('id')->all();
+        $predictions = app(BettingForecastSource::class)->forGames('mlb', $gameIds, $season);
 
         $created = 0;
         $updated = 0;
         $enabledOnly = ! (bool) $this->option('include-disabled-markets');
 
         foreach ($predictions as $prediction) {
+            $snapshot = null;
+            if ($prediction->isCanonical()) {
+                $snapshot = app(CanonicalShadowInputs::class)->fromPrediction($prediction->source);
+                if ($snapshot === null || ! $snapshot->game_start_at->isFuture()) {
+                    continue;
+                }
+            }
             foreach ($betFilter->betCandidatesForPrediction($prediction, enabledOnly: $enabledOnly, includePasses: true) as $candidate) {
                 $payload = $this->payloadForCandidate($prediction, $candidate, $asOfDate);
-                $result = BetFilterResult::query()->updateOrCreate(
+                if ($snapshot !== null) {
+                    $context = app(PredictionDeliverySource::class)->context($prediction->source, 'mlb');
+                    if (! $snapshot->game_start_at->isFuture() || ! app(PredictionDeliverySource::class)->isSelected($context)) {
+                        break;
+                    }
+                    $payload['metadata'] = [...$payload['metadata'], 'canonical_lineage' => $snapshot->lineage, 'is_tracking_only' => true];
+                }
+                $result = BetFilterResult::query()->whereDate('as_of_date', $asOfDate->toDateString())->updateOrCreate(
                     [
-                        'prediction_id' => $prediction->id,
+                        'prediction_id' => $prediction->legacyPredictionId(),
+                        'canonical_prediction_id' => $prediction->canonicalPredictionId(),
                         'market' => $payload['market'],
                         'pick_side' => $payload['pick_side'],
-                        'as_of_date' => $payload['as_of_date'],
                     ],
                     $payload
                 );
@@ -115,7 +130,7 @@ class SnapshotBetFilterCommand extends Command
         foreach ($rows as $row) {
             $game = $row->game;
             $prediction = $row->prediction;
-            if (! $game || ! $prediction) {
+            if (! $game || ($row->canonical_prediction_id === null && ! $prediction)) {
                 continue;
             }
 
@@ -143,7 +158,7 @@ class SnapshotBetFilterCommand extends Command
         $rows = BetFilterResult::query()
             ->where('season', $season)
             ->get()
-            ->groupBy(fn (BetFilterResult $row): string => $row->market.'|'.$row->classification);
+            ->groupBy(fn (BetFilterResult $row): string => ($row->canonical_prediction_id !== null ? 'canonical' : 'legacy').'|'.$row->market.'|'.$row->classification);
 
         if ($rows->isEmpty()) {
             $this->warn('No MLB bet-filter rows found for this season.');
@@ -152,12 +167,13 @@ class SnapshotBetFilterCommand extends Command
         }
 
         $this->table(
-            ['Market', 'Class', 'Rows', 'Graded', 'Hit %', 'Avg Score', 'Avg CLV'],
+            ['Source', 'Market', 'Class', 'Rows', 'Graded', 'Hit %', 'Avg Score', 'Avg CLV'],
             $rows->map(function ($group, string $key): array {
-                [$market, $classification] = explode('|', $key);
+                [$source, $market, $classification] = explode('|', $key);
                 $graded = $group->whereNotNull('graded_at');
 
                 return [
+                    $source,
                     $market,
                     $classification,
                     (string) $group->count(),
@@ -194,15 +210,16 @@ class SnapshotBetFilterCommand extends Command
      * @param  array<string,mixed>  $candidate
      * @return array<string,mixed>
      */
-    private function payloadForCandidate(Prediction $prediction, array $candidate, Carbon $asOfDate): array
+    private function payloadForCandidate(BettingForecast $prediction, array $candidate, Carbon $asOfDate): array
     {
         $game = $prediction->game;
 
         return [
-            'game_id' => (int) $prediction->game_id,
-            'prediction_id' => (int) $prediction->id,
-            'season' => (int) $prediction->season,
-            'season_type' => (string) $prediction->season_type,
+            'game_id' => (int) $game->id,
+            'prediction_id' => $prediction->legacyPredictionId(),
+            'canonical_prediction_id' => $prediction->canonicalPredictionId(),
+            'season' => $prediction->season(),
+            'season_type' => (string) ($prediction->isCanonical() ? $game->season_type : $prediction->source->getAttribute('season_type')),
             'game_date' => $game?->game_date?->toDateString(),
             'as_of_date' => $asOfDate->toDateString(),
             'filter_version' => MlbBettingSignalService::FILTER_VERSION,
@@ -229,12 +246,15 @@ class SnapshotBetFilterCommand extends Command
         ];
     }
 
-    private function resultHit(BetFilterResult $row, Prediction $prediction, float $actualMargin, float $actualTotal): ?bool
+    private function resultHit(BetFilterResult $row, ?Prediction $prediction, float $actualMargin, float $actualTotal): ?bool
     {
+        $marketMargin = $row->canonical_prediction_id !== null ? $row->market_line
+            : ($prediction?->vegas_spread !== null ? -(float) $prediction->vegas_spread : null);
+
         return match ($row->market) {
             'moneyline' => ($row->pick_side === 'home') === ($actualMargin > 0),
-            'run_line' => $prediction->vegas_spread !== null
-                ? (($row->pick_side === 'home') === ($actualMargin > (-1 * (float) $prediction->vegas_spread)))
+            'run_line' => $marketMargin !== null
+                ? (($row->pick_side === 'home') === ($actualMargin > (float) $marketMargin))
                 : null,
             'total' => $row->market_line !== null
                 ? (($row->pick_side === 'over') === ($actualTotal > (float) $row->market_line))
@@ -267,8 +287,8 @@ class SnapshotBetFilterCommand extends Command
     private function clv(BetFilterResult $row): ?float
     {
         if ($row->market === 'moneyline' && $row->market_price !== null && $row->closing_price !== null) {
-            $open = $this->americanToImplied((int) $row->market_price);
-            $close = $this->americanToImplied((int) $row->closing_price);
+            $open = AmericanOdds::impliedProbability((int) $row->market_price);
+            $close = AmericanOdds::impliedProbability((int) $row->closing_price);
 
             return $open !== null && $close !== null ? round($close - $open, 4) : null;
         }
@@ -393,17 +413,6 @@ class SnapshotBetFilterCommand extends Command
         }
 
         return null;
-    }
-
-    private function americanToImplied(int $price): ?float
-    {
-        if ($price === 0) {
-            return null;
-        }
-
-        return $price > 0
-            ? 100 / ($price + 100)
-            : abs($price) / (abs($price) + 100);
     }
 
     private function signed(float $value, int $precision): string

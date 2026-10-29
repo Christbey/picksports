@@ -159,7 +159,7 @@ class MlbBettingSignalService
             $oddsData = $game?->odds_data;
             $hasH2h = $this->extractMarket($oddsData, 'h2h') !== null;
             $hasSpreads = $this->extractMarket($oddsData, 'spreads') !== null || $prediction->vegasSpread !== null;
-            $hasTotals = $this->extractMarket($oddsData, 'totals') !== null || is_numeric(data_get($prediction->modelMetadata, 'market_context.market_total'));
+            $hasTotals = $this->extractMarket($oddsData, 'totals') !== null || is_numeric($this->forecastMarketTotal($prediction));
 
             $h2h += $hasH2h ? 1 : 0;
             $spreads += $hasSpreads ? 1 : 0;
@@ -397,7 +397,7 @@ class MlbBettingSignalService
         $signals = [];
 
         foreach ($predictions as $prediction) {
-            $marketTotal = data_get($prediction->modelMetadata, 'market_context.market_total');
+            $marketTotal = $this->forecastMarketTotal($prediction);
             if (! is_numeric($marketTotal)) {
                 continue;
             }
@@ -857,6 +857,12 @@ class MlbBettingSignalService
         ];
     }
 
+    private function forecastMarketTotal(BettingForecast $prediction): mixed
+    {
+        return $prediction->isCanonical() ? $prediction->marketTotal
+            : data_get($prediction->modelMetadata, 'market_context.market_total');
+    }
+
     /**
      * @return array<int,array<string,mixed>>
      */
@@ -874,7 +880,7 @@ class MlbBettingSignalService
             $candidates[] = $this->runLineBetCandidate($prediction);
         }
 
-        if ((! $enabledOnly || (bool) config('mlb.signals.bet_filter.total_enabled', false)) && is_numeric(data_get($prediction->modelMetadata, 'market_context.market_total'))) {
+        if ((! $enabledOnly || (bool) config('mlb.signals.bet_filter.total_enabled', false)) && is_numeric($this->forecastMarketTotal($prediction))) {
             $candidates[] = $this->totalBetCandidate($prediction);
         }
 
@@ -1017,7 +1023,7 @@ class MlbBettingSignalService
     protected function totalBetCandidate(BettingForecast $prediction): ?array
     {
         $game = $prediction->game;
-        $marketTotal = data_get($prediction->modelMetadata, 'market_context.market_total');
+        $marketTotal = $this->forecastMarketTotal($prediction);
         if (! $game || ! is_numeric($marketTotal)) {
             return null;
         }

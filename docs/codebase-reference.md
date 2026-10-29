@@ -109,6 +109,14 @@ NFL web research shares `ResearchPipeline::storedForecast`, using frozen native 
 
 Deploy `2026_10_29_121751_add_canonical_prediction_to_sports_ai_prediction_analyses` before this stage. Populated canonical analysis lineage blocks destructive rollback. Historical analyses, legacy compatibility readers, grading/calibration/backtests, queued narrative wrappers, and NBA legacy narrative context still have supported callers and remain available.
 
+## MLB bet-filter observation retirement
+
+`mlb:snapshot-bet-filter` selects forecasts through `BettingForecastSource`, replacing its direct legacy prediction query. Native observations require verified frozen pregame inputs, a future kickoff, and the exact selected revision at persistence. `mlb_bet_filter_results.canonical_prediction_id` provides an explicit native foreign key and daily uniqueness namespace; legacy observations retain their original references. The migration refuses to roll back populated native lineage.
+
+Native candidates keep the existing `canonical_approval_required` pass classification and tracking-only metadata. Totals consume the frozen canonical market total; legacy totals retain their metadata contract. Grading can settle a recorded native observation after its forecast is withdrawn or superseded, using the recorded home-margin/total line rather than a mutable legacy baseline. Historical legacy grading retains its original calculation, and source-separated reports avoid pooling historical and native observations. No observation creates a public approval or executed wager. The command reuses the shared American-odds conversion for CLV.
+
+The remaining references reviewed in this stage include historical MLB recommendation-readiness/calibration reports, CFB adaptive-calibration corpora, NFL point-in-time team evidence, and NBA legacy narrative context. These still have supported callers; their historical input contracts are retained rather than relabeled as native evidence.
+
 ## Remaining writer retirement dependencies
 
 The following code paths still write or require legacy prediction identities. This is a code dependency audit; it does not establish production coverage or authorize disabling a writer.

@@ -38,6 +38,7 @@ use Illuminate\Support\Facades\Http;
 beforeEach(function () {
     $this->travelTo('2026-10-28 12:00:00');
     Http::preventStrayRequests();
+    config(['mlb_ml.mode' => 'shadow', 'mlb_ml.shadow.enabled' => true, 'mlb_ml.period_models.enabled' => true]);
 });
 afterEach(fn () => $this->travelBack());
 

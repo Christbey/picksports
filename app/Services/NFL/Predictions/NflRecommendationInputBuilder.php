@@ -41,7 +41,13 @@ class NflRecommendationInputBuilder
             'authority' => 'nfl_deterministic_analysis_and_pro_signal_consensus',
             'forecast_role' => 'recommendation_evidence_only',
             'model_version' => $preview['model_version'],
-            'outputs' => $preview['outputs'],
+            'outputs' => [
+                ...$preview['outputs'],
+                'calibration_inputs' => array_intersect_key(
+                    (array) data_get($preview, 'model_metadata.calibration_inputs', []),
+                    array_flip(['point', 'win_probability']),
+                ),
+            ],
             'model_metadata' => [
                 ...array_intersect_key((array) $preview['model_metadata'], array_flip(['true_epa', 'analysis_layer'])),
                 'qb_form' => collect(['home', 'away'])->mapWithKeys(fn (string $side): array => [

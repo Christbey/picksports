@@ -1096,7 +1096,10 @@ it('captures the existing pregame recommendation calculation without legacy publ
     app(NflCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
     $native = app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
     $context = data_get($native->calculationRun->inputSnapshot->inputs, 'recommendation_context');
-    expect($context['outputs'])->toEqual($expected['outputs'])
+    expect(array_diff_key($context['outputs'], ['calibration_inputs' => true]))->toEqual($expected['outputs'])
+        ->and($context['outputs']['calibration_inputs'])->toEqual($expected['model_metadata']['calibration_inputs'])
+        ->and($context['outputs']['calibration_inputs']['point'])->toHaveKeys(['predicted_spread', 'predicted_total'])
+        ->and($context['outputs']['calibration_inputs']['win_probability'])->toHaveKey('win_probability')
         ->and(array_intersect_key($context['model_metadata'], array_flip(['true_epa', 'analysis_layer'])))->toEqual(array_intersect_key($expected['model_metadata'], array_flip(['true_epa', 'analysis_layer'])))
         ->and($context['evidence_source_version'])->toBe(NflEvidenceForecastSource::VERSION)
         ->and($context['runtime_configuration_hash'])->toBe(app(ModelRunRecorder::class)->configHash('nfl'))

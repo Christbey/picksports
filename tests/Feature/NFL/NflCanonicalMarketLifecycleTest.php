@@ -18,6 +18,7 @@ use App\Models\NFL\TeamMetric;
 use App\Models\PredictionEvaluation;
 use App\Models\PredictionFeatureSnapshot;
 use App\Models\SportEvent;
+use App\Services\NFL\NflEvidenceForecastSource;
 use App\Services\NFL\NflPredictionDispositionRecorder;
 use App\Services\NFL\NflPregamePipelineRunner;
 use App\Services\NFL\NflReleasedBetDecisionRecorder;
@@ -29,6 +30,7 @@ use App\Services\NFL\Predictions\NflRecommendationInputBuilder;
 use App\Services\NFL\Research\ResearchPipeline;
 use App\Services\OddsApi\GameOddsSnapshotRecorder;
 use App\Services\Predictions\CanonicalSportCutoverReadinessService;
+use App\Services\Predictions\ModelRunRecorder;
 use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
@@ -1095,7 +1097,12 @@ it('captures the existing pregame recommendation calculation without legacy publ
     $native = app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
     $context = data_get($native->calculationRun->inputSnapshot->inputs, 'recommendation_context');
     expect($context['outputs'])->toEqual($expected['outputs'])
-        ->and($context['model_metadata'])->toEqual(array_intersect_key($expected['model_metadata'], array_flip(['true_epa', 'analysis_layer'])))
+        ->and(array_intersect_key($context['model_metadata'], array_flip(['true_epa', 'analysis_layer'])))->toEqual(array_intersect_key($expected['model_metadata'], array_flip(['true_epa', 'analysis_layer'])))
+        ->and($context['evidence_source_version'])->toBe(NflEvidenceForecastSource::VERSION)
+        ->and($context['runtime_configuration_hash'])->toBe(app(ModelRunRecorder::class)->configHash('nfl'))
+        ->and($context['model_metadata']['qb_form'])->toEqual(collect(['home', 'away'])->mapWithKeys(fn (string $side): array => [
+            $side => array_intersect_key((array) data_get($expected['model_metadata'], 'qb_form.'.$side, []), array_flip(['qb_id', 'identity_status'])),
+        ])->all())
         ->and($context['forecast_role'])->toBe('recommendation_evidence_only')
         ->and($native->model_version)->toBe('1.2.0')
         ->and(Prediction::query()->count())->toBe(0)

@@ -40,6 +40,9 @@ class NflSignalObservationMaterializer
             throw new InvalidArgumentException("Snapshot {$snapshot->id} does not reference an NFL game.");
         }
 
+        if ($snapshot->blend_version === NflEvidenceCapture::NATIVE_POLICY && ! NflEvidenceCapture::hasNativeLineage($snapshot)) {
+            throw new InvalidArgumentException('Native evidence snapshot has incomplete or mismatched prediction lineage.');
+        }
         $signals = $this->signals($snapshot);
         $created = 0;
         $bulk = [];
@@ -53,7 +56,8 @@ class NflSignalObservationMaterializer
             ];
             $values = [
                 'model_run_id' => $snapshot->model_run_id,
-                'prediction_id' => $snapshot->prediction_id,
+                'prediction_id' => $snapshot->canonical_prediction_id === null ? $snapshot->prediction_id : null,
+                'canonical_prediction_id' => $snapshot->canonical_prediction_id,
                 'game_id' => $snapshot->game_id,
                 'season' => (int) $game->season,
                 'week' => is_numeric($game->week) ? (int) $game->week : null,
@@ -87,7 +91,7 @@ class NflSignalObservationMaterializer
                 'game_start_at' => $snapshot->game_start_at,
             ];
 
-            if ($snapshot->blend_version === NflEvidenceCapture::POLICY) {
+            if (NflEvidenceCapture::isEvidence($snapshot)) {
                 $bulk[] = [...$attributes, ...$values, 'signal_payload' => json_encode($values['signal_payload'], JSON_THROW_ON_ERROR), 'created_at' => now()];
 
                 continue;
@@ -125,7 +129,7 @@ class NflSignalObservationMaterializer
      */
     private function signals(PredictionFeatureSnapshot $snapshot): array
     {
-        if ($snapshot->blend_version === NflEvidenceCapture::POLICY) {
+        if (NflEvidenceCapture::isEvidence($snapshot)) {
             return $this->evidenceSignals($snapshot);
         }
         $analysis = data_get($snapshot->model_metadata, 'analysis_layer');

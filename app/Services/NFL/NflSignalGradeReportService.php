@@ -28,6 +28,7 @@ class NflSignalGradeReportService
      */
     public function report(array $filters = []): array
     {
+        $filters['forecast_source'] = app(NflEvidenceForecastSource::class)->name($filters['forecast_source'] ?? null);
         $limit = max(1, min(500, (int) ($filters['limit'] ?? 100)));
         $summaryRows = $this->aggregateQuery($filters)
             ->select([
@@ -49,7 +50,7 @@ class NflSignalGradeReportService
             ->values();
 
         if ($summaryRows->isEmpty()) {
-            return ['signals' => [], 'windows' => [], 'sample_unit' => $filters['sample_unit'] ?? 'game'];
+            return ['signals' => [], 'windows' => [], 'forecast_source' => $filters['forecast_source'], 'sample_unit' => $filters['sample_unit'] ?? 'game'];
         }
 
         $windows = $this->windowRows($filters, $summaryRows);
@@ -84,7 +85,7 @@ class NflSignalGradeReportService
         return [
             'signals' => $signals,
             'windows' => $windows->values()->all(),
-            'sample_unit' => $filters['sample_unit'] ?? 'game',
+            'forecast_source' => $filters['forecast_source'], 'sample_unit' => $filters['sample_unit'] ?? 'game',
             'selection_policy' => ($filters['sample_unit'] ?? 'game') === 'observation'
                 ? 'all_observations' : 'latest_graded_observation_per_game_and_signal',
         ];
@@ -115,6 +116,9 @@ class NflSignalGradeReportService
         if (($filters['sample_unit'] ?? 'game') !== 'observation') {
             $ranked = DB::table('nfl_signal_observations as candidates')
                 ->select(['candidates.id', 'candidates.game_id', 'candidates.signal_type', 'candidates.signal_key', 'candidates.observed_at'])
+                ->when(($filters['forecast_source'] ?? 'legacy') === 'canonical',
+                    fn ($q) => $q->whereNotNull('candidates.canonical_prediction_id'),
+                    fn ($q) => $q->whereNull('candidates.canonical_prediction_id'))
                 ->selectRaw('ROW_NUMBER() OVER (PARTITION BY candidates.game_id, candidates.signal_type, candidates.signal_key ORDER BY candidates.observed_at DESC, candidates.id DESC) as sample_rank')
                 ->when((bool) ($filters['pregame_safe'] ?? true), fn ($q) => $q->where('candidates.pregame_safe', true))
                 ->when(! empty($filters['signal_type']), fn ($q) => $q->where('candidates.signal_type', $filters['signal_type']))
@@ -148,6 +152,9 @@ class NflSignalGradeReportService
     private function applyFilters(Builder $query, array $filters): Builder
     {
         return $query
+            ->when(($filters['forecast_source'] ?? 'legacy') === 'canonical',
+                fn (Builder $builder): Builder => $builder->whereNotNull('nfl_signal_observations.canonical_prediction_id'),
+                fn (Builder $builder): Builder => $builder->whereNull('nfl_signal_observations.canonical_prediction_id'))
             ->when(
                 isset($filters['from_season']),
                 fn (Builder $builder): Builder => $builder->where(

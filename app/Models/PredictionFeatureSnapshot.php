@@ -20,6 +20,7 @@ class PredictionFeatureSnapshot extends Model
         'sport',
         'prediction_table',
         'prediction_id',
+        'canonical_prediction_id',
         'game_id',
         'snapshot_run_id',
         'model_run_id',
@@ -43,6 +44,7 @@ class PredictionFeatureSnapshot extends Model
     protected function casts(): array
     {
         return [
+            'canonical_prediction_id' => 'integer',
             'features' => 'array',
             'outputs' => 'array',
             'market_context' => 'array',
@@ -93,12 +95,17 @@ class PredictionFeatureSnapshot extends Model
     protected static function booted(): void
     {
         $immutable = function (self $snapshot): void {
-            if (in_array($snapshot->getOriginal('blend_version'), ['nfl-prop-shadow-v1', 'nfl-game-simulation-shadow-v1', 'nfl-prop-probability-v1', 'nfl-evidence-v1'], true)) {
+            if (in_array($snapshot->getOriginal('blend_version'), ['nfl-prop-shadow-v1', 'nfl-game-simulation-shadow-v1', 'nfl-prop-probability-v1', 'nfl-evidence-v1', 'nfl-evidence-canonical-v1'], true)) {
                 throw new LogicException('NFL shadow snapshots are immutable.');
             }
         };
         static::updating($immutable);
         static::deleting($immutable);
+    }
+
+    public function canonicalPrediction(): BelongsTo
+    {
+        return $this->belongsTo(CanonicalPrediction::class);
     }
 
     public function nflGame(): BelongsTo

@@ -22,6 +22,7 @@ class NflEvidenceLeaderboard
         $validationWeek = (int) ($filters['validation_from_week'] ?? 5);
         $cohort = $filters['cohort'] ?? 'all';
         $version = $filters['model_version'] ?? NflModelVersion::current();
+        $source = app(NflEvidenceForecastSource::class)->name($filters['forecast_source'] ?? null);
         $scope = NflSignalObservation::query()
             ->join('prediction_feature_snapshots as snapshot', 'snapshot.id', '=', 'nfl_signal_observations.prediction_feature_snapshot_id')
             ->join('model_runs as run', 'run.id', '=', 'snapshot.model_run_id')
@@ -30,7 +31,12 @@ class NflEvidenceLeaderboard
             ->join('nfl_games as game', 'game.id', '=', 'nfl_signal_observations.game_id')
             ->whereBetween('nfl_signal_observations.season', [$from, $to])
             ->whereIn('game.season_type', ['2', 'regular'])->where('snapshot.sport', 'nfl')
-            ->where('snapshot.prediction_table', 'nfl_predictions')
+            ->when($source === 'canonical', fn ($query) => $query
+                ->where('snapshot.prediction_table', 'predictions')->where('snapshot.blend_version', NflEvidenceCapture::NATIVE_POLICY)
+                ->whereColumn('snapshot.canonical_prediction_id', 'nfl_signal_observations.canonical_prediction_id')
+                ->whereColumn('snapshot.prediction_id', 'nfl_signal_observations.canonical_prediction_id')
+                ->whereNull('nfl_signal_observations.prediction_id'), fn ($query) => $query
+                ->where('snapshot.prediction_table', 'nfl_predictions')->whereNull('nfl_signal_observations.canonical_prediction_id'))
             ->whereColumn('snapshot.game_id', 'game.id')
             ->whereColumn('snapshot.model_version', 'nfl_signal_observations.model_version')
             ->whereColumn('snapshot.feature_version', 'nfl_signal_observations.feature_version')
@@ -164,7 +170,7 @@ class NflEvidenceLeaderboard
             <=> [$a['sample'] >= self::MIN_GAMES, $a['wilson_lower'] ?? -1, $a['sample'], $a['signal_key']]);
 
         return ['generated_at' => now()->toIso8601String(), 'scope' => ['from_season' => $from, 'to_season' => $to,
-            'model_version' => $version, 'cohort' => $cohort, 'validation_from_week' => $validationWeek],
+            'forecast_source' => $source, 'model_version' => $version, 'cohort' => $cohort, 'validation_from_week' => $validationWeek],
             'minimum_games' => self::MIN_GAMES, 'selected_observations' => $selected,
             'excluded_kickoff_mismatch' => $excluded, 'total_rows' => count($rows),
             'rows' => $rows, 'overlap_search_limit' => 300, 'inventory' => $this->inventory(),

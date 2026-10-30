@@ -75,3 +75,24 @@ it('uses the canonical-only NFL pregame pipeline and its shared eight day horizo
         '--days-forward' => 8,
     ]);
 });
+
+it('retires CFB automatic legacy calibration only with the matching generation cutover', function (bool $pipeline, bool $reads, bool $retired, string $mode) {
+    config(['prediction_lifecycle.canonical_pipeline.cfb' => $pipeline, 'prediction_lifecycle.canonical_reads.cfb' => $reads]);
+    $registry = app(SportsPipelineRegistry::class);
+    $steps = collect($registry->pipelineSteps('cfb', $mode, $registry->context(date: '2026-10-30', season: 2026, week: 9)));
+    $commands = $steps->pluck('command')->all();
+    expect(in_array('cfb:update-adaptive-calibration', $commands, true))->toBe(! $retired)
+        ->and(in_array('cfb:generate-canonical-predictions', $commands, true))->toBe($retired)
+        ->and(in_array('cfb:generate-predictions', $commands, true))->toBe(! $retired)
+        ->and($commands)->toContain('cfb:grade-predictions', 'cfb:import-fpi', 'cfb:calculate-team-metrics')
+        ->and($steps->firstWhere('command', 'cfb:import-fpi')['arguments'])->toMatchArray(['--season' => 2026, '--week' => 9, '--require-complete' => true]);
+})->with([
+    'compatibility predict' => [false, false, false, 'predict'],
+    'pipeline-only predict' => [true, false, false, 'predict'],
+    'reads-only predict' => [false, true, false, 'predict'],
+    'canonical predict' => [true, true, true, 'predict'],
+    'compatibility full' => [false, false, false, 'full'],
+    'pipeline-only full' => [true, false, false, 'full'],
+    'reads-only full' => [false, true, false, 'full'],
+    'canonical full' => [true, true, true, 'full'],
+]);

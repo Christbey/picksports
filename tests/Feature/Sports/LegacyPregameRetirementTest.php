@@ -55,7 +55,7 @@ function pregameRetirementFixture(string $sport, ?CalculationRelease $release = 
     $release ??= CalculationRelease::factory()->approved()->create(['sport' => $sport, 'phase' => 'pregame']);
     $input = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id,
         'phase' => 'pregame', 'pregame_safety_status' => 'verified', 'captured_at' => now(), 'cutoff_at' => now(),
-        'inputs' => ['home' => ['elo' => 1550], 'away' => ['elo' => 1490],
+        'inputs' => ['event' => ['starts_at' => $event->starts_at->toIso8601String()], 'home' => ['elo' => 1550], 'away' => ['elo' => 1490],
             'pitching' => ['home' => ['elo' => 1600, 'espn_id' => '100'], 'away' => ['elo' => 1450, 'espn_id' => '200']]]]);
     $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
         'calculation_release_id' => $release->id, 'status' => 'succeeded']);

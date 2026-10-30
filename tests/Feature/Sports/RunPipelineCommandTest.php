@@ -57,3 +57,22 @@ it('fails for an unsupported sport', function () {
         ->expectsOutput('Unsupported sport [soccer]. Supported sports: nba, nfl, mlb, cbb, wcbb, wnba, cfb.')
         ->assertFailed();
 });
+
+it('runs canonical CFB generation without updating a legacy adaptive profile', function () {
+    config(['prediction_lifecycle.canonical_pipeline.cfb' => true, 'prediction_lifecycle.canonical_reads.cfb' => true]);
+    $runner = Mockery::mock(PipelineCommandRunner::class);
+    foreach ([
+        ['cfb:grade-predictions', ['--season' => 2026]],
+        ['cfb:sync-season-affiliations', ['--season' => 2026]],
+        ['cfb:calculate-elo', ['--season' => 2026]],
+        ['cfb:import-fpi', ['--season' => 2026, '--week' => 9, '--require-complete' => true]],
+        ['cfb:calculate-team-metrics', ['--season' => 2026]],
+        ['cfb:derive-game-context-signals', ['--season' => 2026, '--week' => 9]],
+        ['cfb:generate-canonical-predictions', ['--season' => 2026]],
+    ] as [$command, $arguments]) {
+        $runner->shouldReceive('call')->once()->ordered()->with($command, $arguments)->andReturn(0);
+    }
+    $runner->shouldNotReceive('call')->with('cfb:update-adaptive-calibration', Mockery::any());
+    app()->instance(PipelineCommandRunner::class, $runner);
+    artisan('sports:run-pipeline cfb --mode=predict --season=2026 --week=9')->assertSuccessful();
+});

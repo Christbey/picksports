@@ -5,12 +5,16 @@ namespace App\Console\Commands\NFL;
 use App\Models\GameOddsSnapshot;
 use App\Models\NFL\Game;
 use App\Models\NFL\Prediction;
+use App\Services\NFL\NflEvidenceForecastSource;
+use App\Support\NflModelVersion;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 
 class AnalyzePointProjectionsCommand extends Command
 {
     protected $signature = 'nfl:analyze-point-projections
+        {--forecast-source= : canonical or legacy (defaults to the active NFL evidence source)}
+        {--model-version= : Canonical recommendation model version (defaults to current)}
         {--season= : Season to analyze}
         {--from-season= : Analyze starting with this NFL season}
         {--to-season= : Analyze through this NFL season}
@@ -24,13 +28,15 @@ class AnalyzePointProjectionsCommand extends Command
     {
         try {
             $scope = $this->resolveScope();
+            $source = app(NflEvidenceForecastSource::class)->name($this->option('forecast-source'));
         } catch (\InvalidArgumentException $exception) {
             $this->error($exception->getMessage());
 
             return self::FAILURE;
         }
 
-        $rows = $this->loadRows($scope);
+        $rows = $source === 'canonical' ? $this->canonicalRows($scope) : $this->loadRows($scope);
+        $this->line('Forecast source: '.$source);
 
         if ($rows->isEmpty()) {
             $this->warn('No final NFL predictions with point projections found for '.$scope['label'].'.');
@@ -188,6 +194,51 @@ class AnalyzePointProjectionsCommand extends Command
         ];
     }
 
+    /** @param array{season:?int,from_season:?int,to_season:?int,label:string} $scope */
+    private function canonicalRows(array $scope): Collection
+    {
+        $rows = collect();
+        $includeLayers = (bool) $this->option('layers');
+        $query = Game::query()->select(['id', 'sport_event_id', 'season', 'week', 'game_date',
+            'home_team_id', 'away_team_id', 'home_score', 'away_score'])
+            ->with(['sportEvent', 'homeTeam:id,abbreviation', 'awayTeam:id,abbreviation'])
+            ->where('status', 'STATUS_FINAL')->whereNotNull('home_score')->whereNotNull('away_score');
+        foreach (['season' => '=', 'from_season' => '>=', 'to_season' => '<='] as $key => $operator) {
+            if ($scope[$key] !== null) {
+                $query->where('season', $operator, $scope[$key]);
+            }
+        }
+        $query->chunkById(250, function (Collection $games) use ($rows, $includeLayers): void {
+            $games = $games->keyBy('id');
+            $forecasts = app(NflEvidenceForecastSource::class)->forGames(
+                $games, (string) ($this->option('model-version') ?: NflModelVersion::current()), includeMetadata: $includeLayers,
+            );
+            foreach ($forecasts as $forecast) {
+                $game = $games->get($forecast->game_id);
+                $spread = $forecast->outputs['predicted_spread'] ?? null;
+                $total = $forecast->outputs['predicted_total'] ?? null;
+                if (! $forecast->game_start_at->eq($game->sportEvent?->starts_at)
+                    || ! is_numeric($spread) || ! is_finite((float) $spread)
+                    || ! is_numeric($total) || ! is_finite((float) $total)) {
+                    continue;
+                }
+                $market = $forecast->market_context;
+                $number = fn (mixed $value): ?float => is_numeric($value) && is_finite((float) $value) ? (float) $value : null;
+                $rows->push([
+                    ...$this->projectionRow($game, (float) $spread, (float) $total,
+                        $includeLayers ? $forecast->model_metadata : [],
+                        ['spread' => $number($market['market_home_margin'] ?? null), 'total' => $number($market['market_total'] ?? null)]),
+                    'forecast_source' => 'canonical', 'canonical_prediction_id' => $forecast->canonical_prediction_id,
+                    'generated_at' => $forecast->generated_at->getTimestamp(), 'canonical_lineage' => $forecast->lineage,
+                ]);
+            }
+        });
+        $rows = $rows->sortByDesc(fn (array $row): array => [$row['generated_at'], $row['canonical_prediction_id']])->values();
+        $limit = (int) $this->option('limit');
+
+        return $limit > 0 ? $rows->take($limit)->values() : $rows;
+    }
+
     /**
      * @param  array{season:?int,from_season:?int,to_season:?int,label:string}  $scope
      * @return Collection<int,array<string,mixed>>
@@ -269,13 +320,17 @@ class AnalyzePointProjectionsCommand extends Command
             return null;
         }
 
-        $predictedSpread = (float) $prediction->predicted_spread;
-        $predictedTotal = (float) $prediction->predicted_total;
+        return $this->projectionRow($game, (float) $prediction->predicted_spread, (float) $prediction->predicted_total,
+            $includeLayers && is_array($prediction->model_metadata) ? $prediction->model_metadata : [], $this->marketLines($game));
+    }
+
+    /** @param array<string, mixed> $metadata @param array{spread:?float,total:?float} $market */
+    private function projectionRow(Game $game, float $predictedSpread, float $predictedTotal, array $metadata, array $market): array
+    {
         $actualSpread = (float) $game->home_score - (float) $game->away_score;
         $actualTotal = (float) $game->home_score + (float) $game->away_score;
         $predictedHomeScore = ($predictedTotal + $predictedSpread) / 2;
         $predictedAwayScore = ($predictedTotal - $predictedSpread) / 2;
-        $market = $this->marketLines($game);
 
         return [
             'date' => $game->game_date?->format('Y-m-d') ?? '',
@@ -303,7 +358,7 @@ class AnalyzePointProjectionsCommand extends Command
             'winner_correct' => ($actualSpread > 0 && $predictedSpread > 0) || ($actualSpread < 0 && $predictedSpread < 0),
             'market_spread' => $market['spread'],
             'market_total' => $market['total'],
-            'metadata' => $includeLayers && is_array($prediction->model_metadata) ? $prediction->model_metadata : [],
+            'metadata' => $metadata,
         ];
     }
 

@@ -22,8 +22,11 @@ class NflSpreadAssessmentService
                 'reason' => 'requires_future_canonical_kickoff', 'model_version' => $modelVersion];
         }
 
-        $key = $game->season.':'.$modelVersion;
-        $data = $this->datasets[$key] ??= $this->dataset->load(max(2000, (int) $game->season - 5), (int) $game->season, $modelVersion);
+        $source = app(NflEvidenceForecastSource::class)->name();
+        $key = $source.':'.$game->season.':'.$modelVersion;
+        $data = $this->datasets[$key] ??= $this->dataset->load(
+            max(2000, (int) $game->season - 5), (int) $game->season, $modelVersion, $source,
+        );
         $residuals = [];
         foreach ($data['rows'] as $row) {
             $start = CarbonImmutable::parse($row['kickoff']);
@@ -39,7 +42,7 @@ class NflSpreadAssessmentService
 
         return [...$this->probability->estimate($residuals, $margin, $homeLine),
             'model_version' => $modelVersion, 'evaluated_at' => $asOf->toIso8601String(),
-            'history_source' => 'frozen_observed_pregame_same_model',
+            'history_source' => $source === 'canonical' ? 'frozen_canonical_recommendation_same_model' : 'frozen_observed_pregame_same_model',
             'validation_status' => count($residuals) < NflSpreadProbability::MINIMUM_RESIDUALS
                 ? 'insufficient_training_history' : 'held_out_validation_required'];
     }

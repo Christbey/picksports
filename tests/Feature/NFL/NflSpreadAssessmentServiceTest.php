@@ -16,7 +16,7 @@ it('uses only completed same-version frozen history available before this foreca
         'generated_at' => '2026-10-01T15:00:00Z', 'result_available_at' => '2026-10-01T21:00:00Z',
         'actual_margin' => 7.0, 'model_margin' => 4.0];
     $dataset = Mockery::mock(NflSpreadValidationDataset::class);
-    $dataset->shouldReceive('load')->once()->with(2021, 2026, 'v3')->andReturn(['rows' => [
+    $dataset->shouldReceive('load')->once()->with(2021, 2026, 'v3', 'legacy')->andReturn(['rows' => [
         $row,
         array_replace($row, ['game_id' => 2, 'model_version' => 'v2']),
         array_replace($row, ['game_id' => 3, 'result_available_at' => '2026-10-10T21:00:00Z']),

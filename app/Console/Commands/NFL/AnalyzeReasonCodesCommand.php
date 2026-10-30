@@ -2,14 +2,20 @@
 
 namespace App\Console\Commands\NFL;
 
+use App\Models\NFL\Game;
 use App\Models\NFL\Prediction;
+use App\Services\NFL\NflEvidenceForecastSource;
+use App\Support\NflModelVersion;
 use App\Support\NflReasonCodeCatalog;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 class AnalyzeReasonCodesCommand extends Command
 {
     protected $signature = 'nfl:analyze-reason-codes
+                            {--forecast-source= : canonical or legacy (defaults to the active NFL evidence source)}
+                            {--model-version= : Canonical recommendation model version (defaults to current)}
                             {--season= : Season to analyze (defaults to config nfl.season.default)}
                             {--from-season= : Analyze starting with this NFL season}
                             {--to-season= : Analyze through this NFL season}
@@ -35,6 +41,7 @@ class AnalyzeReasonCodesCommand extends Command
     {
         try {
             $scope = $this->resolveScope();
+            $source = app(NflEvidenceForecastSource::class)->name($this->option('forecast-source'));
             $minGames = max(1, (int) $this->option('min-games'));
             $top = max(1, (int) $this->option('top'));
             $maxSize = max(1, min(5, (int) $this->option('max-size')));
@@ -47,33 +54,10 @@ class AnalyzeReasonCodesCommand extends Command
             return Command::FAILURE;
         }
 
-        $predictions = Prediction::query()
-            ->select([
-                'id',
-                'game_id',
-                'predicted_spread',
-                'win_probability',
-                'model_metadata',
-            ])
-            ->with(['game:id,season,home_score,away_score'])
-            ->whereHas('game', function ($query) use ($scope) {
-                $query->where('status', 'STATUS_FINAL');
-
-                if ($scope['season'] !== null) {
-                    $query->where('season', $scope['season']);
-                }
-
-                if ($scope['from_season'] !== null) {
-                    $query->where('season', '>=', $scope['from_season']);
-                }
-
-                if ($scope['to_season'] !== null) {
-                    $query->where('season', '<=', $scope['to_season']);
-                }
-            })
-            ->get()
-            ->filter(fn (Prediction $prediction): bool => ! empty($this->reasonCodes($prediction)))
+        $predictions = $this->loadPredictions($scope, $source)
+            ->filter(fn (object $prediction): bool => ! empty($this->reasonCodes($prediction)))
             ->values();
+        $this->line('Forecast source: '.$source);
 
         if ($predictions->isEmpty()) {
             $this->warn('No predictions with reason codes found for '.$scope['label']);
@@ -109,7 +93,7 @@ class AnalyzeReasonCodesCommand extends Command
 
         if ($requiredCodes->isNotEmpty()) {
             $matches = $predictions
-                ->filter(fn (Prediction $prediction): bool => $requiredCodes->every(
+                ->filter(fn (object $prediction): bool => $requiredCodes->every(
                     fn (string $code): bool => in_array($code, $this->reasonCodes($prediction), true)
                 ))
                 ->values();
@@ -136,6 +120,51 @@ class AnalyzeReasonCodesCommand extends Command
         );
 
         return Command::SUCCESS;
+    }
+
+    /** @param array{season:?int,from_season:?int,to_season:?int,label:string} $scope */
+    private function loadPredictions(array $scope, string $source): Collection
+    {
+        $scopeGames = function (Builder $query) use ($scope): void {
+            $query->where('status', 'STATUS_FINAL');
+            foreach (['season' => '=', 'from_season' => '>=', 'to_season' => '<='] as $key => $operator) {
+                if ($scope[$key] !== null) {
+                    $query->where('season', $operator, $scope[$key]);
+                }
+            }
+        };
+        if ($source === 'legacy') {
+            return Prediction::query()->select(['id', 'game_id', 'predicted_spread', 'win_probability', 'model_metadata'])
+                ->with('game:id,season,home_score,away_score')->whereHas('game', $scopeGames)->get();
+        }
+
+        $rows = collect();
+        $games = Game::query()->with('sportEvent')->select(['id', 'sport_event_id', 'season', 'home_score', 'away_score']);
+        $scopeGames($games);
+        $games->chunkById(250, function (Collection $games) use ($rows): void {
+            $byId = $games->keyBy('id');
+            $forecasts = app(NflEvidenceForecastSource::class)->forGames(
+                $byId, (string) ($this->option('model-version') ?: NflModelVersion::current()), includeMetadata: true,
+            );
+            foreach ($forecasts as $forecast) {
+                $game = $byId->get($forecast->game_id);
+                $probability = $forecast->outputs['win_probability'] ?? null;
+                $spread = $forecast->outputs['predicted_spread'] ?? null;
+                if ($game->home_score === null || $game->away_score === null
+                    || ! $forecast->game_start_at->eq($game->sportEvent?->starts_at)
+                    || ! is_numeric($probability) || ! is_finite((float) $probability) || $probability < 0 || $probability > 1
+                    || ($spread !== null && (! is_numeric($spread) || ! is_finite((float) $spread)))) {
+                    continue;
+                }
+                $rows->push((object) [
+                    'game' => $game, 'win_probability' => (float) $probability,
+                    'predicted_spread' => $spread === null ? null : (float) $spread,
+                    'model_metadata' => $forecast->model_metadata,
+                ]);
+            }
+        });
+
+        return $rows;
     }
 
     /**
@@ -178,7 +207,7 @@ class AnalyzeReasonCodesCommand extends Command
     }
 
     /**
-     * @param  Collection<int, Prediction>  $predictions
+     * @param  Collection<int, object>  $predictions
      * @return array<int, array<int, mixed>>
      */
     protected function combinationRows(Collection $predictions, int $maxSize, int $minGames, int $top, int $maxCodesPerGame, Collection $backgroundCodes): array
@@ -230,7 +259,7 @@ class AnalyzeReasonCodesCommand extends Command
     }
 
     /**
-     * @param  Collection<int, Prediction>  $predictions
+     * @param  Collection<int, object>  $predictions
      * @return array<int, array<int, mixed>>
      */
     protected function standaloneRows(Collection $predictions, int $minGames, int $top, Collection $backgroundCodes): array
@@ -288,20 +317,20 @@ class AnalyzeReasonCodesCommand extends Command
     }
 
     /**
-     * @param  iterable<int, Prediction>  $predictions
+     * @param  iterable<int, object>  $predictions
      * @return array<int, mixed>
      */
     protected function summaryRow(string $label, iterable $predictions): array
     {
         $rows = collect($predictions)->values();
         $count = $rows->count();
-        $correct = $rows->filter(fn (Prediction $prediction): bool => $this->predictionWinnerCorrect($prediction))->count();
+        $correct = $rows->filter(fn (object $prediction): bool => $this->predictionWinnerCorrect($prediction))->count();
         $spreadErrors = $rows
-            ->map(fn (Prediction $prediction): ?float => $this->spreadError($prediction))
+            ->map(fn (object $prediction): ?float => $this->spreadError($prediction))
             ->filter(fn (?float $error): bool => $error !== null)
             ->values();
         $seasons = $rows
-            ->map(fn (Prediction $prediction): ?int => $prediction->game?->season !== null ? (int) $prediction->game->season : null)
+            ->map(fn (object $prediction): ?int => $prediction->game?->season !== null ? (int) $prediction->game->season : null)
             ->filter()
             ->unique()
             ->sort()
@@ -311,7 +340,7 @@ class AnalyzeReasonCodesCommand extends Command
             $label,
             $count,
             $count > 0 ? round(($correct / $count) * 100, 1).'%' : 'n/a',
-            $count > 0 ? round((float) $rows->avg(fn (Prediction $prediction): float => (float) data_get($prediction->model_metadata, 'analysis_layer.trust_score', 0)), 1) : 'n/a',
+            $count > 0 ? round((float) $rows->avg(fn (object $prediction): float => (float) data_get($prediction->model_metadata, 'analysis_layer.trust_score', 0)), 1) : 'n/a',
             $spreadErrors->isNotEmpty() ? round((float) $spreadErrors->avg(), 2) : 'n/a',
             $seasons !== '' ? $seasons : 'n/a',
         ];
@@ -320,7 +349,7 @@ class AnalyzeReasonCodesCommand extends Command
     /**
      * @return array<int, string>
      */
-    protected function reasonCodes(Prediction $prediction): array
+    protected function reasonCodes(object $prediction): array
     {
         $codes = (array) data_get($prediction->model_metadata, 'analysis_layer.reason_codes', []);
 
@@ -336,7 +365,7 @@ class AnalyzeReasonCodesCommand extends Command
     /**
      * @return array<int, string>
      */
-    protected function actionableReasonCodes(Prediction $prediction, Collection $backgroundCodes): array
+    protected function actionableReasonCodes(object $prediction, Collection $backgroundCodes): array
     {
         return collect($this->reasonCodes($prediction))
             ->reject(fn (string $code): bool => $backgroundCodes->contains($code))
@@ -345,7 +374,7 @@ class AnalyzeReasonCodesCommand extends Command
     }
 
     /**
-     * @param  Collection<int, Prediction>  $predictions
+     * @param  Collection<int, object>  $predictions
      * @return Collection<int, string>
      */
     protected function backgroundReasonCodes(Collection $predictions, float $maxCodeFrequency): Collection
@@ -375,7 +404,7 @@ class AnalyzeReasonCodesCommand extends Command
             ->values();
     }
 
-    protected function predictionWinnerCorrect(Prediction $prediction): bool
+    protected function predictionWinnerCorrect(object $prediction): bool
     {
         $game = $prediction->game;
         if (! $game || $game->home_score === null || $game->away_score === null) {
@@ -388,7 +417,7 @@ class AnalyzeReasonCodesCommand extends Command
         return $predictedHomeWin === $homeWon;
     }
 
-    protected function spreadError(Prediction $prediction): ?float
+    protected function spreadError(object $prediction): ?float
     {
         $game = $prediction->game;
         if (! $game || $game->home_score === null || $game->away_score === null || $prediction->predicted_spread === null) {

@@ -123,6 +123,7 @@ class ReadinessPassCommand extends Command
                 'label' => 'Analyze reason codes',
                 'command' => 'nfl:analyze-reason-codes',
                 'arguments' => [
+                    '--forecast-source' => 'legacy',
                     '--from-season' => $fromSeason,
                     '--to-season' => $toSeason,
                     '--min-games' => (int) $this->option('reason-code-min-games'),

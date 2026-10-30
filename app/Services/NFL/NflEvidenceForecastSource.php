@@ -31,7 +31,7 @@ class NflEvidenceForecastSource
     }
 
     /** @param Collection<int, Game> $games @return Collection<int, object> */
-    public function forGames(Collection $games, string $version, bool $forCapture = false): Collection
+    public function forGames(Collection $games, string $version, bool $forCapture = false, bool $includeMetadata = false): Collection
     {
         $forecasts = collect();
         if ($games->isEmpty()) {
@@ -56,8 +56,8 @@ class NflEvidenceForecastSource
                     'inputs->recommendation_context->outputs as audit_outputs',
                     'inputs->recommendation_context->evidence_source_version as capture_version',
                     'inputs->recommendation_context->runtime_configuration_hash as capture_config_hash',
-                    ...($forCapture ? ['inputs->recommendation_context->model_metadata as capture_metadata',
-                        'inputs->event->game_id as capture_game_id'] : []),
+                    ...($forCapture || $includeMetadata ? ['inputs->recommendation_context->model_metadata as capture_metadata'] : []),
+                    ...($forCapture ? ['inputs->event->game_id as capture_game_id'] : []),
                     'inputs->pregame_market->available as audit_market_available',
                     'inputs->pregame_market->consensus as audit_market_consensus',
                 ])->withCasts(['audit_outputs' => 'array', 'audit_market_consensus' => 'array', 'capture_metadata' => 'array']),

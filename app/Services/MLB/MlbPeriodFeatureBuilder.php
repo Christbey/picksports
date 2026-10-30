@@ -5,8 +5,6 @@ namespace App\Services\MLB;
 use App\Models\MarketQuote;
 use App\Models\MLB\Game;
 use App\Models\PredictionFeatureSnapshot;
-use App\Services\Api\V2\CanonicalSportPredictionQuery;
-use App\Services\Predictions\PredictionDeliverySource;
 use App\Support\MLB\MlbGameStart;
 use App\Support\MLB\MlbLineScores;
 use Illuminate\Support\Carbon;
@@ -74,8 +72,8 @@ class MlbPeriodFeatureBuilder
             ->get();
 
         $states = $this->replay($history);
-        $trustedPitchers = app(PredictionDeliverySource::class)->usesCanonical('mlb')
-            ? ($this->nativePitcherFeaturesByGame([$game->id])[$game->id] ?? [])
+        $trustedPitchers = app(MlbPeriodForecastSource::class)->usesCanonical()
+            ? ($this->nativePitcherFeatures(app(MlbPeriodForecastSource::class)->forGames(collect([$game])))[$game->id] ?? [])
             : $this->trustedPitcherFeatures($snapshot);
         $features = [];
 
@@ -98,7 +96,7 @@ class MlbPeriodFeatureBuilder
      * @param  Collection<int, Game>  $games
      * @return array<int, array<string, array<string, float|int|null>>>
      */
-    public function liveFeaturesForGames(Collection $games): array
+    public function liveFeaturesForGames(Collection $games, ?Collection $nativeSources = null): array
     {
         $targets = $games
             ->filter(fn (Game $game): bool => is_numeric($game->id) && is_numeric($game->season))
@@ -129,8 +127,8 @@ class MlbPeriodFeatureBuilder
             ->orderBy('id')
             ->get();
 
-        $trustedPitchers = app(PredictionDeliverySource::class)->usesCanonical('mlb')
-            ? $this->nativePitcherFeaturesByGame($targetIds) : $this->trustedPitcherFeaturesByGame($targetIds);
+        $trustedPitchers = app(MlbPeriodForecastSource::class)->usesCanonical()
+            ? $this->nativePitcherFeatures($nativeSources ?? app(MlbPeriodForecastSource::class)->forGames($targets)) : $this->trustedPitcherFeaturesByGame($targetIds);
         $states = [];
         $featuresByGame = [];
         $season = null;
@@ -455,27 +453,14 @@ class MlbPeriodFeatureBuilder
         ];
     }
 
-    /** @param list<int> $gameIds @return array<int, array<string, float>> */
-    private function nativePitcherFeaturesByGame(array $gameIds): array
+    /** @return array<int, array<string, float>> */
+    private function nativePitcherFeatures(Collection $sources): array
     {
-        return app(CanonicalSportPredictionQuery::class)->queryForSport('mlb')
-            ->whereIn('mlb_games.id', $gameIds)->get()->mapWithKeys(function ($prediction): array {
-                $game = $prediction->sportEvent?->mlbGame;
-                $snapshot = $prediction->calculationRun?->inputSnapshot;
-                if (! $game || ! $snapshot || ! $snapshot->captured_at || ! $snapshot->cutoff_at
-                    || $snapshot->captured_at->gt($snapshot->cutoff_at)) {
-                    return [];
-                }
-                $features = [];
-                foreach (['home', 'away'] as $side) {
-                    $elo = data_get($snapshot->inputs, "pitching.{$side}.elo");
-                    if (is_numeric($elo)) {
-                        $features["feature_{$side}_pitcher_elo"] = (float) $elo;
-                    }
-                }
+        return $sources->map(fn ($source): array => collect(['home', 'away'])->mapWithKeys(function (string $side) use ($source): array {
+            $elo = $source->features[$side.'_pitcher_elo'] ?? null;
 
-                return [$game->id => $features];
-            })->all();
+            return is_numeric($elo) && is_finite((float) $elo) ? ['feature_'.$side.'_pitcher_elo' => (float) $elo] : [];
+        })->all())->all();
     }
 
     /**

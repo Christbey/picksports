@@ -64,7 +64,9 @@ class MlbPeriodShadowService
             ->get()
             ->keyBy('id');
         $this->featureStore->materialize($games->values());
-        $featuresByGame = $this->featureStore->forGames($games->values());
+        $expectedSources = $snapshots->filter(fn ($snapshot) => $snapshot instanceof CanonicalShadowSnapshot)
+            ->mapWithKeys(fn ($snapshot): array => [$snapshot->game_id => $snapshot->id])->all();
+        $featuresByGame = $this->featureStore->forGames($games->values(), $expectedSources === [] ? null : $expectedSources);
 
         $inferred = 0;
         $created = 0;

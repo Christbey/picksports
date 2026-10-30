@@ -2,10 +2,15 @@
 
 namespace App\Services\MLB;
 
+use App\Models\CanonicalPrediction;
 use App\Models\MLB\Game;
 use App\Models\MLB\Prediction;
 use App\Models\PredictionFeatureSnapshot;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
+use App\Services\Predictions\CanonicalShadowInputs;
+use App\Services\Predictions\PredictionDeliverySource;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 
 class MlbPredictionCalculationAuditService
@@ -13,8 +18,11 @@ class MlbPredictionCalculationAuditService
     /**
      * @return array<string, mixed>
      */
-    public function explain(Prediction $prediction, ?CarbonInterface $asOf = null): array
+    public function explain(Prediction|CanonicalPrediction $prediction, ?CarbonInterface $asOf = null): array
     {
+        if ($prediction instanceof CanonicalPrediction) {
+            return $this->canonicalExplanation($prediction, $asOf);
+        }
         $prediction->loadMissing(['game.homeTeam', 'game.awayTeam', 'game.weather']);
         $game = $prediction->game;
         $metadata = is_array($prediction->model_metadata) ? $prediction->model_metadata : [];
@@ -117,17 +125,22 @@ class MlbPredictionCalculationAuditService
      */
     public function hardInvariantFailures(Prediction $prediction): array
     {
+        return $this->invariantFailures($prediction->getAttributes());
+    }
+
+    private function invariantFailures(array $values, bool $requireConfidence = true): array
+    {
         $failures = [];
-        $homeProbability = $this->nullableFloat($prediction->win_probability);
-        $spread = $this->nullableFloat($prediction->predicted_spread);
-        $total = $this->nullableFloat($prediction->predicted_total);
-        $confidence = $this->nullableFloat($prediction->confidence_score);
+        $homeProbability = $this->nullableFloat($values['win_probability'] ?? null);
+        $spread = $this->nullableFloat($values['predicted_spread'] ?? null);
+        $total = $this->nullableFloat($values['predicted_total'] ?? null);
+        $confidence = $this->nullableFloat($values['confidence_score'] ?? null);
 
         foreach ([
             'win_probability' => $homeProbability,
             'predicted_spread' => $spread,
             'predicted_total' => $total,
-            'confidence_score' => $confidence,
+            ...($requireConfidence || $confidence !== null ? ['confidence_score' => $confidence] : []),
         ] as $field => $value) {
             if ($value === null || ! is_finite($value)) {
                 $failures[] = "{$field}_is_missing_or_not_finite";
@@ -161,7 +174,7 @@ class MlbPredictionCalculationAuditService
         }
 
         foreach (['model_version', 'feature_version', 'blend_version'] as $field) {
-            if (! is_string($prediction->{$field}) || trim($prediction->{$field}) === '') {
+            if (! is_string(($values[$field] ?? null)) || trim(($values[$field] ?? null)) === '') {
                 $failures[] = "{$field}_missing";
             }
         }
@@ -201,6 +214,101 @@ class MlbPredictionCalculationAuditService
         }
 
         return array_values(array_unique($warnings));
+    }
+
+    /** @param array<string, mixed> $filters */
+    public function canonicalQuery(array $filters = []): Builder
+    {
+        return app(CanonicalSportPredictionQuery::class)->queryForSport('mlb', $filters)->withOnly([
+            'markets', 'calculationRun:id,event_input_snapshot_id,calculation_release_id,status,diagnostics',
+            'calculationRun.release:id,status,semantic_version',
+            'calculationRun.inputSnapshot:id,sport,sport_event_id,phase,pregame_safety_status,captured_at,cutoff_at,latest_source_available_at,content_hash,schema_version,inputs',
+            'sportEvent:id,starts_at',
+            'sportEvent.mlbGame:id,sport_event_id,season,game_date,game_time,status,home_team_id,away_team_id,home_score,away_score,short_name,name',
+            'sportEvent.mlbGame.homeTeam', 'sportEvent.mlbGame.awayTeam',
+        ]);
+    }
+
+    public function forecastSource(?string $requested = null): string
+    {
+        $source = $requested ?? ((config('prediction_lifecycle.canonical_pipeline.mlb', false)
+            || config('prediction_lifecycle.canonical_reads.mlb', false)) ? 'canonical' : 'legacy');
+        if (! in_array($source, ['canonical', 'legacy'], true)) {
+            throw new \InvalidArgumentException('Forecast source must be canonical or legacy.');
+        }
+
+        return $source;
+    }
+
+    private function canonicalExplanation(CanonicalPrediction $prediction, ?CarbonInterface $asOf): array
+    {
+        if ($prediction->sport !== 'mlb') {
+            throw new \InvalidArgumentException('MLB diagnostics require an MLB forecast.');
+        }
+        $context = app(PredictionDeliverySource::class)->context($prediction, 'mlb');
+        $snapshot = app(CanonicalShadowInputs::class)->fromPrediction($prediction);
+        $input = $prediction->calculationRun?->inputSnapshot;
+        $inputs = (array) $input?->inputs;
+        $game = $context->game;
+        $start = $prediction->sportEvent?->starts_at;
+        try {
+            $frozenStart = data_get($inputs, 'event.starts_at');
+            $kickoffMatches = is_string($frozenStart) && Carbon::parse($frozenStart)->eq($start);
+        } catch (\Throwable) {
+            $kickoffMatches = false;
+        }
+        $safe = $snapshot !== null && $kickoffMatches && $prediction->generated_at->lte($asOf ?? now())
+            && $prediction->published_at->lt($start) && $prediction->published_at->lte($asOf ?? now())
+            && ($input->latest_source_available_at === null || $input->latest_source_available_at->lte($prediction->generated_at));
+        $versions = ['model_version' => $prediction->model_version ?? $prediction->calculationRun?->release?->semantic_version, 'feature_version' => $input?->schema_version,
+            'blend_version' => 'canonical-release-'.$prediction->calculationRun?->calculation_release_id];
+        $values = [...$versions, 'win_probability' => $context->homeWinProbability,
+            'predicted_spread' => $context->predictedSpread, 'predicted_total' => $context->predictedTotal,
+            'confidence_score' => $context->confidenceScore];
+        $failures = $this->invariantFailures($values, false);
+        $away = $this->nullableFloat($prediction->markets->first(fn ($market) => $market->market_type === 'moneyline' && $market->selection === 'away')?->probability);
+        if ($away === null || ! is_finite($away) || $away < 0 || $away > 1) {
+            $failures[] = 'away_win_probability_is_missing_or_invalid';
+        } elseif ($context->homeWinProbability !== null && abs($context->homeWinProbability + $away - 1) > 0.001) {
+            $failures[] = 'probabilities_do_not_sum_to_one';
+        }
+        $scores = $this->derivedScores($context->predictedSpread, $context->predictedTotal);
+        $warnings = $safe ? [] : ['missing_canonical_input_evidence'];
+        $market = (array) data_get($inputs, 'pregame_market', []);
+        if (($market['available'] ?? false) !== true) {
+            $warnings[] = 'market_context_not_proven_pregame_safe';
+        }
+
+        return [
+            'game_id' => $game->id, 'prediction_id' => $prediction->id, 'forecast_source' => 'canonical',
+            'prediction_public_id' => $prediction->public_id,
+            'canonical_lineage' => $snapshot?->lineage ?? ['canonical_prediction_id' => $prediction->id,
+                'calculation_run_id' => $prediction->calculation_run_id, 'event_input_snapshot_id' => $input?->id],
+            'phase' => $this->phase($game), 'as_of' => ($asOf ?? now())->toIso8601String(),
+            'teams' => ['home' => $this->teamLabel($game->homeTeam), 'away' => $this->teamLabel($game->awayTeam)],
+            'game' => ['date' => $game->game_date?->toDateString(), 'time' => $game->game_time,
+                'status' => $game->status, 'start_at' => $start?->toIso8601String()],
+            'versions' => $versions,
+            'input_timestamps' => ['input_captured_at' => $input?->captured_at?->toIso8601String(),
+                'features_available_at' => $input?->latest_source_available_at?->toIso8601String(),
+                'weather_observed_at' => data_get($inputs, 'weather.observed_at'),
+                'market_snapshot_captured_at' => data_get($market, 'consensus.spread.captured_at')],
+            'inputs' => ['team_elo' => ['home' => data_get($inputs, 'home.elo'), 'away' => data_get($inputs, 'away.elo'),
+                'home_combined' => null, 'away_combined' => null],
+                'pitcher_elo' => ['home' => data_get($inputs, 'pitching.home.elo'), 'away' => data_get($inputs, 'pitching.away.elo'),
+                    'source' => data_get($inputs, 'pitching', [])],
+                'team_metrics' => ['home' => data_get($inputs, 'home.metrics', []), 'away' => data_get($inputs, 'away.metrics', [])],
+                'weather' => data_get($inputs, 'weather'), 'venue' => data_get($inputs, 'venue'), 'market' => $market],
+            'adjustments' => (array) $prediction->calculationRun?->diagnostics,
+            'outputs' => ['home_win_probability' => $context->homeWinProbability, 'away_win_probability' => $away,
+                'predicted_winner' => $context->homeWinProbability === null ? null : $this->teamLabel($context->homeWinProbability >= 0.5 ? $game->homeTeam : $game->awayTeam),
+                'predicted_spread' => $context->predictedSpread, 'predicted_total' => $context->predictedTotal,
+                'derived_home_score' => $scores['home'], 'derived_away_score' => $scores['away'],
+                'confidence' => $this->nullableFloat($context->confidenceScore), 'confidence_label' => $this->confidenceLabel($this->nullableFloat($context->confidenceScore))],
+            'safety' => ['point_in_time_safe' => $safe, 'market_context_safe' => $safe && ($market['available'] ?? false) === true,
+                'warnings' => $warnings, 'hard_failures' => array_values(array_unique($failures)),
+                'calibrated' => false, 'bet_eligible' => false],
+        ];
     }
 
     public function confidenceLabel(?float $confidence): string

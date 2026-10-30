@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\MLB;
 
+use App\Models\CanonicalPrediction;
 use App\Models\MLB\Prediction;
 use App\Services\MLB\MlbPredictionCalculationAuditService;
 use Illuminate\Console\Command;
@@ -15,17 +16,25 @@ class AuditPredictionCalculationsCommand extends Command
         {--to= : End game date in YYYY-MM-DD}
         {--strict-pregame : Warn when point-in-time metadata is incomplete}
         {--sample=50 : Number of sample failures/warnings to show}
-        {--json : Output structured JSON}';
+        {--json : Output structured JSON}
+        {--forecast-source= : canonical or legacy; defaults to the active pipeline source}';
 
     protected $description = 'Audit MLB prediction calculation invariants and point-in-time safety metadata.';
 
     public function handle(MlbPredictionCalculationAuditService $audit): int
     {
         $sampleLimit = max(1, (int) $this->option('sample'));
-        $predictions = $this->predictionQuery()->get();
+        try {
+            $source = $audit->forecastSource($this->option('forecast-source'));
+        } catch (\InvalidArgumentException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::INVALID;
+        }
+        $predictions = $this->predictionQuery($source, $audit)->reorder()->lazyByIdDesc(25, $source === 'canonical' ? 'predictions.id' : 'mlb_predictions.id', 'id');
 
         $summary = [
-            'predictions_scanned' => $predictions->count(),
+            'predictions_scanned' => 0,
             'invalid_probabilities' => 0,
             'probabilities_not_sum_one' => 0,
             'winner_probability_disagreements' => 0,
@@ -44,8 +53,8 @@ class AuditPredictionCalculationsCommand extends Command
         $warnings = [];
 
         foreach ($predictions as $prediction) {
-            $prediction->loadMissing(['game.homeTeam', 'game.awayTeam', 'game.weather']);
-            $game = $prediction->game;
+            $summary['predictions_scanned']++;
+            $game = $prediction instanceof CanonicalPrediction ? $prediction->sportEvent?->mlbGame : $prediction->game;
 
             if ($game && in_array($game->status, [config('mlb.statuses.postponed'), config('mlb.statuses.suspended'), config('mlb.statuses.canceled')], true)) {
                 $summary['games_excluded_due_postponed_or_suspended_status']++;
@@ -59,13 +68,14 @@ class AuditPredictionCalculationsCommand extends Command
                 continue;
             }
 
-            $failures = $audit->hardInvariantFailures($prediction);
-            $rowWarnings = $audit->warnings($prediction, $audit->latestSnapshot($prediction));
-            $homeProbability = is_numeric($prediction->win_probability) ? (float) $prediction->win_probability : null;
-            $spread = is_numeric($prediction->predicted_spread) ? (float) $prediction->predicted_spread : null;
-            $total = is_numeric($prediction->predicted_total) ? (float) $prediction->predicted_total : null;
+            $explanation = $audit->explain($prediction);
+            $failures = $explanation['safety']['hard_failures'];
+            $rowWarnings = $explanation['safety']['warnings'];
+            $homeProbability = $explanation['outputs']['home_win_probability'];
+            $spread = $explanation['outputs']['predicted_spread'];
+            $total = $explanation['outputs']['predicted_total'];
 
-            if (in_array('home_win_probability_out_of_range', $failures, true) || in_array('win_probability_is_missing_or_not_finite', $failures, true)) {
+            if (in_array('home_win_probability_out_of_range', $failures, true) || in_array('win_probability_is_missing_or_not_finite', $failures, true) || in_array('away_win_probability_is_missing_or_invalid', $failures, true)) {
                 $summary['invalid_probabilities']++;
             }
 
@@ -93,7 +103,7 @@ class AuditPredictionCalculationsCommand extends Command
                 }
             }
 
-            if (in_array('missing_feature_snapshot', $rowWarnings, true)
+            if (in_array('missing_canonical_input_evidence', $rowWarnings, true) || in_array('missing_feature_snapshot', $rowWarnings, true)
                 || in_array('team_metric_point_in_time_limitation', $rowWarnings, true)) {
                 $summary['missing_point_in_time_metadata']++;
             }
@@ -108,16 +118,16 @@ class AuditPredictionCalculationsCommand extends Command
             }
 
             if ($failures !== [] && count($hardFailures) < $sampleLimit) {
-                $hardFailures[] = $this->sampleRow($prediction, array_values(array_unique($failures)), $homeProbability, $spread, $total);
+                $hardFailures[] = $this->sampleRow($prediction, $explanation, array_values(array_unique($failures)), $homeProbability, $spread, $total);
             }
 
             if ($rowWarnings !== [] && count($warnings) < $sampleLimit) {
-                $warnings[] = $this->sampleRow($prediction, $rowWarnings, $homeProbability, $spread, $total);
+                $warnings[] = $this->sampleRow($prediction, $explanation, $rowWarnings, $homeProbability, $spread, $total);
             }
         }
 
         $report = [
-            'report_type' => 'mlb_prediction_calculation_audit',
+            'report_type' => 'mlb_prediction_calculation_audit', 'forecast_source' => $source,
             'season' => $this->option('season') ? (int) $this->option('season') : null,
             'strict_pregame' => (bool) $this->option('strict-pregame'),
             'summary' => $summary,
@@ -154,8 +164,15 @@ class AuditPredictionCalculationsCommand extends Command
         return $hardFailures === [] ? self::SUCCESS : self::FAILURE;
     }
 
-    private function predictionQuery(): Builder
+    private function predictionQuery(string $source, MlbPredictionCalculationAuditService $audit): Builder
     {
+        if ($source === 'canonical') {
+            return $audit->canonicalQuery(array_filter([
+                'season' => $this->option('season') ? (int) $this->option('season') : null,
+                'from_date' => $this->option('from'), 'to_date' => $this->option('to'),
+            ]));
+        }
+
         return Prediction::query()
             ->with(['game.homeTeam', 'game.awayTeam', 'game.weather'])
             ->whereHas('game', function (Builder $query): void {
@@ -177,13 +194,14 @@ class AuditPredictionCalculationsCommand extends Command
     /**
      * @return array<string, mixed>
      */
-    private function sampleRow(Prediction $prediction, array $reasons, ?float $homeProbability, ?float $spread, ?float $total): array
+    private function sampleRow(Prediction|CanonicalPrediction $prediction, array $explanation, array $reasons, ?float $homeProbability, ?float $spread, ?float $total): array
     {
-        $game = $prediction->game;
+        $game = $prediction instanceof CanonicalPrediction ? $prediction->sportEvent?->mlbGame : $prediction->game;
 
         return [
             'prediction_id' => (int) $prediction->id,
-            'game_id' => (int) $prediction->game_id,
+            'game_id' => (int) $explanation['game_id'],
+            ...($prediction instanceof CanonicalPrediction ? ['forecast_source' => 'canonical', 'canonical_lineage' => $explanation['canonical_lineage']] : []),
             'matchup' => (string) ($game?->short_name ?: $game?->name ?: ''),
             'reasons' => $reasons,
             'home_win_probability' => $homeProbability,

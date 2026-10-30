@@ -26,6 +26,8 @@ class NflEvidenceOperations
                 'controlled_use' => 'shadow_only_no_production_promotion']];
         };
 
-        return app()->environment('testing') ? $build() : Cache::remember('nfl:evidence:ops:'.$season.':'.$version, 60, $build);
+        $source = app(NflEvidenceLedgerAudit::class)->usesCanonicalForecasts() ? 'canonical' : 'legacy';
+
+        return app()->environment('testing') ? $build() : Cache::remember('nfl:evidence:ops:'.$season.':'.$version.':'.$source, 60, $build);
     }
 }

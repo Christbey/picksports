@@ -129,9 +129,15 @@ Dashboard and live-scoreboard sport settings now live in `DashboardSportConfig`.
 
 ## MLB monitoring input retirement
 
-`MlbModelMonitoringService` resolves observation safety/hash fields and weekly baseline fallbacks from the recorded source identity. Native observations reuse `CanonicalShadowInputs` validation and primary-market margin conventions; superseded observations retain their original native lineage, while withdrawn, unsafe, or mismatched-game inputs do not fall back to legacy snapshots. Recorded multi-market explanation outputs and scalar observations retain their existing precedence. Full-game primary markets never fill missing F3/F5 period baselines. Historical observations continue using their original feature snapshots, independently of the public read switch.
+`MlbModelMonitoringService` uses the shared `RecordedShadowInputSource` to resolve observation safety/hash fields and weekly baseline fallbacks from the recorded source identity. Native observations reuse `CanonicalShadowInputs` validation and primary-market margin conventions; superseded observations retain their original native lineage, while withdrawn, unsafe, or mismatched-game inputs do not fall back to legacy snapshots. Recorded multi-market explanation outputs and scalar observations retain their existing precedence. Full-game primary markets never fill missing F3/F5 period baselines. Historical observations continue using their original feature snapshots, independently of the public read switch.
 
 Monitoring batches native timing/lineage and primary-market reads without hydrating frozen input JSON. It loads legacy snapshot outputs only for historical observations, skips unused metadata payloads, and no longer loads feature snapshots for decision summaries. Existing week/game deduplication, metric formulas, admin access, response fields, and tracking/approval rules remain unchanged. No schema or production-switch change is required.
+
+## Recorded shadow decision retirement
+
+The scheduled `sports:record-shadow-bet-decisions` command and MLB monitoring share `RecordedShadowInputSource`. Source selection follows each recorded observation's explicit native foreign key, independently of public read switches. Native sport, game, prediction namespace and ID must match; ineligible native inputs never borrow attached legacy snapshots or promotion metadata. Decision recording loads the frozen market/input context it requires, while monitoring retains its compact projections. Historical observations keep their original full feature-snapshot contract.
+
+The recorder processes ascending-ID batches of 100 with a fixed per-run upper ID while preserving `--artifact`, `--limit`, immutable decision hashes, exact quote/reference-line selection, uncertainty/promotion checks, period semantics and the `canonical_shadow_inputs_unvalidated` hold. Model persistence still rechecks promotion and NFL uncertainty before accepting a shadow bet, without native-to-legacy fallback. Non-NFL no-bet saves skip unused snapshot reads; NFL explanation enrichment remains intact. Schedule timing, heartbeat names, generation, approvals and production switches are unchanged.
 
 ## Remaining writer retirement dependencies
 

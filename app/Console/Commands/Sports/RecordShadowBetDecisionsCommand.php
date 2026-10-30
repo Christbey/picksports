@@ -9,8 +9,9 @@ use App\Models\ModelArtifact;
 use App\Models\PredictionFeatureSnapshot;
 use App\Models\ShadowModelOutput;
 use App\Services\NFL\NflEvidenceTrialService;
-use App\Services\Predictions\CanonicalShadowInputs;
+use App\Services\Predictions\RecordedShadowInputSource;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 class RecordShadowBetDecisionsCommand extends Command
@@ -23,11 +24,11 @@ class RecordShadowBetDecisionsCommand extends Command
 
     protected $description = 'Write challenger or promoted shadow outputs into immutable tracking decisions';
 
-    public function handle(): int
+    public function handle(RecordedShadowInputSource $inputs): int
     {
         $sport = strtolower((string) $this->option('sport'));
         $query = ShadowModelOutput::query()
-            ->with(['artifact', 'featureSnapshot', 'canonicalPrediction.calculationRun.inputSnapshot', 'canonicalPrediction.sportEvent', 'canonicalPrediction.markets'])
+            ->with('artifact')
             ->where('sport', $sport)
             ->when($this->option('artifact'), fn ($builder) => $builder->where('model_artifact_id', $this->option('artifact')))
             ->orderBy('id');
@@ -37,213 +38,216 @@ class RecordShadowBetDecisionsCommand extends Command
         }
 
         $created = 0;
-        foreach ($query->get() as $shadow) {
-            $snapshot = $shadow->canonical_prediction_id !== null
-                ? ($shadow->canonicalPrediction ? app(CanonicalShadowInputs::class)->fromPrediction($shadow->canonicalPrediction) : null)
-                : $shadow->featureSnapshot;
-            $artifact = $shadow->artifact;
-            if ($artifact?->model_type === NflEvidenceTrialService::TYPE) {
-                continue;
-            }
-            $market = $this->marketDefinition($sport, $shadow->market_type);
-            if (! $snapshot || ! $artifact || $market === null) {
-                continue;
-            }
+        $throughId = (int) (clone $query)->reorder()->max('id');
+        $query->where('id', '<=', $throughId)->chunkById(100, function (Collection $outputs) use ($inputs, $sport, &$created): void {
+            $inputs->preload($outputs, $sport);
+            foreach ($outputs as $shadow) {
+                $snapshot = $inputs->fromOutput($shadow, $sport);
+                $artifact = $shadow->artifact;
+                if ($artifact?->model_type === NflEvidenceTrialService::TYPE) {
+                    continue;
+                }
+                $market = $this->marketDefinition($sport, $shadow->market_type);
+                if (! $snapshot || ! $artifact || $market === null) {
+                    continue;
+                }
 
-            $referenceProbability = $this->referenceProbability($shadow, $market['observation_market']);
-            $side = $this->side($market['observation_market'], $referenceProbability);
-            $modelProbability = $referenceProbability === null
-                ? null
-                : $this->sideProbability($market['observation_market'], $side, $referenceProbability);
-            $marketReference = $this->modelMarketReference(
-                $snapshot,
-                $market['observation_market'],
-                $side,
-            );
-            $quoteSelection = $this->entryQuote(
-                $sport,
-                $shadow,
-                $market['market_key'],
-                $side,
-                $snapshot->game_start_at,
-                $marketReference,
-            );
-            $quote = $quoteSelection['quote'];
-            $marketProbability = $this->probability($quote?->no_vig_probability);
-            $edge = $modelProbability === null || $marketProbability === null
-                ? null
-                : $modelProbability - $marketProbability;
-            $periodMoneyline = $this->isPeriodMoneyline($market['observation_market']);
-            $periodProbabilities = $this->periodOutcomeProbabilities($shadow, $side);
-            $projectedValue = $periodMoneyline
-                ? ($periodProbabilities === null ? null : $this->expectedValue(
-                    $periodProbabilities['win'],
-                    $periodProbabilities['loss'],
-                    is_numeric($quote?->price) ? (int) $quote->price : null,
-                ))
-                : $edge;
-            $minimumEdge = max(0.0, (float) $this->option('minimum-edge'));
-            $artifactPromotedAtDecisionTime = $artifact->status === 'promoted'
-                && $artifact->promoted_at !== null
-                && $artifact->promoted_at->lessThanOrEqualTo($shadow->generated_at);
-            $recordedMarketPromotion = $this->recordedMarketPromotion(
-                $shadow,
-                $market['observation_market'],
-            );
-            $marketPromotedAtDecisionTime = $artifactPromotedAtDecisionTime
-                && $artifact->isPromotedForMarket($market['observation_market'])
-                && $recordedMarketPromotion !== false;
-            $observedPregame = $snapshot->availability_status === 'observed_pregame';
-            $featuresBeforeStart = $snapshot->game_start_at !== null
-                && $snapshot->generated_at->lessThan($snapshot->game_start_at)
-                && ($snapshot->features_available_at === null
-                    || $snapshot->features_available_at->lessThanOrEqualTo($snapshot->game_start_at));
-            $pregameSafe = (bool) $snapshot->pregame_safe
-                && $observedPregame
-                && $featuresBeforeStart
-                && (bool) $quote?->is_pregame;
-            $uncertainty = $this->probability(
-                data_get($shadow->explanation, 'challenger_outputs.uncertainty')
-                    ?? data_get($snapshot->outputs, 'challenger_uncertainty')
-                    ?? data_get($snapshot->model_metadata, 'shadow_inference.challenger_outputs.uncertainty'),
-            );
-            $maximumUncertainty = $this->isPeriodMoneyline($market['observation_market'])
-                ? config('mlb_ml.period_models.maximum_uncertainty')
-                : config("{$sport}_ml.shadow.max_uncertainty");
-            $maximumUncertainty = is_numeric($maximumUncertainty)
-                ? max(0.0, (float) $maximumUncertainty)
-                : null;
-            $uncertaintyRequired = (bool) data_get($shadow->explanation, 'multi_market_contract', false);
-            $uncertaintyEligible = (! $uncertaintyRequired || $uncertainty !== null)
-                && ($maximumUncertainty === null
-                    || ($uncertainty !== null && $uncertainty <= $maximumUncertainty));
-            $isBet = ! ($snapshot instanceof CanonicalShadowSnapshot)
-                && $marketPromotedAtDecisionTime
-                && $pregameSafe
-                && $modelProbability !== null
-                && $edge !== null
-                && $edge >= $minimumEdge
-                && (! $periodMoneyline || ($projectedValue !== null && $projectedValue > 0))
-                && $uncertaintyEligible;
-            $eligibilityReasons = array_values(array_filter([
-                $artifactPromotedAtDecisionTime ? null : 'artifact_not_promoted_at_decision_time',
-                $artifactPromotedAtDecisionTime
-                    && ! $marketPromotedAtDecisionTime
-                    ? 'market_model_not_promoted_at_decision_time'
-                    : null,
-                $snapshot instanceof CanonicalShadowSnapshot ? 'canonical_shadow_inputs_unvalidated' : null,
-                $snapshot->pregame_safe ? null : 'feature_snapshot_not_pregame_safe',
-                $observedPregame ? null : 'historical_reconstruction_not_bet_eligible',
-                $featuresBeforeStart ? null : 'feature_snapshot_not_before_game_start',
-                $quote ? null : 'pregame_market_quote_missing',
-                $quoteSelection['failure_reason'],
-                $quote && ! $quote->is_pregame ? 'market_quote_not_pregame' : null,
-                $modelProbability !== null ? null : 'model_probability_missing',
-                $quote && $marketProbability === null ? 'market_probability_missing' : null,
-                $uncertaintyRequired && $uncertainty === null ? 'model_uncertainty_missing' : null,
-                $maximumUncertainty !== null
-                    && $uncertainty !== null
-                    && $uncertainty > $maximumUncertainty
-                    ? 'model_uncertainty_above_threshold'
-                    : null,
-                $edge !== null && $edge < $minimumEdge ? 'edge_below_threshold' : null,
-                $periodMoneyline
-                    && $quote
-                    && ($projectedValue === null || $projectedValue <= 0)
-                    ? 'expected_value_nonpositive'
-                    : null,
-            ]));
-            $decisionHash = hash('sha256', implode('|', [
-                $artifact->id,
-                $shadow->id,
-                $market['market_type'],
-                $market['market_key'],
-                $side,
-            ]));
+                $referenceProbability = $this->referenceProbability($shadow, $market['observation_market']);
+                $side = $this->side($market['observation_market'], $referenceProbability);
+                $modelProbability = $referenceProbability === null
+                    ? null
+                    : $this->sideProbability($market['observation_market'], $side, $referenceProbability);
+                $marketReference = $this->modelMarketReference(
+                    $snapshot,
+                    $market['observation_market'],
+                    $side,
+                );
+                $quoteSelection = $this->entryQuote(
+                    $sport,
+                    $shadow,
+                    $market['market_key'],
+                    $side,
+                    $snapshot->game_start_at,
+                    $marketReference,
+                );
+                $quote = $quoteSelection['quote'];
+                $marketProbability = $this->probability($quote?->no_vig_probability);
+                $edge = $modelProbability === null || $marketProbability === null
+                    ? null
+                    : $modelProbability - $marketProbability;
+                $periodMoneyline = $this->isPeriodMoneyline($market['observation_market']);
+                $periodProbabilities = $this->periodOutcomeProbabilities($shadow, $side);
+                $projectedValue = $periodMoneyline
+                    ? ($periodProbabilities === null ? null : $this->expectedValue(
+                        $periodProbabilities['win'],
+                        $periodProbabilities['loss'],
+                        is_numeric($quote?->price) ? (int) $quote->price : null,
+                    ))
+                    : $edge;
+                $minimumEdge = max(0.0, (float) $this->option('minimum-edge'));
+                $artifactPromotedAtDecisionTime = $artifact->status === 'promoted'
+                    && $artifact->promoted_at !== null
+                    && $artifact->promoted_at->lessThanOrEqualTo($shadow->generated_at);
+                $recordedMarketPromotion = $this->recordedMarketPromotion(
+                    $shadow,
+                    $snapshot,
+                    $market['observation_market'],
+                );
+                $marketPromotedAtDecisionTime = $artifactPromotedAtDecisionTime
+                    && $artifact->isPromotedForMarket($market['observation_market'])
+                    && $recordedMarketPromotion !== false;
+                $observedPregame = $snapshot->availability_status === 'observed_pregame';
+                $featuresBeforeStart = $snapshot->game_start_at !== null
+                    && $snapshot->generated_at->lessThan($snapshot->game_start_at)
+                    && ($snapshot->features_available_at === null
+                        || $snapshot->features_available_at->lessThanOrEqualTo($snapshot->game_start_at));
+                $pregameSafe = (bool) $snapshot->pregame_safe
+                    && $observedPregame
+                    && $featuresBeforeStart
+                    && (bool) $quote?->is_pregame;
+                $uncertainty = $this->probability(
+                    data_get($shadow->explanation, 'challenger_outputs.uncertainty')
+                        ?? data_get($snapshot->outputs, 'challenger_uncertainty')
+                        ?? data_get($snapshot->model_metadata, 'shadow_inference.challenger_outputs.uncertainty'),
+                );
+                $maximumUncertainty = $this->isPeriodMoneyline($market['observation_market'])
+                    ? config('mlb_ml.period_models.maximum_uncertainty')
+                    : config("{$sport}_ml.shadow.max_uncertainty");
+                $maximumUncertainty = is_numeric($maximumUncertainty)
+                    ? max(0.0, (float) $maximumUncertainty)
+                    : null;
+                $uncertaintyRequired = (bool) data_get($shadow->explanation, 'multi_market_contract', false);
+                $uncertaintyEligible = (! $uncertaintyRequired || $uncertainty !== null)
+                    && ($maximumUncertainty === null
+                        || ($uncertainty !== null && $uncertainty <= $maximumUncertainty));
+                $isBet = ! ($snapshot instanceof CanonicalShadowSnapshot)
+                    && $marketPromotedAtDecisionTime
+                    && $pregameSafe
+                    && $modelProbability !== null
+                    && $edge !== null
+                    && $edge >= $minimumEdge
+                    && (! $periodMoneyline || ($projectedValue !== null && $projectedValue > 0))
+                    && $uncertaintyEligible;
+                $eligibilityReasons = array_values(array_filter([
+                    $artifactPromotedAtDecisionTime ? null : 'artifact_not_promoted_at_decision_time',
+                    $artifactPromotedAtDecisionTime
+                        && ! $marketPromotedAtDecisionTime
+                        ? 'market_model_not_promoted_at_decision_time'
+                        : null,
+                    $snapshot instanceof CanonicalShadowSnapshot ? 'canonical_shadow_inputs_unvalidated' : null,
+                    $snapshot->pregame_safe ? null : 'feature_snapshot_not_pregame_safe',
+                    $observedPregame ? null : 'historical_reconstruction_not_bet_eligible',
+                    $featuresBeforeStart ? null : 'feature_snapshot_not_before_game_start',
+                    $quote ? null : 'pregame_market_quote_missing',
+                    $quoteSelection['failure_reason'],
+                    $quote && ! $quote->is_pregame ? 'market_quote_not_pregame' : null,
+                    $modelProbability !== null ? null : 'model_probability_missing',
+                    $quote && $marketProbability === null ? 'market_probability_missing' : null,
+                    $uncertaintyRequired && $uncertainty === null ? 'model_uncertainty_missing' : null,
+                    $maximumUncertainty !== null
+                        && $uncertainty !== null
+                        && $uncertainty > $maximumUncertainty
+                        ? 'model_uncertainty_above_threshold'
+                        : null,
+                    $edge !== null && $edge < $minimumEdge ? 'edge_below_threshold' : null,
+                    $periodMoneyline
+                        && $quote
+                        && ($projectedValue === null || $projectedValue <= 0)
+                        ? 'expected_value_nonpositive'
+                        : null,
+                ]));
+                $decisionHash = hash('sha256', implode('|', [
+                    $artifact->id,
+                    $shadow->id,
+                    $market['market_type'],
+                    $market['market_key'],
+                    $side,
+                ]));
 
-            $decision = BetDecision::query()->firstOrCreate(
-                ['decision_hash' => $decisionHash],
-                [
-                    'decision_run_id' => (string) Str::uuid(),
-                    'model_run_id' => $shadow->inference_run_id,
-                    'model_artifact_id' => $artifact->id,
-                    'shadow_model_output_id' => $shadow->id,
-                    'prediction_feature_snapshot_id' => $snapshot instanceof CanonicalShadowSnapshot ? null : $snapshot->id,
-                    'game_odds_snapshot_id' => $quote?->game_odds_snapshot_id,
-                    'source_table' => 'shadow_model_outputs',
-                    'source_id' => $shadow->id,
-                    'sport' => $sport,
-                    'game_table' => $shadow->game_table,
-                    'game_id' => $shadow->game_id,
-                    'prediction_table' => $shadow->prediction_table,
-                    'prediction_id' => $shadow->prediction_id,
-                    'market_type' => $market['market_type'],
-                    'market_key' => $market['market_key'],
-                    'side' => $side,
-                    'line' => $quote?->line,
-                    'price' => $quote?->price,
-                    'bookmaker' => $quote?->bookmaker_key,
-                    'market_probability' => $quote?->implied_probability,
-                    'no_vig_probability' => $quote?->no_vig_probability,
-                    'model_probability' => $modelProbability,
-                    'blend_probability' => $modelProbability,
-                    'edge' => $edge,
-                    'projected_value' => $projectedValue,
-                    'confidence' => $modelProbability === null ? null : abs($modelProbability - 0.5) * 2,
-                    'status' => $isBet ? 'tracking_bet' : 'shadow_no_bet',
-                    'recommendation_label' => $isBet ? 'shadow_bet' : 'no_bet',
-                    'is_public' => false,
-                    'is_tracking_only' => true,
-                    'is_bet' => $isBet,
-                    'pregame_safe' => $pregameSafe,
-                    'eligibility_reasons' => $eligibilityReasons,
-                    'risk_flags' => [],
-                    'reason_codes' => $isBet
-                        ? [$periodMoneyline ? 'promoted_model_positive_ev' : 'promoted_model_edge']
-                        : ['shadow_model_observation'],
-                    'explanation' => [
-                        'decision' => $isBet ? 'bet' : 'no_bet',
-                        'observation_market' => $market['observation_market'],
-                        'market_display_type' => $market['display_type'],
-                        'artifact_status' => $artifact->status,
-                        'artifact_promoted_at' => $artifact->promoted_at?->toIso8601String(),
-                        'artifact_promoted_at_decision_time' => $artifactPromotedAtDecisionTime,
-                        'recorded_market_promotion' => $recordedMarketPromotion,
-                        'market_promoted_at_decision_time' => $marketPromotedAtDecisionTime,
+                $decision = BetDecision::query()->firstOrCreate(
+                    ['decision_hash' => $decisionHash],
+                    [
+                        'decision_run_id' => (string) Str::uuid(),
+                        'model_run_id' => $shadow->inference_run_id,
+                        'model_artifact_id' => $artifact->id,
+                        'shadow_model_output_id' => $shadow->id,
+                        'prediction_feature_snapshot_id' => $snapshot instanceof CanonicalShadowSnapshot ? null : $snapshot->id,
+                        'game_odds_snapshot_id' => $quote?->game_odds_snapshot_id,
+                        'source_table' => 'shadow_model_outputs',
+                        'source_id' => $shadow->id,
+                        'sport' => $sport,
+                        'game_table' => $shadow->game_table,
+                        'game_id' => $shadow->game_id,
+                        'prediction_table' => $shadow->prediction_table,
+                        'prediction_id' => $shadow->prediction_id,
+                        'market_type' => $market['market_type'],
+                        'market_key' => $market['market_key'],
+                        'side' => $side,
+                        'line' => $quote?->line,
+                        'price' => $quote?->price,
+                        'bookmaker' => $quote?->bookmaker_key,
+                        'market_probability' => $quote?->implied_probability,
+                        'no_vig_probability' => $quote?->no_vig_probability,
                         'model_probability' => $modelProbability,
-                        'market_probability' => $marketProbability,
+                        'blend_probability' => $modelProbability,
                         'edge' => $edge,
-                        'expected_value' => $projectedValue,
-                        'win_probability' => $periodProbabilities['win'] ?? null,
-                        'loss_probability' => $periodProbabilities['loss'] ?? null,
-                        'tie_push_probability' => $periodProbabilities['tie'] ?? null,
-                        'minimum_edge' => $minimumEdge,
-                        'model_market_reference_line' => $marketReference['line'],
-                        'model_market_reference_bookmaker' => $marketReference['bookmaker'],
-                        'market_line_match_tolerance' => $marketReference['line'] === null
-                            ? null
-                            : 0.001,
-                        'model_uncertainty' => $uncertainty,
-                        'maximum_model_uncertainty' => $maximumUncertainty,
-                        'uncertainty_gate_enabled' => $uncertaintyRequired || $maximumUncertainty !== null,
-                        'why_not_bet' => $eligibilityReasons,
+                        'projected_value' => $projectedValue,
+                        'confidence' => $modelProbability === null ? null : abs($modelProbability - 0.5) * 2,
+                        'status' => $isBet ? 'tracking_bet' : 'shadow_no_bet',
+                        'recommendation_label' => $isBet ? 'shadow_bet' : 'no_bet',
+                        'is_public' => false,
+                        'is_tracking_only' => true,
+                        'is_bet' => $isBet,
+                        'pregame_safe' => $pregameSafe,
+                        'eligibility_reasons' => $eligibilityReasons,
+                        'risk_flags' => [],
+                        'reason_codes' => $isBet
+                            ? [$periodMoneyline ? 'promoted_model_positive_ev' : 'promoted_model_edge']
+                            : ['shadow_model_observation'],
+                        'explanation' => [
+                            'decision' => $isBet ? 'bet' : 'no_bet',
+                            'observation_market' => $market['observation_market'],
+                            'market_display_type' => $market['display_type'],
+                            'artifact_status' => $artifact->status,
+                            'artifact_promoted_at' => $artifact->promoted_at?->toIso8601String(),
+                            'artifact_promoted_at_decision_time' => $artifactPromotedAtDecisionTime,
+                            'recorded_market_promotion' => $recordedMarketPromotion,
+                            'market_promoted_at_decision_time' => $marketPromotedAtDecisionTime,
+                            'model_probability' => $modelProbability,
+                            'market_probability' => $marketProbability,
+                            'edge' => $edge,
+                            'expected_value' => $projectedValue,
+                            'win_probability' => $periodProbabilities['win'] ?? null,
+                            'loss_probability' => $periodProbabilities['loss'] ?? null,
+                            'tie_push_probability' => $periodProbabilities['tie'] ?? null,
+                            'minimum_edge' => $minimumEdge,
+                            'model_market_reference_line' => $marketReference['line'],
+                            'model_market_reference_bookmaker' => $marketReference['bookmaker'],
+                            'market_line_match_tolerance' => $marketReference['line'] === null
+                                ? null
+                                : 0.001,
+                            'model_uncertainty' => $uncertainty,
+                            'maximum_model_uncertainty' => $maximumUncertainty,
+                            'uncertainty_gate_enabled' => $uncertaintyRequired || $maximumUncertainty !== null,
+                            'why_not_bet' => $eligibilityReasons,
+                        ],
+                        'feature_snapshot' => [
+                            'canonical_lineage' => $snapshot instanceof CanonicalShadowSnapshot ? $snapshot->lineage : null,
+                            'snapshot_run_id' => $snapshot->snapshot_run_id,
+                            'feature_hash' => $snapshot->feature_hash,
+                            'features_available_at' => $snapshot->features_available_at?->toIso8601String(),
+                            'availability_status' => $snapshot->availability_status,
+                        ],
+                        'market_snapshot' => $quote?->toArray(),
+                        'decided_at' => $shadow->generated_at,
+                        'locked_at' => $shadow->generated_at,
+                        'game_start_at' => $snapshot->game_start_at,
                     ],
-                    'feature_snapshot' => [
-                        'canonical_lineage' => $snapshot instanceof CanonicalShadowSnapshot ? $snapshot->lineage : null,
-                        'snapshot_run_id' => $snapshot->snapshot_run_id,
-                        'feature_hash' => $snapshot->feature_hash,
-                        'features_available_at' => $snapshot->features_available_at?->toIso8601String(),
-                        'availability_status' => $snapshot->availability_status,
-                    ],
-                    'market_snapshot' => $quote?->toArray(),
-                    'decided_at' => $shadow->generated_at,
-                    'locked_at' => $shadow->generated_at,
-                    'game_start_at' => $snapshot->game_start_at,
-                ],
-            );
+                );
 
-            $created += $decision->wasRecentlyCreated ? 1 : 0;
-        }
+                $created += $decision->wasRecentlyCreated ? 1 : 0;
+            }
+        });
 
         $this->info("Recorded {$created} new immutable shadow decision(s).");
 
@@ -457,11 +461,11 @@ class RecordShadowBetDecisionsCommand extends Command
         ];
     }
 
-    private function recordedMarketPromotion(ShadowModelOutput $shadow, string $marketType): ?bool
+    private function recordedMarketPromotion(ShadowModelOutput $shadow, PredictionFeatureSnapshot|CanonicalShadowSnapshot $snapshot, string $marketType): ?bool
     {
         $value = data_get($shadow->explanation, "market_promotion.{$marketType}")
             ?? data_get(
-                $shadow->featureSnapshot?->model_metadata,
+                $snapshot->model_metadata,
                 "shadow_inference.market_promotion.{$marketType}",
             );
 

@@ -88,16 +88,18 @@ class BetDecision extends Model
             if (! $decision->shadow_model_output_id) {
                 return;
             }
+            if (! $decision->is_bet && $decision->sport !== 'nfl') {
+                return;
+            }
 
-            $shadow = $decision->shadowOutput()
-                ->with('featureSnapshot')
-                ->first();
+            $shadow = $decision->shadowOutput()->first();
+            $snapshot = $shadow?->canonical_prediction_id === null ? $shadow?->featureSnapshot : null;
             $maximumUncertainty = $decision->sport === 'nfl'
                 ? config('nfl_ml.shadow.max_uncertainty')
                 : null;
             $uncertainty = data_get($shadow?->explanation, 'challenger_outputs.uncertainty')
-                ?? data_get($shadow?->featureSnapshot?->outputs, 'challenger_uncertainty')
-                ?? data_get($shadow?->featureSnapshot?->model_metadata, 'shadow_inference.challenger_outputs.uncertainty');
+                ?? data_get($snapshot?->outputs, 'challenger_uncertainty')
+                ?? data_get($snapshot?->model_metadata, 'shadow_inference.challenger_outputs.uncertainty');
 
             if ($decision->sport === 'nfl') {
                 $decision->forceFill([

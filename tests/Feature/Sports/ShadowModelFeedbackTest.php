@@ -1,6 +1,10 @@
 <?php
 
 use App\Models\BetDecision;
+use App\Models\CalculationRelease;
+use App\Models\CalculationRun;
+use App\Models\CanonicalPrediction;
+use App\Models\EventInputSnapshot;
 use App\Models\GameOddsSnapshot;
 use App\Models\MarketQuote;
 use App\Models\MLB\Game as MlbGame;
@@ -9,11 +13,15 @@ use App\Models\ModelArtifact;
 use App\Models\NFL\Game as NflGame;
 use App\Models\NFL\Team as NflTeam;
 use App\Models\PredictionFeatureSnapshot;
+use App\Models\PredictionMarket;
 use App\Models\ShadowModelOutput;
+use App\Models\SportEvent;
 use App\Services\ML\ShadowModelOutputRecorder;
 use App\Services\Predictions\ModelRunRecorder;
+use App\Services\Predictions\RecordedShadowInputSource;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 uses()->group('ml', 'shadow-feedback');
@@ -805,3 +813,157 @@ function createShadowFeedbackQuote(
         ])),
     ]);
 }
+
+it('records native shadow decisions from their own inputs without legacy reads or public promotion', function () {
+    [$artifact, $native] = createNativeShadowFeedbackFixture();
+    DB::enableQueryLog();
+    try {
+        $this->artisan('sports:record-shadow-bet-decisions', ['--sport' => 'mlb', '--artifact' => $artifact->id])
+            ->expectsOutput('Recorded 3 new immutable shadow decision(s).')->assertSuccessful();
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    $decisions = BetDecision::query()->where('model_artifact_id', $artifact->id)->get();
+    expect($decisions)->toHaveCount(3)
+        ->and($decisions->every(fn (BetDecision $decision): bool => ! $decision->is_bet && ! $decision->is_public && $decision->is_tracking_only))->toBeTrue()
+        ->and($decisions->every(fn (BetDecision $decision): bool => in_array('canonical_shadow_inputs_unvalidated', $decision->eligibility_reasons, true)))->toBeTrue()
+        ->and($decisions->every(fn (BetDecision $decision): bool => $decision->prediction_feature_snapshot_id === null && $decision->prediction_table === 'predictions' && $decision->prediction_id === $native->id))->toBeTrue()
+        ->and($decisions->every(fn (BetDecision $decision): bool => data_get($decision->feature_snapshot, 'canonical_lineage.canonical_prediction_public_id') === $native->public_id))->toBeTrue()
+        ->and($queries->implode(' '))->not->toContain('prediction_feature_snapshots')->not->toContain('snapshot_metadata_payloads');
+    expect($queries->filter(fn (string $query): bool => str_contains($query, 'from "event_input_snapshots"')))->toHaveCount(1);
+    $this->artisan('sports:record-shadow-bet-decisions', ['--sport' => 'mlb', '--artifact' => $artifact->id])
+        ->expectsOutput('Recorded 0 new immutable shadow decision(s).')->assertSuccessful();
+});
+
+it('does not use legacy promotion metadata for a native shadow decision', function () {
+    [$artifact] = createNativeShadowFeedbackFixture();
+    ShadowModelOutput::query()->update(['explanation' => ['challenger_outputs' => [
+        'win_probability' => 0.62, 'home_cover_probability' => 0.6, 'over_probability' => 0.58, 'uncertainty' => 0.04]]]);
+    PredictionFeatureSnapshot::query()->update(['model_metadata' => ['shadow_inference' => ['market_promotion' => [
+        'win_probability' => false, 'spread' => false, 'total' => false]]]]);
+    $this->artisan('sports:record-shadow-bet-decisions', ['--sport' => 'mlb', '--artifact' => $artifact->id])->assertSuccessful();
+    expect(BetDecision::query()->get()->every(fn (BetDecision $decision): bool => ! in_array('market_model_not_promoted_at_decision_time', $decision->eligibility_reasons, true)
+        && in_array('canonical_shadow_inputs_unvalidated', $decision->eligibility_reasons, true)
+        && ! $decision->is_bet))->toBeTrue();
+});
+
+it('skips invalid native shadow lineage without falling back to attached legacy snapshots', function (string $variant) {
+    [$artifact] = createNativeShadowFeedbackFixture($variant);
+    $this->artisan('sports:record-shadow-bet-decisions', ['--sport' => 'mlb', '--artifact' => $artifact->id])
+        ->expectsOutput('Recorded 0 new immutable shadow decision(s).')->assertSuccessful();
+    expect(BetDecision::query()->count())->toBe(0);
+})->with(['withdrawn', 'unsafe', 'wrong_game', 'wrong_identity']);
+
+it('respects the shadow decision limit across bounded batches and retains idempotence', function () {
+    Carbon::setTestNow('2026-08-01 17:00:00');
+    [$artifact, $game, $snapshot] = createStructuredMlbShadowFeedbackFixture();
+    app(ShadowModelOutputRecorder::class)->record($snapshot);
+    $first = ShadowModelOutput::query()->where('market_type', 'win_probability')->firstOrFail();
+    for ($index = 0; $index < 100; $index++) {
+        $copy = $snapshot->replicate();
+        $copy->forceFill(['snapshot_run_id' => (string) Str::uuid(), 'prediction_id' => 1000 + $index])->save();
+        $output = $first->replicate();
+        $output->forceFill(['prediction_feature_snapshot_id' => $copy->id, 'prediction_id' => $copy->prediction_id])->save();
+    }
+    createShadowFeedbackQuote($game, 'h2h', 'home', null, 100, 0.5, '2026-08-01 16:50:00');
+    DB::enableQueryLog();
+    try {
+        $this->artisan('sports:record-shadow-bet-decisions', ['--sport' => 'mlb', '--artifact' => $artifact->id, '--limit' => 101])
+            ->expectsOutput('Recorded 101 new immutable shadow decision(s).')->assertSuccessful();
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect(BetDecision::query()->count())->toBe(101)
+        ->and($queries->filter(fn (string $query): bool => str_starts_with($query, 'select * from "shadow_model_outputs"') && str_contains($query, 'order by "id" asc')))->toHaveCount(2)
+        ->and(BetDecision::query()->orderBy('shadow_model_output_id')->pluck('shadow_model_output_id')->all())
+        ->toBe(ShadowModelOutput::query()->orderBy('id')->limit(101)->pluck('id')->all());
+    $this->artisan('sports:record-shadow-bet-decisions', ['--sport' => 'mlb', '--artifact' => $artifact->id, '--limit' => 101])
+        ->expectsOutput('Recorded 0 new immutable shadow decision(s).')->assertSuccessful();
+    $source = app(RecordedShadowInputSource::class);
+    $late = null;
+    $this->mock(RecordedShadowInputSource::class, function ($mock) use ($source, $snapshot, $first, &$late) {
+        $mock->shouldReceive('preload')->andReturnUsing(function ($outputs, string $sport) use ($source, $snapshot, $first, &$late): void {
+            $source->preload($outputs, $sport);
+            if ($late !== null) {
+                return;
+            }
+            $copy = $snapshot->replicate();
+            $copy->forceFill(['snapshot_run_id' => (string) Str::uuid(), 'prediction_id' => 9999])->save();
+            $late = $first->replicate();
+            $late->forceFill(['prediction_feature_snapshot_id' => $copy->id, 'prediction_id' => $copy->prediction_id])->save();
+        });
+        $mock->shouldReceive('fromOutput')->andReturnUsing(fn (ShadowModelOutput $output, string $sport): mixed => $source->fromOutput($output, $sport));
+    });
+    $this->artisan('sports:record-shadow-bet-decisions', ['--sport' => 'mlb', '--artifact' => $artifact->id])
+        ->expectsOutput('Recorded 2 new immutable shadow decision(s).')->assertSuccessful();
+    expect(BetDecision::query()->count())->toBe(103)
+        ->and(BetDecision::query()->where('shadow_model_output_id', $late->id)->exists())->toBeFalse();
+    $this->instance(RecordedShadowInputSource::class, $source);
+    $this->artisan('sports:record-shadow-bet-decisions', ['--sport' => 'mlb', '--artifact' => $artifact->id])
+        ->expectsOutput('Recorded 1 new immutable shadow decision(s).')->assertSuccessful();
+});
+
+function createNativeShadowFeedbackFixture(string $variant = 'valid'): array
+{
+    Carbon::setTestNow('2026-08-01 17:00:00');
+    config(['mlb_ml.shadow.max_uncertainty' => 0.1]);
+    [$artifact, $game, $legacy] = createStructuredMlbShadowFeedbackFixture();
+    $event = SportEvent::factory()->create(['sport' => 'mlb', 'starts_at' => Carbon::parse('2026-08-01 19:00:00')]);
+    $game->update(['sport_event_id' => $event->id]);
+    $input = EventInputSnapshot::factory()->create(['sport' => 'mlb', 'sport_event_id' => $event->id,
+        'captured_at' => now()->subHour(), 'cutoff_at' => now()->subHour(), 'latest_source_available_at' => now()->subHours(2),
+        'pregame_safety_status' => $variant === 'unsafe' ? 'unverified' : 'verified',
+        'inputs' => ['pregame_market' => ['available' => true, 'consensus' => ['spread' => ['line' => -2.0], 'total' => ['line' => 8.0]]]]]);
+    $release = CalculationRelease::factory()->approved()->create(['sport' => 'mlb', 'phase' => 'pregame']);
+    $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
+        'calculation_release_id' => $release->id, 'status' => 'succeeded']);
+    $native = CanonicalPrediction::factory()->create(['sport' => 'mlb', 'sport_event_id' => $event->id,
+        'calculation_run_id' => $run->id, 'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null,
+        'generated_at' => now()->subMinutes(30), 'detail_source' => null, 'detail_sport' => null, 'detail_id' => null]);
+    foreach ([['moneyline', 'home', null, 0.54], ['spread', 'home', -1.2, null], ['total', 'combined', 8.0, null]] as [$type, $side, $line, $probability]) {
+        PredictionMarket::factory()->create(['prediction_id' => $native->id, 'market_type' => $type,
+            'selection' => $side, 'projected_line' => $line, 'probability' => $probability]);
+    }
+    $native->update(['publication_state' => 'published', 'published_at' => now()->subMinutes(20)]);
+    if ($variant === 'withdrawn') {
+        $native->update(['publication_state' => 'withdrawn', 'withdrawn_at' => now()]);
+    }
+    app(ShadowModelOutputRecorder::class)->record($legacy);
+    ShadowModelOutput::query()->where('model_artifact_id', $artifact->id)->update([
+        'canonical_prediction_id' => $native->id, 'prediction_table' => 'predictions', 'prediction_id' => $native->id]);
+    if ($variant === 'wrong_game') {
+        $other = MlbGame::factory()->create(['home_team_id' => MlbTeam::factory(), 'away_team_id' => MlbTeam::factory()]);
+        ShadowModelOutput::query()->where('model_artifact_id', $artifact->id)->update(['game_id' => $other->id]);
+    }
+    if ($variant === 'wrong_identity') {
+        ShadowModelOutput::query()->where('model_artifact_id', $artifact->id)->update(['prediction_id' => $native->id + 1000]);
+    }
+    createShadowFeedbackQuote($game, 'h2h', 'home', null, 100, 0.5, '2026-08-01 16:50:00');
+    createShadowFeedbackQuote($game, 'spreads', 'home', -2.0, 105, 0.5, '2026-08-01 16:50:00');
+    createShadowFeedbackQuote($game, 'totals', 'over', 8.0, -105, 0.5, '2026-08-01 16:50:00');
+
+    return [$artifact, $native];
+}
+
+it('retains fresh promotion checks when saving native shadow bets without legacy snapshot reads', function () {
+    [$artifact] = createNativeShadowFeedbackFixture();
+    $this->artisan('sports:record-shadow-bet-decisions', ['--sport' => 'mlb', '--artifact' => $artifact->id])->assertSuccessful();
+    $decision = BetDecision::query()->where('market_type', 'moneyline')->firstOrFail();
+    $artifact->update(['status' => 'challenger', 'promotion_decision' => ['promoted_markets' => []]]);
+    DB::enableQueryLog();
+    try {
+        $decision->forceFill(['is_bet' => true, 'status' => 'tracking_bet', 'eligibility_reasons' => []])->save();
+        $queries = collect(DB::getQueryLog())->pluck('query')->implode(' ');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect($decision->refresh()->is_bet)->toBeFalse()
+        ->and($decision->is_public)->toBeFalse()->and($decision->is_tracking_only)->toBeTrue()
+        ->and($decision->eligibility_reasons)->toContain('market_model_not_promoted')
+        ->and($queries)->not->toContain('prediction_feature_snapshots')->not->toContain('snapshot_metadata_payloads');
+});

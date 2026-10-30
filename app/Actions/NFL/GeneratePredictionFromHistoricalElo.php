@@ -16,6 +16,7 @@ use App\Models\NFL\TeamCoachSeason;
 use App\Models\NFL\TeamMetric;
 use App\Services\NFL\GameWeatherService;
 use App\Services\NFL\NflCalibrationHistory;
+use App\Services\NFL\NflEvidenceForecastSource;
 use App\Services\NFL\NflInjuryTotalAdjustment;
 use App\Services\NFL\NflMlFeatureVectorBuilder;
 use App\Services\NFL\NflOddsHistory;
@@ -75,6 +76,8 @@ class GeneratePredictionFromHistoricalElo
      */
     protected array $highTrustRegimePerformanceCache = [];
 
+    protected string $calibrationForecastSource = 'legacy';
+
     public function __construct(
         protected ?DepthChartImpactService $depthChartImpactService = null,
         protected ?PlayerPositionGradeService $playerPositionGradeService = null,
@@ -122,6 +125,8 @@ class GeneratePredictionFromHistoricalElo
      */
     protected function generate(Game $game, bool $persist, ?string $profile = null): array|string|null
     {
+        $this->calibrationForecastSource = ! $persist && $profile === 'pregame'
+            ? app(NflEvidenceForecastSource::class)->name() : 'legacy';
         $this->lastModelMetadata = [];
         $this->teamHistory = null;
         $this->oddsHistory = null;
@@ -2161,7 +2166,7 @@ class GeneratePredictionFromHistoricalElo
 
         $lookbackGames = max(1, (int) config('nfl.predictions.adaptive_point_calibration.lookback_games', 384));
         $minSample = max(1, (int) config('nfl.predictions.adaptive_point_calibration.min_sample', 48));
-        $priorPredictions = $this->calibrationHistory->prior($game, NflModelVersion::current(), $lookbackGames, 'point');
+        $priorPredictions = $this->calibrationHistory->prior($game, NflModelVersion::current(), $lookbackGames, 'point', $this->calibrationForecastSource);
 
         if ($priorPredictions->count() < $minSample) {
             $this->lastModelMetadata['adaptive_point_calibration']['reason'] = 'insufficient_prior_predictions';
@@ -2281,7 +2286,7 @@ class GeneratePredictionFromHistoricalElo
         }
 
         $lookbackGames = max(1, (int) config('nfl.predictions.adaptive_win_probability_calibration.lookback_games', 512));
-        $priorPredictions = $this->calibrationHistory->prior($game, NflModelVersion::current(), $lookbackGames, 'win_probability')->filter(fn (Prediction $prediction): bool => (float) $prediction->game->home_score !== (float) $prediction->game->away_score)->values();
+        $priorPredictions = $this->calibrationHistory->prior($game, NflModelVersion::current(), $lookbackGames, 'win_probability', $this->calibrationForecastSource)->filter(fn (Prediction $prediction): bool => (float) $prediction->game->home_score !== (float) $prediction->game->away_score)->values();
 
         if ($priorPredictions->isEmpty()) {
             $this->lastModelMetadata['adaptive_win_probability_calibration']['reason'] = 'no_prior_predictions';
@@ -2516,6 +2521,8 @@ class GeneratePredictionFromHistoricalElo
 
         $lookbackGames = max(1, (int) config('nfl.predictions.automated_calibration_tweaks.regime_dampener.lookback_games', 272));
         $cacheKey = implode('|', [
+            $this->calibrationForecastSource,
+            $this->calibrationForecastSource === 'canonical' ? $game->sportEvent?->starts_at?->timestamp : null,
             $date->toDateString(),
             (string) $lookbackGames,
             number_format($trustThreshold, 4, '.', ''),
@@ -2529,7 +2536,7 @@ class GeneratePredictionFromHistoricalElo
             ];
         }
 
-        $priorPredictions = $this->calibrationHistory->prior($game, NflModelVersion::current(), $lookbackGames)
+        $priorPredictions = $this->calibrationHistory->prior($game, NflModelVersion::current(), $lookbackGames, forecastSource: $this->calibrationForecastSource)
             ->filter(function (Prediction $prediction) use ($trustThreshold): bool {
                 $priorConfidence = max((float) $prediction->win_probability, 1 - (float) $prediction->win_probability);
 

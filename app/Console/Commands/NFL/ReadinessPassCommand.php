@@ -136,6 +136,7 @@ class ReadinessPassCommand extends Command
                 'label' => 'Audit point projections',
                 'command' => 'nfl:analyze-point-projections',
                 'arguments' => [
+                    '--forecast-source' => 'legacy',
                     '--from-season' => $fromSeason,
                     '--to-season' => $toSeason,
                 ],

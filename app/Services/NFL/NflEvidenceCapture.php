@@ -2,9 +2,11 @@
 
 namespace App\Services\NFL;
 
+use App\Models\CanonicalPrediction;
 use App\Models\NFL\Game;
 use App\Models\NflSignalObservation;
 use App\Models\PredictionFeatureSnapshot;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\NFL\Matchups\NflMatchupSignalCatalog;
 use App\Services\NFL\Matchups\NflMatchupSignalService;
 use App\Services\Predictions\ModelRunRecorder;
@@ -21,12 +23,18 @@ class NflEvidenceCapture
 
     public const POLICY = 'nfl-evidence-v1';
 
+    public const NATIVE_POLICY = 'nfl-evidence-canonical-v1';
+
     public function capture(int $season, int $limit = 16): array
     {
         $result = ['created' => 0, 'existing' => 0, 'skipped' => [], 'observations_created' => 0];
         $games = Game::with(['sportEvent', 'homeTeam', 'awayTeam'])->where('season', $season)
             ->whereIn('season_type', ['2', 'regular'])->whereNotIn('status', ['STATUS_FINAL', 'STATUS_CANCELED'])
             ->whereBetween('game_date', [now()->subDay()->toDateString(), now()->addDays(2)->toDateString()])->orderBy('game_date')->orderBy('game_time')->get();
+        $forecasts = app(NflEvidenceForecastSource::class);
+        $canonical = $forecasts->usesCanonical();
+        $policy = $canonical ? self::NATIVE_POLICY : self::POLICY;
+        $nativeSources = $canonical ? $forecasts->forGames($games->keyBy('id'), NflModelVersion::current(), forCapture: true) : collect();
         foreach ($games as $game) {
             if ($result['created'] >= max(1, min(16, $limit))) {
                 break;
@@ -36,7 +44,7 @@ class NflEvidenceCapture
                 continue;
             }
             $phase = $kickoff->lte(now()->addMinutes(90)) ? 'late' : 'early';
-            $lock = Cache::lock('nfl:evidence:'.$game->id.':'.$phase, 180);
+            $lock = Cache::lock('nfl:evidence:'.($canonical ? 'canonical:' : '').$game->id.':'.$phase, 180);
             if (! $lock->get()) {
                 $result['skipped'][$game->id] = 'capture_locked';
 
@@ -45,7 +53,7 @@ class NflEvidenceCapture
             try {
                 // At most two compact captures per game; no repeated full catalog per prediction run.
                 $existing = PredictionFeatureSnapshot::where('sport', 'nfl')->where('game_id', $game->id)
-                    ->where('blend_version', self::POLICY)->where('features->evidence->phase', $phase)->first();
+                    ->where('blend_version', $policy)->where('features->evidence->phase', $phase)->first();
                 if ($existing) {
                     app(NflSignalObservationMaterializer::class)->materialize($existing);
                     app(NflEvidenceTrialService::class)->recordShadows($existing);
@@ -53,7 +61,7 @@ class NflEvidenceCapture
 
                     continue;
                 }
-                $source = PredictionFeatureSnapshot::where('sport', 'nfl')->where('game_id', $game->id)
+                $source = $canonical ? $nativeSources->get($game->id) : PredictionFeatureSnapshot::where('sport', 'nfl')->where('game_id', $game->id)
                     ->where('prediction_table', 'nfl_predictions')->where('model_version', NflModelVersion::current())
                     ->where('blend_version', '!=', self::POLICY)->where('pregame_safe', true)
                     ->where('availability_status', 'observed_pregame')->where('generated_at', '<=', now())
@@ -64,8 +72,9 @@ class NflEvidenceCapture
 
                     continue;
                 }
-                $run = app(ModelRunRecorder::class)->forPrediction('nfl', $source->model_version, self::POLICY, self::POLICY, ['run_type' => 'evidence_capture']);
-                if ($source->modelRun?->config_hash !== $run->config_hash) {
+                $run = app(ModelRunRecorder::class)->forPrediction('nfl', $source->model_version, $policy, $policy, ['run_type' => 'evidence_capture']);
+                $sourceConfigHash = $canonical ? $source->config_hash : $source->modelRun?->config_hash;
+                if ($sourceConfigHash !== $run->config_hash) {
                     $result['skipped'][$game->id] = 'source_configuration_changed';
 
                     continue;
@@ -86,17 +95,30 @@ class NflEvidenceCapture
                     'meeting' => 1 + Game::where('season', $season)->whereIn('season_type', ['2', 'regular'])->where('status', 'STATUS_FINAL')
                         ->whereDate('game_date', '<', $game->game_date)->whereIn('home_team_id', [$game->home_team_id, $game->away_team_id])
                         ->whereIn('away_team_id', [$game->home_team_id, $game->away_team_id])->count()];
-                $features = ['evidence' => ['policy' => self::POLICY, 'version' => $catalog['version'], 'phase' => $phase,
-                    'source_snapshot_id' => $source->id, 'source_feature_hash' => $source->feature_hash, 'source_config_hash' => $source->modelRun->config_hash,
+                $features = ['evidence' => ['policy' => $policy, 'version' => $catalog['version'], 'phase' => $phase,
+                    'source_snapshot_id' => $source->id, 'source_feature_hash' => $source->feature_hash, 'source_config_hash' => $sourceConfigHash,
+                    ...($canonical ? ['canonical_lineage' => $source->lineage] : []),
                     'collection_started_at' => $started->toIso8601String(), 'baseline' => $catalog['baseline'],
                     'context' => $context, 'conditions' => $conditions]];
                 $capturedAt = now();
-                $snapshot = DB::transaction(function () use ($source, $game, $kickoff, $features, $run, $capturedAt) {
-                    $snapshot = PredictionFeatureSnapshot::create(['sport' => 'nfl', 'prediction_table' => 'nfl_predictions',
-                        'prediction_id' => $source->prediction_id, 'game_id' => $game->id, 'snapshot_run_id' => (string) Uuid::uuid5(Uuid::NAMESPACE_URL, 'picksports:'.self::POLICY.':'.$game->id.':'.$features['evidence']['phase']),
-                        'model_run_id' => $run->id, 'model_version' => $source->model_version, 'feature_version' => self::POLICY, 'blend_version' => self::POLICY,
+                $snapshot = DB::transaction(function () use ($source, $game, $kickoff, $features, $run, $capturedAt, $canonical, $policy) {
+                    if ($canonical) {
+                        $locked = CanonicalPrediction::query()->lockForUpdate()->find($source->canonical_prediction_id);
+                        $selected = app(CanonicalSportPredictionQuery::class)->queryForSport('nfl', ['game_id' => $game->id])
+                            ->withOnly([])->value('predictions.id');
+                        if ($locked?->publication_state !== 'published' || (int) $selected !== $source->canonical_prediction_id
+                            || ! app(NflEvidenceForecastSource::class)->usesCanonical()
+                            || app(ModelRunRecorder::class)->configHash('nfl') !== $source->config_hash) {
+                            return null;
+                        }
+                    }
+                    $snapshot = PredictionFeatureSnapshot::create(['sport' => 'nfl', 'prediction_table' => $source->prediction_table,
+                        'canonical_prediction_id' => $canonical ? $source->canonical_prediction_id : null,
+                        'prediction_id' => $source->prediction_id, 'game_id' => $game->id, 'snapshot_run_id' => (string) Uuid::uuid5(Uuid::NAMESPACE_URL, 'picksports:'.$policy.':'.$game->id.':'.$features['evidence']['phase']),
+                        'model_run_id' => $run->id, 'model_version' => $source->model_version, 'feature_version' => $policy, 'blend_version' => $policy,
                         'features' => $features, 'outputs' => $source->outputs, 'market_context' => $source->market_context,
-                        'model_metadata' => ['evidence_only' => true, 'source_snapshot_id' => $source->id],
+                        'model_metadata' => ['evidence_only' => true, 'source_snapshot_id' => $source->id,
+                            ...($canonical ? ['canonical_lineage' => $source->lineage, 'calibrated' => false, 'bet_eligible' => false] : [])],
                         'feature_hash' => self::fingerprint($features, $source->outputs, $source->market_context),
                         'generated_at' => $capturedAt, 'features_available_at' => $capturedAt, 'game_start_at' => $kickoff->setTimezone(config('app.timezone')),
                         'pregame_safe' => true, 'availability_status' => 'observed_pregame',
@@ -105,6 +127,11 @@ class NflEvidenceCapture
 
                     return [$snapshot, $created];
                 });
+                if ($snapshot === null) {
+                    $result['skipped'][$game->id] = 'source_changed_during_capture';
+
+                    continue;
+                }
                 [$snapshot, $created] = $snapshot;
                 $result['observations_created'] += $created;
                 app(NflEvidenceTrialService::class)->recordShadows($snapshot);
@@ -115,6 +142,23 @@ class NflEvidenceCapture
         }
 
         return $result;
+    }
+
+    public static function isEvidence(PredictionFeatureSnapshot $snapshot): bool
+    {
+        return in_array($snapshot->blend_version, [self::POLICY, self::NATIVE_POLICY], true);
+    }
+
+    public static function hasNativeLineage(PredictionFeatureSnapshot $snapshot): bool
+    {
+        $lineage = data_get($snapshot->features, 'evidence.canonical_lineage', []);
+
+        return $snapshot->blend_version === self::NATIVE_POLICY && $snapshot->prediction_table === 'predictions'
+            && $snapshot->canonical_prediction_id !== null
+            && (int) $snapshot->prediction_id === (int) $snapshot->canonical_prediction_id
+            && (int) ($lineage['canonical_prediction_id'] ?? 0) === (int) $snapshot->canonical_prediction_id
+            && ! empty($lineage['canonical_prediction_public_id']) && ! empty($lineage['calculation_run_id'])
+            && ! empty($lineage['event_input_snapshot_id']) && ! empty($lineage['input_content_hash']);
     }
 
     public function compact(array $catalog, Game $game): array
@@ -152,7 +196,7 @@ class NflEvidenceCapture
         return $normalize($conditions);
     }
 
-    private function atomicConditions(PredictionFeatureSnapshot $source): array
+    private function atomicConditions(PredictionFeatureSnapshot|\stdClass $source): array
     {
         $analysis = (array) data_get($source->model_metadata, 'analysis_layer', []);
         $definitions = [

@@ -49,7 +49,13 @@ class MaterializeSignalObservationsCommand extends Command
             ->values();
         $query = PredictionFeatureSnapshot::query()
             ->with('modelRun')
-            ->where('sport', 'nfl')->where('prediction_table', 'nfl_predictions')->when($snapshotIds->isEmpty(), fn ($q) => $q->where('blend_version', '!=', NflEvidenceCapture::POLICY))
+            ->where('sport', 'nfl')->where(function ($query) use ($snapshotIds): void {
+                $query->where('prediction_table', 'nfl_predictions');
+                if ($snapshotIds->isNotEmpty()) {
+                    $query->orWhere(fn ($native) => $native->where('prediction_table', 'predictions')
+                        ->where('blend_version', NflEvidenceCapture::NATIVE_POLICY)->whereNotNull('canonical_prediction_id'));
+                }
+            })->when($snapshotIds->isEmpty(), fn ($q) => $q->where('blend_version', '!=', NflEvidenceCapture::POLICY))
             ->when($snapshotIds->isNotEmpty(), fn ($builder) => $builder->whereIn('id', $snapshotIds))
             ->when(
                 $snapshotIds->isEmpty() && ! (bool) $this->option('all-snapshots'),

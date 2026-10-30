@@ -17,6 +17,7 @@ class NflSignalObservation extends Model
         'prediction_feature_snapshot_id',
         'model_run_id',
         'prediction_id',
+        'canonical_prediction_id',
         'game_id',
         'season',
         'week',
@@ -58,6 +59,7 @@ class NflSignalObservation extends Model
     protected function casts(): array
     {
         return [
+            'canonical_prediction_id' => 'integer',
             'season' => 'integer',
             'week' => 'integer',
             'is_actionable' => 'boolean',
@@ -68,6 +70,11 @@ class NflSignalObservation extends Model
             'observed_at' => 'datetime',
             'game_start_at' => 'datetime',
         ];
+    }
+
+    public function canonicalPrediction(): BelongsTo
+    {
+        return $this->belongsTo(CanonicalPrediction::class);
     }
 
     public function featureSnapshot(): BelongsTo

@@ -111,6 +111,7 @@ class NflModelMonitoringService
 
     private function evidencePayload(array $filters): array
     {
+        $filters['forecast_source'] = app(NflEvidenceForecastSource::class)->name($filters['forecast_source'] ?? null);
         $report = app()->environment('testing')
             ? $this->signalGrades->leaderboard($filters)
             : Cache::remember('nfl:evidence:leaderboard:'.hash('sha256', json_encode($filters)), 60, fn () => $this->signalGrades->leaderboard($filters));
@@ -133,6 +134,7 @@ class NflModelMonitoringService
             ->map(function (string $label, string $signalType): array {
                 $report = $this->signalGrades->report([
                     'signal_type' => $signalType,
+                    'forecast_source' => 'legacy',
                     'pregame_safe' => true,
                     'limit' => 25,
                 ]);

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\NFL;
 
+use App\Services\NFL\NflEvidenceForecastSource;
 use App\Services\NFL\NflEvidenceLedgerAudit;
 use App\Services\NFL\NflSignalGradeReportService;
 use Illuminate\Console\Command;
@@ -20,6 +21,7 @@ class ReportSignalGradesCommand extends Command
         {--limit=100 : Maximum signal rows}
         {--reconcile : Explain per-game grade coverage and pipeline freshness}
         {--leaderboard : Rank prospective evidence using the existing outcome grades}
+        {--forecast-source= : canonical or legacy; defaults to the active pipeline source}
         {--model-version= : Exact model version for the evidence leaderboard}
         {--cohort=all : all, divisional, conference_non_divisional, interconference or unknown}
         {--validation-from-week=5 : Descriptive later-week window starts here; not an untouched holdout}
@@ -30,6 +32,7 @@ class ReportSignalGradesCommand extends Command
     public function handle(NflSignalGradeReportService $reportService): int
     {
         try {
+            app(NflEvidenceForecastSource::class)->name($this->option('forecast-source'));
             [$fromSeason, $toSeason] = $this->seasonScope();
             if (! in_array($this->option('sample-unit'), ['game', 'observation'], true)) {
                 throw new InvalidArgumentException('sample-unit must be game or observation.');
@@ -46,7 +49,7 @@ class ReportSignalGradesCommand extends Command
 
                 return self::FAILURE;
             }
-            $this->line(json_encode(app(NflEvidenceLedgerAudit::class)->report($fromSeason, $this->option('model-version')), JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT));
+            $this->line(json_encode(app(NflEvidenceLedgerAudit::class)->report($fromSeason, $this->option('model-version'), $this->option('forecast-source')), JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT));
 
             return self::SUCCESS;
         }
@@ -75,7 +78,7 @@ class ReportSignalGradesCommand extends Command
             $report = $reportService->leaderboard([
                 'from_season' => $fromSeason, 'to_season' => $toSeason,
                 'signal_type' => $this->option('signal-type'), 'signal_key' => $this->option('signal-key'),
-                'model_version' => $this->option('model-version'), 'cohort' => $cohort,
+                'model_version' => $this->option('model-version'), 'forecast_source' => $this->option('forecast-source'), 'cohort' => $cohort,
                 'validation_from_week' => $week,
             ]);
             $this->line(json_encode($report, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT));
@@ -84,6 +87,7 @@ class ReportSignalGradesCommand extends Command
         }
 
         $report = $reportService->report([
+            'forecast_source' => $this->option('forecast-source'),
             'from_season' => $fromSeason,
             'to_season' => $toSeason,
             'signal_type' => $this->option('signal-type'),

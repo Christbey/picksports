@@ -151,7 +151,7 @@ class NflEvidenceTrialService
             ->where('model_artifact_id', $artifact->id)->orderByDesc('generated_at')->orderByDesc('id');
         foreach ($query->get() as $shadow) {
             $s = $shadow->featureSnapshot;
-            if (! $s || ! $this->safe($s) || ($shadow->explanation['protocol_hash'] ?? null) !== $artifact->artifact_hash
+            if (! $s || $s->blend_version !== NflEvidenceCapture::POLICY || ! $this->safe($s) || ($shadow->explanation['protocol_hash'] ?? null) !== $artifact->artifact_hash
                 || ($shadow->explanation['code_hash'] ?? null) !== $p['code_hash']
                 || ($shadow->explanation['feature_hash'] ?? null) !== $s->feature_hash
                 || $shadow->generated_at->ne($s->generated_at)
@@ -285,7 +285,8 @@ class NflEvidenceTrialService
         $game = $s->nflGame;
         $kickoff = $game ? app(SnapshotProvenanceResolver::class)->gameStartAt($game) : null;
 
-        return $kickoff !== null && $s->game_start_at?->eq($kickoff) && $s->blend_version === NflEvidenceCapture::POLICY && $s->pregame_safe && $s->availability_status === 'observed_pregame'
+        return $kickoff !== null && $s->game_start_at?->eq($kickoff) && NflEvidenceCapture::isEvidence($s)
+            && ($s->blend_version !== NflEvidenceCapture::NATIVE_POLICY || NflEvidenceCapture::hasNativeLineage($s)) && $s->pregame_safe && $s->availability_status === 'observed_pregame'
             && $s->generated_at && $s->game_start_at && $s->features_available_at && $s->generated_at->lt($s->game_start_at)
             && $s->features_available_at->lte($s->generated_at)
             && $s->generated_at->gte($s->game_start_at->toImmutable()->subDay())

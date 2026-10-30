@@ -11,6 +11,7 @@ use App\Models\NflSignalObservation;
 use App\Models\PredictionFeatureSnapshot;
 use App\Models\PredictionMarket;
 use App\Models\SportEvent;
+use App\Services\NFL\NflEvidenceForecastSource;
 use App\Services\NFL\NflEvidenceLedgerAudit;
 use App\Services\NFL\NflEvidenceOperations;
 use App\Services\NFL\NflSignalGradingService;
@@ -58,6 +59,8 @@ function evidenceAuditRetirementFixture(string $variant = 'valid'): array
         app(NflSignalGradingService::class)->grade($observation);
     }
     $context = ['version' => NflRecommendationInputBuilder::VERSION,
+        'evidence_source_version' => NflEvidenceForecastSource::VERSION,
+        'runtime_configuration_hash' => app(ModelRunRecorder::class)->configHash('nfl'),
         'model_version' => $variant === 'wrong_version' ? 'other-model' : NflModelVersion::current(),
         'outputs' => ['win_probability' => 0.6, 'predicted_spread' => 3, 'predicted_total' => $variant === 'missing_value' ? null : 44]];
     $market = ['available' => $variant !== 'missing_market', 'consensus' => [
@@ -105,7 +108,7 @@ it('audits frozen canonical recommendation evidence without treating colliding h
         DB::disableQueryLog();
         DB::flushQueryLog();
     }
-    expect($report['forecast_source'])->toBe('canonical')->and($report['canonical_evidence_capture'])->toBe('not_migrated')
+    expect($report['forecast_source'])->toBe('canonical')->and($report['canonical_evidence_capture'])->toBe('implemented_tracking_only')
         ->and($report['reasons']['winner'])->toBe(['not_materialized' => 1])
         ->and($report['games'][0]['snapshot_id'])->toBeNull()
         ->and($report['games'][0]['canonical_prediction_public_id'])->toBe($native->public_id)

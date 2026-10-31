@@ -490,3 +490,18 @@ it('does not create missing-forecast warnings for cancelled early-week games', f
     expect(Artisan::call('cfb:report-preseason-readiness', ['--season' => 2026, '--json' => true, '--fail-on-warnings' => true]))->toBe(0);
     expect(json_decode(Artisan::output(), true)['early_week_readiness']['warning_count'])->toBe(0);
 });
+
+it('preserves historical sample ordering when legacy timestamps are tied', function () {
+    $this->travelTo('2026-10-30 12:00:00');
+    try {
+        cfbNativeReadinessFixture();
+        cfbNativeReadinessFixture();
+        $expected = Prediction::whereNotNull('predicted_spread')->whereHas('game', fn ($query) => $query->where('season', 2026))
+            ->latest()->limit(5)->pluck('game_id')->all();
+        Artisan::call('cfb:report-preseason-readiness', ['--season' => 2026, '--forecast-source' => 'legacy', '--json' => true]);
+        $report = json_decode(Artisan::output(), true);
+        expect(array_column($report['spread_convention']['samples'], 'game_id'))->toBe($expected);
+    } finally {
+        $this->travelBack();
+    }
+});

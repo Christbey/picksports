@@ -30,7 +30,7 @@ class CfbPreseasonReadinessForecastSource
                 'home_fpi', 'away_fpi', 'spread_error', 'winner_correct', 'created_at'])
                 ->with(['game:id,season,week,status,home_score,away_score,home_team_id,away_team_id', 'game.homeTeam', 'game.awayTeam'])
                 ->whereHas('game', fn ($query) => $query->whereBetween('season', [$fromSeason, $toSeason]))
-                ->orderByDesc('created_at')->orderByDesc('id')->chunk(100, function (Collection $predictions) use ($rows): void {
+                ->orderByDesc('created_at')->chunk(100, function (Collection $predictions) use ($rows): void {
                     foreach ($predictions as $prediction) {
                         $rows->push($prediction);
                     }

@@ -484,3 +484,31 @@ it('continues later metric batches after a subprocess crashes and conservatively
     expect(Artisan::call('cfb:run-pregame-pipeline', ['--season' => 2026, '--run-id' => $id]))->toBe(2);
     expect(Cache::get('cfb:pregame:run:'.$id))->toMatchArray(['selected_count' => 6, 'publication_count' => 1, 'held_count' => 5, 'pending_count' => 0]);
 });
+
+it('limits multi-game recovery weather calls to selected games and continues after optional weather failure', function () {
+    $first = Game::firstOrFail();
+    $second = Game::factory()->create(['sport_event_id' => SportEvent::factory()->create(['sport' => 'cfb', 'starts_at' => now()->addHours(13)])->id,
+        'season' => 2026, 'home_team_id' => Team::factory(), 'away_team_id' => Team::factory(), 'status' => 'STATUS_SCHEDULED']);
+    $visited = new ArrayObject;
+    Artisan::command('cfb:sync-game-weather {--season=} {--from-date=} {--days-forward=} {--game-id=} {--force}', function () use ($visited) {
+        $visited[] = (int) $this->option('game-id');
+
+        return count($visited) === 1 ? 1 : 0;
+    });
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026, '--games' => $first->id.','.$second->id])->assertSuccessful();
+    expect($visited->getArrayCopy())->toBe([$first->id, $second->id]);
+});
+
+it('keeps ordinary pipeline weather within its validated future game selection', function () {
+    $selected = Game::firstOrFail();
+    Game::factory()->create(['sport_event_id' => SportEvent::factory()->create(['sport' => 'cfb', 'starts_at' => now()->subHours(2)])->id,
+        'season' => 2026, 'home_team_id' => Team::factory(), 'away_team_id' => Team::factory(), 'status' => 'STATUS_FINAL']);
+    $visited = new ArrayObject;
+    Artisan::command('cfb:sync-game-weather {--season=} {--from-date=} {--days-forward=} {--game-id=} {--force}', function () use ($visited) {
+        $visited[] = (int) $this->option('game-id');
+
+        return 0;
+    });
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertSuccessful();
+    expect($visited->getArrayCopy())->toBe([$selected->id]);
+});

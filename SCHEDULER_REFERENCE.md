@@ -32,6 +32,8 @@ The scheduled `sports:ai-daily-predictions` publisher follows each sport’s can
 
 The MLB `08:40` `mlb:snapshot-bet-filter` job now follows the canonical read switch through `BettingForecastSource`. Native observations retain verified run/input lineage under a separate prediction foreign key and the existing `canonical_approval_required` tracking hold. Grading uses the observation’s stored native line; historical legacy grading remains available, and reports separate the two sources. Deploy `2026_10_29_153220_add_canonical_prediction_to_mlb_bet_filter_results` before this code. The season gate, cadence, market enablement, and feature switches are unchanged.
 
+The weekly `sports:report-epa-blend-calibration` reports for NFL/NBA/CBB/WCBB follow either sport's canonical switch. Native NFL reports grade frozen recommendation forecasts with matching recommendation EPA metadata; native basketball reports grade canonical forecasts and their recorded EPA metadata. Missing native EPA application evidence stays in an unknown cohort. Input hydration is batched and summaries stream; explicit `--forecast-source=legacy` retains historical inspection. NFL `--model-version` selects the frozen recommendation version (current by default). Cadence, season guards, heartbeat names, observational interpretation, approval rules and betting holds are unchanged.
+
 ## Core Scheduling Helpers
 
 The scheduler is organized around shared helpers in `routes/console.php`:

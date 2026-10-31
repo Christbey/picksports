@@ -35,7 +35,7 @@ class GenerateCanonicalPredictionsCommand extends AbstractGenerateCanonicalPredi
         if ($this->option('draft')) {
             $command[] = '--draft';
         }
-        $result = Process::path(base_path())->timeout(120)->run($command);
+        $result = Process::path(base_path())->timeout(300)->run($command);
         if (! $result->successful()) {
             throw new RuntimeException(trim($result->errorOutput().' '.$result->output()) ?: 'Isolated forecast worker failed.');
         }

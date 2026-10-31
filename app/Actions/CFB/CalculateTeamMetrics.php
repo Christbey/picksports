@@ -39,6 +39,8 @@ class CalculateTeamMetrics
 
     protected array $seasonBasicStatsIndex = [];
 
+    private array $providerFailures = [];
+
     /**
      * @var array<string, int>|null
      */
@@ -699,6 +701,10 @@ class CalculateTeamMetrics
 
     private function providerRows(string $source, int $season): array
     {
+        $key = $source.':'.$season;
+        if (isset($this->providerFailures[$key])) {
+            throw $this->providerFailures[$key];
+        }
         try {
             $rows = match ($source) {
                 'advanced' => $this->collegeFootballDataService->getAdvancedTeamSeasonStats($season, excludeGarbageTime: true),
@@ -723,7 +729,7 @@ class CalculateTeamMetrics
             // Optional unconfigured local environments can still calculate local box-score metrics.
             // A configured provider failure must not silently overwrite real metrics with nulls.
             if (config('services.collegefootballdata.api_key') || $exception instanceof RequestException) {
-                throw new \RuntimeException("CFBD {$source} request failed for {$season}; metric update withheld.", previous: $exception);
+                throw $this->providerFailures[$key] = new \RuntimeException("CFBD {$source} request failed for {$season}; metric update withheld.", previous: $exception);
             }
 
             return [];

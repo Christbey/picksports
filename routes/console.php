@@ -122,11 +122,17 @@ $attachCommandHeartbeat = function ($event, string $command, string $sourceName)
         ];
     };
 
-    if ($externalHeartbeatUrl = $resolveExternalHeartbeatUrl($sourceName)) {
+    $queuedCfb = str_starts_with($command, 'cfb:run-pregame-pipeline') && str_contains($command, '--queued');
+    if (! $queuedCfb && ($externalHeartbeatUrl = $resolveExternalHeartbeatUrl($sourceName))) {
         $event->pingOnSuccess($externalHeartbeatUrl);
     }
 
-    $event->onSuccess(function () use ($service, $command, $sport, $metadata) {
+    $event->onSuccess(function () use ($service, $command, $sport, $metadata, $queuedCfb) {
+        if ($queuedCfb) {
+            $metadata();
+
+            return;
+        }
         $service->recordSuccess($command, $sport, 'schedule', $metadata());
     });
 
@@ -1359,8 +1365,8 @@ $cfbSpreadCandidateEvent = Schedule::command($cfbSpreadCandidateCommand)->weekly
 $attachCommandHeartbeat($cfbSpreadCandidateEvent, $cfbSpreadCandidateCommand, 'CFB: Evaluate Spread Calibration Challenger');
 $scheduleDailySeasonJob("cfb:review-model-candidates --season={$fallSeasonYear}", '03:40', $cfbCanonicalPipelineEnabled, 'CFB: Review Paired Forecast Candidates')
     ->appendOutputTo(storage_path('logs/cfb-model-candidates.log'));
-$scheduleDailySeasonJob("cfb:run-pregame-pipeline --season={$fallSeasonYear} --days-forward=8 --resume --queued", '04:35', $cfbCanonicalPipelineEnabled, 'CFB: Generate Canonical Predictions');
-$cfbPregamePipelineCommand = "cfb:run-pregame-pipeline --season={$fallSeasonYear} --days-forward=8 --resume --queued";
+$scheduleDailySeasonJob("cfb:run-pregame-pipeline --season={$fallSeasonYear} --days-forward=8 --resume --queued --heartbeat-name='CFB: Generate Canonical Predictions'", '04:35', $cfbCanonicalPipelineEnabled, 'CFB: Generate Canonical Predictions');
+$cfbPregamePipelineCommand = "cfb:run-pregame-pipeline --season={$fallSeasonYear} --days-forward=8 --resume --queued --heartbeat-name='CFB: Refresh Pregame Inputs and Forecasts'";
 $cfbPregamePipelineEvent = Schedule::command($cfbPregamePipelineCommand)
     ->hourlyAt(45)
     ->between('08:00', '23:00')

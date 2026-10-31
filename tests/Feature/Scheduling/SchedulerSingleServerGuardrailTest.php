@@ -5,6 +5,7 @@ use App\Models\NFL\Game;
 use App\Models\NFL\Team;
 use App\Models\SportEvent;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Facades\Http;
 
 uses()->group('scheduling');
 
@@ -341,4 +342,15 @@ it('runs immutable epa baseline rebuilds weekly and bounds the nfl readiness aud
         ->toContain('--from-season=2021')
         ->toContain('--spread-backtest-limit=2500')
         ->not->toContain('--spread-backtest-limit=0');
+});
+
+it('does not record a successful CFB dispatch as worker completion or ping external success', function () {
+    Http::fake();
+    $event = collect(app(Schedule::class)->events())->first(fn ($event) => $event->description === 'CFB: Refresh Pregame Inputs and Forecasts');
+    expect($event->command)->toContain('--heartbeat-name=');
+    $event->callBeforeCallbacks(app());
+    $event->exitCode = 0;
+    $event->callAfterCallbacks(app());
+    expect(CommandHeartbeat::where('source', 'schedule')->where('command', 'like', 'cfb:run-pregame-pipeline%')->count())->toBe(0);
+    Http::assertNothingSent();
 });

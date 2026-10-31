@@ -28,12 +28,19 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 
 class RunPregamePipelineCommand extends Command
 {
-    protected $signature = 'cfb:run-pregame-pipeline {--season=} {--week=} {--days-forward=2} {--game=} {--games= : Comma-separated game IDs for scoped recovery} {--resume} {--dry-run} {--queued : Run on the bulk sync worker} {--core-only : Skip optional play reconstruction; approved release quality checks still apply}';
+    protected $signature = 'cfb:run-pregame-pipeline {--heartbeat-name= : Scheduled completion heartbeat name} {--run-id= : Internal worker execution identifier} {--season=} {--week=} {--days-forward=2} {--game=} {--games= : Comma-separated game IDs for scoped recovery} {--resume} {--dry-run} {--queued : Run on the bulk sync worker} {--core-only : Skip optional play reconstruction; approved release quality checks still apply}';
 
     protected $description = 'Refresh upcoming CFB injuries and odds before generating immutable forecasts';
+
+    private string $runId;
+
+    private int $selectedGames = 0;
+
+    private array $metricFailedTeams = [];
 
     public function handle(SyncPlayerInjuries $injuries, SyncPlayers $players): int
     {
@@ -51,12 +58,21 @@ class RunPregamePipelineCommand extends Command
             RunPregamePipeline::dispatch(array_filter(['--season' => (int) $season, '--days-forward' => (int) $days,
                 '--week' => $this->option('week'), '--game' => $this->option('game'),
                 '--games' => $this->option('games'),
-                '--resume' => (bool) $this->option('resume'), '--core-only' => (bool) $this->option('core-only')],
+                '--heartbeat-name' => $this->option('heartbeat-name'), '--resume' => (bool) $this->option('resume'), '--core-only' => (bool) $this->option('core-only')],
                 fn ($value) => $value !== null && $value !== false));
             $this->info('CFB pregame pipeline dispatched to the bulk sync worker; publication still requires worker completion.');
 
             return self::SUCCESS;
         }
+        $this->runId = (string) ($this->option('run-id') ?: Str::uuid());
+        if (! Str::isUuid($this->runId)) {
+            $this->error('Invalid worker run identifier.');
+
+            return self::FAILURE;
+        }
+        $this->selectedGames = 0;
+        $this->metricFailedTeams = [];
+        $this->recordProgress([]);
         $lock = Cache::lock('cfb:pregame-pipeline', 3600);
         if (! $lock->get()) {
             $this->warn('CFB pregame pipeline is already running.');
@@ -78,6 +94,8 @@ class RunPregamePipelineCommand extends Command
                 ->orderBy('game_date')->orderBy('game_time')->get();
             $coverage = app(CfbValidationCoverage::class);
             $games = $games->filter(fn ($game) => $coverage->requiredTeamIds($game) !== [])->values();
+            $this->selectedGames = $games->count();
+            $this->recordProgress([]);
             if ($games->isEmpty()) {
                 $this->info('No upcoming CFB games in the pipeline horizon.');
 
@@ -107,6 +125,8 @@ class RunPregamePipelineCommand extends Command
                 ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_PRE_GAME', 'STATUS_DELAYED'])
                 ->whereHas('sportEvent', fn ($q) => $q->where('starts_at', '>', now())->where('starts_at', '<=', now()->addDays((int) $days)))
                 ->get();
+            $this->selectedGames = $games->count();
+            $this->recordProgress([]);
             if ($games->isEmpty()) {
                 return $metadataFailures === [] ? self::SUCCESS : self::FAILURE;
             }
@@ -243,11 +263,30 @@ class RunPregamePipelineCommand extends Command
             }
             // Recompute after Elo and injury updates, including games finalized since the daily refresh.
             $metricTeamIds = $games->flatMap(fn ($game) => $coverage->requiredTeamIds($game))->unique()->values();
+            $metricFailures = [];
             foreach ($metricTeamIds->chunk(10) as $batch) {
-                if ($this->refreshShared('cfb:calculate-team-metrics', ['--season' => (int) $season, '--team-ids' => $batch->implode(',')]) !== self::SUCCESS) {
-                    $this->error('Team metric refresh failed; generation stopped.');
-
-                    return self::FAILURE;
+                try {
+                    $result = app(CfbSharedInputRunner::class)->run('cfb:calculate-team-metrics', ['--season' => (int) $season, '--team-ids' => $batch->implode(',')]);
+                } catch (\Throwable $error) {
+                    report($error);
+                    $result = ['exit_code' => 1, 'output' => 'Metrics subprocess failed; its required teams remain held.'];
+                }
+                $this->line($result['output']);
+                if (($result['exit_code'] ?? 1) !== self::SUCCESS) {
+                    $failed = $batch->all();
+                    if (preg_match('/^CFB_METRIC_BATCH_RESULT=(.+)$/m', $result['output'], $match)) {
+                        $report = json_decode($match[1], true);
+                        $good = $report['refreshed_team_ids'] ?? [];
+                        $bad = $report['failed_team_ids'] ?? [];
+                        if (($result['exit_code'] ?? null) === 2 && is_array($good) && is_array($bad) && $good !== [] && $bad !== [] && $batch->diff(array_merge($good, $bad))->isEmpty()
+                            && count(array_unique(array_merge($good, $bad))) === $batch->count() && array_intersect($good, $bad) === []) {
+                            $failed = $bad;
+                        }
+                    }
+                    $metricFailures = array_merge($metricFailures, $failed);
+                    $this->warn('Metric refresh failed for '.count($failed).' teams; their games remain held.');
+                    $this->metricFailedTeams = array_values(array_unique($metricFailures));
+                    $this->recordProgress([]);
                 }
             }
             if ($this->refreshShared('cfb:sync-odds', ['--days' => (int) $days]) !== self::SUCCESS) {
@@ -256,14 +295,25 @@ class RunPregamePipelineCommand extends Command
 
             $results = [];
             foreach ($games as $game) {
-                $inputs = ['metadata_reliable' => ! in_array($game->id, $metadataFailures, true), 'game_updated_at' => $game->updated_at?->toISOString(),
+                $requiredTeams = $coverage->requiredTeamIds($game);
+                $executed = false;
+                $generationAttempted = false;
+                $previousId = (int) CanonicalPrediction::where('sport_event_id', $game->sport_event_id)->max('id');
+                $inputs = ['metric_failures' => array_values(array_intersect($requiredTeams, $metricFailures)),
+                    'team_failures' => array_values(array_intersect($requiredTeams, $teamFailures)),
+                    'history_failures' => array_values(array_intersect($requiredTeams, $historyFailures)),
+                    'play_failures' => array_values(array_intersect($requiredTeams, $playFailures)), 'metadata_reliable' => ! in_array($game->id, $metadataFailures, true), 'game_updated_at' => $game->updated_at?->toISOString(),
                     'history' => GameDataCheck::whereIn('game_id', $history->modelKeys())->whereNotNull('accepted_at')->pluck('source_hash')->sort()->values()->all(),
                     // A new hourly source refresh needs a new immutable forecast; --resume only skips completed work within that refresh window.
                     'refresh_window' => now()->format('Y-m-d-H'),
                     'team_revisions' => TeamMetric::whereIn('team_id', [$game->home_team_id, $game->away_team_id])->max('updated_at'),
                     'quote_revision' => MarketQuote::where('sport', 'cfb')->where('game_id', $game->id)->max('id'),
                     'injury_revision' => PlayerInjury::whereIn('team_id', [$game->home_team_id, $game->away_team_id])->max('updated_at')];
-                $results[$game->id] = app(CfbPipelineStage::class)->run('game:'.$game->id, 'forecast', $inputs, function () use ($game, $historyFailures, $playFailures, $teamFailures, $metadataFailures) {
+                $results[$game->id] = app(CfbPipelineStage::class)->run('game:'.$game->id, 'forecast', $inputs, function () use ($game, $historyFailures, $playFailures, $teamFailures, $metadataFailures, $metricFailures, $requiredTeams, $previousId, &$executed, &$generationAttempted) {
+                    $executed = true;
+                    if (array_intersect($requiredTeams, $metricFailures)) {
+                        return ['state' => 'blocked', 'reason' => 'unreliable_team_metrics'];
+                    }
                     if (in_array($game->id, $metadataFailures, true)) {
                         return ['state' => 'blocked', 'reason' => 'unreliable_kickoff_metadata'];
                     }
@@ -282,6 +332,7 @@ class RunPregamePipelineCommand extends Command
                         return ['state' => 'blocked', 'reason' => 'kickoff_passed'];
                     }
                     $started = now();
+                    $generationAttempted = true;
                     $code = $this->call('cfb:generate-canonical-predictions', ['--game' => $game->id, '--isolate' => true]);
 
                     $output = CanonicalPrediction::where('sport_event_id', $game->sport_event_id)->where('sport', 'cfb')->where('phase', 'pregame')
@@ -292,8 +343,12 @@ class RunPregamePipelineCommand extends Command
                     gc_mem_caches();
 
                     return ['state' => $code === self::SUCCESS && $output ? 'complete' : 'failed', 'code' => $code,
-                        'prediction_id' => $output?->public_id, 'reason' => $output ? null : 'no_fresh_published_forecast'];
+                        'prediction_id' => $output?->public_id, 'published_count' => $output && $output->id > $previousId ? 1 : 0, 'reused_count' => $output && $output->id <= $previousId ? 1 : 0, 'reason' => $output ? null : 'no_fresh_published_forecast'];
                 }, (bool) $this->option('resume'));
+                $results[$game->id]['published_count'] = $generationAttempted ? CanonicalPrediction::where('sport_event_id', $game->sport_event_id)
+                    ->where('sport', 'cfb')->where('phase', 'pregame')->where('id', '>', $previousId)->whereNotNull('published_at')->count() : 0;
+                $results[$game->id]['reused_count'] = $executed ? (int) ($results[$game->id]['reused_count'] ?? 0) : ($results[$game->id]['state'] === 'complete' ? 1 : 0);
+                $this->recordProgress($results);
             }
             // Publish first: optional weather requests must not delay otherwise valid forecasts.
             try {
@@ -307,12 +362,24 @@ class RunPregamePipelineCommand extends Command
                 $this->warn('Weather refresh unavailable; missing weather remains unknown.');
             }
 
-            $this->line(json_encode(['games' => $results], JSON_THROW_ON_ERROR));
+            $this->line(json_encode($this->recordProgress($results), JSON_THROW_ON_ERROR));
 
             return collect($results)->every(fn ($r) => $r['state'] === 'complete') ? self::SUCCESS : 2;
         } finally {
             $lock->release();
         }
+    }
+
+    private function recordProgress(array $results): array
+    {
+        $rows = collect($results);
+        $summary = ['run_id' => $this->runId, 'selected_count' => $this->selectedGames, 'pending_count' => max(0, $this->selectedGames - $rows->count()),
+            'metric_failed_team_ids' => $this->metricFailedTeams, 'games' => $results, 'publication_count' => $rows->sum('published_count'),
+            'reused_count' => $rows->sum('reused_count'), 'complete_count' => $rows->where('state', 'complete')->count(),
+            'held_count' => $rows->where('state', 'blocked')->count(), 'failed_count' => $rows->whereNotIn('state', ['complete', 'blocked'])->count()];
+        Cache::put('cfb:pregame:run:'.$this->runId, $summary, now()->addDay());
+
+        return $summary;
     }
 
     private function refreshShared(string $command, array $arguments): int

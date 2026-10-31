@@ -2,7 +2,9 @@
 
 namespace App\Services\CollegeFootballData;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 
 class CollegeFootballDataService
@@ -173,6 +175,8 @@ class CollegeFootballDataService
     public function get(string $path, array $query = []): array
     {
         $response = $this->request()
+            ->retry([250, 1000], when: fn (\Throwable $error): bool => $error instanceof ConnectionException
+                || ($error instanceof RequestException && in_array($error->response->status(), [429, 500, 502, 503, 504], true)))
             ->get($path, $this->sanitizeQuery($query))
             ->throw();
 

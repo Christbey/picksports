@@ -24,7 +24,9 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     $this->travelTo(now()->setDate(2026, 9, 18)->startOfDay());
@@ -71,6 +73,7 @@ beforeEach(function () {
 
         return 0;
     });
+    Artisan::command('cfb:sync-odds {--days=}', fn () => 0);
     Artisan::command('cfb:sync-game-weather {--season=} {--from-date=} {--days-forward=} {--game-id=} {--force}', fn () => 0);
     Artisan::command('cfb:generate-canonical-predictions {--season=} {--days-forward=} {--game=} {--isolate}', function () use ($steps) {
         $steps[] = 'generation';
@@ -321,7 +324,7 @@ it('dispatches the weekly refresh to the bulk queue without claiming completed g
 });
 
 it('records actual worker completion and preserves partial outcomes', function (int $code, string $state) {
-    Artisan::command('cfb:run-pregame-pipeline {--season=} {--days-forward=}', function () use ($code) {
+    Artisan::command('cfb:run-pregame-pipeline {--season=} {--days-forward=} {--run-id=}', function () use ($code) {
         $this->line('Worker result');
 
         return $code;
@@ -348,3 +351,136 @@ it('keeps boxscore evidence required during urgent core-only recovery', function
     expect(in_array('generation', $this->steps->getArrayCopy(), true))->toBe($boxReady);
     Process::assertNothingRan();
 })->with([true, false]);
+
+it('continues games with refreshed metrics and holds only the failed team cohort', function () {
+    $first = Game::firstOrFail();
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+    $event = SportEvent::factory()->create(['sport' => 'cfb', 'starts_at' => now()->addHours(14)]);
+    $second = Game::factory()->create(['season' => 2026, 'sport_event_id' => $event->id, 'home_team_id' => $home->id,
+        'away_team_id' => $away->id, 'status' => 'STATUS_SCHEDULED']);
+    Artisan::command('cfb:calculate-team-metrics {--season=} {--team-ids=}', function () use ($first) {
+        $ids = array_map('intval', explode(',', $this->option('team-ids')));
+        $this->line('CFB_METRIC_BATCH_RESULT='.json_encode(['refreshed_team_ids' => array_values(array_diff($ids, [$first->home_team_id])), 'failed_team_ids' => [$first->home_team_id]]));
+
+        return 2;
+    });
+    expect(Artisan::call('cfb:run-pregame-pipeline', ['--season' => 2026]))->toBe(2);
+    expect(CanonicalPrediction::where('sport_event_id', $first->sport_event_id)->count())->toBe(0)
+        ->and(CanonicalPrediction::where('sport_event_id', $second->sport_event_id)->count())->toBe(1);
+    $results = DB::table('cfb_pipeline_steps')->where('stage', 'forecast')->get()->keyBy('scope');
+    expect(json_decode($results['game:'.$first->id]->result, true)['reason'])->toBe('unreliable_team_metrics')
+        ->and($results['game:'.$second->id]->state)->toBe('complete');
+});
+
+it('holds the whole failed batch when its per-team report is missing or contradictory', function (string $report) {
+    Artisan::command('cfb:calculate-team-metrics {--season=} {--team-ids=}', function () use ($report) {
+        $this->line($report);
+
+        return 2;
+    });
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertExitCode(2);
+    expect(CanonicalPrediction::count())->toBe(0)
+        ->and(json_decode(DB::table('cfb_pipeline_steps')->where('stage', 'forecast')->value('result'), true)['reason'])->toBe('unreliable_team_metrics');
+})->with(['', 'CFB_METRIC_BATCH_RESULT={"refreshed_team_ids":[],"failed_team_ids":[]}']);
+
+it('records real publications and does not count resumed work as newly published', function () {
+    $id = (string) Str::uuid();
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026, '--run-id' => $id, '--resume' => true])->assertSuccessful();
+    expect(Cache::get('cfb:pregame:run:'.$id))->toMatchArray(['publication_count' => 1, 'reused_count' => 0, 'complete_count' => 1]);
+    $next = (string) Str::uuid();
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026, '--run-id' => $next, '--resume' => true])->assertSuccessful();
+    expect(Cache::get('cfb:pregame:run:'.$next))->toMatchArray(['publication_count' => 0, 'reused_count' => 1, 'complete_count' => 1]);
+});
+
+it('rechecks metric holds rather than resuming a previously complete forecast', function () {
+    expect(Artisan::call('cfb:run-pregame-pipeline', ['--season' => 2026, '--resume' => true]))->toBe(0);
+    $this->mock(CfbSharedInputRunner::class)->shouldReceive('run')->andReturnUsing(function ($command, $arguments) {
+        if ($command === 'cfb:calculate-team-metrics') {
+            return ['exit_code' => 1, 'output' => 'Provider failure'];
+        }
+        $code = Artisan::call($command, $arguments);
+
+        return ['exit_code' => $code, 'output' => Artisan::output()];
+    });
+    $id = (string) Str::uuid();
+    expect(Artisan::call('cfb:run-pregame-pipeline', ['--season' => 2026, '--run-id' => $id, '--resume' => true]))->toBe(2);
+    expect(Cache::get('cfb:pregame:run:'.$id))->toMatchArray(['publication_count' => 0, 'held_count' => 1, 'reused_count' => 0]);
+});
+
+it('persists terminal worker outcomes and counts without mistaking partial work for queue success', function (int $code, string $state) {
+    Artisan::command('cfb:run-pregame-pipeline {--season=} {--days-forward=} {--run-id=}', function () use ($code) {
+        Cache::put('cfb:pregame:run:'.$this->option('run-id'), ['publication_count' => 2, 'reused_count' => 1,
+            'held_count' => 3, 'failed_count' => 0, 'pending_count' => 0, 'complete_count' => 3, 'games' => []]);
+
+        return $code;
+    });
+    $job = (new RunPregamePipeline(['--season' => 2026, '--days-forward' => 8]))->withFakeQueueInteractions();
+    $job->handle();
+    $record = CommandHeartbeat::where('source', 'worker')->where('metadata->run_id', $job->runId)->sole();
+    expect($record->status)->toBe($state === 'complete' ? 'success' : 'failure')
+        ->and($record->metadata)->toMatchArray(['run_id' => $job->runId, 'state' => $state, 'publication_count' => 2, 'reused_count' => 1, 'held_count' => 3]);
+    if ($state === 'complete') {
+        $job->assertNotFailed();
+    } else {
+        $job->assertFailed();
+    }
+    $job->failed(new RuntimeException('Repeated failed callback'));
+    expect(CommandHeartbeat::where('source', 'worker')->count())->toBe(1)
+        ->and(Cache::get('cfb:pregame:worker-status')['state'])->toBe($state);
+})->with([[0, 'complete'], [2, 'partial'], [1, 'failed']]);
+
+it('records exceptions with already-published progress and marks the queue job failed', function () {
+    Artisan::command('cfb:run-pregame-pipeline {--season=} {--run-id=}', function () {
+        Cache::put('cfb:pregame:run:'.$this->option('run-id'), ['publication_count' => 1, 'pending_count' => 2, 'games' => []]);
+        throw new RuntimeException('Worker interrupted');
+    });
+    $job = (new RunPregamePipeline(['--season' => 2026]))->withFakeQueueInteractions();
+    $job->handle();
+    $job->assertFailedWith(RuntimeException::class);
+    expect(CommandHeartbeat::where('source', 'worker')->sole()->metadata)->toMatchArray(['state' => 'failed', 'publication_count' => 1, 'pending_count' => 2]);
+});
+
+it('pings the scheduled heartbeat only after successful worker completion', function (int $code) {
+    Http::fake();
+    config(['services.forge.heartbeats.cfb_refresh_pregame_inputs_and_forecasts' => 'https://heartbeat.test/complete']);
+    Artisan::command('cfb:run-pregame-pipeline {--season=} {--run-id=} {--heartbeat-name=}', fn () => $code);
+    (new RunPregamePipeline(['--season' => 2026, '--heartbeat-name' => 'CFB: Refresh Pregame Inputs and Forecasts']))->handle();
+    Http::assertSentCount($code === 0 ? 1 : 0);
+})->with([0, 1, 2]);
+
+it('counts a publication even when generation subsequently raises an error', function () {
+    Artisan::command('cfb:generate-canonical-predictions {--game=} {--isolate}', function () {
+        $game = Game::findOrFail($this->option('game'));
+        CanonicalPrediction::factory()->create(['sport' => 'cfb', 'sport_event_id' => $game->sport_event_id,
+            'phase' => 'pregame', 'publication_state' => 'published', 'published_at' => now(), 'generated_at' => now()]);
+        throw new RuntimeException('Post-publication interruption');
+    });
+    $id = (string) Str::uuid();
+    expect(Artisan::call('cfb:run-pregame-pipeline', ['--season' => 2026, '--run-id' => $id]))->toBe(2);
+    expect(Cache::get('cfb:pregame:run:'.$id))->toMatchArray(['publication_count' => 1, 'failed_count' => 1]);
+});
+
+it('continues later metric batches after a subprocess crashes and conservatively holds the failed batch', function () {
+    $first = Game::firstOrFail();
+    foreach (range(1, 5) as $index) {
+        $event = SportEvent::factory()->create(['sport' => 'cfb', 'starts_at' => now()->addHours(14)]);
+        Game::factory()->create(['season' => 2026, 'sport_event_id' => $event->id, 'home_team_id' => Team::factory(),
+            'away_team_id' => Team::factory(), 'status' => 'STATUS_SCHEDULED']);
+    }
+    $this->mock(CfbSharedInputRunner::class)->shouldReceive('run')->andReturnUsing(function ($command, $arguments) use ($first) {
+        if ($command === 'cfb:calculate-team-metrics') {
+            if (in_array($first->home_team_id, explode(',', $arguments['--team-ids']))) {
+                throw new RuntimeException('Metrics subprocess timed out');
+            }
+
+            return ['exit_code' => 0, 'output' => 'Refreshed'];
+        }
+        $code = Artisan::call($command, $arguments);
+
+        return ['exit_code' => $code, 'output' => Artisan::output()];
+    });
+    $id = (string) Str::uuid();
+    expect(Artisan::call('cfb:run-pregame-pipeline', ['--season' => 2026, '--run-id' => $id]))->toBe(2);
+    expect(Cache::get('cfb:pregame:run:'.$id))->toMatchArray(['selected_count' => 6, 'publication_count' => 1, 'held_count' => 5, 'pending_count' => 0]);
+});

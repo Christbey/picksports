@@ -24,6 +24,6 @@ it('isolates game calculations in sequential workers and reports individual work
     Process::assertRanTimes(fn () => true, 3);
     foreach ($games as $game) {
         Process::assertRan(fn ($process) => in_array('--game='.$game->id, $process->command, true)
-            && in_array('--draft', $process->command, true) && $process->timeout === 120);
+            && in_array('--draft', $process->command, true) && $process->timeout === 300);
     }
 });

@@ -34,13 +34,7 @@ class CfbFootballSignalEvidence
         $replayed = [];
         $jointRows = [];
         $replay = data_get($configuration, 'football_signals.training_policy') === 'replay_frozen_baseline_v1';
-        $predictions = CanonicalPrediction::query()->where('sport', 'cfb')->where('phase', 'pregame')
-            ->whereIn('publication_state', ['published', 'superseded'])
-            ->where('generated_at', '<', $asOf)->where('published_at', '<', $asOf)
-            ->where('created_at', '<=', $asOf)->where('generated_at', '>=', $asOf->subYears(3))
-            ->whereHas('sportEvent.cfbGame', fn ($q) => $q->where('status', 'STATUS_FINAL')->where('updated_at', '<=', $asOf))
-            ->with(['markets', 'calculationRun.release', 'calculationRun.inputSnapshot', 'sportEvent.cfbGame'])
-            ->orderByDesc('generated_at')->orderByDesc('id')->lazy(50);
+        $predictions = $this->predictions($asOf, $seen);
         foreach ($predictions as $prediction) {
             $game = $prediction->sportEvent?->cfbGame;
             $kickoff = $prediction->sportEvent?->starts_at;
@@ -153,5 +147,38 @@ class CfbFootballSignalEvidence
             'baseline_hash' => $baselineHash, 'as_of' => $asOf->toIso8601String(),
             'latest_source_observed_at' => $latest?->toIso8601String(), 'prediction_ids' => $sourceIds,
             'status' => $historical ? 'retrospective_and_frozen_outcomes_evaluated' : ($sourceIds ? 'frozen_outcomes_evaluated' : 'no_eligible_frozen_outcomes'), 'signals' => $fits];
+    }
+
+    /** @return \Generator<int, CanonicalPrediction> */
+    private function predictions(CarbonImmutable $asOf, array &$acceptedGames = []): \Generator
+    {
+        $query = CanonicalPrediction::query()->select(['id', 'sport_event_id', 'calculation_run_id', 'generated_at', 'published_at', 'created_at'])->where('sport', 'cfb')->where('phase', 'pregame')
+            ->whereIn('publication_state', ['published', 'superseded'])->whereNotNull('calculation_run_id')
+            ->where('generated_at', '<', $asOf)->where('published_at', '<', $asOf)
+            ->where('created_at', '<=', $asOf)->where('generated_at', '>=', $asOf->subYears(3))
+            ->whereHas('sportEvent.cfbGame', fn ($q) => $q->where('status', 'STATUS_FINAL')->where('updated_at', '<=', $asOf))
+            ->with(['markets', 'calculationRun.release', 'calculationRun.inputSnapshot', 'sportEvent.cfbGame'])
+            ->orderByDesc('generated_at')->orderByDesc('id');
+        $cursor = null;
+        $acceptedEvents = [];
+        while (true) {
+            $page = (clone $query)->when($acceptedEvents !== [], fn ($query) => $query->whereNotIn('sport_event_id', array_keys($acceptedEvents)))->when($cursor !== null, fn ($query) => $query->where(fn ($query) => $query
+                ->where('generated_at', '<', $cursor->generated_at)
+                ->orWhere(fn ($query) => $query->where('generated_at', $cursor->generated_at)->where('id', '<', $cursor->id))))
+                ->limit(50)->get();
+            foreach ($page as $prediction) {
+                if (isset($acceptedEvents[$prediction->sport_event_id])) {
+                    continue;
+                }
+                yield $prediction;
+                if (isset($acceptedGames[$prediction->sportEvent?->cfbGame?->id])) {
+                    $acceptedEvents[$prediction->sport_event_id] = true;
+                }
+            }
+            if ($page->count() < 50) {
+                return;
+            }
+            $cursor = $page->last();
+        }
     }
 }

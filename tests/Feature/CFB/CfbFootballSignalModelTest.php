@@ -146,3 +146,44 @@ it('matches frozen evidence when database JSON reorders object keys', function (
     $reorderedCatalog[$id] = array_reverse($reorderedCatalog[$id], true);
     expect(CfbFootballSignalEvidence::catalogHash($catalog))->toBe(CfbFootballSignalEvidence::catalogHash($reorderedCatalog));
 });
+
+it('streams the same frozen prediction order across timestamp ties without sorting large metadata or using offsets', function () {
+    $at = CarbonImmutable::parse('2026-10-31 12:00:00');
+    $event = SportEvent::factory()->create(['sport' => 'cfb', 'starts_at' => $at->subDays(3)]);
+    $game = Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026, 'status' => 'STATUS_FINAL',
+        'home_team_id' => Team::factory(), 'away_team_id' => Team::factory(), 'updated_at' => $at->subDay()]);
+    foreach (range(1, 67) as $revision) {
+        $run = CalculationRun::factory()->create(['sport_event_id' => $event->id]);
+        CanonicalPrediction::factory()->create(['sport' => 'cfb', 'sport_event_id' => $event->id, 'phase' => 'pregame', 'calculation_run_id' => $run->id,
+            'publication_state' => $revision % 2 ? 'published' : 'superseded', 'revision' => $revision,
+            'generated_at' => $revision < 60 ? $at->subDays(5) : $at->subDays(4), 'published_at' => $at->subDays(4),
+            'created_at' => $at->subDays(5), 'output_metadata' => ['unused_large_payload' => str_repeat('unused', 1000)]]);
+    }
+    CanonicalPrediction::factory()->create(['sport' => 'cfb', 'sport_event_id' => $event->id, 'phase' => 'pregame',
+        'publication_state' => 'published', 'revision' => 68, 'generated_at' => $at->subDays(4), 'published_at' => $at->subDays(4), 'created_at' => $at->subDays(5)]);
+    $expected = CanonicalPrediction::where('sport', 'cfb')->whereNotNull('calculation_run_id')->orderByDesc('generated_at')->orderByDesc('id')->pluck('id')->all();
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        $iterator = (new ReflectionMethod(CfbFootballSignalEvidence::class, 'predictions'))->invoke(app(CfbFootballSignalEvidence::class), $at);
+        $rows = collect(iterator_to_array($iterator, false));
+        $sql = collect(DB::getQueryLog())->pluck('query')->filter(fn ($sql) => str_contains($sql, 'from "predictions"'));
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect($rows->pluck('id')->all())->toBe($expected)->and($rows)->toHaveCount(67)
+        ->and($rows->first()->getAttributes())->not->toHaveKey('output_metadata')
+        ->and($sql)->toHaveCount(2)->and($sql->implode(' '))->not->toContain('offset')->not->toContain('select * from "predictions"');
+    $acceptedGames = [];
+    $iterator = (new ReflectionMethod(CfbFootballSignalEvidence::class, 'predictions'))->invokeArgs(app(CfbFootballSignalEvidence::class), [$at, &$acceptedGames]);
+    $visited = [];
+    foreach ($iterator as $prediction) {
+        $visited[] = $prediction->id;
+        // A rejected newest revision must leave the older fallback eligible.
+        if (count($visited) === 2) {
+            $acceptedGames[$game->id] = true;
+        }
+    }
+    expect($visited)->toBe(array_slice($expected, 0, 2));
+});

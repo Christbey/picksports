@@ -34,6 +34,8 @@ The MLB `08:40` `mlb:snapshot-bet-filter` job now follows the canonical read swi
 
 The weekly `sports:report-epa-blend-calibration` reports for NFL/NBA/CBB/WCBB follow either sport's canonical switch. Native NFL reports grade frozen recommendation forecasts with matching recommendation EPA metadata; native basketball reports grade canonical forecasts and their recorded EPA metadata. Missing native EPA application evidence stays in an unknown cohort. Input hydration is batched and summaries stream; explicit `--forecast-source=legacy` retains historical inspection. NFL `--model-version` selects the frozen recommendation version (current by default). Cadence, season guards, heartbeat names, observational interpretation, approval rules and betting holds are unchanged.
 
+NFL spread and totals backtests select frozen recommendation forecasts and same-input market lines after either NFL canonical switch is enabled. The historical `nfl:readiness-pass` explicitly retains `--forecast-source=legacy` for these backtests, alongside its historical point/reason audits. Direct native inspection accepts `--model-version` (current by default); missing native inputs remain excluded and uncaptured closing lines leave CLV unavailable. Native reads are batched, and grading math, total-rule play/watchlist gates, historical market-quality warnings, schedules and approval rules are unchanged.
+
 ## Core Scheduling Helpers
 
 The scheduler is organized around shared helpers in `routes/console.php`:

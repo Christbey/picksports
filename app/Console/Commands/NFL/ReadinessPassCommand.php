@@ -155,6 +155,7 @@ class ReadinessPassCommand extends Command
                 'label' => 'Backtest spreads',
                 'command' => 'nfl:backtest-spreads',
                 'arguments' => [
+                    '--forecast-source' => 'legacy',
                     '--limit' => (int) $this->option('spread-backtest-limit'),
                 ],
                 'skip' => (bool) $this->option('skip-spreads'),
@@ -163,6 +164,7 @@ class ReadinessPassCommand extends Command
                 'label' => 'Backtest totals',
                 'command' => 'nfl:backtest-totals',
                 'arguments' => [
+                    '--forecast-source' => 'legacy',
                     '--from-season' => $fromSeason,
                     '--to-season' => $toSeason,
                 ],

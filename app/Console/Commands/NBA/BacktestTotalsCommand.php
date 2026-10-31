@@ -4,6 +4,7 @@ namespace App\Console\Commands\NBA;
 
 use App\Models\NBA\Game;
 use App\Models\PredictionFeatureSnapshot;
+use App\Services\NBA\NbaBacktestForecastSource;
 use App\Services\Sports\SportsDateWindowService;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
@@ -12,9 +13,10 @@ use Illuminate\Support\Collection;
 class BacktestTotalsCommand extends Command
 {
     protected $signature = 'nba:backtest-totals
+        {--forecast-source= : canonical or legacy (defaults to the active NBA source)}
         {--season= : Filter by season}
         {--limit=250 : Limit number of most recent graded/final predictions to inspect}
-        {--stored : Compatibility flag; evaluation always uses frozen pregame snapshots}
+        {--stored : Compatibility flag; evaluation always uses frozen pregame evidence}
         {--season-type=2 : Restrict to a season phase (2 regular, 3 postseason)}
         {--detailed : Show biggest misses}';
 
@@ -24,7 +26,15 @@ class BacktestTotalsCommand extends Command
 
     public function handle(): int
     {
-        $rows = $this->loadRows();
+        try {
+            $source = app(NbaBacktestForecastSource::class)->name($this->option('forecast-source'));
+        } catch (\InvalidArgumentException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
+        $rows = $source === 'canonical' ? $this->canonicalRows() : $this->loadRows();
+        $this->line('Forecast source: '.$source);
 
         $this->line('Source: frozen pregame forecasts and matching frozen market totals.');
         $this->line('Excluded games without usable pregame evidence: '.$this->excludedGames);
@@ -77,6 +87,25 @@ class BacktestTotalsCommand extends Command
         return self::SUCCESS;
     }
 
+    private function canonicalRows(): Collection
+    {
+        $season = $this->option('season') ? (int) $this->option('season') : null;
+        $seasonType = (int) $this->option('season-type');
+        $forecasts = app(NbaBacktestForecastSource::class)->forFinalGames($season, $seasonType);
+        $usable = $forecasts->filter(fn (object $forecast): bool => $forecast->predicted_total !== null && $forecast->market_total !== null);
+        $this->excludedGames = Game::where('status', 'STATUS_FINAL')->whereNotNull('home_score')->whereNotNull('away_score')
+            ->where('season_type', $seasonType)->when($season !== null, fn ($query) => $query->where('season', $season))->count() - $usable->count();
+        $rows = $usable->sortByDesc(fn (object $forecast): array => [$forecast->game_start_at->timestamp, $forecast->game->id])
+            ->map(fn (object $forecast): array => [
+                ...$this->totalRow($forecast->game, $forecast->predicted_total, $forecast->market_total),
+                'game_start_at' => $forecast->game_start_at->timestamp, 'snapshot_id' => null,
+                'canonical_prediction_id' => $forecast->canonical_prediction_id, 'canonical_lineage' => $forecast->canonical_lineage,
+            ])->values();
+        $limit = (int) $this->option('limit');
+
+        return $limit > 0 ? $rows->take($limit)->values() : $rows;
+    }
+
     private function loadRows(): Collection
     {
         $this->excludedGames = 0;
@@ -119,23 +148,28 @@ class BacktestTotalsCommand extends Command
             }
             $modelTotal = (float) $snapshot->outputs['predicted_total'];
             $marketTotal = (float) (data_get($snapshot->market_context, 'market_total') ?? data_get($snapshot->outputs, 'market_total'));
-            $actualTotal = (float) $game->home_score + (float) $game->away_score;
-            $pick = $modelTotal > $marketTotal ? 'over' : ($modelTotal < $marketTotal ? 'under' : 'pass');
-            $result = $actualTotal > $marketTotal ? 'over' : ($actualTotal < $marketTotal ? 'under' : 'push');
 
-            return [
-                'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
-                'game_start_at' => $start->getTimestamp(),
-                'snapshot_id' => $snapshot->id,
-                'model_total' => $modelTotal, 'market_total' => $marketTotal, 'actual_total' => $actualTotal,
-                'pick' => $pick, 'result' => $result, 'won' => $pick === $result,
-                'push' => $result === 'push', 'edge' => abs($modelTotal - $marketTotal),
-                'model_error' => abs($actualTotal - $modelTotal),
-            ];
+            return [...$this->totalRow($game, $modelTotal, $marketTotal), 'game_start_at' => $start->getTimestamp(), 'snapshot_id' => $snapshot->id];
         })->filter()->sortByDesc('game_start_at')->values();
         $limit = (int) $this->option('limit');
 
         return $limit > 0 ? $rows->take($limit)->values() : $rows;
+    }
+
+    private function totalRow(Game $game, float $modelTotal, float $marketTotal): array
+    {
+        $actualTotal = (float) $game->home_score + (float) $game->away_score;
+        $pick = $modelTotal > $marketTotal ? 'over' : ($modelTotal < $marketTotal ? 'under' : 'pass');
+        $result = $actualTotal > $marketTotal ? 'over' : ($actualTotal < $marketTotal ? 'under' : 'push');
+
+        return [
+            'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
+            'model_total' => $modelTotal, 'market_total' => $marketTotal, 'actual_total' => $actualTotal,
+            'pick' => $pick, 'result' => $result, 'won' => $pick === $result,
+            'push' => $result === 'push', 'edge' => abs($modelTotal - $marketTotal),
+            'model_error' => abs($actualTotal - $modelTotal),
+        ];
+
     }
 
     /**

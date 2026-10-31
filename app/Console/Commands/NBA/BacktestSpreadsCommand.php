@@ -3,23 +3,37 @@
 namespace App\Console\Commands\NBA;
 
 use App\Actions\NBA\GeneratePrediction;
+use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
+use App\Services\NBA\NbaBacktestForecastSource;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 
 class BacktestSpreadsCommand extends Command
 {
     protected $signature = 'nba:backtest-spreads
+        {--forecast-source= : canonical or legacy (defaults to the active NBA source)}
         {--season= : Filter by season}
         {--limit=250 : Limit number of most recent graded/final predictions to inspect}
-        {--stored : Use stored predicted spreads instead of recomputing with the current model}
+        {--stored : Use stored legacy spreads; canonical evaluation always uses frozen forecasts}
         {--detailed : Show biggest market disagreements}';
 
     protected $description = 'Backtest NBA spread predictions against market spreads and final margins';
 
     public function handle(): int
     {
-        $rows = $this->loadRows();
+        try {
+            $source = app(NbaBacktestForecastSource::class)->name($this->option('forecast-source'));
+        } catch (\InvalidArgumentException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
+        $rows = $source === 'canonical' ? $this->canonicalRows() : $this->loadRows();
+        $this->line('Forecast source: '.$source);
+        if ($source === 'canonical') {
+            $this->line('Source: frozen canonical forecasts and matching frozen market spreads.');
+        }
 
         if ($rows->isEmpty()) {
             $this->warn('No final NBA predictions with spread market data found for the selected scope.');
@@ -77,6 +91,20 @@ class BacktestSpreadsCommand extends Command
         return self::SUCCESS;
     }
 
+    private function canonicalRows(): Collection
+    {
+        $rows = app(NbaBacktestForecastSource::class)->forFinalGames($this->option('season') ? (int) $this->option('season') : null)
+            ->filter(fn (object $forecast): bool => $forecast->predicted_spread !== null && $forecast->market_sportsbook_spread !== null)
+            ->sortByDesc(fn (object $forecast): array => [$forecast->generated_at->timestamp, $forecast->canonical_prediction_id])
+            ->map(fn (object $forecast): array => [
+                ...$this->spreadRow($forecast->game, $forecast->predicted_spread, $forecast->market_sportsbook_spread, $forecast->confidence_score),
+                'canonical_prediction_id' => $forecast->canonical_prediction_id, 'canonical_lineage' => $forecast->canonical_lineage,
+            ])->values();
+        $limit = (int) $this->option('limit');
+
+        return $limit > 0 ? $rows->take($limit)->values() : $rows;
+    }
+
     private function loadRows(): Collection
     {
         $generator = app(GeneratePrediction::class);
@@ -107,43 +135,48 @@ class BacktestSpreadsCommand extends Command
                     return null;
                 }
 
-                $marketSportsbookSpread = (float) $prediction->vegas_spread;
-                $marketSpread = -$marketSportsbookSpread;
-                $actualMargin = (float) $game->home_score - (float) $game->away_score;
                 $modelSpread = $this->option('stored')
                     ? (float) $prediction->predicted_spread
                     : $this->recomputedSpread($generator, $game, $prediction);
-                $edge = abs($modelSpread - $marketSpread);
-                $pick = $modelSpread > $marketSpread ? 'home' : 'away';
-                $coverMargin = $pick === 'home'
-                    ? ($actualMargin - $marketSpread)
-                    : ((-$actualMargin) + $marketSpread);
-                $result = abs($coverMargin) < 0.0001
-                    ? 'push'
-                    : ($coverMargin > 0 ? 'win' : 'loss');
-                $winnerCorrect = ($actualMargin > 0 && $modelSpread > 0)
-                    || ($actualMargin < 0 && $modelSpread < 0);
 
-                return [
-                    'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
-                    'home_team' => $this->teamName($game->homeTeam),
-                    'away_team' => $this->teamName($game->awayTeam),
-                    'model_spread' => $modelSpread,
-                    'market_spread' => $marketSpread,
-                    'market_sportsbook_spread' => $marketSportsbookSpread,
-                    'actual_margin' => $actualMargin,
-                    'pick' => $pick,
-                    'result' => $result,
-                    'won' => $result === 'win',
-                    'push' => $result === 'push',
-                    'edge' => $edge,
-                    'winner_correct' => $winnerCorrect,
-                    'confidence_score' => (float) $prediction->confidence_score,
-                    'model_error' => abs($actualMargin - $modelSpread),
-                ];
+                return $this->spreadRow($game, $modelSpread, (float) $prediction->vegas_spread, (float) $prediction->confidence_score);
             })
             ->filter()
             ->values();
+    }
+
+    private function spreadRow(Game $game, float $modelSpread, float $marketSportsbookSpread, ?float $confidenceScore): array
+    {
+        $marketSpread = -$marketSportsbookSpread;
+        $actualMargin = (float) $game->home_score - (float) $game->away_score;
+        $edge = abs($modelSpread - $marketSpread);
+        $pick = $modelSpread > $marketSpread ? 'home' : 'away';
+        $coverMargin = $pick === 'home'
+            ? ($actualMargin - $marketSpread)
+            : ((-$actualMargin) + $marketSpread);
+        $result = abs($coverMargin) < 0.0001
+            ? 'push'
+            : ($coverMargin > 0 ? 'win' : 'loss');
+        $winnerCorrect = ($actualMargin > 0 && $modelSpread > 0)
+            || ($actualMargin < 0 && $modelSpread < 0);
+
+        return [
+            'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
+            'home_team' => $this->teamName($game->homeTeam),
+            'away_team' => $this->teamName($game->awayTeam),
+            'model_spread' => $modelSpread,
+            'market_spread' => $marketSpread,
+            'market_sportsbook_spread' => $marketSportsbookSpread,
+            'actual_margin' => $actualMargin,
+            'pick' => $pick,
+            'result' => $result,
+            'won' => $result === 'win',
+            'push' => $result === 'push',
+            'edge' => $edge,
+            'winner_correct' => $winnerCorrect,
+            'confidence_score' => $confidenceScore,
+            'model_error' => abs($actualMargin - $modelSpread),
+        ];
     }
 
     private function recomputedSpread(GeneratePrediction $generator, object $game, Prediction $prediction): float
@@ -252,7 +285,7 @@ class BacktestSpreadsCommand extends Command
 
         $table = [];
         foreach ($buckets as $label => $filter) {
-            $group = $rows->filter(fn (array $row) => $filter((float) $row['confidence_score']))->values();
+            $group = $rows->filter(fn (array $row) => $row['confidence_score'] !== null && $filter((float) $row['confidence_score']))->values();
             if ($group->isEmpty()) {
                 continue;
             }

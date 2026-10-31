@@ -351,15 +351,18 @@ class RunPregamePipelineCommand extends Command
                 $this->recordProgress($results);
             }
             // Publish first: optional weather requests must not delay otherwise valid forecasts.
-            try {
-                if ($this->call('cfb:sync-game-weather', ['--season' => (int) $season,
-                    '--from-date' => now()->toDateString(), '--days-forward' => (int) $days, '--force' => true,
-                    ...($this->option('game') ? ['--game-id' => $this->option('game')] : [])]) !== self::SUCCESS) {
+            $weatherScopes = $this->option('games') ? $games->modelKeys() : [$this->option('game')];
+            foreach ($weatherScopes as $weatherGameId) {
+                try {
+                    if ($this->call('cfb:sync-game-weather', ['--season' => (int) $season,
+                        '--from-date' => now()->toDateString(), '--days-forward' => (int) $days, '--force' => true,
+                        ...($weatherGameId ? ['--game-id' => $weatherGameId] : [])]) !== self::SUCCESS) {
+                        $this->warn('Weather refresh unavailable; missing weather remains unknown.');
+                    }
+                } catch (\Throwable $error) {
+                    report($error);
                     $this->warn('Weather refresh unavailable; missing weather remains unknown.');
                 }
-            } catch (\Throwable $error) {
-                report($error);
-                $this->warn('Weather refresh unavailable; missing weather remains unknown.');
             }
 
             $this->line(json_encode($this->recordProgress($results), JSON_THROW_ON_ERROR));

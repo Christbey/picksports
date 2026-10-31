@@ -498,3 +498,17 @@ it('limits multi-game recovery weather calls to selected games and continues aft
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026, '--games' => $first->id.','.$second->id])->assertSuccessful();
     expect($visited->getArrayCopy())->toBe([$first->id, $second->id]);
 });
+
+it('keeps ordinary pipeline weather within its validated future game selection', function () {
+    $selected = Game::firstOrFail();
+    Game::factory()->create(['sport_event_id' => SportEvent::factory()->create(['sport' => 'cfb', 'starts_at' => now()->subHours(2)])->id,
+        'season' => 2026, 'home_team_id' => Team::factory(), 'away_team_id' => Team::factory(), 'status' => 'STATUS_FINAL']);
+    $visited = new ArrayObject;
+    Artisan::command('cfb:sync-game-weather {--season=} {--from-date=} {--days-forward=} {--game-id=} {--force}', function () use ($visited) {
+        $visited[] = (int) $this->option('game-id');
+
+        return 0;
+    });
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertSuccessful();
+    expect($visited->getArrayCopy())->toBe([$selected->id]);
+});

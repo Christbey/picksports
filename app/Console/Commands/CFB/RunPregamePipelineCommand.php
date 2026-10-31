@@ -351,12 +351,11 @@ class RunPregamePipelineCommand extends Command
                 $this->recordProgress($results);
             }
             // Publish first: optional weather requests must not delay otherwise valid forecasts.
-            $weatherScopes = $this->option('games') ? $games->modelKeys() : [$this->option('game')];
-            foreach ($weatherScopes as $weatherGameId) {
+            foreach ($games->modelKeys() as $weatherGameId) {
                 try {
                     if ($this->call('cfb:sync-game-weather', ['--season' => (int) $season,
                         '--from-date' => now()->toDateString(), '--days-forward' => (int) $days, '--force' => true,
-                        ...($weatherGameId ? ['--game-id' => $weatherGameId] : [])]) !== self::SUCCESS) {
+                        '--game-id' => $weatherGameId]) !== self::SUCCESS) {
                         $this->warn('Weather refresh unavailable; missing weather remains unknown.');
                     }
                 } catch (\Throwable $error) {

@@ -5,6 +5,8 @@ namespace App\Console\Commands\NFL;
 use App\Models\GameOddsSnapshot;
 use App\Models\NFL\Game;
 use App\Models\NFL\Prediction;
+use App\Services\NFL\NflBacktestForecastSource;
+use App\Services\NFL\NflEvidenceForecastSource;
 use App\Services\NFL\NflSpreadBacktestEvaluator;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
@@ -12,6 +14,8 @@ use Illuminate\Support\Collection;
 class BacktestSpreadsCommand extends Command
 {
     protected $signature = 'nfl:backtest-spreads
+        {--forecast-source= : canonical or legacy (defaults to the active NFL evidence source)}
+        {--model-version= : Canonical recommendation version (defaults to current)}
         {--season= : Filter by season}
         {--limit=250 : Limit number of most recent final predictions to inspect}
         {--detailed : Show biggest model-market disagreements}';
@@ -20,7 +24,19 @@ class BacktestSpreadsCommand extends Command
 
     public function handle(): int
     {
-        $rows = $this->loadRows();
+        try {
+            $source = app(NflEvidenceForecastSource::class)->name($this->option('forecast-source'));
+        } catch (\InvalidArgumentException $error) {
+            $this->error($error->getMessage());
+
+            return self::FAILURE;
+        }
+        $rows = $source === 'canonical' ? $this->canonicalRows() : $this->loadRows();
+        $this->line('Forecast source: '.$source);
+        if ($source === 'canonical') {
+            $this->line('Evidence: frozen recommendation forecasts and same-input market lines.');
+            $this->line('Closing-line evidence: unavailable in native snapshots.');
+        }
 
         if ($rows->isEmpty()) {
             $this->warn('No final NFL predictions with spread market data found for the selected scope.');
@@ -81,6 +97,32 @@ class BacktestSpreadsCommand extends Command
         return self::SUCCESS;
     }
 
+    private function canonicalRows(): Collection
+    {
+        return app(NflBacktestForecastSource::class)->forMarket('spread',
+            season: $this->option('season') ? (int) $this->option('season') : null,
+            version: $this->option('model-version'), limit: (int) $this->option('limit'))
+            ->map(fn (object $forecast): array => [
+                ...$this->spreadRow($forecast->game, $forecast->projection, $forecast->market_line, $forecast->confidence_score,
+                    null, 'canonical_input:'.$forecast->event_input_snapshot_id, null),
+                'canonical_prediction_id' => $forecast->canonical_prediction_id, 'canonical_lineage' => $forecast->lineage,
+            ]);
+    }
+
+    private function spreadRow(Game $game, float $modelSpread, float $homeMarketSpread, ?float $confidence, ?float $closingSpread, string $entrySource, ?string $closingSource): array
+    {
+        $actualMargin = (float) $game->home_score - (float) $game->away_score;
+
+        return [
+            ...app(NflSpreadBacktestEvaluator::class)->evaluate($modelSpread, $homeMarketSpread, $actualMargin, $closingSpread),
+            'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
+            'home_team' => $this->teamName($game->homeTeam), 'away_team' => $this->teamName($game->awayTeam),
+            'entry_source' => $entrySource, 'closing_source' => $closingSource,
+            'winner_correct' => ($actualMargin > 0 && $modelSpread > 0) || ($actualMargin < 0 && $modelSpread < 0),
+            'confidence_score' => $confidence, 'model_error' => abs($actualMargin - $modelSpread),
+        ];
+    }
+
     private function loadRows(): Collection
     {
         $query = Prediction::query()
@@ -115,27 +157,8 @@ class BacktestSpreadsCommand extends Command
                     return null;
                 }
 
-                $actualMargin = (float) $game->home_score - (float) $game->away_score;
-                $modelSpread = (float) $prediction->predicted_spread;
-                $evaluation = app(NflSpreadBacktestEvaluator::class)->evaluate(
-                    $modelSpread,
-                    (float) $homeMarketSpread,
-                    $actualMargin,
-                    $lineSet['closing_home_spread']
-                );
-                $winnerCorrect = ($actualMargin > 0 && $modelSpread > 0)
-                    || ($actualMargin < 0 && $modelSpread < 0);
-
-                return array_merge($evaluation, [
-                    'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
-                    'home_team' => $this->teamName($game->homeTeam),
-                    'away_team' => $this->teamName($game->awayTeam),
-                    'entry_source' => $lineSet['entry_source'],
-                    'closing_source' => $lineSet['closing_source'],
-                    'winner_correct' => $winnerCorrect,
-                    'confidence_score' => (float) $prediction->confidence_score,
-                    'model_error' => abs($actualMargin - $modelSpread),
-                ]);
+                return $this->spreadRow($game, (float) $prediction->predicted_spread, (float) $homeMarketSpread,
+                    (float) $prediction->confidence_score, $lineSet['closing_home_spread'], $lineSet['entry_source'], $lineSet['closing_source']);
             })
             ->filter()
             ->values();
@@ -257,7 +280,7 @@ class BacktestSpreadsCommand extends Command
 
         return collect($buckets)
             ->map(function (callable $filter, string $label) use ($rows): ?array {
-                $group = $rows->filter(fn (array $row) => $filter((float) $row['confidence_score']))->values();
+                $group = $rows->filter(fn (array $row) => $row['confidence_score'] !== null && $filter((float) $row['confidence_score']))->values();
                 if ($group->isEmpty()) {
                     return null;
                 }

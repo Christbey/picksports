@@ -3,7 +3,10 @@
 namespace App\Console\Commands\NFL;
 
 use App\Models\GameOddsSnapshot;
+use App\Models\NFL\Game;
 use App\Models\NFL\Prediction;
+use App\Services\NFL\NflBacktestForecastSource;
+use App\Services\NFL\NflEvidenceForecastSource;
 use App\Services\NFL\NflTotalRuleSupport;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
@@ -11,6 +14,8 @@ use Illuminate\Support\Collection;
 class BacktestTotalsCommand extends Command
 {
     protected $signature = 'nfl:backtest-totals
+        {--forecast-source= : canonical or legacy (defaults to the active NFL evidence source)}
+        {--model-version= : Canonical recommendation version (defaults to current)}
         {--season= : Filter by season}
         {--from-season= : Analyze starting with this NFL season}
         {--to-season= : Analyze through this NFL season}
@@ -21,7 +26,19 @@ class BacktestTotalsCommand extends Command
 
     public function handle(): int
     {
-        $rows = $this->loadRows();
+        try {
+            $source = app(NflEvidenceForecastSource::class)->name($this->option('forecast-source'));
+        } catch (\InvalidArgumentException $error) {
+            $this->error($error->getMessage());
+
+            return self::FAILURE;
+        }
+        $rows = $source === 'canonical' ? $this->canonicalRows() : $this->loadRows();
+        $this->line('Forecast source: '.$source);
+        if ($source === 'canonical') {
+            $this->line('Evidence: frozen recommendation forecasts and same-input market lines.');
+            $this->line('Closing-line evidence: unavailable in native snapshots.');
+        }
 
         if ($rows->isEmpty()) {
             $this->warn('No final NFL predictions with totals market data found for the selected scope.');
@@ -81,6 +98,48 @@ class BacktestTotalsCommand extends Command
         return self::SUCCESS;
     }
 
+    private function canonicalRows(): Collection
+    {
+        return app(NflBacktestForecastSource::class)->forMarket('total',
+            season: $this->option('season') ? (int) $this->option('season') : null,
+            fromSeason: $this->option('from-season') ? (int) $this->option('from-season') : null,
+            toSeason: $this->option('to-season') ? (int) $this->option('to-season') : null,
+            version: $this->option('model-version'), limit: (int) $this->option('limit'))
+            ->map(fn (object $forecast): array => [
+                ...$this->totalRow($forecast, $forecast->game, $forecast->projection, $forecast->market_line, null),
+                'canonical_prediction_id' => $forecast->canonical_prediction_id, 'canonical_lineage' => $forecast->lineage,
+            ]);
+    }
+
+    private function totalRow(object $forecast, Game $game, float $modelTotal, float $marketTotal, ?float $closingTotal): array
+    {
+        $actualTotal = (float) $game->home_score + (float) $game->away_score;
+        $pick = $modelTotal > $marketTotal ? 'over' : 'under';
+        $result = $actualTotal > $marketTotal
+            ? 'over'
+            : ($actualTotal < $marketTotal ? 'under' : 'push');
+        $support = app(NflTotalRuleSupport::class)->forPrediction($forecast, $pick);
+
+        return [
+            'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
+            'model_total' => $modelTotal,
+            'market_total' => $marketTotal,
+            'closing_total' => $closingTotal,
+            'actual_total' => $actualTotal,
+            'pick' => $pick,
+            'result' => $result,
+            'won' => $pick === $result,
+            'push' => $result === 'push',
+            'edge' => abs($modelTotal - $marketTotal),
+            'model_error' => abs($actualTotal - $modelTotal),
+            'rule_support' => $support,
+            'rule_action' => $support['action'] ?? null,
+            'rule_label' => $support['label'] ?? null,
+            'playable' => $support !== null && $this->isPlayableTotal($support, abs($modelTotal - $marketTotal)),
+            'clv' => $this->totalClv($pick, $marketTotal, $closingTotal),
+        ];
+    }
+
     private function loadRows(): Collection
     {
         $query = Prediction::query()
@@ -122,33 +181,8 @@ class BacktestTotalsCommand extends Command
                     return null;
                 }
 
-                $actualTotal = (float) $game->home_score + (float) $game->away_score;
-                $modelTotal = (float) $prediction->predicted_total;
-                $marketTotal = (float) $lineSet['entry_total'];
-                $pick = $modelTotal > $marketTotal ? 'over' : 'under';
-                $result = $actualTotal > $marketTotal
-                    ? 'over'
-                    : ($actualTotal < $marketTotal ? 'under' : 'push');
-                $support = app(NflTotalRuleSupport::class)->forPrediction($prediction, $pick);
-
-                return [
-                    'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
-                    'model_total' => $modelTotal,
-                    'market_total' => $marketTotal,
-                    'closing_total' => $lineSet['closing_total'],
-                    'actual_total' => $actualTotal,
-                    'pick' => $pick,
-                    'result' => $result,
-                    'won' => $pick === $result,
-                    'push' => $result === 'push',
-                    'edge' => abs($modelTotal - $marketTotal),
-                    'model_error' => abs($actualTotal - $modelTotal),
-                    'rule_support' => $support,
-                    'rule_action' => $support['action'] ?? null,
-                    'rule_label' => $support['label'] ?? null,
-                    'playable' => $support !== null && $this->isPlayableTotal($support, abs($modelTotal - $marketTotal)),
-                    'clv' => $this->totalClv($pick, $marketTotal, $lineSet['closing_total']),
-                ];
+                return $this->totalRow($prediction, $game, (float) $prediction->predicted_total,
+                    (float) $lineSet['entry_total'], $lineSet['closing_total']);
             })
             ->filter()
             ->values();

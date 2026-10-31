@@ -49,16 +49,24 @@ class CalculateTeamMetricsCommand extends AbstractFootballTeamMetricsCommand
             return self::FAILURE;
         }
         $action = app(CalculateTeamMetrics::class);
+        $refreshed = [];
+        $failed = [];
         foreach ($teams as $team) {
-            if (! $action->execute($team, $season)) {
-                $this->error("Team {$team->id}: required current metrics could not be refreshed.");
-
-                return self::FAILURE;
+            try {
+                if (! $action->execute($team, $season)) {
+                    throw new \RuntimeException('Required current metrics could not be refreshed.');
+                }
+                $refreshed[] = $team->id;
+            } catch (\Throwable $error) {
+                report($error);
+                $failed[] = $team->id;
+                $this->warn("Team {$team->id}: metric refresh failed; its games remain held.");
             }
         }
-        $this->info('Refreshed metrics for '.$teams->count().' verified FBS teams.');
+        $this->line('CFB_METRIC_BATCH_RESULT='.json_encode(['refreshed_team_ids' => $refreshed, 'failed_team_ids' => $failed], JSON_THROW_ON_ERROR));
+        $this->info('Refreshed metrics for '.count($refreshed).' of '.$teams->count().' verified FBS teams.');
 
-        return self::SUCCESS;
+        return $failed === [] ? self::SUCCESS : ($refreshed === [] ? self::FAILURE : 2);
     }
 
     protected function beforeBulkCalculation(object $calculateMetrics, int|string $season): void

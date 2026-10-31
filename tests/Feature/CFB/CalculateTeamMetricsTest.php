@@ -6,12 +6,15 @@ use App\Models\CFB\EloRating;
 use App\Models\CFB\Game;
 use App\Models\CFB\Team;
 use App\Models\CFB\TeamMetric;
+use App\Models\CFB\TeamSeasonAffiliation;
 use App\Models\CFB\TeamStat;
 use App\Services\CFB\PlayerAvailabilityImpactService;
 use App\Services\CollegeFootballData\CollegeFootballDataService;
 use App\Support\CfbSeasonAffiliationResolver;
 use Illuminate\Http\Client\Factory;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 
 uses()->group('cfb', 'team-metrics');
 
@@ -324,3 +327,34 @@ it('preserves prior metrics on actual WEPA provider or authentication failures',
         ->toThrow(RuntimeException::class, 'metric update withheld');
     expect((float) $metric->fresh()->cfbd_wepa_net)->toBe(.8);
 })->with([[401, 'Invalid API token'], [500, 'Service unavailable']]);
+
+it('reports per-team metric failures and continues the rest of a bounded batch', function () {
+    foreach ([$this->team, $this->opponent] as $team) {
+        TeamSeasonAffiliation::updateOrCreate(['team_id' => $team->id, 'season' => 2026],
+            ['source' => 'cfbd_fbs_membership', 'subdivision' => 'FBS']);
+    }
+    $this->mock(CalculateTeamMetrics::class)->shouldReceive('execute')->withArgs(fn ($team) => $team->id === $this->team->id)->once()->andThrow(new RuntimeException('Provider unavailable'));
+    app(CalculateTeamMetrics::class)->shouldReceive('execute')->withArgs(fn ($team) => $team->id === $this->opponent->id)->once()
+        ->andReturn(new TeamMetric(['team_id' => $this->opponent->id, 'season' => 2026]));
+    expect(Artisan::call('cfb:calculate-team-metrics', ['--season' => 2026, '--team-ids' => $this->team->id.','.$this->opponent->id]))->toBe(2);
+    preg_match('/CFB_METRIC_BATCH_RESULT=(.+)/', Artisan::output(), $match);
+    expect(json_decode($match[1], true))->toBe(['refreshed_team_ids' => [$this->opponent->id], 'failed_team_ids' => [$this->team->id]]);
+});
+
+it('does not repeatedly hit an exhausted provider within the same metric batch', function () {
+    Sleep::fake();
+    Http::swap(new Factory);
+    config(['services.collegefootballdata.api_key' => 'test']);
+    $this->team->update(['cfbd_team_id' => 61]);
+    $this->opponent->update(['cfbd_team_id' => 62]);
+    foreach ([$this->team, $this->opponent] as $team) {
+        TeamMetric::create(['team_id' => $team->id, 'season' => 2026, 'cfbd_wepa_net' => 0.8]);
+    }
+    Http::fake(['api.collegefootballdata.com/wepa/*' => Http::response([], 503)]);
+    $action = app(CalculateTeamMetrics::class);
+    foreach ([$this->team, $this->opponent] as $team) {
+        expect(fn () => $action->refreshExternalMetrics($team, 2026))->toThrow(RuntimeException::class);
+        expect((float) TeamMetric::where('team_id', $team->id)->sole()->cfbd_wepa_net)->toBe(0.8);
+    }
+    Http::assertSentCount(3);
+});

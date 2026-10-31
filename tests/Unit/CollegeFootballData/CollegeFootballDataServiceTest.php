@@ -1,9 +1,11 @@
 <?php
 
 use App\Services\CollegeFootballData\CollegeFootballDataService;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -138,4 +140,32 @@ it('serializes explicit false query booleans instead of numeric zero', function 
     Http::fake(fn (Request $request) => Http::response([]));
     (new CollegeFootballDataService)->getAdvancedTeamSeasonStats(2026, excludeGarbageTime: false);
     Http::assertSent(fn (Request $request) => $request['excludeGarbageTime'] === 'false');
+});
+
+it('retries transient provider failures with a bounded three-attempt budget', function () {
+    config(['services.collegefootballdata.api_key' => 'test']);
+    Sleep::fake();
+    Http::fakeSequence()->push([], 503)->push([], 502)->push([['team' => 'Georgia']], 200);
+    expect((new CollegeFootballDataService)->getAdvancedTeamSeasonStats(2026))->toBe([['team' => 'Georgia']]);
+    Http::assertSentCount(3);
+});
+
+it('stops transient retries after three attempts and does not retry permanent denials', function (int $status, int $attempts) {
+    config(['services.collegefootballdata.api_key' => 'test']);
+    Sleep::fake();
+    Http::fake(fn () => Http::response([], $status));
+    expect(fn () => (new CollegeFootballDataService)->getAdvancedTeamSeasonStats(2026))->toThrow(RequestException::class);
+    Http::assertSentCount($attempts);
+})->with([[503, 3], [429, 3], [401, 1], [403, 1], [404, 1]]);
+
+it('bounds connection failures to three attempts as well', function () {
+    config(['services.collegefootballdata.api_key' => 'test']);
+    Sleep::fake();
+    $attempts = 0;
+    Http::fake(function () use (&$attempts) {
+        $attempts++;
+        throw new ConnectionException('Temporary connection failure');
+    });
+    expect(fn () => (new CollegeFootballDataService)->getAdvancedTeamSeasonStats(2026))->toThrow(ConnectionException::class);
+    expect($attempts)->toBe(3);
 });

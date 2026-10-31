@@ -2,87 +2,54 @@
 
 namespace App\Console\Commands\Sports;
 
+use App\Services\Predictions\EpaBlendCalibrationSource;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 
 class ReportEpaBlendCalibrationCommand extends Command
 {
     protected $signature = 'sports:report-epa-blend-calibration
         {sport : One of nfl,nba,cbb,wcbb}
-        {--season= : Filter by season}';
+        {--season= : Filter by season}
+        {--forecast-source= : canonical or legacy (defaults to the active sport source)}
+        {--model-version= : NFL canonical recommendation version (defaults to current)}';
 
     protected $description = 'Report prediction calibration split by true-EPA blend applied vs not applied';
 
-    /**
-     * @var array<string,array{predictions:string,games:string}>
-     */
-    private const SPORT_TABLES = [
-        'nfl' => ['predictions' => 'nfl_predictions', 'games' => 'nfl_games'],
-        'nba' => ['predictions' => 'nba_predictions', 'games' => 'nba_games'],
-        'cbb' => ['predictions' => 'cbb_predictions', 'games' => 'cbb_games'],
-        'wcbb' => ['predictions' => 'wcbb_predictions', 'games' => 'wcbb_games'],
-    ];
-
-    public function handle(): int
+    public function handle(EpaBlendCalibrationSource $source): int
     {
         $sport = strtolower((string) $this->argument('sport'));
-        if (! isset(self::SPORT_TABLES[$sport])) {
-            $allowed = implode(', ', array_keys(self::SPORT_TABLES));
-            $this->error("Unsupported sport '{$sport}'. Allowed: {$allowed}");
+        try {
+            $forecastSource = $source->name($sport, $this->option('forecast-source'));
+        } catch (\InvalidArgumentException $error) {
+            $this->error($error->getMessage());
 
             return self::FAILURE;
         }
-
         $season = $this->option('season');
-        $tables = self::SPORT_TABLES[$sport];
-
-        $query = DB::table($tables['predictions'].' as p')
-            ->join($tables['games'].' as g', 'g.id', '=', 'p.game_id')
-            ->whereNotNull('p.graded_at')
-            ->whereNotNull('p.predicted_spread')
-            ->whereNotNull('p.actual_spread')
-            ->select([
-                'p.id',
-                'p.predicted_spread',
-                'p.actual_spread',
-                'p.predicted_total',
-                'p.actual_total',
-                'p.winner_correct',
-                'p.model_metadata',
-                'g.season',
-            ]);
-
-        if ($season !== null && $season !== '') {
-            $query->where('g.season', (int) $season);
+        $this->line('Forecast source: '.$forecastSource);
+        if ($forecastSource === 'canonical') {
+            $this->line($sport === 'nfl' ? 'Evidence: frozen NFL recommendation forecasts.' : 'Evidence: published canonical forecasts.');
         }
-
-        $rows = $query->get();
-        if ($rows->isEmpty()) {
+        $empty = ['count' => 0, 'spread_error' => 0.0, 'total_error' => 0.0, 'total_count' => 0, 'winner_correct' => 0];
+        $groups = ['all' => $empty, 'true_epa_applied' => $empty, 'true_epa_not_applied' => $empty];
+        if ($forecastSource === 'canonical') {
+            $groups['true_epa_unknown'] = $empty;
+        }
+        foreach ($source->rows($sport, $forecastSource, $season !== null && $season !== '' ? (int) $season : null, $this->option('model-version')) as $row) {
+            $this->accumulate($groups['all'], $row);
+            $group = $row->epa_applied === null ? 'true_epa_unknown' : ($row->epa_applied ? 'true_epa_applied' : 'true_epa_not_applied');
+            $this->accumulate($groups[$group], $row);
+        }
+        if ($groups['all']['count'] === 0) {
             $this->warn('No graded predictions found for the selected scope.');
 
             return self::SUCCESS;
         }
 
-        $groups = [
-            'all' => [],
-            'true_epa_applied' => [],
-            'true_epa_not_applied' => [],
-        ];
-
-        foreach ($rows as $row) {
-            $groups['all'][] = $row;
-
-            if ($this->isTrueEpaApplied($row->model_metadata)) {
-                $groups['true_epa_applied'][] = $row;
-            } else {
-                $groups['true_epa_not_applied'][] = $row;
-            }
-        }
-
         $this->line(strtoupper($sport).' EPA Blend Calibration Report');
         $this->line('----------------------------------------');
         $this->line('Scope: '.($season ? "season {$season}" : 'all seasons'));
-        $this->line('Total graded predictions: '.count($groups['all']));
+        $this->line('Total graded predictions: '.$groups['all']['count']);
         $this->newLine();
 
         $tableRows = [];
@@ -114,78 +81,28 @@ class ReportEpaBlendCalibrationCommand extends Command
         return self::SUCCESS;
     }
 
-    /**
-     * @return array{count:int,spread_mae:string,total_mae:string,winner_accuracy:string,spread_mae_raw:?float,total_mae_raw:?float,winner_accuracy_raw:?float}
-     */
-    private function summarizeGroup(array $rows): array
+    private function accumulate(array &$stats, object $row): void
     {
-        $count = count($rows);
-        if ($count === 0) {
-            return [
-                'count' => 0,
-                'spread_mae' => 'n/a',
-                'total_mae' => 'n/a',
-                'winner_accuracy' => 'n/a',
-                'spread_mae_raw' => null,
-                'total_mae_raw' => null,
-                'winner_accuracy_raw' => null,
-            ];
+        $stats['count']++;
+        $stats['spread_error'] += abs((float) $row->actual_spread - (float) $row->predicted_spread);
+        if ($row->predicted_total !== null && $row->actual_total !== null) {
+            $stats['total_error'] += abs((float) $row->actual_total - (float) $row->predicted_total);
+            $stats['total_count']++;
         }
-
-        $spreadErrors = [];
-        $totalErrors = [];
-        $winnerCorrect = 0;
-
-        foreach ($rows as $row) {
-            $spreadErrors[] = abs((float) $row->actual_spread - (float) $row->predicted_spread);
-
-            if ($row->predicted_total !== null && $row->actual_total !== null) {
-                $totalErrors[] = abs((float) $row->actual_total - (float) $row->predicted_total);
-            }
-
-            $winnerCorrect += (int) ((bool) $row->winner_correct);
-        }
-
-        $spreadMae = array_sum($spreadErrors) / max(1, count($spreadErrors));
-        $totalMae = $totalErrors === [] ? null : (array_sum($totalErrors) / count($totalErrors));
-        $winnerAcc = ($winnerCorrect / $count) * 100.0;
-
-        return [
-            'count' => $count,
-            'spread_mae' => number_format($spreadMae, 3),
-            'total_mae' => $totalMae === null ? 'n/a' : number_format($totalMae, 3),
-            'winner_accuracy' => number_format($winnerAcc, 2),
-            'spread_mae_raw' => $spreadMae,
-            'total_mae_raw' => $totalMae,
-            'winner_accuracy_raw' => $winnerAcc,
-        ];
+        $stats['winner_correct'] += (int) ((bool) $row->winner_correct);
     }
 
-    private function isTrueEpaApplied(mixed $metadata): bool
+    private function summarizeGroup(array $stats): array
     {
-        if (! is_string($metadata) || $metadata === '') {
-            return false;
-        }
+        $count = $stats['count'];
+        $spreadMae = $count === 0 ? null : $stats['spread_error'] / $count;
+        $totalMae = $stats['total_count'] === 0 ? null : $stats['total_error'] / $stats['total_count'];
+        $winnerAcc = $count === 0 ? null : $stats['winner_correct'] / $count * 100;
 
-        $decoded = json_decode($metadata, true);
-        if (! is_array($decoded)) {
-            return false;
-        }
-
-        $trueEpa = $decoded['true_epa'] ?? null;
-        if (! is_array($trueEpa)) {
-            return false;
-        }
-
-        if (array_key_exists('true_epa_applied', $trueEpa)) {
-            return (bool) $trueEpa['true_epa_applied'];
-        }
-
-        if (array_key_exists('applied', $trueEpa)) {
-            return (bool) $trueEpa['applied'];
-        }
-
-        return false;
+        return ['count' => $count, 'spread_mae' => $spreadMae === null ? 'n/a' : number_format($spreadMae, 3),
+            'total_mae' => $totalMae === null ? 'n/a' : number_format($totalMae, 3),
+            'winner_accuracy' => $winnerAcc === null ? 'n/a' : number_format($winnerAcc, 2),
+            'spread_mae_raw' => $spreadMae, 'total_mae_raw' => $totalMae, 'winner_accuracy_raw' => $winnerAcc];
     }
 
     private function formatDelta(?float $a, ?float $b, bool $asPercent = false): string

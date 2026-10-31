@@ -5,6 +5,8 @@ namespace App\Console\Commands\NFL;
 use App\Actions\Sports\Concerns\InteractsWithBettingMarkets;
 use App\Models\GameOddsSnapshot;
 use App\Models\NFL\Prediction;
+use App\Services\NFL\NflBacktestForecastSource;
+use App\Services\NFL\NflEvidenceForecastSource;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 
@@ -13,6 +15,8 @@ class BacktestMoneylinesCommand extends Command
     use InteractsWithBettingMarkets;
 
     protected $signature = 'nfl:backtest-moneylines
+        {--forecast-source= : canonical or legacy (defaults to the active NFL evidence source)}
+        {--model-version= : Canonical recommendation version (defaults to current)}
         {--season= : Filter by season}
         {--from-season= : Analyze starting with this NFL season}
         {--to-season= : Analyze through this NFL season}
@@ -23,7 +27,19 @@ class BacktestMoneylinesCommand extends Command
 
     public function handle(): int
     {
-        $rows = $this->loadRows();
+        try {
+            $source = app(NflEvidenceForecastSource::class)->name($this->option('forecast-source'));
+        } catch (\InvalidArgumentException $error) {
+            $this->error($error->getMessage());
+
+            return self::FAILURE;
+        }
+        $rows = $source === 'canonical' ? $this->canonicalRows() : $this->loadRows();
+        $this->line('Forecast source: '.$source);
+        if ($source === 'canonical') {
+            $this->line('Evidence: frozen recommendation probabilities, trust and paired moneyline prices.');
+            $this->line('Historical report only; qualification does not grant betting approval.');
+        }
 
         if ($rows->isEmpty()) {
             $this->warn('No final NFL predictions with h2h moneyline odds found for the selected scope.');
@@ -112,45 +128,68 @@ class BacktestMoneylinesCommand extends Command
                     return null;
                 }
 
-                $noVig = $this->noVigMoneylineProbabilities($prices['home'], $prices['away']);
-                if ($noVig === null) {
-                    return null;
-                }
-
-                $homeModelProb = max(0.0, min(1.0, (float) $prediction->win_probability));
-                $awayModelProb = 1 - $homeModelProb;
-                $homeEdge = $homeModelProb - $noVig['home'];
-                $awayEdge = $awayModelProb - $noVig['away'];
-                $betHome = $homeEdge >= $awayEdge;
-                $edge = $betHome ? $homeEdge : $awayEdge;
-                $trustScore = $this->analysisTrustScore($prediction);
-
-                if ($edge < ((float) config('nfl.betting.moneyline.play_min_edge', 10.0) / 100)
-                    || $trustScore < (float) config('nfl.betting.moneyline.play_min_trust', 85.0)) {
-                    return null;
-                }
-
-                $won = $betHome
-                    ? (float) $game->home_score > (float) $game->away_score
-                    : (float) $game->away_score > (float) $game->home_score;
-                $odds = $betHome ? $prices['home'] : $prices['away'];
-                $profit = $won ? $this->americanPayoutPerUnit($odds) : -1.0;
-
-                return [
-                    'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
-                    'pick' => $betHome ? 'home' : 'away',
-                    'pick_team' => $betHome ? $this->teamName($game->homeTeam) : $this->teamName($game->awayTeam),
-                    'odds' => $odds,
-                    'model_probability' => ($betHome ? $homeModelProb : $awayModelProb) * 100,
-                    'no_vig_implied' => ($betHome ? $noVig['home'] : $noVig['away']) * 100,
-                    'edge' => $edge * 100,
-                    'market_hold' => $noVig['hold'] * 100,
-                    'won' => $won,
-                    'profit' => $profit,
-                ];
+                return $this->moneylineRow($game, (float) $prediction->win_probability, $prices, $this->analysisTrustScore($prediction));
             })
             ->filter()
             ->values();
+    }
+
+    private function canonicalRows(): Collection
+    {
+        $rows = app(NflBacktestForecastSource::class)->forMarket('moneyline',
+            season: $this->option('season') ? (int) $this->option('season') : null,
+            fromSeason: $this->option('from-season') ? (int) $this->option('from-season') : null,
+            toSeason: $this->option('to-season') ? (int) $this->option('to-season') : null,
+            version: $this->option('model-version'))
+            ->map(function (object $forecast): ?array {
+                $row = $this->moneylineRow($forecast->game, $forecast->projection, $forecast->prices, $forecast->trust_score);
+
+                return $row === null ? null : [...$row, 'canonical_prediction_id' => $forecast->canonical_prediction_id,
+                    'canonical_lineage' => $forecast->lineage];
+            })->filter()->values();
+        $limit = (int) $this->option('limit');
+
+        return $limit > 0 ? $rows->take($limit)->values() : $rows;
+    }
+
+    /** @param array{home:float,away:float} $prices */
+    private function moneylineRow(object $game, float $homeProbability, array $prices, float $trustScore): ?array
+    {
+        $noVig = $this->noVigMoneylineProbabilities($prices['home'], $prices['away']);
+        if ($noVig === null) {
+            return null;
+        }
+
+        $homeModelProb = max(0.0, min(1.0, $homeProbability));
+        $awayModelProb = 1 - $homeModelProb;
+        $homeEdge = $homeModelProb - $noVig['home'];
+        $awayEdge = $awayModelProb - $noVig['away'];
+        $betHome = $homeEdge >= $awayEdge;
+        $edge = $betHome ? $homeEdge : $awayEdge;
+
+        if ($edge < ((float) config('nfl.betting.moneyline.play_min_edge', 10.0) / 100)
+            || $trustScore < (float) config('nfl.betting.moneyline.play_min_trust', 85.0)) {
+            return null;
+        }
+
+        $won = $betHome
+            ? (float) $game->home_score > (float) $game->away_score
+            : (float) $game->away_score > (float) $game->home_score;
+        $odds = $betHome ? $prices['home'] : $prices['away'];
+        $profit = $won ? $this->americanPayoutPerUnit($odds) : -1.0;
+
+        return [
+            'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
+            'pick' => $betHome ? 'home' : 'away',
+            'pick_team' => $betHome ? $this->teamName($game->homeTeam) : $this->teamName($game->awayTeam),
+            'odds' => $odds,
+            'model_probability' => ($betHome ? $homeModelProb : $awayModelProb) * 100,
+            'no_vig_implied' => ($betHome ? $noVig['home'] : $noVig['away']) * 100,
+            'edge' => $edge * 100,
+            'market_hold' => $noVig['hold'] * 100,
+            'won' => $won,
+            'profit' => $profit,
+        ];
     }
 
     /**

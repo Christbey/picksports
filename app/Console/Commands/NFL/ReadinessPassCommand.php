@@ -146,6 +146,7 @@ class ReadinessPassCommand extends Command
                 'label' => 'Backtest winner-priced moneyline EV',
                 'command' => 'nfl:backtest-moneylines',
                 'arguments' => [
+                    '--forecast-source' => 'legacy',
                     '--from-season' => $fromSeason,
                     '--to-season' => $toSeason,
                 ],

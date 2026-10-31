@@ -1,10 +1,16 @@
 <?php
 
+use App\Models\CalculationRelease;
+use App\Models\CalculationRun;
+use App\Models\CanonicalPrediction;
 use App\Models\CFB\FpiRating;
 use App\Models\CFB\Game;
 use App\Models\CFB\Prediction;
 use App\Models\CFB\PreseasonTeamSignal;
 use App\Models\CFB\Team;
+use App\Models\EventInputSnapshot;
+use App\Models\PredictionMarket;
+use App\Models\SportEvent;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -328,3 +334,174 @@ function cfbReadinessFinalPrediction(
         'graded_at' => now(),
     ]);
 }
+
+function cfbNativeReadinessFixture(string $variant = 'valid', bool $final = false, int $season = 2026, int $week = 0): array
+{
+    $home = Team::where('abbreviation', 'HST')->first();
+    $away = Team::where('abbreviation', 'AT')->first();
+    if (! $home || ! $away) {
+        [$home, $away] = cfbReadinessTeams();
+    }
+    $start = $final ? now()->subDays(2) : now()->addDay();
+    $generated = $final ? $start->copy()->subHours(2) : now()->subHour();
+    $event = SportEvent::factory()->create(['sport' => 'cfb', 'season' => $season, 'starts_at' => $start]);
+    $game = cfbReadinessGame($home, $away, ['sport_event_id' => $event->id, 'season' => $season, 'week' => $week,
+        'game_date' => $start->toDateString(), 'game_time' => $start->toTimeString(),
+        'status' => $final ? 'STATUS_FINAL' : 'STATUS_SCHEDULED', 'home_score' => $final ? 31 : null, 'away_score' => $final ? 21 : null]);
+    Prediction::create(['game_id' => $game->id, 'home_elo' => 1600, 'away_elo' => 1500,
+        'predicted_spread' => 25, 'win_probability' => 0.9, 'winner_correct' => false, 'spread_error' => 99]);
+    $input = EventInputSnapshot::factory()->create(['sport' => 'cfb', 'sport_event_id' => $event->id,
+        'phase' => 'pregame', 'pregame_safety_status' => $variant === 'unsafe' ? 'unverified' : 'verified',
+        'captured_at' => $generated->copy()->subHour(), 'cutoff_at' => $generated->copy()->subHour(),
+        'latest_source_available_at' => $generated->copy()->subHour(),
+        'inputs' => ['event' => ['starts_at' => ($variant === 'kickoff_mismatch' ? $start->copy()->addHour() : $start)->toIso8601String()],
+            'home' => ['elo' => 1600, 'metrics' => ['fpi' => $variant === 'core_metrics' ? 8.0 : null]], 'away' => ['elo' => 1500]]]);
+    $release = CalculationRelease::factory()->approved()->create(['sport' => 'cfb', 'phase' => 'pregame']);
+    $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
+        'calculation_release_id' => $release->id, 'status' => 'succeeded']);
+    $native = CanonicalPrediction::factory()->create(['sport' => 'cfb', 'sport_event_id' => $event->id,
+        'calculation_run_id' => $run->id, 'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null,
+        'generated_at' => $generated, 'detail_source' => null, 'detail_sport' => null, 'detail_id' => null]);
+    if ($variant !== 'missing_spread') {
+        PredictionMarket::factory()->create(['prediction_id' => $native->id, 'market_type' => 'spread', 'selection' => 'home', 'projected_line' => -7.0]);
+    }
+    if ($variant !== 'missing_probability') {
+        PredictionMarket::factory()->create(['prediction_id' => $native->id, 'market_type' => 'moneyline', 'selection' => 'home', 'probability' => 0.65]);
+    }
+    if ($variant !== 'draft') {
+        $native->update(['publication_state' => 'published', 'published_at' => $generated]);
+    }
+    if ($variant === 'withdrawn') {
+        $native->update(['publication_state' => 'withdrawn', 'withdrawn_at' => now()]);
+    }
+
+    return [$game, $native];
+}
+
+it('uses native CFB outputs for week backtests and spread signs without legacy reads in either switch mode', function (bool $pipeline, bool $reads) {
+    cfbNativeReadinessFixture(final: true);
+    cfbNativeReadinessFixture();
+    config(['prediction_lifecycle.canonical_pipeline.cfb' => $pipeline, 'prediction_lifecycle.canonical_reads.cfb' => $reads]);
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        expect(Artisan::call('cfb:report-preseason-readiness', ['--season' => 2026, '--json' => true, '--fail-on-warnings' => true]))->toBe(1);
+        $report = json_decode(Artisan::output(), true);
+        $sql = collect(DB::getQueryLog())->pluck('query')->implode(' ');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect($report['forecast_source'])->toBe('canonical')->and($report['backtest']['count'])->toBe(1)
+        ->and((float) $report['backtest']['spread_mae'])->toBe(3.0)->and((float) $report['backtest']['winner_accuracy'])->toBe(100.0)
+        ->and($report['early_week_readiness']['elo_only_count'])->toBe(1)
+        ->and($report['early_week_readiness']['warnings'][0]['reason'])->toBe('week_0_1_prediction_relies_only_on_elo')
+        ->and((float) $report['spread_convention']['samples'][0]['predicted_spread_home_margin'])->toBe(7.0)
+        ->and((float) $report['spread_convention']['samples'][0]['ui_home_line'])->toBe(-7.0)
+        ->and($sql)->not->toContain('cfb_predictions')->not->toContain('prediction_feature_snapshots')->not->toContain('odds_data');
+})->with([[true, false], [false, true], [true, true]]);
+
+it('warns about unavailable native early-week forecasts without borrowing legacy evidence', function (string $variant) {
+    cfbNativeReadinessFixture($variant);
+    config(['prediction_lifecycle.canonical_pipeline.cfb' => true]);
+    expect(Artisan::call('cfb:report-preseason-readiness', ['--season' => 2026, '--json' => true, '--fail-on-warnings' => true]))->toBe(1);
+    $report = json_decode(Artisan::output(), true);
+    expect($report['early_week_readiness']['warning_count'])->toBe(1)
+        ->and($report['early_week_readiness']['warnings'][0]['reason'])->toBe('week_0_1_canonical_forecast_unavailable')
+        ->and($report['spread_convention']['samples'])->toBeEmpty()->and($report['backtest']['count'])->toBe(0);
+})->with(['draft', 'withdrawn', 'unsafe', 'missing_spread', 'kickoff_mismatch']);
+
+it('preserves explicit historical readiness and rejects invalid sources', function () {
+    cfbNativeReadinessFixture(final: true);
+    config(['prediction_lifecycle.canonical_pipeline.cfb' => true, 'prediction_lifecycle.canonical_reads.cfb' => true]);
+    expect(Artisan::call('cfb:report-preseason-readiness', ['--season' => 2026, '--forecast-source' => 'legacy', '--json' => true]))->toBe(0);
+    $report = json_decode(Artisan::output(), true);
+    expect($report['forecast_source'])->toBe('legacy')->and((float) $report['backtest']['spread_mae'])->toBe(99.0)
+        ->and((float) $report['backtest']['winner_accuracy'])->toBe(0.0)
+        ->and((float) $report['spread_convention']['samples'][0]['predicted_spread_home_margin'])->toBe(25.0);
+    $this->artisan('cfb:report-preseason-readiness', ['--forecast-source' => 'invalid'])->assertFailed();
+});
+
+it('uses native frozen core metrics without removing missing-family warnings', function () {
+    cfbNativeReadinessFixture('core_metrics');
+    config(['prediction_lifecycle.canonical_pipeline.cfb' => true]);
+    Artisan::call('cfb:report-preseason-readiness', ['--season' => 2026, '--json' => true]);
+    $report = json_decode(Artisan::output(), true);
+    expect($report['early_week_readiness']['elo_only_count'])->toBe(0)
+        ->and($report['early_week_readiness']['warning_count'])->toBe(1)
+        ->and($report['early_week_readiness']['warnings'][0]['reason'])->toBe('week_0_1_prediction_missing_preseason_signal_family');
+});
+
+it('preserves successful native readiness when every required signal family is covered', function () {
+    [$game] = cfbNativeReadinessFixture();
+    foreach ([$game->home_team_id, $game->away_team_id] as $teamId) {
+        PreseasonTeamSignal::factory()->create(['team_id' => $teamId, 'season' => 2026,
+            'returning_percent_ppa' => 0.72, 'transfer_portal_payload' => [['position' => 'QB', 'rating' => 0.94]],
+            'talent_composite' => 850, 'qb_continuity_classification' => PreseasonTeamSignal::QB_RETURNING_STARTER,
+            'new_head_coach' => false, 'coaching_continuity_payload' => ['scheme_change_score' => 0.1]]);
+        FpiRating::factory()->create(['team_id' => $teamId, 'season' => 2026, 'week' => 0, 'special_teams' => 1.5]);
+    }
+    config(['prediction_lifecycle.canonical_pipeline.cfb' => true]);
+    expect(Artisan::call('cfb:report-preseason-readiness', ['--season' => 2026, '--json' => true, '--fail-on-warnings' => true]))->toBe(0);
+    expect(json_decode(Artisan::output(), true)['early_week_readiness']['warning_count'])->toBe(0);
+});
+
+it('keeps canonical history scope separate from the target season and limits only eligible backtests', function () {
+    cfbNativeReadinessFixture(final: true, season: 2025, week: 3);
+    cfbNativeReadinessFixture(final: true, season: 2026, week: 6);
+    cfbNativeReadinessFixture('missing_probability', final: true, season: 2026, week: 10);
+    cfbNativeReadinessFixture(season: 2027);
+    config(['prediction_lifecycle.canonical_pipeline.cfb' => true]);
+    Artisan::call('cfb:report-preseason-readiness', ['--season' => 2027, '--from-season' => 2025, '--to-season' => 2026, '--json' => true]);
+    $report = json_decode(Artisan::output(), true);
+    expect($report['backtest']['count'])->toBe(2)->and($report['backtest']['week_buckets']['week_2_4']['count'])->toBe(1)
+        ->and($report['backtest']['week_buckets']['week_5_8']['count'])->toBe(1)
+        ->and($report['early_week_readiness']['warning_count'])->toBe(1);
+    Artisan::call('cfb:report-preseason-readiness', ['--season' => 2027, '--from-season' => 2025, '--to-season' => 2026, '--limit' => 1, '--json' => true]);
+    $limited = json_decode(Artisan::output(), true);
+    expect($limited['backtest']['count'])->toBe(1)->and($limited['backtest']['week_buckets']['week_5_8']['count'])->toBe(1);
+    $this->artisan('cfb:report-preseason-readiness', ['--from-season' => 2027, '--to-season' => 2025])->assertFailed();
+});
+
+it('reuses one batched native forecast corpus across all report sections', function () {
+    foreach (range(1, 26) as $index) {
+        cfbNativeReadinessFixture(final: true);
+    }
+    config(['prediction_lifecycle.canonical_pipeline.cfb' => true]);
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        Artisan::call('cfb:report-preseason-readiness', ['--season' => 2026, '--json' => true]);
+        $report = json_decode(Artisan::output(), true);
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect($report['backtest']['count'])->toBe(26)
+        ->and($queries->filter(fn (string $sql): bool => str_starts_with($sql, 'select * from "event_input_snapshots"'))->count())->toBe(2)
+        ->and($queries->implode(' '))->not->toContain('cfb_predictions');
+});
+
+it('does not create missing-forecast warnings for cancelled early-week games', function () {
+    [$game] = cfbNativeReadinessFixture('draft');
+    $game->update(['status' => 'STATUS_CANCELED']);
+    config(['prediction_lifecycle.canonical_pipeline.cfb' => true]);
+    expect(Artisan::call('cfb:report-preseason-readiness', ['--season' => 2026, '--json' => true, '--fail-on-warnings' => true]))->toBe(0);
+    expect(json_decode(Artisan::output(), true)['early_week_readiness']['warning_count'])->toBe(0);
+});
+
+it('preserves historical sample ordering when legacy timestamps are tied', function () {
+    $this->travelTo('2026-10-30 12:00:00');
+    try {
+        cfbNativeReadinessFixture();
+        cfbNativeReadinessFixture();
+        $expected = Prediction::whereNotNull('predicted_spread')->whereHas('game', fn ($query) => $query->where('season', 2026))
+            ->latest()->limit(5)->pluck('game_id')->all();
+        Artisan::call('cfb:report-preseason-readiness', ['--season' => 2026, '--forecast-source' => 'legacy', '--json' => true]);
+        $report = json_decode(Artisan::output(), true);
+        expect(array_column($report['spread_convention']['samples'], 'game_id'))->toBe($expected);
+    } finally {
+        $this->travelBack();
+    }
+});

@@ -3,8 +3,8 @@
 namespace App\Console\Commands\CFB;
 
 use App\Models\CFB\Game;
-use App\Models\CFB\Prediction;
 use App\Models\CFB\Team;
+use App\Services\CFB\CfbPreseasonReadinessForecastSource;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Schema;
 class ReportPreseasonReadinessCommand extends Command
 {
     protected $signature = 'cfb:report-preseason-readiness
+        {--forecast-source= : canonical or legacy (defaults to the active CFB source)}
         {--season= : Upcoming/current season to inspect; defaults to cfb.season.default}
         {--from-season= : First season for signal coverage/backtest; defaults to --season}
         {--to-season= : Last season for signal coverage/backtest; defaults to --season}
@@ -318,8 +319,20 @@ class ReportPreseasonReadinessCommand extends Command
      */
     private array $columnCache = [];
 
+    private Collection $forecasts;
+
+    private string $forecastSource;
+
     public function handle(): int
     {
+        $this->columnCache = [];
+        try {
+            $this->forecastSource = app(CfbPreseasonReadinessForecastSource::class)->name($this->option('forecast-source'));
+        } catch (\InvalidArgumentException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
         $season = (int) ($this->option('season') ?: config('cfb.season.default'));
         $fromSeason = (int) ($this->option('from-season') ?: $season);
         $toSeason = (int) ($this->option('to-season') ?: $season);
@@ -330,6 +343,9 @@ class ReportPreseasonReadinessCommand extends Command
             return self::FAILURE;
         }
 
+        $this->forecasts = app(CfbPreseasonReadinessForecastSource::class)->forSeasons(
+            min($season, $fromSeason), max($season, $toSeason), $this->forecastSource,
+        );
         $seasons = range($fromSeason, $toSeason);
         $coverage = collect($seasons)
             ->mapWithKeys(fn (int $reportSeason): array => [
@@ -341,6 +357,7 @@ class ReportPreseasonReadinessCommand extends Command
         $earlyReadiness = $this->earlyWeekReadiness($season);
         $report = [
             'report_type' => 'cfb_preseason_readiness',
+            'forecast_source' => $this->forecastSource,
             'season' => $season,
             'from_season' => $fromSeason,
             'to_season' => $toSeason,
@@ -562,25 +579,18 @@ class ReportPreseasonReadinessCommand extends Command
      */
     private function loadBacktestRows(int $fromSeason, int $toSeason): Collection
     {
-        $query = Prediction::query()
-            ->with(['game.homeTeam', 'game.awayTeam'])
-            ->whereNotNull('predicted_spread')
-            ->whereNotNull('win_probability')
-            ->whereHas('game', function ($query) use ($fromSeason, $toSeason): void {
-                $query->whereBetween('season', [$fromSeason, $toSeason])
-                    ->whereNotNull('week')
-                    ->whereNotNull('home_score')
-                    ->whereNotNull('away_score');
-            })
-            ->latest();
-
+        $rows = $this->forecasts->filter(fn (object $prediction): bool => $prediction->predicted_spread !== null
+            && $prediction->win_probability !== null && $prediction->game !== null
+            && $prediction->game->season >= $fromSeason && $prediction->game->season <= $toSeason
+            && $prediction->game->week !== null && $prediction->game->home_score !== null && $prediction->game->away_score !== null
+            && ($this->forecastSource === 'legacy' || $prediction->game->status === config('cfb.statuses.final', 'STATUS_FINAL')));
         $limit = max(0, (int) $this->option('limit'));
         if ($limit > 0) {
-            $query->limit($limit);
+            $rows = $rows->take($limit);
         }
 
-        return $query->get()
-            ->map(function (Prediction $prediction): ?array {
+        return $rows
+            ->map(function (object $prediction): ?array {
                 $game = $prediction->game;
                 if (! $game) {
                     return null;
@@ -691,16 +701,21 @@ class ReportPreseasonReadinessCommand extends Command
         }
         $coreMetricTeams = $this->coveredTeamIds(self::CORE_METRIC_SOURCES, $season, $teamIds, true)->all();
 
-        $warnings = Prediction::query()
-            ->with(['game.homeTeam', 'game.awayTeam'])
-            ->whereNotNull('predicted_spread')
-            ->whereHas('game', function ($query) use ($season): void {
-                $query->where('season', $season)
-                    ->whereIn('week', [0, 1])
-                    ->where('status', '!=', config('cfb.statuses.final', 'STATUS_FINAL'));
-            })
-            ->get()
-            ->map(function (Prediction $prediction) use ($coveredByFamily, $coreMetricTeams): ?array {
+        $predictions = $this->forecasts->filter(fn (object $prediction): bool => $prediction->predicted_spread !== null
+            && $prediction->game?->season === $season && $prediction->game->week !== null && in_array((int) $prediction->game->week, [0, 1], true)
+            && $prediction->game->status !== config('cfb.statuses.final', 'STATUS_FINAL'));
+        if ($this->forecastSource === 'canonical') {
+            $known = $predictions->keyBy(fn (object $prediction): int => $prediction->game->id);
+            $predictions = Game::query()->with(['homeTeam', 'awayTeam'])->where('season', $season)->whereIn('week', [0, 1])
+                ->where('status', '!=', config('cfb.statuses.final', 'STATUS_FINAL'))
+                ->where(fn ($query) => $query->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_DELAYED'])->orWhereIn('id', $known->keys()))->get()
+                ->map(fn (Game $game): object => $known->get($game->id) ?? (object) [
+                    'game' => $game, 'home_fpi' => null, 'away_fpi' => null, 'home_elo' => null, 'away_elo' => null,
+                    'forecast_unavailable' => true,
+                ]);
+        }
+        $warnings = $predictions
+            ->map(function (object $prediction) use ($coveredByFamily, $coreMetricTeams): ?array {
                 $game = $prediction->game;
                 if (! $game) {
                     return null;
@@ -727,7 +742,7 @@ class ReportPreseasonReadinessCommand extends Command
                 $hasAnyPreseasonFamily = $availableFamilies !== [];
                 $eloOnly = ! $hasCoreMetrics && ! $hasAnyPreseasonFamily && $prediction->home_elo !== null && $prediction->away_elo !== null;
 
-                if (! $eloOnly && $missingFamilies === []) {
+                if (! ($prediction->forecast_unavailable ?? false) && ! $eloOnly && $missingFamilies === []) {
                     return null;
                 }
 
@@ -738,9 +753,9 @@ class ReportPreseasonReadinessCommand extends Command
                     'elo_only' => $eloOnly,
                     'available_preseason_signal_families' => $availableFamilies,
                     'missing_preseason_signal_families' => $missingFamilies,
-                    'reason' => $eloOnly
+                    'reason' => ($prediction->forecast_unavailable ?? false) ? 'week_0_1_canonical_forecast_unavailable' : ($eloOnly
                         ? 'week_0_1_prediction_relies_only_on_elo'
-                        : 'week_0_1_prediction_missing_preseason_signal_family',
+                        : 'week_0_1_prediction_missing_preseason_signal_family'),
                 ];
             })
             ->filter()
@@ -760,14 +775,9 @@ class ReportPreseasonReadinessCommand extends Command
      */
     private function spreadConventionReport(int $season): array
     {
-        $samples = Prediction::query()
-            ->with(['game.homeTeam', 'game.awayTeam'])
-            ->whereNotNull('predicted_spread')
-            ->whereHas('game', fn ($query) => $query->where('season', $season))
-            ->latest()
-            ->limit($this->sampleLimit())
-            ->get()
-            ->map(function (Prediction $prediction): array {
+        $samples = $this->forecasts->filter(fn (object $prediction): bool => $prediction->predicted_spread !== null && $prediction->game?->season === $season)
+            ->take($this->sampleLimit())
+            ->map(function (object $prediction): array {
                 $game = $prediction->game;
                 $predictedSpread = (float) $prediction->predicted_spread;
                 $homeLine = round(-$predictedSpread, 1);
@@ -793,7 +803,7 @@ class ReportPreseasonReadinessCommand extends Command
         ];
     }
 
-    private function predictionHasCoreMetrics(Prediction $prediction): bool
+    private function predictionHasCoreMetrics(object $prediction): bool
     {
         return is_numeric($prediction->home_fpi)
             || is_numeric($prediction->away_fpi);
@@ -814,6 +824,7 @@ class ReportPreseasonReadinessCommand extends Command
     private function renderReport(array $report): void
     {
         $this->info('CFB Preseason Readiness Report');
+        $this->line('Forecast source: '.$report['forecast_source']);
         $this->line("Season: {$report['season']} | Historical scope: {$report['from_season']}-{$report['to_season']}");
         $this->newLine();
 

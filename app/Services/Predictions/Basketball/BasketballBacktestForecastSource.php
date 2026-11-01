@@ -24,23 +24,44 @@ class BasketballBacktestForecastSource
     /** @return Collection<int, object> */
     public function forFinalGames(string $sport, ?int $season = null, ?int $seasonType = null): Collection
     {
+        return $this->finalGames($sport, $season, $seasonType);
+    }
+
+    /** @return Collection<int, object> */
+    public function forCbbPlayReplay(?int $season, int $limit): Collection
+    {
+        return $this->finalGames('cbb', $season, null, max(1, $limit));
+    }
+
+    private function finalGames(string $sport, ?int $season, ?int $seasonType, ?int $replayLimit = null): Collection
+    {
         $this->validateSport($sport);
         $rows = collect();
         $filters = array_filter(['season' => $season, 'season_type' => $seasonType === null ? null : (string) $seasonType], fn ($value) => $value !== null);
         app(CanonicalSportPredictionQuery::class)->queryForSport($sport, $filters)
             ->where("{$sport}_games.status", 'STATUS_FINAL')->whereNotNull("{$sport}_games.home_score")->whereNotNull("{$sport}_games.away_score")
             ->where('predictions.generated_at', '<=', now())->where('predictions.published_at', '<=', now())
+            ->when($replayLimit !== null, fn ($query) => $query->whereHas('sportEvent.cbbGame.plays')->reorder()->orderByDesc('cbb_games.game_date')->orderByDesc('cbb_games.id'))
             ->withOnly(['markets', 'calculationRun:id,event_input_snapshot_id,calculation_release_id,status',
                 'calculationRun.inputSnapshot', 'calculationRun.release:id,status', 'sportEvent:id,starts_at',
-                "sportEvent.{$sport}Game:id,sport_event_id,season,season_type,home_team_id,away_team_id,home_score,away_score",
+                "sportEvent.{$sport}Game:id,sport_event_id,season,season_type,home_team_id,away_team_id,home_score,away_score,game_date,game_time",
                 "sportEvent.{$sport}Game.homeTeam:id,abbreviation,".($sport === 'cbb' ? 'school' : ($sport === 'wnba' ? 'location,name' : 'location')), "sportEvent.{$sport}Game.awayTeam:id,abbreviation,".($sport === 'cbb' ? 'school' : ($sport === 'wnba' ? 'location,name' : 'location'))])
-            ->chunk(25, function (Collection $predictions) use ($rows, $sport): void {
+            ->chunk(25, function (Collection $predictions) use ($rows, $sport, $replayLimit): bool {
                 foreach ($predictions as $prediction) {
                     $row = $this->canonical($prediction, $sport);
+                    if ($row !== null && $replayLimit !== null && ($row->predicted_spread === null || $row->predicted_total === null
+                        || $row->win_probability === null || $row->win_probability < 0 || $row->win_probability > 1)) {
+                        continue;
+                    }
                     if ($row !== null && ! $rows->has($row->game->id)) {
                         $rows->put($row->game->id, $row);
+                        if ($replayLimit !== null && $rows->count() >= $replayLimit) {
+                            return false;
+                        }
                     }
                 }
+
+                return true;
             });
 
         return $rows->values();
@@ -70,6 +91,7 @@ class BasketballBacktestForecastSource
             'game_start_at' => $snapshot->game_start_at,
             'predicted_spread' => $this->number($snapshot->outputs['predicted_spread'] ?? null),
             'predicted_total' => $this->number($snapshot->outputs['predicted_total'] ?? null),
+            'win_probability' => $this->number($moneyline?->probability),
             'confidence_score' => $this->number($moneyline?->confidence_score),
             'market_sportsbook_spread' => $homeLine, 'market_total' => $this->number(data_get($market, 'total.line')),
         ];

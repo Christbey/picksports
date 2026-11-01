@@ -4,7 +4,9 @@ namespace App\Console\Commands\MLB;
 
 use App\Models\GameOddsSnapshot;
 use App\Models\MLB\Prediction;
+use App\Services\MLB\MlbAnalysisForecastSource;
 use App\Services\MLB\MlbPredictionRecommendationService;
+use App\Services\MLB\Predictions\MlbCalculationReleaseDefinition;
 use App\Support\Odds\AmericanOdds;
 use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
@@ -16,7 +18,8 @@ class ResearchMarketBlendsCommand extends Command
 {
     protected $signature = 'mlb:research-market-blends
         {--season= : Filter by season}
-        {--feature-version=core-v3 : Filter to a single feature_version (use "any" to include all)}
+        {--forecast-source= : canonical or legacy (defaults to the active MLB evidence source)}
+        {--feature-version= : Filter to a single feature_version (use "any" to include all)}
         {--limit=2500 : Limit number of most recent graded predictions to inspect}
         {--from= : Start game date in YYYY-MM-DD}
         {--to= : End game date in YYYY-MM-DD}
@@ -30,8 +33,18 @@ class ResearchMarketBlendsCommand extends Command
 
     public function handle(MlbPredictionRecommendationService $recommendations): int
     {
-        $rows = $this->loadRows($recommendations);
+        $this->forecastSource = $this->option('forecast-source') ?? ((config('prediction_lifecycle.canonical_pipeline.mlb') || config('prediction_lifecycle.canonical_reads.mlb')) ? 'canonical' : 'legacy');
+        if (! in_array($this->forecastSource, ['canonical', 'legacy'], true)) {
+            $this->error('Forecast source must be canonical or legacy.');
+
+            return self::FAILURE;
+        }
+        $rows = $this->forecastSource === 'canonical' ? $this->canonicalRows($recommendations) : $this->loadRows($recommendations);
         $report = $this->buildReport($rows);
+        if ($this->forecastSource === 'canonical') {
+            $report['forecast_source'] = 'canonical';
+            $report['canonical_evidence'] = $rows->map(fn (array $row): array => $row['canonical_evidence'])->all();
+        }
 
         if ($this->option('json')) {
             $this->line(json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
@@ -41,6 +54,9 @@ class ResearchMarketBlendsCommand extends Command
 
         $this->info('MLB Market-Aware Shadow Model Research');
         $this->line('Shadow model: mlb_market_aware_shadow_v1');
+        if ($this->forecastSource === 'canonical') {
+            $this->line('Forecast source: canonical; report grants no calibration or betting approval.');
+        }
         $this->line('Rows: '.$report['summary']['rows'].' | Market rows: '.$report['summary']['market_rows'].' | Strict market rows: '.$report['summary']['strict_market_rows']);
         $this->line('Full scope strict pregame safe: '.($report['summary']['strict_pregame_safe'] ? 'yes' : 'no'));
         $this->line('Analysis rows: '.$report['summary']['analysis_rows'].' | Analysis mode: '.$report['summary']['analysis_mode']);
@@ -138,64 +154,125 @@ class ResearchMarketBlendsCommand extends Command
 
                 $oddsContext = $this->oddsContext($prediction);
                 $h2hPrices = $this->extractH2hPrices($prediction, $oddsContext['odds_data']);
-                $marketProbabilities = AmericanOdds::noVigProbabilities($h2hPrices['home'], $h2hPrices['away']);
-                $marketHomeProbability = $marketProbabilities['home'];
-                $marketAwayProbability = $marketProbabilities['away'];
-                $homeProbability = (float) $prediction->win_probability;
-                $actualMargin = (float) $game->home_score - (float) $game->away_score;
-                $actualTotal = (float) $game->home_score + (float) $game->away_score;
-                $homeWon = $actualMargin > 0;
-                $modelPickSide = $this->sideFromHomeProbability($homeProbability);
-                $marketPickSide = $this->marketPickSide($marketProbabilities, $h2hPrices);
-                $marketTotal = $this->extractMarketTotal($prediction, $oddsContext['odds_data']);
-                $recommendation = $recommendations->forPrediction($prediction);
-                $public = (array) ($recommendation['public'] ?? $recommendation);
-                $candidate = (array) ($recommendation['candidate'] ?? $recommendation['pregame_recommendation'] ?? $recommendation);
-                $promotion = (array) ($recommendation['promotion'] ?? []);
 
-                return [
-                    'prediction_id' => (int) $prediction->id,
-                    'game_id' => (int) $game->id,
-                    'game_date' => $game->game_date?->toDateString(),
-                    'month' => $game->game_date?->format('M') ?? 'unknown',
-                    'game_time' => $game->game_time,
-                    'status' => (string) $game->status,
-                    'home_won' => $homeWon,
-                    'actual_total' => $actualTotal,
-                    'home_probability' => $homeProbability,
-                    'model_pick_side' => $modelPickSide,
-                    'model_pick_won' => $this->pickWon($modelPickSide, $homeWon),
-                    'market_home_probability' => $marketHomeProbability,
-                    'market_away_probability' => $marketAwayProbability,
-                    'market_pick_side' => $marketPickSide,
-                    'market_pick_won' => $marketPickSide === null ? null : $this->pickWon($marketPickSide, $homeWon),
-                    'predicted_spread' => (float) $prediction->predicted_spread,
-                    'market_home_margin' => is_numeric($prediction->vegas_spread) ? -1 * (float) $prediction->vegas_spread : null,
-                    'predicted_total' => (float) $prediction->predicted_total,
-                    'market_total' => $marketTotal,
-                    'confidence_score' => (float) $prediction->confidence_score,
-                    'candidate_recommendation_type' => (string) ($candidate['recommendation_type'] ?? 'no_play'),
-                    'candidate_score' => $candidate['score'] ?? null,
-                    'candidate_risk_flags' => array_values((array) ($candidate['risk_flags'] ?? [])),
-                    'candidate_reason_codes' => array_values((array) ($candidate['reason_codes'] ?? [])),
-                    'raw_edge' => $candidate['raw_edge'] ?? null,
-                    'no_vig_edge' => $candidate['no_vig_edge'] ?? null,
-                    'home_pitcher_source' => (string) data_get($prediction->model_metadata, 'pitcher_inputs.home_source', 'unknown'),
-                    'away_pitcher_source' => (string) data_get($prediction->model_metadata, 'pitcher_inputs.away_source', 'unknown'),
-                    'park_adjustment' => (float) data_get($prediction->model_metadata, 'park_context.total_adjustment', 0.0),
-                    'weather_adjustment' => (float) data_get($prediction->model_metadata, 'actual_weather.total_adjustment', 0.0),
-                    'odds_updated_at' => $oddsContext['captured_at'],
-                    'market_odds_source' => $oddsContext['source'],
-                    'market_odds_snapshot_id' => $oddsContext['snapshot_id'],
-                    'public_recommendation_type' => (string) ($public['recommendation_type'] ?? 'no_play'),
-                    'safety_flags' => $this->safetyFlags($prediction, $oddsContext),
-                    'promotion_status' => (string) ($promotion['status'] ?? 'unknown'),
-                    'promotion_blocked' => ($promotion['status'] ?? null) === 'blocked',
-                    'promotion_block_reasons' => array_values((array) ($promotion['block_reasons'] ?? [])),
-                ];
+                return $this->reportRow($prediction, $h2hPrices, $this->extractMarketTotal($prediction, $oddsContext['odds_data']), $recommendations->forPrediction($prediction), $oddsContext, $this->safetyFlags($prediction, $oddsContext));
             })
             ->filter()
             ->values();
+    }
+
+    private string $forecastSource = 'legacy';
+
+    private function featureVersion(): string
+    {
+        return (string) ($this->option('feature-version') ?? ($this->forecastSource === 'canonical' ? MlbCalculationReleaseDefinition::INPUT_SCHEMA_VERSION : 'core-v3'));
+    }
+
+    private function canonicalRows(MlbPredictionRecommendationService $recommendations): Collection
+    {
+        $version = $this->featureVersion();
+
+        return app(MlbAnalysisForecastSource::class)->rows($this->option('season') ? (int) $this->option('season') : null,
+            $this->option('from'), $this->option('to'), strtolower($version) === 'any' || $version === '' ? null : $version, (int) $this->option('limit'))
+            ->map(function (array $entry) use ($recommendations): array {
+                $forecast = $entry['forecast'];
+                $input = $forecast->source->calculationRun->inputSnapshot;
+                $captured = data_get($input->inputs, 'pregame_market.captured_at');
+                $flags = [];
+                if ($entry['prices']['home'] === null || $entry['prices']['away'] === null) {
+                    $flags[] = 'missing_market_odds';
+                }
+                try {
+                    $captured = is_string($captured) ? Carbon::parse($captured) : null;
+                } catch (\Throwable) {
+                    $captured = null;
+                }
+                $start = $forecast->source->sportEvent->starts_at;
+                if ($captured === null) {
+                    $flags[] = 'missing_odds_timestamp';
+                } else {
+                    if ($captured->gte($start)) {
+                        $flags[] = 'odds_after_first_pitch';
+                    }
+                    if ($captured->gt($input->captured_at)) {
+                        $flags[] = 'odds_after_input_capture';
+                    }
+                    if ($this->oddsAreStale($captured, $start)) {
+                        $flags[] = 'stale_odds';
+                    }
+                }
+                $metadata = $forecast->modelMetadata;
+                foreach (['home', 'away'] as $side) {
+                    data_set($metadata, 'pitcher_inputs.'.$side.'_source', data_get($input->inputs, 'pitching.'.$side.'.source', 'unknown'));
+                }
+                data_set($metadata, 'park_context.total_adjustment', data_get($forecast->source->calculationRun->diagnostics, 'park_total_adjustment'));
+                data_set($metadata, 'actual_weather.total_adjustment', data_get($forecast->source->calculationRun->diagnostics, 'weather_total_adjustment'));
+                $prediction = (object) ['game' => $forecast->game, 'win_probability' => $forecast->winProbability,
+                    'predicted_spread' => $forecast->predictedSpread, 'predicted_total' => $forecast->predictedTotal,
+                    'confidence_score' => $forecast->confidenceScore, 'vegas_spread' => $forecast->vegasSpread, 'model_metadata' => $metadata];
+
+                return [...$this->reportRow($prediction, $entry['prices'], $forecast->marketTotal, $recommendations->forPrediction($forecast),
+                    ['captured_at' => $captured, 'source' => 'canonical_input_snapshot', 'snapshot_id' => null], $flags, true),
+                    'canonical_evidence' => ['canonical_prediction_id' => $forecast->source->id, 'lineage' => $entry['lineage'], 'event_input_snapshot_id' => $input->id]];
+            });
+    }
+
+    private function reportRow(object $prediction, array $h2hPrices, ?float $marketTotal, array $recommendation, array $oddsContext, array $flags, bool $native = false): array
+    {
+        $game = $prediction->game;
+        $marketProbabilities = AmericanOdds::noVigProbabilities($h2hPrices['home'], $h2hPrices['away']);
+        $marketHomeProbability = $marketProbabilities['home'];
+        $marketAwayProbability = $marketProbabilities['away'];
+        $homeProbability = (float) $prediction->win_probability;
+        $actualMargin = (float) $game->home_score - (float) $game->away_score;
+        $actualTotal = (float) $game->home_score + (float) $game->away_score;
+        $homeWon = $actualMargin > 0;
+        $modelPickSide = $this->sideFromHomeProbability($homeProbability);
+        $marketPickSide = $this->marketPickSide($marketProbabilities, $h2hPrices);
+        $public = (array) ($recommendation['public'] ?? $recommendation);
+        $candidate = (array) ($recommendation['candidate'] ?? $recommendation['pregame_recommendation'] ?? $recommendation);
+        $promotion = (array) ($recommendation['promotion'] ?? []);
+
+        return [
+            'prediction_id' => $native ? null : (int) $prediction->id,
+            'game_id' => (int) $game->id,
+            'game_date' => $game->game_date?->toDateString(),
+            'month' => $game->game_date?->format('M') ?? 'unknown',
+            'game_time' => $game->game_time,
+            'status' => (string) $game->status,
+            'home_won' => $homeWon,
+            'actual_total' => $actualTotal,
+            'home_probability' => $homeProbability,
+            'model_pick_side' => $modelPickSide,
+            'model_pick_won' => $this->pickWon($modelPickSide, $homeWon),
+            'market_home_probability' => $marketHomeProbability,
+            'market_away_probability' => $marketAwayProbability,
+            'market_pick_side' => $marketPickSide,
+            'market_pick_won' => $marketPickSide === null ? null : $this->pickWon($marketPickSide, $homeWon),
+            'predicted_spread' => (float) $prediction->predicted_spread,
+            'market_home_margin' => is_numeric($prediction->vegas_spread) ? -1 * (float) $prediction->vegas_spread : null,
+            'predicted_total' => (float) $prediction->predicted_total,
+            'market_total' => $marketTotal,
+            'confidence_score' => (float) $prediction->confidence_score,
+            'candidate_recommendation_type' => (string) ($candidate['recommendation_type'] ?? 'no_play'),
+            'candidate_score' => $candidate['score'] ?? null,
+            'candidate_risk_flags' => array_values((array) ($candidate['risk_flags'] ?? [])),
+            'candidate_reason_codes' => array_values((array) ($candidate['reason_codes'] ?? [])),
+            'raw_edge' => $candidate['raw_edge'] ?? null,
+            'no_vig_edge' => $candidate['no_vig_edge'] ?? null,
+            'home_pitcher_source' => (string) data_get($prediction->model_metadata, 'pitcher_inputs.home_source', 'unknown'),
+            'away_pitcher_source' => (string) data_get($prediction->model_metadata, 'pitcher_inputs.away_source', 'unknown'),
+            'park_adjustment' => data_get($prediction->model_metadata, 'park_context.total_adjustment', $native ? null : 0.0),
+            'weather_adjustment' => data_get($prediction->model_metadata, 'actual_weather.total_adjustment', $native ? null : 0.0),
+            'odds_updated_at' => $oddsContext['captured_at'],
+            'market_odds_source' => $oddsContext['source'],
+            'market_odds_snapshot_id' => $oddsContext['snapshot_id'],
+            'public_recommendation_type' => (string) ($public['recommendation_type'] ?? 'no_play'),
+            'safety_flags' => $flags,
+            'promotion_status' => (string) ($promotion['status'] ?? 'unknown'),
+            'promotion_blocked' => ($promotion['status'] ?? null) === 'blocked',
+            'promotion_block_reasons' => array_values((array) ($promotion['block_reasons'] ?? [])),
+        ];
     }
 
     private function predictionQuery(): Builder
@@ -219,7 +296,7 @@ class ResearchMarketBlendsCommand extends Command
             $query->whereHas('game', fn (Builder $gameQuery) => $gameQuery->whereDate('game_date', '<=', (string) $this->option('to')));
         }
 
-        $featureVersion = (string) $this->option('feature-version');
+        $featureVersion = $this->featureVersion();
         if ($featureVersion !== '' && strtolower($featureVersion) !== 'any') {
             $query->where('feature_version', $featureVersion);
         }
@@ -244,7 +321,7 @@ class ResearchMarketBlendsCommand extends Command
         return [
             'report_type' => 'mlb_market_aware_shadow_research',
             'shadow_model_version' => 'mlb_market_aware_shadow_v1',
-            'production_model_version' => (string) $this->option('feature-version'),
+            'production_model_version' => $this->featureVersion(),
             'season' => $this->option('season') ? (int) $this->option('season') : null,
             'generated_at' => now()->toIso8601String(),
             'summary' => [
@@ -641,8 +718,8 @@ class ResearchMarketBlendsCommand extends Command
 
         return [
             'month' => $this->totalBreakdown($totalRows, fn (array $row): string => (string) $row['month']),
-            'park_adjustment_bucket' => $this->totalBreakdown($totalRows, fn (array $row): string => $this->adjustmentBucket((float) $row['park_adjustment'], 'park')),
-            'weather_adjustment_bucket' => $this->totalBreakdown($totalRows, fn (array $row): string => $this->adjustmentBucket((float) $row['weather_adjustment'], 'weather')),
+            'park_adjustment_bucket' => $this->totalBreakdown($totalRows, fn (array $row): string => $this->adjustmentBucket($row['park_adjustment'], 'park')),
+            'weather_adjustment_bucket' => $this->totalBreakdown($totalRows, fn (array $row): string => $this->adjustmentBucket($row['weather_adjustment'], 'weather')),
             'predicted_total_bucket' => $this->totalBreakdown($totalRows, fn (array $row): string => $this->totalBucket((float) $row['predicted_total'])),
             'market_total_gap_bucket' => $this->totalBreakdown($totalRows, fn (array $row): string => $this->gapBucket(abs((float) $row['predicted_total'] - (float) $row['market_total']))),
         ];
@@ -885,7 +962,7 @@ class ResearchMarketBlendsCommand extends Command
         ];
     }
 
-    private function oddsAreStale(CarbonInterface $oddsUpdatedAt, ?Carbon $start): bool
+    private function oddsAreStale(CarbonInterface $oddsUpdatedAt, ?CarbonInterface $start): bool
     {
         $staleHours = (int) config('mlb.signals.odds_stale_hours', 12);
 
@@ -1069,8 +1146,11 @@ class ResearchMarketBlendsCommand extends Command
         };
     }
 
-    private function adjustmentBucket(float $value, string $prefix): string
+    private function adjustmentBucket(?float $value, string $prefix): string
     {
+        if ($value === null) {
+            return "{$prefix}_unknown";
+        }
         if ($value >= 0.25) {
             return "{$prefix}_boost";
         }

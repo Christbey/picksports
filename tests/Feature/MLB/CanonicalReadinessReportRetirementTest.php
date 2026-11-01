@@ -39,7 +39,9 @@ function mlbReadinessFixture(string $variant = 'valid', int $season = 2026, int 
         'pregame_safety_status' => $variant === 'unsafe' ? 'unverified' : 'verified', 'captured_at' => $captured, 'cutoff_at' => $start,
         'latest_source_available_at' => $variant === 'future_source' ? $generated->copy()->addMinute() : $captured,
         'inputs' => ['event' => ['starts_at' => $variant === 'missing_start' ? null : ($variant === 'kickoff_mismatch' ? $start->copy()->addHour() : $start)->toIso8601String()],
-            'pregame_market' => ['captured_at' => $variant === 'missing_quote_time' ? null : $captured->toIso8601String(), 'available' => $variant !== 'missing_market', 'consensus' => ['spread' => ['line' => -1.5], 'total' => ['line' => 9.0],
+            'pregame_market' => ['captured_at' => match ($variant) {
+                'missing_quote_time' => null, 'late_input' => $captured->copy()->addMinute()->toIso8601String(), 'kickoff' => $start->toIso8601String(), 'stale' => $start->copy()->subDays(2)->toIso8601String(), 'malformed' => 'invalid timestamp', default => $captured->toIso8601String()
+            }, 'available' => $variant !== 'missing_market', 'consensus' => ['spread' => ['line' => -1.5], 'total' => ['line' => 9.0],
                 'moneyline' => ['market_key' => 'h2h', 'side' => 'home', 'price' => -120, 'opposite_quote' => ['market_key' => 'h2h', 'side' => 'away', 'price' => 110]]]]]]);
     $release = CalculationRelease::factory()->approved()->create(['sport' => 'mlb', 'phase' => 'pregame']);
     $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id, 'calculation_release_id' => $release->id, 'status' => 'succeeded', 'diagnostics' => $variant === 'recorded_adjustments' ? ['park_total_adjustment' => 0.3, 'weather_total_adjustment' => -0.4] : []]);
@@ -226,3 +228,81 @@ it('uses recorded native adjustment diagnostics and renders calibration without 
         ->expectsOutputToContain('Forecast source: canonical')->expectsOutputToContain('grants no calibration')->assertSuccessful();
     expect(BetDecision::count())->toBe(0);
 });
+
+function mlbNativeMarketBlendReport(array $arguments = []): array
+{
+    Artisan::call('mlb:research-market-blends', [...['--forecast-source' => 'canonical', '--season' => 2026, '--json' => true], ...$arguments]);
+
+    return json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+}
+
+it('researches frozen canonical MLB markets and retains unknown adjustments without granting approval', function () {
+    [$game, $native] = mlbReadinessFixture();
+    $report = mlbNativeMarketBlendReport();
+    expect($report['forecast_source'])->toBe('canonical')
+        ->and($report['summary']['rows'])->toBe(1)
+        ->and($report['summary']['strict_market_rows'])->toBe(1)
+        ->and($report['market_aware_blend_grid'][0][4])->toBe('0.1225')
+        ->and($report['summary']['public_promoted_rows'])->toBe(0)
+        ->and($report['canonical_evidence'][0]['canonical_prediction_id'])->toBe($native->id)
+        ->and($report['total_bias_breakdowns']['park_adjustment_bucket'][0][0])->toBe('park_unknown')
+        ->and($report['total_bias_breakdowns']['weather_adjustment_bucket'][0][0])->toBe('weather_unknown');
+    $game->update(['odds_data' => null, 'odds_updated_at' => null]);
+    expect(mlbNativeMarketBlendReport())->toBe($report)->and(BetDecision::count())->toBe(0);
+    $this->artisan('mlb:research-market-blends', ['--forecast-source' => 'canonical'])->expectsOutputToContain('grants no calibration')->assertSuccessful();
+});
+
+it('excludes unsafe native research evidence without legacy fallback', function (string $variant) {
+    mlbReadinessFixture($variant);
+    expect(mlbNativeMarketBlendReport()['summary']['rows'])->toBe(0);
+})->with(['unsafe', 'future_source', 'missing_start', 'kickoff_mismatch', 'draft', 'withdrawn', 'late_publication', 'wrong_schema', 'missing_spread', 'missing_total', 'missing_probability', 'missing_confidence']);
+
+it('preserves strict market warnings and missing-market behavior in native MLB research', function (string $variant) {
+    mlbReadinessFixture($variant);
+    $report = mlbNativeMarketBlendReport(['--strict-pregame' => true]);
+    expect($report['summary']['rows'])->toBe(1)->and($report['summary']['analysis_rows'])->toBe(0)
+        ->and($report['warnings'])->not->toBeEmpty()->and(BetDecision::count())->toBe(0);
+})->with(['missing_market', 'missing_quote_time']);
+
+it('preserves historical research and selects canonical inputs under either switch', function () {
+    mlbReadinessFixture();
+    Artisan::call('mlb:research-market-blends', ['--json' => true]);
+    $before = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    foreach (['canonical_pipeline', 'canonical_reads'] as $switch) {
+        config(['prediction_lifecycle.'.$switch.'.mlb' => true]);
+        Artisan::call('mlb:research-market-blends', ['--json' => true]);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['forecast_source'])->toBe('canonical');
+        config(['prediction_lifecycle.'.$switch.'.mlb' => false]);
+    }
+    Artisan::call('mlb:research-market-blends', ['--forecast-source' => 'legacy', '--json' => true]);
+    expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR))->toBe($before);
+    expect(mlbNativeMarketBlendReport(['--feature-version' => 'core-v3'])['summary']['rows'])->toBe(0);
+    $this->artisan('mlb:research-market-blends', ['--forecast-source' => 'invalid'])->assertFailed();
+});
+
+it('batches native market research with bounded eligible limits and date filters', function () {
+    for ($i = 0; $i < 26; $i++) {
+        mlbReadinessFixture();
+    }
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        expect(mlbNativeMarketBlendReport()['summary']['rows'])->toBe(26);
+        expect(collect(DB::getQueryLog())->pluck('query')->filter(fn ($sql) => str_starts_with($sql, 'select * from "event_input_snapshots"')))->toHaveCount(2);
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect(mlbNativeMarketBlendReport(['--limit' => 1])['summary']['rows'])->toBe(1)
+        ->and(mlbNativeMarketBlendReport(['--from' => '2026-10-30'])['summary']['rows'])->toBe(0);
+});
+
+it('holds native market blends for late stale or malformed observed quotes', function (string $time, string $reason) {
+    mlbReadinessFixture($time);
+    $report = mlbNativeMarketBlendReport(['--strict-pregame' => true]);
+    expect($report['summary']['analysis_rows'])->toBe(0)
+        ->and(collect($report['market_blend_exclusions'])->first(fn ($row) => $row[0] === $reason)[1])->toBe(1);
+})->with([
+    ['late_input', 'odds_after_input_capture'], ['kickoff', 'odds_after_first_pitch'],
+    ['stale', 'stale_odds'], ['malformed', 'missing_odds_timestamp'],
+]);

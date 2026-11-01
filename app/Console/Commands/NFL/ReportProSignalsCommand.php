@@ -5,12 +5,16 @@ namespace App\Console\Commands\NFL;
 use App\Models\GameOddsSnapshot;
 use App\Models\NFL\Game;
 use App\Models\NFL\Prediction;
+use App\Services\NFL\NflBacktestForecastSource;
+use App\Services\NFL\NflEvidenceForecastSource;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 
 class ReportProSignalsCommand extends Command
 {
     protected $signature = 'nfl:report-pro-signals
+        {--forecast-source= : canonical or legacy (defaults to the active NFL evidence source)}
+        {--model-version= : Canonical recommendation version (defaults to current)}
         {--from-season= : First season to include}
         {--to-season= : Last season to include}
         {--min-sample=10 : Minimum sample size for reason-code rows}
@@ -20,10 +24,28 @@ class ReportProSignalsCommand extends Command
 
     public function handle(): int
     {
-        $rows = $this->rows();
+        try {
+            $source = app(NflEvidenceForecastSource::class)->name($this->option('forecast-source'));
+        } catch (\InvalidArgumentException $error) {
+            $this->error($error->getMessage());
+
+            return self::FAILURE;
+        }
+        $canonical = $source === 'canonical';
+        $forecasts = $canonical ? app(NflBacktestForecastSource::class)->forProSignals(
+            fromSeason: $this->option('from-season') ? (int) $this->option('from-season') : null,
+            toSeason: $this->option('to-season') ? (int) $this->option('to-season') : null,
+            version: $this->option('model-version')) : $this->historicalPredictions();
+        $rows = $forecasts->map(fn (object $forecast): ?array => $this->row($forecast, $canonical))->filter()->values();
+        $this->line('Forecast source: '.$source);
+        if ($canonical) {
+            $this->line('Evidence: frozen recommendation pro-signal layers and entry markets.');
+            $this->line('Native closing-line evidence is unavailable; reporting grants no betting approval.');
+            $this->line('Signal-score Brier is observational and does not establish probability calibration.');
+        }
 
         if ($rows->isEmpty()) {
-            $proLayerCount = $this->proLayerCount();
+            $proLayerCount = $forecasts->filter(fn (object $forecast): bool => is_array(data_get($forecast->model_metadata, 'analysis_layer.pro_signal_layer')))->count();
             $this->warn($proLayerCount > 0
                 ? "Found {$proLayerCount} completed NFL prediction(s) with pro signal layers, but none had usable spread market data."
                 : 'No completed NFL predictions with stored pro signal layers found for the selected seasons.'
@@ -92,12 +114,12 @@ class ReportProSignalsCommand extends Command
     }
 
     /**
-     * @return Collection<int,array<string,mixed>>
+     * @return Collection<int,Prediction>
      */
-    private function rows(): Collection
+    private function historicalPredictions(): Collection
     {
         return Prediction::query()
-            ->with(['game.homeTeam', 'game.awayTeam'])
+            ->with('game')
             ->whereHas('game', function ($query): void {
                 $query->where('status', 'STATUS_FINAL')
                     ->whereNotNull('home_score')
@@ -111,42 +133,21 @@ class ReportProSignalsCommand extends Command
                     $query->where('season', '<=', (int) $this->option('to-season'));
                 }
             })
-            ->get()
-            ->map(fn (Prediction $prediction): ?array => $this->row($prediction))
-            ->filter()
-            ->values();
-    }
-
-    private function proLayerCount(): int
-    {
-        return Prediction::query()
-            ->whereHas('game', function ($query): void {
-                $query->where('status', 'STATUS_FINAL')
-                    ->whereNotNull('home_score')
-                    ->whereNotNull('away_score');
-
-                if ($this->option('from-season')) {
-                    $query->where('season', '>=', (int) $this->option('from-season'));
-                }
-
-                if ($this->option('to-season')) {
-                    $query->where('season', '<=', (int) $this->option('to-season'));
-                }
-            })
-            ->get()
-            ->filter(fn (Prediction $prediction): bool => is_array(data_get($prediction->model_metadata, 'analysis_layer.pro_signal_layer')))
-            ->count();
+            ->get();
     }
 
     /**
      * @return array<string,mixed>|null
      */
-    private function row(Prediction $prediction): ?array
+    private function row(object $prediction, bool $canonical = false): ?array
     {
         $game = $prediction->game;
         $layer = data_get($prediction->model_metadata, 'analysis_layer.pro_signal_layer');
-        $marketSpread = $this->number(data_get($layer, 'market_context.market_spread')) ?? ($game ? $this->entryMarketSpread($game) : null);
-        $marketTotal = $this->number(data_get($layer, 'market_context.market_total')) ?? ($game ? $this->entryMarketTotal($game) : null);
+        if (! $game || ! is_array($layer)) {
+            return null;
+        }
+        $marketSpread = $this->number(data_get($layer, 'market_context.market_spread')) ?? ($canonical ? $this->number($prediction->market_context['market_home_margin'] ?? null) : ($game ? $this->entryMarketSpread($game) : null));
+        $marketTotal = $this->number(data_get($layer, 'market_context.market_total')) ?? ($canonical ? $this->number($prediction->market_context['market_total'] ?? null) : ($game ? $this->entryMarketTotal($game) : null));
         $totalEdge = $this->number(data_get($layer, 'market_context.total_edge'))
             ?? ($marketTotal !== null && $prediction->predicted_total !== null ? (float) $prediction->predicted_total - $marketTotal : null);
         $pick = data_get($layer, 'market_context.pick_side');
@@ -154,7 +155,7 @@ class ReportProSignalsCommand extends Command
             $pick = (float) $prediction->predicted_spread >= $marketSpread ? 'home' : 'away';
         }
 
-        if (! $game || ! is_array($layer) || ! in_array($pick, ['home', 'away'], true) || $marketSpread === null) {
+        if (! in_array($pick, ['home', 'away'], true) || $marketSpread === null) {
             return null;
         }
 
@@ -166,14 +167,15 @@ class ReportProSignalsCommand extends Command
             ? $actualMargin - $marketSpread
             : (-$actualMargin) + $marketSpread;
         $result = abs($coverMargin) < 0.0001 ? 'push' : ($coverMargin > 0 ? 'win' : 'loss');
-        $closingSpread = $this->closingMarketSpread($game);
+        $closingSpread = $canonical ? null : $this->closingMarketSpread($game);
         $clv = $closingSpread !== null ? $this->spreadClv($pick, $marketSpread, $closingSpread) : null;
         $totalResult = $this->totalResult($game, $marketTotal, $totalEdge);
-        $score = $this->number($layer['score'] ?? null) ?? 0.0;
-        $probability = max(0.01, min(0.99, $score / 100));
+        $score = $this->number($layer['score'] ?? null) ?? ($canonical ? null : 0.0);
+        $probability = $score === null ? null : max(0.01, min(0.99, $score / 100));
         $outcome = $result === 'win' ? 1.0 : 0.0;
 
         return [
+            ...($canonical ? ['canonical_prediction_id' => $prediction->canonical_prediction_id, 'canonical_lineage' => $prediction->lineage] : []),
             'tier' => (string) ($layer['tier'] ?? 'unknown'),
             'winner_tier' => (string) data_get($layer, 'market_scores.winner.tier', $layer['tier'] ?? 'unknown'),
             'spread_tier' => (string) data_get($layer, 'market_scores.spread.tier', $layer['tier'] ?? 'unknown'),
@@ -186,7 +188,7 @@ class ReportProSignalsCommand extends Command
             'push' => $result === 'push',
             'roi' => $result === 'push' ? 0.0 : ($result === 'win' ? 0.9091 : -1.0),
             'clv' => $clv,
-            'brier' => ($probability - $outcome) ** 2,
+            'brier' => $probability === null ? null : ($probability - $outcome) ** 2,
             'ou_result' => $totalResult,
             'ou_won' => $totalResult === 'win',
             'ou_push' => $totalResult === 'push',
@@ -246,7 +248,7 @@ class ReportProSignalsCommand extends Command
             $ouGraded > 0 ? number_format(($ouWins / $ouGraded) * 100, 1).'%' : 'n/a',
             number_format((float) $items->avg('roi'), 3),
             $clvItems->isNotEmpty() ? $this->signed((float) $clvItems->avg('clv'), 2) : 'n/a',
-            number_format((float) $items->avg('brier'), 3),
+            $items->contains(fn (array $row): bool => $row['brier'] !== null) ? number_format((float) $items->avg('brier'), 3) : 'n/a',
         ];
     }
 

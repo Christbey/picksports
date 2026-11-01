@@ -26,7 +26,7 @@ beforeEach(function () {
 });
 afterEach(fn () => $this->travelBack());
 
-function nflMarketBacktestFixture(string $variant = 'valid', int $season = 2026, int $daysAgo = 2, array $moneyline = []): array
+function nflMarketBacktestFixture(string $variant = 'valid', int $season = 2026, int $daysAgo = 2, array $moneyline = [], ?array $proLayer = null): array
 {
     $start = now()->subDays($daysAgo);
     $generated = $start->copy()->subHours(2);
@@ -42,6 +42,9 @@ function nflMarketBacktestFixture(string $variant = 'valid', int $season = 2026,
     $metadata = ['analysis_layer' => ['trust_score' => $moneyline['trust'] ?? 90.0, 'reason_codes' => ['market_total_edge_over'], 'bet_rule_evaluation' => ['matched_rules' => [
         ['market' => 'total', 'action' => 'play', 'name' => 'recorded_over', 'label' => 'Recorded over rule'],
     ]]]];
+    if ($proLayer !== null) {
+        $metadata['analysis_layer']['pro_signal_layer'] = $proLayer;
+    }
     Prediction::factory()->create(['game_id' => $game->id, 'predicted_spread' => 99, 'predicted_total' => 888, 'confidence_score' => 55, 'model_metadata' => $metadata]);
     GameOddsSnapshot::create(['sport' => 'nfl', 'game_table' => 'nfl_games', 'game_id' => $game->id, 'captured_at' => $start->copy()->subMinute(),
         'odds_data' => $odds, 'payload_hash' => hash('sha256', json_encode($odds))]);
@@ -400,4 +403,121 @@ it('pins historical readiness accuracy analysis despite canonical cutover', func
     expect(Artisan::call('nfl:readiness-pass', ['--from-season' => 2026, '--to-season' => 2026, '--skip-backfill' => true,
         '--skip-reason-codes' => true, '--skip-point-audit' => true, '--skip-sentinel' => true]))->toBe(0);
     expect(Artisan::output())->toContain('Forecast source: legacy', 'Analyzing 1 predictions')->not->toContain('Forecast source: canonical');
+});
+
+function nflReportProLayer(): array
+{
+    return ['score' => 80.0, 'tier' => 'candidate', 'market_scores' => ['winner' => ['tier' => 'winner-tier'], 'spread' => ['tier' => 'spread-tier'], 'total' => ['tier' => 'total-tier']],
+        'market_context' => ['market_spread' => 3.0, 'market_total' => 44.5, 'total_edge' => 4.5, 'pick_side' => 'home'], 'reason_codes' => ['frozen_pro_reason']];
+}
+
+function nflReportProRow(object $forecast): ?array
+{
+    return (new ReflectionMethod(Artisan::all()['nfl:report-pro-signals'], 'row'))->invoke(Artisan::all()['nfl:report-pro-signals'], $forecast, true);
+}
+
+it('reports frozen pro layers with preserved grading and no mutable inputs', function (bool $pipeline, bool $reads) {
+    [, $native, $input] = nflMarketBacktestFixture(proLayer: nflReportProLayer());
+    config(['prediction_lifecycle.canonical_pipeline.nfl' => $pipeline, 'prediction_lifecycle.canonical_reads.nfl' => $reads]);
+    $statuses = CalculationRelease::pluck('status', 'id')->all();
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        expect(Artisan::call('nfl:report-pro-signals', ['--from-season' => 2026, '--to-season' => 2026, '--min-sample' => 1]))->toBe(0);
+        $output = Artisan::output();
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect($output)->toContain('Forecast source: canonical', 'Rows: 1', 'frozen_pro_reason', 'winner-tier', 'spread-tier', 'total-tier', '0.040', 'n/a');
+    $forecast = app(NflBacktestForecastSource::class)->forProSignals(fromSeason: 2026, toSeason: 2026)->sole();
+    expect(nflReportProRow($forecast))->toMatchArray(['canonical_prediction_id' => $native->id, 'result' => 'win', 'ou_result' => 'win', 'winner_correct' => true, 'roi' => 0.9091, 'clv' => null])
+        ->and($forecast->lineage['event_input_snapshot_id'])->toBe($input->id)
+        ->and($queries->implode(' '))->not->toContain('nfl_predictions', 'odds_data', 'prediction_feature_snapshots', 'game_odds_snapshots')
+        ->and(CalculationRelease::pluck('status', 'id')->all())->toBe($statuses);
+})->with([[true, false], [false, true], [true, true]]);
+
+it('excludes unsafe native pro evidence without legacy fallback', function (string $variant) {
+    nflMarketBacktestFixture($variant, proLayer: nflReportProLayer());
+    Artisan::call('nfl:report-pro-signals', ['--forecast-source' => 'canonical']);
+    expect(Artisan::output())->toContain('No completed NFL predictions with stored pro signal layers');
+})->with(['unsafe', 'future_source', 'late_publication', 'draft', 'withdrawn', 'wrong_version', 'missing_start', 'kickoff_mismatch']);
+
+it('keeps missing pro score and optional totals unknown and reports missing market distinctly', function () {
+    $layer = nflReportProLayer();
+    unset($layer['score'], $layer['market_context']);
+    nflMarketBacktestFixture('missing_total', proLayer: $layer);
+    $forecast = app(NflBacktestForecastSource::class)->forProSignals()->sole();
+    expect(nflReportProRow($forecast))->toMatchArray(['brier' => null, 'clv' => null, 'ou_result' => null]);
+    $forecast->market_context = [];
+    expect(nflReportProRow($forecast))->toBeNull();
+    $forecast->model_metadata = [];
+    expect(nflReportProRow($forecast))->toBeNull();
+    nflMarketBacktestFixture('missing_market', daysAgo: 1, proLayer: $layer);
+    Artisan::call('nfl:report-pro-signals', ['--forecast-source' => 'canonical', '--from-season' => 2027]);
+    expect(Artisan::output())->toContain('No completed NFL predictions');
+    Artisan::call('nfl:report-pro-signals', ['--forecast-source' => 'canonical', '--model-version' => 'absent']);
+    expect(Artisan::output())->toContain('No completed NFL predictions');
+    $this->artisan('nfl:report-pro-signals', ['--forecast-source' => 'invalid'])->assertFailed();
+});
+
+it('preserves pro report historical output and avoids duplicate empty-report reads', function () {
+    nflMarketBacktestFixture(proLayer: nflReportProLayer());
+    Artisan::call('nfl:report-pro-signals', ['--min-sample' => 1]);
+    $legacy = Artisan::output();
+    config(['prediction_lifecycle.canonical_pipeline.nfl' => true]);
+    Artisan::call('nfl:report-pro-signals', ['--forecast-source' => 'legacy', '--min-sample' => 1]);
+    expect(Artisan::output())->toBe($legacy);
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        Artisan::call('nfl:report-pro-signals', ['--forecast-source' => 'legacy', '--from-season' => 2027]);
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect($queries->filter(fn ($sql) => str_starts_with($sql, 'select * from "nfl_predictions"')))->toHaveCount(1);
+});
+
+it('preserves pro signal pushes away grading and threshold behavior', function () {
+    nflMarketBacktestFixture(proLayer: nflReportProLayer());
+    $f = app(NflBacktestForecastSource::class)->forProSignals()->sole();
+    $f->game->home_score = 23;
+    expect(nflReportProRow($f))->toMatchArray(['result' => 'push', 'roi' => 0.0]);
+    $f->model_metadata['analysis_layer']['pro_signal_layer']['market_context']['pick_side'] = 'away';
+    $f->game->home_score = 17;
+    expect(nflReportProRow($f))->toMatchArray(['result' => 'win', 'winner_correct' => true]);
+    $f->game->home_score = 20;
+    expect(nflReportProRow($f))->toMatchArray(['winner_push' => true]);
+    $f->model_metadata['analysis_layer']['pro_signal_layer']['market_context']['total_edge'] = 2.9;
+    expect(nflReportProRow($f)['ou_result'])->toBeNull();
+});
+
+it('bounds pro report hydration and retains missing-market warnings', function () {
+    $layer = nflReportProLayer();
+    unset($layer['market_context']);
+    nflMarketBacktestFixture('missing_market', proLayer: $layer);
+    Artisan::call('nfl:report-pro-signals', ['--forecast-source' => 'canonical']);
+    expect(Artisan::output())->toContain('Found 1 completed NFL prediction(s) with pro signal layers, but none had usable spread market data.');
+    for ($i = 0; $i < 25; $i++) {
+        nflMarketBacktestFixture(proLayer: nflReportProLayer());
+    }
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        Artisan::call('nfl:report-pro-signals', ['--forecast-source' => 'canonical', '--min-sample' => 26]);
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect(Artisan::output())->toContain('Rows: 25')->not->toContain('frozen_pro_reason');
+    $snapshots = $queries->filter(fn ($sql) => str_contains($sql, 'as "audit_outputs"'));
+    expect($snapshots)->toHaveCount(2);
+    foreach ($snapshots as $sql) {
+        preg_match('/in \(([^)]+)\)/', $sql, $matches);
+        expect(count(explode(',', $matches[1])))->toBeLessThanOrEqual(25);
+    }
 });

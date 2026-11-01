@@ -2,6 +2,8 @@
 
 use App\Events\GameFinalized;
 use App\Listeners\TriggerGameFinalizationGrading;
+use App\Models\BetDecision;
+use App\Models\CalculationRelease;
 use App\Models\CanonicalPrediction;
 use App\Models\NBA\Prediction;
 use App\Models\PredictionEvaluation;
@@ -11,6 +13,7 @@ use App\Models\SportEventResult;
 use App\Services\GameFinalizationDispatcher;
 use App\Services\Predictions\CanonicalTeamGameEvaluator;
 use App\Services\Predictions\SportEventResultRecorder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 
 function canonicalFinalizationFixture(string $sport = 'nba'): array
@@ -200,4 +203,87 @@ it('grades legacy and canonical records independently when both exist for a fina
         ->and($native->fresh()->getAttributes())->toBe($before)
         ->and(PredictionEvaluation::query()->where('canonical_prediction_id', $native->id)->count())->toBe(1)
         ->and(PredictionEvaluation::query()->where('prediction_table', 'nba_predictions')->where('prediction_id', $legacy->id)->count())->toBe(1);
+});
+
+it('rebuilds canonical evaluations without legacy predictions for every supported sport', function (string $sport) {
+    [$game, $prediction] = canonicalFinalizationFixture($sport);
+    $before = $prediction->getAttributes();
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        $this->artisan('sports:rebuild-prediction-evaluations', ['--sport' => [$sport], '--season' => $game->season])
+            ->expectsOutputToContain('Rebuilt 1 prediction evaluation rows.')->assertSuccessful();
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect(PredictionEvaluation::sole()->canonical_prediction_id)->toBe($prediction->id)
+        ->and($queries->implode(' '))->not->toContain($sport.'_predictions')
+        ->and($prediction->fresh()->getAttributes())->toBe($before);
+    $this->artisan('sports:rebuild-prediction-evaluations', ['--sport' => [$sport]])->assertSuccessful();
+    expect(PredictionEvaluation::count())->toBe(1)->and(SportEventResult::count())->toBe(1);
+})->with(['nba', 'nfl', 'mlb', 'cbb', 'wcbb', 'wnba', 'cfb']);
+
+it('keeps public read switches independent from evaluation rebuild ownership', function () {
+    [$game, $prediction] = canonicalFinalizationFixture();
+    config(['prediction_lifecycle.canonical_pipeline.nba' => false, 'prediction_lifecycle.canonical_reads.nba' => true]);
+    $this->artisan('sports:rebuild-prediction-evaluations', ['--sport' => ['nba']])->expectsOutputToContain('Rebuilt 0 prediction evaluation rows.')->assertSuccessful();
+    expect(PredictionEvaluation::count())->toBe(0);
+    $this->artisan('sports:rebuild-prediction-evaluations', ['--forecast-source' => 'canonical', '--sport' => ['nba']])->assertSuccessful();
+    expect(PredictionEvaluation::sole()->canonical_prediction_id)->toBe($prediction->id);
+});
+
+it('preserves explicit historical rebuilds without modifying native evaluations', function () {
+    [$game] = canonicalFinalizationFixture();
+    $legacy = Prediction::factory()->create(['game_id' => $game->id, 'graded_at' => now(), 'spread_error' => 1.0, 'total_error' => 2.0]);
+    $this->artisan('sports:rebuild-prediction-evaluations', ['--forecast-source' => 'legacy', '--sport' => ['nba']])->assertSuccessful();
+    expect(PredictionEvaluation::sole()->prediction_table)->toBe('nba_predictions')
+        ->and(PredictionEvaluation::sole()->prediction_id)->toBe($legacy->id)
+        ->and(PredictionEvaluation::sole()->canonical_prediction_id)->toBeNull();
+});
+
+it('keeps final-clock and age holds and applies a shared successful-evaluation limit', function () {
+    [$tooYoung] = canonicalFinalizationFixture();
+    $tooYoung->sportEvent->update(['starts_at' => now()->subMinutes(20)]);
+    [$badClock] = canonicalFinalizationFixture();
+    $badClock->update(['game_clock' => '1:00']);
+    [, $eligible] = canonicalFinalizationFixture();
+    canonicalFinalizationFixture('nfl');
+    $this->artisan('sports:rebuild-prediction-evaluations', ['--sport' => ['nba', 'nfl'], '--limit' => 1])->assertSuccessful();
+    expect(PredictionEvaluation::sole()->canonical_prediction_id)->toBe($eligible->id);
+});
+
+it('keeps rebuild season filters and reports missing native forecasts without fallback', function () {
+    [$game, $prediction] = canonicalFinalizationFixture();
+    $this->artisan('sports:rebuild-prediction-evaluations', ['--sport' => ['nba'], '--season' => $game->season + 1])->assertSuccessful();
+    expect(PredictionEvaluation::count())->toBe(0);
+    $prediction->update(['publication_state' => 'withdrawn', 'withdrawn_at' => now()]);
+    $this->artisan('sports:rebuild-prediction-evaluations', ['--sport' => ['nba']])->expectsOutputToContain('Canonical evaluations: 0; skipped final games: 1.')->assertSuccessful();
+    expect(PredictionEvaluation::count())->toBe(0);
+    $this->artisan('sports:rebuild-prediction-evaluations', ['--forecast-source' => 'invalid', '--sport' => ['nba']])->assertExitCode(2);
+    $this->artisan('sports:rebuild-prediction-evaluations', ['--sport' => ['invalid']])->assertExitCode(2);
+});
+
+it('appends corrected evaluations during recovery without changing prior results or approvals', function () {
+    [$game, $prediction] = canonicalFinalizationFixture();
+    $statuses = CalculationRelease::pluck('status', 'id')->all();
+    $args = ['--sport' => ['nba']];
+    $this->artisan('sports:rebuild-prediction-evaluations', $args)->assertSuccessful();
+    $first = PredictionEvaluation::sole()->getAttributes();
+    $game->update(['home_score' => 109]);
+    $this->artisan('sports:rebuild-prediction-evaluations', $args)->assertSuccessful();
+    expect(PredictionEvaluation::count())->toBe(2)->and(SportEventResult::count())->toBe(2)
+        ->and(PredictionEvaluation::orderBy('id')->first()->getAttributes())->toBe($first)
+        ->and(CalculationRelease::pluck('status', 'id')->all())->toBe($statuses)
+        ->and(BetDecision::count())->toBe(0);
+});
+
+it('shares the rebuild limit across historical and canonical ownership', function () {
+    [$nba] = canonicalFinalizationFixture();
+    config(['prediction_lifecycle.canonical_pipeline.nba' => false]);
+    Prediction::factory()->create(['game_id' => $nba->id, 'graded_at' => now()]);
+    canonicalFinalizationFixture('nfl');
+    $this->artisan('sports:rebuild-prediction-evaluations', ['--sport' => ['nba', 'nfl'], '--limit' => 1])->assertSuccessful();
+    expect(PredictionEvaluation::count())->toBe(1)->and(PredictionEvaluation::sole()->prediction_table)->toBe('nba_predictions');
 });

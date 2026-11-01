@@ -114,6 +114,7 @@ class ReadinessPassCommand extends Command
                 'label' => 'Analyze prediction accuracy',
                 'command' => 'nfl:analyze-predictions',
                 'arguments' => [
+                    '--forecast-source' => 'legacy',
                     '--from-season' => $fromSeason,
                     '--to-season' => $toSeason,
                 ],

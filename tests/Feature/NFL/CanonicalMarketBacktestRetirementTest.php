@@ -308,3 +308,96 @@ it('preserves explicit legacy moneyline snapshot fallback and default compatibil
     Artisan::call('nfl:backtest-moneylines', ['--forecast-source' => 'legacy', '--season' => 2026]);
     expect(Artisan::output())->toBe($output);
 });
+
+it('reports accuracy from frozen recommendation evidence in each canonical switch mode', function (bool $pipeline, bool $reads) {
+    [, $native, $input] = nflMarketBacktestFixture();
+    config(['prediction_lifecycle.canonical_pipeline.nfl' => $pipeline, 'prediction_lifecycle.canonical_reads.nfl' => $reads]);
+    $status = CalculationRelease::pluck('status', 'id')->all();
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        expect(Artisan::call('nfl:analyze-predictions', ['--season' => 2026, '--detailed' => true]))->toBe(0);
+        $output = Artisan::output();
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect($output)->toContain('Forecast source: canonical', 'Analyzing 1 predictions', 'HOM vs AWY', '0.04', '0.2231', '0.5', 'does not grant calibration or betting approval');
+    $forecasts = app(NflBacktestForecastSource::class)->forAccuracy(season: 2026);
+    expect($forecasts->sole()->canonical_prediction_id)->toBe($native->id)
+        ->and($forecasts->sole()->lineage['event_input_snapshot_id'])->toBe($input->id)
+        ->and($forecasts->sole()->win_probability)->toBe(0.8)
+        ->and($forecasts->sole()->predicted_spread)->toBe(6.5)
+        ->and($queries->implode(' '))->not->toContain('nfl_predictions', 'odds_data', 'prediction_feature_snapshots', 'game_odds_snapshots')
+        ->and(CalculationRelease::pluck('status', 'id')->all())->toBe($status);
+})->with([[true, false], [false, true], [true, true]]);
+
+it('excludes missing or unsafe accuracy evidence without legacy fallback', function (string $variant, array $moneyline) {
+    nflMarketBacktestFixture($variant, moneyline: $moneyline);
+    Artisan::call('nfl:analyze-predictions', ['--forecast-source' => 'canonical', '--season' => 2026]);
+    expect(Artisan::output())->toContain('No predictions found');
+    expect(app(NflBacktestForecastSource::class)->forAccuracy(season: 2026))->toBeEmpty();
+})->with([
+    ['unsafe', []], ['future_source', []], ['draft', []], ['withdrawn', []], ['late_publication', []], ['wrong_version', []], ['missing_start', []], ['kickoff_mismatch', []],
+    ['missing_spread', []], ['valid', ['probability' => 'unknown']], ['valid', ['probability' => 1.1]], ['valid', ['probability' => -0.1]],
+]);
+
+it('does not require market quotes or trust to measure native forecast accuracy', function () {
+    nflMarketBacktestFixture('missing_market', moneyline: ['trust' => 'unknown']);
+    Artisan::call('nfl:analyze-predictions', ['--forecast-source' => 'canonical', '--season' => 2026, '--detailed' => true]);
+    expect(Artisan::output())->toContain('Analyzing 1 predictions', 'unknown', 'n/a');
+    $command = Artisan::all()['nfl:analyze-predictions'];
+    $forecast = app(NflBacktestForecastSource::class)->forAccuracy(season: 2026)->sole();
+    $summary = (new ReflectionMethod($command, 'analysisSummaryRow'))->invoke($command, 'test', collect([$forecast]));
+    expect($summary)->toMatchArray(['Avg Trust' => 'n/a', 'Avg Spread Edge' => 'n/a', 'Avg Total Edge' => 'n/a'])
+        ->and((new ReflectionMethod($command, 'modelSignalClassificationForPrediction'))->invoke($command, $forecast))->toBe('unknown');
+});
+
+it('retains explicit historical accuracy output and scopes canonical seasons and versions', function () {
+    nflMarketBacktestFixture();
+    Artisan::call('nfl:analyze-predictions', ['--season' => 2026, '--detailed' => true]);
+    $historical = Artisan::output();
+    config(['prediction_lifecycle.canonical_pipeline.nfl' => true]);
+    Artisan::call('nfl:analyze-predictions', ['--forecast-source' => 'legacy', '--season' => 2026, '--detailed' => true]);
+    expect(Artisan::output())->toBe($historical);
+    nflMarketBacktestFixture(season: 2025);
+    Artisan::call('nfl:analyze-predictions', ['--from-season' => 2025, '--to-season' => 2026]);
+    expect(Artisan::output())->toContain('Analyzing 2 predictions', 'seasons 2025-2026');
+    Artisan::call('nfl:analyze-predictions', ['--season' => 2026, '--model-version' => 'absent']);
+    expect(Artisan::output())->toContain('No predictions found');
+    $this->artisan('nfl:analyze-predictions', ['--forecast-source' => 'invalid'])->assertFailed();
+    $this->artisan('nfl:analyze-predictions', ['--season' => 2026, '--from-season' => 2025])->assertFailed();
+    $this->artisan('nfl:analyze-predictions', ['--from-season' => 2026, '--to-season' => 2025])->assertFailed();
+});
+
+it('bounds native accuracy input hydration and retains probability and tie scoring', function () {
+    foreach (range(1, 26) as $index) {
+        nflMarketBacktestFixture();
+    }
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        Artisan::call('nfl:analyze-predictions', ['--forecast-source' => 'canonical', '--season' => 2026]);
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect(Artisan::output())->toContain('Analyzing 26 predictions')
+        ->and($queries->filter(fn ($sql) => str_contains($sql, 'as "audit_outputs"')))->toHaveCount(2);
+    $command = Artisan::all()['nfl:analyze-predictions'];
+    $forecast = app(NflBacktestForecastSource::class)->forAccuracy(season: 2026)->first();
+    $forecast->win_probability = 0.5;
+    $forecast->game->home_score = $forecast->game->away_score;
+    $metrics = (new ReflectionMethod($command, 'calculateMetrics'))->invoke($command, collect([$forecast]));
+    expect($metrics)->toMatchArray(['total' => 1, 'correct' => 1, 'accuracy' => 100.0, 'brier_score' => 0.25, 'log_loss' => 0.6931, 'mean_absolute_spread_error' => 6.5]);
+});
+
+it('pins historical readiness accuracy analysis despite canonical cutover', function () {
+    nflMarketBacktestFixture();
+    config(['prediction_lifecycle.canonical_pipeline.nfl' => true, 'prediction_lifecycle.canonical_reads.nfl' => true]);
+    expect(Artisan::call('nfl:readiness-pass', ['--from-season' => 2026, '--to-season' => 2026, '--skip-backfill' => true,
+        '--skip-reason-codes' => true, '--skip-point-audit' => true, '--skip-sentinel' => true]))->toBe(0);
+    expect(Artisan::output())->toContain('Forecast source: legacy', 'Analyzing 1 predictions')->not->toContain('Forecast source: canonical');
+});

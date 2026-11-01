@@ -3,11 +3,16 @@
 namespace App\Console\Commands\NFL;
 
 use App\Models\NFL\Prediction;
+use App\Services\NFL\NflBacktestForecastSource;
+use App\Services\NFL\NflEvidenceForecastSource;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 
 class AnalyzePredictionsCommand extends Command
 {
     protected $signature = 'nfl:analyze-predictions
+                            {--forecast-source= : canonical or legacy (defaults to the active NFL evidence source)}
+                            {--model-version= : Canonical recommendation version (defaults to current)}
                             {--season= : Season to analyze (defaults to config nfl.season.default)}
                             {--from-season= : Analyze starting with this NFL season}
                             {--to-season= : Analyze through this NFL season}
@@ -19,43 +24,21 @@ class AnalyzePredictionsCommand extends Command
     {
         try {
             $scope = $this->resolveScope();
+            $source = app(NflEvidenceForecastSource::class)->name($this->option('forecast-source'));
         } catch (\InvalidArgumentException $exception) {
             $this->error($exception->getMessage());
 
             return Command::FAILURE;
         }
 
-        $relations = ['game:id,season,game_date,home_team_id,away_team_id,home_score,away_score'];
-        if ($this->option('detailed')) {
-            $relations[] = 'game.homeTeam:id,abbreviation';
-            $relations[] = 'game.awayTeam:id,abbreviation';
+        $predictions = $source === 'canonical'
+            ? app(NflBacktestForecastSource::class)->forAccuracy($scope['season'], $scope['from_season'], $scope['to_season'], $this->option('model-version'))
+            : $this->historicalPredictions($scope);
+        $this->line('Forecast source: '.$source);
+        if ($source === 'canonical') {
+            $this->line('Evidence: frozen recommendation probabilities, spreads and analysis metadata.');
+            $this->line('Observed performance only; this report does not grant calibration or betting approval.');
         }
-
-        $predictions = Prediction::query()
-            ->select([
-                'id',
-                'game_id',
-                'predicted_spread',
-                'win_probability',
-                'model_metadata',
-            ])
-            ->with($relations)
-            ->whereHas('game', function ($query) use ($scope) {
-                $query->where('status', 'STATUS_FINAL');
-
-                if ($scope['season'] !== null) {
-                    $query->where('season', $scope['season']);
-                }
-
-                if ($scope['from_season'] !== null) {
-                    $query->where('season', '>=', $scope['from_season']);
-                }
-
-                if ($scope['to_season'] !== null) {
-                    $query->where('season', '<=', $scope['to_season']);
-                }
-            })
-            ->get();
 
         if ($predictions->isEmpty()) {
             $this->warn('No predictions found for completed games in '.$scope['label']);
@@ -93,6 +76,42 @@ class AnalyzePredictionsCommand extends Command
         }
 
         return Command::SUCCESS;
+    }
+
+    /** @param array{season:?int,from_season:?int,to_season:?int,label:string} $scope */
+    private function historicalPredictions(array $scope): Collection
+    {
+        $relations = ['game:id,season,game_date,home_team_id,away_team_id,home_score,away_score'];
+        if ($this->option('detailed')) {
+            $relations[] = 'game.homeTeam:id,abbreviation';
+            $relations[] = 'game.awayTeam:id,abbreviation';
+        }
+
+        return Prediction::query()
+            ->select([
+                'id',
+                'game_id',
+                'predicted_spread',
+                'win_probability',
+                'model_metadata',
+            ])
+            ->with($relations)
+            ->whereHas('game', function ($query) use ($scope) {
+                $query->where('status', 'STATUS_FINAL');
+
+                if ($scope['season'] !== null) {
+                    $query->where('season', $scope['season']);
+                }
+
+                if ($scope['from_season'] !== null) {
+                    $query->where('season', '>=', $scope['from_season']);
+                }
+
+                if ($scope['to_season'] !== null) {
+                    $query->where('season', '<=', $scope['to_season']);
+                }
+            })
+            ->get();
     }
 
     /**
@@ -292,7 +311,7 @@ class AnalyzePredictionsCommand extends Command
         $this->info('Year Breakdown');
 
         $rows = $predictions
-            ->groupBy(fn (Prediction $prediction) => (int) $prediction->game->season)
+            ->groupBy(fn (object $prediction) => (int) $prediction->game->season)
             ->sortKeys()
             ->map(function ($seasonPredictions, int $season): array {
                 $metrics = $this->calculateMetrics($seasonPredictions);
@@ -319,7 +338,7 @@ class AnalyzePredictionsCommand extends Command
     protected function displayAnalysisLayerBreakdown($predictions): void
     {
         $withAnalysis = $predictions
-            ->filter(fn (Prediction $prediction) => is_array(data_get($prediction->model_metadata, 'analysis_layer')))
+            ->filter(fn (object $prediction) => is_array(data_get($prediction->model_metadata, 'analysis_layer')))
             ->values();
 
         if ($withAnalysis->isEmpty()) {
@@ -331,7 +350,7 @@ class AnalyzePredictionsCommand extends Command
         $this->info('Analysis Layer Breakdown');
 
         $classificationRows = $withAnalysis
-            ->groupBy(fn (Prediction $prediction) => (string) data_get($prediction->model_metadata, 'analysis_layer.bet_classification', 'unknown'))
+            ->groupBy(fn (object $prediction) => (string) data_get($prediction->model_metadata, 'analysis_layer.bet_classification', 'unknown'))
             ->map(function ($rows, string $classification): array {
                 return $this->analysisSummaryRow($classification, $rows);
             })
@@ -347,7 +366,7 @@ class AnalyzePredictionsCommand extends Command
         $this->newLine();
         $this->info('Model Signal Classification');
         $signalRows = $withAnalysis
-            ->groupBy(fn (Prediction $prediction) => $this->modelSignalClassificationForPrediction($prediction))
+            ->groupBy(fn (object $prediction) => $this->modelSignalClassificationForPrediction($prediction))
             ->map(function ($rows, string $classification): array {
                 return $this->analysisSummaryRow($classification, $rows);
             })
@@ -370,10 +389,10 @@ class AnalyzePredictionsCommand extends Command
             '85-100' => [85, 100.01],
         ])
             ->map(function (array $range, string $label) use ($withAnalysis): array {
-                $rows = $withAnalysis->filter(function (Prediction $prediction) use ($range): bool {
-                    $trust = (float) data_get($prediction->model_metadata, 'analysis_layer.trust_score', 0);
+                $rows = $withAnalysis->filter(function (object $prediction) use ($range): bool {
+                    $trust = $this->analysisNumber($prediction, 'trust_score');
 
-                    return $trust >= $range[0] && $trust < $range[1];
+                    return $trust !== null && $trust >= $range[0] && $trust < $range[1];
                 });
 
                 return $this->analysisSummaryRow($label, $rows);
@@ -401,16 +420,36 @@ class AnalyzePredictionsCommand extends Command
     protected function analysisSummaryRow(string $label, $predictions): array
     {
         $count = $predictions->count();
-        $correct = $predictions->filter(fn (Prediction $prediction): bool => $this->predictionWinnerCorrect($prediction))->count();
+        $correct = $predictions->filter(fn (object $prediction): bool => $this->predictionWinnerCorrect($prediction))->count();
 
         return [
             'Label' => $label,
             'Games' => $count,
             'Winner Acc' => $count > 0 ? round(($correct / $count) * 100, 1).'%' : 'n/a',
-            'Avg Trust' => $count > 0 ? round((float) $predictions->avg(fn (Prediction $prediction) => (float) data_get($prediction->model_metadata, 'analysis_layer.trust_score', 0)), 1) : 'n/a',
-            'Avg Spread Edge' => $count > 0 ? round((float) $predictions->avg(fn (Prediction $prediction) => abs((float) data_get($prediction->model_metadata, 'analysis_layer.calculated_edge.spread_points', 0))), 2) : 'n/a',
-            'Avg Total Edge' => $count > 0 ? round((float) $predictions->avg(fn (Prediction $prediction) => abs((float) data_get($prediction->model_metadata, 'analysis_layer.calculated_edge.total_points', 0))), 2) : 'n/a',
+            'Avg Trust' => $this->analysisAverage($predictions, 'trust_score', 1),
+            'Avg Spread Edge' => $this->analysisAverage($predictions, 'calculated_edge.spread_points', 2, true),
+            'Avg Total Edge' => $this->analysisAverage($predictions, 'calculated_edge.total_points', 2, true),
         ];
+    }
+
+    private function analysisNumber(object $prediction, string $key): ?float
+    {
+        $value = data_get($prediction->model_metadata, 'analysis_layer.'.$key);
+        if ($prediction instanceof Prediction) {
+            return (float) ($value ?? 0);
+        }
+
+        return is_numeric($value) && is_finite((float) $value) ? (float) $value : null;
+    }
+
+    private function analysisAverage(Collection $predictions, string $key, int $precision, bool $absolute = false): float|string
+    {
+        $values = $predictions->map(fn (object $prediction) => $this->analysisNumber($prediction, $key))->filter(fn ($value) => $value !== null);
+        if ($values->isEmpty()) {
+            return 'n/a';
+        }
+
+        return round((float) $values->avg(fn (float $value) => $absolute ? abs($value) : $value), $precision);
     }
 
     protected function analysisTokenRows($predictions, string $key): array
@@ -444,7 +483,7 @@ class AnalyzePredictionsCommand extends Command
             ->all();
     }
 
-    protected function predictionWinnerCorrect(Prediction $prediction): bool
+    protected function predictionWinnerCorrect(object $prediction): bool
     {
         $game = $prediction->game;
         if (! $game || $game->home_score === null || $game->away_score === null) {
@@ -457,14 +496,17 @@ class AnalyzePredictionsCommand extends Command
         return $predictedHomeWin === $homeWon;
     }
 
-    protected function modelSignalClassificationForPrediction(Prediction $prediction): string
+    protected function modelSignalClassificationForPrediction(object $prediction): string
     {
         $stored = data_get($prediction->model_metadata, 'analysis_layer.model_signal_classification');
         if (is_string($stored) && $stored !== '') {
             return $stored;
         }
 
-        $trustScore = (float) data_get($prediction->model_metadata, 'analysis_layer.trust_score', 0);
+        $trustScore = $this->analysisNumber($prediction, 'trust_score');
+        if ($trustScore === null) {
+            return 'unknown';
+        }
 
         return match (true) {
             $trustScore >= (float) config('nfl.predictions.analysis_layer.strong_model_signal_threshold', 65.0) => 'strong_model_side',

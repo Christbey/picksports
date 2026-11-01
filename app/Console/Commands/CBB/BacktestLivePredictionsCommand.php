@@ -3,12 +3,15 @@
 namespace App\Console\Commands\CBB;
 
 use App\Models\CBB\Prediction;
+use App\Services\CBB\CbbLiveAuditSource;
+use App\Services\Predictions\Basketball\BasketballBacktestForecastSource;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 
 class BacktestLivePredictionsCommand extends Command
 {
     protected $signature = 'cbb:backtest-live-predictions
+        {--forecast-source= : canonical or legacy (defaults to the active CBB source)}
         {--season= : Filter by season}
         {--limit=25 : Limit detailed current-live rows}
         {--detailed : Show current live prediction rows}';
@@ -17,17 +20,35 @@ class BacktestLivePredictionsCommand extends Command
 
     public function handle(): int
     {
-        $finalRows = $this->loadFinalRows();
-        $currentLiveRows = $this->loadCurrentLiveRows();
+        try {
+            $source = app(BasketballBacktestForecastSource::class)->name('cbb', $this->option('forecast-source'));
+        } catch (\InvalidArgumentException $error) {
+            $this->error($error->getMessage());
+
+            return self::FAILURE;
+        }
+        $canonical = $source === 'canonical';
+        if ($canonical) {
+            $report = app(CbbLiveAuditSource::class)->report($this->option('season') ? (int) $this->option('season') : null);
+            $finalRows = $report['final'];
+            $currentLiveRows = $report['current'];
+        } else {
+            $finalRows = $this->loadFinalRows();
+            $currentLiveRows = $this->loadCurrentLiveRows();
+        }
 
         $this->info('CBB Live Prediction Audit');
+        if ($canonical) {
+            $this->line('Forecast source: canonical live snapshots; latest observed live state per completed game.');
+            $this->line('Observational diagnostics only; this report grants no betting approval.');
+        }
         $this->line('Scope: '.($this->option('season') ? 'season '.$this->option('season') : 'all seasons'));
         $this->newLine();
 
         $this->table(
             ['Metric', 'Value'],
             [
-                ['Final predictions with game result', number_format($finalRows['final_predictions'])],
+                [$canonical ? 'Final games with results' : 'Final predictions with game result', number_format($finalRows['final_predictions'])],
                 ['Final rows retaining live fields', number_format($finalRows['final_rows_with_live_fields'])],
                 ['Current in-progress rows', number_format($currentLiveRows->count())],
                 ['Current in-progress rows with live fields', number_format($currentLiveRows->where('has_live_fields', true)->count())],
@@ -39,19 +60,27 @@ class BacktestLivePredictionsCommand extends Command
 
         if ($finalRows['final_rows_with_live_fields'] === 0) {
             $this->warn('Historical live backtesting is not currently possible from stored data.');
-            $this->line('Reason: CBB only keeps the latest live fields on the prediction row and clears them when the game is no longer in progress.');
-            $this->line('Result: there are no preserved historical live-state snapshots to compare against final outcomes.');
+            if ($canonical) {
+                $this->line('No eligible canonical live snapshots are available for completed games in this scope.');
+            } else {
+                $this->line('Reason: CBB only keeps the latest live fields on the prediction row and clears them when the game is no longer in progress.');
+                $this->line('Result: there are no preserved historical live-state snapshots to compare against final outcomes.');
+            }
         } else {
             $this->info('Stored Final Live Snapshot Backtest');
             $this->table(
                 ['Metric', 'Value'],
                 [
                     ['Rows', number_format($finalRows['final_rows_with_live_fields'])],
-                    ['Live win probability Brier', number_format($finalRows['brier_score'], 4)],
-                    ['Live spread MAE', number_format($finalRows['live_spread_mae'], 2)],
-                    ['Live total MAE', number_format($finalRows['live_total_mae'], 2)],
+                    ['Live win probability Brier', $finalRows['brier_score'] === null ? 'n/a' : number_format($finalRows['brier_score'], 4)],
+                    ['Live spread MAE', $finalRows['live_spread_mae'] === null ? 'n/a' : number_format($finalRows['live_spread_mae'], 2)],
+                    ['Live total MAE', $finalRows['live_total_mae'] === null ? 'n/a' : number_format($finalRows['live_total_mae'], 2)],
                 ]
             );
+        }
+
+        if ($canonical) {
+            $this->line('Metric samples (probability/spread/total): '.$finalRows['brier_score_sample'].'/'.$finalRows['live_spread_mae_sample'].'/'.$finalRows['live_total_mae_sample']);
         }
 
         if ($this->option('detailed')) {
@@ -66,11 +95,11 @@ class BacktestLivePredictionsCommand extends Command
                         $row['status'],
                         $row['score'],
                         $row['clock'],
-                        $row['live_win_probability'],
-                        $row['live_predicted_spread'],
-                        $row['live_predicted_total'],
-                        $row['live_seconds_remaining'],
-                        $row['live_updated_at'],
+                        $canonical ? ($row['live_win_probability'] === null ? '-' : number_format($row['live_win_probability'] * 100, 1).'%') : $row['live_win_probability'],
+                        $canonical ? ($row['live_predicted_spread'] === null ? '-' : number_format($row['live_predicted_spread'], 1)) : $row['live_predicted_spread'],
+                        $canonical ? ($row['live_predicted_total'] === null ? '-' : number_format($row['live_predicted_total'], 1)) : $row['live_predicted_total'],
+                        $row['live_seconds_remaining'] ?? '-',
+                        $row['live_updated_at'] ?? '-',
                     ])
                     ->all()
             );

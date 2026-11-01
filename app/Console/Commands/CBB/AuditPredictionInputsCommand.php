@@ -6,12 +6,15 @@ use App\Models\CBB\Game;
 use App\Models\CBB\Play;
 use App\Models\CBB\PlayerInjury;
 use App\Models\CBB\TeamMetric;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
+use App\Services\Predictions\Basketball\BasketballBacktestForecastSource;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 
 class AuditPredictionInputsCommand extends Command
 {
     protected $signature = 'cbb:audit-prediction-inputs
+        {--forecast-source= : canonical or legacy (defaults to the active CBB source)}
         {--season= : Limit to a season}
         {--date= : Limit to a game date (YYYY-MM-DD)}
         {--game= : Audit a single game ID}
@@ -26,12 +29,22 @@ class AuditPredictionInputsCommand extends Command
 
     public function handle(): int
     {
+        try {
+            $this->forecastSource = app(BasketballBacktestForecastSource::class)->name('cbb', $this->option('forecast-source'));
+        } catch (\InvalidArgumentException $error) {
+            $this->error($error->getMessage());
+
+            return self::FAILURE;
+        }
         $games = $this->gamesToAudit();
         $staleOddsHours = max(1, (int) $this->option('stale-odds-hours'));
         $includePlaceholders = (bool) $this->option('include-placeholders');
         $showOk = (bool) $this->option('show-ok');
 
         $this->info('CBB prediction input audit');
+        if ($this->forecastSource === 'canonical') {
+            $this->line('Forecast source: canonical availability; this audit grants no betting approval.');
+        }
         $this->newLine();
 
         $this->renderGlobalSummary((int) $this->option('recent-finals'));
@@ -43,8 +56,18 @@ class AuditPredictionInputsCommand extends Command
             return self::SUCCESS;
         }
 
+        $available = $this->forecastSource === 'canonical' ? $this->canonicalGameIds($games) : collect();
+        $metrics = TeamMetric::query()->whereIn('season', $games->pluck('season')->unique())
+            ->whereIn('team_id', $games->flatMap(fn ($game) => [$game->home_team_id, $game->away_team_id])->filter()->unique())
+            ->selectRaw('season, team_id, COUNT(*) as metric_count')->groupBy('season', 'team_id')->get()
+            ->keyBy(fn ($metric) => $metric->season.':'.$metric->team_id);
         $rows = $games
-            ->map(fn (Game $game) => $this->auditGame($game, $staleOddsHours))
+            ->map(function (Game $game) use ($staleOddsHours, $available, $metrics): array {
+                $count = collect([$game->home_team_id, $game->away_team_id])->filter()->unique()
+                    ->sum(fn ($id) => (int) ($metrics->get($game->season.':'.$id)?->metric_count ?? 0));
+
+                return $this->auditGame($game, $staleOddsHours, $count, $this->forecastSource === 'canonical' ? $available->has($game->id) : $game->prediction !== null);
+            })
             ->reject(fn (array $row) => ! $includePlaceholders && $row['is_placeholder'])
             ->values();
 
@@ -85,13 +108,30 @@ class AuditPredictionInputsCommand extends Command
         return self::SUCCESS;
     }
 
+    private string $forecastSource = 'legacy';
+
+    private function canonicalGameIds(Collection $games): Collection
+    {
+        $ids = collect();
+        foreach ($games->pluck('id')->chunk(250) as $batch) {
+            $matches = app(CanonicalSportPredictionQuery::class)->queryForSport('cbb')
+                ->whereIn('cbb_games.id', $batch)->where('predictions.generated_at', '<=', now())
+                ->where('predictions.published_at', '<=', now())->reorder()->select('cbb_games.id')->pluck('id');
+            foreach ($matches as $id) {
+                $ids->put((int) $id, true);
+            }
+        }
+
+        return $ids;
+    }
+
     /**
      * @return Collection<int, Game>
      */
     private function gamesToAudit(): Collection
     {
         $query = Game::query()
-            ->with(['homeTeam', 'awayTeam', 'prediction'])
+            ->with(['homeTeam', 'awayTeam'])->when($this->forecastSource === 'legacy', fn ($query) => $query->with('prediction'))
             ->orderBy('game_date')
             ->orderBy('id');
 
@@ -124,7 +164,7 @@ class AuditPredictionInputsCommand extends Command
     /**
      * @return array{game_id:int,matchup:string,status:string,issues_count:int,flags:array<int,string>,is_placeholder:bool}
      */
-    private function auditGame(Game $game, int $staleOddsHours): array
+    private function auditGame(Game $game, int $staleOddsHours, int $metricCount, bool $hasPrediction): array
     {
         $flags = [];
         $isPlaceholder = $this->isPlaceholderGame($game);
@@ -157,16 +197,11 @@ class AuditPredictionInputsCommand extends Command
             $flags[] = 'odds_stale';
         }
 
-        $metricCount = TeamMetric::query()
-            ->where('season', $game->season)
-            ->whereIn('team_id', array_filter([$game->home_team_id, $game->away_team_id]))
-            ->count();
-
         if ($metricCount < 2) {
             $flags[] = 'missing_team_metrics';
         }
 
-        if ($game->prediction === null) {
+        if (! $hasPrediction) {
             $flags[] = 'missing_prediction_row';
         }
 
@@ -192,11 +227,13 @@ class AuditPredictionInputsCommand extends Command
             ->limit(max(1, $recentFinals))
             ->get(['id', 'home_score', 'away_score']);
 
-        $completePlayGames = $sampleFinalGames->filter(function (Game $game) {
-            $lastPlay = Play::query()
-                ->where('game_id', $game->id)
-                ->orderByDesc('sequence_number')
-                ->first(['period', 'clock', 'home_score', 'away_score']);
+        $lastPlays = Play::query()->whereIn('game_id', $sampleFinalGames->pluck('id'))
+            ->where('id', function ($query): void {
+                $query->from('cbb_plays as latest')->select('latest.id')->whereColumn('latest.game_id', 'cbb_plays.game_id')
+                    ->orderByDesc('latest.sequence_number')->limit(1);
+            })->get(['game_id', 'home_score', 'away_score'])->keyBy('game_id');
+        $completePlayGames = $sampleFinalGames->filter(function (Game $game) use ($lastPlays) {
+            $lastPlay = $lastPlays->get($game->id);
 
             if (! $lastPlay) {
                 return false;

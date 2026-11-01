@@ -14,8 +14,21 @@ class NflBacktestForecastSource
         if (! in_array($market, ['spread', 'total', 'moneyline'], true)) {
             throw new \InvalidArgumentException('Backtest market must be spread, total or moneyline.');
         }
+
+        return $this->read($market, $season, $fromSeason, $toSeason, $version, $limit);
+    }
+
+    /** @return Collection<int, object> */
+    public function forAccuracy(?int $season = null, ?int $fromSeason = null, ?int $toSeason = null, ?string $version = null): Collection
+    {
+        return $this->read('accuracy', $season, $fromSeason, $toSeason, $version);
+    }
+
+    /** @return Collection<int, object> */
+    private function read(string $market, ?int $season, ?int $fromSeason, ?int $toSeason, ?string $version, int $limit = 0): Collection
+    {
         $rows = collect();
-        $query = Game::query()->select(['id', 'sport_event_id', 'home_team_id', 'away_team_id', 'home_score', 'away_score'])
+        $query = Game::query()->select(['id', 'sport_event_id', 'season', 'game_date', 'home_team_id', 'away_team_id', 'home_score', 'away_score'])
             ->with(['sportEvent:id,starts_at', 'homeTeam:id,abbreviation', 'awayTeam:id,abbreviation'])
             ->where('status', 'STATUS_FINAL')->whereNotNull('home_score')->whereNotNull('away_score')
             ->whereHas('sportEvent', fn ($query) => $query->where('starts_at', '<', now()))
@@ -31,7 +44,15 @@ class NflBacktestForecastSource
                 }
                 $forecast->game = $game;
                 $forecast->confidence_score = $this->number($forecast->outputs['confidence_score'] ?? null);
-                if ($market === 'moneyline') {
+                if ($market === 'accuracy') {
+                    $probability = $this->number($forecast->outputs['win_probability'] ?? null);
+                    $spread = $this->number($forecast->outputs['predicted_spread'] ?? null);
+                    if ($probability === null || $probability < 0 || $probability > 1 || $spread === null) {
+                        continue;
+                    }
+                    $forecast->win_probability = $probability;
+                    $forecast->predicted_spread = $spread;
+                } elseif ($market === 'moneyline') {
                     $probability = $this->number($forecast->outputs['win_probability'] ?? null);
                     $quote = $forecast->market_context['moneyline'] ?? [];
                     $home = $this->number($quote['price'] ?? null);

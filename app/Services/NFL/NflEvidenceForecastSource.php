@@ -112,7 +112,7 @@ class NflEvidenceForecastSource
                         'game_id' => $snapshot->game_id, 'generated_at' => $prediction->generated_at,
                         'game_start_at' => $frozenStart, 'outputs' => (array) $input->getAttribute('audit_outputs'),
                         'market_context' => ['market_home_margin' => is_numeric($line) ? -(float) $line : null,
-                            'market_total' => data_get($market, 'total.line'), 'quote_times' => $quoteTimes,
+                            'market_total' => data_get($market, 'total.line'), 'moneyline' => data_get($market, 'moneyline'), 'quote_times' => $quoteTimes,
                             'odds_updated_at' => collect($quoteTimes)->filter()->sort()->last()],
                     ]);
                 }

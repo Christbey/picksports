@@ -981,3 +981,7 @@ This document is meant to reduce repeated mistakes, especially around:
 - starter identity assumptions
 - season-type behavior
 - shared-vs-sport-specific abstractions
+
+### MLB market-blend research retirement
+
+`mlb:research-market-blends` selects canonical evidence when either MLB canonical switch is enabled, with explicit `--forecast-source=legacy` for historical research. Native rows reuse `MlbAnalysisForecastSource` for verified final-game projections, confidence, frozen paired prices and lineage, bounded in batches of 25. Feature filters select native input schemas (current by default); date filters and eligible limits apply before strict-market exclusions. Shared report calculations preserve historical results. Native strict evidence requires observed quote capture before kickoff and no later than input capture, with the existing stale-odds window. Missing quotes/timestamps retain warnings and cannot enter strict blends; unknown park/weather adjustments remain unknown cohorts. Mutable game odds and legacy forecasts never fill native gaps. Reports grant no calibration, promotion or betting approval; schedules and rollout settings are unchanged.

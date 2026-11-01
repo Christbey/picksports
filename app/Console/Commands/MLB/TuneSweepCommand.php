@@ -3,6 +3,8 @@
 namespace App\Console\Commands\MLB;
 
 use App\Models\MLB\Prediction;
+use App\Services\MLB\MlbTuningReplaySource;
+use App\Services\MLB\Predictions\MlbCalculationReleaseDefinition;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\File;
@@ -10,11 +12,15 @@ use Illuminate\Support\Facades\File;
 class TuneSweepCommand extends Command
 {
     protected $signature = 'mlb:tune-sweep
+        {--forecast-source= : canonical or legacy (defaults to the active MLB evidence source)}
+        {--json : Output structured JSON in canonical mode}
+        {--limit=2500 : Maximum eligible canonical forecasts to inspect}
+        {--average-total= : Comma-separated canonical total.average_total values to replay}
         {--season=2026 : Season to evaluate against}
         {--hfa= : Comma-separated HFA Elo values to sweep (e.g. 0,10,15,20,25,35)}
         {--base-runs= : Comma-separated base_runs values to sweep}
         {--coef= : Comma-separated spread_to_probability_coefficient values to sweep}
-        {--feature-version=core-v3 : Filter to a single feature_version (use "any" to include all)}
+        {--feature-version= : Filter to a single feature_version (use "any" to include all)}
         {--baseline-hfa=35 : HFA the stored predictions were generated under (legacy default 35)}
         {--baseline-base-runs=9.7 : base_runs the stored predictions were generated under}
         {--output= : Optional JSON path}';
@@ -23,6 +29,20 @@ class TuneSweepCommand extends Command
 
     public function handle(): int
     {
+        $source = $this->option('forecast-source') ?? ((config('prediction_lifecycle.canonical_pipeline.mlb') || config('prediction_lifecycle.canonical_reads.mlb')) ? 'canonical' : 'legacy');
+        if (! in_array($source, ['canonical', 'legacy'], true)) {
+            $this->error('Forecast source must be canonical or legacy.');
+
+            return self::FAILURE;
+        }
+        if ($source === 'canonical') {
+            return $this->canonicalSweep();
+        }
+        if ($this->option('average-total') !== null || $this->option('json')) {
+            $this->error('--average-total and --json require canonical mode.');
+
+            return self::FAILURE;
+        }
         $season = (int) $this->option('season');
         $currentPredictionHfa = (float) config(
             'mlb.prediction.home_field_advantage',
@@ -44,7 +64,7 @@ class TuneSweepCommand extends Command
             ->whereNotNull('home_combined_elo')
             ->whereNotNull('away_combined_elo');
 
-        $featureVersion = (string) $this->option('feature-version');
+        $featureVersion = (string) ($this->option('feature-version') ?? 'core-v3');
         if ($featureVersion !== '' && strtolower($featureVersion) !== 'any') {
             $query->where('feature_version', $featureVersion);
         }
@@ -141,6 +161,82 @@ class TuneSweepCommand extends Command
         return self::SUCCESS;
     }
 
+    private function canonicalSweep(): int
+    {
+        foreach (['base-runs', 'baseline-hfa', 'baseline-base-runs'] as $option) {
+            if ($this->input->hasParameterOption('--'.$option)) {
+                $this->error('--'.$option.' is a legacy-only linear baseline option; canonical tuning replays frozen release configuration. Use --average-total for the canonical total model.');
+
+                return self::FAILURE;
+            }
+        }
+        $grids = [];
+        foreach (['hfa', 'average-total', 'coef'] as $option) {
+            $value = $this->option($option);
+            $grids[$option] = [null];
+            if ($value === null) {
+                continue;
+            }
+            $parts = explode(',', (string) $value);
+            foreach ($parts as $part) {
+                if (! is_numeric(trim($part)) || ! is_finite((float) $part) || ($option !== 'hfa' && (float) $part <= 0)) {
+                    $this->error('Canonical '.$option.' values must be finite'.($option === 'hfa' ? '.' : ' and positive.'));
+
+                    return self::FAILURE;
+                }
+            }
+            $grids[$option] = array_values(array_unique(array_map(fn ($part) => (float) trim($part), $parts)));
+        }
+        $version = (string) ($this->option('feature-version') ?? MlbCalculationReleaseDefinition::INPUT_SCHEMA_VERSION);
+        $source = app(MlbTuningReplaySource::class);
+        $corpus = $source->rows((int) $this->option('season'), $version === '' || strtolower($version) === 'any' ? null : $version, max(1, (int) $this->option('limit')));
+        $results = [];
+        foreach ($grids['hfa'] as $hfa) {
+            foreach ($grids['average-total'] as $total) {
+                foreach ($grids['coef'] as $coef) {
+                    $metrics = $this->score($corpus['rows'], fn ($row) => $source->project($row, $hfa, $total, $coef));
+                    if ($metrics['n'] === 0) {
+                        foreach (array_keys($metrics) as $key) {
+                            if ($key !== 'n') {
+                                $metrics[$key] = null;
+                            }
+                        }
+                    }
+                    $results[] = ['hfa' => $hfa, 'average_total' => $total, 'coef' => $coef, ...$metrics];
+                }
+            }
+        }
+        $report = ['forecast_source' => 'canonical', 'season' => (int) $this->option('season'), 'input_schema' => $version,
+            'sample' => $corpus['rows']->count(), 'excluded' => $corpus['excluded'],
+            'parameter_defaults' => "Null parameters retain each forecast's frozen release value.",
+            'approval_notice' => 'Read-only counterfactual research; grants no calibration, promotion or betting approval.',
+            'canonical_evidence' => $corpus['rows']->map(fn ($row) => $row->lineage)->all(), 'results' => $results];
+        if ($this->option('json')) {
+            $this->line(json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        } else {
+            $this->info('MLB canonical tuning replay: '.$report['sample'].' forecasts');
+            $this->line($report['parameter_defaults']);
+            $this->line($report['approval_notice']);
+            foreach ($corpus['excluded'] as $reason => $count) {
+                $this->warn($reason.': '.$count);
+            }
+            if ($corpus['rows']->isEmpty()) {
+                $this->warn('No replayable canonical forecasts matched the filters.');
+            } else {
+                $this->table(['HFA', 'average_total', 'coef', 'Rows', 'Win %', 'Spread MAE', 'Total MAE', 'Brier'], array_map(fn ($r) => [
+                    $r['hfa'] ?? 'recorded', $r['average_total'] ?? 'recorded', $r['coef'] ?? 'recorded', $r['n'],
+                    $r['n'] ? number_format($r['win_pct'] * 100, 2) : 'n/a', $r['n'] ? number_format($r['spread_mae'], 3) : 'n/a', $r['n'] ? number_format($r['total_mae'], 3) : 'n/a', $r['n'] ? number_format($r['brier'], 4) : 'n/a',
+                ], $results));
+            }
+        }
+        if ($output = $this->option('output')) {
+            File::ensureDirectoryExists(dirname((string) $output));
+            File::put((string) $output, json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        }
+
+        return self::SUCCESS;
+    }
+
     /**
      * @param  Collection<int, Prediction>  $rows
      * @return array<string, mixed>
@@ -157,6 +253,16 @@ class TuneSweepCommand extends Command
         $hfaDelta = ($hfa - $oldHfa) / $divisor;
         $totalDelta = $baseRuns - $oldBaseRuns;
 
+        return ['hfa' => $hfa, 'base_runs' => $baseRuns, 'coef' => $coef, ...$this->score($rows, function ($row) use ($hfaDelta, $totalDelta, $coef): array {
+            $spread = (float) $row->predicted_spread + $hfaDelta;
+
+            return ['spread' => $spread, 'total' => (float) $row->predicted_total + $totalDelta,
+                'probability' => 1.0 / (1.0 + exp(-$spread / max($coef, 0.0001)))];
+        })];
+    }
+
+    private function score(Collection $rows, callable $project): array
+    {
         $n = 0;
         $winnerCorrect = 0;
         $homePicks = 0;
@@ -168,14 +274,13 @@ class TuneSweepCommand extends Command
         $confSum = 0.0;
 
         foreach ($rows as $row) {
-            $oldSpread = (float) $row->predicted_spread;
-            $newSpread = $oldSpread + $hfaDelta;
-            $oldTotal = (float) $row->predicted_total;
-            $newTotal = $oldTotal + $totalDelta;
+            $projected = $project($row);
+            $newSpread = $projected['spread'];
+            $newTotal = $projected['total'];
             $actualSpread = (float) $row->actual_spread;
             $actualTotal = (float) $row->actual_total;
 
-            $pHome = 1.0 / (1.0 + exp(-$newSpread / max($coef, 0.0001)));
+            $pHome = $projected['probability'];
             $pickHome = $newSpread > 0;
             if ($newSpread === 0.0) {
                 continue;
@@ -197,9 +302,6 @@ class TuneSweepCommand extends Command
         }
 
         return [
-            'hfa' => $hfa,
-            'base_runs' => $baseRuns,
-            'coef' => $coef,
             'n' => $n,
             'win_pct' => $n ? $winnerCorrect / $n : 0.0,
             'home_pick_pct' => $n ? $homePicks / $n : 0.0,

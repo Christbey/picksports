@@ -4,6 +4,8 @@ namespace App\Console\Commands\MLB;
 
 use App\Models\MLB\Prediction;
 use App\Services\MLB\MlbPredictionRecommendationService;
+use App\Services\MLB\MlbReadinessForecastSource;
+use App\Services\MLB\Predictions\MlbCalculationReleaseDefinition;
 use App\Support\Odds\AmericanOdds;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
@@ -12,8 +14,9 @@ use Illuminate\Support\Collection;
 class ValidateRecommendationReadinessCommand extends Command
 {
     protected $signature = 'mlb:validate-recommendation-readiness
+        {--forecast-source= : canonical or legacy (defaults to the active MLB evidence source)}
         {--season= : Filter by season}
-        {--feature-version=core-v3 : Filter to a single feature_version (use "any" to include all)}
+        {--feature-version= : Historical feature version (core-v3 by default) or native input schema (current by default); any includes all}
         {--limit=2500 : Limit number of most recent graded predictions to inspect}
         {--from= : Start game date in YYYY-MM-DD}
         {--to= : End game date in YYYY-MM-DD}
@@ -25,8 +28,19 @@ class ValidateRecommendationReadinessCommand extends Command
 
     public function handle(MlbPredictionRecommendationService $recommendations): int
     {
-        $rows = $this->loadRows($recommendations);
+        $this->forecastSource = $this->option('forecast-source') ?? ((config('prediction_lifecycle.canonical_pipeline.mlb') || config('prediction_lifecycle.canonical_reads.mlb')) ? 'canonical' : 'legacy');
+        if (! in_array($this->forecastSource, ['canonical', 'legacy'], true)) {
+            $this->error('Forecast source must be canonical or legacy.');
+
+            return self::FAILURE;
+        }
+        $rows = $this->forecastSource === 'canonical' ? $this->canonicalRows($recommendations) : $this->loadRows($recommendations);
         $report = $this->buildReport($rows);
+        if ($this->forecastSource === 'canonical') {
+            $report['forecast_source'] = 'canonical';
+            $report['forecast_lineage'] = $rows->pluck('canonical_lineage')->all();
+            $report['evidence'] = 'Verified frozen native forecasts; this report does not grant promotion or betting approval.';
+        }
 
         if ($this->option('json')) {
             $this->line(json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
@@ -35,6 +49,10 @@ class ValidateRecommendationReadinessCommand extends Command
         }
 
         $this->info('MLB Recommendation Readiness');
+        if ($this->forecastSource === 'canonical') {
+            $this->line('Forecast source: canonical');
+            $this->line($report['evidence']);
+        }
         $this->line('Status: '.$report['status'].' | Ready: '.($report['ready'] ? 'yes' : 'no'));
         $this->line('Rows: '.$report['summary']['rows'].' | Candidate rows: '.$report['summary']['candidate_rows']);
         $this->newLine();
@@ -84,9 +102,77 @@ class ValidateRecommendationReadinessCommand extends Command
         return self::SUCCESS;
     }
 
-    /**
-     * @return Collection<int, array<string, mixed>>
-     */
+    private string $forecastSource = 'legacy';
+
+    private function featureVersion(): string
+    {
+        return (string) ($this->option('feature-version') ?? ($this->forecastSource === 'canonical' ? MlbCalculationReleaseDefinition::INPUT_SCHEMA_VERSION : 'core-v3'));
+    }
+
+    private function canonicalRows(MlbPredictionRecommendationService $recommendations): Collection
+    {
+        $version = $this->featureVersion();
+
+        return app(MlbReadinessForecastSource::class)->rows($this->option('season') ? (int) $this->option('season') : null,
+            $this->option('from'), $this->option('to'), $version !== '' && strtolower($version) !== 'any' ? $version : null, (int) $this->option('limit'))
+            ->map(function (array $entry) use ($recommendations): array {
+                $forecast = $entry['forecast'];
+                $market = data_get($forecast->source->calculationRun->inputSnapshot->inputs, 'pregame_market.available') === true
+                    ? (array) data_get($forecast->source->calculationRun->inputSnapshot->inputs, 'pregame_market.consensus.moneyline', []) : [];
+                $home = $market['price'] ?? null;
+                $away = data_get($market, 'opposite_quote.price');
+                $paired = ($market['market_key'] ?? null) === 'h2h' && ($market['side'] ?? null) === 'home'
+                    && data_get($market, 'opposite_quote.market_key') === 'h2h' && data_get($market, 'opposite_quote.side') === 'away'
+                    && is_numeric($home) && is_numeric($away) && abs((float) $home) >= 100 && abs((float) $away) >= 100;
+                $actual = (float) $forecast->game->home_score - (float) $forecast->game->away_score;
+                $row = (object) ['id' => null, 'game' => $forecast->game, 'win_probability' => $forecast->winProbability,
+                    'predicted_total' => $forecast->predictedTotal, 'confidence_score' => $forecast->confidenceScore,
+                    'winner_correct' => ($actual > 0 && $forecast->predictedSpread > 0) || ($actual < 0 && $forecast->predictedSpread < 0)];
+
+                return [...$this->reportRow($row, $recommendations->forPrediction($forecast),
+                    ['home' => $paired ? (int) $home : null, 'away' => $paired ? (int) $away : null], $forecast->marketTotal),
+                    'prediction_id' => null, 'canonical_prediction_id' => $forecast->source->id, 'canonical_lineage' => $entry['lineage']];
+            });
+    }
+
+    private function reportRow(object $prediction, array $recommendation, array $h2hPrices, ?float $marketTotal): array
+    {
+        $game = $prediction->game;
+        $actualMargin = (float) $game->home_score - (float) $game->away_score;
+        $homeWon = $actualMargin > 0;
+        $homeWinProbability = (float) $prediction->win_probability;
+        $modelPickSide = $homeWinProbability >= 0.5 ? 'home' : 'away';
+        $marketProbabilities = AmericanOdds::noVigProbabilities($h2hPrices['home'], $h2hPrices['away']);
+        $marketPickSide = $this->marketPickSide($marketProbabilities, $h2hPrices);
+        $public = (array) ($recommendation['public'] ?? $recommendation);
+        $candidate = (array) ($recommendation['candidate'] ?? $recommendation['pregame_recommendation'] ?? $recommendation);
+        $promotion = (array) ($recommendation['promotion'] ?? []);
+
+        return [
+            'prediction_id' => (int) $prediction->id,
+            'game_id' => (int) $game->id,
+            'game' => (string) ($game->short_name ?: $game->name ?: ''),
+            'game_date' => $game->game_date?->toDateString(),
+            'home_won' => $homeWon,
+            'winner_correct' => (bool) $prediction->winner_correct,
+            'home_win_probability' => $homeWinProbability,
+            'model_pick_side' => $modelPickSide,
+            'market_home_probability' => $marketProbabilities['home'],
+            'market_pick_side' => $marketPickSide,
+            'market_pick_won' => $marketPickSide === null ? null : ($marketPickSide === 'home' ? $homeWon : ! $homeWon),
+            'market_total' => $marketTotal,
+            'predicted_total' => (float) $prediction->predicted_total,
+            'confidence_score' => (float) $prediction->confidence_score,
+            'candidate_recommendation_type' => (string) ($candidate['recommendation_type'] ?? 'no_play'),
+            'candidate_score' => $candidate['score'] ?? null,
+            'candidate_no_bet_reason' => $candidate['no_bet_reason'] ?? null,
+            'candidate_reason_codes' => array_values((array) ($candidate['reason_codes'] ?? [])),
+            'candidate_risk_flags' => array_values((array) ($candidate['risk_flags'] ?? [])),
+            'public_recommendation_type' => (string) ($public['recommendation_type'] ?? 'no_play'),
+            'promotion_block_reasons' => array_values((array) ($promotion['block_reasons'] ?? [])),
+        ];
+    }
+
     private function loadRows(MlbPredictionRecommendationService $recommendations): Collection
     {
         return $this->predictionQuery()
@@ -101,42 +187,7 @@ class ValidateRecommendationReadinessCommand extends Command
                     return null;
                 }
 
-                $actualMargin = (float) $game->home_score - (float) $game->away_score;
-                $homeWon = $actualMargin > 0;
-                $homeWinProbability = (float) $prediction->win_probability;
-                $modelPickSide = $homeWinProbability >= 0.5 ? 'home' : 'away';
-                $h2hPrices = $this->extractH2hPrices($prediction);
-                $marketProbabilities = AmericanOdds::noVigProbabilities($h2hPrices['home'], $h2hPrices['away']);
-                $marketPickSide = $this->marketPickSide($marketProbabilities, $h2hPrices);
-                $marketTotal = $this->extractMarketTotal($prediction);
-                $recommendation = $recommendations->forPrediction($prediction);
-                $public = (array) ($recommendation['public'] ?? $recommendation);
-                $candidate = (array) ($recommendation['candidate'] ?? $recommendation['pregame_recommendation'] ?? $recommendation);
-                $promotion = (array) ($recommendation['promotion'] ?? []);
-
-                return [
-                    'prediction_id' => (int) $prediction->id,
-                    'game_id' => (int) $game->id,
-                    'game' => (string) ($game->short_name ?: $game->name ?: ''),
-                    'game_date' => $game->game_date?->toDateString(),
-                    'home_won' => $homeWon,
-                    'winner_correct' => (bool) $prediction->winner_correct,
-                    'home_win_probability' => $homeWinProbability,
-                    'model_pick_side' => $modelPickSide,
-                    'market_home_probability' => $marketProbabilities['home'],
-                    'market_pick_side' => $marketPickSide,
-                    'market_pick_won' => $marketPickSide === null ? null : ($marketPickSide === 'home' ? $homeWon : ! $homeWon),
-                    'market_total' => $marketTotal,
-                    'predicted_total' => (float) $prediction->predicted_total,
-                    'confidence_score' => (float) $prediction->confidence_score,
-                    'candidate_recommendation_type' => (string) ($candidate['recommendation_type'] ?? 'no_play'),
-                    'candidate_score' => $candidate['score'] ?? null,
-                    'candidate_no_bet_reason' => $candidate['no_bet_reason'] ?? null,
-                    'candidate_reason_codes' => array_values((array) ($candidate['reason_codes'] ?? [])),
-                    'candidate_risk_flags' => array_values((array) ($candidate['risk_flags'] ?? [])),
-                    'public_recommendation_type' => (string) ($public['recommendation_type'] ?? 'no_play'),
-                    'promotion_block_reasons' => array_values((array) ($promotion['block_reasons'] ?? [])),
-                ];
+                return $this->reportRow($prediction, $recommendations->forPrediction($prediction), $this->extractH2hPrices($prediction), $this->extractMarketTotal($prediction));
             })
             ->filter()
             ->values();
@@ -163,7 +214,7 @@ class ValidateRecommendationReadinessCommand extends Command
             $query->whereHas('game', fn (Builder $gameQuery) => $gameQuery->whereDate('game_date', '<=', (string) $this->option('to')));
         }
 
-        $featureVersion = (string) $this->option('feature-version');
+        $featureVersion = $this->featureVersion();
         if ($featureVersion !== '' && strtolower($featureVersion) !== 'any') {
             $query->where('feature_version', $featureVersion);
         }
@@ -202,7 +253,7 @@ class ValidateRecommendationReadinessCommand extends Command
         return [
             'report_type' => 'mlb_recommendation_readiness',
             'season' => $this->option('season') ? (int) $this->option('season') : null,
-            'feature_version' => (string) $this->option('feature-version'),
+            'feature_version' => $this->featureVersion(),
             'strict_pregame' => (bool) $this->option('strict-pregame'),
             'generated_at' => now()->toIso8601String(),
             'ready' => $blockReasons === [],
@@ -303,7 +354,7 @@ class ValidateRecommendationReadinessCommand extends Command
         return $candidateRows
             ->take(10)
             ->map(fn (array $row): array => [
-                (string) $row['prediction_id'],
+                (string) ($row['canonical_prediction_id'] ?? $row['prediction_id']),
                 $row['game_id'].' '.$row['game'],
                 (string) ($row['game_date'] ?? ''),
                 (string) $row['candidate_recommendation_type'],

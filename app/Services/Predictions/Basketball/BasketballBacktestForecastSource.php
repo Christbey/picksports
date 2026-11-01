@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Services\NBA;
+namespace App\Services\Predictions\Basketball;
 
 use App\Models\CanonicalPrediction;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
@@ -8,11 +8,12 @@ use App\Services\Predictions\CanonicalShadowInputs;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 
-class NbaBacktestForecastSource
+class BasketballBacktestForecastSource
 {
-    public function name(?string $requested = null): string
+    public function name(string $sport, ?string $requested = null): string
     {
-        $source = $requested ?? ((config('prediction_lifecycle.canonical_pipeline.nba') || config('prediction_lifecycle.canonical_reads.nba')) ? 'canonical' : 'legacy');
+        $this->validateSport($sport);
+        $source = $requested ?? ((config("prediction_lifecycle.canonical_pipeline.{$sport}") || config("prediction_lifecycle.canonical_reads.{$sport}")) ? 'canonical' : 'legacy');
         if (! in_array($source, ['canonical', 'legacy'], true)) {
             throw new \InvalidArgumentException('Forecast source must be canonical or legacy.');
         }
@@ -21,20 +22,21 @@ class NbaBacktestForecastSource
     }
 
     /** @return Collection<int, object> */
-    public function forFinalGames(?int $season = null, ?int $seasonType = null): Collection
+    public function forFinalGames(string $sport, ?int $season = null, ?int $seasonType = null): Collection
     {
+        $this->validateSport($sport);
         $rows = collect();
         $filters = array_filter(['season' => $season, 'season_type' => $seasonType === null ? null : (string) $seasonType], fn ($value) => $value !== null);
-        app(CanonicalSportPredictionQuery::class)->queryForSport('nba', $filters)
-            ->where('nba_games.status', 'STATUS_FINAL')->whereNotNull('nba_games.home_score')->whereNotNull('nba_games.away_score')
+        app(CanonicalSportPredictionQuery::class)->queryForSport($sport, $filters)
+            ->where("{$sport}_games.status", 'STATUS_FINAL')->whereNotNull("{$sport}_games.home_score")->whereNotNull("{$sport}_games.away_score")
             ->where('predictions.generated_at', '<=', now())->where('predictions.published_at', '<=', now())
             ->withOnly(['markets', 'calculationRun:id,event_input_snapshot_id,calculation_release_id,status',
                 'calculationRun.inputSnapshot', 'calculationRun.release:id,status', 'sportEvent:id,starts_at',
-                'sportEvent.nbaGame:id,sport_event_id,season,season_type,home_team_id,away_team_id,home_score,away_score',
-                'sportEvent.nbaGame.homeTeam:id,abbreviation,location', 'sportEvent.nbaGame.awayTeam:id,abbreviation,location'])
-            ->chunk(25, function (Collection $predictions) use ($rows): void {
+                "sportEvent.{$sport}Game:id,sport_event_id,season,season_type,home_team_id,away_team_id,home_score,away_score",
+                "sportEvent.{$sport}Game.homeTeam:id,abbreviation,".($sport === 'nba' ? 'location' : 'school'), "sportEvent.{$sport}Game.awayTeam:id,abbreviation,".($sport === 'nba' ? 'location' : 'school')])
+            ->chunk(25, function (Collection $predictions) use ($rows, $sport): void {
                 foreach ($predictions as $prediction) {
-                    $row = $this->canonical($prediction);
+                    $row = $this->canonical($prediction, $sport);
                     if ($row !== null && ! $rows->has($row->game->id)) {
                         $rows->put($row->game->id, $row);
                     }
@@ -44,7 +46,7 @@ class NbaBacktestForecastSource
         return $rows->values();
     }
 
-    private function canonical(CanonicalPrediction $prediction): ?object
+    private function canonical(CanonicalPrediction $prediction, string $sport): ?object
     {
         $snapshot = app(CanonicalShadowInputs::class)->fromPrediction($prediction);
         $input = $prediction->calculationRun?->inputSnapshot;
@@ -63,7 +65,7 @@ class NbaBacktestForecastSource
         $moneyline = $prediction->markets->first(fn ($m) => $m->market_type === 'moneyline' && $m->selection === 'home');
 
         return (object) [
-            'game' => $prediction->sportEvent->nbaGame, 'canonical_prediction_id' => $prediction->id,
+            'game' => $prediction->sportEvent->{$sport.'Game'}, 'canonical_prediction_id' => $prediction->id,
             'canonical_lineage' => $snapshot->lineage, 'generated_at' => $prediction->generated_at,
             'game_start_at' => $snapshot->game_start_at,
             'predicted_spread' => $this->number($snapshot->outputs['predicted_spread'] ?? null),
@@ -71,6 +73,13 @@ class NbaBacktestForecastSource
             'confidence_score' => $this->number($moneyline?->confidence_score),
             'market_sportsbook_spread' => $homeLine, 'market_total' => $this->number(data_get($market, 'total.line')),
         ];
+    }
+
+    private function validateSport(string $sport): void
+    {
+        if (! in_array($sport, ['nba', 'cbb'], true)) {
+            throw new \InvalidArgumentException('Backtest sport must be nba or cbb.');
+        }
     }
 
     private function number(mixed $value): ?float

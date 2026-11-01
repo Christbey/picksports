@@ -4,7 +4,7 @@ namespace App\Console\Commands\NBA;
 
 use App\Models\NBA\Game;
 use App\Models\PredictionFeatureSnapshot;
-use App\Services\NBA\NbaBacktestForecastSource;
+use App\Services\Predictions\Basketball\BasketballBacktestForecastSource;
 use App\Services\Sports\SportsDateWindowService;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
@@ -27,7 +27,7 @@ class BacktestTotalsCommand extends Command
     public function handle(): int
     {
         try {
-            $source = app(NbaBacktestForecastSource::class)->name($this->option('forecast-source'));
+            $source = app(BasketballBacktestForecastSource::class)->name('nba', $this->option('forecast-source'));
         } catch (\InvalidArgumentException $exception) {
             $this->error($exception->getMessage());
 
@@ -91,7 +91,7 @@ class BacktestTotalsCommand extends Command
     {
         $season = $this->option('season') ? (int) $this->option('season') : null;
         $seasonType = (int) $this->option('season-type');
-        $forecasts = app(NbaBacktestForecastSource::class)->forFinalGames($season, $seasonType);
+        $forecasts = app(BasketballBacktestForecastSource::class)->forFinalGames('nba', $season, $seasonType);
         $usable = $forecasts->filter(fn (object $forecast): bool => $forecast->predicted_total !== null && $forecast->market_total !== null);
         $this->excludedGames = Game::where('status', 'STATUS_FINAL')->whereNotNull('home_score')->whereNotNull('away_score')
             ->where('season_type', $seasonType)->when($season !== null, fn ($query) => $query->where('season', $season))->count() - $usable->count();

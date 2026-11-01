@@ -10,6 +10,7 @@ use App\Models\CBB\Game;
 use App\Models\CBB\Play;
 use App\Models\CBB\Prediction;
 use App\Models\CBB\Team;
+use App\Models\CBB\TeamMetric;
 use App\Models\EventInputSnapshot;
 use App\Models\LivePredictionSnapshot;
 use App\Models\PredictionMarket;
@@ -421,3 +422,85 @@ it('keeps native play replay independent of confidence and market quote coverage
     expect(Artisan::output())->toContain('Winner Accuracy')->not->toContain('No playable');
     expect(LivePredictionSnapshot::count())->toBe(0)->and(BetDecision::count())->toBe(0);
 })->with(['missing_confidence', 'missing_market']);
+
+it('audits canonical CBB availability without legacy reads while preserving input warnings', function (bool $pipeline, bool $reads) {
+    [$game, , $legacy] = cbbBacktestRetirementFixture();
+    $legacy->delete();
+    config(['prediction_lifecycle.canonical_pipeline.cbb' => $pipeline, 'prediction_lifecycle.canonical_reads.cbb' => $reads]);
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        expect(Artisan::call('cbb:audit-prediction-inputs', ['--game' => $game->id, '--include-placeholders' => true, '--show-ok' => true]))->toBe(0);
+        expect(Artisan::output())->toContain('Forecast source: canonical', 'missing_team_metrics', 'missing_spreads', 'missing_h2h')
+            ->not->toContain('missing_prediction_row');
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect($queries->filter(fn ($sql) => str_contains($sql, 'cbb_predictions')))->toBeEmpty()
+        ->and($queries->filter(fn ($sql) => str_starts_with($sql, 'select * from "event_input_snapshots"')))->toBeEmpty()
+        ->and(BetDecision::count())->toBe(0);
+})->with([[true, false], [false, true]]);
+
+it('keeps canonical input-audit gaps visible despite legacy coverage', function (string $variant) {
+    [$game] = cbbBacktestRetirementFixture($variant);
+    expect(Artisan::call('cbb:audit-prediction-inputs', ['--forecast-source' => 'canonical', '--game' => $game->id, '--include-placeholders' => true]))->toBe(0);
+    expect(Artisan::output())->toContain('missing_prediction_row');
+})->with(['unsafe', 'draft', 'withdrawn']);
+
+it('preserves historical CBB input-audit output and last-play completeness', function () {
+    [$game] = cbbBacktestRetirementFixture();
+    cbbReplayPlays($game);
+    $args = ['--game' => $game->id, '--include-placeholders' => true, '--show-ok' => true];
+    Artisan::call('cbb:audit-prediction-inputs', $args);
+    $before = Artisan::output();
+    Artisan::call('cbb:audit-prediction-inputs', [...$args, '--forecast-source' => 'legacy']);
+    expect(Artisan::output())->toBe($before)->not->toContain('missing_prediction_row');
+    Play::query()->where('game_id', $game->id)->where('sequence_number', 3)->update(['home_score' => 120, 'away_score' => 115]);
+    Artisan::call('cbb:audit-prediction-inputs', $args);
+    expect(Artisan::output())->toContain('1 / 1');
+    $this->artisan('cbb:audit-prediction-inputs', ['--forecast-source' => 'invalid'])->assertFailed();
+});
+
+it('batches CBB audit availability metrics and final-play lookups', function () {
+    [$game] = cbbBacktestRetirementFixture();
+    $game->update(['status' => 'STATUS_SCHEDULED']);
+    Game::factory()->count(250)->create(['season' => 2027, 'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $game->home_team_id, 'away_team_id' => $game->away_team_id]);
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        expect(Artisan::call('cbb:audit-prediction-inputs', ['--forecast-source' => 'canonical', '--season' => 2027, '--include-historical' => true]))->toBe(0);
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect($queries->filter(fn ($sql) => str_contains($sql, 'select "cbb_games"."id" from "predictions"')))->toHaveCount(2)
+        ->and($queries->filter(fn ($sql) => str_contains($sql, 'COUNT(*) as metric_count')))->toHaveCount(1)
+        ->and($queries->filter(fn ($sql) => str_contains($sql, 'from "cbb_plays"') && str_contains($sql, 'latest')))->toHaveCount(1);
+});
+
+it('maps CBB canonical availability by game id and retains kickoff-boundary delivery semantics', function () {
+    Game::factory()->create();
+    [$game, $native] = cbbBacktestRetirementFixture('late_publication');
+    expect($game->id)->not->toBe($native->id);
+    Artisan::call('cbb:audit-prediction-inputs', ['--forecast-source' => 'canonical', '--game' => $game->id, '--include-placeholders' => true, '--show-ok' => true]);
+    expect(Artisan::output())->not->toContain('missing_prediction_row');
+});
+
+it('preserves season-scoped missing-metric warnings in the batched CBB audit', function () {
+    [$game] = cbbBacktestRetirementFixture();
+    foreach ([$game->home_team_id, $game->away_team_id] as $teamId) {
+        TeamMetric::factory()->create(['team_id' => $teamId, 'season' => 2026]);
+    }
+    $args = ['--forecast-source' => 'canonical', '--game' => $game->id, '--include-placeholders' => true, '--show-ok' => true];
+    Artisan::call('cbb:audit-prediction-inputs', $args);
+    expect(Artisan::output())->toContain('missing_team_metrics');
+    foreach ([$game->home_team_id, $game->away_team_id] as $teamId) {
+        TeamMetric::factory()->create(['team_id' => $teamId, 'season' => 2027]);
+    }
+    Artisan::call('cbb:audit-prediction-inputs', $args);
+    expect(Artisan::output())->not->toContain('missing_team_metrics');
+});

@@ -33,7 +33,7 @@ class BasketballBacktestForecastSource
             ->withOnly(['markets', 'calculationRun:id,event_input_snapshot_id,calculation_release_id,status',
                 'calculationRun.inputSnapshot', 'calculationRun.release:id,status', 'sportEvent:id,starts_at',
                 "sportEvent.{$sport}Game:id,sport_event_id,season,season_type,home_team_id,away_team_id,home_score,away_score",
-                "sportEvent.{$sport}Game.homeTeam:id,abbreviation,".($sport === 'nba' ? 'location' : 'school'), "sportEvent.{$sport}Game.awayTeam:id,abbreviation,".($sport === 'nba' ? 'location' : 'school')])
+                "sportEvent.{$sport}Game.homeTeam:id,abbreviation,".($sport === 'cbb' ? 'school' : 'location'), "sportEvent.{$sport}Game.awayTeam:id,abbreviation,".($sport === 'cbb' ? 'school' : 'location')])
             ->chunk(25, function (Collection $predictions) use ($rows, $sport): void {
                 foreach ($predictions as $prediction) {
                     $row = $this->canonical($prediction, $sport);
@@ -77,8 +77,8 @@ class BasketballBacktestForecastSource
 
     private function validateSport(string $sport): void
     {
-        if (! in_array($sport, ['nba', 'cbb'], true)) {
-            throw new \InvalidArgumentException('Backtest sport must be nba or cbb.');
+        if (! in_array($sport, ['nba', 'cbb', 'wnba'], true)) {
+            throw new \InvalidArgumentException('Backtest sport must be nba, cbb or wnba.');
         }
     }
 

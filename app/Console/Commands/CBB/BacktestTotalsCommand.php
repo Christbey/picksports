@@ -3,13 +3,16 @@
 namespace App\Console\Commands\CBB;
 
 use App\Actions\CBB\GeneratePrediction;
+use App\Models\CBB\Game;
 use App\Models\CBB\Prediction;
+use App\Services\Predictions\Basketball\BasketballBacktestForecastSource;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 
 class BacktestTotalsCommand extends Command
 {
     protected $signature = 'cbb:backtest-totals
+        {--forecast-source= : canonical or legacy (defaults to the active CBB source)}
         {--season= : Filter by season}
         {--limit=250 : Limit number of most recent graded/final predictions to inspect}
         {--stored : Use stored predicted totals instead of recomputing with the current model}
@@ -19,7 +22,15 @@ class BacktestTotalsCommand extends Command
 
     public function handle(): int
     {
-        $rows = $this->loadRows();
+        try {
+            $source = app(BasketballBacktestForecastSource::class)->name('cbb', $this->option('forecast-source'));
+        } catch (\InvalidArgumentException $error) {
+            $this->error($error->getMessage());
+
+            return self::FAILURE;
+        }
+        $rows = $source === 'canonical' ? $this->canonicalRows() : $this->loadRows();
+        $this->line('Forecast source: '.$source);
 
         if ($rows->isEmpty()) {
             $this->warn('No final CBB predictions with totals market data found for the selected scope.');
@@ -70,6 +81,41 @@ class BacktestTotalsCommand extends Command
         return self::SUCCESS;
     }
 
+    private function canonicalRows(): Collection
+    {
+        $rows = app(BasketballBacktestForecastSource::class)->forFinalGames('cbb', $this->option('season') ? (int) $this->option('season') : null)
+            ->filter(fn (object $forecast): bool => $forecast->predicted_total !== null && $forecast->market_total !== null)
+            ->sortByDesc(fn (object $forecast): array => [$forecast->generated_at->timestamp, $forecast->canonical_prediction_id])
+            ->map(fn (object $forecast): array => [
+                ...$this->totalRow($forecast->game, $forecast->predicted_total, $forecast->market_total),
+                'canonical_prediction_id' => $forecast->canonical_prediction_id, 'canonical_lineage' => $forecast->canonical_lineage,
+            ])->values();
+        $limit = (int) $this->option('limit');
+
+        return $limit > 0 ? $rows->take($limit)->values() : $rows;
+    }
+
+    private function totalRow(Game $game, float $modelTotal, float $marketTotal): array
+    {
+        $actualTotal = (float) $game->home_score + (float) $game->away_score;
+        $pick = $modelTotal > $marketTotal ? 'over' : 'under';
+        $result = $actualTotal > $marketTotal
+            ? 'over'
+            : ($actualTotal < $marketTotal ? 'under' : 'push');
+
+        return [
+            'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
+            'model_total' => $modelTotal,
+            'market_total' => $marketTotal,
+            'actual_total' => $actualTotal,
+            'pick' => $pick,
+            'result' => $result,
+            'won' => $pick === $result,
+            'push' => $result === 'push',
+            'model_error' => abs($actualTotal - $modelTotal),
+        ];
+    }
+
     private function loadRows(): Collection
     {
         $generator = app(GeneratePrediction::class);
@@ -105,26 +151,9 @@ class BacktestTotalsCommand extends Command
                     return null;
                 }
 
-                $actualTotal = (float) $game->home_score + (float) $game->away_score;
-                $modelTotal = $this->option('stored')
-                    ? (float) $prediction->predicted_total
-                    : $this->recomputedTotal($generator, $game, $prediction);
-                $pick = $modelTotal > $marketTotal ? 'over' : 'under';
-                $result = $actualTotal > $marketTotal
-                    ? 'over'
-                    : ($actualTotal < $marketTotal ? 'under' : 'push');
+                $modelTotal = $this->option('stored') ? (float) $prediction->predicted_total : $this->recomputedTotal($generator, $game, $prediction);
 
-                return [
-                    'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
-                    'model_total' => $modelTotal,
-                    'market_total' => $marketTotal,
-                    'actual_total' => $actualTotal,
-                    'pick' => $pick,
-                    'result' => $result,
-                    'won' => $pick === $result,
-                    'push' => $result === 'push',
-                    'model_error' => abs($actualTotal - $modelTotal),
-                ];
+                return $this->totalRow($game, $modelTotal, $marketTotal);
             })
             ->filter()
             ->values();

@@ -5,7 +5,7 @@ namespace App\Console\Commands\NBA;
 use App\Actions\NBA\GeneratePrediction;
 use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
-use App\Services\NBA\NbaBacktestForecastSource;
+use App\Services\Predictions\Basketball\BasketballBacktestForecastSource;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 
@@ -23,7 +23,7 @@ class BacktestSpreadsCommand extends Command
     public function handle(): int
     {
         try {
-            $source = app(NbaBacktestForecastSource::class)->name($this->option('forecast-source'));
+            $source = app(BasketballBacktestForecastSource::class)->name('nba', $this->option('forecast-source'));
         } catch (\InvalidArgumentException $exception) {
             $this->error($exception->getMessage());
 
@@ -93,7 +93,7 @@ class BacktestSpreadsCommand extends Command
 
     private function canonicalRows(): Collection
     {
-        $rows = app(NbaBacktestForecastSource::class)->forFinalGames($this->option('season') ? (int) $this->option('season') : null)
+        $rows = app(BasketballBacktestForecastSource::class)->forFinalGames('nba', $this->option('season') ? (int) $this->option('season') : null)
             ->filter(fn (object $forecast): bool => $forecast->predicted_spread !== null && $forecast->market_sportsbook_spread !== null)
             ->sortByDesc(fn (object $forecast): array => [$forecast->generated_at->timestamp, $forecast->canonical_prediction_id])
             ->map(fn (object $forecast): array => [

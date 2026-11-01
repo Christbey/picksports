@@ -3,8 +3,8 @@
 namespace App\Console\Commands\MLB;
 
 use App\Models\MLB\Prediction;
+use App\Services\MLB\MlbAnalysisForecastSource;
 use App\Services\MLB\MlbPredictionRecommendationService;
-use App\Services\MLB\MlbReadinessForecastSource;
 use App\Services\MLB\Predictions\MlbCalculationReleaseDefinition;
 use App\Support\Odds\AmericanOdds;
 use Illuminate\Console\Command;
@@ -113,24 +113,17 @@ class ValidateRecommendationReadinessCommand extends Command
     {
         $version = $this->featureVersion();
 
-        return app(MlbReadinessForecastSource::class)->rows($this->option('season') ? (int) $this->option('season') : null,
+        return app(MlbAnalysisForecastSource::class)->rows($this->option('season') ? (int) $this->option('season') : null,
             $this->option('from'), $this->option('to'), $version !== '' && strtolower($version) !== 'any' ? $version : null, (int) $this->option('limit'))
             ->map(function (array $entry) use ($recommendations): array {
                 $forecast = $entry['forecast'];
-                $market = data_get($forecast->source->calculationRun->inputSnapshot->inputs, 'pregame_market.available') === true
-                    ? (array) data_get($forecast->source->calculationRun->inputSnapshot->inputs, 'pregame_market.consensus.moneyline', []) : [];
-                $home = $market['price'] ?? null;
-                $away = data_get($market, 'opposite_quote.price');
-                $paired = ($market['market_key'] ?? null) === 'h2h' && ($market['side'] ?? null) === 'home'
-                    && data_get($market, 'opposite_quote.market_key') === 'h2h' && data_get($market, 'opposite_quote.side') === 'away'
-                    && is_numeric($home) && is_numeric($away) && abs((float) $home) >= 100 && abs((float) $away) >= 100;
                 $actual = (float) $forecast->game->home_score - (float) $forecast->game->away_score;
                 $row = (object) ['id' => null, 'game' => $forecast->game, 'win_probability' => $forecast->winProbability,
                     'predicted_total' => $forecast->predictedTotal, 'confidence_score' => $forecast->confidenceScore,
                     'winner_correct' => ($actual > 0 && $forecast->predictedSpread > 0) || ($actual < 0 && $forecast->predictedSpread < 0)];
 
                 return [...$this->reportRow($row, $recommendations->forPrediction($forecast),
-                    ['home' => $paired ? (int) $home : null, 'away' => $paired ? (int) $away : null], $forecast->marketTotal),
+                    $entry['prices'], $forecast->marketTotal),
                     'prediction_id' => null, 'canonical_prediction_id' => $forecast->source->id, 'canonical_lineage' => $entry['lineage']];
             });
     }

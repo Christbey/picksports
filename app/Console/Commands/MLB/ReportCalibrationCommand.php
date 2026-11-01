@@ -4,9 +4,12 @@ namespace App\Console\Commands\MLB;
 
 use App\Models\MLB\Prediction;
 use App\Models\PredictionFeatureSnapshot;
+use App\Services\MLB\MlbAnalysisForecastSource;
 use App\Services\MLB\MlbPredictionRecommendationService;
+use App\Services\MLB\Predictions\MlbCalculationReleaseDefinition;
 use App\Support\MLB\MlbGamePhase;
 use App\Support\Odds\AmericanOdds;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\File;
@@ -14,9 +17,10 @@ use Illuminate\Support\Facades\File;
 class ReportCalibrationCommand extends Command
 {
     protected $signature = 'mlb:report-calibration
+        {--forecast-source= : canonical or legacy (defaults to the active MLB evidence source)}
         {--season= : Filter by season}
         {--limit=500 : Limit number of most recent graded predictions to inspect}
-        {--feature-version=core-v3 : Filter to a single feature_version (use "any" to include all)}
+        {--feature-version= : Historical feature version (core-v3 by default) or native input schema (current by default); any includes all}
         {--strict-pregame : Exclude rows without provably pregame-safe timestamps and market context}
         {--diagnostics : Include underperformance diagnostic breakdowns}
         {--compare-market : Include model-vs-market diagnostic baselines}
@@ -27,7 +31,15 @@ class ReportCalibrationCommand extends Command
 
     public function handle(): int
     {
-        $rows = $this->loadRows();
+        $this->strictPregameExcludedRows = collect();
+        $this->gradedCandidateCount = 0;
+        $this->forecastSource = $this->option('forecast-source') ?? ((config('prediction_lifecycle.canonical_pipeline.mlb') || config('prediction_lifecycle.canonical_reads.mlb')) ? 'canonical' : 'legacy');
+        if (! in_array($this->forecastSource, ['canonical', 'legacy'], true)) {
+            $this->error('Forecast source must be canonical or legacy.');
+
+            return self::FAILURE;
+        }
+        $rows = $this->forecastSource === 'canonical' ? $this->canonicalRows() : $this->loadRows();
 
         if ($rows->isEmpty()) {
             if ($this->option('strict-pregame') && isset($this->strictPregameExcludedRows) && $this->strictPregameExcludedRows->isNotEmpty()) {
@@ -50,6 +62,11 @@ class ReportCalibrationCommand extends Command
         }
 
         $report = $this->buildReport($rows);
+        if ($this->forecastSource === 'canonical') {
+            $report['forecast_source'] = 'canonical';
+            $report['forecast_lineage'] = $rows->pluck('canonical_lineage')->all();
+            $report['evidence'] = 'Verified frozen native forecasts; observed performance grants no calibration, promotion or betting approval.';
+        }
 
         if ($this->option('diagnostics') || $this->option('compare-market')) {
             $report['diagnostics'] = $this->buildDiagnostics($rows);
@@ -62,6 +79,10 @@ class ReportCalibrationCommand extends Command
         }
 
         $this->info('MLB Prediction Calibration Report');
+        if ($this->forecastSource === 'canonical') {
+            $this->line('Forecast source: canonical');
+            $this->line($report['evidence']);
+        }
         $this->line('Scope: '.($this->option('season') ? 'season '.$this->option('season') : 'all seasons'));
         $this->line('Rows: '.(string) $report['summary']['count']);
         if ($this->option('strict-pregame')) {
@@ -143,6 +164,159 @@ class ReportCalibrationCommand extends Command
         return self::SUCCESS;
     }
 
+    private string $forecastSource = 'legacy';
+
+    private function featureVersion(): string
+    {
+        return (string) ($this->option('feature-version') ?? ($this->forecastSource === 'canonical' ? MlbCalculationReleaseDefinition::INPUT_SCHEMA_VERSION : 'core-v3'));
+    }
+
+    private function canonicalRows(): Collection
+    {
+        $version = $this->featureVersion();
+        $entries = app(MlbAnalysisForecastSource::class)->rows($this->option('season') ? (int) $this->option('season') : null,
+            null, null, $version !== '' && strtolower($version) !== 'any' ? $version : null, (int) $this->option('limit'));
+        $this->gradedCandidateCount = $entries->count();
+        $excluded = collect();
+        $rows = $entries->map(function (array $entry) use ($excluded): ?array {
+            $forecast = $entry['forecast'];
+            $input = $forecast->source->calculationRun->inputSnapshot;
+            $market = data_get($input->inputs, 'pregame_market.available') === true ? (array) data_get($input->inputs, 'pregame_market', []) : [];
+            $reasons = [];
+            if ($market === []) {
+                $reasons[] = 'missing_pregame_safe_market_context';
+            }
+            $captured = $market['captured_at'] ?? null;
+            try {
+                $safeQuoteTime = is_string($captured) && CarbonImmutable::parse($captured)->lte($input->captured_at)
+                    && CarbonImmutable::parse($captured)->lt($forecast->source->sportEvent->starts_at);
+            } catch (\Throwable) {
+                $safeQuoteTime = false;
+            }
+            if (! $safeQuoteTime) {
+                $reasons[] = 'missing_odds_timestamp';
+            }
+            if ($this->option('strict-pregame') && $reasons !== []) {
+                $excluded->push(['_excluded' => true, 'exclusion_reasons' => $reasons]);
+
+                return null;
+            }
+            $metadata = $forecast->modelMetadata;
+            foreach (['home', 'away'] as $side) {
+                data_set($metadata, 'pitcher_inputs.'.$side.'_source', data_get($input->inputs, 'pitching.'.$side.'.source', 'unknown'));
+            }
+            data_set($metadata, 'park_context.total_adjustment', data_get($forecast->source->calculationRun->diagnostics, 'park_total_adjustment'));
+            data_set($metadata, 'actual_weather.total_adjustment', data_get($forecast->source->calculationRun->diagnostics, 'weather_total_adjustment'));
+            $actual = (float) $forecast->game->home_score - (float) $forecast->game->away_score;
+            $row = (object) ['game' => $forecast->game, 'win_probability' => $forecast->winProbability,
+                'predicted_spread' => $forecast->predictedSpread, 'predicted_total' => $forecast->predictedTotal,
+                'confidence_score' => $forecast->confidenceScore, 'model_metadata' => $metadata,
+                'winner_correct' => ($actual > 0 && $forecast->predictedSpread > 0) || ($actual < 0 && $forecast->predictedSpread < 0),
+                'spread_error' => null, 'total_error' => null];
+
+            return [...$this->reportRow($row, null, app(MlbPredictionRecommendationService::class)->forPrediction($forecast),
+                $forecast->vegasSpread, $forecast->marketTotal, $entry['prices'], true),
+                'canonical_prediction_id' => $forecast->source->id, 'canonical_lineage' => $entry['lineage'], 'event_input_snapshot_id' => $input->id];
+        })->filter()->values();
+        $this->strictPregameExcludedRows = $excluded;
+
+        return $rows;
+    }
+
+    private function reportRow(object $prediction, ?PredictionFeatureSnapshot $snapshot, array $recommendation, ?float $marketSpread, ?float $marketTotal, array $h2hPrices, bool $native = false): array
+    {
+        $game = $prediction->game;
+        $publicRecommendation = $recommendation['public'] ?? $recommendation;
+        $candidateRecommendation = $recommendation['candidate'] ?? $recommendation['pregame_recommendation'] ?? $recommendation;
+        $promotion = (array) ($recommendation['promotion'] ?? []);
+
+        $marketProbabilities = AmericanOdds::noVigProbabilities($h2hPrices['home'], $h2hPrices['away']);
+        $actualMargin = (float) $game->home_score - (float) $game->away_score;
+        $actualTotal = (float) $game->home_score + (float) $game->away_score;
+        $homeWinProbability = (float) $prediction->win_probability;
+        $homeWon = $actualMargin > 0;
+        $modelPickSide = $this->modelPickSide((float) $prediction->predicted_spread, $homeWinProbability);
+        $marketHomeMargin = $marketSpread !== null ? -1 * $marketSpread : null;
+        $marketPickSide = match (true) {
+            $marketHomeMargin !== null => $marketHomeMargin >= 0 ? 'home' : 'away',
+            $marketProbabilities['home'] !== null && $marketProbabilities['away'] !== null => $marketProbabilities['home'] >= $marketProbabilities['away'] ? 'home' : 'away',
+            default => null,
+        };
+        $modelPickWon = match ($modelPickSide) {
+            'home' => $homeWon,
+            'away' => ! $homeWon,
+            default => null,
+        };
+        $marketPickWon = $marketPickSide === null ? null : ($marketPickSide === 'home' ? $homeWon : ! $homeWon);
+        $modelProbability = match ($modelPickSide) {
+            'home' => $homeWinProbability,
+            'away' => 1 - $homeWinProbability,
+            default => max($homeWinProbability, 1 - $homeWinProbability),
+        };
+        $marketProbability = $marketPickSide === 'home'
+            ? $marketProbabilities['home']
+            : ($marketPickSide === 'away' ? $marketProbabilities['away'] : null);
+        $parkAdjustment = data_get($prediction->model_metadata, 'park_context.total_adjustment');
+        $weatherAdjustment = data_get($prediction->model_metadata, 'actual_weather.total_adjustment');
+        $homePitcherSource = (string) data_get($prediction->model_metadata, 'pitcher_inputs.home_source', 'unknown');
+        $awayPitcherSource = (string) data_get($prediction->model_metadata, 'pitcher_inputs.away_source', 'unknown');
+        $candidateRiskFlags = array_values((array) ($candidateRecommendation['risk_flags'] ?? []));
+        $publicRiskFlags = array_values((array) ($publicRecommendation['risk_flags'] ?? []));
+        $promotionBlockReasons = array_values((array) ($promotion['block_reasons'] ?? []));
+
+        return [
+            'game_id' => (int) $game->id,
+            'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
+            'game_date' => $game->game_date?->toDateString(),
+            'month' => $game->game_date?->format('M') ?? 'unknown',
+            'home_team' => $this->teamName($game->homeTeam),
+            'away_team' => $this->teamName($game->awayTeam),
+            'home_won' => $homeWon,
+            'predicted_spread' => (float) $prediction->predicted_spread,
+            'predicted_total' => (float) $prediction->predicted_total,
+            'home_win_probability' => $homeWinProbability,
+            'model_pick_side' => $modelPickSide,
+            'model_pick_won' => $modelPickWon,
+            'model_pick_probability' => $modelProbability,
+            'actual_margin' => $actualMargin,
+            'actual_total' => $actualTotal,
+            'winner_correct' => (bool) $prediction->winner_correct,
+            'spread_error' => (float) ($prediction->spread_error ?? abs($actualMargin - (float) $prediction->predicted_spread)),
+            'total_error' => (float) ($prediction->total_error ?? abs($actualTotal - (float) $prediction->predicted_total)),
+            'confidence_score' => (float) $prediction->confidence_score,
+            'market_spread' => $marketSpread,
+            'market_home_margin' => $marketHomeMargin,
+            'market_pick_side' => $marketPickSide,
+            'market_pick_won' => $marketPickWon,
+            'market_home_probability' => $marketProbabilities['home'],
+            'market_away_probability' => $marketProbabilities['away'],
+            'market_pick_probability' => $marketProbability,
+            'home_moneyline' => $h2hPrices['home'],
+            'away_moneyline' => $h2hPrices['away'],
+            'market_total' => $marketTotal,
+            'recommendation_type' => (string) ($candidateRecommendation['recommendation_type'] ?? 'no_play'),
+            'candidate_recommendation_type' => (string) ($candidateRecommendation['recommendation_type'] ?? 'no_play'),
+            'public_recommendation_type' => (string) ($publicRecommendation['recommendation_type'] ?? 'no_play'),
+            'promotion_status' => (string) ($promotion['status'] ?? 'unknown'),
+            'promotion_block_reasons' => $promotionBlockReasons,
+            'promotion_block_reason_key' => $promotionBlockReasons === [] ? 'none' : implode(',', $promotionBlockReasons),
+            'risk_flags' => $candidateRiskFlags,
+            'risk_flag_key' => $candidateRiskFlags === [] ? 'none' : implode(',', $candidateRiskFlags),
+            'public_risk_flags' => $publicRiskFlags,
+            'public_risk_flag_key' => $publicRiskFlags === [] ? 'none' : implode(',', $publicRiskFlags),
+            'signal_score' => $candidateRecommendation['score'] ?? null,
+            'raw_edge' => $candidateRecommendation['raw_edge'] ?? null,
+            'no_vig_edge' => $candidateRecommendation['no_vig_edge'] ?? null,
+            'home_pitcher_source' => $homePitcherSource,
+            'away_pitcher_source' => $awayPitcherSource,
+            'pitcher_source_bucket' => $this->pitcherSourceBucket($homePitcherSource, $awayPitcherSource),
+            'park_adjustment' => is_numeric($parkAdjustment) ? (float) $parkAdjustment : ($native ? null : 0.0),
+            'weather_adjustment' => is_numeric($weatherAdjustment) ? (float) $weatherAdjustment : ($native ? null : 0.0),
+            'feature_snapshot_at' => $snapshot?->generated_at?->toIso8601String(),
+            'snapshot_run_id' => $snapshot?->snapshot_run_id,
+        ];
+    }
+
     private function loadRows(): Collection
     {
         $query = Prediction::query()
@@ -156,7 +330,7 @@ class ReportCalibrationCommand extends Command
             $query->whereHas('game', fn ($gameQuery) => $gameQuery->where('season', (int) $this->option('season')));
         }
 
-        $featureVersion = (string) $this->option('feature-version');
+        $featureVersion = $this->featureVersion();
         if ($featureVersion !== '' && strtolower($featureVersion) !== 'any') {
             $query->where('feature_version', $featureVersion);
         }
@@ -186,99 +360,8 @@ class ReportCalibrationCommand extends Command
                     ];
                 }
 
-                $recommendation = app(MlbPredictionRecommendationService::class)->forPrediction($prediction);
-                $publicRecommendation = $recommendation['public'] ?? $recommendation;
-                $candidateRecommendation = $recommendation['candidate'] ?? $recommendation['pregame_recommendation'] ?? $recommendation;
-                $promotion = (array) ($recommendation['promotion'] ?? []);
-
-                $marketSpread = is_numeric($prediction->vegas_spread) ? (float) $prediction->vegas_spread : null;
-                $marketTotal = $this->extractMarketTotal($prediction);
-                $h2hPrices = $this->extractH2hPrices($prediction);
-                $marketProbabilities = AmericanOdds::noVigProbabilities($h2hPrices['home'], $h2hPrices['away']);
-                $actualMargin = (float) $game->home_score - (float) $game->away_score;
-                $actualTotal = (float) $game->home_score + (float) $game->away_score;
-                $homeWinProbability = (float) $prediction->win_probability;
-                $homeWon = $actualMargin > 0;
-                $modelPickSide = $this->modelPickSide((float) $prediction->predicted_spread, $homeWinProbability);
-                $marketHomeMargin = $marketSpread !== null ? -1 * $marketSpread : null;
-                $marketPickSide = match (true) {
-                    $marketHomeMargin !== null => $marketHomeMargin >= 0 ? 'home' : 'away',
-                    $marketProbabilities['home'] !== null && $marketProbabilities['away'] !== null => $marketProbabilities['home'] >= $marketProbabilities['away'] ? 'home' : 'away',
-                    default => null,
-                };
-                $modelPickWon = match ($modelPickSide) {
-                    'home' => $homeWon,
-                    'away' => ! $homeWon,
-                    default => null,
-                };
-                $marketPickWon = $marketPickSide === null ? null : ($marketPickSide === 'home' ? $homeWon : ! $homeWon);
-                $modelProbability = match ($modelPickSide) {
-                    'home' => $homeWinProbability,
-                    'away' => 1 - $homeWinProbability,
-                    default => max($homeWinProbability, 1 - $homeWinProbability),
-                };
-                $marketProbability = $marketPickSide === 'home'
-                    ? $marketProbabilities['home']
-                    : ($marketPickSide === 'away' ? $marketProbabilities['away'] : null);
-                $parkAdjustment = data_get($prediction->model_metadata, 'park_context.total_adjustment');
-                $weatherAdjustment = data_get($prediction->model_metadata, 'actual_weather.total_adjustment');
-                $homePitcherSource = (string) data_get($prediction->model_metadata, 'pitcher_inputs.home_source', 'unknown');
-                $awayPitcherSource = (string) data_get($prediction->model_metadata, 'pitcher_inputs.away_source', 'unknown');
-                $candidateRiskFlags = array_values((array) ($candidateRecommendation['risk_flags'] ?? []));
-                $publicRiskFlags = array_values((array) ($publicRecommendation['risk_flags'] ?? []));
-                $promotionBlockReasons = array_values((array) ($promotion['block_reasons'] ?? []));
-
-                return [
-                    'game_id' => (int) $game->id,
-                    'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
-                    'game_date' => $game->game_date?->toDateString(),
-                    'month' => $game->game_date?->format('M') ?? 'unknown',
-                    'home_team' => $this->teamName($game->homeTeam),
-                    'away_team' => $this->teamName($game->awayTeam),
-                    'home_won' => $homeWon,
-                    'predicted_spread' => (float) $prediction->predicted_spread,
-                    'predicted_total' => (float) $prediction->predicted_total,
-                    'home_win_probability' => $homeWinProbability,
-                    'model_pick_side' => $modelPickSide,
-                    'model_pick_won' => $modelPickWon,
-                    'model_pick_probability' => $modelProbability,
-                    'actual_margin' => $actualMargin,
-                    'actual_total' => $actualTotal,
-                    'winner_correct' => (bool) $prediction->winner_correct,
-                    'spread_error' => (float) ($prediction->spread_error ?? abs($actualMargin - (float) $prediction->predicted_spread)),
-                    'total_error' => (float) ($prediction->total_error ?? abs($actualTotal - (float) $prediction->predicted_total)),
-                    'confidence_score' => (float) $prediction->confidence_score,
-                    'market_spread' => $marketSpread,
-                    'market_home_margin' => $marketHomeMargin,
-                    'market_pick_side' => $marketPickSide,
-                    'market_pick_won' => $marketPickWon,
-                    'market_home_probability' => $marketProbabilities['home'],
-                    'market_away_probability' => $marketProbabilities['away'],
-                    'market_pick_probability' => $marketProbability,
-                    'home_moneyline' => $h2hPrices['home'],
-                    'away_moneyline' => $h2hPrices['away'],
-                    'market_total' => $marketTotal,
-                    'recommendation_type' => (string) ($candidateRecommendation['recommendation_type'] ?? 'no_play'),
-                    'candidate_recommendation_type' => (string) ($candidateRecommendation['recommendation_type'] ?? 'no_play'),
-                    'public_recommendation_type' => (string) ($publicRecommendation['recommendation_type'] ?? 'no_play'),
-                    'promotion_status' => (string) ($promotion['status'] ?? 'unknown'),
-                    'promotion_block_reasons' => $promotionBlockReasons,
-                    'promotion_block_reason_key' => $promotionBlockReasons === [] ? 'none' : implode(',', $promotionBlockReasons),
-                    'risk_flags' => $candidateRiskFlags,
-                    'risk_flag_key' => $candidateRiskFlags === [] ? 'none' : implode(',', $candidateRiskFlags),
-                    'public_risk_flags' => $publicRiskFlags,
-                    'public_risk_flag_key' => $publicRiskFlags === [] ? 'none' : implode(',', $publicRiskFlags),
-                    'signal_score' => $candidateRecommendation['score'] ?? null,
-                    'raw_edge' => $candidateRecommendation['raw_edge'] ?? null,
-                    'no_vig_edge' => $candidateRecommendation['no_vig_edge'] ?? null,
-                    'home_pitcher_source' => $homePitcherSource,
-                    'away_pitcher_source' => $awayPitcherSource,
-                    'pitcher_source_bucket' => $this->pitcherSourceBucket($homePitcherSource, $awayPitcherSource),
-                    'park_adjustment' => is_numeric($parkAdjustment) ? (float) $parkAdjustment : 0.0,
-                    'weather_adjustment' => is_numeric($weatherAdjustment) ? (float) $weatherAdjustment : 0.0,
-                    'feature_snapshot_at' => $snapshot?->generated_at?->toIso8601String(),
-                    'snapshot_run_id' => $snapshot?->snapshot_run_id,
-                ];
+                return $this->reportRow($prediction, $snapshot, app(MlbPredictionRecommendationService::class)->forPrediction($prediction),
+                    is_numeric($prediction->vegas_spread) ? (float) $prediction->vegas_spread : null, $this->extractMarketTotal($prediction), $this->extractH2hPrices($prediction));
             })
             ->filter()
             ->values();
@@ -468,7 +551,7 @@ class ReportCalibrationCommand extends Command
         return [
             'metadata' => [
                 'season' => $this->option('season') ? (int) $this->option('season') : null,
-                'feature_version' => (string) $this->option('feature-version'),
+                'feature_version' => $this->featureVersion(),
                 'limit' => (int) $this->option('limit'),
                 'strict_pregame' => (bool) $this->option('strict-pregame'),
                 'rows' => $rows->count(),
@@ -510,9 +593,9 @@ class ReportCalibrationCommand extends Command
             ],
             'pitcher_source_breakdowns' => $this->groupRows($rows, fn (array $row): string => (string) $row['pitcher_source_bucket']),
             'park_weather_breakdowns' => [
-                'park' => $this->groupRows($rows, fn (array $row): string => $this->adjustmentBucket((float) $row['park_adjustment'], 'park')),
-                'weather' => $this->groupRows($rows, fn (array $row): string => $this->adjustmentBucket((float) $row['weather_adjustment'], 'weather')),
-                'combined' => $this->groupRows($rows, fn (array $row): string => $this->adjustmentBucket((float) $row['park_adjustment'] + (float) $row['weather_adjustment'], 'combined')),
+                'park' => $this->groupRows($rows, fn (array $row): string => $this->adjustmentBucket($row['park_adjustment'], 'park')),
+                'weather' => $this->groupRows($rows, fn (array $row): string => $this->adjustmentBucket($row['weather_adjustment'], 'weather')),
+                'combined' => $this->groupRows($rows, fn (array $row): string => $this->adjustmentBucket($row['park_adjustment'] === null || $row['weather_adjustment'] === null ? null : $row['park_adjustment'] + $row['weather_adjustment'], 'combined')),
             ],
             'month_breakdowns' => $this->groupRows($rows, fn (array $row): string => (string) $row['month']),
             'market_disagreement_breakdowns' => [
@@ -647,8 +730,8 @@ class ReportCalibrationCommand extends Command
             'avg_signal_score' => $group->whereNotNull('signal_score')->isNotEmpty() ? round((float) $group->whereNotNull('signal_score')->avg('signal_score'), 2) : null,
             'avg_raw_edge' => $group->whereNotNull('raw_edge')->isNotEmpty() ? round((float) $group->whereNotNull('raw_edge')->avg('raw_edge'), 4) : null,
             'avg_no_vig_edge' => $group->whereNotNull('no_vig_edge')->isNotEmpty() ? round((float) $group->whereNotNull('no_vig_edge')->avg('no_vig_edge'), 4) : null,
-            'avg_park_adjustment' => round((float) $group->avg('park_adjustment'), 2),
-            'avg_weather_adjustment' => round((float) $group->avg('weather_adjustment'), 2),
+            'avg_park_adjustment' => $group->whereNotNull('park_adjustment')->isEmpty() ? null : round((float) $group->avg('park_adjustment'), 2),
+            'avg_weather_adjustment' => $group->whereNotNull('weather_adjustment')->isEmpty() ? null : round((float) $group->avg('weather_adjustment'), 2),
         ];
     }
 
@@ -1100,9 +1183,10 @@ class ReportCalibrationCommand extends Command
         };
     }
 
-    private function adjustmentBucket(float $adjustment, string $prefix): string
+    private function adjustmentBucket(?float $adjustment, string $prefix): string
     {
         return match (true) {
+            $adjustment === null => "{$prefix}_unknown",
             $adjustment <= -0.25 => "{$prefix}_suppress",
             $adjustment >= 0.25 => "{$prefix}_boost",
             default => "{$prefix}_neutral",

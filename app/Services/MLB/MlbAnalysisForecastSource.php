@@ -8,9 +8,9 @@ use App\Services\Predictions\CanonicalShadowInputs;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 
-class MlbReadinessForecastSource
+class MlbAnalysisForecastSource
 {
-    /** @return Collection<int, array{forecast:BettingForecast,lineage:array}> */
+    /** @return Collection<int, array{forecast:BettingForecast,lineage:array,prices:array{home:?int,away:?int}}> */
     public function rows(?int $season, ?string $from, ?string $to, ?string $schema, int $limit): Collection
     {
         $rows = collect();
@@ -46,7 +46,7 @@ class MlbReadinessForecastSource
                     $rows->push(['forecast' => new BettingForecast(source: $prediction, game: $prediction->sportEvent->mlbGame,
                         predictedSpread: $spread, predictedTotal: $total, winProbability: $probability, confidenceScore: $confidence,
                         modelMetadata: (array) $prediction->output_metadata, vegasSpread: $this->number($safe->market_context['bookmaker_home_line']),
-                        marketHomeMargin: $safe->market_context['market_home_margin'], marketTotal: $this->number($safe->market_context['market_total'])), 'lineage' => $safe->lineage]);
+                        marketHomeMargin: $safe->market_context['market_home_margin'], marketTotal: $this->number($safe->market_context['market_total'])), 'lineage' => $safe->lineage, 'prices' => $this->prices($input->inputs)]);
                     if ($rows->count() >= max(1, $limit)) {
                         return false;
                     }
@@ -56,6 +56,19 @@ class MlbReadinessForecastSource
             });
 
         return $rows->sortByDesc(fn ($row) => [$row['forecast']->source->generated_at->timestamp, $row['forecast']->source->id])->take(max(1, $limit))->values();
+    }
+
+    /** @return array{home:?int,away:?int} */
+    private function prices(array $inputs): array
+    {
+        $quote = data_get($inputs, 'pregame_market.available') === true ? (array) data_get($inputs, 'pregame_market.consensus.moneyline', []) : [];
+        $home = $this->number($quote['price'] ?? null);
+        $away = $this->number(data_get($quote, 'opposite_quote.price'));
+        $paired = ($quote['market_key'] ?? null) === 'h2h' && ($quote['side'] ?? null) === 'home'
+            && data_get($quote, 'opposite_quote.market_key') === 'h2h' && data_get($quote, 'opposite_quote.side') === 'away'
+            && $home !== null && $away !== null && abs($home) >= 100 && abs($away) >= 100;
+
+        return ['home' => $paired ? (int) $home : null, 'away' => $paired ? (int) $away : null];
     }
 
     private function number(mixed $value): ?float

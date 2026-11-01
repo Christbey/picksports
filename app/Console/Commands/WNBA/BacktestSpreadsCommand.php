@@ -2,7 +2,9 @@
 
 namespace App\Console\Commands\WNBA;
 
+use App\Models\WNBA\Game;
 use App\Models\WNBA\Prediction;
+use App\Services\Predictions\Basketball\BasketballBacktestForecastSource;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 
@@ -11,6 +13,7 @@ class BacktestSpreadsCommand extends Command
     private int $missingSpreadLine = 0;
 
     protected $signature = 'wnba:backtest-spreads
+        {--forecast-source= : canonical or legacy (defaults to the active WNBA source)}
         {--season= : Filter by season}
         {--limit=500 : Limit number of most recent graded/final predictions to inspect}
         {--json : Output the report as JSON}
@@ -20,7 +23,14 @@ class BacktestSpreadsCommand extends Command
 
     public function handle(): int
     {
-        $rows = $this->loadRows();
+        try {
+            $source = app(BasketballBacktestForecastSource::class)->name('wnba', $this->option('forecast-source'));
+        } catch (\InvalidArgumentException $error) {
+            $this->error($error->getMessage());
+
+            return self::FAILURE;
+        }
+        $rows = $source === 'canonical' ? $this->canonicalRows() : $this->loadRows();
 
         if ($rows->isEmpty()) {
             $this->warn('No final WNBA predictions with spread market data found for the selected scope.');
@@ -29,6 +39,11 @@ class BacktestSpreadsCommand extends Command
         }
 
         $summary = $this->summarize($rows);
+        if ($source === 'canonical') {
+            $summary['forecast_source'] = 'canonical';
+            $summary['evidence'] = 'Frozen canonical projections and matching entry lines; report qualification grants no betting approval.';
+            $summary['forecast_lineage'] = $rows->pluck('canonical_lineage')->all();
+        }
 
         if ($this->option('json')) {
             $this->line(json_encode($summary, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
@@ -37,6 +52,10 @@ class BacktestSpreadsCommand extends Command
         }
 
         $this->info('WNBA Spreads Backtest');
+        if ($source === 'canonical') {
+            $this->line('Forecast source: canonical');
+            $this->line($summary['evidence']);
+        }
         $this->line('Scope: '.($this->option('season') ? 'season '.$this->option('season') : 'all seasons'));
         $this->line('Rows with spread line: '.$summary['count']);
         $this->line('Rows missing spread line: '.$summary['missing_spread_line']);
@@ -99,6 +118,62 @@ class BacktestSpreadsCommand extends Command
         return self::SUCCESS;
     }
 
+    private function canonicalRows(): Collection
+    {
+        $this->missingSpreadLine = 0;
+        $forecasts = app(BasketballBacktestForecastSource::class)->forFinalGames('wnba', $this->option('season') ? (int) $this->option('season') : null)
+            ->filter(fn (object $forecast): bool => $forecast->predicted_spread !== null);
+        $this->missingSpreadLine = $forecasts->whereNull('market_sportsbook_spread')->count();
+        $rows = $forecasts->whereNotNull('market_sportsbook_spread')
+            ->sortByDesc(fn (object $forecast): array => [$forecast->generated_at->timestamp, $forecast->canonical_prediction_id])
+            ->map(function (object $forecast): array {
+                $actual = (float) $forecast->game->home_score - (float) $forecast->game->away_score;
+                $winnerCorrect = ($actual > 0 && $forecast->predicted_spread > 0) || ($actual < 0 && $forecast->predicted_spread < 0);
+
+                return [...$this->spreadRow($forecast->game, $forecast->predicted_spread, $forecast->market_sportsbook_spread, $forecast->confidence_score, $winnerCorrect),
+                    'canonical_prediction_id' => $forecast->canonical_prediction_id, 'canonical_lineage' => $forecast->canonical_lineage];
+            })->values();
+        $limit = (int) $this->option('limit');
+
+        return $limit > 0 ? $rows->take($limit)->values() : $rows;
+    }
+
+    private function spreadRow(Game $game, float $modelSpread, float $homeSpread, ?float $confidence, bool $winnerCorrect): array
+    {
+        $marketSpread = -$homeSpread;
+        $actualMargin = (float) $game->home_score - (float) $game->away_score;
+        $edge = abs($modelSpread - $marketSpread);
+        $pick = $modelSpread > $marketSpread ? 'home' : 'away';
+        $coverMargin = $pick === 'home'
+            ? ($actualMargin - $marketSpread)
+            : ((-$actualMargin) + $marketSpread);
+        $result = abs($coverMargin) < 0.0001
+            ? 'push'
+            : ($coverMargin > 0 ? 'win' : 'loss');
+        $isFavorite = $pick === 'home' ? $homeSpread < 0 : $homeSpread > 0;
+
+        return [
+            'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
+            'home_team' => $this->teamName($game->homeTeam),
+            'away_team' => $this->teamName($game->awayTeam),
+            'model_spread' => $modelSpread,
+            'market_spread' => $marketSpread,
+            'market_home_line' => $homeSpread,
+            'actual_margin' => $actualMargin,
+            'pick' => $pick,
+            'pick_type' => $isFavorite ? 'favorite' : 'underdog',
+            'result' => $result,
+            'won' => $result === 'win',
+            'push' => $result === 'push',
+            'edge' => $edge,
+            'passes_gate' => $this->passesSpreadGate($edge, $isFavorite, $confidence),
+            'winner_correct' => $winnerCorrect,
+            'confidence_score' => $confidence,
+            'model_error' => abs($actualMargin - $modelSpread),
+            'market_error' => abs($actualMargin - $marketSpread),
+        ];
+    }
+
     private function loadRows(): Collection
     {
         $this->missingSpreadLine = 0;
@@ -136,39 +211,7 @@ class BacktestSpreadsCommand extends Command
                     return null;
                 }
 
-                $marketSpread = -$homeSpread;
-                $actualMargin = (float) $game->home_score - (float) $game->away_score;
-                $modelSpread = (float) $prediction->predicted_spread;
-                $edge = abs($modelSpread - $marketSpread);
-                $pick = $modelSpread > $marketSpread ? 'home' : 'away';
-                $coverMargin = $pick === 'home'
-                    ? ($actualMargin - $marketSpread)
-                    : ((-$actualMargin) + $marketSpread);
-                $result = abs($coverMargin) < 0.0001
-                    ? 'push'
-                    : ($coverMargin > 0 ? 'win' : 'loss');
-                $isFavorite = $pick === 'home' ? $homeSpread < 0 : $homeSpread > 0;
-
-                return [
-                    'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
-                    'home_team' => $this->teamName($game->homeTeam),
-                    'away_team' => $this->teamName($game->awayTeam),
-                    'model_spread' => $modelSpread,
-                    'market_spread' => $marketSpread,
-                    'market_home_line' => $homeSpread,
-                    'actual_margin' => $actualMargin,
-                    'pick' => $pick,
-                    'pick_type' => $isFavorite ? 'favorite' : 'underdog',
-                    'result' => $result,
-                    'won' => $result === 'win',
-                    'push' => $result === 'push',
-                    'edge' => $edge,
-                    'passes_gate' => $this->passesSpreadGate($edge, $isFavorite, (float) $prediction->confidence_score),
-                    'winner_correct' => (bool) $prediction->winner_correct,
-                    'confidence_score' => (float) $prediction->confidence_score,
-                    'model_error' => abs($actualMargin - $modelSpread),
-                    'market_error' => abs($actualMargin - $marketSpread),
-                ];
+                return $this->spreadRow($game, (float) $prediction->predicted_spread, $homeSpread, (float) $prediction->confidence_score, (bool) $prediction->winner_correct);
             })
             ->filter()
             ->values();
@@ -369,7 +412,7 @@ class BacktestSpreadsCommand extends Command
     {
         $table = [];
         foreach ($buckets as $label => $filter) {
-            $group = $rows->filter(fn (array $row): bool => $filter($row[$field]))->values();
+            $group = $rows->filter(fn (array $row): bool => $row[$field] !== null && $filter($row[$field]))->values();
             if ($group->isEmpty()) {
                 continue;
             }
@@ -380,10 +423,14 @@ class BacktestSpreadsCommand extends Command
         return $table;
     }
 
-    private function passesSpreadGate(float $edge, bool $isFavorite, float $winnerConfidence): bool
+    private function passesSpreadGate(float $edge, bool $isFavorite, ?float $winnerConfidence): bool
     {
         if (! (bool) config('wnba.betting.spread_gate.enabled', true)) {
             return $edge >= (float) config('wnba.betting.edge_thresholds.spread', 2.0);
+        }
+
+        if ($winnerConfidence === null) {
+            return false;
         }
 
         if ($isFavorite && $winnerConfidence >= (float) config('wnba.betting.spread_gate.block_favorite_confidence', 80.0)) {

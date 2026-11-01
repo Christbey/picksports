@@ -1,10 +1,13 @@
 <?php
 
 use App\Actions\CBB\GeneratePrediction;
+use App\Actions\CBB\UpdateLivePrediction;
+use App\Models\BetDecision;
 use App\Models\CalculationRelease;
 use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
 use App\Models\CBB\Game;
+use App\Models\CBB\Play;
 use App\Models\CBB\Prediction;
 use App\Models\CBB\Team;
 use App\Models\EventInputSnapshot;
@@ -12,6 +15,7 @@ use App\Models\LivePredictionSnapshot;
 use App\Models\PredictionMarket;
 use App\Models\SportEvent;
 use App\Services\CBB\CbbLiveAuditSource;
+use App\Services\Predictions\Basketball\BasketballBacktestForecastSource;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -54,7 +58,7 @@ function cbbBacktestRetirementFixture(string $variant = 'valid', int $season = 2
         'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null, 'generated_at' => $generated,
         'detail_source' => null, 'detail_sport' => null, 'detail_id' => null]);
     foreach ([['spread', 'home', $variant === 'missing_spread' ? null : -8.0, null],
-        ['total', 'combined', $variant === 'missing_total' ? null : 240.0, null], ['moneyline', 'home', null, 0.7]] as [$type, $selection, $line, $probability]) {
+        ['total', 'combined', $variant === 'missing_total' ? null : 240.0, null], ['moneyline', 'home', null, $variant === 'missing_probability' ? null : 0.7]] as [$type, $selection, $line, $probability]) {
         PredictionMarket::factory()->create(['prediction_id' => $native->id, 'market_type' => $type, 'selection' => $selection,
             'projected_line' => $line, 'probability' => $probability, 'confidence_score' => $variant === 'missing_confidence' ? null : 70]);
     }
@@ -334,3 +338,86 @@ it('batches CBB live audit inputs and keeps season scopes isolated', function ()
     expect($report['final'])->toMatchArray(['final_predictions' => 26, 'final_rows_with_live_fields' => 26, 'brier_score_sample' => 26]);
     expect($queries->filter(fn ($sql) => str_starts_with($sql, 'select * from "event_input_snapshots"')))->toHaveCount(2);
 });
+
+function cbbReplayPlays(Game $game, int $count = 3): void
+{
+    for ($i = 1; $i <= $count; $i++) {
+        Play::factory()->create(['game_id' => $game->id, 'sequence_number' => $i,
+            'period' => 1, 'clock' => '10:00', 'home_score' => 20 + $i, 'away_score' => 18 + $i]);
+    }
+}
+
+it('replays CBB plays with the canonical baseline and shared preview grading', function (bool $pipeline, bool $reads) {
+    [$game, $native, $legacy] = cbbBacktestRetirementFixture();
+    cbbReplayPlays($game);
+    $legacy->delete();
+    config(['prediction_lifecycle.canonical_pipeline.cbb' => $pipeline, 'prediction_lifecycle.canonical_reads.cbb' => $reads]);
+    $updater = Mockery::mock(UpdateLivePrediction::class);
+    $updater->shouldReceive('previewState')->times(3)->withArgs(fn ($g, $baseline, $period, $clock, $home, $away) => $g->id === $game->id
+        && $baseline->canonical_prediction_id === $native->id && $baseline->predicted_spread === 8.0 && $baseline->predicted_total === 240.0
+        && $baseline->win_probability === 0.7 && $period === 1 && $clock === '10:00' && $home - $away === 2)
+        ->andReturn(['live_seconds_remaining' => 1800, 'live_win_probability' => 0.7, 'live_predicted_spread' => 8.0, 'live_predicted_total' => 240.0]);
+    app()->instance(UpdateLivePrediction::class, $updater);
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        expect(Artisan::call('cbb:backtest-live-from-plays', ['--season' => 2027, '--detailed' => true]))->toBe(0);
+        expect(Artisan::output())->toContain('Forecast source: canonical', 'current live formulas', '100.0%', '3.00', '5.00');
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect($queries->filter(fn ($sql) => str_contains($sql, 'cbb_predictions')))->toBeEmpty()
+        ->and(LivePredictionSnapshot::count())->toBe(0)->and(BetDecision::count())->toBe(0);
+})->with([[true, false], [false, true]]);
+
+it('holds incomplete canonical play replay inputs without default or historical baselines', function (string $variant) {
+    [$game] = cbbBacktestRetirementFixture($variant);
+    cbbReplayPlays($game);
+    $this->artisan('cbb:backtest-live-from-plays', ['--forecast-source' => 'canonical'])
+        ->expectsOutputToContain('No final games with plays and predictions')->assertSuccessful();
+})->with(['unsafe', 'future_source', 'missing_start', 'kickoff_mismatch', 'draft', 'withdrawn', 'late_publication', 'missing_spread', 'missing_total', 'missing_probability']);
+
+it('keeps historical play replay and source validation while requiring plays in native mode', function () {
+    [$game] = cbbBacktestRetirementFixture();
+    cbbReplayPlays($game);
+    Artisan::call('cbb:backtest-live-from-plays', ['--season' => 2027, '--detailed' => true]);
+    $legacy = Artisan::output();
+    Artisan::call('cbb:backtest-live-from-plays', ['--forecast-source' => 'legacy', '--season' => 2027, '--detailed' => true]);
+    expect(Artisan::output())->toBe($legacy);
+    cbbBacktestRetirementFixture('valid', daysAgo: 1);
+    $source = app(BasketballBacktestForecastSource::class);
+    expect($source->forCbbPlayReplay(2027, 1)->sole()->game->id)->toBe($game->id);
+    $this->artisan('cbb:backtest-live-from-plays', ['--forecast-source' => 'invalid'])->assertFailed();
+    $this->artisan('cbb:backtest-live-from-plays', ['--forecast-source' => 'canonical', '--states-per-game' => 10])
+        ->expectsOutputToContain('No playable snapshots')->assertSuccessful();
+});
+
+it('batches native play baselines and stops after the eligible game limit', function () {
+    for ($i = 0; $i < 26; $i++) {
+        [$game] = cbbBacktestRetirementFixture();
+        cbbReplayPlays($game, 1);
+    }
+    $source = app(BasketballBacktestForecastSource::class);
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        expect($source->forCbbPlayReplay(2027, 26))->toHaveCount(26);
+        expect(collect(DB::getQueryLog())->pluck('query')->filter(fn ($sql) => str_starts_with($sql, 'select * from "event_input_snapshots"')))->toHaveCount(2);
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect($source->forCbbPlayReplay(2027, 1))->toHaveCount(1)->and($source->forCbbPlayReplay(2026, 26))->toBeEmpty();
+});
+
+it('keeps native play replay independent of confidence and market quote coverage', function (string $variant) {
+    [$game] = cbbBacktestRetirementFixture($variant);
+    cbbReplayPlays($game);
+    $source = app(BasketballBacktestForecastSource::class);
+    expect($source->forCbbPlayReplay(2027, 1)->sole()->win_probability)->toBe(0.7);
+    expect(Artisan::call('cbb:backtest-live-from-plays', ['--forecast-source' => 'canonical', '--season' => 2027]))->toBe(0);
+    expect(Artisan::output())->toContain('Winner Accuracy')->not->toContain('No playable');
+    expect(LivePredictionSnapshot::count())->toBe(0)->and(BetDecision::count())->toBe(0);
+})->with(['missing_confidence', 'missing_market']);

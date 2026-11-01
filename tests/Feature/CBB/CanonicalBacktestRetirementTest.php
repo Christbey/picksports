@@ -8,12 +8,15 @@ use App\Models\CBB\Game;
 use App\Models\CBB\Prediction;
 use App\Models\CBB\Team;
 use App\Models\EventInputSnapshot;
+use App\Models\LivePredictionSnapshot;
 use App\Models\PredictionMarket;
 use App\Models\SportEvent;
+use App\Services\CBB\CbbLiveAuditSource;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     $this->travelTo('2026-10-31 12:00:00');
@@ -225,4 +228,109 @@ it('preserves CBB spread equality and approval state in native reporting', funct
     $row = (new ReflectionMethod($command, 'spreadRow'))->invoke($command, $game, 3.5, -3.5, null);
     expect($row)->toMatchArray(['pick' => 'away', 'edge' => 0.0, 'confidence_score' => null])
         ->and(CalculationRelease::pluck('status', 'id')->all())->toBe($statuses);
+});
+
+function cbbLiveAuditSnapshot($game, $native, array $overrides = []): LivePredictionSnapshot
+{
+    return LivePredictionSnapshot::create([...[
+        'sport' => 'cbb', 'game_table' => 'cbb_games', 'game_id' => $game->id, 'canonical_prediction_id' => $native->id,
+        'baseline' => ['prediction_source' => 'canonical', 'pinned' => true, 'canonical_prediction_id' => $native->id, 'calculation_run_id' => $native->calculation_run_id],
+        'state' => ['status' => 'STATUS_IN_PROGRESS'],
+        'projection' => ['live_win_probability' => 0.8, 'live_predicted_spread' => 8.0, 'live_predicted_total' => 240.0, 'live_seconds_remaining' => 120],
+        'status' => 'live', 'calculator' => 'test', 'state_hash' => hash('sha256', (string) Str::uuid()),
+        'observed_at' => $native->sportEvent->starts_at->addHour(),
+    ], ...$overrides]);
+}
+
+it('audits canonical CBB live snapshots without legacy reads and ignores final markers', function (bool $pipeline, bool $reads) {
+    [$game, $native] = cbbBacktestRetirementFixture();
+    $live = cbbLiveAuditSnapshot($game, $native);
+    cbbLiveAuditSnapshot($game, $native, ['status' => 'final', 'projection' => null, 'observed_at' => $live->observed_at->addMinute()]);
+    config(['prediction_lifecycle.canonical_pipeline.cbb' => $pipeline, 'prediction_lifecycle.canonical_reads.cbb' => $reads]);
+    $statuses = CalculationRelease::pluck('status', 'id')->all();
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        $this->artisan('cbb:backtest-live-predictions', ['--season' => 2027, '--detailed' => true])->expectsOutputToContain('Forecast source: canonical live snapshots')
+            ->expectsOutputToContain('Metric samples (probability/spread/total): 1/1/1')->assertSuccessful();
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    $report = app(CbbLiveAuditSource::class)->report(2027);
+    expect($report['final'])->toMatchArray(['final_predictions' => 1, 'final_rows_with_live_fields' => 1, 'live_spread_mae' => 3.0, 'live_total_mae' => 5.0])
+        ->and($report['final']['brier_score'])->toEqualWithDelta(0.04, 0.000001)
+        ->and($queries->implode(' '))->not->toContain('cbb_predictions', 'prediction_feature_snapshots', 'odds_data')
+        ->and(CalculationRelease::pluck('status', 'id')->all())->toBe($statuses);
+})->with([[true, false], [false, true], [true, true]]);
+
+it('holds unsafe canonical CBB live baselines without borrowing legacy fields', function (string $variant) {
+    [$game, $native] = cbbBacktestRetirementFixture($variant);
+    cbbLiveAuditSnapshot($game, $native);
+    expect(app(CbbLiveAuditSource::class)->report(2027)['final']['final_rows_with_live_fields'])->toBe(0);
+})->with(['unsafe', 'draft', 'withdrawn', 'future_source', 'late_publication', 'missing_start', 'kickoff_mismatch']);
+
+it('keeps missing CBB live metrics out of numeric samples', function () {
+    [$game, $native] = cbbBacktestRetirementFixture();
+    cbbLiveAuditSnapshot($game, $native, ['projection' => ['live_predicted_spread' => 8.0]]);
+    $final = app(CbbLiveAuditSource::class)->report(2027)['final'];
+    expect($final)->toMatchArray(['brier_score' => null, 'live_total_mae' => null, 'live_spread_mae' => 3.0,
+        'brier_score_sample' => 0, 'live_spread_mae_sample' => 1, 'live_total_mae_sample' => 0]);
+    $this->artisan('cbb:backtest-live-predictions', ['--forecast-source' => 'canonical', '--season' => 2027])->expectsOutputToContain('n/a')->assertSuccessful();
+});
+
+it('uses the latest CBB live snapshot for current coverage without bypassing holds', function () {
+    [$game, $native] = cbbBacktestRetirementFixture();
+    $game->update(['status' => 'STATUS_IN_PROGRESS']);
+    $live = cbbLiveAuditSnapshot($game, $native);
+    $source = app(CbbLiveAuditSource::class);
+    expect($source->report(2027)['current']->sole())->toMatchArray(['has_live_fields' => true, 'live_win_probability' => 0.8]);
+    cbbLiveAuditSnapshot($game, $native, ['status' => 'missing_pregame', 'projection' => null, 'observed_at' => $live->observed_at->addMinute()]);
+    expect($source->report(2027)['current']->sole())->toMatchArray(['has_live_fields' => false, 'live_win_probability' => null]);
+    $this->artisan('cbb:backtest-live-predictions', ['--forecast-source' => 'canonical', '--season' => 2027, '--detailed' => true])->assertSuccessful();
+});
+
+it('rejects mismatched or unpinned live lineage and future observations', function (string $variant) {
+    [$game, $native] = cbbBacktestRetirementFixture();
+    $baseline = ['prediction_source' => 'canonical', 'pinned' => true, 'canonical_prediction_id' => $native->id, 'calculation_run_id' => $native->calculation_run_id];
+    if ($variant === 'unpinned') {
+        $baseline['pinned'] = false;
+    } elseif ($variant === 'legacy') {
+        $baseline['prediction_source'] = 'legacy';
+    } elseif ($variant === 'run') {
+        $baseline['calculation_run_id'] = 'wrong';
+    }
+    cbbLiveAuditSnapshot($game, $native, ['baseline' => $baseline, 'observed_at' => $variant === 'future' ? now()->addHour() : $native->sportEvent->starts_at->addHour()]);
+    expect(app(CbbLiveAuditSource::class)->report(2027)['final']['final_rows_with_live_fields'])->toBe(0);
+})->with(['unpinned', 'legacy', 'run', 'future']);
+
+it('retains explicit historical CBB live audit output and validates sources', function () {
+    cbbBacktestRetirementFixture();
+    Artisan::call('cbb:backtest-live-predictions', ['--season' => 2027]);
+    $historical = Artisan::output();
+    config(['prediction_lifecycle.canonical_pipeline.cbb' => true]);
+    Artisan::call('cbb:backtest-live-predictions', ['--forecast-source' => 'legacy', '--season' => 2027]);
+    expect(Artisan::output())->toBe($historical);
+    $this->artisan('cbb:backtest-live-predictions', ['--forecast-source' => 'invalid'])->assertFailed();
+});
+
+it('batches CBB live audit inputs and keeps season scopes isolated', function () {
+    for ($i = 0; $i < 26; $i++) {
+        [$game, $native] = cbbBacktestRetirementFixture();
+        cbbLiveAuditSnapshot($game, $native);
+    }
+    [$outside, $native] = cbbBacktestRetirementFixture(season: 2026);
+    cbbLiveAuditSnapshot($outside, $native);
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        $report = app(CbbLiveAuditSource::class)->report(2027);
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect($report['final'])->toMatchArray(['final_predictions' => 26, 'final_rows_with_live_fields' => 26, 'brier_score_sample' => 26]);
+    expect($queries->filter(fn ($sql) => str_starts_with($sql, 'select * from "event_input_snapshots"')))->toHaveCount(2);
 });

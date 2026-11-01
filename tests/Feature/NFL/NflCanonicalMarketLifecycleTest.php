@@ -631,6 +631,7 @@ it('blocks readiness when any current forecast market is missing its immutable d
 });
 
 it('fails readiness when formerly safe forecasts have stopped refreshing', function () {
+    $this->travelTo(Carbon::parse('2026-10-24 12:00:00', 'America/Chicago'));
     config()->set('prediction_lifecycle.canonical_pipeline.nfl', true);
     config()->set('nfl.predictions.true_epa.enabled', true);
     config()->set('nfl.predictions.true_epa.backfill_before_generation', true);

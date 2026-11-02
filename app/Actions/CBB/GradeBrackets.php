@@ -15,7 +15,7 @@ class GradeBrackets
     public function execute(int $season, ?CbbBracket $onlyBracket = null): int
     {
         $games = Game::query()
-            ->with(['homeTeam', 'awayTeam', 'prediction'])
+            ->with(['homeTeam', 'awayTeam'])
             ->where('season', $season)
             ->where('season_type', (int) config('cbb.season.types.postseason'))
             ->where(function ($query) {

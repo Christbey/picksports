@@ -84,7 +84,9 @@ it('retires CFB automatic legacy calibration only with the matching generation c
     expect(in_array('cfb:update-adaptive-calibration', $commands, true))->toBe(! $retired)
         ->and(in_array('cfb:generate-canonical-predictions', $commands, true))->toBe($retired)
         ->and(in_array('cfb:generate-predictions', $commands, true))->toBe(! $retired)
-        ->and($commands)->toContain('cfb:grade-predictions', 'cfb:import-fpi', 'cfb:calculate-team-metrics')
+        ->and(in_array('cfb:grade-predictions', $commands, true))->toBe(! $retired)
+        ->and(in_array('cfb:evaluate-canonical-predictions', $commands, true))->toBe($pipeline)
+        ->and($commands)->toContain('cfb:import-fpi', 'cfb:calculate-team-metrics')
         ->and($steps->firstWhere('command', 'cfb:import-fpi')['arguments'])->toMatchArray(['--season' => 2026, '--week' => 9, '--require-complete' => true]);
 })->with([
     'compatibility predict' => [false, false, false, 'predict'],
@@ -96,3 +98,19 @@ it('retires CFB automatic legacy calibration only with the matching generation c
     'reads-only full' => [false, true, false, 'full'],
     'canonical full' => [true, true, true, 'full'],
 ]);
+
+it('selects grading ownership while preserving partial-cutover compatibility for every sport', function (string $sport, bool $pipeline, bool $reads, string $mode) {
+    config(["prediction_lifecycle.canonical_pipeline.{$sport}" => $pipeline, "prediction_lifecycle.canonical_reads.{$sport}" => $reads]);
+    $registry = app(SportsPipelineRegistry::class);
+    $steps = collect($registry->pipelineSteps($sport, $mode, $registry->context(date: '2026-11-02', season: 2026)));
+    $grading = $steps->filter(fn ($step) => in_array($step['command'], ["{$sport}:grade-predictions", "{$sport}:evaluate-canonical-predictions"], true))->values();
+    $expected = $pipeline ? ["{$sport}:evaluate-canonical-predictions", ...(! $reads ? ["{$sport}:grade-predictions"] : [])] : ["{$sport}:grade-predictions"];
+    expect($grading->pluck('command')->all())->toBe($expected)
+        ->and($grading->pluck('arguments')->all())->toBe(array_fill(0, count($expected), ['--season' => 2026]));
+    $eloIndex = $steps->search(fn ($step) => $step['command'] === "{$sport}:calculate-elo");
+    foreach ($expected as $command) {
+        expect($steps->search(fn ($step) => $step['command'] === $command))->toBeLessThan($eloIndex);
+    }
+})->with(['nba', 'nfl', 'mlb', 'cbb', 'wcbb', 'wnba', 'cfb'])
+    ->with([[false, false], [true, false], [false, true], [true, true]])
+    ->with(['predict', 'full']);

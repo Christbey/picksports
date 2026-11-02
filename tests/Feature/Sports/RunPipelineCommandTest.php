@@ -62,7 +62,7 @@ it('runs canonical CFB generation without updating a legacy adaptive profile', f
     config(['prediction_lifecycle.canonical_pipeline.cfb' => true, 'prediction_lifecycle.canonical_reads.cfb' => true]);
     $runner = Mockery::mock(PipelineCommandRunner::class);
     foreach ([
-        ['cfb:grade-predictions', ['--season' => 2026]],
+        ['cfb:evaluate-canonical-predictions', ['--season' => 2026]],
         ['cfb:sync-season-affiliations', ['--season' => 2026]],
         ['cfb:calculate-elo', ['--season' => 2026]],
         ['cfb:import-fpi', ['--season' => 2026, '--week' => 9, '--require-complete' => true]],
@@ -73,6 +73,35 @@ it('runs canonical CFB generation without updating a legacy adaptive profile', f
         $runner->shouldReceive('call')->once()->ordered()->with($command, $arguments)->andReturn(0);
     }
     $runner->shouldNotReceive('call')->with('cfb:update-adaptive-calibration', Mockery::any());
+    app()->instance(PipelineCommandRunner::class, $runner);
+    artisan('sports:run-pipeline cfb --mode=predict --season=2026 --week=9')->assertSuccessful();
+});
+
+it('stops a canonical pipeline before ratings or generation when native evaluation fails', function (string $sport) {
+    config(["prediction_lifecycle.canonical_pipeline.{$sport}" => true, "prediction_lifecycle.canonical_reads.{$sport}" => true]);
+    $runner = Mockery::mock(PipelineCommandRunner::class);
+    $runner->shouldReceive('call')->once()->with("{$sport}:evaluate-canonical-predictions", ['--season' => 2026])->andReturn(1);
+    app()->instance(PipelineCommandRunner::class, $runner);
+    artisan("sports:run-pipeline {$sport} --mode=predict --season=2026")
+        ->expectsOutputToContain("Step failed: {$sport}:evaluate-canonical-predictions --season=2026")->assertFailed();
+})->with(['nba', 'nfl', 'mlb', 'cbb', 'wcbb', 'wnba', 'cfb']);
+
+it('evaluates native CFB forecasts and grades historical rows before partial-cutover calibration', function () {
+    config(['prediction_lifecycle.canonical_pipeline.cfb' => true, 'prediction_lifecycle.canonical_reads.cfb' => false]);
+    $runner = Mockery::mock(PipelineCommandRunner::class);
+    foreach ([
+        ['cfb:evaluate-canonical-predictions', ['--season' => 2026]],
+        ['cfb:grade-predictions', ['--season' => 2026]],
+        ['cfb:update-adaptive-calibration', ['--season' => 2026]],
+        ['cfb:sync-season-affiliations', ['--season' => 2026]],
+        ['cfb:calculate-elo', ['--season' => 2026]],
+        ['cfb:import-fpi', ['--season' => 2026, '--week' => 9, '--require-complete' => true]],
+        ['cfb:calculate-team-metrics', ['--season' => 2026]],
+        ['cfb:derive-game-context-signals', ['--season' => 2026, '--week' => 9]],
+        ['cfb:generate-predictions', ['--season' => 2026]],
+    ] as [$command, $arguments]) {
+        $runner->shouldReceive('call')->once()->ordered()->with($command, $arguments)->andReturn(0);
+    }
     app()->instance(PipelineCommandRunner::class, $runner);
     artisan('sports:run-pipeline cfb --mode=predict --season=2026 --week=9')->assertSuccessful();
 });

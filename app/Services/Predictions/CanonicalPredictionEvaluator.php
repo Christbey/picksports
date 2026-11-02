@@ -9,6 +9,7 @@ use App\Models\PredictionMarket;
 use App\Models\SportEventResult;
 use App\Services\CFB\Predictions\CfbCandidateReview;
 use App\Services\CFB\Predictions\CfbForecastCandidates;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class CanonicalPredictionEvaluator
@@ -87,11 +88,28 @@ class CanonicalPredictionEvaluator
 
     public function hasCurrentEvaluation(CanonicalPrediction $prediction, SportEventResult $result): bool
     {
-        return PredictionEvaluation::query()
-            ->where('canonical_prediction_id', $prediction->getKey())
-            ->where('sport_event_result_id', $result->getKey())
-            ->where('scoring_version', $this->scoringVersion($prediction))
-            ->exists();
+        return $this->currentEvaluationPredictionIds(collect([$prediction]), collect([$result]))->contains($prediction->getKey());
+    }
+
+    /** @return Collection<int, int> */
+    public function currentEvaluationPredictionIds(Collection $predictions, Collection $results): Collection
+    {
+        if ($predictions->isEmpty() || $results->isEmpty()) {
+            return collect();
+        }
+        $nfl = $predictions->filter(fn ($prediction) => $prediction->sport === 'nfl');
+        (new \Illuminate\Database\Eloquent\Collection($nfl->all()))->loadMissing('calculationRun.inputSnapshot');
+        $evaluations = PredictionEvaluation::query()->whereIn('canonical_prediction_id', $predictions->pluck('id'))
+            ->whereIn('sport_event_result_id', $results->pluck('id'))
+            ->get(['canonical_prediction_id', 'sport_event_result_id', 'scoring_version'])
+            ->keyBy(fn ($evaluation) => $evaluation->canonical_prediction_id.':'.$evaluation->sport_event_result_id.':'.$evaluation->scoring_version);
+        $byEvent = $results->keyBy('sport_event_id');
+
+        return $predictions->filter(function ($prediction) use ($evaluations, $byEvent): bool {
+            $result = $byEvent->get($prediction->sport_event_id);
+
+            return $result !== null && $evaluations->has($prediction->id.':'.$result->id.':'.$this->scoringVersion($prediction));
+        })->pluck('id')->values();
     }
 
     /** @return array{actuals:array<string,mixed>,errors:array<string,mixed>,market_comparison:array<string,mixed>} */

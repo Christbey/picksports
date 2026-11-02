@@ -3,6 +3,7 @@
 namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
+use App\Services\Predictions\CanonicalTeamGameEvaluator;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Database\Eloquent\Model;
 
@@ -26,13 +27,15 @@ class FinalizedDataCompletenessCheck implements ValidationCheck
         $dates = app(SportsDateWindowService::class);
         $window = $dates->forRange($dates->parseLocalDate()->subDays($lookbackDays), $dates->parseLocalDate());
 
+        $canonical = (bool) config("prediction_lifecycle.canonical_pipeline.{$sport}", false);
         $games = $gameModel::query()
-            ->with(['prediction', 'teamStats'])
+            ->with('teamStats')->withExists(['playerStats', 'plays'])->when(! $canonical, fn ($query) => $query->with('prediction'))
             ->where('status', 'STATUS_FINAL')
             ->whereDate('game_date', '>=', $window->localStartDate())
             ->whereDate('game_date', '<=', $window->localEndDate())
             ->get();
 
+        $pending = $canonical ? app(CanonicalTeamGameEvaluator::class)->pendingGameIds($games, $sport) : collect();
         $totalGames = $games->count();
         $missingPlayerStatsCount = 0;
         $missingTeamStatsCount = 0;
@@ -49,19 +52,19 @@ class FinalizedDataCompletenessCheck implements ValidationCheck
             $flagged = false;
             $reasons = [];
 
-            if (! $game->playerStats()->exists()) {
+            if (! $game->player_stats_exists) {
                 $missingPlayerStatsCount++;
                 $flagged = true;
                 $reasons[] = 'missing_player_stats';
             }
 
-            if (! $game->teamStats()->exists()) {
+            if ($game->teamStats->isEmpty()) {
                 $missingTeamStatsCount++;
                 $flagged = true;
                 $reasons[] = 'missing_team_stats';
             }
 
-            if (! $game->plays()->exists()) {
+            if (! $game->plays_exists) {
                 $missingPlaysCount++;
                 $flagged = true;
                 $reasons[] = 'missing_plays';
@@ -88,11 +91,11 @@ class FinalizedDataCompletenessCheck implements ValidationCheck
                 $reasons[] = 'score_conflict_with_team_stats';
             }
 
-            $prediction = $game->prediction;
+            $missingGrade = $canonical ? $pending->contains($game->getKey()) : ($game->prediction !== null && $game->prediction->graded_at === null);
             $gameEndedLongEnoughAgo = $game->game_date !== null
                 && $game->game_date->lt(now()->subHours($gradingGraceHours));
 
-            if ($prediction !== null && $gameEndedLongEnoughAgo && $prediction->graded_at === null) {
+            if ($gameEndedLongEnoughAgo && $missingGrade) {
                 $missingGradingCount++;
                 $flagged = true;
                 $reasons[] = 'missing_prediction_grading';
@@ -137,6 +140,7 @@ class FinalizedDataCompletenessCheck implements ValidationCheck
             'message' => $message,
             'recommended_action' => "espn:sync-{$sport}-game-details",
             'metadata' => [
+                ...($canonical ? ['grading_source' => 'canonical'] : []),
                 'lookback_days' => $lookbackDays,
                 'date_window' => $window->toArray(),
                 'recent_final_games' => $totalGames,

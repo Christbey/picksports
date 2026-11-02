@@ -5,12 +5,16 @@ namespace App\Console\Commands\NFL;
 use App\Models\GameOddsSnapshot;
 use App\Models\NFL\Game;
 use App\Models\NFL\PlayerStat;
+use App\Services\NFL\NflEvidenceForecastSource;
+use App\Support\NflModelVersion;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 
 class ReportWeekTrendsCommand extends Command
 {
     protected $signature = 'nfl:report-week-trends
+        {--forecast-source= : canonical or legacy QB metadata (defaults to the active NFL evidence source)}
+        {--model-version= : Canonical recommendation model version (defaults to current)}
         {--from-season=2021 : First season to include}
         {--to-season=2025 : Last season to include}
         {--season-type=2 : Season type to include}
@@ -23,6 +27,14 @@ class ReportWeekTrendsCommand extends Command
 
     public function handle(): int
     {
+        $this->forecastLineage = [];
+        try {
+            $this->forecastSource = app(NflEvidenceForecastSource::class)->name($this->option('forecast-source'));
+        } catch (\InvalidArgumentException $error) {
+            $this->error($error->getMessage());
+
+            return self::FAILURE;
+        }
         $rows = $this->rows();
 
         if ($rows->isEmpty()) {
@@ -40,6 +52,10 @@ class ReportWeekTrendsCommand extends Command
         $toSeason = (int) $this->option('to-season');
 
         $this->info('NFL Week Trends');
+        if ($this->forecastSource === 'canonical') {
+            $this->line('QB metadata source: frozen canonical recommendation evidence; missing metadata remains unknown.');
+            $this->line('Stored-market trends and the player-stat QB proxy are unchanged; this report grants no betting approval.');
+        }
         $this->line("Scope: {$fromSeason} through {$toSeason}; rows: {$rows->count()}");
         $this->line('Market line source: stored game odds or earliest odds snapshot.');
         $this->newLine();
@@ -73,6 +89,10 @@ class ReportWeekTrendsCommand extends Command
         if ($output = $this->option('output')) {
             @mkdir(dirname((string) $output), 0777, true);
             file_put_contents((string) $output, json_encode([
+                ...($this->forecastSource === 'canonical' ? ['qb_metadata_source' => 'canonical',
+                    'qb_model_version' => (string) ($this->option('model-version') ?: NflModelVersion::current()),
+                    'qb_forecast_lineage' => $this->forecastLineage,
+                    'qb_evidence_note' => 'Only frozen canonical QB metadata contributes to metadata cohorts. Missing evidence stays unknown; stored-market trends and the player-stat QB proxy are independent and unchanged. No betting approval is granted.'] : []),
                 'report_type' => 'nfl_week_trends',
                 'from_season' => $fromSeason,
                 'to_season' => $toSeason,
@@ -91,6 +111,10 @@ class ReportWeekTrendsCommand extends Command
         return self::SUCCESS;
     }
 
+    private string $forecastSource = 'legacy';
+
+    private array $forecastLineage = [];
+
     /**
      * @return Collection<int, array<string, mixed>>
      */
@@ -100,8 +124,8 @@ class ReportWeekTrendsCommand extends Command
         $toSeason = (int) $this->option('to-season');
         $seasonType = (string) $this->option('season-type');
 
-        return Game::query()
-            ->with(['homeTeam', 'awayTeam', 'prediction'])
+        $games = Game::query()
+            ->with(['homeTeam', 'awayTeam'])->when($this->forecastSource === 'legacy', fn ($query) => $query->with('prediction'))
             ->whereBetween('season', [$fromSeason, $toSeason])
             ->where('season_type', $seasonType)
             ->where('status', 'STATUS_FINAL')
@@ -110,17 +134,35 @@ class ReportWeekTrendsCommand extends Command
             ->orderBy('season')
             ->orderBy('week')
             ->orderBy('game_date')
-            ->get()
-            ->map(fn (Game $game): ?array => $this->row($game))
+            ->get();
+        $evidence = collect();
+        if ($this->forecastSource === 'canonical') {
+            foreach ($games->chunk(250) as $batch) {
+                foreach (app(NflEvidenceForecastSource::class)->forGames($batch->keyBy('id'),
+                    (string) ($this->option('model-version') ?: NflModelVersion::current()), includeMetadata: true) as $id => $forecast) {
+                    $evidence->put($id, ['qb_form' => [
+                        'home' => ['experience_bucket' => data_get($forecast->model_metadata, 'qb_form.home.experience_bucket')],
+                        'away' => ['experience_bucket' => data_get($forecast->model_metadata, 'qb_form.away.experience_bucket')],
+                    ]]);
+                    $this->forecastLineage[$id] = $forecast->lineage;
+                }
+            }
+        }
+
+        $rows = $games
+            ->map(fn (Game $game): ?array => $this->row($game, $this->forecastSource === 'canonical' ? $evidence->get($game->id, []) : (array) ($game->prediction?->model_metadata ?? [])))
             ->filter()
             ->values()
             ->pipe(fn (Collection $rows): Collection => $this->withPrimaryQbContext($rows));
+        $this->forecastLineage = array_intersect_key($this->forecastLineage, $rows->keyBy('game_id')->all());
+
+        return $rows;
     }
 
     /**
      * @return array<string, mixed>|null
      */
-    private function row(Game $game): ?array
+    private function row(Game $game, array $metadata): ?array
     {
         $lineSet = $this->lineSet($game);
         $homeSpread = $lineSet['home_spread'];
@@ -158,8 +200,8 @@ class ReportWeekTrendsCommand extends Command
             'favorite_ats_margin' => $favoriteAtsMargin,
             'dog_ats_margin' => $dogAtsMargin,
             'over_margin' => $overMargin,
-            'home_qb_bucket' => data_get($game->prediction?->model_metadata, 'qb_form.home.experience_bucket'),
-            'away_qb_bucket' => data_get($game->prediction?->model_metadata, 'qb_form.away.experience_bucket'),
+            'home_qb_bucket' => data_get($metadata, 'qb_form.home.experience_bucket'),
+            'away_qb_bucket' => data_get($metadata, 'qb_form.away.experience_bucket'),
         ];
     }
 

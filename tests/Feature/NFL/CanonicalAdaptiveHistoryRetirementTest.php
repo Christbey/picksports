@@ -129,6 +129,18 @@ it('uses native stage inputs and published recommendation evidence with no legac
     expect((float) $history->prior($target, NflModelVersion::current(), 512)->sole()->predicted_spread)->toBe(11.0);
 });
 
+it('selects canonical game identities when prediction and game sequences differ', function () {
+    Game::factory()->create(['home_team_id' => Team::factory(), 'away_team_id' => Team::factory()]);
+    [$game, $native] = adaptiveHistoryRetirementFixture();
+    expect($game->id)->not->toBe($native->id);
+
+    $samples = (new NflCalibrationHistory)->prior(adaptiveHistoryTarget(), NflModelVersion::current(), 512, forecastSource: 'canonical');
+
+    expect($samples)->toHaveCount(1)
+        ->and($samples->sole()->game->id)->toBe($game->id)
+        ->and($samples->sole()->canonical_lineage['canonical_prediction_id'])->toBe($native->id);
+});
+
 it('rejects ineligible native history without substituting legacy or primary forecasts', function (string $variant) {
     adaptiveHistoryRetirementFixture($variant);
     expect((new NflCalibrationHistory)->prior(adaptiveHistoryTarget(), NflModelVersion::current(), 512, forecastSource: 'canonical'))->toBeEmpty();

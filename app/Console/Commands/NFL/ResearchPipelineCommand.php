@@ -124,15 +124,24 @@ class ResearchPipelineCommand extends Command
         }
         $start = $dates->parseLocalDate($this->option('date'));
         $window = $dates->forRange($start, $start->addDays(max(0, (int) $this->option('days-forward'))));
-        $games = Game::with(['homeTeam', 'awayTeam', 'prediction'])->where(fn ($q) => $dates->applyGameDateWindow($q, $window))->orderBy('game_date')->orderBy('game_time')->get();
-        if ($this->option('game-id') !== []) {
-            $games = $games->whereIn('id', array_map('intval', $this->option('game-id')));
-        }
+        $games = Game::with(['homeTeam', 'awayTeam'])
+            ->where(fn ($q) => $dates->applyGameDateWindow($q, $window))
+            ->when($this->option('game-id') !== [], fn ($query) => $query->whereIn('id', array_map('intval', $this->option('game-id'))))
+            ->orderBy('game_date')->orderBy('game_time')->get();
         if ($this->option('briefs')) {
-            foreach ($games as $game) {
-                $revision = ResearchRevision::where('game_id', $game->id)->latest('id')->first();
-                if ($revision) {
-                    $this->line(json_encode(['revision_id' => $revision->id, 'baseline' => $revision->baseline, 'revised' => $revision->revised, 'brief' => $revision->brief, 'market' => $revision->market], JSON_UNESCAPED_SLASHES));
+            foreach ($games->chunk(25) as $batch) {
+                $revisions = ResearchRevision::query()
+                    ->whereIn('game_id', $batch->pluck('id'))
+                    ->where('id', function ($query): void {
+                        $query->from('nfl_research_revisions as latest')->select('latest.id')
+                            ->whereColumn('latest.game_id', 'nfl_research_revisions.game_id')
+                            ->orderByDesc('latest.id')->limit(1);
+                    })->get(['id', 'game_id', 'baseline', 'revised', 'brief', 'market'])->keyBy('game_id');
+                foreach ($batch as $game) {
+                    $revision = $revisions->get($game->id);
+                    if ($revision) {
+                        $this->line(json_encode(['revision_id' => $revision->id, 'baseline' => $revision->baseline, 'revised' => $revision->revised, 'brief' => $revision->brief, 'market' => $revision->market], JSON_UNESCAPED_SLASHES));
+                    }
                 }
             }
 
@@ -163,6 +172,9 @@ class ResearchPipelineCommand extends Command
             (int) $game->id,
         ))->values();
         $selected = $games->take(max(1, (int) $this->option('limit')));
+        if (! config('prediction_lifecycle.canonical_pipeline.nfl') && ! config('prediction_lifecycle.canonical_reads.nfl')) {
+            $selected->loadMissing('prediction');
+        }
         $this->line(sprintf(
             'NFL research coverage: %d eligible game(s); reviewing %d this run; %d remain for the next batch.',
             $games->count(),

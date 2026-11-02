@@ -2,8 +2,8 @@
 
 namespace App\Services\NFL;
 
+use App\Application\Sports\ReadModels\NflCalibrationSample;
 use App\Models\NFL\Game;
-use App\Models\NFL\Prediction;
 use App\Models\PredictionFeatureSnapshot;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Predictions\SnapshotProvenanceResolver;
@@ -19,7 +19,7 @@ class NflCalibrationHistory
         $this->cache = [];
     }
 
-    /** @return Collection<int, Prediction> */
+    /** @return Collection<int, NflCalibrationSample> */
     public function prior(Game $target, string $modelVersion, int $limit, string $stage = 'published', string $forecastSource = 'legacy'): Collection
     {
         $canonical = app(NflEvidenceForecastSource::class)->name($forecastSource) === 'canonical';
@@ -48,15 +48,15 @@ class NflCalibrationHistory
                 : $this->legacy($date, $modelVersion, $capacity);
         }
 
-        return $this->cache[$key]->filter(fn (Prediction $prediction): bool => ! $canonical
+        return $this->cache[$key]->filter(fn (NflCalibrationSample $prediction): bool => ! $canonical
             || ($prediction->game->result_updated_at->lt(now()) && $prediction->game->result_updated_at->lt($start)))
-            ->map(function (Prediction $prediction) use ($stage, $canonical): ?Prediction {
+            ->map(function (NflCalibrationSample $prediction) use ($stage, $canonical): ?NflCalibrationSample {
                 if ($stage === 'published') {
                     return $prediction;
                 }
-                $inputs = $prediction->getAttribute('calibration_inputs')[$stage] ?? [];
+                $inputs = $prediction->calibration_inputs[$stage] ?? [];
                 $fields = $stage === 'point' ? ['predicted_spread', 'predicted_total'] : ['win_probability'];
-                $row = clone $prediction;
+                $values = [];
                 foreach ($fields as $field) {
                     if (! is_numeric($inputs[$field] ?? null) || ! is_finite((float) $inputs[$field])) {
                         return null;
@@ -64,10 +64,10 @@ class NflCalibrationHistory
                     if ($canonical && $field === 'win_probability' && ((float) $inputs[$field] <= 0 || (float) $inputs[$field] >= 1)) {
                         return null;
                     }
-                    $row->setAttribute($field, $inputs[$field]);
+                    $values[$field] = $inputs[$field];
                 }
 
-                return $row;
+                return $prediction->withValues($values);
             })->filter()->take($limit)->values();
     }
 
@@ -94,7 +94,7 @@ class NflCalibrationHistory
         $games = Game::query()->whereIn('id', $snapshots->pluck('game_id'))
             ->with('sportEvent')->get(['id', 'sport_event_id', 'game_date', 'game_time', 'home_score', 'away_score'])->keyBy('id');
 
-        return $snapshots->map(function (PredictionFeatureSnapshot $snapshot) use ($games): ?Prediction {
+        return $snapshots->map(function (PredictionFeatureSnapshot $snapshot) use ($games): ?NflCalibrationSample {
             $game = $games->get($snapshot->game_id);
             $kickoff = $game ? app(SnapshotProvenanceResolver::class)->gameStartAt($game) : null;
             if ($kickoff === null || $snapshot->generated_at->gte($kickoff)
@@ -102,7 +102,7 @@ class NflCalibrationHistory
                 return null;
             }
 
-            return $this->sample($snapshot->outputs ?? [], $game);
+            return NflCalibrationSample::fromOutputs($snapshot->outputs ?? [], $game);
         })->filter()->values();
     }
 
@@ -124,35 +124,13 @@ class NflCalibrationHistory
             ->get(['id', 'sport_event_id', 'game_date', 'game_time', 'home_score', 'away_score', 'result_updated_at'])->keyBy('id');
         $sources = app(NflEvidenceForecastSource::class)->forGames($games, $modelVersion);
 
-        return $games->map(function (Game $game) use ($sources): ?Prediction {
+        return $games->map(function (Game $game) use ($sources): ?NflCalibrationSample {
             $source = $sources->get($game->id);
             if ($source === null || ! $source->game_start_at->eq($game->sportEvent->starts_at)) {
                 return null;
             }
-            $sample = $this->sample($source->outputs, $game);
-            $sample?->setAttribute('canonical_lineage', $source->lineage);
 
-            return $sample;
+            return NflCalibrationSample::fromOutputs($source->outputs, $game, $source->lineage);
         })->filter()->values();
-    }
-
-    /** Unsaved calculation adapter: native IDs never become legacy model identity. */
-    private function sample(array $outputs, Game $game): ?Prediction
-    {
-        foreach (['predicted_spread', 'predicted_total', 'win_probability'] as $field) {
-            if (! is_numeric($outputs[$field] ?? null) || ! is_finite((float) $outputs[$field])) {
-                return null;
-            }
-        }
-        if ((float) $outputs['win_probability'] <= 0 || (float) $outputs['win_probability'] >= 1) {
-            return null;
-        }
-        $prediction = new Prediction(array_intersect_key($outputs, array_flip([
-            'predicted_spread', 'predicted_total', 'win_probability',
-        ])));
-        $prediction->setRelation('game', $game);
-        $prediction->setAttribute('calibration_inputs', $outputs['calibration_inputs'] ?? []);
-
-        return $prediction;
     }
 }

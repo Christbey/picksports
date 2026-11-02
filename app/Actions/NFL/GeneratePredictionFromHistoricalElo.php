@@ -2,6 +2,7 @@
 
 namespace App\Actions\NFL;
 
+use App\Application\Sports\ReadModels\NflCalibrationSample;
 use App\Jobs\NFL\EvaluateShadowPrediction;
 use App\Models\NFL\DepthChartEntry;
 use App\Models\NFL\DepthChartSnapshot;
@@ -2286,7 +2287,7 @@ class GeneratePredictionFromHistoricalElo
         }
 
         $lookbackGames = max(1, (int) config('nfl.predictions.adaptive_win_probability_calibration.lookback_games', 512));
-        $priorPredictions = $this->calibrationHistory->prior($game, NflModelVersion::current(), $lookbackGames, 'win_probability', $this->calibrationForecastSource)->filter(fn (Prediction $prediction): bool => (float) $prediction->game->home_score !== (float) $prediction->game->away_score)->values();
+        $priorPredictions = $this->calibrationHistory->prior($game, NflModelVersion::current(), $lookbackGames, 'win_probability', $this->calibrationForecastSource)->filter(fn (NflCalibrationSample $prediction): bool => (float) $prediction->game->home_score !== (float) $prediction->game->away_score)->values();
 
         if ($priorPredictions->isEmpty()) {
             $this->lastModelMetadata['adaptive_win_probability_calibration']['reason'] = 'no_prior_predictions';
@@ -2314,7 +2315,7 @@ class GeneratePredictionFromHistoricalElo
         $bucketCeiling = min(1.0, $bucketFloor + $bucketWidth);
 
         $bucketPredictions = $priorPredictions
-            ->filter(function (Prediction $prediction) use ($bucketFloor, $bucketCeiling): bool {
+            ->filter(function (NflCalibrationSample $prediction) use ($bucketFloor, $bucketCeiling): bool {
                 $priorConfidence = max((float) $prediction->win_probability, 1 - (float) $prediction->win_probability);
 
                 return $priorConfidence >= $bucketFloor && $priorConfidence < $bucketCeiling;
@@ -2537,7 +2538,7 @@ class GeneratePredictionFromHistoricalElo
         }
 
         $priorPredictions = $this->calibrationHistory->prior($game, NflModelVersion::current(), $lookbackGames, forecastSource: $this->calibrationForecastSource)
-            ->filter(function (Prediction $prediction) use ($trustThreshold): bool {
+            ->filter(function (NflCalibrationSample $prediction) use ($trustThreshold): bool {
                 $priorConfidence = max((float) $prediction->win_probability, 1 - (float) $prediction->win_probability);
 
                 return $priorConfidence >= $trustThreshold;

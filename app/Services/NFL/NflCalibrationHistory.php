@@ -118,7 +118,7 @@ class NflCalibrationHistory
             ->whereHas('calculationRun.inputSnapshot', fn ($query) => $query
                 ->where('inputs->recommendation_context->model_version', $modelVersion))
             ->reorder()->orderByDesc('nfl_games.game_date')->orderByDesc('nfl_games.id')
-            ->limit($capacity)->pluck('nfl_games.id');
+            ->limit($capacity)->select('nfl_games.id as calibration_game_id')->toBase()->pluck('calibration_game_id');
         $games = Game::query()->with('sportEvent:id,starts_at')->whereIn('id', $ids)
             ->orderByDesc('game_date')->orderByDesc('id')
             ->get(['id', 'sport_event_id', 'game_date', 'game_time', 'home_score', 'away_score', 'result_updated_at'])->keyBy('id');

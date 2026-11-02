@@ -1034,3 +1034,10 @@ The read model preserves the former Eloquent decimal conversion exactly: half-up
 `cfb:compare-prediction-models` no longer reads mutable CFB predictions when either canonical switch is enabled. The paired official/candidate replay continues using frozen canonical inputs and stored evaluations, selecting the latest published or superseded pregame revision before kickoff. Forecast graphs hydrate in batches of 25 games instead of one query per game. Missing/unsafe/unevaluated latest revisions retain their exclusions rather than borrowing older or legacy forecasts.
 
 The informational `legacy_comparable` field is null when unchecked, with `legacy_comparison_included=false`. Explicit `--include-legacy-comparison` retains its original pre-kickoff mutable-row timestamp check; both switches off retain that compatibility behavior by default. This flag never changes replay membership or grades. Report formulas, retrospective-validation limitations, season/week/final-game filters and approval rules remain unchanged. The command persists no forecasts, evaluations, releases or betting decisions.
+
+
+### MLB pick-decision source isolation
+
+`BetDecisionRecorder` follows each candidate's explicit `canonical_prediction_id`, independently of rollout switches. Native candidates never query historical feature snapshots or attach their `model_run_id`/snapshot identity, even if a compatibility row also carries `prediction_id`. The recorded native namespace and candidate's frozen `prediction_lineage` remain authoritative; missing native evidence is never filled from a legacy snapshot. Historical-only candidates retain their original timestamp-scoped snapshot lookup after cutover.
+
+Decision hashes, frozen feature/market payloads, tracking/public/bet flags, eligibility exclusions and settlement behavior remain unchanged. Re-recording a decision does not rewrite its original values. This stage changes no generation, schema, promotion, approval, schedule or production settings and does not rewrite existing records.

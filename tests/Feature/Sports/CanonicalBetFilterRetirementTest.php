@@ -168,3 +168,79 @@ it('retains market enablement and refuses new native observations after kickoff'
     $this->artisan('mlb:snapshot-bet-filter', [...$options, '--as-of-date' => now()->toDateString()])->assertSuccessful();
     expect(BetFilterResult::count())->toBe(1);
 });
+
+it('grades canonical observations without loading attached legacy predictions under any rollout mode', function (bool $pipeline, bool $reads) {
+    [$game, $native] = betFilterRetirementFixture('mlb');
+    $legacy = betFilterLegacyPrediction($game);
+    config(['prediction_lifecycle.canonical_pipeline.mlb' => $pipeline, 'prediction_lifecycle.canonical_reads.mlb' => $reads]);
+    $row = BetFilterResult::create(['game_id' => $game->id, 'canonical_prediction_id' => $native->id,
+        'prediction_id' => $legacy->id, 'season' => 2026, 'as_of_date' => now()->toDateString(),
+        'market' => 'run_line', 'pick_side' => 'home', 'market_line' => 2.5, 'score' => 70,
+        'classification' => 'pass', 'risk_flags' => ['canonical_approval_required'], 'metadata' => ['is_tracking_only' => true]]);
+    $native->update(['publication_state' => 'withdrawn', 'withdrawn_at' => now()]);
+    $game->forceFill(['status' => 'STATUS_FINAL', 'home_score' => 8, 'away_score' => 4])->saveQuietly();
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        $this->artisan('mlb:snapshot-bet-filter', ['--grade' => true, '--season' => 2026])->assertSuccessful();
+        $queries = collect(DB::getQueryLog())->pluck('query')->implode(' ');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    $row->refresh();
+    expect($queries)->not->toContain('mlb_predictions')
+        ->and($row->result_hit)->toBeTrue()->and($row->graded_at)->not->toBeNull()
+        ->and($row->classification)->toBe('pass')->and($row->risk_flags)->toBe(['canonical_approval_required'])
+        ->and($row->metadata)->toBe(['is_tracking_only' => true]);
+})->with([[false, false], [true, false], [false, true], [true, true]]);
+
+it('grades a fixed observation cohort in bounded payload batches and reuses closing odds per game', function () {
+    foreach (range(1, 26) as $index) {
+        [$game, $native] = betFilterRetirementFixture('mlb');
+        $game->forceFill(['status' => 'STATUS_FINAL', 'home_score' => 8, 'away_score' => 4])->saveQuietly();
+        foreach ([['moneyline', 'home'], ['moneyline', 'away'], ['total', 'over'], ['total', 'under']] as [$market, $side]) {
+            BetFilterResult::create(['game_id' => $game->id, 'canonical_prediction_id' => $native->id,
+                'season' => 2026, 'as_of_date' => now()->toDateString(), 'market' => $market, 'pick_side' => $side,
+                'market_line' => $market === 'total' ? 10 : null, 'score' => 70, 'classification' => 'pass']);
+        }
+    }
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        $this->artisan('mlb:snapshot-bet-filter', ['--grade' => true, '--season' => 2026])
+            ->expectsOutputToContain('Graded 104')->assertSuccessful();
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect(BetFilterResult::whereNotNull('graded_at')->count())->toBe(104)
+        ->and($queries->filter(fn ($q) => str_contains($q, 'select * from "mlb_bet_filter_results"')))->toHaveCount(2)
+        ->and($queries->filter(fn ($q) => str_contains($q, 'from "game_odds_snapshots"')))->toHaveCount(26)
+        ->and($queries->implode(' '))->not->toContain('mlb_predictions');
+    expect(BetFilterResult::where('pick_side', 'home')->where('result_hit', true)->count())->toBe(26)
+        ->and(BetFilterResult::where('pick_side', 'away')->where('result_hit', false)->count())->toBe(26)
+        ->and(BetFilterResult::where('pick_side', 'over')->where('result_hit', true)->count())->toBe(26)
+        ->and(BetFilterResult::where('pick_side', 'under')->where('result_hit', false)->count())->toBe(26);
+});
+
+it('preserves pending score and missing-evidence grading behavior', function (string $variant) {
+    [$game, $native] = betFilterRetirementFixture('mlb');
+    $legacy = betFilterLegacyPrediction($game);
+    $row = BetFilterResult::create(['game_id' => $game->id,
+        'canonical_prediction_id' => $variant === 'missing_historical_prediction' ? null : $native->id,
+        'prediction_id' => $variant === 'missing_historical_prediction' ? null : $legacy->id,
+        'season' => 2026, 'as_of_date' => now()->toDateString(), 'market' => 'run_line', 'pick_side' => 'home',
+        'market_line' => $variant === 'missing_native_line' ? null : 2.5, 'score' => 70, 'classification' => 'pass']);
+    $game->forceFill(['status' => $variant === 'pending' ? 'STATUS_SCHEDULED' : 'STATUS_FINAL',
+        'home_score' => $variant === 'missing_score' ? null : 8, 'away_score' => 4])->saveQuietly();
+    $this->artisan('mlb:snapshot-bet-filter', ['--grade' => true, '--season' => 2026])->assertSuccessful();
+    $row->refresh();
+    expect($row->result_hit)->toBeNull();
+    if ($variant === 'missing_native_line') {
+        expect($row->graded_at)->not->toBeNull();
+    } else {
+        expect($row->graded_at)->toBeNull();
+    }
+})->with(['missing_historical_prediction', 'pending', 'missing_score', 'missing_native_line']);

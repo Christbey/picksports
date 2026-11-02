@@ -1041,3 +1041,10 @@ The informational `legacy_comparable` field is null when unchecked, with `legacy
 `BetDecisionRecorder` follows each candidate's explicit `canonical_prediction_id`, independently of rollout switches. Native candidates never query historical feature snapshots or attach their `model_run_id`/snapshot identity, even if a compatibility row also carries `prediction_id`. The recorded native namespace and candidate's frozen `prediction_lineage` remain authoritative; missing native evidence is never filled from a legacy snapshot. Historical-only candidates retain their original timestamp-scoped snapshot lookup after cutover.
 
 Decision hashes, frozen feature/market payloads, tracking/public/bet flags, eligibility exclusions and settlement behavior remain unchanged. Re-recording a decision does not rewrite its original values. This stage changes no generation, schema, promotion, approval, schedule or production settings and does not rewrite existing records.
+
+
+### NFL research slate-loading retirement
+
+`nfl:research-pipeline` no longer eagerly loads mutable NFL predictions for its entire date window. Baselines remain owned by `ResearchPipeline::storedForecast`: either canonical switch selects frozen native recommendation context with no legacy fallback; both switches off retain historical compatibility. Only the selected compatibility-mode review batch preloads legacy predictions. Ingest-only and stored-brief modes need no forecasts under any switch combination. Explicit `--game-id` restrictions now apply in SQL before slate relations load.
+
+Stored briefs fetch the latest revision by ID in 25-game batches and select only the existing output fields, excluding large unused evidence payloads. Missing revisions remain omitted and game ordering/output shape remain unchanged. Review rotation, cached/persisted activity, limits, cooldown handling, missing-baseline/research holds, final grading, schedule cadence and approval rules are unchanged. Historical calculator previews remain supported and no forecast writer or provider refresh is introduced.

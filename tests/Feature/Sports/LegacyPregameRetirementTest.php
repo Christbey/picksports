@@ -33,6 +33,7 @@ use App\Services\Predictions\ModelRunRecorder;
 use App\Services\Predictions\PredictionDeliverySource;
 use App\Services\Sports\SportsPipelineRegistry;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
@@ -84,12 +85,13 @@ it('retires active legacy writes only after both pipeline and readers select can
     expect($source->legacyWriterRetired($sport))->toBeFalse();
 })->with(['nba', 'nfl', 'cbb', 'wcbb', 'wnba', 'mlb', 'cfb']);
 
-it('routes the active pipeline to canonical generation while retaining upstream and historical grading', function (string $sport) {
+it('routes the active pipeline to canonical generation and evaluation while retaining historical commands', function (string $sport) {
     config(["prediction_lifecycle.canonical_pipeline.{$sport}" => true, "prediction_lifecycle.canonical_reads.{$sport}" => true]);
     $registry = app(SportsPipelineRegistry::class);
     $commands = collect($registry->pipelineSteps($sport, 'predict', $registry->context(date: '2026-10-28', season: 2026)))->pluck('command');
-    expect($commands)->toContain("{$sport}:generate-canonical-predictions", "{$sport}:grade-predictions", "{$sport}:calculate-elo")
-        ->not->toContain("{$sport}:generate-predictions");
+    expect($commands)->toContain("{$sport}:generate-canonical-predictions", "{$sport}:evaluate-canonical-predictions", "{$sport}:calculate-elo")
+        ->not->toContain("{$sport}:generate-predictions", "{$sport}:grade-predictions")
+        ->and(Artisan::all())->toHaveKey("{$sport}:grade-predictions");
 })->with(['nba', 'cbb', 'wcbb', 'wnba', 'mlb', 'cfb']);
 
 it('keeps the existing generation command as a canonical entry point after retirement', function (string $sport) {

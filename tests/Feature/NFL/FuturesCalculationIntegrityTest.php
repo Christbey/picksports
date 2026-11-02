@@ -8,6 +8,7 @@ use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportForecastQuery;
 use App\Services\NFL\TeamFuturesProjectionService;
 use App\Services\NFL\TeamPlayoffForecastService;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 
 require_once __DIR__.'/../../Support/NflFutures.php';
@@ -82,7 +83,7 @@ it('does not convert a scoring-total injury penalty into a win-strength penalty'
 
 it('retains stored futures prices but suppresses stale and future-dated comparisons', function (int $age, bool $stale) {
     Cache::flush();
-    $this->travelTo(now()->startOfSecond());
+    $this->travelTo(Carbon::parse('2026-10-24 12:00:00', 'America/Chicago'));
     $this->mock(TeamPlayoffForecastService::class)->shouldReceive('forecast')->once()->andReturn([
         'summary' => ['simulations' => 5000],
         'teams' => [['team_id' => 1, 'team_name' => 'Test', 'super_bowl_champion_probability' => 0.25]],

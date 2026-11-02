@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Validation\Checks\FinalizedDataCompletenessCheck;
 use App\Events\GameFinalized;
 use App\Listeners\TriggerGameFinalizationGrading;
 use App\Models\BetDecision;
@@ -13,6 +14,7 @@ use App\Models\SportEventResult;
 use App\Services\GameFinalizationDispatcher;
 use App\Services\Predictions\CanonicalTeamGameEvaluator;
 use App\Services\Predictions\SportEventResultRecorder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 
@@ -286,4 +288,111 @@ it('shares the rebuild limit across historical and canonical ownership', functio
     canonicalFinalizationFixture('nfl');
     $this->artisan('sports:rebuild-prediction-evaluations', ['--sport' => ['nba', 'nfl'], '--limit' => 1])->assertSuccessful();
     expect(PredictionEvaluation::count())->toBe(1)->and(PredictionEvaluation::sole()->prediction_table)->toBe('nba_predictions');
+});
+
+afterEach(fn () => Carbon::setTestNow());
+
+function finalizedAuditFixture(string $sport = 'nba'): array
+{
+    Carbon::setTestNow('2026-11-02 12:00:00');
+    [$game, $prediction] = canonicalFinalizationFixture($sport);
+    $game->update(['game_date' => now()->subDay()->toDateString()]);
+
+    return [$game, $prediction];
+}
+
+function finalizedAuditReport(string $sport): array
+{
+    return app(FinalizedDataCompletenessCheck::class)->run($sport, config('validation.sports.'.$sport));
+}
+
+it('audits canonical evaluation revisions without changing approvals or forecast rows', function (string $sport) {
+    [$game] = finalizedAuditFixture($sport);
+    $report = finalizedAuditReport($sport);
+    expect($report['metadata']['grading_source'])->toBe('canonical')->and($report['metadata']['games_missing_grading'])->toBe(1);
+    $evaluator = app(CanonicalTeamGameEvaluator::class);
+    $evaluator->evaluate($game, $sport);
+    $before = [CanonicalPrediction::count(), PredictionEvaluation::count(), SportEventResult::count(), BetDecision::count()];
+    expect(finalizedAuditReport($sport)['metadata']['games_missing_grading'])->toBe(0)
+        ->and([CanonicalPrediction::count(), PredictionEvaluation::count(), SportEventResult::count(), BetDecision::count()])->toBe($before);
+    $game->update(['home_score' => 109]);
+    expect(finalizedAuditReport($sport)['metadata']['games_missing_grading'])->toBe(1);
+    $evaluator->evaluate($game, $sport);
+    expect(finalizedAuditReport($sport)['metadata']['games_missing_grading'])->toBe(0)
+        ->and(PredictionEvaluation::count())->toBe(2)->and(SportEventResult::count())->toBe(2);
+})->with(['nba', 'nfl', 'mlb', 'cbb', 'cfb', 'wnba', 'wcbb']);
+
+it('preserves grading ownership and historical finalized audit behavior under partial switches', function () {
+    [$game] = finalizedAuditFixture();
+    $legacy = Prediction::factory()->create(['game_id' => $game->id, 'graded_at' => null]);
+    app(CanonicalTeamGameEvaluator::class)->evaluate($game, 'nba');
+    expect(finalizedAuditReport('nba')['metadata']['games_missing_grading'])->toBe(0);
+    config(['prediction_lifecycle.canonical_pipeline.nba' => false, 'prediction_lifecycle.canonical_reads.nba' => true]);
+    expect(finalizedAuditReport('nba')['metadata']['games_missing_grading'])->toBe(1);
+    $legacy->update(['graded_at' => now()]);
+    $before = finalizedAuditReport('nba');
+    config(['prediction_lifecycle.canonical_reads.nba' => false]);
+    expect(finalizedAuditReport('nba'))->toBe($before);
+});
+
+it('retains finalization guards and grading grace in the native finalized audit', function (string $guard) {
+    [$game] = finalizedAuditFixture();
+    if ($guard === 'clock') {
+        $game->update(['game_clock' => '1:23']);
+    } elseif ($guard === 'age') {
+        $game->sportEvent->update(['starts_at' => now()->subMinutes(20)]);
+    } else {
+        config(['validation.thresholds.finalized_data_completeness.grading_grace_hours' => 48]);
+    }
+    expect(finalizedAuditReport('nba')['metadata']['games_missing_grading'])->toBe(0);
+})->with(['clock', 'age', 'grace']);
+
+it('does not replace missing canonical grading evidence with ungraded legacy rows', function () {
+    [$game, $prediction] = finalizedAuditFixture();
+    Prediction::factory()->create(['game_id' => $game->id, 'graded_at' => null]);
+    $prediction->update(['publication_state' => 'withdrawn', 'withdrawn_at' => now()]);
+    expect(finalizedAuditReport('nba')['metadata']['games_missing_grading'])->toBe(0);
+});
+
+it('batches canonical grading and removes per-game stats and play existence queries', function () {
+    for ($i = 0; $i < 26; $i++) {
+        [$game] = finalizedAuditFixture();
+        app(CanonicalTeamGameEvaluator::class)->evaluate($game, 'nba');
+    }
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        expect(finalizedAuditReport('nba')['metadata']['games_missing_grading'])->toBe(0);
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect($queries->filter(fn ($sql) => str_contains($sql, 'nba_predictions')))->toBeEmpty()
+        ->and($queries->filter(fn ($sql) => str_contains($sql, 'from "prediction_evaluations"')))->toHaveCount(2)
+        ->and($queries->filter(fn ($sql) => str_starts_with($sql, 'select exists(') && (str_contains($sql, 'nba_plays') || str_contains($sql, 'nba_player_stats'))))->toBeEmpty();
+});
+
+it('keeps obsolete scoring versions pending without overwriting evaluation history', function () {
+    [$game, $prediction] = finalizedAuditFixture();
+    $result = app(SportEventResultRecorder::class)->record($game->sportEvent, 108, 100, source: 'test', observedAt: now()->toImmutable());
+    PredictionEvaluation::create(['canonical_prediction_id' => $prediction->id, 'sport_event_id' => $game->sport_event_id,
+        'sport_event_result_id' => $result->id, 'evaluation_revision' => 1, 'sport' => 'nba', 'prediction_phase' => 'pregame',
+        'actuals' => [], 'errors' => [], 'market_comparison' => [],
+        'scoring_version' => 'obsolete-version', 'evaluation_hash' => str_repeat('b', 64), 'evaluated_at' => now()]);
+    expect(finalizedAuditReport('nba')['metadata']['games_missing_grading'])->toBe(1);
+    app(CanonicalTeamGameEvaluator::class)->evaluate($game, 'nba');
+    expect(finalizedAuditReport('nba')['metadata']['games_missing_grading'])->toBe(0)
+        ->and(PredictionEvaluation::count())->toBe(2);
+});
+
+it('does not use an older forecast evaluation to satisfy a newer eligible revision', function () {
+    [$game, $prediction] = finalizedAuditFixture();
+    app(CanonicalTeamGameEvaluator::class)->evaluate($game, 'nba');
+    $next = CanonicalPrediction::factory()->create(['sport' => 'nba', 'sport_event_id' => $game->sport_event_id,
+        'revision' => $prediction->revision + 1, 'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null,
+        'detail_source' => null, 'detail_sport' => null, 'detail_id' => null]);
+    expect(finalizedAuditReport('nba')['metadata']['games_missing_grading'])->toBe(0);
+    $next->update(['publication_state' => 'published', 'published_at' => $game->sportEvent->starts_at->subMinute()]);
+    expect(finalizedAuditReport('nba')['metadata']['games_missing_grading'])->toBe(1);
 });

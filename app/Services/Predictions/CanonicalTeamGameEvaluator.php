@@ -9,10 +9,13 @@ use App\Models\MLB\Game as MlbGame;
 use App\Models\NBA\Game as NbaGame;
 use App\Models\NFL\Game as NflGame;
 use App\Models\PredictionEvaluation;
+use App\Models\SportEvent;
+use App\Models\SportEventResult;
 use App\Models\WCBB\Game as WcbbGame;
 use App\Models\WNBA\Game as WnbaGame;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 
 class CanonicalTeamGameEvaluator
 {
@@ -61,22 +64,69 @@ class CanonicalTeamGameEvaluator
 
     public function hasPendingEvaluation(Model $game, string $sport): bool
     {
-        $prediction = $this->predictionForGame($game, strtolower(trim($sport)));
-        if ($prediction === null) {
-            return false;
-        }
-        $result = $game->getRelation('sportEvent')->results()->orderByDesc('revision')->first();
-        if ($result === null
-            || $result->status !== 'official'
-            || $result->home_score !== (int) $game->home_score
-            || $result->away_score !== (int) $game->away_score) {
-            return true;
+        return $this->pendingGameIds(collect([$game]), $sport)->contains($game->getKey());
+    }
+
+    /** @return Collection<int, int> */
+    public function pendingGameIds(Collection $games, string $sport): Collection
+    {
+        $sport = strtolower(trim($sport));
+        $pending = collect();
+        foreach ($games->chunk(25) as $batch) {
+            (new \Illuminate\Database\Eloquent\Collection($batch->all()))->loadMissing('sportEvent');
+            $eligible = $batch->filter(fn ($game) => $this->eligibleEvent($game, $sport) !== null)->keyBy('sport_event_id');
+            if ($eligible->isEmpty()) {
+                continue;
+            }
+            $predictions = CanonicalPrediction::query()->select(['predictions.id', 'predictions.sport_event_id', 'predictions.sport', 'predictions.calculation_run_id'])
+                ->join('sport_events', 'sport_events.id', '=', 'predictions.sport_event_id')
+                ->whereIn('predictions.sport_event_id', $eligible->keys())->where('predictions.sport', $sport)
+                ->where('predictions.id', function ($query) use ($sport): void {
+                    $query->from('predictions as candidate')->select('candidate.id')->whereColumn('candidate.sport_event_id', 'predictions.sport_event_id')
+                        ->where('candidate.sport', $sport)->where('candidate.phase', 'pregame')->whereIn('candidate.publication_state', ['published', 'superseded'])
+                        ->whereNotNull('candidate.published_at')->whereColumn('candidate.published_at', '<=', 'sport_events.starts_at')
+                        ->orderByDesc('candidate.revision')->limit(1);
+                })->get();
+            $results = SportEventResult::query()->whereIn('sport_event_id', $eligible->keys())
+                ->where('id', function ($query): void {
+                    $query->from('sport_event_results as latest')->select('latest.id')->whereColumn('latest.sport_event_id', 'sport_event_results.sport_event_id')
+                        ->orderByDesc('latest.revision')->limit(1);
+                })->get();
+            $current = $this->evaluator->currentEvaluationPredictionIds($predictions, $results);
+            $results = $results->keyBy('sport_event_id');
+            foreach ($predictions as $prediction) {
+                $game = $eligible->get($prediction->sport_event_id);
+                $result = $results->get($prediction->sport_event_id);
+                if ($result === null || $result->status !== 'official' || $result->home_score !== (int) $game->home_score
+                    || $result->away_score !== (int) $game->away_score || ! $current->contains($prediction->id)) {
+                    $pending->push($game->getKey());
+                }
+            }
         }
 
-        return ! $this->evaluator->hasCurrentEvaluation($prediction, $result);
+        return $pending;
     }
 
     private function predictionForGame(Model $game, string $sport): ?CanonicalPrediction
+    {
+        $event = $this->eligibleEvent($game, $sport);
+        if ($event === null) {
+            return null;
+        }
+
+        return CanonicalPrediction::query()
+            ->where('sport_event_id', $event->getKey())
+            ->where('sport', $sport)
+            ->where('phase', 'pregame')
+            ->whereIn('publication_state', ['published', 'superseded'])
+            ->whereNotNull('published_at')
+            ->where('published_at', '<=', $event->starts_at)
+            ->orderByDesc('revision')
+            ->first();
+
+    }
+
+    private function eligibleEvent(Model $game, string $sport): ?SportEvent
     {
         $gameClass = self::GAME_MODELS[$sport] ?? null;
 
@@ -97,16 +147,7 @@ class CanonicalTeamGameEvaluator
             return null;
         }
 
-        return CanonicalPrediction::query()
-            ->where('sport_event_id', $event->getKey())
-            ->where('sport', $sport)
-            ->where('phase', 'pregame')
-            ->whereIn('publication_state', ['published', 'superseded'])
-            ->whereNotNull('published_at')
-            ->where('published_at', '<=', $event->starts_at)
-            ->orderByDesc('revision')
-            ->first();
-
+        return $event;
     }
 
     private function hasFinalClock(mixed $clock): bool

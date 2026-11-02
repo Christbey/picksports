@@ -77,12 +77,6 @@ class CbbBracketTree
             'status' => $game->status,
             'homeScore' => $game->home_score,
             'awayScore' => $game->away_score,
-            'prediction' => $game->prediction
-                ? [
-                    'homeWinProbability' => (float) $game->prediction->win_probability,
-                    'awayWinProbability' => round(1 - (float) $game->prediction->win_probability, 3),
-                ]
-                : null,
             'homeTeam' => [
                 'id' => $homeTeam?->id,
                 'name' => $homeName,

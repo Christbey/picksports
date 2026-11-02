@@ -1,11 +1,14 @@
 <?php
 
 use App\Actions\CBB\GradeBrackets;
+use App\Models\BetDecision;
 use App\Models\CBB\Game;
+use App\Models\CBB\Prediction;
 use App\Models\CBB\Team;
 use App\Models\CbbBracket;
 use App\Models\Group;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 test('grade brackets stores correct and incorrect results for finalized tournament games', function () {
     $user = User::factory()->create();
@@ -188,3 +191,41 @@ test('bracket leaderboard can be filtered by group', function () {
         ->assertJsonPath('data.0.bracket_name', 'Owner Entry')
         ->assertJsonPath('data.1.bracket_name', 'Member Entry');
 });
+
+it('grades only tournament results without forecast reads across rollout modes', function (bool $pipeline, bool $reads) {
+    config(['prediction_lifecycle.canonical_pipeline.cbb' => $pipeline, 'prediction_lifecycle.canonical_reads.cbb' => $reads]);
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+    $games = collect();
+    foreach ([[1, 16, 'STATUS_FINAL', 81, 54], [8, 9, 'STATUS_FINAL', 70, 73],
+        [5, 12, 'STATUS_SCHEDULED', null, null], [4, 13, 'STATUS_FINAL', 70, 70], [6, 11, 'STATUS_FINAL', 80, 60], [3, 14, 'STATUS_FINAL', null, 65]] as [$homeSeed, $awaySeed, $status, $homeScore, $awayScore]) {
+        $games->push(Game::factory()->create(['season' => 2026, 'season_type' => 3, 'is_ncaa_tournament' => true,
+            'tournament_round' => 'round_of_64', 'tournament_region' => 'East', 'home_team_id' => $home->id, 'away_team_id' => $away->id,
+            'home_seed' => $homeSeed, 'away_seed' => $awaySeed, 'status' => $status, 'home_score' => $homeScore, 'away_score' => $awayScore]));
+    }
+    $legacy = Prediction::factory()->create(['game_id' => $games[1]->id, 'win_probability' => 0.99]);
+    $bracket = CbbBracket::create(['user_id' => User::factory()->create()->id, 'season' => 2026,
+        'picks' => $games->reject(fn ($game, $index) => $index === 4)->mapWithKeys(fn ($game) => ['game:'.$game->id => 'team:'.$home->id])->all()]);
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        expect(app(GradeBrackets::class)->execute(2026, $bracket))->toBe(1);
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    $bracket->refresh();
+    expect($bracket->points_earned)->toBe(10)->and($bracket->correct_picks)->toBe(1)->and($bracket->incorrect_picks)->toBe(1)
+        ->and($bracket->max_points_remaining)->toBe(30)
+        ->and($bracket->results['game:'.$games[2]->id]['status'])->toBe('pending')
+        ->and($bracket->results['game:'.$games[3]->id]['status'])->toBe('pending')
+        ->and($bracket->results['game:'.$games[4]->id]['status'])->toBe('unpicked')
+        ->and($bracket->results['game:'.$games[5]->id]['status'])->toBe('pending')
+        ->and($queries->filter(fn ($sql) => str_contains($sql, 'predictions') || str_contains($sql, 'prediction_markets')))->toBeEmpty()
+        ->and(BetDecision::count())->toBe(0);
+    $before = $bracket->only(['results', 'points_earned', 'max_points_remaining', 'correct_picks', 'incorrect_picks', 'graded_through_round']);
+    $legacy->delete();
+    app(GradeBrackets::class)->execute(2026, $bracket);
+    expect($bracket->fresh()->only(array_keys($before)))->toBe($before);
+})->with([[false, false], [true, false], [false, true], [true, true]]);

@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\NFL\GeneratePredictionFromHistoricalElo;
+use App\Application\Sports\ReadModels\NflCalibrationSample;
 use App\Models\CalculationRelease;
 use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
@@ -16,6 +17,7 @@ use App\Services\NFL\NflEvidenceForecastSource;
 use App\Services\NFL\Predictions\NflRecommendationInputBuilder;
 use App\Services\Predictions\ModelRunRecorder;
 use App\Support\NflModelVersion;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -119,7 +121,8 @@ it('uses native stage inputs and published recommendation evidence with no legac
     }
     expect((float) $point->predicted_spread)->toBe(8.0)->and((float) $point->predicted_total)->toBe(51.0)
         ->and((float) $win->win_probability)->toBe(0.85)->and((float) $published->predicted_spread)->toBe(3.0)
-        ->and($point->id)->toBeNull()->and($point->exists)->toBeFalse()
+        ->and($point)->toBeInstanceOf(NflCalibrationSample::class)
+        ->and($point)->not->toBeInstanceOf(Model::class)
         ->and($point->canonical_lineage['canonical_prediction_id'])->toBe($native->id)
         ->and($point->game->id)->toBe($game->id)
         ->and($queries->implode(' '))->not->toContain('prediction_feature_snapshots')->not->toContain('nfl_predictions')->not->toContain('odds_data');
@@ -188,3 +191,42 @@ it('selects the correct history at the real calculator entry point', function (b
     'compatibility' => [false, false, 'previewPregame', 'legacy'],
     'historical preview' => [true, true, 'preview', 'legacy'],
 ]);
+
+it('preserves legacy decimal casting exactly in immutable calibration samples', function (array $outputs) {
+    $game = new Game;
+    $legacy = new Prediction($outputs);
+    $lineage = ['canonical_prediction_id' => 123];
+    $sample = NflCalibrationSample::fromOutputs($outputs, $game, $lineage);
+    foreach (['predicted_spread', 'predicted_total', 'win_probability'] as $field) {
+        expect($sample->{$field})->toBe($legacy->{$field});
+    }
+    $values = ['predicted_spread' => '-8.25', 'predicted_total' => '51.25'];
+    $point = $sample->withValues($values);
+    foreach ($values as $field => $value) {
+        $legacy->setAttribute($field, $value);
+        expect($point->{$field})->toBe($legacy->{$field});
+    }
+    $win = $sample->withValues(['win_probability' => '0.8545']);
+    $legacy->win_probability = '0.8545';
+    expect($win->win_probability)->toBe($legacy->win_probability)
+        ->and($sample->canonical_lineage)->toBe($lineage)
+        ->and($point->canonical_lineage)->toBe($lineage)
+        ->and(method_exists($sample, 'save'))->toBeFalse()
+        ->and(property_exists($sample, 'id'))->toBeFalse();
+})->with([
+    [['predicted_spread' => '3.25', 'predicted_total' => '44.45', 'win_probability' => '0.6505']],
+    [['predicted_spread' => '-3.25', 'predicted_total' => '44.449999', 'win_probability' => '0.9999']],
+    [['predicted_spread' => 3, 'predicted_total' => 44, 'win_probability' => '0.0001']],
+]);
+
+it('keeps cached calibration samples and their stage inputs immutable', function () {
+    adaptiveHistoryRetirementFixture();
+    $history = new NflCalibrationHistory;
+    $target = adaptiveHistoryTarget();
+    $published = $history->prior($target, NflModelVersion::current(), 512, forecastSource: 'canonical')->sole();
+    $point = $history->prior($target, NflModelVersion::current(), 512, 'point', 'canonical')->sole();
+    expect(fn () => $point->predicted_spread = '999.0')->toThrow(Error::class);
+    expect($history->prior($target, NflModelVersion::current(), 512, forecastSource: 'canonical')->sole())->toBe($published)
+        ->and($published->predicted_spread)->toBe('3.0')
+        ->and($point->predicted_spread)->toBe('8.0');
+});

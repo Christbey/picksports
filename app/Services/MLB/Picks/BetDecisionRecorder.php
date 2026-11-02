@@ -108,7 +108,7 @@ class BetDecisionRecorder
 
     private function featureSnapshot(PickCandidate $candidate): ?PredictionFeatureSnapshot
     {
-        if ($candidate->prediction_id === null) {
+        if ($candidate->canonical_prediction_id !== null || $candidate->prediction_id === null) {
             return null;
         }
 

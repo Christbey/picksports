@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\BetDecision;
 use App\Models\CalculationRelease;
 use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
@@ -19,6 +20,8 @@ use App\Services\NFL\NflSignalObservationMaterializer;
 use App\Services\NFL\Predictions\NflRecommendationInputBuilder;
 use App\Services\Predictions\ModelRunRecorder;
 use App\Support\NflModelVersion;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -32,7 +35,7 @@ beforeEach(function () {
 });
 afterEach(fn () => $this->travelBack());
 
-function evidenceAuditRetirementFixture(string $variant = 'valid'): array
+function evidenceAuditRetirementFixture(string $variant = 'valid', array $metadata = []): array
 {
     $start = now()->subDay()->utc();
     $generated = now()->subHours(26);
@@ -58,7 +61,7 @@ function evidenceAuditRetirementFixture(string $variant = 'valid'): array
     foreach (NflSignalObservation::query()->get() as $observation) {
         app(NflSignalGradingService::class)->grade($observation);
     }
-    $context = ['version' => NflRecommendationInputBuilder::VERSION,
+    $context = ['model_metadata' => $metadata, 'version' => NflRecommendationInputBuilder::VERSION,
         'evidence_source_version' => NflEvidenceForecastSource::VERSION,
         'runtime_configuration_hash' => app(ModelRunRecorder::class)->configHash('nfl'),
         'model_version' => $variant === 'wrong_version' ? 'other-model' : NflModelVersion::current(),
@@ -182,4 +185,81 @@ it('retains the frozen kickoff mismatch hold when an event is rescheduled', func
     expect($report['reasons']['winner']['kickoff_mismatch'])->toBe(1)
         ->and($report['reasons']['spread']['kickoff_mismatch'])->toBe(1)
         ->and($report['reasons']['total']['kickoff_mismatch'])->toBe(1);
+});
+
+function weekTrendRetirementGame(string $variant = 'valid', array $metadata = []): array
+{
+    [$game, $native] = evidenceAuditRetirementFixture($variant, $metadata);
+    $game->update(['week' => 1, 'odds_data' => ['home_team' => 'Home', 'bookmakers' => [['markets' => [
+        ['key' => 'spreads', 'outcomes' => [['name' => 'Home', 'point' => -3.5], ['name' => 'Away', 'point' => 3.5]]],
+        ['key' => 'totals', 'outcomes' => [['name' => 'Over', 'point' => 44.5]]],
+    ]]]]]);
+    $game->prediction->update(['model_metadata' => ['qb_form' => ['home' => ['experience_bucket' => 'veteran'], 'away' => ['experience_bucket' => 'rookie']]]]);
+
+    return [$game, $native];
+}
+
+function weekTrendRetirementRows(array $args = []): Collection
+{
+    expect(Artisan::call('nfl:report-week-trends', [
+        '--from-season' => 2026, '--to-season' => 2026, '--season-type' => '2', '--min-games' => 1, ...$args,
+    ]))->toBe(0);
+    $command = Artisan::all()['nfl:report-week-trends'];
+
+    return (new ReflectionMethod($command, 'rows'))->invoke($command);
+}
+
+it('uses frozen NFL week-trend QB metadata while preserving independent market and result rows', function (bool $pipeline, bool $reads) {
+    [$game] = weekTrendRetirementGame(metadata: ['qb_form' => ['home' => ['experience_bucket' => 'rookie'], 'away' => ['experience_bucket' => 'veteran']]]);
+    config(['prediction_lifecycle.canonical_pipeline.nfl' => $pipeline, 'prediction_lifecycle.canonical_reads.nfl' => $reads]);
+    $native = weekTrendRetirementRows()->sole();
+    expect($native['home_qb_bucket'])->toBe('rookie')->and($native['away_qb_bucket'])->toBe('veteran');
+    $legacy = weekTrendRetirementRows(['--forecast-source' => 'legacy'])->sole();
+    expect($legacy['home_qb_bucket'])->toBe('veteran')->and($legacy['away_qb_bucket'])->toBe('rookie');
+    unset($legacy['home_qb_bucket'], $legacy['away_qb_bucket'], $native['home_qb_bucket'], $native['away_qb_bucket']);
+    expect($native)->toBe($legacy)->and(BetDecision::count())->toBe(0);
+})->with([[true, false], [false, true]]);
+
+it('retains NFL week-trend game rows with unknown QB evidence and no legacy fallback', function (string $variant) {
+    weekTrendRetirementGame($variant);
+    $row = weekTrendRetirementRows(['--forecast-source' => 'canonical'])->sole();
+    expect($row['home_qb_bucket'])->toBeNull()->and($row['away_qb_bucket'])->toBeNull()
+        ->and($row['home_spread'])->toBe(-3.5);
+})->with(['valid', 'unsafe', 'draft', 'withdrawn', 'kickoff_publication', 'wrong_version', 'missing_context', 'missing_start']);
+
+it('preserves historical NFL week-trend output and identifies native evidence in exports', function () {
+    [, $native] = weekTrendRetirementGame(metadata: ['qb_form' => ['home' => ['experience_bucket' => 'rookie']]]);
+    config(['prediction_lifecycle.canonical_pipeline.nfl' => false, 'prediction_lifecycle.canonical_reads.nfl' => false]);
+    weekTrendRetirementRows();
+    $before = Artisan::output();
+    weekTrendRetirementRows(['--forecast-source' => 'legacy']);
+    expect(Artisan::output())->toBe($before);
+    $path = sys_get_temp_dir().'/week-trends-'.Str::uuid().'.json';
+    try {
+        weekTrendRetirementRows(['--forecast-source' => 'canonical', '--output' => $path]);
+        $report = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+        expect($report['qb_metadata_source'])->toBe('canonical')->and($report['row_count'])->toBe(1)
+            ->and(collect($report['qb_forecast_lineage'])->first()['canonical_prediction_id'])->toBe($native->id);
+        expect(weekTrendRetirementRows(['--forecast-source' => 'canonical', '--model-version' => 'missing'])->sole()['home_qb_bucket'])->toBeNull();
+        $this->artisan('nfl:report-week-trends', ['--forecast-source' => 'invalid'])->assertFailed();
+    } finally {
+        @unlink($path);
+    }
+});
+
+it('batches NFL week-trend evidence and avoids legacy forecast reads', function () {
+    for ($i = 0; $i < 26; $i++) {
+        weekTrendRetirementGame(metadata: ['qb_form' => ['home' => ['experience_bucket' => 'rookie']]]);
+    }
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    try {
+        expect(Artisan::call('nfl:report-week-trends', ['--forecast-source' => 'canonical', '--from-season' => 2026, '--to-season' => 2026, '--season-type' => '2']))->toBe(0);
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+    expect($queries->filter(fn ($sql) => str_contains($sql, 'nfl_predictions')))->toBeEmpty()
+        ->and($queries->filter(fn ($sql) => str_starts_with($sql, 'select ') && str_contains($sql, 'capture_metadata')))->toHaveCount(2);
 });

@@ -115,8 +115,7 @@ class SnapshotBetFilterCommand extends Command
 
     private function grade(int $season): void
     {
-        $rows = BetFilterResult::query()
-            ->with(['game', 'prediction'])
+        $ids = BetFilterResult::query()
             ->where('season', $season)
             ->whereNull('graded_at')
             ->whereHas('game', function ($query): void {
@@ -124,30 +123,38 @@ class SnapshotBetFilterCommand extends Command
                     ->whereNotNull('home_score')
                     ->whereNotNull('away_score');
             })
-            ->get();
+            ->orderBy('id')->pluck('id');
 
         $graded = 0;
-        foreach ($rows as $row) {
-            $game = $row->game;
-            $prediction = $row->prediction;
-            if (! $game || ($row->canonical_prediction_id === null && ! $prediction)) {
-                continue;
+        foreach ($ids->chunk(100) as $batchIds) {
+            $rows = BetFilterResult::query()->with('game')->whereKey($batchIds)->whereNull('graded_at')->orderBy('id')->get();
+            $rows->filter(fn (BetFilterResult $row): bool => $row->canonical_prediction_id === null)->loadMissing('prediction');
+            $closingOdds = [];
+            foreach ($rows as $row) {
+                $game = $row->game;
+                $prediction = $row->canonical_prediction_id === null ? $row->getRelation('prediction') : null;
+                if (! $game || ($row->canonical_prediction_id === null && ! $prediction)) {
+                    continue;
+                }
+
+                if (! array_key_exists($game->id, $closingOdds)) {
+                    $closingOdds[$game->id] = $this->closingOddsData($game);
+                }
+                $actualMargin = (float) $game->home_score - (float) $game->away_score;
+                $actualTotal = (float) $game->home_score + (float) $game->away_score;
+
+                $row->fill([
+                    'result_hit' => $this->resultHit($row, $prediction, $actualMargin, $actualTotal),
+                    'actual_margin' => $actualMargin,
+                    'actual_total' => $actualTotal,
+                    'closing_line' => $this->closingLine($row, $game, $closingOdds[$game->id]),
+                    'closing_price' => $this->closingPrice($row, $game, $closingOdds[$game->id]),
+                    'graded_at' => now(),
+                ]);
+                $row->clv = $this->clv($row);
+                $row->save();
+                $graded++;
             }
-
-            $actualMargin = (float) $game->home_score - (float) $game->away_score;
-            $actualTotal = (float) $game->home_score + (float) $game->away_score;
-
-            $row->fill([
-                'result_hit' => $this->resultHit($row, $prediction, $actualMargin, $actualTotal),
-                'actual_margin' => $actualMargin,
-                'actual_total' => $actualTotal,
-                'closing_line' => $this->closingLine($row, $game),
-                'closing_price' => $this->closingPrice($row, $game),
-                'graded_at' => now(),
-            ]);
-            $row->clv = $this->clv($row);
-            $row->save();
-            $graded++;
         }
 
         $this->info("Graded {$graded} MLB bet-filter decision(s).");
@@ -263,10 +270,8 @@ class SnapshotBetFilterCommand extends Command
         };
     }
 
-    private function closingLine(BetFilterResult $row, Game $game): ?float
+    private function closingLine(BetFilterResult $row, Game $game, ?array $oddsData): ?float
     {
-        $oddsData = $this->closingOddsData($game);
-
         return match ($row->market) {
             'run_line' => $this->homeSpreadLine($oddsData, $game) !== null ? -1 * $this->homeSpreadLine($oddsData, $game) : null,
             'total' => $this->totalLine($oddsData),
@@ -274,10 +279,8 @@ class SnapshotBetFilterCommand extends Command
         };
     }
 
-    private function closingPrice(BetFilterResult $row, Game $game): ?int
+    private function closingPrice(BetFilterResult $row, Game $game, ?array $oddsData): ?int
     {
-        $oddsData = $this->closingOddsData($game);
-
         return match ($row->market) {
             'moneyline' => $this->moneylinePrice($oddsData, $game, (string) $row->pick_side),
             default => null,

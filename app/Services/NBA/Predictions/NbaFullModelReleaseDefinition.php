@@ -4,7 +4,7 @@ namespace App\Services\NBA\Predictions;
 
 class NbaFullModelReleaseDefinition extends NbaCalculationReleaseDefinition
 {
-    public const SEMANTIC_VERSION = '1.1.0';
+    public const SEMANTIC_VERSION = '1.1.1';
 
     public const INPUT_SCHEMA_VERSION = 'nba-pregame-v2';
 

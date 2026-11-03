@@ -65,13 +65,25 @@ class NbaCanonicalCutoverReadinessService
         if (! $report['ready_for_cutover']) {
             $blockers[] = 'canonical_coverage_not_ready';
         }
+        $inflight = Game::whereNotNull('sport_event_id')->whereHas('prediction')
+            ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_DELAYED', 'STATUS_IN_PROGRESS', 'STATUS_END_PERIOD', 'STATUS_HALFTIME', 'STATUS_SUSPENDED'])
+            ->when($season !== null, fn ($q) => $q->where('season', $season))
+            ->whereHas('sportEvent', fn ($q) => $q->where('starts_at', '<=', $start))
+            ->get(['id', 'sport_event_id']);
+        $nativeInflight = $this->predictions->queryForSport('nba', array_filter(['season' => $season]))
+            ->whereIn('predictions.sport_event_id', $inflight->pluck('sport_event_id'))
+            ->pluck('predictions.sport_event_id');
+        $inflightHolds = $inflight->whereNotIn('sport_event_id', $nativeInflight)->pluck('id')->values()->all();
+        if ($inflightHolds !== []) {
+            $blockers[] = 'inflight_legacy_baselines_require_compatibility';
+        }
         $transportReady = $blockers === [];
         if (! config('prediction_lifecycle.canonical_pipeline.nba')) {
             $blockers[] = 'canonical_pipeline_disabled';
         }
 
         return [...$report, 'selected_release_id' => $release?->id,
-            'unlinked_slate_game_ids' => $unlinked, 'slate_event_count' => $games->count(), 'full_model_forecast_event_count' => $fullModelEvents->count(),
+            'inflight_legacy_game_ids' => $inflightHolds, 'unlinked_slate_game_ids' => $unlinked, 'slate_event_count' => $games->count(), 'full_model_forecast_event_count' => $fullModelEvents->count(),
             'missing_full_model_forecast_game_ids' => $missing, 'readiness_blockers' => $blockers,
             'read_transport_ready' => $transportReady, 'model_performance_review_required' => true,
             'ready_for_cutover' => $blockers === [],

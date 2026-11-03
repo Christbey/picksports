@@ -10,7 +10,17 @@ let server;
 before(async () => {
     server = await createServer({
         configFile: false,
-        plugins: [vue()],
+        plugins: [
+            {
+                name: 'nba-cutover-api',
+                enforce: 'pre',
+                load(id) {
+                    if (id.endsWith('/composables/useApiV2Client.ts'))
+                        return 'export const useApiV2Client = () => globalThis.__nbaCutoverApi;';
+                },
+            },
+            vue(),
+        ],
         server: { middlewareMode: true, hmr: false, ws: false, watch: null },
         optimizeDeps: { noDiscovery: true, include: [] },
         resolve: {
@@ -137,4 +147,61 @@ test('NBA historical review labels distinguish observed pregame archives from un
         }),
     );
     assert.doesNotMatch(active, /Historical model forecast/);
+});
+
+test('missing native forecasts retain historical game loading while authentication and permissions still fail', async () => {
+    const { useDetailedGameData } = await server.ssrLoadModule(
+        '/resources/js/composables/useDetailedGameData.ts',
+    );
+    const { ApiError } = await server.ssrLoadModule(
+        '/resources/js/composables/useApiClient.ts',
+    );
+    for (const status of [404, 401, 403]) {
+        const archive = {
+            source: 'legacy_archive',
+            known_before_kickoff: true,
+            predicted_spread: 3.5,
+            predicted_total: 210,
+        };
+        globalThis.__nbaCutoverApi = {
+            games: {
+                show: async () => ({
+                    data: { id: 1, status: 'STATUS_FINAL' },
+                    historical_prediction: archive,
+                }),
+            },
+            predictions: {
+                forGame: async () => {
+                    throw new ApiError(new Response(null, { status }), {});
+                },
+            },
+            stats: {
+                teams: async () => ({ data: [] }),
+                players: async () => ({ data: [] }),
+            },
+        };
+        let state;
+        await renderToString(
+            createSSRApp({
+                async setup() {
+                    state = useDetailedGameData({ sport: 'nba', gameId: 1 });
+                    await state.reload();
+                    return () => '';
+                },
+            }),
+        );
+        if (status === 404) {
+            assert.equal(state.error.value, null);
+            assert.equal(state.game.value.id, 1);
+            assert.equal(state.prediction.value, null);
+            assert.equal(
+                state.historicalPrediction.value.source,
+                'legacy_archive',
+            );
+        } else {
+            assert.ok(state.error.value);
+            assert.equal(state.game.value, null);
+            assert.equal(state.historicalPrediction.value, null);
+        }
+    }
 });

@@ -30,6 +30,7 @@ function createCbbGameWithCompleteDetail(array $gameOverrides = [], array $lastP
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
         'status' => 'STATUS_FINAL',
+        'season_type' => 2,
         'home_score' => 79,
         'away_score' => 73,
         'game_date' => now()->subDay()->toDateString(),

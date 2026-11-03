@@ -89,7 +89,7 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                 }
             )?.historical_prediction;
             historicalPrediction.value =
-                options.sport === 'nba' &&
+                ['nba', 'cbb'].includes(options.sport) &&
                 archive &&
                 ['legacy_archive', 'legacy_history'].includes(archive.source)
                     ? archive

@@ -156,7 +156,9 @@ test('missing native forecasts retain historical game loading while authenticati
     const { ApiError } = await server.ssrLoadModule(
         '/resources/js/composables/useApiClient.ts',
     );
-    for (const status of [404, 401, 403]) {
+    for (const [sport, status] of ['nba', 'cbb'].flatMap((sport) =>
+        [404, 401, 403].map((status) => [sport, status]),
+    )) {
         const archive = {
             source: 'legacy_archive',
             known_before_kickoff: true,
@@ -184,7 +186,7 @@ test('missing native forecasts retain historical game loading while authenticati
         await renderToString(
             createSSRApp({
                 async setup() {
-                    state = useDetailedGameData({ sport: 'nba', gameId: 1 });
+                    state = useDetailedGameData({ sport, gameId: 1 });
                     await state.reload();
                     return () => '';
                 },

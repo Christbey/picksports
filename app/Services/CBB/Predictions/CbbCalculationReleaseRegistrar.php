@@ -21,7 +21,8 @@ class CbbCalculationReleaseRegistrar
         ?CarbonImmutable $effectiveAt = null,
     ): CalculationRelease {
         return $this->registrar->register(
-            $this->definition,
+            $semanticVersion === CbbFullModelReleaseDefinition::SEMANTIC_VERSION
+                ? new CbbFullModelReleaseDefinition : $this->definition,
             CbbCalculator::class,
             CbbInputSnapshotBuilder::class,
             $semanticVersion,

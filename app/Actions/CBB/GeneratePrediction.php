@@ -8,6 +8,7 @@ use App\Models\CBB\Prediction;
 use App\Models\CBB\TeamMetric;
 use App\Models\CBB\TeamStat;
 use App\Services\CBB\CbbDataQuality;
+use App\Services\CBB\CbbPregameEligibility;
 use App\Services\CBB\CbbSeasonInitializer;
 use App\Services\CBB\CbbSeasonInputs;
 use App\Services\Sports\SportsDateWindowService;
@@ -150,17 +151,6 @@ class GeneratePrediction extends AbstractCollegeBasketballPredictionGenerator
 
     protected function shouldGeneratePredictionForGame(Model $game, Model $homeTeam, Model $awayTeam): bool
     {
-        return ! $this->isPlaceholderTeam($homeTeam) && ! $this->isPlaceholderTeam($awayTeam);
-    }
-
-    private function isPlaceholderTeam(Model $team): bool
-    {
-        $school = strtoupper(trim((string) ($team->school ?? '')));
-        $abbreviation = strtoupper(trim((string) ($team->abbreviation ?? '')));
-        $espnId = (int) ($team->espn_id ?? 0);
-
-        return in_array($school, ['TBD', 'TBD2'], true)
-            || in_array($abbreviation, ['TBD', 'TBD2', 'WFF', 'FF'], true)
-            || $espnId < 0;
+        return app(CbbPregameEligibility::class)->teamsAreKnown($homeTeam, $awayTeam);
     }
 }

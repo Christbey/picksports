@@ -174,7 +174,10 @@ it('serves strict canonical college basketball reads after readiness passes', fu
     expect($readiness->report(2026)['ready_for_cutover'])->toBeFalse();
     app($definition['registrar'])->register(effectiveAt: now()->subMinute()->toImmutable());
     $prediction = app($definition['generator'])->execute($fixture['game']);
-    expect($readiness->report(2026)['ready_for_cutover'])->toBeTrue();
+    expect($readiness->report(2026)['ready_for_cutover'])->toBe($definition['sport'] !== 'cbb');
+    if ($definition['sport'] === 'cbb') {
+        expect($readiness->report(2026)['readiness_blockers'])->toContain('established_model_release_required');
+    }
 
     $user = User::factory()->create();
     config()->set('subscriptions.enforce_tiers', true);

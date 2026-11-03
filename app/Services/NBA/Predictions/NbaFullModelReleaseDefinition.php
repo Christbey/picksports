@@ -20,12 +20,18 @@ class NbaFullModelReleaseDefinition extends NbaCalculationReleaseDefinition
         return self::INPUT_SCHEMA_VERSION;
     }
 
+    /** @return list<string> */
+    public static function configurationKeys(): array
+    {
+        return ['nba.elo', 'nba.prediction', 'nba.season', 'nba.possession_coefficient'];
+    }
+
     public function configuration(): array
     {
         return [...parent::configuration(), 'forecast' => [
             'source' => self::FORECAST_SOURCE,
-            'configuration' => collect(['elo', 'prediction', 'season', 'possession_coefficient'])
-                ->mapWithKeys(fn (string $key): array => ['nba.'.$key => config('nba.'.$key)])->all(),
+            'configuration' => collect(self::configurationKeys())
+                ->mapWithKeys(fn (string $key): array => [$key => config($key)])->all(),
         ]];
     }
 }

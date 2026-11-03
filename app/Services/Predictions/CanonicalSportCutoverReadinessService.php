@@ -31,8 +31,11 @@ class CanonicalSportCutoverReadinessService
 
     public function __construct(private readonly CanonicalSportPredictionQuery $predictions) {}
 
-    /** @return array<string, mixed> */
-    /** @param list<string>|null $seasonTypes */
+    /**
+     * @param  list<string>|null  $seasonTypes
+     * @param  list<int>  $excludedEventIds  Intentional sport-specific holds, reported by the caller.
+     * @return array<string, mixed>
+     */
     public function report(
         string $sport,
         ?int $season = null,
@@ -41,6 +44,7 @@ class CanonicalSportCutoverReadinessService
         ?string $releaseVersion = null,
         ?CarbonImmutable $horizonStart = null,
         ?CarbonImmutable $horizonEnd = null,
+        array $excludedEventIds = [],
     ): array {
         $sport = strtolower(trim($sport));
         $gameModel = self::GAME_MODELS[$sport] ?? null;
@@ -60,7 +64,7 @@ class CanonicalSportCutoverReadinessService
             ? null
             : CarbonImmutable::parse($cutoverStartedAtValue);
         $scopedGames = $gameModel::query()
-            ->whereNotNull('sport_event_id')
+            ->whereNotNull('sport_event_id')->whereNotIn('sport_event_id', $excludedEventIds)
             ->whereIn('status', [
                 'STATUS_SCHEDULED',
                 'STATUS_DELAYED',
@@ -108,7 +112,7 @@ class CanonicalSportCutoverReadinessService
                 'season' => $season,
                 'week' => $week,
             ], fn (mixed $value): bool => $value !== null),
-        )->when(
+        )->whereNotIn('predictions.sport_event_id', $excludedEventIds)->when(
             $cutoverStartedAt !== null,
             fn ($query) => $query->where('sport_events.starts_at', '>=', $cutoverStartedAt),
         )->when(
@@ -116,7 +120,7 @@ class CanonicalSportCutoverReadinessService
             fn ($query) => $query->whereIn("{$sport}_games.season_type", $seasonTypes),
         );
         $historicalSafePredictionEventIds = (clone $historicalSafePredictions)
-            ->pluck('predictions.sport_event_id')
+            ->select('predictions.sport_event_id')->pluck('predictions.sport_event_id')
             ->map(fn (mixed $id): int => (int) $id)
             ->unique()
             ->values();
@@ -124,7 +128,7 @@ class CanonicalSportCutoverReadinessService
             ->when($horizonStart !== null, fn ($query) => $query->where('sport_events.starts_at', '>=', $horizonStart))
             ->when($horizonEnd !== null, fn ($query) => $query->where('sport_events.starts_at', '<=', $horizonEnd));
         $safePredictionEventIds = (clone $safePredictions)
-            ->pluck('predictions.sport_event_id')
+            ->select('predictions.sport_event_id')->pluck('predictions.sport_event_id')
             ->map(fn (mixed $id): int => (int) $id)
             ->unique()
             ->values();
@@ -132,7 +136,7 @@ class CanonicalSportCutoverReadinessService
         $historicalPublished = CanonicalPrediction::query()
             ->where('sport', $sport)
             ->where('phase', 'pregame')
-            ->where('publication_state', 'published')
+            ->where('publication_state', 'published')->whereNotIn('sport_event_id', $excludedEventIds)
             ->when($cutoverStartedAt !== null, fn ($query) => $query->whereHas(
                 'sportEvent',
                 fn ($query) => $query->where('starts_at', '>=', $cutoverStartedAt),

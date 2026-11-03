@@ -167,17 +167,15 @@ it('runs college basketball generation and evaluation commands idempotently', fu
         ->and(data_get(PredictionEvaluation::query()->sole()->actuals, 'home_margin'))->toBe(8);
 })->with('canonical college basketball sports');
 
-it('serves strict canonical college basketball reads after readiness passes', function (array $definition) {
+it('serves strict canonical college basketball reads without treating original rules as release readiness', function (array $definition) {
     $fixture = canonicalCollegeBasketballFixture($definition);
     $readiness = app($definition['readiness']);
 
     expect($readiness->report(2026)['ready_for_cutover'])->toBeFalse();
     app($definition['registrar'])->register(effectiveAt: now()->subMinute()->toImmutable());
     $prediction = app($definition['generator'])->execute($fixture['game']);
-    expect($readiness->report(2026)['ready_for_cutover'])->toBe($definition['sport'] !== 'cbb');
-    if ($definition['sport'] === 'cbb') {
-        expect($readiness->report(2026)['readiness_blockers'])->toContain('established_model_release_required');
-    }
+    expect($readiness->report(2026)['ready_for_cutover'])->toBeFalse();
+    expect($readiness->report(2026)['readiness_blockers'])->toContain('established_model_release_required');
 
     $user = User::factory()->create();
     config()->set('subscriptions.enforce_tiers', true);

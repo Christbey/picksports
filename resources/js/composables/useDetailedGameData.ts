@@ -3,6 +3,7 @@ import { useApiV2Client } from '@/composables/useApiV2Client';
 import { flattenApiV2Stats } from '@/composables/useApiV2StatsAdapter';
 import type {
     ApiEnvelope,
+    BasketballHistoricalPrediction,
     Game,
     Prediction,
     Team,
@@ -37,6 +38,9 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
     const homeTeam = ref<Team | null>(null);
     const awayTeam = ref<Team | null>(null);
     const prediction = ref<Prediction | Record<string, unknown> | null>(null);
+    const historicalPrediction = ref<BasketballHistoricalPrediction | null>(
+        null,
+    );
     const homeMetrics = ref<TeamMetric | null>(null);
     const awayMetrics = ref<TeamMetric | null>(null);
     const homeTeamStats = ref<TeamStatsEntry | null>(null);
@@ -72,6 +76,17 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                 }),
             ]);
 
+            const archive = (
+                gameData as unknown as {
+                    historical_prediction?: BasketballHistoricalPrediction | null;
+                }
+            )?.historical_prediction;
+            historicalPrediction.value =
+                options.sport === 'nba' &&
+                archive &&
+                ['legacy_archive', 'legacy_history'].includes(archive.source)
+                    ? archive
+                    : null;
             const fullGame = gameData?.data as unknown as Game | undefined;
             if (fullGame) {
                 game.value = fullGame;
@@ -249,6 +264,7 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
         homeTeam,
         awayTeam,
         prediction,
+        historicalPrediction,
         homeMetrics,
         awayMetrics,
         homeTeamStats,

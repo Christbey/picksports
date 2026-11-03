@@ -21,7 +21,8 @@ class NbaCalculationReleaseRegistrar
         ?CarbonImmutable $effectiveAt = null,
     ): CalculationRelease {
         return $this->registrar->register(
-            $this->definition,
+            $semanticVersion === NbaFullModelReleaseDefinition::SEMANTIC_VERSION
+                ? new NbaFullModelReleaseDefinition : $this->definition,
             NbaCalculator::class,
             NbaInputSnapshotBuilder::class,
             $semanticVersion,

@@ -1,0 +1,140 @@
+import assert from 'node:assert/strict';
+import { after, before, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { createServer } from 'vite';
+import vue from '@vitejs/plugin-vue';
+import { createSSRApp } from 'vue';
+import { renderToString } from 'vue/server-renderer';
+import { predictionHomeMargin } from '../../resources/js/lib/predictionSpread.ts';
+let server;
+before(async () => {
+    server = await createServer({
+        configFile: false,
+        plugins: [vue()],
+        server: { middlewareMode: true, hmr: false, ws: false, watch: null },
+        optimizeDeps: { noDiscovery: true, include: [] },
+        resolve: {
+            alias: {
+                '@': fileURLToPath(
+                    new URL('../../resources/js', import.meta.url),
+                ),
+            },
+        },
+    });
+});
+after(async () => {
+    await server?.close();
+});
+
+test('native home handicaps become margins while dashboards and legacy records retain their convention', () => {
+    const native = {
+        phase: 'pregame',
+        revision: 1,
+        game: { status: 'STATUS_SCHEDULED' },
+        predicted_spread: -6.5,
+    };
+    assert.equal(predictionHomeMargin(native), 6.5);
+    assert.equal(
+        predictionHomeMargin({ ...native, predicted_spread: 6.5 }),
+        -6.5,
+    );
+    assert.equal(
+        predictionHomeMargin({
+            ...native,
+            game: 'Away at Home',
+            predicted_spread: 6.5,
+        }),
+        6.5,
+    );
+    assert.equal(predictionHomeMargin({ predicted_spread: 6.5 }), 6.5);
+    assert.equal(
+        predictionHomeMargin({ ...native, predicted_spread: null }),
+        null,
+    );
+});
+
+test('NBA CBB WNBA and WCBB card and game-page adapters preserve the same native margin', async () => {
+    const { normalizePrediction } = await server.ssrLoadModule(
+        '/resources/js/composables/useBasketballGamePage.ts',
+    );
+    const { normalizePredictionLiveState } = await server.ssrLoadModule(
+        '/resources/js/composables/usePredictionLiveData.ts',
+    );
+    for (const sport of ['nba', 'cbb', 'wnba', 'wcbb']) {
+        const native = {
+            sport,
+            phase: 'pregame',
+            revision: 1,
+            home_win_probability: 0.6,
+            away_win_probability: 0.4,
+            predicted_spread: -6.5,
+            predicted_total: 220,
+            game: { status: 'STATUS_SCHEDULED' },
+        };
+        assert.equal(normalizePrediction(native).predicted_spread, 6.5);
+        assert.equal(
+            normalizePredictionLiveState({
+                ...native,
+                game: null,
+                predicted_spread: 6.5,
+            }).preGamePredictedSpread,
+            6.5,
+        );
+        assert.equal(
+            normalizePredictionLiveState(native).preGamePredictedSpread,
+            6.5,
+        );
+        assert.equal(
+            normalizePredictionLiveState({
+                ...native,
+                game: 'Away at Home',
+                predicted_spread: 6.5,
+            }).preGamePredictedSpread,
+            6.5,
+        );
+    }
+});
+
+test('NBA historical review labels distinguish observed pregame archives from unverified stored values', async () => {
+    const { default: component } = await server.ssrLoadModule(
+        '/resources/js/components/game-page/BasketballGameInsights.vue',
+    );
+    for (const known of [true, false]) {
+        const html = await renderToString(
+            createSSRApp(component, {
+                gameStatus: 'STATUS_FINAL',
+                homeTeamId: 1,
+                showRecap: false,
+                showMetrics: false,
+                formatNumber: String,
+                getBetterValue: () => null,
+                historicalPrediction: {
+                    source: known ? 'legacy_archive' : 'legacy_history',
+                    known_before_kickoff: known,
+                    predicted_spread: 3.5,
+                    predicted_total: 210,
+                },
+            }),
+        );
+        assert.match(
+            html,
+            known ? /observed before kickoff/ : /pregame timing is unverified/,
+        );
+        assert.match(html, /no betting approval/);
+    }
+    const active = await renderToString(
+        createSSRApp(component, {
+            gameStatus: 'STATUS_SCHEDULED',
+            homeTeamId: 1,
+            showRecap: false,
+            showMetrics: false,
+            formatNumber: String,
+            getBetterValue: () => null,
+            historicalPrediction: {
+                source: 'legacy_history',
+                known_before_kickoff: false,
+            },
+        }),
+    );
+    assert.doesNotMatch(active, /Historical model forecast/);
+});

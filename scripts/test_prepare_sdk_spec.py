@@ -29,6 +29,9 @@ class SdkSpecificationTest(unittest.TestCase):
         self.assertEqual(convert({"properties": {"forbidden": False}, "additionalProperties": False}), {"properties": {"forbidden": {"not": {}}}, "additionalProperties": False})
         self.assertEqual(convert({"const": True}), {"type": "boolean", "x-json-schema-const": True})
 
+    def test_transports_opaque_json_union_without_losing_wire_values(self):
+        self.assertEqual(convert({"oneOf": [{"type": "object", "additionalProperties": True}, {"type": "array", "maxItems": 0}]}), {"description": "Opaque JSON object or array; transported without conversion."})
+
     def test_rejects_different_authentication_transports(self):
         source = json.loads((pathlib.Path(__file__).resolve().parents[1] / "docs/openapi-v2.json").read_text())
         source["components"]["securitySchemes"]["developerApiCredential"]["scheme"] = "basic"

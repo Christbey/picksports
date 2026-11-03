@@ -57,6 +57,15 @@ def convert(value):
             else:
                 value[key] = remaining
             value["nullable"] = True
+    for key in ["oneOf", "anyOf"]:
+        branches = value.get(key, [])
+        if len(branches) == 2 and {item.get("type") for item in branches} == {"object", "array"}:
+            object_branch = next(item for item in branches if item.get("type") == "object")
+            array_branch = next(item for item in branches if item.get("type") == "array")
+            items = array_branch.get("items", {})
+            if not object_branch.get("properties") and object_branch.get("additionalProperties", True) is True and (items == {} or (items.get("type") == "object" and not items.get("properties"))):
+                value.pop(key)
+                value["description"] = "Opaque JSON object or array; transported without conversion."
     return {key: convert(item) for key, item in value.items()}
 
 

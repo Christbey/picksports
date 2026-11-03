@@ -3,11 +3,10 @@
 namespace App\Console\Commands\CBB;
 
 use App\Actions\CBB\GenerateCanonicalPrediction;
+use App\Console\Commands\Sports\Canonical\AbstractGenerateCollegeBasketballCanonicalPredictionsCommand;
 use App\Models\CBB\Game;
-use App\Services\CBB\CbbPregameEligibility;
-use Illuminate\Console\Command;
 
-class GenerateCanonicalPredictionsCommand extends Command
+class GenerateCanonicalPredictionsCommand extends AbstractGenerateCollegeBasketballCanonicalPredictionsCommand
 {
     protected $signature = 'cbb:generate-canonical-predictions
         {--game= : Generate for one CBB game ID}
@@ -18,56 +17,18 @@ class GenerateCanonicalPredictionsCommand extends Command
 
     protected $description = 'Generate canonical CBB predictions through the snapshot and calculation-release lifecycle';
 
-    public function handle(GenerateCanonicalPrediction $generator): int
+    protected function gameClass(): string
     {
-        $query = Game::query()
-            ->with(['sportEvent', 'homeTeam', 'awayTeam'])
-            ->whereNotNull('sport_event_id')
-            ->whereHas('sportEvent', fn ($query) => $query->where('starts_at', '>=', now()))
-            ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_DELAYED'])
-            ->orderBy('game_date')
-            ->orderBy('id');
+        return Game::class;
+    }
 
-        if (! filled($this->option('game')) && ! filled($this->option('date'))) {
-            $end = now()->addDays(max(0, (int) $this->option('days-forward')));
-            $query->whereHas('sportEvent', fn ($query) => $query->where('starts_at', '<=', $end));
-        }
-        if (filled($this->option('game'))) {
-            $query->whereKey((int) $this->option('game'));
-        }
-        if (filled($this->option('season'))) {
-            $query->where('season', (int) $this->option('season'));
-        }
-        if (filled($this->option('date'))) {
-            $query->whereDate('game_date', (string) $this->option('date'));
-        }
+    protected function generatorClass(): string
+    {
+        return GenerateCanonicalPrediction::class;
+    }
 
-        $games = $query->get();
-        if ($games->isEmpty()) {
-            $this->warn('No eligible linked CBB games matched the request.');
-
-            return self::SUCCESS;
-        }
-
-        $eligibility = app(CbbPregameEligibility::class);
-        foreach ($games->reject(fn ($game) => $eligibility->teamsAreKnown($game->homeTeam, $game->awayTeam)) as $held) {
-            $this->warn("Game {$held->id} held: placeholder matchup requires known teams.");
-        }
-        $games = $games->filter(fn ($game) => $eligibility->teamsAreKnown($game->homeTeam, $game->awayTeam));
-        $succeeded = 0;
-        $failures = 0;
-        foreach ($games as $game) {
-            try {
-                $generator->execute($game, ! $this->option('draft'), 'artisan');
-                $succeeded++;
-            } catch (\Throwable $exception) {
-                $failures++;
-                $this->error("Game {$game->getKey()}: {$exception->getMessage()}");
-            }
-        }
-
-        $this->info("Canonical CBB generation complete: {$succeeded} succeeded, {$failures} failed.");
-
-        return $failures === 0 ? self::SUCCESS : self::FAILURE;
+    protected function sportLabel(): string
+    {
+        return 'CBB';
     }
 }

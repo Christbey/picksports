@@ -60,7 +60,7 @@ class SportGameController extends Controller
 
         return response()->json([
             'data' => new SportGameResource($resolvedGame, $context),
-            ...(in_array($context->slug, ['nba', 'cbb', 'mlb'], true) ? ['historical_prediction' => app(HistoricalForecastArchive::class)->forGame($resolvedGame, $context->slug)] : []),
+            ...(in_array($context->slug, ['nba', 'cbb', 'mlb', 'wcbb'], true) ? ['historical_prediction' => app(HistoricalForecastArchive::class)->forGame($resolvedGame, $context->slug)] : []),
             'meta' => [
                 'sport' => $context->slug,
                 'freshness' => [],

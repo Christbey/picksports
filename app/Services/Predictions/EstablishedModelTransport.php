@@ -30,13 +30,7 @@ class EstablishedModelTransport
             || array_diff($expectedKeys, array_keys($frozen)) !== []) {
             throw new PredictionLifecycleException($label.' full-model configuration is unavailable.');
         }
-        $original = collect(array_keys($frozen))->mapWithKeys(fn (string $key): array => [$key => config($key)])->all();
-        try {
-            config($frozen);
-            $preview = $previewModel();
-        } finally {
-            config($original);
-        }
+        $preview = $this->usingConfiguration($frozen, $previewModel);
         if ($preview === null) {
             throw new PredictionLifecycleException($label.' established model inputs are unavailable.');
         }
@@ -66,6 +60,19 @@ class EstablishedModelTransport
             pregameSafetyStatus: $snapshot->pregameSafetyStatus,
             metadata: [...$snapshot->metadata, 'established_model_configuration' => 'frozen_release'],
         );
+    }
+
+    /** @param array<string, mixed> $configuration */
+    public function usingConfiguration(array $configuration, Closure $callback): mixed
+    {
+        $original = collect(array_keys($configuration))->mapWithKeys(fn (string $key): array => [$key => config($key)])->all();
+        try {
+            config($configuration);
+
+            return $callback();
+        } finally {
+            config($original);
+        }
     }
 
     public function calculate(EventInputSnapshotData $snapshot, CalculationReleaseData $release, string $sport, string $schema, string $expectedSource): PredictionOutput

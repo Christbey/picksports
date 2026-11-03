@@ -18,7 +18,7 @@ class HistoricalForecastArchive
     /** @return array<string, mixed>|null */
     public function forGame(Model $game, string $sport): ?array
     {
-        $models = ['nba' => [Game::class, Prediction::class], 'cbb' => [\App\Models\CBB\Game::class, \App\Models\CBB\Prediction::class], 'mlb' => [\App\Models\MLB\Game::class, \App\Models\MLB\Prediction::class]];
+        $models = ['nba' => [Game::class, Prediction::class], 'cbb' => [\App\Models\CBB\Game::class, \App\Models\CBB\Prediction::class], 'wcbb' => [\App\Models\WCBB\Game::class, \App\Models\WCBB\Prediction::class], 'mlb' => [\App\Models\MLB\Game::class, \App\Models\MLB\Prediction::class]];
         if (! isset($models[$sport]) || ! $game instanceof $models[$sport][0]) {
             return null;
         }

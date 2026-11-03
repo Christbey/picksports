@@ -18,7 +18,7 @@ abstract class AbstractGenerateCanonicalPredictionsCommand extends Command
 
                 if ($horizon !== null) {
                     $query->where('starts_at', '<=', $horizon['end']);
-                } elseif ($this->getDefinition()->hasOption('days-forward') && filled($this->option('days-forward'))) {
+                } elseif ($this->applyDaysForwardOption() && $this->getDefinition()->hasOption('days-forward') && filled($this->option('days-forward'))) {
                     $query->where('starts_at', '<=', now(config('sports.business_timezone', config('app.timezone')))->addDays(max(0, (int) $this->option('days-forward')))->endOfDay()->utc());
                 }
             })
@@ -52,6 +52,12 @@ abstract class AbstractGenerateCanonicalPredictionsCommand extends Command
         $failures = 0;
         foreach ($games as $game) {
             try {
+                $hold = $this->generationHoldReason($game);
+                if ($hold !== null) {
+                    $this->warn("Game {$game->getKey()} held: {$hold}");
+
+                    continue;
+                }
                 $this->generateGame($game, $generator);
                 $succeeded++;
             } catch (\Throwable $exception) {
@@ -64,6 +70,16 @@ abstract class AbstractGenerateCanonicalPredictionsCommand extends Command
         $this->info("Canonical {$this->sportLabel()} generation complete: {$succeeded} succeeded, {$failures} failed.");
 
         return $failures === 0 ? self::SUCCESS : self::FAILURE;
+    }
+
+    protected function applyDaysForwardOption(): bool
+    {
+        return true;
+    }
+
+    protected function generationHoldReason(Model $game): ?string
+    {
+        return null;
     }
 
     protected function configureBatch(int $count): void {}

@@ -41,7 +41,7 @@ class EstablishedModelCutoverReadiness
             ->when($season !== null, fn ($q) => $q->where('season', $season))
             ->whereHas('sportEvent', fn ($q) => $q->whereBetween('starts_at', [$start, $end]))
             ->when($eligible !== null || $identityMatches !== null, fn ($q) => $q->with(['homeTeam', 'awayTeam', 'sportEvent:id,starts_at,neutral_site']))
-            ->get(['id', 'sport_event_id', 'home_team_id', 'away_team_id', 'game_date', 'game_time', ...($sport === 'mlb' ? [] : ['neutral_site'])]);
+            ->get(['id', 'sport_event_id', 'home_team_id', 'away_team_id', 'season', 'season_type', 'game_date', 'game_time', ...($sport === 'mlb' ? [] : ['neutral_site'])]);
         $scheduledCount = $games->count();
         $held = $eligible === null ? collect() : $games->reject($eligible);
         $games = $eligible === null ? $games : $games->filter($eligible);

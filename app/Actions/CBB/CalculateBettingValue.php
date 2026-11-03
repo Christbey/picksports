@@ -18,6 +18,12 @@ class CalculateBettingValue
             return null;
         }
 
+        if ($game->odds_updated_at === null || $game->odds_updated_at->lt(now()->subHours(36))
+            || data_get($prediction->model_metadata, 'statistical_inputs_available') !== true
+            || data_get($prediction->model_metadata, 'provisional', true)) {
+            return null;
+        }
+
         $recommendations = [];
 
         // Extract markets from odds data

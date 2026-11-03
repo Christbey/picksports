@@ -5,6 +5,7 @@ namespace App\Actions\Sports;
 use App\Actions\Sports\Concerns\AppliesTrueEpaPredictionBlend;
 use App\Services\NBA\WinProbabilityCalibrationInferenceService;
 use App\Support\Odds\MarketSpread;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPredictionGenerator
@@ -43,6 +44,13 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         }
 
         return static::TEAM_STAT_MODEL;
+    }
+
+    protected function constrainStatGames(Builder $query): void {}
+
+    protected function spreadComponentWeights(?Model $homeMetrics, ?Model $awayMetrics, array $homeForm, array $awayForm, array $config): array
+    {
+        return ['elo' => $config['elo_weight'], 'efficiency' => $config['efficiency_weight'], 'form' => $config['form_weight']];
     }
 
     protected function calculatePredictedSpread(
@@ -84,9 +92,10 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         $turnoverAdj = $this->calculateTurnoverAdjustment($game, $config);
         $reboundAdj = $this->calculateReboundAdjustment($game, $config);
 
-        $modelSpread = ($config['elo_weight'] * $eloSpread)
-            + ($config['efficiency_weight'] * $efficiencySpread)
-            + ($config['form_weight'] * $formSpread)
+        $weights = $this->spreadComponentWeights($homeMetrics, $awayMetrics, $homeForm, $awayForm, $config);
+        $modelSpread = ($weights['elo'] * $eloSpread)
+            + ($weights['efficiency'] * $efficiencySpread)
+            + ($weights['form'] * $formSpread)
             + $restAdj
             + $turnoverAdj
             + $reboundAdj;
@@ -102,6 +111,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         );
 
         $this->metadata = [
+            'spread_component_weights' => $weights,
             'home_recent_form' => $homeFormNet,
             'away_recent_form' => $awayFormNet,
             'rest_days_home' => $restHome,
@@ -204,6 +214,11 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         return round($calibrationResult['calibrated_total'], 1);
     }
 
+    protected function winProbabilityCalibration(float $baseline): array
+    {
+        return app(WinProbabilityCalibrationInferenceService::class)->calibrate($this->getSport(), $baseline);
+    }
+
     protected function buildPredictionData(
         int $homeElo,
         int $awayElo,
@@ -215,8 +230,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         float $confidenceScore
     ): array {
         $defaultEfficiency = config("{$this->getSport()}.prediction.default_efficiency");
-        $calibration = app(WinProbabilityCalibrationInferenceService::class)
-            ->calibrate($this->getSport(), $winProbability);
+        $calibration = $this->winProbabilityCalibration($winProbability);
         $this->winProbabilityCalibrationMetadata = $calibration;
 
         $activeWinProbability = round((float) ($calibration['active_win_probability'] ?? $winProbability), 3);
@@ -308,6 +322,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
 
         $recentGames = $gameModel::query()
             ->where('status', 'STATUS_FINAL')
+            ->tap(fn (Builder $query) => $this->constrainStatGames($query))
             ->where('game_date', '<', $game->game_date)
             ->where('season', $season)
             ->where(function ($q) use ($team) {
@@ -364,6 +379,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         $defEff = $weightedDefEff / $totalWeight;
 
         return [
+            'games_count' => $stats->count(),
             'off_eff' => round($offEff, 1),
             'def_eff' => round($defEff, 1),
             'net_rating' => round($offEff - $defEff, 3),
@@ -532,7 +548,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         return round($avgTeamRebounds - $avgOpponentRebounds, 2);
     }
 
-    private function getVegasSpread(Model $game): ?float
+    protected function getVegasSpread(Model $game): ?float
     {
         $oddsData = $game->odds_data;
 
@@ -913,6 +929,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
 
         $recentGames = $gameModel::query()
             ->where('status', 'STATUS_FINAL')
+            ->tap(fn (Builder $query) => $this->constrainStatGames($query))
             ->where('game_date', '<', $game->game_date)
             ->where('season', $season)
             ->where(function ($q) use ($team) {
@@ -1054,6 +1071,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
     private function defaultRecentForm(float $defaultEfficiency, float $defaultPace): array
     {
         return [
+            'games_count' => 0,
             'off_eff' => $defaultEfficiency,
             'def_eff' => $defaultEfficiency,
             'net_rating' => 0.0,
@@ -1069,6 +1087,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         $gameModel = $this->getGameModel();
         $query = $gameModel::query()
             ->where('status', 'STATUS_FINAL')
+            ->tap(fn (Builder $query) => $this->constrainStatGames($query))
             ->where('game_date', '<', $game->game_date)
             ->where('season', $season);
 

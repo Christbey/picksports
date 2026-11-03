@@ -603,18 +603,25 @@ $scheduleSportPipeline(
     'CBB',
     $basketballSeasonYear,
     $cbbInSeason,
-    [
-        'grade-predictions' => '05:00',
-        'calculate-elo' => '05:30',
-        'calculate-team-metrics' => '06:00',
-        'generate-predictions' => '06:30',
-    ],
+    [],
     'cbb:sync-odds',
     'CBB: Sync Odds',
     'cbb:sync-player-props',
     12,
     17,
     'CBB: Sync Player Props'
+);
+$scheduleDailySeasonJob(
+    "cbb:run-pregame-pipeline --season={$basketballSeasonYear}",
+    '06:30',
+    $cbbInSeason,
+    'CBB: Run Pregame Pipeline'
+);
+$scheduleDailySeasonJob(
+    "cbb:season-readiness --season={$basketballSeasonYear} --json",
+    '07:00',
+    $cbbInSeason,
+    'CBB: Season Readiness'
 );
 $cbbCanonicalPipelineEnabled = fn (): bool => $cbbInSeason()
     && (bool) config('prediction_lifecycle.canonical_pipeline.cbb', false);
@@ -623,12 +630,6 @@ $scheduleDailySeasonJob(
     '05:05',
     $cbbCanonicalPipelineEnabled,
     'CBB: Evaluate Canonical Predictions'
-);
-$scheduleDailySeasonJob(
-    "cbb:generate-canonical-predictions --season={$basketballSeasonYear}",
-    '06:35',
-    $cbbCanonicalPipelineEnabled,
-    'CBB: Generate Canonical Predictions'
 );
 $scheduleDailySeasonJob(
     "cbb:generate-tournament-forecast --season={$basketballSeasonYear}",

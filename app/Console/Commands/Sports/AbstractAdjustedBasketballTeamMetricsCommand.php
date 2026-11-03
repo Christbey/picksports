@@ -37,7 +37,7 @@ abstract class AbstractAdjustedBasketballTeamMetricsCommand extends Command
     public function handle(): int
     {
         $calculateMetrics = app($this->calculateMetricsActionClass());
-        $season = $this->option('season') ?? date('Y');
+        $season = $this->option('season') ?? $this->defaultSeason();
 
         $singleTeamResult = $this->handleSingleTeamMetricsCalculation(
             $season,
@@ -211,5 +211,10 @@ abstract class AbstractAdjustedBasketballTeamMetricsCommand extends Command
     protected function commandDescription(): string
     {
         return $this->requiredString(static::COMMAND_DESCRIPTION, 'COMMAND_DESCRIPTION must be defined.');
+    }
+
+    protected function defaultSeason(): int
+    {
+        return (int) date('Y');
     }
 }

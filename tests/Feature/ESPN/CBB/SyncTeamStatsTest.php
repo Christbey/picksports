@@ -9,6 +9,7 @@ beforeEach(function () {
     $this->homeTeam = Team::factory()->create(['espn_id' => '52']);
     $this->awayTeam = Team::factory()->create(['espn_id' => '150']);
     $this->game = Game::factory()->create([
+        'status' => 'STATUS_IN_PROGRESS',
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
     ]);

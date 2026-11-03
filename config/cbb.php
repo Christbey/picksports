@@ -30,7 +30,8 @@ return [
     */
 
     'season' => [
-        'default' => env('CBB_DEFAULT_SEASON', 2026),
+        'default' => env('CBB_DEFAULT_SEASON'),
+        'analytics_types' => [2, 3],
         'types' => [
             'preseason' => 1,
             'regular' => 2,
@@ -266,6 +267,10 @@ return [
     */
 
     'prediction' => [
+        'season_inputs' => [
+            'transition_games' => 8,
+            'prior_retention' => 0.5,
+        ],
         'elo_to_spread_divisor' => 30,
         'average_pace' => 70.0,
         'default_efficiency' => 100.0,

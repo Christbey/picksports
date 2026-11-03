@@ -477,7 +477,15 @@ export interface PredictionSummary {
         odds_updated_at?: string | null;
         [key: string]: unknown;
     } | null;
+    evidence?: {
+        run_type?: string | null;
+        provisional?: boolean | null;
+        pregame_safe?: boolean | null;
+    } | null;
     audit_context?: {
+        run_type?: string | null;
+        provisional?: boolean | null;
+        pregame_safe?: boolean | null;
         prediction_generated_at?: string | null;
         prediction_locked_at?: string | null;
         feature_snapshot_at?: string | null;

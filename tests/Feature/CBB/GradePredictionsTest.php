@@ -33,3 +33,16 @@ it('stores ats grading fields using the stored vegas spread snapshot', function 
         ->and($prediction->ats_pick_result)->toBe('win')
         ->and((float) $prediction->ats_pick_edge)->toBe(3.0);
 });
+
+it('regrades corrected final scores without changing the stored forecast', function (): void {
+    $game = Game::factory()->create(['season' => 2027, 'status' => 'STATUS_FINAL', 'home_score' => 80, 'away_score' => 70]);
+    $prediction = Prediction::factory()->create(['game_id' => $game->id, 'predicted_spread' => 7.5, 'predicted_total' => 148.0]);
+    app(GradePredictions::class)->executeForGame($game->id);
+    $game->update(['home_score' => 68, 'away_score' => 70]);
+    $result = app(GradePredictions::class)->executeForGame($game->id);
+    $prediction->refresh();
+    expect($result['graded'])->toBe(1)->and((float) $prediction->actual_spread)->toBe(-2.0)
+        ->and((float) $prediction->predicted_spread)->toBe(7.5)
+        ->and($prediction->winner_correct)->toBeFalse();
+    expect(app(GradePredictions::class)->executeForGame($game->id)['graded'])->toBe(0);
+});

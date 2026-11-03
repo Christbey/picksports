@@ -6,6 +6,7 @@ use App\Console\Commands\ESPN\Concerns\ResolvesJobClass;
 use App\Console\Commands\ESPN\Concerns\ResolvesSportCode;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
+use Throwable;
 
 abstract class AbstractSyncGameDetailsCommand extends Command
 {
@@ -71,20 +72,40 @@ abstract class AbstractSyncGameDetailsCommand extends Command
         $bar = $this->output->createProgressBar($games->count());
         $bar->start();
 
+        $failed = 0;
         foreach ($games as $game) {
-            $this->dispatchGameDetailsSync((string) $game->espn_event_id);
+            try {
+                $this->dispatchGameDetailsSync((string) $game->espn_event_id);
+            } catch (Throwable $exception) {
+                if (! $this->continueAfterDetailFailure()) {
+                    throw $exception;
+                }
+                $failed++;
+                report($exception);
+                $this->error('Game '.$game->id.': '.$exception->getMessage());
+            }
             $bar->advance();
         }
 
         $bar->finish();
         $this->newLine(2);
 
+        if ($failed > 0) {
+            $this->error("{$failed} of {$games->count()} detail imports failed; remaining games were still attempted.");
+
+            return Command::FAILURE;
+        }
         $this->info($this->shouldRunSynchronously()
             ? "Ran {$games->count()} game details sync jobs successfully."
             : "Dispatched {$games->count()} game details sync jobs successfully."
         );
 
         return Command::SUCCESS;
+    }
+
+    protected function continueAfterDetailFailure(): bool
+    {
+        return false;
     }
 
     protected function pendingGamesDescriptor(): string

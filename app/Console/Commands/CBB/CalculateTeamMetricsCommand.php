@@ -6,6 +6,7 @@ use App\Actions\CBB\CalculateTeamMetrics;
 use App\Console\Commands\Sports\AbstractAdjustedBasketballTeamMetricsCommand;
 use App\Models\CBB\Team;
 use App\Models\CBB\TeamMetric;
+use App\Support\BasketballSeason;
 
 class CalculateTeamMetricsCommand extends AbstractAdjustedBasketballTeamMetricsCommand
 {
@@ -20,4 +21,9 @@ class CalculateTeamMetricsCommand extends AbstractAdjustedBasketballTeamMetricsC
     protected const TEAM_METRIC_MODEL_CLASS = TeamMetric::class;
 
     protected const METRICS_CONFIG_PREFIX = 'cbb';
+
+    protected function defaultSeason(): int
+    {
+        return BasketballSeason::forDate();
+    }
 }

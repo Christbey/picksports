@@ -20,6 +20,7 @@ use App\Models\WCBB\TournamentForecast as WcbbTournamentForecast;
 use App\Services\NFL\TeamPlayoffForecastService;
 use App\Services\Sports\FuturesEdgeService;
 use App\Services\Sports\FuturesOddsLookupService;
+use App\Support\BasketballSeason;
 use App\Support\SportsViewCache;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -237,7 +238,7 @@ class SportForecastQuery
      */
     private function cbb(SportContext $context, array $filters): array
     {
-        $season = (int) ($filters['season'] ?? config('cbb.season.default'));
+        $season = (int) ($filters['season'] ?? (config('cbb.season.default') ?? BasketballSeason::forDate()));
         $sortBy = $this->sortBy($filters, [
             'champion_probability',
             'tournament_make_probability',

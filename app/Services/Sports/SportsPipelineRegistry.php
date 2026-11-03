@@ -230,8 +230,8 @@ class SportsPipelineRegistry
                 ]),
             ],
             'cbb' => [
-                $this->step('Sync current window', 'espn:sync-cbb-current'),
-                $this->step('Sync game details', 'espn:sync-cbb-game-details'),
+                $this->step('Sync current window', 'espn:sync-cbb-games-scoreboard', ['--sync' => true, '--from-date' => $referenceDate->toDateString(), '--to-date' => $referenceDate->copy()->addDays(2)->toDateString()]),
+                $this->step('Sync game details', 'espn:sync-cbb-game-details', ['--sync' => true, '--lookback-days' => 7, '--days-forward' => 0, '--limit' => 25, '--latest' => true]),
                 $this->step('Sync injuries', 'espn:sync-cbb-injuries'),
                 $this->step('Sync odds', 'cbb:sync-odds'),
                 $this->step('Sync player props', 'cbb:sync-player-props'),

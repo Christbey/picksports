@@ -7,9 +7,23 @@ use App\Models\CBB\Game;
 use App\Models\CBB\Play;
 use App\Models\CBB\Team;
 use App\Models\CBB\TeamMetric;
+use App\Services\CBB\CbbDataQuality;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
 
 class CalculateTeamMetrics extends AbstractCollegeBasketballCalculateTeamMetrics
 {
+    protected function getCompletedGamesForTeam(Model $team, int $season, string $sport, int|string|null $seasonType = null): Collection
+    {
+        return app(CbbDataQuality::class)->reconciledGames(Game::query())
+            ->where('season', $season)
+            ->whereIn('season_type', $seasonType === null ? [2, 3, 'regular', 'postseason'] : [$seasonType])
+            ->where(fn (Builder $query) => $query->where('home_team_id', $team->id)->orWhere('away_team_id', $team->id))
+            ->with(['teamStats', 'homeTeam', 'awayTeam'])->orderBy('game_date')->orderBy('id')->get()
+            ->filter(fn (Game $game): bool => app(CbbDataQuality::class)->boxScoreIssues($game, $game->teamStats) === []);
+    }
+
     protected function teamModelClass(): string
     {
         return Team::class;

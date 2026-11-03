@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\CBB\Prediction as CbbPrediction;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
+use App\Services\CBB\CbbForecastEvidence;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -117,6 +119,9 @@ class PerformanceStatistics
             ->join($gamesTable, "{$table}.game_id", '=', "{$gamesTable}.id")
             ->whereNotNull("{$table}.graded_at");
 
+        if ($sport === 'cbb') {
+            $query->whereIn('cbb_predictions.id', app(CbbForecastEvidence::class)->cohort(CbbPrediction::query(), 'pregame')->select('cbb_predictions.id'));
+        }
         if ($fromDate) {
             $query->whereDate("{$gamesTable}.game_date", '>=', $fromDate);
         }
@@ -267,6 +272,7 @@ class PerformanceStatistics
             ->join($gamesTable, "{$table}.game_id", '=', "{$gamesTable}.id")
             ->whereNotNull("{$table}.graded_at")
             ->whereNotNull("{$table}.winner_correct")
+            ->when($sport === 'cbb', fn ($query) => $query->whereIn('cbb_predictions.id', app(CbbForecastEvidence::class)->cohort(CbbPrediction::query(), 'pregame')->select('cbb_predictions.id')))
             ->max("{$gamesTable}.season");
 
         return $this->latestGradedSeasonMemo[$sport] = is_numeric($season)

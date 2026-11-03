@@ -4,6 +4,7 @@ use App\Models\NBA\Game;
 use App\Models\NBA\TeamMetric;
 use App\Models\NBA\TeamStat;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -27,10 +28,26 @@ function calculationReviewGame(string $sport): array
     $game = $gc::factory()->create([
         'home_team_id' => $home->id, 'away_team_id' => $away->id,
         'season' => 2027, 'season_type' => 2, 'status' => 'STATUS_SCHEDULED',
-        'game_date' => '2026-10-21', 'game_time' => '23:00:00', 'odds_data' => null,
+        'game_date' => '2026-10-21', 'game_time' => '23:00:00', 'odds_data' => null, 'odds_updated_at' => now(),
     ]);
 
     return [$game, $home, $away, $ac];
+}
+
+function calculationReviewStat(string $sport, string $statClass, array $attributes): Model
+{
+    if ($sport === 'cbb') {
+        $points = $attributes['points'];
+        $attributes += ['field_goals_made' => intdiv($points, 2), 'field_goals_attempted' => intdiv($points, 2) + 15,
+            'three_point_made' => 0, 'three_point_attempted' => 0, 'free_throws_made' => $points % 2, 'free_throws_attempted' => 2];
+    }
+    $stat = $statClass::factory()->create($attributes);
+    if ($sport === 'cbb') {
+        $game = App\Models\CBB\Game::findOrFail($stat->game_id);
+        $game->update(['season_type' => 2, $stat->team_id === $game->home_team_id ? 'home_score' : 'away_score' => $stat->points]);
+    }
+
+    return $stat;
 }
 
 it('moves toward a home favorite when blending the bookmaker spread', function (string $sport) {
@@ -148,6 +165,26 @@ it('does not blend home and away venue scoring splits into a neutral site total'
             TeamStat::factory()->create(['game_id' => $prior->id, 'team_id' => $team->id, 'points' => 140, 'possessions' => 100]);
         }
     }
+    if ($sport === 'cbb') {
+        $prior = App\Models\CBB\Game::factory()->create([
+            'home_team_id' => $home->id, 'away_team_id' => $away->id,
+            'season' => 2027, 'season_type' => 2, 'status' => 'STATUS_FINAL',
+            'game_date' => '2026-10-19', 'neutral_site' => false,
+        ]);
+        foreach ([$home, $away] as $team) {
+            calculationReviewStat($sport, App\Models\CBB\TeamStat::class, ['game_id' => $prior->id, 'team_id' => $team->id, 'points' => 140, 'possessions' => 100]);
+        }
+    }
+    if ($sport === 'cbb') {
+        $neutralPrior = App\Models\CBB\Game::factory()->create([
+            'home_team_id' => $home->id, 'away_team_id' => $away->id,
+            'season' => 2027, 'season_type' => 2, 'status' => 'STATUS_FINAL',
+            'game_date' => '2026-10-18', 'neutral_site' => true,
+        ]);
+        foreach ([$home, $away] as $team) {
+            calculationReviewStat($sport, App\Models\CBB\TeamStat::class, ['game_id' => $neutralPrior->id, 'team_id' => $team->id, 'points' => 60, 'possessions' => 100]);
+        }
+    }
     $game->neutral_site = true;
     config(["{$sport}.prediction.total_venue_efficiency_weight" => 0]);
     $baseline = (new ReflectionMethod($action, 'makePredictionData'))->invoke(app($action), $game);
@@ -173,7 +210,7 @@ it('does not let later completed games change an earlier forecast raw stat input
         'season' => 2027, 'status' => 'STATUS_FINAL', 'game_date' => '2026-10-19',
     ]);
     foreach ([[$home, 110], [$away, 100]] as [$team, $points]) {
-        $statClass::factory()->create([
+        calculationReviewStat($sport, $statClass, [
             'game_id' => $prior->id, 'team_id' => $team->id, 'points' => $points, 'possessions' => 100,
         ]);
     }
@@ -183,11 +220,11 @@ it('does not let later completed games change an earlier forecast raw stat input
         'season' => 2027, 'season_type' => 2, 'status' => 'STATUS_FINAL',
         'game_date' => '2026-10-23',
     ]);
-    $statClass::factory()->create([
+    calculationReviewStat($sport, $statClass, [
         'game_id' => $later->id, 'team_id' => $home->id,
         'points' => 140, 'possessions' => 100, 'turnovers' => 1, 'rebounds' => 60,
     ]);
-    $statClass::factory()->create([
+    calculationReviewStat($sport, $statClass, [
         'game_id' => $later->id, 'team_id' => $away->id,
         'points' => 80, 'possessions' => 100, 'turnovers' => 30, 'rebounds' => 20,
     ]);
@@ -208,10 +245,10 @@ it('does not classify a neutral site history row as a home venue sample', functi
         'season' => 2027, 'status' => 'STATUS_FINAL', 'neutral_site' => true,
         'game_date' => '2026-10-19',
     ]);
-    $statClass::factory()->create([
+    calculationReviewStat($sport, $statClass, [
         'game_id' => $past->id, 'team_id' => $home->id, 'points' => 140, 'possessions' => 100,
     ]);
-    $statClass::factory()->create([
+    calculationReviewStat($sport, $statClass, [
         'game_id' => $past->id, 'team_id' => $away->id, 'points' => 80, 'possessions' => 100,
     ]);
     expect($method->invoke(app($action), $home, 2027, 'home', $game))->toBe($before);
@@ -236,7 +273,7 @@ it('keeps neutral games in college season metrics but excludes them from stored 
             'game_date' => '2026-10-19', 'neutral_site' => $neutral,
         ]);
         foreach ([[$home, $neutral ? 100 : 80], [$away, 70]] as [$team, $points]) {
-            $statClass::factory()->create([
+            calculationReviewStat($sport, $statClass, [
                 'game_id' => $game->id, 'team_id' => $team->id,
                 'points' => $points, 'possessions' => 70,
             ]);

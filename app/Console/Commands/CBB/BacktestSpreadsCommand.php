@@ -5,6 +5,7 @@ namespace App\Console\Commands\CBB;
 use App\Actions\CBB\GeneratePrediction;
 use App\Models\CBB\Game;
 use App\Models\CBB\Prediction;
+use App\Services\CBB\CbbForecastEvidence;
 use App\Services\Predictions\Basketball\BasketballBacktestForecastSource;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
@@ -15,6 +16,8 @@ class BacktestSpreadsCommand extends Command
         {--forecast-source= : canonical or legacy (defaults to the active CBB source)}
         {--season= : Filter by season}
         {--limit=250 : Limit number of most recent graded/final predictions to inspect}
+        {--cohort=pregame : pregame, reconstruction, or all}
+        {--recompute : Run a retrospective current-model exercise instead of evaluating stored forecasts}
         {--stored : Use stored predicted spreads instead of recomputing with the current model}
         {--detailed : Show biggest market disagreements}';
 
@@ -23,6 +26,10 @@ class BacktestSpreadsCommand extends Command
     public function handle(): int
     {
         try {
+            app(CbbForecastEvidence::class)->cohort(Prediction::query(), (string) $this->option('cohort'));
+            if ($this->option('recompute') && $this->option('stored')) {
+                throw new \InvalidArgumentException('Choose stored forecasts or recomputation, not both.');
+            }
             $source = app(BasketballBacktestForecastSource::class)->name('cbb', $this->option('forecast-source'));
         } catch (\InvalidArgumentException $error) {
             $this->error($error->getMessage());
@@ -31,6 +38,10 @@ class BacktestSpreadsCommand extends Command
         }
         $rows = $source === 'canonical' ? $this->canonicalRows() : $this->loadRows();
         $this->line('Forecast source: '.$source);
+        $this->line('Evidence cohort: '.($source === 'canonical' ? 'pregame' : $this->option('cohort')));
+        if ($this->option('recompute')) {
+            $this->warn('Retrospective current-model exercise; not observed pregame performance.');
+        }
 
         if ($rows->isEmpty()) {
             $this->warn('No final CBB predictions with spread market data found for the selected scope.');
@@ -154,6 +165,7 @@ class BacktestSpreadsCommand extends Command
             })
             ->latest();
 
+        app(CbbForecastEvidence::class)->cohort($query, (string) $this->option('cohort'));
         $limit = (int) $this->option('limit');
         if ($limit > 0) {
             $query->limit($limit);
@@ -170,7 +182,7 @@ class BacktestSpreadsCommand extends Command
                     return null;
                 }
 
-                $modelSpread = $this->option('stored') ? (float) $prediction->predicted_spread : $this->recomputedSpread($generator, $game, $prediction);
+                $modelSpread = $this->option('recompute') ? $this->recomputedSpread($generator, $game, $prediction) : (float) $prediction->predicted_spread;
 
                 return $this->spreadRow($game, $modelSpread, (float) $prediction->vegas_spread, (float) $prediction->confidence_score);
             })

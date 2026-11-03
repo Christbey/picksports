@@ -3,6 +3,7 @@
 namespace App\Console\Commands\CBB;
 
 use App\Actions\CBB\CalculatePossessionMetrics;
+use App\Support\BasketballSeason;
 use Illuminate\Console\Command;
 
 class CalculatePossessionMetricsCommand extends Command
@@ -18,7 +19,7 @@ class CalculatePossessionMetricsCommand extends Command
 
     public function handle(CalculatePossessionMetrics $action): int
     {
-        $season = (int) ($this->option('season') ?: config('cbb.season.default'));
+        $season = (int) ($this->option('season') ?: (config('cbb.season.default') ?? BasketballSeason::forDate()));
         $gameId = $this->option('game_id') ? (int) $this->option('game_id') : null;
         $rebuild = (bool) $this->option('rebuild');
         $chunkSize = max(25, (int) $this->option('chunk'));

@@ -23,6 +23,9 @@ class Game extends Model
     }
 
     protected $fillable = [
+        'details_attempted_at',
+        'details_completed_at',
+        'details_status',
         'sport_event_id',
         'espn_event_id',
         'espn_uid',
@@ -67,6 +70,8 @@ class Game extends Model
     protected function casts(): array
     {
         return [
+            'details_attempted_at' => 'datetime',
+            'details_completed_at' => 'datetime',
             'game_date' => 'date',
             'neutral_site' => 'boolean',
             'completed_at' => 'datetime',

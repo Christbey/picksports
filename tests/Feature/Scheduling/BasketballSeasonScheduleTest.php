@@ -29,7 +29,7 @@ it('schedules basketball predictions for the ending year with active preseason c
     $this->travelTo(CarbonImmutable::parse('2026-10-20 12:00:00', 'America/Chicago'));
     $events = collect(app(Schedule::class)->events());
     foreach (['nba', 'cbb', 'wcbb'] as $sport) {
-        $daily = $events->first(fn ($event) => str_contains((string) $event->command, $sport.':generate-predictions --season='));
+        $daily = $events->first(fn ($event) => str_contains((string) $event->command, ($sport === 'cbb' ? 'cbb:run-pregame-pipeline --season=' : $sport.':generate-predictions --season=')));
         expect($daily->command)->toContain('--season=2027')->and($daily->filtersPass(app()))->toBeTrue();
         $coverage = $events->firstWhere('description', strtoupper($sport).': Ensure Pregame Prediction Coverage');
         expect($coverage)->not->toBeNull()->and($coverage->expression)->toBe('*/5 * * * *')

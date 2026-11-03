@@ -3,6 +3,7 @@
 namespace App\Console\Commands\CBB;
 
 use App\Actions\CBB\RecalculateTournamentOutlook;
+use App\Support\BasketballSeason;
 use Illuminate\Console\Command;
 
 class RecalculateTournamentOutlookCommand extends Command
@@ -16,7 +17,7 @@ class RecalculateTournamentOutlookCommand extends Command
 
     public function handle(RecalculateTournamentOutlook $action): int
     {
-        $season = (int) ($this->argument('season') ?: config('cbb.season.default'));
+        $season = (int) ($this->argument('season') ?: (config('cbb.season.default') ?? BasketballSeason::forDate()));
         $source = (string) $this->option('source');
         $triggerGameId = $this->option('trigger-game-id');
         $triggerGameId = $triggerGameId !== null ? (int) $triggerGameId : null;

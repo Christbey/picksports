@@ -5,6 +5,7 @@ namespace App\Console\Commands\CBB;
 use App\Actions\CBB\GeneratePrediction;
 use App\Models\CBB\Game;
 use App\Models\CBB\Prediction;
+use App\Services\CBB\CbbForecastEvidence;
 use App\Services\Predictions\Basketball\BasketballBacktestForecastSource;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
@@ -15,6 +16,8 @@ class BacktestTotalsCommand extends Command
         {--forecast-source= : canonical or legacy (defaults to the active CBB source)}
         {--season= : Filter by season}
         {--limit=250 : Limit number of most recent graded/final predictions to inspect}
+        {--cohort=pregame : pregame, reconstruction, or all}
+        {--recompute : Run a retrospective current-model exercise instead of evaluating stored forecasts}
         {--stored : Use stored predicted totals instead of recomputing with the current model}
         {--detailed : Show biggest misses}';
 
@@ -23,6 +26,10 @@ class BacktestTotalsCommand extends Command
     public function handle(): int
     {
         try {
+            app(CbbForecastEvidence::class)->cohort(Prediction::query(), (string) $this->option('cohort'));
+            if ($this->option('recompute') && $this->option('stored')) {
+                throw new \InvalidArgumentException('Choose stored forecasts or recomputation, not both.');
+            }
             $source = app(BasketballBacktestForecastSource::class)->name('cbb', $this->option('forecast-source'));
         } catch (\InvalidArgumentException $error) {
             $this->error($error->getMessage());
@@ -31,6 +38,10 @@ class BacktestTotalsCommand extends Command
         }
         $rows = $source === 'canonical' ? $this->canonicalRows() : $this->loadRows();
         $this->line('Forecast source: '.$source);
+        $this->line('Evidence cohort: '.($source === 'canonical' ? 'pregame' : $this->option('cohort')));
+        if ($this->option('recompute')) {
+            $this->warn('Retrospective current-model exercise; not observed pregame performance.');
+        }
 
         if ($rows->isEmpty()) {
             $this->warn('No final CBB predictions with totals market data found for the selected scope.');
@@ -134,6 +145,7 @@ class BacktestTotalsCommand extends Command
             })
             ->latest();
 
+        app(CbbForecastEvidence::class)->cohort($query, (string) $this->option('cohort'));
         $limit = (int) $this->option('limit');
         if ($limit > 0) {
             $query->limit($limit);
@@ -146,12 +158,14 @@ class BacktestTotalsCommand extends Command
                     return null;
                 }
 
-                $marketTotal = $this->extractMarketTotal($game->odds_data);
+                $snapshot = app(CbbForecastEvidence::class)->latest($prediction);
+                $frozenTotal = data_get($snapshot?->market_context, 'market_total');
+                $marketTotal = is_numeric($frozenTotal) ? (float) $frozenTotal : ($this->option('cohort') === 'pregame' ? null : $this->extractMarketTotal($game->odds_data));
                 if ($marketTotal === null) {
                     return null;
                 }
 
-                $modelTotal = $this->option('stored') ? (float) $prediction->predicted_total : $this->recomputedTotal($generator, $game, $prediction);
+                $modelTotal = $this->option('recompute') ? $this->recomputedTotal($generator, $game, $prediction) : (float) $prediction->predicted_total;
 
                 return $this->totalRow($game, $modelTotal, $marketTotal);
             })

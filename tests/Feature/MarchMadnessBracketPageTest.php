@@ -36,7 +36,7 @@ test('march madness bracket page renders', function () {
 
     $this->withoutVite();
 
-    $this->get('/march-madness-bracket')
+    $this->get('/march-madness-bracket?season=2026')
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('MarchMadnessBracket')
@@ -68,7 +68,7 @@ test('march madness bracket page renders tournament games with unresolved teams'
 
     $this->withoutVite();
 
-    $this->get('/march-madness-bracket')
+    $this->get('/march-madness-bracket?season=2026')
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('MarchMadnessBracket')

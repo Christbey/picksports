@@ -3,6 +3,7 @@
 namespace App\Http\Resources\CBB;
 
 use App\Http\Resources\Sports\AbstractPredictionResource;
+use App\Services\CBB\CbbForecastEvidence;
 use Illuminate\Http\Request;
 
 class PredictionResource extends AbstractPredictionResource
@@ -15,6 +16,13 @@ class PredictionResource extends AbstractPredictionResource
     public function toArray(Request $request): array
     {
         $data = $this->basePredictionData(GameResource::class);
+        $snapshot = app(CbbForecastEvidence::class)->latest($this->resource);
+        $data['evidence'] = [
+            'pregame_safe' => $snapshot?->pregame_safe,
+            'run_type' => data_get($snapshot?->lineage_metadata, 'run_type'),
+            'provisional' => data_get($this->model_metadata, 'provisional'),
+            'season_inputs' => data_get($this->model_metadata, 'season_inputs'),
+        ];
 
         // Spread (includes predicted_spread and predicted_total)
         if ($this->hasTierPermission($request, 'spread')) {

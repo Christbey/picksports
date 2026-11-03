@@ -5,6 +5,7 @@ namespace App\Actions\CBB;
 use App\Models\CBB\TeamMetric;
 use App\Models\CBB\TournamentForecast;
 use App\Services\TournamentForecast\CbbTournamentForecastTuningStore;
+use App\Support\BasketballSeason;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -110,7 +111,7 @@ class GenerateTournamentForecast
         ?int $simulationRuns = null,
         array $configOverrides = []
     ): array {
-        $resolvedSeason = (int) ($season ?? config('cbb.season.default'));
+        $resolvedSeason = (int) ($season ?? (config('cbb.season.default') ?? BasketballSeason::forDate()));
         $config = $this->resolveForecastConfig($resolvedSeason, $configOverrides);
 
         $fieldSize = max(2, (int) ($config['field_size'] ?? 68));

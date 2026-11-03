@@ -7,6 +7,8 @@ use App\Console\Commands\Sports\AbstractCalculateEloCommand;
 use App\Models\CBB\EloRating;
 use App\Models\CBB\Game;
 use App\Models\CBB\Team;
+use App\Services\CBB\CbbSeasonInitializer;
+use App\Support\BasketballSeason;
 
 class CalculateEloCommand extends AbstractCalculateEloCommand
 {
@@ -28,4 +30,15 @@ class CalculateEloCommand extends AbstractCalculateEloCommand
     protected const ELO_RATING_MODEL = EloRating::class;
 
     protected const CALCULATE_ELO_ACTION = CalculateElo::class;
+
+    public function handle(): int
+    {
+        $season = (int) ($this->option('season') ?: BasketballSeason::forDate());
+        $this->input->setOption('season', $season);
+        if (! $this->option('reset')) {
+            app(CbbSeasonInitializer::class)->initialize($season);
+        }
+
+        return parent::handle();
+    }
 }

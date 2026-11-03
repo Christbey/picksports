@@ -2,6 +2,7 @@
 
 namespace App\Services\Predictions;
 
+use App\Models\CBB\Game as CbbGame;
 use App\Models\NBA\Game as NbaGame;
 use App\Models\NFL\Game as NflGame;
 use App\Services\Sports\SportsDateWindowService;
@@ -55,7 +56,7 @@ class SnapshotProvenanceResolver
 
     public function gameStartAt(Model $game): ?CarbonImmutable
     {
-        if ($game instanceof NflGame || $game instanceof NbaGame) {
+        if ($game instanceof NflGame || $game instanceof NbaGame || $game instanceof CbbGame) {
             $canonicalStart = $game->sportEvent?->starts_at;
             if ($canonicalStart !== null) {
                 return CarbonImmutable::instance($canonicalStart);

@@ -10,11 +10,25 @@ use App\Models\CBB\Team;
 use App\Models\CBB\TeamMetric;
 use App\Models\CBB\TeamStat;
 use App\Models\PredictionFeatureSnapshot;
+use App\Services\CBB\CbbSeasonInitializer;
+use App\Services\CBB\CbbSeasonInputs;
 use Illuminate\Support\Carbon;
 
 uses()->group('cbb', 'predictions');
 
+function cbbPredictionGame(array $attributes): Game
+{
+    return Game::factory()->create(['game_date' => now()->addDay()->toDateString(), 'game_time' => '23:00:00', 'season_type' => 2, 'odds_updated_at' => now(), ...$attributes]);
+}
+
 beforeEach(function () {
+    $this->travelTo('2026-01-01 00:00:00');
+    $this->mock(CbbSeasonInitializer::class)->shouldReceive('initialize')->andReturn(0);
+    $this->mock(CbbSeasonInputs::class)->shouldReceive('forTeam')->andReturnUsing(function (int $teamId, Game $game): array {
+        $metric = TeamMetric::query()->where('team_id', $teamId)->where('season', $game->season)->first();
+
+        return ['metric' => $metric, 'evidence' => ['source' => $metric ? 'current_season' : 'baseline', 'provisional' => $metric === null, 'current_games' => $metric ? 8 : 0]];
+    });
     $this->homeTeam = Team::factory()->create([
         'elo_rating' => 1550,
         'school' => 'Kansas',
@@ -28,7 +42,7 @@ beforeEach(function () {
 });
 
 it('generates prediction for an upcoming game', function () {
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -52,7 +66,7 @@ it('calculates confidence from win probability', function () {
     $strongHome = Team::factory()->create(['elo_rating' => 1700]);
     $weakAway = Team::factory()->create(['elo_rating' => 1300]);
 
-    $game1 = Game::factory()->create([
+    $game1 = cbbPredictionGame([
         'home_team_id' => $strongHome->id,
         'away_team_id' => $weakAway->id,
         'status' => 'STATUS_SCHEDULED',
@@ -63,7 +77,7 @@ it('calculates confidence from win probability', function () {
     $evenHome = Team::factory()->create(['elo_rating' => 1500]);
     $evenAway = Team::factory()->create(['elo_rating' => 1500]);
 
-    $game2 = Game::factory()->create([
+    $game2 = cbbPredictionGame([
         'home_team_id' => $evenHome->id,
         'away_team_id' => $evenAway->id,
         'status' => 'STATUS_SCHEDULED',
@@ -105,7 +119,7 @@ it('stores baseline and challenger win probability side by side for cbb when cal
     config()->set('cbb.prediction.win_probability_calibration.apply_to_live_output', false);
     config()->set('cbb.prediction.win_probability_calibration.artifact_path', $artifactPath);
 
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -135,7 +149,7 @@ it('stores baseline and challenger win probability side by side for cbb when cal
 });
 
 it('does not generate prediction for completed game', function () {
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_FINAL',
@@ -150,7 +164,7 @@ it('does not generate prediction for completed game', function () {
 });
 
 it('uses team metrics when available', function () {
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -190,7 +204,7 @@ it('uses team metrics when available', function () {
 });
 
 it('uses raw total injury adjustments when persisted spread context exists without persisted total context', function () {
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -246,7 +260,7 @@ it('uses raw total injury adjustments when persisted spread context exists witho
 });
 
 it('uses persisted total injury adjustments when available on cbb team metrics', function () {
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -326,7 +340,7 @@ it('raises predicted total when recent scoring factors improve', function () {
         'calculation_date' => now()->toDateString(),
     ]);
 
-    $baselineGame = Game::factory()->create([
+    $baselineGame = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -334,7 +348,7 @@ it('raises predicted total when recent scoring factors improve', function () {
         'game_date' => now()->addDay(),
     ]);
 
-    $boostedGame = Game::factory()->create([
+    $boostedGame = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -345,7 +359,7 @@ it('raises predicted total when recent scoring factors improve', function () {
     foreach ([$this->homeTeam, $this->awayTeam] as $team) {
         for ($i = 0; $i < 4; $i++) {
             $opponent = Team::factory()->create();
-            $game = Game::factory()->create([
+            $game = cbbPredictionGame([
                 'home_team_id' => $team->id,
                 'away_team_id' => $opponent->id,
                 'status' => 'STATUS_FINAL',
@@ -425,7 +439,7 @@ it('lowers predicted total when recent shooting profile is poor', function () {
         'calculation_date' => now()->toDateString(),
     ]);
 
-    $baselineGame = Game::factory()->create([
+    $baselineGame = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -433,7 +447,7 @@ it('lowers predicted total when recent shooting profile is poor', function () {
         'game_date' => now()->addDay(),
     ]);
 
-    $sluggishGame = Game::factory()->create([
+    $sluggishGame = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -444,7 +458,7 @@ it('lowers predicted total when recent shooting profile is poor', function () {
     foreach ([$this->homeTeam, $this->awayTeam] as $team) {
         for ($i = 0; $i < 4; $i++) {
             $opponent = Team::factory()->create();
-            $game = Game::factory()->create([
+            $game = cbbPredictionGame([
                 'home_team_id' => $team->id,
                 'away_team_id' => $opponent->id,
                 'status' => 'STATUS_FINAL',
@@ -502,7 +516,7 @@ it('lowers predicted total when recent shooting profile is poor', function () {
 });
 
 it('stores total model metadata for cbb totals', function () {
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -550,7 +564,7 @@ it('stores total model metadata for cbb totals', function () {
 });
 
 it('stores spread components in prediction metadata', function () {
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -598,7 +612,7 @@ it('incorporates recent form from completed games', function () {
     // Create some completed games with team stats for the home team
     for ($i = 0; $i < 5; $i++) {
         $opponent = Team::factory()->create();
-        $completedGame = Game::factory()->create([
+        $completedGame = cbbPredictionGame([
             'home_team_id' => $this->homeTeam->id,
             'away_team_id' => $opponent->id,
             'status' => 'STATUS_FINAL',
@@ -629,7 +643,7 @@ it('incorporates recent form from completed games', function () {
         ]);
     }
 
-    $upcomingGame = Game::factory()->create([
+    $upcomingGame = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -650,7 +664,7 @@ it('applies rest day advantage when home team is rested', function () {
     $opponent = Team::factory()->create();
 
     // Home team last played 3 days ago
-    Game::factory()->create([
+    cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $opponent->id,
         'status' => 'STATUS_FINAL',
@@ -659,7 +673,7 @@ it('applies rest day advantage when home team is rested', function () {
     ]);
 
     // Away team last played yesterday (back-to-back)
-    Game::factory()->create([
+    cbbPredictionGame([
         'home_team_id' => $opponent->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_FINAL',
@@ -667,7 +681,7 @@ it('applies rest day advantage when home team is rested', function () {
         'game_date' => now()->subDay(),
     ]);
 
-    $upcomingGame = Game::factory()->create([
+    $upcomingGame = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -682,7 +696,7 @@ it('applies rest day advantage when home team is rested', function () {
     expect($prediction->rest_days_home)->toBeGreaterThan($prediction->rest_days_away);
 
     // Compare with same matchup but no rest advantage
-    $evenGame = Game::factory()->create([
+    $evenGame = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -697,7 +711,7 @@ it('applies rest day advantage when home team is rested', function () {
 });
 
 it('blends vegas spread when odds data available', function () {
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -737,7 +751,7 @@ it('blends vegas spread when odds data available', function () {
 });
 
 it('generates prediction without vegas spread when no odds data', function () {
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -757,7 +771,7 @@ it('stores turnover and rebound adjustments', function () {
     for ($i = 0; $i < 3; $i++) {
         $opponent = Team::factory()->create();
 
-        $completedGame = Game::factory()->create([
+        $completedGame = cbbPredictionGame([
             'home_team_id' => $this->homeTeam->id,
             'away_team_id' => $opponent->id,
             'status' => 'STATUS_FINAL',
@@ -778,9 +792,12 @@ it('stores turnover and rebound adjustments', function () {
             'turnovers' => 18, // High turnovers (forced by home team)
             'rebounds' => 33, // Low rebounds
         ]);
+        foreach ($completedGame->teamStats()->get() as $stat) {
+            $completedGame->update([$stat->team_id === $completedGame->home_team_id ? 'home_score' : 'away_score' => $stat->points]);
+        }
     }
 
-    $upcomingGame = Game::factory()->create([
+    $upcomingGame = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -805,7 +822,7 @@ it('ensemble weights sum to one', function () {
 });
 
 it('falls back gracefully when no recent form data exists', function () {
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -828,7 +845,7 @@ it('applies true epa blend metadata when enabled and metrics are available', fun
     config()->set('cbb.prediction.true_epa.blend_weight', 1.0);
     config()->set('cbb.prediction.true_epa.spread_points_per_epa', 15.0);
 
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -873,7 +890,7 @@ it('applies true epa blend metadata when enabled and metrics are available', fun
 });
 
 it('updates existing prediction instead of creating duplicate', function () {
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -899,7 +916,7 @@ it('updates existing prediction instead of creating duplicate', function () {
 });
 
 it('uses total-specific confidence for cbb over under recommendations', function () {
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -922,6 +939,7 @@ it('uses total-specific confidence for cbb over under recommendations', function
     ]);
 
     Prediction::create([
+        'model_metadata' => ['statistical_inputs_available' => true, 'provisional' => false],
         'game_id' => $game->id,
         'home_elo' => 1500,
         'away_elo' => 1500,
@@ -948,7 +966,7 @@ it('filters out small-edge away spread recommendations for cbb', function () {
     config()->set('cbb.betting.edge_thresholds.spread', 2.0);
     config()->set('cbb.betting.edge_thresholds.spread_away', 4.0);
 
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -973,6 +991,7 @@ it('filters out small-edge away spread recommendations for cbb', function () {
     ]);
 
     Prediction::create([
+        'model_metadata' => ['statistical_inputs_available' => true, 'provisional' => false],
         'game_id' => $game->id,
         'home_elo' => 1500,
         'away_elo' => 1500,
@@ -996,7 +1015,7 @@ it('keeps home spread recommendations at the base cbb threshold', function () {
     config()->set('cbb.betting.edge_thresholds.spread', 2.0);
     config()->set('cbb.betting.edge_thresholds.spread_away', 4.0);
 
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -1021,6 +1040,7 @@ it('keeps home spread recommendations at the base cbb threshold', function () {
     ]);
 
     Prediction::create([
+        'model_metadata' => ['statistical_inputs_available' => true, 'provisional' => false],
         'game_id' => $game->id,
         'home_elo' => 1500,
         'away_elo' => 1500,
@@ -1049,7 +1069,7 @@ it('filters out sub-threshold home spread recommendations for cbb', function () 
     config()->set('cbb.betting.edge_thresholds.spread', 2.0);
     config()->set('cbb.betting.edge_thresholds.spread_away', 4.0);
 
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -1074,6 +1094,7 @@ it('filters out sub-threshold home spread recommendations for cbb', function () 
     ]);
 
     Prediction::create([
+        'model_metadata' => ['statistical_inputs_available' => true, 'provisional' => false],
         'game_id' => $game->id,
         'home_elo' => 1500,
         'away_elo' => 1500,
@@ -1099,7 +1120,7 @@ it('filters out extreme tournament under outliers for cbb', function () {
     config()->set('cbb.betting.filters.tournament_under_market_total_floor', 145.0);
     config()->set('cbb.betting.filters.tournament_under_skip_edge', 18.0);
 
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -1125,6 +1146,7 @@ it('filters out extreme tournament under outliers for cbb', function () {
     ]);
 
     Prediction::create([
+        'model_metadata' => ['statistical_inputs_available' => true, 'provisional' => false],
         'game_id' => $game->id,
         'home_elo' => 1500,
         'away_elo' => 1500,
@@ -1148,7 +1170,7 @@ it('requires a stronger tournament under edge for cbb', function () {
     config()->set('cbb.betting.edge_thresholds.total', 2.25);
     config()->set('cbb.betting.filters.tournament_under_min_edge', 4.5);
 
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -1174,6 +1196,7 @@ it('requires a stronger tournament under edge for cbb', function () {
     ]);
 
     Prediction::create([
+        'model_metadata' => ['statistical_inputs_available' => true, 'provisional' => false],
         'game_id' => $game->id,
         'home_elo' => 1500,
         'away_elo' => 1500,
@@ -1199,7 +1222,7 @@ it('filters out extreme high-total over outliers for cbb', function () {
     config()->set('cbb.betting.filters.high_total_over_min_edge', 4.5);
     config()->set('cbb.betting.filters.high_total_over_skip_edge', 16.5);
 
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -1222,6 +1245,7 @@ it('filters out extreme high-total over outliers for cbb', function () {
     ]);
 
     Prediction::create([
+        'model_metadata' => ['statistical_inputs_available' => true, 'provisional' => false],
         'game_id' => $game->id,
         'home_elo' => 1500,
         'away_elo' => 1500,
@@ -1248,7 +1272,7 @@ it('reduces confidence for high-total over recommendations for cbb', function ()
     config()->set('cbb.betting.filters.high_total_over_skip_edge', 20.0);
     config()->set('cbb.betting.filters.high_total_over_confidence_penalty', 8.0);
 
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -1271,6 +1295,7 @@ it('reduces confidence for high-total over recommendations for cbb', function ()
     ]);
 
     Prediction::create([
+        'model_metadata' => ['statistical_inputs_available' => true, 'provisional' => false],
         'game_id' => $game->id,
         'home_elo' => 1500,
         'away_elo' => 1500,
@@ -1298,7 +1323,7 @@ it('filters out giant-dog tournament spread recommendations unless the edge is s
     config()->set('cbb.betting.filters.big_dog_line_threshold', 15.0);
     config()->set('cbb.betting.filters.big_dog_min_edge', 6.0);
 
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
@@ -1326,6 +1351,7 @@ it('filters out giant-dog tournament spread recommendations unless the edge is s
     ]);
 
     Prediction::create([
+        'model_metadata' => ['statistical_inputs_available' => true, 'provisional' => false],
         'game_id' => $game->id,
         'home_elo' => 1500,
         'away_elo' => 1500,
@@ -1370,7 +1396,7 @@ it('regresses cbb total pace toward the sport baseline and records market totals
         'calculation_date' => now()->toDateString(),
     ]);
 
-    $game = Game::factory()->create([
+    $game = cbbPredictionGame([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',

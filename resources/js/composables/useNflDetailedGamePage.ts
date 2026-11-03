@@ -26,6 +26,7 @@ export function useNflDetailedGamePage(gameId: number) {
         homeTeam,
         awayTeam,
         prediction,
+        historicalPrediction,
         homeTeamStats,
         awayTeamStats,
         homeRecentGames,
@@ -64,6 +65,7 @@ export function useNflDetailedGamePage(gameId: number) {
     );
     const predictionSectionProps = computed(() => ({
         section: 'prediction' as const,
+        historicalPrediction: historicalPrediction.value,
         game: currentGame.value,
         prediction: prediction.value,
         awayLabel: awayLabel.value,

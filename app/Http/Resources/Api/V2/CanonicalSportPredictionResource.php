@@ -93,6 +93,12 @@ class CanonicalSportPredictionResource extends JsonResource
             'market_aware_projection' => $this->presentation->marketAwareProjection,
             'recommendation' => $this->presentation->recommendation,
             'pro_signal_layer' => null,
+            'nfl_board' => $this->presentation->nflBoard === null ? null : [
+                ...$this->presentation->nflBoard,
+                'can_retry_research' => (bool) $request->user()?->isAdmin()
+                    && in_array($game?->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true)
+                    && $prediction->sportEvent?->starts_at?->isFuture(),
+            ],
             'period_insights' => [],
             'cfb_signal_context' => null,
             ...($prediction->sport === 'cfb' ? ['scoring_model' => $this->cfbScoringModel($prediction)] : []),

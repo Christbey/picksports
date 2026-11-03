@@ -4,6 +4,7 @@ namespace App\Services\Api\V2;
 
 use App\Http\Resources\Api\V2\SportGameResource;
 use App\Http\Resources\Api\V2\SportStatResource;
+use App\Services\NFL\NflHistoricalForecastArchive;
 use App\Services\Sports\GameMatchupContextService;
 use Illuminate\Http\Request;
 
@@ -26,6 +27,7 @@ class NflGamePageQuery
             'data' => [
                 'game' => new SportGameResource($game, $context),
                 'prediction' => $payload['data'] ?? null,
+                'historical_prediction' => $payload === null ? app(NflHistoricalForecastArchive::class)->forGame($game) : null,
                 'team_stats' => $game->teamStats->map(fn ($stat) => new SportStatResource($stat, $context, 'team'))->values(),
             ],
             'meta' => [

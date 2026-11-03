@@ -5,6 +5,7 @@ namespace App\Services\Api\V2;
 use App\Http\Resources\Api\V2\CanonicalSportPredictionResource;
 use App\Http\Resources\Api\V2\SportPredictionResource;
 use App\Models\CanonicalPrediction;
+use App\Services\NFL\NflPredictionBoardContext;
 use App\Services\Predictions\LivePredictionStore;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -50,8 +51,10 @@ class SportPredictionReader
             (new \Illuminate\Database\Eloquent\Collection($predictions->all()))->loadMissing(['sportEvent.'.$context->slug.'Game.homeTeam', 'sportEvent.'.$context->slug.'Game.awayTeam']);
             app(LivePredictionStore::class)->preload($predictions->map(fn ($prediction) => $prediction->sportEvent?->getRelation($context->slug.'Game'))->filter());
 
+            $nflBoards = $context->slug === 'nfl' ? app(NflPredictionBoardContext::class)->forPredictions($predictions) : collect();
+
             return $predictions->map(fn (CanonicalPrediction $prediction): JsonResource => new CanonicalSportPredictionResource(
-                $prediction, $context, $this->canonicalPresentations->forPrediction($prediction),
+                $prediction, $context, $this->canonicalPresentations->forPrediction($prediction, $nflBoards->get($prediction->id)),
             ));
         }
 

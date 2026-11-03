@@ -673,6 +673,17 @@ export interface CfbScoringModel {
     recommendation_status: string;
 }
 
+export interface NflHistoricalPrediction {
+    source: 'legacy_archive';
+    prediction_id: number;
+    snapshot_id: number;
+    generated_at: string;
+    known_before_kickoff: true;
+    predicted_spread: number | null;
+    predicted_total: number | null;
+    win_probability: number | null;
+}
+
 export interface NflPagePrediction {
     comparison_forecasts?: CfbComparisonForecasts | null;
     forecast_coordination?: Record<string, unknown> | null;

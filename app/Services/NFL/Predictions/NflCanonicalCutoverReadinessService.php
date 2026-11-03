@@ -2,10 +2,13 @@
 
 namespace App\Services\NFL\Predictions;
 
+use App\Exceptions\Predictions\PredictionLifecycleException;
 use App\Models\BetDecision;
 use App\Models\NFL\Game;
+use App\Models\SportEvent;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\NFL\NflCandidateDecisionPolicy;
+use App\Services\Predictions\CalculationReleaseSelector;
 use App\Services\Predictions\CanonicalSportCutoverReadinessService;
 use Carbon\CarbonImmutable;
 use Throwable;
@@ -16,17 +19,29 @@ class NflCanonicalCutoverReadinessService
         private readonly CanonicalSportCutoverReadinessService $readiness,
         private readonly NflPregameHorizon $horizons,
         private readonly NflCandidateDecisionPolicy $decisionPolicy,
+        private readonly CalculationReleaseSelector $releases,
     ) {}
 
     /** @return array<string,mixed> */
     public function report(?int $season = null, ?string $date = null, int $daysForward = 8): array
     {
         $horizon = $this->horizons->resolve($date, $daysForward);
+        $release = null;
+        $releaseBlockers = [];
+        try {
+            $release = $this->releases->select(new SportEvent(['sport' => 'nfl']), 'pregame');
+            if ($release->calculator_name !== NflCalculationReleaseDefinition::CALCULATOR_NAME
+                || $release->input_schema_version !== NflCalculationReleaseDefinition::INPUT_SCHEMA_VERSION) {
+                $releaseBlockers[] = 'canonical_release_incompatible';
+            }
+        } catch (PredictionLifecycleException) {
+            $releaseBlockers[] = 'canonical_release_unavailable';
+        }
         $report = $this->readiness->report(
             'nfl',
             $season,
             seasonTypes: NflPregameHorizon::seasonTypes(),
-            releaseVersion: NflCalculationReleaseDefinition::SEMANTIC_VERSION,
+            releaseVersion: $release?->semantic_version ?? NflCalculationReleaseDefinition::SEMANTIC_VERSION,
             horizonStart: $horizon['start'],
             horizonEnd: $horizon['end'],
         );
@@ -100,14 +115,21 @@ class NflCanonicalCutoverReadinessService
             $coverageBlockers[] = 'missing_market_dispositions';
         }
         $coverageBlockers = array_values(array_unique($coverageBlockers));
+        $configurationBlockers = [...$releaseBlockers, ...$configurationBlockers];
         $blockers = [...$configurationBlockers, ...$coverageBlockers];
         $dataReady = (bool) $report['ready_for_cutover'] && $coverageBlockers === [];
         $ready = $dataReady && $configurationBlockers === [];
+        $displayReady = (bool) $report['ready_for_cutover']
+            && array_values(array_diff($blockers, ['custom_epa_quarantined'])) === [];
+        $fullModel = data_get($release?->configuration, 'forecast.source') === NflFullModelReleaseDefinition::FORECAST_SOURCE;
+        $transportReady = $displayReady && $fullModel
+            && (int) $slateCoverage['full_model_forecast_event_count'] === $slateEventCount;
 
         return [
             ...$report,
             ...$configuration,
             ...$slateCoverage,
+            'selected_release_id' => $release?->id,
             'true_epa_authority' => 'canonical_frozen_recommendation_context',
             'canonical_true_epa_role' => 'not_applied_to_canonical_forecast',
             'horizon_date' => $horizon['date'],
@@ -116,6 +138,11 @@ class NflCanonicalCutoverReadinessService
             'configuration_blockers' => $configurationBlockers,
             'coverage_blockers' => $coverageBlockers,
             'readiness_blockers' => $blockers,
+            'read_display_ready' => $displayReady,
+            'read_transport_ready' => $transportReady,
+            'selected_forecast_source' => data_get($release?->configuration, 'forecast.source', 'legacy_primary_rules'),
+            'recommendation_cutover_ready' => $ready,
+            'model_performance_review_required' => true,
             'ready_for_cutover' => $ready,
             'next_action' => $this->nextAction($blockers, $ready),
         ];
@@ -129,6 +156,8 @@ class NflCanonicalCutoverReadinessService
         }
 
         return match (true) {
+            in_array('canonical_release_unavailable', $blockers, true) => 'Resolve the approved effective NFL pregame release; readiness requires the same unambiguous release selected by generation. Do not backdate or revive invalidated releases.',
+            in_array('canonical_release_incompatible', $blockers, true) => 'Register a compatible approved NFL pregame release with the current calculator and frozen input schema before cutover.',
             in_array('canonical_pipeline_disabled', $blockers, true) => 'Set PREDICTION_LIFECYCLE_NFL_CANONICAL_PIPELINE=true, clear cached configuration, and verify the effective value before generation.',
             in_array('true_epa_disabled', $blockers, true) => 'Set NFL_TRUE_EPA_ENABLED=true and verify true-EPA readiness before generation.',
             in_array('true_epa_preflight_disabled', $blockers, true) => 'Set NFL_TRUE_EPA_BACKFILL_BEFORE_GENERATION=true so incomplete slate metrics are refreshed or explicitly held.',
@@ -136,7 +165,7 @@ class NflCanonicalCutoverReadinessService
             in_array('no_eligible_regular_season_events', $blockers, true) => 'Verify regular-season NFL event identity and register a non-backdated release before the next kickoff.',
             in_array('no_upcoming_regular_season_slate', $blockers, true) => 'Verify the upcoming regular-season slate, canonical event identity, and kickoff timestamps.',
             in_array('zero_safe_canonical_predictions', $blockers, true) => 'Generate safe canonical predictions for every eligible upcoming regular-season event, then rerun readiness.',
-            in_array('custom_epa_quarantined', $blockers, true) => 'Keep canonical reader cutover disabled while custom EPA is quarantined; this is an intentional model exclusion, not missing play data.',
+            in_array('custom_epa_quarantined', $blockers, true) => 'Custom EPA remains quarantined for recommendations. Verify read-display coverage and the separate model-performance review before reader cutover; do not clear betting holds.',
             in_array('missing_true_epa_disposition', $blockers, true) => 'Run canonical NFL generation and require true EPA to be applied or explicitly held with missing_true_epa for every slate game.',
             in_array('true_epa_holds_present', $blockers, true) => 'Backfill true EPA for every explicitly held slate game, rerun canonical generation, and require zero missing_true_epa holds before cutover.',
             in_array('missing_immutable_pregame_market', $blockers, true) => 'Refresh odds and regenerate canonical NFL predictions so every slate game freezes a fresh immutable pregame spread and total.',
@@ -188,9 +217,10 @@ class NflCanonicalCutoverReadinessService
             ])
             ->where('predictions.published_at', '<=', now())
             ->whereIn('predictions.sport_event_id', $eventIds)
-            ->select(['predictions.id', 'predictions.sport_event_id', 'predictions.calculation_run_id', 'predictions.generated_at', 'predictions.published_at'])
+            ->select(['predictions.id', 'predictions.sport_event_id', 'predictions.calculation_run_id', 'predictions.generated_at', 'predictions.published_at', 'predictions.output_metadata'])
             ->get()->unique('sport_event_id')->keyBy('sport_event_id');
 
+        $fullModelEvents = [];
         $epaApplied = [];
         $epaHeld = [];
         $epaQuarantined = [];
@@ -221,6 +251,9 @@ class NflCanonicalCutoverReadinessService
             ->get()->groupBy('prediction_id');
         foreach ($games as $game) {
             $canonical = $canonicalByEvent->get($game->sport_event_id);
+            if (data_get($canonical?->output_metadata, 'forecast_source') === NflFullModelReleaseDefinition::FORECAST_SOURCE) {
+                $fullModelEvents[] = (int) $game->getKey();
+            }
             $inputSnapshot = $canonical?->calculationRun?->inputSnapshot;
             $context = (array) $inputSnapshot?->getAttribute('recommendation_context');
             $metadata = ($context['version'] ?? null) === NflRecommendationInputBuilder::VERSION
@@ -319,6 +352,8 @@ class NflCanonicalCutoverReadinessService
 
         return [
             'slate_event_count' => $games->count(),
+            'full_model_forecast_event_count' => count($fullModelEvents),
+            'missing_full_model_forecast_game_ids' => collect($gameIds)->diff($fullModelEvents)->values()->all(),
             'slate_game_ids' => $games->modelKeys(),
             'canonical_prediction_event_count' => $canonicalByEvent->count(),
             'recorded_disposition_event_count' => count($gameIds) - count($missingDispositionGameIds),

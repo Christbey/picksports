@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { predictionHomeMargin } from '@/lib/predictionSpread';
 import { Link } from '@inertiajs/vue3';
 import {
     Activity,
@@ -1142,7 +1143,10 @@ function predictionId(): number | string | null {
 }
 
 function predictedSpreadValue(): number | null {
-    const spread = props.prediction.predicted_spread;
+    const spread = predictionHomeMargin(
+        props.prediction,
+        !isPredictionListItem(props.prediction),
+    );
 
     return typeof spread === 'number' ? Number(spread.toFixed(1)) : null;
 }

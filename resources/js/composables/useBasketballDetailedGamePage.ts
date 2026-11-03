@@ -59,6 +59,7 @@ export function useBasketballDetailedGamePage(
         homeTeam,
         awayTeam,
         prediction,
+        historicalPrediction,
         homeMetrics,
         awayMetrics,
         homeTeamStats,
@@ -178,6 +179,9 @@ export function useBasketballDetailedGamePage(
 
     const insightsProps = computed(() => ({
         gameStatus: currentGame.value.status,
+        historicalPrediction: !prediction.value
+            ? historicalPrediction.value
+            : null,
         awayLabel: awayTeam.value?.abbreviation || null,
         homeLabel: homeTeam.value?.abbreviation || null,
         homeTeamId: currentGame.value.home_team_id,

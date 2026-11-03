@@ -1,3 +1,4 @@
+import { predictionHomeMargin } from '@/lib/predictionSpread';
 import { computed } from 'vue';
 import { useDetailedGameData } from '@/composables/useDetailedGameData';
 import { formatDateLong, useGameStatus } from '@/composables/useFormatters';
@@ -142,7 +143,7 @@ const normalizeBasketballStats = (
     };
 };
 
-const normalizePrediction = (
+export const normalizePrediction = (
     rawPrediction: unknown,
 ): PredictionSummary | null => {
     if (!rawPrediction || typeof rawPrediction !== 'object') return null;
@@ -361,7 +362,7 @@ const normalizePrediction = (
     return {
         home_win_probability: toNumber(source.home_win_probability),
         away_win_probability: toNumber(source.away_win_probability),
-        predicted_spread: toNumber(source.predicted_spread),
+        predicted_spread: predictionHomeMargin(source) ?? 0,
         predicted_total: toNumber(source.predicted_total),
         confidence_level: confidenceLevel,
         confidence_context: confidenceContext,
@@ -379,6 +380,7 @@ export function useBasketballGamePage(options: UseBasketballGamePageOptions) {
         homeTeam,
         awayTeam,
         prediction: rawPrediction,
+        historicalPrediction,
         homeMetrics,
         awayMetrics,
         homeTeamStats: rawHomeTeamStats,
@@ -452,6 +454,7 @@ export function useBasketballGamePage(options: UseBasketballGamePageOptions) {
         homeTeam,
         awayTeam,
         prediction,
+        historicalPrediction,
         homeMetrics,
         awayMetrics,
         homeTeamStats,

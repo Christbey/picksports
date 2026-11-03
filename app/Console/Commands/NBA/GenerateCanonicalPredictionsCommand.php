@@ -12,6 +12,7 @@ class GenerateCanonicalPredictionsCommand extends Command
         {--game= : Generate for one NBA game ID}
         {--season= : Limit to a season}
         {--date= : Limit to a game date (YYYY-MM-DD)}
+        {--days-forward=8 : Bound default generation to the upcoming rollout horizon}
         {--draft : Create immutable revisions without publishing them}';
 
     protected $description = 'Generate canonical NBA predictions through the snapshot and calculation-release lifecycle';
@@ -26,6 +27,11 @@ class GenerateCanonicalPredictionsCommand extends Command
             ->withoutCompletedPlayoffSeriesPlaceholders()
             ->orderBy('game_date')
             ->orderBy('id');
+
+        if (! filled($this->option('game')) && ! filled($this->option('date'))) {
+            $end = now()->addDays(max(0, (int) $this->option('days-forward')));
+            $query->whereHas('sportEvent', fn ($query) => $query->where('starts_at', '<=', $end));
+        }
 
         if (filled($this->option('game'))) {
             $query->whereKey((int) $this->option('game'));

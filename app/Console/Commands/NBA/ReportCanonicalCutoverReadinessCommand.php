@@ -27,7 +27,7 @@ class ReportCanonicalCutoverReadinessCommand extends Command
                 ['Check', 'Value'],
                 collect($report)->map(fn (mixed $value, string $key): array => [
                     $key,
-                    is_bool($value) ? ($value ? 'yes' : 'no') : ($value ?? 'all'),
+                    is_array($value) ? json_encode($value, JSON_THROW_ON_ERROR) : (is_bool($value) ? ($value ? 'yes' : 'no') : ($value ?? 'all')),
                 ])->values()->all(),
             );
         }

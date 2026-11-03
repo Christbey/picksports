@@ -2,7 +2,11 @@
 import BasketballBoxScoreCard from '@/components/game-page/BasketballBoxScoreCard.vue';
 import TeamMetricsComparisonCard from '@/components/game-page/TeamMetricsComparisonCard.vue';
 import TopPerformersCard from '@/components/game-page/TopPerformersCard.vue';
-import type { TeamMetricsData, TopPerformer } from '@/types';
+import type {
+    TeamMetricsData,
+    TopPerformer,
+    BasketballHistoricalPrediction,
+} from '@/types';
 
 interface BasketballTeamStats {
     field_goals_made: number;
@@ -23,6 +27,7 @@ interface BasketballTeamStats {
 withDefaults(
     defineProps<{
         gameStatus: string;
+        historicalPrediction?: BasketballHistoricalPrediction | null;
         awayLabel?: string | null;
         homeLabel?: string | null;
         homeTeamId: number;
@@ -47,6 +52,7 @@ withDefaults(
         ) => string;
     }>(),
     {
+        historicalPrediction: null,
         awayLabel: null,
         homeLabel: null,
         homeTeamStats: null,
@@ -64,37 +70,61 @@ withDefaults(
 </script>
 
 <template>
-    <template v-if="showRecap">
-        <BasketballBoxScoreCard
-            v-if="
-                gameStatus === 'STATUS_FINAL' && homeTeamStats && awayTeamStats
-            "
+    <div>
+        <section
+            v-if="gameStatus === 'STATUS_FINAL' && historicalPrediction"
+            aria-label="Historical forecast"
+        >
+            <h3>Historical model forecast</h3>
+            <p>
+                Home scoring margin:
+                {{ historicalPrediction.predicted_spread ?? 'Unavailable' }} ·
+                Total:
+                {{ historicalPrediction.predicted_total ?? 'Unavailable' }}
+            </p>
+            <p v-if="historicalPrediction.known_before_kickoff">
+                Archived forecast observed before kickoff. Historical review
+                only; no betting approval.
+            </p>
+            <p v-else>
+                Stored historical forecast; pregame timing is unverified.
+                Historical review only; no betting approval.
+            </p>
+        </section>
+        <template v-if="showRecap">
+            <BasketballBoxScoreCard
+                v-if="
+                    gameStatus === 'STATUS_FINAL' &&
+                    homeTeamStats &&
+                    awayTeamStats
+                "
+                :away-label="awayLabel"
+                :home-label="homeLabel"
+                :away-team-stats="awayTeamStats"
+                :home-team-stats="homeTeamStats"
+                :get-better-value="getBetterValue"
+                :layout="boxScoreLayout"
+            />
+
+            <TopPerformersCard
+                v-if="gameStatus === 'STATUS_FINAL' && topPerformers.length > 0"
+                :performers="topPerformers"
+                :mode="performersMode"
+                :home-team-id="homeTeamId"
+                :home-label="homeLabel"
+                :away-label="awayLabel"
+            />
+        </template>
+
+        <TeamMetricsComparisonCard
+            v-if="showMetrics && homeMetrics && awayMetrics"
+            :title="metricsTitle"
             :away-label="awayLabel"
             :home-label="homeLabel"
-            :away-team-stats="awayTeamStats"
-            :home-team-stats="homeTeamStats"
+            :away-metrics="awayMetrics"
+            :home-metrics="homeMetrics"
+            :format-number="formatNumber"
             :get-better-value="getBetterValue"
-            :layout="boxScoreLayout"
         />
-
-        <TopPerformersCard
-            v-if="gameStatus === 'STATUS_FINAL' && topPerformers.length > 0"
-            :performers="topPerformers"
-            :mode="performersMode"
-            :home-team-id="homeTeamId"
-            :home-label="homeLabel"
-            :away-label="awayLabel"
-        />
-    </template>
-
-    <TeamMetricsComparisonCard
-        v-if="showMetrics && homeMetrics && awayMetrics"
-        :title="metricsTitle"
-        :away-label="awayLabel"
-        :home-label="homeLabel"
-        :away-metrics="awayMetrics"
-        :home-metrics="homeMetrics"
-        :format-number="formatNumber"
-        :get-better-value="getBetterValue"
-    />
+    </div>
 </template>

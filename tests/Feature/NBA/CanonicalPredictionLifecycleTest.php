@@ -389,3 +389,16 @@ it('still rejects missing or unexpected frozen NBA configuration keys', function
     expect(fn () => app(NbaInputSnapshotBuilder::class)->build($fixture['event'], CalculationReleaseData::fromModel($release)))
         ->toThrow(PredictionLifecycleException::class, 'NBA full-model configuration is unavailable.');
 })->with(['missing', 'unexpected']);
+
+it('blocks NBA read cutover while elapsed-tipoff legacy baselines would be lost', function () {
+    $fixture = canonicalNbaFixture();
+    app(NbaCalculationReleaseRegistrar::class)->register('1.1.1', effectiveAt: now()->subMinute()->toImmutable());
+    $fixture['event']->forceFill(['starts_at' => now()->subMinutes(5)])->save();
+    LegacyNbaPrediction::factory()->create(['game_id' => $fixture['game']->id]);
+    $report = app(NbaCanonicalCutoverReadinessService::class)->report(2026);
+    expect($report['read_transport_ready'])->toBeFalse()
+        ->and($report['inflight_legacy_game_ids'])->toBe([$fixture['game']->id])
+        ->and($report['readiness_blockers'])->toContain('inflight_legacy_baselines_require_compatibility');
+    $fixture['game']->forceFill(['status' => 'STATUS_FINAL'])->save();
+    expect(app(NbaCanonicalCutoverReadinessService::class)->report(2026)['inflight_legacy_game_ids'])->toBe([]);
+});

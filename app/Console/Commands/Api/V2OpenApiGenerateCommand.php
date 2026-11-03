@@ -1195,10 +1195,11 @@ class V2OpenApiGenerateCommand extends Command
                 'team_stats' => ['type' => 'array', 'items' => ['$ref' => '#/components/schemas/SportStat']],
             ]),
             'MlbGamePageData' => $this->fixedObjectSchema([
-                'game', 'prediction', 'recent_games', 'metrics', 'depth_charts_available',
+                'game', 'prediction', 'historical_prediction', 'recent_games', 'metrics', 'depth_charts_available',
             ], [
                 'game' => ['$ref' => '#/components/schemas/SportGame'],
                 'prediction' => ['oneOf' => [['$ref' => '#/components/schemas/SportPrediction'], ['type' => 'null']]],
+                'historical_prediction' => ['type' => ['object', 'null'], 'additionalProperties' => true, 'description' => 'Display-only legacy archive or unverified historical forecast; never active betting evidence.'],
                 'recent_games' => $openObject,
                 'metrics' => $openObject,
                 'depth_charts_available' => ['type' => 'boolean'],

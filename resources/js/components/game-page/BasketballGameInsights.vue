@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HistoricalForecastReview from '@/components/game-page/HistoricalForecastReview.vue';
 import BasketballBoxScoreCard from '@/components/game-page/BasketballBoxScoreCard.vue';
 import TeamMetricsComparisonCard from '@/components/game-page/TeamMetricsComparisonCard.vue';
 import TopPerformersCard from '@/components/game-page/TopPerformersCard.vue';
@@ -71,26 +72,10 @@ withDefaults(
 
 <template>
     <div>
-        <section
-            v-if="gameStatus === 'STATUS_FINAL' && historicalPrediction"
-            aria-label="Historical forecast"
-        >
-            <h3>Historical model forecast</h3>
-            <p>
-                Home scoring margin:
-                {{ historicalPrediction.predicted_spread ?? 'Unavailable' }} ·
-                Total:
-                {{ historicalPrediction.predicted_total ?? 'Unavailable' }}
-            </p>
-            <p v-if="historicalPrediction.known_before_kickoff">
-                Archived forecast observed before kickoff. Historical review
-                only; no betting approval.
-            </p>
-            <p v-else>
-                Stored historical forecast; pregame timing is unverified.
-                Historical review only; no betting approval.
-            </p>
-        </section>
+        <HistoricalForecastReview
+            v-if="gameStatus === 'STATUS_FINAL'"
+            :historical-prediction="historicalPrediction"
+        />
         <template v-if="showRecap">
             <BasketballBoxScoreCard
                 v-if="

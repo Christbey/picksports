@@ -38,6 +38,15 @@ class GenerateCanonicalPredictionsCommand extends AbstractGenerateCanonicalPredi
         $this->generatedGameIds[] = (int) $game->getKey();
     }
 
+    protected function generationHorizon(): ?array
+    {
+        if (filled($this->option('game')) || filled($this->option('date')) || filled($this->option('days-forward'))) {
+            return null;
+        }
+
+        return ['start' => now(), 'end' => now()->addDays(8)];
+    }
+
     protected function gameClass(): string
     {
         return Game::class;

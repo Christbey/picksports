@@ -11913,6 +11913,7 @@
                 "required": [
                     "game",
                     "prediction",
+                    "historical_prediction",
                     "recent_games",
                     "metrics",
                     "depth_charts_available"
@@ -11930,6 +11931,14 @@
                                 "type": "null"
                             }
                         ]
+                    },
+                    "historical_prediction": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "additionalProperties": true,
+                        "description": "Display-only legacy archive or unverified historical forecast; never active betting evidence."
                     },
                     "recent_games": {
                         "type": "object",

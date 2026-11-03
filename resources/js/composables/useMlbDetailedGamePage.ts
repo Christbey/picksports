@@ -17,6 +17,7 @@ export function useMlbDetailedGamePage(gameId: number) {
         homeTeam,
         awayTeam,
         prediction,
+        historicalPrediction,
         homeTrends,
         awayTrends,
         trendsLoading,
@@ -201,6 +202,7 @@ export function useMlbDetailedGamePage(gameId: number) {
 
     return {
         pageProps,
+        historicalPrediction,
         recentSectionProps,
         depthChartsAvailable,
         loadTrends,

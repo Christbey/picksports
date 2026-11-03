@@ -91,13 +91,14 @@ it('runs MLB canonical commands and evaluation idempotently', function () {
         ->and(data_get(PredictionEvaluation::query()->sole()->actuals, 'home_margin'))->toBe(3);
 });
 
-it('serves strict MLB canonical reads after readiness passes', function () {
+it('serves strict MLB canonical reads without mistaking original rules for full model readiness', function () {
     $fixture = canonicalMlbFixture();
     $readiness = app(MlbCanonicalCutoverReadinessService::class);
     expect($readiness->report(2026)['ready_for_cutover'])->toBeFalse();
     app(MlbCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
     $prediction = app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
-    expect($readiness->report(2026)['ready_for_cutover'])->toBeTrue();
+    expect($readiness->report(2026)['ready_for_cutover'])->toBeFalse();
+    expect($readiness->report(2026)['readiness_blockers'])->toContain('established_model_release_required');
     $user = User::factory()->create();
     config()->set('subscriptions.enforce_tiers', true);
     config()->set('subscriptions.tier_bypass_user_ids', [$user->id]);

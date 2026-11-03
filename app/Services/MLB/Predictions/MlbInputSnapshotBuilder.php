@@ -2,7 +2,10 @@
 
 namespace App\Services\MLB\Predictions;
 
+use App\Actions\MLB\GeneratePrediction;
 use App\Application\Predictions\Data\CalculationReleaseData;
+use App\Application\Predictions\Data\EventInputSnapshotData;
+use App\Exceptions\Predictions\PredictionLifecycleException;
 use App\Models\MLB\Game;
 use App\Models\MLB\GameWeather;
 use App\Models\MLB\Player;
@@ -10,11 +13,41 @@ use App\Models\MLB\PlayerInjury;
 use App\Models\MLB\TeamMetric;
 use App\Models\SportEvent;
 use App\Services\Predictions\CanonicalTeamInputSnapshotBuilder;
+use App\Services\Predictions\EstablishedModelTransport;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 
 class MlbInputSnapshotBuilder extends CanonicalTeamInputSnapshotBuilder
 {
+    public function build(SportEvent $event, CalculationReleaseData $release): EventInputSnapshotData
+    {
+        $snapshot = parent::build($event, $release);
+        if (data_get($release->configuration, 'forecast.source') === null) {
+            return $snapshot;
+        }
+        $game = $event->mlbGame()->with(['homeTeam', 'awayTeam'])->first();
+        if ($game === null || ! app(MlbPregameIdentity::class)->matches($game, $event)) {
+            throw new PredictionLifecycleException('MLB canonical game identity must match the linked game.');
+        }
+        $snapshot = app(EstablishedModelTransport::class)->capture(
+            $snapshot, $release, 'mlb', MlbFullModelReleaseDefinition::INPUT_SCHEMA_VERSION,
+            MlbFullModelReleaseDefinition::FORECAST_SOURCE, MlbFullModelReleaseDefinition::configurationKeys(),
+            fn () => app(GeneratePrediction::class)->preview($game),
+        );
+        $inputs = $snapshot->inputs;
+        $features = (array) data_get($inputs, 'established_model.evidence.features', []);
+        foreach (['home', 'away'] as $side) {
+            $inputs[$side]['elo'] = $features[$side.'_team_elo'];
+            $inputs['pitching'][$side]['elo'] = $features[$side.'_pitcher_elo'];
+            $inputs['pitching'][$side]['source'] = $features[$side.'_pitcher_source'] ?? null;
+            $inputs['pitching'][$side]['confidence'] = $features[$side.'_pitcher_confidence'] ?? null;
+        }
+
+        return new EventInputSnapshotData(
+            ...[...(array) $snapshot, 'inputs' => $inputs],
+        );
+    }
+
     private ?GameWeather $capturedWeather = null;
 
     /** @var array<string,Player|null> */

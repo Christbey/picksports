@@ -7,6 +7,8 @@ on:
       - app/Console/Commands/Api/V2OpenApiGenerateCommand.php
       - routes/api-v2.php
       - .github/workflows/sdk-contracts.yml
+      - scripts/prepare_sdk_spec.py
+      - scripts/test_prepare_sdk_spec.py
   push:
     branches: [main]
     paths:
@@ -14,6 +16,8 @@ on:
       - app/Console/Commands/Api/V2OpenApiGenerateCommand.php
       - routes/api-v2.php
       - .github/workflows/sdk-contracts.yml
+      - scripts/prepare_sdk_spec.py
+      - scripts/test_prepare_sdk_spec.py
 
 permissions:
   contents: read
@@ -27,11 +31,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Prepare compatible SDK contract
+        run: |
+          python3 -m unittest discover -s scripts -p test_prepare_sdk_spec.py
+          python3 scripts/prepare_sdk_spec.py docs/openapi-v2.json build/sdk/openapi-v2.json
       - name: Generate TypeScript Fetch SDK
         run: |
           docker run --rm --user "$(id -u):$(id -g)" \
             -v "$PWD:/local" openapitools/openapi-generator-cli:v7.14.0 generate \
-            -i /local/docs/openapi-v2.json \
+            -i /local/build/sdk/openapi-v2.json \
             -g typescript-fetch \
             -o /local/build/sdk/typescript \
             --additional-properties=npmName=@picksports/api-v2,supportsES6=true,typescriptThreePlus=true
@@ -42,20 +50,24 @@ jobs:
           npm run build
 
   swift:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: swift-actions/setup-swift@v2
+      - uses: actions/setup-java@v4
         with:
-          swift-version: "6.0"
+          distribution: temurin
+          java-version: "21"
+      - name: Prepare compatible SDK contract
+        run: python3 scripts/prepare_sdk_spec.py docs/openapi-v2.json build/sdk/openapi-v2.json
       - name: Generate Swift SDK
         run: |
-          docker run --rm --user "$(id -u):$(id -g)" \
-            -v "$PWD:/local" openapitools/openapi-generator-cli:v7.14.0 generate \
-            -i /local/docs/openapi-v2.json \
+          curl --fail --silent --show-error --location https://repo.maven.apache.org/maven2/org/openapitools/openapi-generator-cli/7.14.0/openapi-generator-cli-7.14.0.jar --output "$RUNNER_TEMP/openapi-generator.jar"
+          echo "e03186835022ca02da4aa95e3967b6a3b6d44c2e5f7606e6d5c22466f519c757  $RUNNER_TEMP/openapi-generator.jar" | shasum --algorithm 256 --check
+          java -jar "$RUNNER_TEMP/openapi-generator.jar" generate \
+            -i build/sdk/openapi-v2.json \
             -g swift6 \
-            -o /local/build/sdk/swift \
+            -o build/sdk/swift \
             --additional-properties=projectName=PickSportsApiV2
       - name: Compile Swift SDK
         run: swift build --package-path build/sdk/swift
@@ -69,14 +81,16 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      - name: Prepare compatible SDK contract
+        run: python3 scripts/prepare_sdk_spec.py docs/openapi-v2.json build/sdk/openapi-v2.json
       - name: Generate Kotlin SDK
         run: |
           docker run --rm --user "$(id -u):$(id -g)" \
             -v "$PWD:/local" openapitools/openapi-generator-cli:v7.14.0 generate \
-            -i /local/docs/openapi-v2.json \
-            -g kotlin \
+            -i /local/build/sdk/openapi-v2.json \
+            -g kotlin --library jvm-retrofit2 \
             -o /local/build/sdk/kotlin \
-            --additional-properties=packageName=com.picksports.api.v2,library=jvm-retrofit2,useCoroutines=true
+            --additional-properties=packageName=com.picksports.api.v2,useCoroutines=true
       - name: Compile Kotlin SDK
         working-directory: build/sdk/kotlin
         run: |

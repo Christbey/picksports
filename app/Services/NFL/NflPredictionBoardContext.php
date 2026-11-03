@@ -2,13 +2,16 @@
 
 namespace App\Services\NFL;
 
+use App\Models\CanonicalPrediction;
 use App\Models\NFL\Game;
 use App\Models\NFL\ResearchRevision;
 use App\Models\SportsGameContextReport;
+use App\Services\NFL\Predictions\NflRecommendationInputBuilder;
 use App\Services\NFL\Research\ResearchPipeline;
 use App\Services\NFL\Research\ResearchRefreshPolicy;
 use App\Services\Sports\SportsDateWindowService;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Throwable;
 
@@ -17,7 +20,7 @@ class NflPredictionBoardContext
 {
     public function forPredictions(Collection $predictions): Collection
     {
-        $ids = $predictions->pluck('game_id')->unique()->values();
+        $ids = $predictions->map(fn ($prediction) => $this->game($prediction)?->id)->filter()->unique()->values();
         if ($ids->isEmpty()) {
             return collect();
         }
@@ -30,7 +33,7 @@ class NflPredictionBoardContext
         $pipeline = app(ResearchPipeline::class);
 
         return $predictions->mapWithKeys(function ($prediction) use ($revisions, $reports, $pipeline) {
-            $game = $prediction->getRelationValue('game');
+            $game = $this->game($prediction);
             if (! $game instanceof Game) {
                 return [$prediction->id => null];
             }
@@ -40,9 +43,11 @@ class NflPredictionBoardContext
             $pregame = in_array($game->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true);
             $reasons = (array) data_get($revision?->brief, 'eligibility.data_reasons', []);
             $storedHash = data_get($revision?->brief, 'stored_prediction_hash');
-            $newerSave = $revision && $prediction->updated_at?->gt($revision->created_at);
+            $savedAt = $prediction instanceof CanonicalPrediction ? $prediction->generated_at : $prediction->updated_at;
+            $stored = $this->stored($prediction);
+            $newerSave = $revision && $savedAt?->gt($revision->created_at);
             $changed = in_array('research_candidate_changed', $reasons, true)
-                || ($storedHash && $storedHash !== $pipeline->storedPredictionHash($prediction->toArray()));
+                || ($storedHash && ($stored === null || $storedHash !== $pipeline->storedPredictionHash($stored)));
             // Legacy assessments have no comparison snapshot: request assessment, not a claim of changed values.
             $comparisonMissing = $newerSave && ! $storedHash;
             $expired = $report && (! $report->expires_at?->isFuture()
@@ -94,7 +99,7 @@ class NflPredictionBoardContext
             return [$prediction->id => [
                 'forecast' => $forecast ? array_intersect_key($forecast, array_flip(['predicted_spread', 'predicted_total', 'win_probability'])) : null,
                 'forecast_source' => $forecast ? 'Research forecast' : 'Model forecast',
-                'forecast_at' => ($forecast ? $revision->created_at : $prediction->updated_at)?->toIso8601String(),
+                'forecast_at' => ($forecast ? $revision->created_at : $savedAt)?->toIso8601String(),
                 'research' => [
                     'status' => $status,
                     'assessed_at' => $revision?->created_at?->toIso8601String(),
@@ -118,6 +123,28 @@ class NflPredictionBoardContext
                 ],
             ]];
         });
+    }
+
+    private function game(Model $prediction): ?Game
+    {
+        return $prediction instanceof CanonicalPrediction
+            ? $prediction->sportEvent?->getRelation('nflGame')
+            : $prediction->getRelationValue('game');
+    }
+
+    private function stored(Model $prediction): ?array
+    {
+        if (! $prediction instanceof CanonicalPrediction) {
+            return $prediction->toArray();
+        }
+        $context = (array) data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'recommendation_context', []);
+        if (($context['version'] ?? null) !== NflRecommendationInputBuilder::VERSION) {
+            return null;
+        }
+
+        return [...(array) ($context['outputs'] ?? []), 'model_metadata' => (array) ($context['model_metadata'] ?? []),
+            'model_version' => $context['model_version'] ?? null, 'feature_version' => $prediction->feature_version,
+            'blend_version' => $prediction->blend_version, 'updated_at' => $prediction->generated_at?->toIso8601String()];
     }
 
     /** Only timestamped odds saved before kickoff may stand in for missing research market evidence. */

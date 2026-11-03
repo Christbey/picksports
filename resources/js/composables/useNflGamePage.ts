@@ -19,6 +19,7 @@ import type {
     LivePredictionData,
     NflPageGame,
     NflPagePrediction,
+    NflHistoricalPrediction,
     NflPageTeam,
     NflTeamStats,
     PredictionAnalysisSummary,
@@ -163,6 +164,9 @@ export const normalizePrediction = (
     if (!rawPrediction || typeof rawPrediction !== 'object') return null;
 
     const source = rawPrediction as Record<string, unknown>;
+    const spread = toOptionalNumber(source.predicted_spread);
+    const canonical =
+        source.phase === 'pregame' && typeof source.revision === 'number';
 
     return {
         sport: typeof source.sport === 'string' ? source.sport : undefined,
@@ -172,7 +176,7 @@ export const normalizePrediction = (
         game_id: toNumber(source.game_id),
         home_elo: toOptionalNumber(source.home_elo) ?? '',
         away_elo: toOptionalNumber(source.away_elo) ?? '',
-        predicted_spread: toOptionalNumber(source.predicted_spread) ?? '',
+        predicted_spread: spread === null ? '' : canonical ? -spread : spread,
         predicted_total: toOptionalNumber(source.predicted_total) ?? '',
         win_probability: toOptionalNumber(source.win_probability) ?? '',
         confidence_score: toNumber(source.confidence_score),
@@ -215,6 +219,7 @@ export function useNflGamePage(gameId: number) {
     const homeTeam = ref<NflPageTeam | null>(null);
     const awayTeam = ref<NflPageTeam | null>(null);
     const prediction = ref<NflPagePrediction | null>(null);
+    const historicalPrediction = ref<NflHistoricalPrediction | null>(null);
     const homeTeamStats = ref<NflTeamStats | null>(null);
     const awayTeamStats = ref<NflTeamStats | null>(null);
     const homeRecentGames = ref<RecentGameListItem[]>([]);
@@ -356,11 +361,16 @@ export function useNflGamePage(gameId: number) {
             const page = await api.games.page<{
                 game: NflPageGame;
                 prediction: Record<string, unknown> | null;
+                historical_prediction?: NflHistoricalPrediction | null;
                 team_stats: ApiV2Stat[];
             }>('nfl', gameId, requestOptions);
             if (!page?.data?.game) throw new Error('Game data is unavailable.');
             const gameData = { data: page.data.game };
             const predictionData = { data: page?.data?.prediction };
+            historicalPrediction.value =
+                page.data.historical_prediction?.source === 'legacy_archive'
+                    ? page.data.historical_prediction
+                    : null;
             const stats = flattenApiV2Stats(
                 page?.data?.team_stats ?? [],
             ) as unknown as NflTeamStats[];
@@ -589,6 +599,7 @@ export function useNflGamePage(gameId: number) {
         homeTeam,
         awayTeam,
         prediction,
+        historicalPrediction,
         homeTeamStats,
         awayTeamStats,
         homeRecentGames,

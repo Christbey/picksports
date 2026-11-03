@@ -292,11 +292,17 @@ test('public lines show update times while stale diagnostics remain admin-only',
     p.nfl_board.research = { status: 'refresh_blocked', decision: 'hold' };
     const v = nflBoardPresentation(p);
     assert.equal(v.spreadLean, 'HOME -7');
-    assert.equal(nflBoardPresentation(p, true).spreadLean, 'HOME -7 (stale line)');
+    assert.equal(
+        nflBoardPresentation(p, true).spreadLean,
+        'HOME -7 (stale line)',
+    );
     assert.equal(v.marketSpread, 'HOME -7');
     assert.equal(nflBoardPresentation(p, true).marketSpread, 'HOME -7 (stale)');
     assert.equal(v.totalLean, 'Under 50.5');
-    assert.equal(nflBoardPresentation(p, true).totalLean, 'Under 50.5 (stale line)');
+    assert.equal(
+        nflBoardPresentation(p, true).totalLean,
+        'Under 50.5 (stale line)',
+    );
     assert.equal(v.marketAt, '2026-09-26T16:10:06Z');
     assert.equal(v.researchLabel, 'Refresh blocked');
     assert.equal(v.researchDecision, 'hold');
@@ -375,11 +381,32 @@ test('admin drawer retries research and refreshes the board after completion', a
     }
 });
 
- test('game page preserves canonical public prediction IDs', async () => {
+test('game page preserves canonical public prediction IDs', async () => {
     const { normalizePrediction } = await server.ssrLoadModule(
         '/resources/js/composables/useNflGamePage.ts',
     );
     const id = '01m4m3wsha2ps0z054s6935shm';
     assert.equal(normalizePrediction({ id }).id, id);
     assert.equal(normalizePrediction({ id: 123 }).id, 123);
+});
+
+test('canonical board converts home handicap to margin while research and legacy retain margins', () => {
+    const canonical = { phase: 'pregame', revision: 1, predicted_spread: -6.5 };
+    assert.equal(nflBoardPresentation(canonical).margin, 6.5);
+    assert.equal(
+        nflBoardPresentation({ ...canonical, predicted_spread: 6.5 }).margin,
+        -6.5,
+    );
+    assert.equal(
+        nflBoardPresentation({ ...canonical, predicted_spread: null }).margin,
+        null,
+    );
+    assert.equal(
+        nflBoardPresentation({
+            ...canonical,
+            nfl_board: { forecast: { predicted_spread: 7 } },
+        }).margin,
+        7,
+    );
+    assert.equal(nflBoardPresentation({ predicted_spread: 6.5 }).margin, 6.5);
 });

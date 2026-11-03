@@ -4,18 +4,20 @@ namespace App\Services\Api\V2;
 
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game as CfbGame;
+use App\Services\BettingRecommendations\GameBettingRecommendationService;
 use App\Services\CFB\Predictions\CfbCanonicalSpreadValueSignalService;
 use App\Services\CFB\Predictions\CfbPredictionInputQuality;
 use App\Services\MLB\MlbMarketAwareProjectionService;
 use App\Services\MLB\MlbPredictionRecommendationService;
 use App\Services\MLB\MlbRecommendationPresentation;
 use App\Services\Predictions\BettingForecastSource;
+use App\Services\Predictions\PredictionDeliverySource;
 
 class CanonicalPredictionPresentationService
 {
     public function __construct(private readonly CfbCanonicalSpreadValueSignalService $cfbValueSignals) {}
 
-    public function forPrediction(CanonicalPrediction $prediction): CanonicalPredictionPresentationData
+    public function forPrediction(CanonicalPrediction $prediction, ?array $nflBoard = null): CanonicalPredictionPresentationData
     {
         $market = $prediction->markets->first(fn ($market): bool => $market->market_type === 'moneyline' && $market->selection === 'home');
         $confidence = is_numeric($market?->confidence_score) ? (float) $market->confidence_score : null;
@@ -24,7 +26,16 @@ class CanonicalPredictionPresentationService
         $mlbForecast = $prediction->sport === 'mlb'
             ? app(BettingForecastSource::class)->fromModel($prediction, 'mlb') : null;
 
+        if ($nflBoard !== null) {
+            $context = app(PredictionDeliverySource::class)->context($prediction, 'nfl');
+            if (app(GameBettingRecommendationService::class)->forPrediction($context) === []) {
+                $nflBoard['research']['decision'] = 'hold';
+                $nflBoard['research']['reasons'] = array_values(array_unique([...(array) ($nflBoard['research']['reasons'] ?? []), 'canonical_approval_required']));
+            }
+        }
+
         return new CanonicalPredictionPresentationData(
+            nflBoard: $nflBoard,
             recommendation: $prediction->sport === 'mlb'
                 ? app(MlbRecommendationPresentation::class)->sanitize(app(MlbPredictionRecommendationService::class)->forPrediction($mlbForecast)) : null,
             marketAwareProjection: $prediction->sport === 'mlb'

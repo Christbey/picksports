@@ -12,6 +12,7 @@ class NflCalculationReleaseRegistrar
 
     public function register(string $semanticVersion = NflCalculationReleaseDefinition::SEMANTIC_VERSION, bool $approve = true, string $actor = 'artisan', string $reason = 'NFL canonical rules release registration.', ?CarbonImmutable $effectiveAt = null): CalculationRelease
     {
-        return $this->registrar->register($this->definition, NflCalculator::class, NflInputSnapshotBuilder::class, $semanticVersion, $approve, $actor, $reason, $effectiveAt);
+        return $this->registrar->register($semanticVersion === NflFullModelReleaseDefinition::SEMANTIC_VERSION
+            ? new NflFullModelReleaseDefinition : $this->definition, NflCalculator::class, NflInputSnapshotBuilder::class, $semanticVersion, $approve, $actor, $reason, $effectiveAt);
     }
 }

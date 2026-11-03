@@ -27,7 +27,9 @@ class NbaInputSnapshotBuilder extends BasketballInputSnapshotBuilder
             throw new PredictionLifecycleException('NBA full-model release inputs are incompatible.');
         }
         $frozen = data_get($release->configuration, 'forecast.configuration');
-        if (! is_array($frozen) || array_keys($frozen) !== ['nba.elo', 'nba.prediction', 'nba.season', 'nba.possession_coefficient']) {
+        $expectedKeys = ['nba.elo', 'nba.prediction', 'nba.season', 'nba.possession_coefficient'];
+        if (! is_array($frozen) || count($frozen) !== count($expectedKeys)
+            || array_diff($expectedKeys, array_keys($frozen)) !== []) {
             throw new PredictionLifecycleException('NBA full-model configuration is unavailable.');
         }
         $original = collect(array_keys($frozen))->mapWithKeys(fn (string $key): array => [$key => config($key)])->all();

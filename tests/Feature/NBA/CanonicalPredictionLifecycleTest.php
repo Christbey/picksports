@@ -25,6 +25,8 @@ use App\Services\NBA\Predictions\NbaCalculationReleaseRegistrar;
 use App\Services\NBA\Predictions\NbaCalculator;
 use App\Services\NBA\Predictions\NbaCanonicalCutoverReadinessService;
 use App\Services\NBA\Predictions\NbaInputSnapshotBuilder;
+use App\Services\Predictions\CalculationReleaseManager;
+use App\Services\Predictions\CanonicalPayloadHasher;
 use App\Services\Predictions\PredictionDeliverySource;
 use App\Support\SportsViewCache;
 use Illuminate\Support\Facades\Bus;
@@ -359,3 +361,31 @@ it('does not replace future NBA source timestamps with a safe capture timestamp'
         ->toThrow(PredictionLifecycleException::class);
     expect(CanonicalPrediction::where('publication_state', 'published')->count())->toBe(0);
 });
+
+it('accepts database-reordered frozen NBA configuration keys without relaxing the exact configuration contract', function () {
+    $fixture = canonicalNbaFixture();
+    $release = app(NbaCalculationReleaseRegistrar::class)->register('1.1.1', approve: false);
+    $configuration = $release->configuration;
+    $configuration['forecast']['configuration'] = array_reverse($configuration['forecast']['configuration'], true);
+    $release->configuration = $configuration;
+    $release->configuration_hash = app(CanonicalPayloadHasher::class)->hash($configuration);
+    $release->save();
+    app(CalculationReleaseManager::class)->approve($release, 'test', 'Database JSON ordering regression', now()->subMinute()->toImmutable());
+    $prediction = app(GenerateCanonicalPrediction::class)->execute($fixture['game']->fresh());
+    expect($prediction->output_metadata['forecast_source'])->toBe('frozen_nba_model_v1');
+});
+
+it('still rejects missing or unexpected frozen NBA configuration keys', function (string $variant) {
+    $fixture = canonicalNbaFixture();
+    $release = app(NbaCalculationReleaseRegistrar::class)->register('1.1.1', approve: false);
+    $configuration = $release->configuration;
+    if ($variant === 'missing') {
+        unset($configuration['forecast']['configuration']['nba.season']);
+    } else {
+        $configuration['forecast']['configuration']['unexpected'] = [];
+    }
+    $release->configuration = $configuration;
+    $release->save();
+    expect(fn () => app(NbaInputSnapshotBuilder::class)->build($fixture['event'], CalculationReleaseData::fromModel($release)))
+        ->toThrow(PredictionLifecycleException::class, 'NBA full-model configuration is unavailable.');
+})->with(['missing', 'unexpected']);

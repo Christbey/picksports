@@ -11,6 +11,7 @@ abstract class AbstractReportCanonicalCutoverReadinessCommand extends Command
         $readiness = app($this->readinessClass());
         $season = filled($this->option('season')) ? (int) $this->option('season') : null;
         $report = match (true) {
+            $this->getDefinition()->hasOption('offseason') => $readiness->report($season, (bool) $this->option('offseason')),
             $this->getDefinition()->hasOption('week') => $readiness->report(
                 $season,
                 filled($this->option('week')) ? (int) $this->option('week') : null,

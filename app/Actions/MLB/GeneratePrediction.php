@@ -36,6 +36,12 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
     private bool $allowHistoricalGames = false;
 
+    /** @return array<string, mixed>|null */
+    public function preview(Game $game): ?array
+    {
+        return $this->makePredictionData($game);
+    }
+
     protected const SPORT_KEY = 'mlb';
 
     protected const FEATURE_VERSION = 'core-v3';

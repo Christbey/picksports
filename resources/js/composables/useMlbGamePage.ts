@@ -8,6 +8,7 @@ import {
 } from '@/composables/useGameDataUtils';
 import { useTeamTrends } from '@/composables/useTeamTrends';
 import type {
+    BasketballHistoricalPrediction,
     ApiV2Team,
     ApiV2TeamMetric,
     MlbPageGame,
@@ -28,6 +29,7 @@ interface MlbGamePageBootstrap {
         away_team?: ApiV2Team | null;
     };
     prediction: unknown;
+    historical_prediction?: BasketballHistoricalPrediction | null;
     recent_games: {
         home: MlbPageGame[];
         away: MlbPageGame[];
@@ -463,6 +465,9 @@ export function useMlbGamePage(gameId: number) {
     const homeTeam = ref<MlbPageTeam | null>(null);
     const awayTeam = ref<MlbPageTeam | null>(null);
     const prediction = ref<MlbPagePrediction | null>(null);
+    const historicalPrediction = ref<BasketballHistoricalPrediction | null>(
+        null,
+    );
     const homeRecentGames = ref<MlbPageGame[]>([]);
     const awayRecentGames = ref<MlbPageGame[]>([]);
     const homeMetrics = ref<MlbTeamMetricsData | null>(null);
@@ -579,6 +584,13 @@ export function useMlbGamePage(gameId: number) {
                 ? normalizeMlbTeam(payload.game.away_team)
                 : null;
             prediction.value = normalizeMlbPrediction(payload.prediction);
+            const archive = payload.historical_prediction;
+            historicalPrediction.value =
+                !prediction.value &&
+                archive &&
+                ['legacy_archive', 'legacy_history'].includes(archive.source)
+                    ? archive
+                    : null;
             homeRecentGames.value = recentGamesBefore(
                 payload.recent_games.home ?? [],
                 currentGame.value,
@@ -612,6 +624,7 @@ export function useMlbGamePage(gameId: number) {
         homeTeam,
         awayTeam,
         prediction,
+        historicalPrediction,
         homeTrends,
         awayTrends,
         homeMetrics,

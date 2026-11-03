@@ -87,6 +87,8 @@ export const useGameStatus = (status: () => string) => {
                 return 'Scheduled';
             case 'STATUS_IN_PROGRESS':
                 return 'Live';
+            case 'STATUS_UNRESOLVED':
+                return 'Result unverified';
             case 'STATUS_FINAL':
                 return 'Final';
             default:

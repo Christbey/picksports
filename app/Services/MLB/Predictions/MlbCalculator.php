@@ -8,11 +8,17 @@ use App\Application\Predictions\Data\PredictionMarketOutput;
 use App\Application\Predictions\Data\PredictionOutput;
 use App\Contracts\Predictions\SportCalculator;
 use App\Exceptions\Predictions\PredictionLifecycleException;
+use App\Services\Predictions\EstablishedModelTransport;
 
 class MlbCalculator implements SportCalculator
 {
     public function calculate(EventInputSnapshotData $snapshot, CalculationReleaseData $release): PredictionOutput
     {
+        if (data_get($release->configuration, 'forecast.source') !== null) {
+            return app(EstablishedModelTransport::class)->calculate(
+                $snapshot, $release, 'mlb', MlbFullModelReleaseDefinition::INPUT_SCHEMA_VERSION, MlbFullModelReleaseDefinition::FORECAST_SOURCE,
+            );
+        }
         if ($release->sport !== 'mlb' || $release->phase !== 'pregame' || $snapshot->schemaVersion !== MlbCalculationReleaseDefinition::INPUT_SCHEMA_VERSION) {
             throw new PredictionLifecycleException('MLB calculator received incompatible lifecycle data.');
         }

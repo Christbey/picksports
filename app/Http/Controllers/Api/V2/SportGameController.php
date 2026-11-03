@@ -7,7 +7,7 @@ use App\Http\Requests\Api\V2\SportGameIndexRequest;
 use App\Http\Resources\Api\V2\SportGameResource;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportGameQuery;
-use App\Services\Predictions\Basketball\BasketballHistoricalForecastArchive;
+use App\Services\Predictions\HistoricalForecastArchive;
 use App\Services\Sports\GameMatchupContextService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -60,7 +60,7 @@ class SportGameController extends Controller
 
         return response()->json([
             'data' => new SportGameResource($resolvedGame, $context),
-            ...(in_array($context->slug, ['nba', 'cbb'], true) ? ['historical_prediction' => app(BasketballHistoricalForecastArchive::class)->forGame($resolvedGame, $context->slug)] : []),
+            ...(in_array($context->slug, ['nba', 'cbb', 'mlb'], true) ? ['historical_prediction' => app(HistoricalForecastArchive::class)->forGame($resolvedGame, $context->slug)] : []),
             'meta' => [
                 'sport' => $context->slug,
                 'freshness' => [],

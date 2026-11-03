@@ -12,6 +12,6 @@ class MlbCalculationReleaseRegistrar
 
     public function register(string $semanticVersion = MlbCalculationReleaseDefinition::SEMANTIC_VERSION, bool $approve = true, string $actor = 'artisan', string $reason = 'MLB canonical rules release registration.', ?CarbonImmutable $effectiveAt = null): CalculationRelease
     {
-        return $this->registrar->register($this->definition, MlbCalculator::class, MlbInputSnapshotBuilder::class, $semanticVersion, $approve, $actor, $reason, $effectiveAt);
+        return $this->registrar->register($semanticVersion === MlbFullModelReleaseDefinition::SEMANTIC_VERSION ? new MlbFullModelReleaseDefinition : $this->definition, MlbCalculator::class, MlbInputSnapshotBuilder::class, $semanticVersion, $approve, $actor, $reason, $effectiveAt);
     }
 }

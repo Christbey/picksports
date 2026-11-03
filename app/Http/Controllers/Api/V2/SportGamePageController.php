@@ -11,6 +11,7 @@ use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportGameQuery;
 use App\Services\Api\V2\SportPredictionReader;
 use App\Services\Api\V2\SportTeamMetricQuery;
+use App\Services\Predictions\HistoricalForecastArchive;
 use App\Services\Sports\GameMatchupContextService;
 use App\Support\MLB\MlbGameStart;
 use Illuminate\Database\Eloquent\Model;
@@ -70,6 +71,7 @@ class SportGamePageController extends Controller
             'data' => [
                 'game' => (new SportGameResource($resolvedGame, $context))->resolve($request),
                 'prediction' => isset($predictionPayload['data']) ? $predictionPayload['data']->resolve($request) : null,
+                'historical_prediction' => app(HistoricalForecastArchive::class)->forGame($resolvedGame, 'mlb'),
                 'recent_games' => $recentGames,
                 'metrics' => [
                     'home' => $this->teamMetric($context, $metrics, $homeTeamId, $metricFilters, $request),

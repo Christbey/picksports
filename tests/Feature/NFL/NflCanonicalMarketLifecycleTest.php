@@ -1381,7 +1381,8 @@ it('requires complete full-model publication before marking read transport ready
     expect($readiness->report(2026)['read_transport_ready'])->toBeFalse();
     app(GenerateCanonicalPrediction::class)->execute($fixture['game']->fresh());
     $report = $readiness->report(2026);
-    expect($report['read_transport_ready'])->toBeTrue()
+    expect($report['canonical_true_epa_role'])->toBe('frozen_full_model_disposition')
+        ->and($report['read_transport_ready'])->toBeTrue()
         ->and($report['full_model_forecast_event_count'])->toBe(1)
         ->and($report['missing_full_model_forecast_game_ids'])->toBe([])
         ->and($report['recommendation_cutover_ready'])->toBeFalse()

@@ -131,7 +131,7 @@ class NflCanonicalCutoverReadinessService
             ...$slateCoverage,
             'selected_release_id' => $release?->id,
             'true_epa_authority' => 'canonical_frozen_recommendation_context',
-            'canonical_true_epa_role' => 'not_applied_to_canonical_forecast',
+            'canonical_true_epa_role' => $fullModel ? 'frozen_full_model_disposition' : 'not_applied_to_canonical_forecast',
             'horizon_date' => $horizon['date'],
             'horizon_days_forward' => $horizon['days_forward'],
             'data_ready_for_cutover' => $dataReady,

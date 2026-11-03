@@ -7,6 +7,7 @@ import {
     parseLinescores,
 } from '@/composables/useGameDataUtils';
 import { useTeamTrends } from '@/composables/useTeamTrends';
+import { predictionHomeMargin } from '@/lib/predictionSpread';
 import type {
     BasketballHistoricalPrediction,
     ApiV2Team,
@@ -404,7 +405,7 @@ const normalizeMlbPrediction = (
     return {
         home_win_probability: toNumber(record.home_win_probability),
         away_win_probability: toNumber(record.away_win_probability),
-        predicted_spread: toNumber(record.predicted_spread),
+        predicted_spread: predictionHomeMargin(record) ?? 0,
         predicted_total: toNumber(record.predicted_total),
         confidence_level: confidenceLevel,
         confidence_context: confidenceContext,

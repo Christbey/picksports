@@ -138,3 +138,16 @@ it('initializes current-season Elo once from historical ratings rather than repe
         ->and((int) $this->home->fresh()->elo_rating)->toBe(1640)
         ->and(ModelRun::where('sport', 'cbb')->where('run_type', 'season_initialization')->count())->toBe(1);
 });
+
+it('persists valid recent form beyond one hundred after an opening-day blowout', function (): void {
+    cbbSeasonInputFinal($this->home, $this->away, '2026-11-01', 2027, 120, 42);
+    $prediction = app(GeneratePrediction::class)->execute($this->game, false)->fresh();
+
+    expect((float) $prediction->home_recent_form)->toBe(111.429)
+        ->and((float) $prediction->away_recent_form)->toBe(-111.429)
+        ->and(data_get($prediction->model_metadata, 'provisional'))->toBeTrue();
+
+    $migration = require database_path('migrations/2026_11_03_164000_widen_cbb_prediction_recent_form.php');
+    expect(fn () => $migration->down())->toThrow(RuntimeException::class, 'Cannot narrow CBB recent-form columns');
+    expect((float) $prediction->fresh()->away_recent_form)->toBe(-111.429);
+});

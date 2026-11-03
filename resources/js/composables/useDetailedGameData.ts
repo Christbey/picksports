@@ -1,4 +1,5 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { ApiError } from '@/composables/useApiClient';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { flattenApiV2Stats } from '@/composables/useApiV2StatsAdapter';
 import type {
@@ -71,9 +72,15 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                 api.games.show(options.sport, options.gameId, {
                     init: { signal },
                 }),
-                api.predictions.forGame(options.sport, options.gameId, {
-                    init: { signal },
-                }),
+                api.predictions
+                    .forGame(options.sport, options.gameId, {
+                        init: { signal },
+                    })
+                    .catch((error: unknown) => {
+                        if (error instanceof ApiError && error.status === 404)
+                            return null;
+                        throw error;
+                    }),
             ]);
 
             const archive = (
@@ -94,9 +101,7 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                 awayTeam.value = fullGame.away_team ?? awayTeam.value;
             }
 
-            if (predictionData) {
-                prediction.value = predictionData?.data ?? null;
-            }
+            prediction.value = predictionData?.data ?? null;
 
             loading.value = false;
             const supplemental: Promise<unknown>[] = [];

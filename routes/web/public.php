@@ -4,6 +4,7 @@ use App\Http\Controllers\PerformanceController;
 use App\Http\Controllers\PublicSportPageController;
 use App\Models\CBB\Game as CbbGame;
 use App\Services\PerformanceStatistics;
+use App\Support\BasketballSeason;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
@@ -82,7 +83,7 @@ Route::get('/', function () {
 Route::get('performance', PerformanceController::class)->name('performance');
 
 Route::get('march-madness-bracket', function () {
-    $season = (int) config('cbb.season.default');
+    $season = (int) (request('season') ?? config('cbb.season.default') ?? BasketballSeason::forDate());
     $roundLabels = [
         'first_four' => 'First Four',
         'round_of_64' => 'Round of 64',

@@ -30,7 +30,7 @@ abstract class AbstractGradePredictionsCommand extends Command
     {
         $gradePredictions = app($this->gradeActionClass());
 
-        $season = $this->option('season') ?? date('Y');
+        $season = $this->option('season') ?? $this->defaultSeason();
 
         $this->info("Grading predictions for season {$season}...");
         $this->newLine();
@@ -112,5 +112,10 @@ abstract class AbstractGradePredictionsCommand extends Command
     protected function commandDescription(): string
     {
         return $this->requiredString(static::COMMAND_DESCRIPTION, 'COMMAND_DESCRIPTION must be defined.');
+    }
+
+    protected function defaultSeason(): int
+    {
+        return (int) date('Y');
     }
 }

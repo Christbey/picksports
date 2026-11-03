@@ -42,6 +42,7 @@ it('can pass team stat coverage validation when teams have stats for season game
         'home_team_id' => $teamIds[0],
         'away_team_id' => $teamIds[1],
         'season' => $season,
+        'season_type' => 2,
         'week' => 1,
         'game_date' => now(),
         'game_time' => '19:00:00',

@@ -465,6 +465,10 @@ The total model is similar as well, but includes additional college-basketball p
 - tournament calibration hooks
 - win-probability calibration metadata
 
+CBB season readiness (`cbb-season-v2`) initializes the current season once from the latest prior-season Elo history with the configured offseason regression (30% by default); teams without history start at the configured mean. Initialization is locked and recorded as a completed `season_initialization` model run, and existing current-season Elo history prevents retroactive rollover. It then uses `CbbSeasonInputs` to build inputs from completed, scoreboard-reconciled box scores before the target game date. It excludes incomplete historical snapshots, preseason games, and neutral-site games from venue splits. Prior-season efficiencies and tempo regress halfway toward defaults, and current-season evidence replaces the prior over eight validated games. These are explicit provisional transition settings, not fitted or calibrated probabilities. Persisted summary metrics remain available for display; unverified summaries do not enter this CBB input path. Missing efficiency/form components receive zero spread weight, and available component weights are normalized.
+
+Normal CBB generation freezes at tipoff. Historical reconstruction remains explicit, timestamped at execution, and marked `pregame_safe=false`. CBB spread and total backtests default to stored observed pregame forecasts; `--cohort=reconstruction` selects reconstructions, `--cohort=all` includes unverified history, and `--recompute` explicitly labels a current-model retrospective exercise. Pregame total comparisons require the frozen market total. API audit fields expose provenance and provisional input status. The CBB betting-value adapter withholds recommendations for provisional/missing statistical inputs or odds over 36 hours old. Existing probability-calibration artifacts cannot activate output for the new model version without a validation change.
+
 ### NFL and CFB prediction model
 
 The shared model below is not a complete description of the NFL historical-Elo

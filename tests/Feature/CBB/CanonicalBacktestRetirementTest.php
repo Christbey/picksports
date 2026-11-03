@@ -125,12 +125,12 @@ it('keeps per-market gaps independent and never converts missing projections to 
 it('retains stored and recomputed historical spreads and frozen historical totals after cutover', function () {
     [$game] = cbbBacktestRetirementFixture();
     config(['prediction_lifecycle.canonical_pipeline.cbb' => true, 'prediction_lifecycle.canonical_reads.cbb' => true]);
-    $this->artisan('cbb:backtest-spreads', ['--season' => 2027, '--forecast-source' => 'legacy', '--stored' => true])
+    $this->artisan('cbb:backtest-spreads', ['--season' => 2027, '--forecast-source' => 'legacy', '--cohort' => 'all', '--stored' => true])
         ->expectsOutputToContain('99.0')->assertSuccessful();
     $this->mock(GeneratePrediction::class)->shouldReceive('preview')->once()->withArgs(fn ($preview) => $preview->id === $game->id && $preview->status === 'STATUS_SCHEDULED')
         ->andReturn(['predicted_spread' => 6.0]);
-    $this->artisan('cbb:backtest-spreads', ['--season' => 2027, '--forecast-source' => 'legacy'])->expectsOutputToContain('6.0')->assertSuccessful();
-    $this->artisan('cbb:backtest-totals', ['--season' => 2027, '--forecast-source' => 'legacy', '--stored' => true])->expectsOutputToContain('888.0')->expectsOutputToContain('999.0')->assertSuccessful();
+    $this->artisan('cbb:backtest-spreads', ['--season' => 2027, '--forecast-source' => 'legacy', '--cohort' => 'all', '--recompute' => true])->expectsOutputToContain('6.0')->assertSuccessful();
+    $this->artisan('cbb:backtest-totals', ['--season' => 2027, '--forecast-source' => 'legacy', '--cohort' => 'all', '--stored' => true])->expectsOutputToContain('888.0')->expectsOutputToContain('999.0')->assertSuccessful();
     expect($game->refresh()->status)->toBe('STATUS_FINAL');
 });
 
@@ -207,21 +207,21 @@ it('allows explicit canonical inspection before cutover and rejects invalid sour
 it('preserves historical spread fallback when the current preview has no projection', function () {
     cbbBacktestRetirementFixture();
     $this->mock(GeneratePrediction::class)->shouldReceive('preview')->once()->andReturn([]);
-    $this->artisan('cbb:backtest-spreads', ['--season' => 2027, '--forecast-source' => 'legacy'])
+    $this->artisan('cbb:backtest-spreads', ['--season' => 2027, '--forecast-source' => 'legacy', '--cohort' => 'all', '--recompute' => true])
         ->expectsOutputToContain('99.0')->assertSuccessful();
 });
 
 it('preserves CBB historical totals recomputation and explicit source parity', function () {
     [$game] = cbbBacktestRetirementFixture();
-    Artisan::call('cbb:backtest-totals', ['--season' => 2027, '--stored' => true]);
+    Artisan::call('cbb:backtest-totals', ['--season' => 2027, '--stored' => true, '--cohort' => 'all']);
     $compatibility = Artisan::output();
     config(['prediction_lifecycle.canonical_pipeline.cbb' => true]);
-    Artisan::call('cbb:backtest-totals', ['--forecast-source' => 'legacy', '--season' => 2027, '--stored' => true]);
+    Artisan::call('cbb:backtest-totals', ['--forecast-source' => 'legacy', '--cohort' => 'all', '--season' => 2027, '--stored' => true]);
     expect(Artisan::output())->toBe($compatibility);
     $this->mock(GeneratePrediction::class)->shouldReceive('preview')->once()
         ->withArgs(fn ($preview) => $preview->id === $game->id && $preview->status === 'STATUS_SCHEDULED')
         ->andReturn(['predicted_total' => 215.0]);
-    $this->artisan('cbb:backtest-totals', ['--forecast-source' => 'legacy', '--season' => 2027])->expectsOutputToContain('215.0')->assertSuccessful();
+    $this->artisan('cbb:backtest-totals', ['--forecast-source' => 'legacy', '--cohort' => 'all', '--season' => 2027, '--recompute' => true])->expectsOutputToContain('215.0')->assertSuccessful();
     expect($game->refresh()->status)->toBe('STATUS_FINAL');
 });
 

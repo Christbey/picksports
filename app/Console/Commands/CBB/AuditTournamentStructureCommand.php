@@ -3,6 +3,7 @@
 namespace App\Console\Commands\CBB;
 
 use App\Models\CBB\Game;
+use App\Support\BasketballSeason;
 use Illuminate\Console\Command;
 
 class AuditTournamentStructureCommand extends Command
@@ -27,7 +28,7 @@ class AuditTournamentStructureCommand extends Command
 
     public function handle(): int
     {
-        $season = (int) ($this->option('season') ?: config('cbb.season.default'));
+        $season = (int) ($this->option('season') ?: (config('cbb.season.default') ?? BasketballSeason::forDate()));
         $games = Game::query()
             ->where('season', $season)
             ->where('season_type', (int) config('cbb.season.types.postseason'))

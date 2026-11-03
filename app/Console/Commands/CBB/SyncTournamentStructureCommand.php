@@ -5,6 +5,7 @@ namespace App\Console\Commands\CBB;
 use App\Actions\CBB\RepairTournamentStructure;
 use App\Actions\ESPN\CBB\SyncTeamSchedule;
 use App\Models\CBB\Team;
+use App\Support\BasketballSeason;
 use Illuminate\Console\Command;
 
 class SyncTournamentStructureCommand extends Command
@@ -20,7 +21,7 @@ class SyncTournamentStructureCommand extends Command
 
     public function handle(SyncTeamSchedule $syncTeamSchedule, RepairTournamentStructure $repairTournamentStructure): int
     {
-        $season = (int) ($this->option('season') ?: config('cbb.season.default'));
+        $season = (int) ($this->option('season') ?: (config('cbb.season.default') ?? BasketballSeason::forDate()));
         $teams = Team::query()
             ->whereNotNull('espn_id')
             ->orderBy('id')

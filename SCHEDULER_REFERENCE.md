@@ -90,13 +90,10 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 - Backfill stale games daily at `03:00`
 - Daily current-week sync at `02:00`
 - Live scoreboard sync every 5 minutes between `12:00` and `01:00`
-- Game details sync every 30 minutes between `14:00` and `02:00`
-- Grade predictions at `05:00`
+- Game details sync every 30 minutes between `14:00` and `02:00`; only real active/final games in the requested date window qualify. Unattempted games precede retries, with a 30-minute retry cooldown and persisted attempt/completion status.
+- Run the locked CBB pregame pipeline at `06:30`: inline scoreboard ingest, up to 25 eligible detail imports, grading, Elo, validated team metrics, then the configured legacy or canonical generator. A detail failure is reported while forecasts can continue using validated priors; other failed dependencies stop the pipeline.
+- Report read-only season readiness at `07:00`, including missing forecasts, final box-score reconciliation, provisional inputs, and reconstruction counts.
 - Evaluate immutable canonical predictions at `05:05` when `PREDICTION_LIFECYCLE_CBB_CANONICAL_PIPELINE=true`
-- Calculate Elo at `05:30`
-- Calculate team metrics at `06:00`
-- Generate predictions at `06:30`
-- Generate canonical predictions at `06:35` when `PREDICTION_LIFECYCLE_CBB_CANONICAL_PIPELINE=true`
 - Generate tournament forecast at `10:15`
 - Recalculate tournament outlook at `10:25`
 - Sync odds every 4 hours between `08:00` and `23:00`

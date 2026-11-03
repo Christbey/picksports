@@ -3,6 +3,7 @@
 namespace App\Console\Commands\CBB;
 
 use App\Actions\CBB\GenerateTournamentForecast;
+use App\Support\BasketballSeason;
 use Illuminate\Console\Command;
 
 class GenerateTournamentForecastCommand extends Command
@@ -31,7 +32,7 @@ class GenerateTournamentForecastCommand extends Command
             return self::SUCCESS;
         }
 
-        $resolvedSeason = (int) ($season ?? config('cbb.season.default'));
+        $resolvedSeason = (int) ($season ?? (config('cbb.season.default') ?? BasketballSeason::forDate()));
         $resolvedSimulationRuns = (int) $forecasts->first()->simulation_runs;
 
         $this->info("Season: {$resolvedSeason}");

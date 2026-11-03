@@ -9,6 +9,24 @@ use App\Models\CBB\TeamStat;
 
 uses()->group('cbb', 'team-metrics');
 
+function cbbMetricsGame(array $attributes): Game
+{
+    return Game::factory()->create(['season_type' => 2, 'neutral_site' => false, 'game_date' => now()->subDays(100)->addDays(Game::count())->toDateString(), ...$attributes]);
+}
+
+function cbbMetricsStat(array $attributes): TeamStat
+{
+    $points = $attributes['points'] ?? 80;
+    $stat = TeamStat::factory()->create([
+        'field_goals_made' => intdiv($points, 2), 'field_goals_attempted' => intdiv($points, 2) + 20, 'three_point_made' => 0,
+        'free_throws_made' => $points % 2, ...$attributes,
+    ]);
+    $game = Game::findOrFail($stat->game_id);
+    $game->update([$stat->team_id === $game->home_team_id ? 'home_score' : 'away_score' => $stat->points]);
+
+    return $stat;
+}
+
 beforeEach(function () {
     config()->set('cbb.metrics.minimum_games', 2);
 
@@ -19,14 +37,14 @@ beforeEach(function () {
 
 it('calculates basic team metrics for a season', function () {
     // Create 2 completed games for the team
-    $game1 = Game::factory()->create([
+    $game1 = cbbMetricsGame([
         'season' => 2026,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
         'status' => 'STATUS_FINAL',
     ]);
 
-    $game2 = Game::factory()->create([
+    $game2 = cbbMetricsGame([
         'season' => 2026,
         'home_team_id' => $this->opponent2->id,
         'away_team_id' => $this->team->id,
@@ -55,7 +73,7 @@ it('calculates basic team metrics for a season', function () {
     ]);
 
     // Create team stats with possessions
-    TeamStat::factory()->create([
+    cbbMetricsStat([
         'team_id' => $this->team->id,
         'game_id' => $game1->id,
         'points' => 80,
@@ -66,14 +84,14 @@ it('calculates basic team metrics for a season', function () {
         'free_throws_attempted' => 15,
     ]);
 
-    TeamStat::factory()->create([
+    cbbMetricsStat([
         'team_id' => $this->opponent1->id,
         'game_id' => $game1->id,
         'points' => 75,
         'possessions' => 68.0,
     ]);
 
-    TeamStat::factory()->create([
+    cbbMetricsStat([
         'team_id' => $this->team->id,
         'game_id' => $game2->id,
         'points' => 85,
@@ -84,7 +102,7 @@ it('calculates basic team metrics for a season', function () {
         'free_throws_attempted' => 18,
     ]);
 
-    TeamStat::factory()->create([
+    cbbMetricsStat([
         'team_id' => $this->opponent2->id,
         'game_id' => $game2->id,
         'points' => 70,
@@ -132,14 +150,14 @@ it('returns null when no completed games exist', function () {
 });
 
 it('does not calculate metrics when completed game stats are incomplete', function () {
-    $game = Game::factory()->create([
+    $game = cbbMetricsGame([
         'season' => 2026,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
         'status' => 'STATUS_FINAL',
     ]);
 
-    TeamStat::factory()->create([
+    cbbMetricsStat([
         'team_id' => $this->team->id,
         'game_id' => $game->id,
         'points' => 80,
@@ -158,7 +176,7 @@ it('calculates rolling window metrics', function () {
     // Create more games than rolling window size
     for ($i = 0; $i < $rollingWindowSize + 5; $i++) {
         $opponent = Team::factory()->create(['elo_rating' => 1500]);
-        $game = Game::factory()->create([
+        $game = cbbMetricsGame([
             'season' => 2026,
             'home_team_id' => $this->team->id,
             'away_team_id' => $opponent->id,
@@ -169,14 +187,14 @@ it('calculates rolling window metrics', function () {
         // Later games: higher performance
         $points = $i < $rollingWindowSize ? 70 : 90;
 
-        TeamStat::factory()->create([
+        cbbMetricsStat([
             'team_id' => $this->team->id,
             'game_id' => $game->id,
             'points' => $points,
             'possessions' => 70.0,
         ]);
 
-        TeamStat::factory()->create([
+        cbbMetricsStat([
             'team_id' => $opponent->id,
             'game_id' => $game->id,
             'points' => 75,
@@ -199,21 +217,21 @@ it('calculates home and away splits', function () {
     // Create 3 home games
     for ($i = 0; $i < 3; $i++) {
         $opponent = Team::factory()->create();
-        $game = Game::factory()->create([
+        $game = cbbMetricsGame([
             'season' => 2026,
             'home_team_id' => $this->team->id,
             'away_team_id' => $opponent->id,
             'status' => 'STATUS_FINAL',
         ]);
 
-        TeamStat::factory()->create([
+        cbbMetricsStat([
             'team_id' => $this->team->id,
             'game_id' => $game->id,
             'points' => 90,
             'possessions' => 70.0,
         ]);
 
-        TeamStat::factory()->create([
+        cbbMetricsStat([
             'team_id' => $opponent->id,
             'game_id' => $game->id,
             'points' => 70,
@@ -224,21 +242,21 @@ it('calculates home and away splits', function () {
     // Create 2 away games with worse performance
     for ($i = 0; $i < 2; $i++) {
         $opponent = Team::factory()->create();
-        $game = Game::factory()->create([
+        $game = cbbMetricsGame([
             'season' => 2026,
             'home_team_id' => $opponent->id,
             'away_team_id' => $this->team->id,
             'status' => 'STATUS_FINAL',
         ]);
 
-        TeamStat::factory()->create([
+        cbbMetricsStat([
             'team_id' => $this->team->id,
             'game_id' => $game->id,
             'points' => 75,
             'possessions' => 70.0,
         ]);
 
-        TeamStat::factory()->create([
+        cbbMetricsStat([
             'team_id' => $opponent->id,
             'game_id' => $game->id,
             'points' => 80,
@@ -266,21 +284,21 @@ it('respects minimum games threshold', function () {
     // Create games less than minimum threshold
     for ($i = 0; $i < $minimumGames - 1; $i++) {
         $opponent = Team::factory()->create();
-        $game = Game::factory()->create([
+        $game = cbbMetricsGame([
             'season' => 2026,
             'home_team_id' => $this->team->id,
             'away_team_id' => $opponent->id,
             'status' => 'STATUS_FINAL',
         ]);
 
-        TeamStat::factory()->create([
+        cbbMetricsStat([
             'team_id' => $this->team->id,
             'game_id' => $game->id,
             'points' => 80,
             'possessions' => 70.0,
         ]);
 
-        TeamStat::factory()->create([
+        cbbMetricsStat([
             'team_id' => $opponent->id,
             'game_id' => $game->id,
             'points' => 75,
@@ -305,21 +323,21 @@ it('marks metrics as meeting minimum when threshold is met', function () {
     // Create exactly minimum games
     for ($i = 0; $i < $minimumGames; $i++) {
         $opponent = Team::factory()->create();
-        $game = Game::factory()->create([
+        $game = cbbMetricsGame([
             'season' => 2026,
             'home_team_id' => $this->team->id,
             'away_team_id' => $opponent->id,
             'status' => 'STATUS_FINAL',
         ]);
 
-        TeamStat::factory()->create([
+        cbbMetricsStat([
             'team_id' => $this->team->id,
             'game_id' => $game->id,
             'points' => 80,
             'possessions' => 70.0,
         ]);
 
-        TeamStat::factory()->create([
+        cbbMetricsStat([
             'team_id' => $opponent->id,
             'game_id' => $game->id,
             'points' => 75,
@@ -341,7 +359,7 @@ it('marks metrics as meeting minimum when threshold is met', function () {
 it('estimates possessions when not provided', function () {
     config()->set('cbb.metrics.minimum_games', 1);
 
-    $game = Game::factory()->create([
+    $game = cbbMetricsGame([
         'season' => 2026,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
@@ -349,7 +367,7 @@ it('estimates possessions when not provided', function () {
     ]);
 
     // Create team stat without possessions field
-    TeamStat::factory()->create([
+    cbbMetricsStat([
         'team_id' => $this->team->id,
         'game_id' => $game->id,
         'points' => 80,
@@ -360,7 +378,7 @@ it('estimates possessions when not provided', function () {
         'free_throws_attempted' => 15,
     ]);
 
-    TeamStat::factory()->create([
+    cbbMetricsStat([
         'team_id' => $this->opponent1->id,
         'game_id' => $game->id,
         'points' => 75,
@@ -382,14 +400,14 @@ it('estimates possessions when not provided', function () {
 
 it('ignores non-final games', function () {
     // Create scheduled game (shouldn't be counted)
-    $scheduledGame = Game::factory()->create([
+    $scheduledGame = cbbMetricsGame([
         'season' => 2026,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
         'status' => 'STATUS_SCHEDULED',
     ]);
 
-    TeamStat::factory()->create([
+    cbbMetricsStat([
         'team_id' => $this->team->id,
         'game_id' => $scheduledGame->id,
         'points' => 80,
@@ -405,21 +423,21 @@ it('ignores non-final games', function () {
 
 it('updates existing metric instead of creating duplicate', function () {
     // Create initial metric
-    $game = Game::factory()->create([
+    $game = cbbMetricsGame([
         'season' => 2026,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
         'status' => 'STATUS_FINAL',
     ]);
 
-    TeamStat::factory()->create([
+    cbbMetricsStat([
         'team_id' => $this->team->id,
         'game_id' => $game->id,
         'points' => 80,
         'possessions' => 70.0,
     ]);
 
-    TeamStat::factory()->create([
+    cbbMetricsStat([
         'team_id' => $this->opponent1->id,
         'game_id' => $game->id,
         'points' => 75,
@@ -443,21 +461,21 @@ it('calculates metrics for multiple seasons separately', function () {
     config()->set('cbb.metrics.minimum_games', 1);
 
     // Game in 2025
-    $game2025 = Game::factory()->create([
+    $game2025 = cbbMetricsGame([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
         'status' => 'STATUS_FINAL',
     ]);
 
-    TeamStat::factory()->create([
+    cbbMetricsStat([
         'team_id' => $this->team->id,
         'game_id' => $game2025->id,
         'points' => 70,
         'possessions' => 70.0,
     ]);
 
-    TeamStat::factory()->create([
+    cbbMetricsStat([
         'team_id' => $this->opponent1->id,
         'game_id' => $game2025->id,
         'points' => 80,
@@ -465,21 +483,21 @@ it('calculates metrics for multiple seasons separately', function () {
     ]);
 
     // Game in 2026
-    $game2026 = Game::factory()->create([
+    $game2026 = cbbMetricsGame([
         'season' => 2026,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent2->id,
         'status' => 'STATUS_FINAL',
     ]);
 
-    TeamStat::factory()->create([
+    cbbMetricsStat([
         'team_id' => $this->team->id,
         'game_id' => $game2026->id,
         'points' => 90,
         'possessions' => 70.0,
     ]);
 
-    TeamStat::factory()->create([
+    cbbMetricsStat([
         'team_id' => $this->opponent2->id,
         'game_id' => $game2026->id,
         'points' => 70,
@@ -521,21 +539,21 @@ it('calculates opponent-adjusted metrics for all teams', function () {
 
             // Create multiple games to meet minimum threshold
             for ($i = 0; $i < ceil($minimumGames / 2); $i++) {
-                $game = Game::factory()->create([
+                $game = cbbMetricsGame([
                     'season' => 2026,
                     'home_team_id' => $homeTeam->id,
                     'away_team_id' => $awayTeam->id,
                     'status' => 'STATUS_FINAL',
                 ]);
 
-                TeamStat::factory()->create([
+                cbbMetricsStat([
                     'team_id' => $homeTeam->id,
                     'game_id' => $game->id,
                     'points' => 80,
                     'possessions' => 70.0,
                 ]);
 
-                TeamStat::factory()->create([
+                cbbMetricsStat([
                     'team_id' => $awayTeam->id,
                     'game_id' => $game->id,
                     'points' => 75,

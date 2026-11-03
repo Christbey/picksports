@@ -3,6 +3,7 @@
 namespace App\Console\Commands\CBB;
 
 use App\Actions\CBB\RepairTournamentStructure;
+use App\Support\BasketballSeason;
 use Illuminate\Console\Command;
 
 class RepairTournamentStructureCommand extends Command
@@ -14,7 +15,7 @@ class RepairTournamentStructureCommand extends Command
 
     public function handle(RepairTournamentStructure $repairTournamentStructure): int
     {
-        $season = (int) ($this->option('season') ?: config('cbb.season.default'));
+        $season = (int) ($this->option('season') ?: (config('cbb.season.default') ?? BasketballSeason::forDate()));
         $count = $repairTournamentStructure->execute($season);
 
         $this->info("Tournament structure repair complete for {$season}. Repaired {$count} slot(s).");

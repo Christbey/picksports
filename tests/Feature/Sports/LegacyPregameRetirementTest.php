@@ -222,6 +222,14 @@ it('runs native MLB period inference without creating a legacy prediction snapsh
 it('skips duplicate legacy morning schedules after cutover while preserving pipeline-only compatibility', function (string $sport) {
     config(["prediction_lifecycle.canonical_pipeline.{$sport}" => true, "prediction_lifecycle.canonical_reads.{$sport}" => true]);
     $events = collect(app(Schedule::class)->events());
+    if ($sport === 'cbb') {
+        $pipeline = $events->firstWhere('description', 'CBB: Run Pregame Pipeline');
+        expect($pipeline)->not->toBeNull()->and($pipeline->filtersPass(app()))->toBeTrue();
+        config(['prediction_lifecycle.canonical_reads.cbb' => false]);
+        expect($pipeline->filtersPass(app()))->toBeTrue();
+
+        return;
+    }
     $legacy = $events->first(fn ($event) => str_contains($event->command ?? '', "{$sport}:generate-predictions")
         && ! str_contains($event->description ?? '', 'After Odds'));
     $native = $events->first(fn ($event) => str_contains($event->command ?? '', "{$sport}:generate-canonical-predictions"));

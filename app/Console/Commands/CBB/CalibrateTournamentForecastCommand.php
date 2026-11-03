@@ -4,6 +4,7 @@ namespace App\Console\Commands\CBB;
 
 use App\Actions\CBB\GenerateTournamentForecast;
 use App\Services\TournamentForecast\CbbTournamentForecastTuningStore;
+use App\Support\BasketballSeason;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use RuntimeException;
@@ -23,7 +24,7 @@ class CalibrateTournamentForecastCommand extends Command
         GenerateTournamentForecast $forecastAction,
         CbbTournamentForecastTuningStore $tuningStore
     ): int {
-        $season = (int) ($this->option('season') ?? config('cbb.season.default'));
+        $season = (int) ($this->option('season') ?? (config('cbb.season.default') ?? BasketballSeason::forDate()));
         $simulationRuns = max(250, (int) $this->option('simulations'));
         $repeats = max(2, min(7, (int) $this->option('repeats')));
         $full = (bool) $this->option('full');

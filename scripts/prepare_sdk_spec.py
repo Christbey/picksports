@@ -33,7 +33,12 @@ def convert(value):
     # OpenAPI 3.0 SDK equivalent; the published 3.1 contract retains them.
     value.pop("dependentRequired", None)
     if "const" in value:
-        value["enum"] = [value.pop("const")]
+        constant = value.pop("const")
+        if isinstance(constant, bool):
+            value["type"] = "boolean"
+            value["x-json-schema-const"] = constant
+        else:
+            value["enum"] = [constant]
     types = value.get("type")
     if isinstance(types, list):
         value.pop("type")

@@ -27,7 +27,7 @@ class SdkSpecificationTest(unittest.TestCase):
 
     def test_preserves_prohibited_fields_and_constant_values(self):
         self.assertEqual(convert({"properties": {"forbidden": False}, "additionalProperties": False}), {"properties": {"forbidden": {"not": {}}}, "additionalProperties": False})
-        self.assertEqual(convert({"const": True}), {"enum": [True]})
+        self.assertEqual(convert({"const": True}), {"type": "boolean", "x-json-schema-const": True})
 
     def test_rejects_different_authentication_transports(self):
         source = json.loads((pathlib.Path(__file__).resolve().parents[1] / "docs/openapi-v2.json").read_text())

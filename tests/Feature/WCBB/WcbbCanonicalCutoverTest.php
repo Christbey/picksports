@@ -18,15 +18,14 @@ use App\Models\WCBB\Prediction;
 use App\Models\WCBB\Team;
 use App\Models\WCBB\TeamMetric;
 use App\Services\BettingRecommendations\GameBettingRecommendationService;
-use App\Services\Predictions\Basketball\BasketballHistoricalForecastArchive;
 use App\Services\Predictions\CalculationReleaseManager;
+use App\Services\Predictions\HistoricalForecastArchive;
 use App\Services\Predictions\LivePredictionStore;
 use App\Services\Predictions\PredictionDeliverySource;
 use App\Services\WCBB\Predictions\WcbbCalculationReleaseRegistrar;
 use App\Services\WCBB\Predictions\WcbbCalculator;
 use App\Services\WCBB\Predictions\WcbbCanonicalCutoverReadinessService;
 use App\Services\WCBB\Predictions\WcbbInputSnapshotBuilder;
-use App\Services\WCBB\Predictions\WcbbLegacyLiveBaseline;
 use App\Services\WCBB\Predictions\WcbbPregameInputReadiness;
 use Laravel\Sanctum\Sanctum;
 
@@ -135,7 +134,7 @@ it('preserves WCBB history with separate provenance and never borrows another sp
     $f['game']->forceFill(['status' => 'STATUS_FINAL', 'game_date' => $tip->toDateString(), 'game_time' => $tip->toTimeString(), 'home_score' => 80, 'away_score' => 70])->save();
     $legacy = Prediction::factory()->create(['game_id' => $f['game']->id, 'predicted_spread' => 4.5, 'predicted_total' => 150]);
     CalculationRelease::factory()->approved()->create(['sport' => 'nba', 'phase' => 'pregame', 'effective_at' => now()->subDay()]);
-    $archive = app(BasketballHistoricalForecastArchive::class);
+    $archive = app(HistoricalForecastArchive::class);
     expect($archive->forGame($f['game']->fresh(), 'wcbb'))->toBeNull();
     app(WcbbCalculationReleaseRegistrar::class)->register('1.1.0', effectiveAt: now()->subMinute()->toImmutable());
     $snapshot = PredictionFeatureSnapshot::create(['sport' => 'wcbb', 'prediction_table' => 'wcbb_predictions', 'prediction_id' => $legacy->id, 'game_id' => $f['game']->id,
@@ -231,7 +230,7 @@ it('preserves WCBB live projections from full-model forecasts and fails closed a
     expect($action->execute($f['game']->fresh()))->toBeNull()->and($legacy->fresh()->getAttributes())->toBe($legacyBefore);
 });
 
-it('retains only observed pre-cutover WCBB live baselines without restoring active legacy forecasts', function () {
+it('does not revive expired WCBB cutover baselines after selecting canonical reads', function () {
     config(['prediction_lifecycle.canonical_pipeline.wcbb' => true, 'prediction_lifecycle.canonical_reads.wcbb' => false]);
     $f = wcbbCutoverFixture();
     $legacy = Prediction::factory()->create(['game_id' => $f['game']->id, 'predicted_spread' => 3.2, 'predicted_total' => 150, 'win_probability' => 0.65]);
@@ -247,13 +246,14 @@ it('retains only observed pre-cutover WCBB live baselines without restoring acti
     $legacyBefore = $legacy->fresh()->getAttributes();
     $expected = app(UpdateLivePrediction::class)->execute($f['game']->fresh());
     config(['prediction_lifecycle.canonical_reads.wcbb' => true]);
-    expect(app(UpdateLivePrediction::class)->execute($f['game']->fresh()))->toEqual($expected)->not->toBeNull()
-        ->and($store->fields($f['game']->fresh())['live_predicted_total'])->toBe($expected['live_predicted_total'])
+    expect($expected)->not->toBeNull();
+    expect(app(UpdateLivePrediction::class)->execute($f['game']->fresh()))->toBeNull()
+        ->and($store->fields($f['game']->fresh()))->toBe(LivePredictionStore::EMPTY_FIELDS)
         ->and(app(PredictionDeliverySource::class)->forGame($f['game']->fresh(), 'wcbb'))->toBeNull()
         ->and($legacy->fresh()->getAttributes())->toBe($legacyBefore)->and(CanonicalPrediction::count())->toBe(0)
         ->and(BetDecision::count())->toBe(0);
     $r = app(WcbbCanonicalCutoverReadinessService::class)->report(2027);
-    expect($r['inflight_legacy_game_ids'])->toBe([])->and($r['compatible_legacy_live_game_ids'])->toBe([$f['game']->id]);
+    expect($r['inflight_legacy_game_ids'])->toBe([$f['game']->id])->and($r['read_transport_ready'])->toBeFalse();
     $f['game']->forceFill(['status' => 'STATUS_FINAL'])->save();
     expect($store->baseline($f['game']->fresh()))->toBeNull()
         ->and($store->fields($f['game']->fresh()))->toBe(LivePredictionStore::EMPTY_FIELDS);
@@ -288,6 +288,5 @@ it('rejects unsafe WCBB live compatibility anchors and never rescues withdrawn n
     config(['prediction_lifecycle.canonical_reads.wcbb' => true]);
     expect($store->baseline($f['game']->fresh()))->toBeNull()
         ->and($store->fields($f['game']->fresh()))->toBe(LivePredictionStore::EMPTY_FIELDS)
-        ->and(app(WcbbLegacyLiveBaseline::class)->forGame($f['game']->fresh()))->toBeNull()
         ->and(BetDecision::count())->toBe(0);
 })->with(['missing', 'late', 'invalid', 'other_table', 'post_cutover', 'withdrawn']);

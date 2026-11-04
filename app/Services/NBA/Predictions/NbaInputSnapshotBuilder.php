@@ -10,7 +10,7 @@ use App\Models\NBA\PlayerInjury;
 use App\Models\NBA\TeamMetric;
 use App\Models\SportEvent;
 use App\Services\Predictions\Basketball\BasketballInputSnapshotBuilder;
-use App\Services\Predictions\Basketball\EstablishedBasketballModel;
+use App\Services\Predictions\EstablishedModelTransport;
 use Illuminate\Database\Eloquent\Model;
 
 class NbaInputSnapshotBuilder extends BasketballInputSnapshotBuilder
@@ -19,7 +19,7 @@ class NbaInputSnapshotBuilder extends BasketballInputSnapshotBuilder
     {
         $snapshot = parent::build($event, $release);
 
-        return app(EstablishedBasketballModel::class)->capture(
+        return app(EstablishedModelTransport::class)->capture(
             $snapshot, $release, 'nba', NbaFullModelReleaseDefinition::INPUT_SCHEMA_VERSION,
             NbaFullModelReleaseDefinition::FORECAST_SOURCE, NbaFullModelReleaseDefinition::configurationKeys(),
             fn () => app(GeneratePrediction::class)->preview($event->nbaGame()->with(['homeTeam', 'awayTeam'])->firstOrFail()),

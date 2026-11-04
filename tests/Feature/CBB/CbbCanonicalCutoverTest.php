@@ -20,8 +20,8 @@ use App\Services\CBB\Predictions\CbbCalculationReleaseRegistrar;
 use App\Services\CBB\Predictions\CbbCalculator;
 use App\Services\CBB\Predictions\CbbCanonicalCutoverReadinessService;
 use App\Services\CBB\Predictions\CbbInputSnapshotBuilder;
-use App\Services\Predictions\Basketball\BasketballHistoricalForecastArchive;
 use App\Services\Predictions\CalculationReleaseManager;
+use App\Services\Predictions\HistoricalForecastArchive;
 use App\Services\Predictions\PredictionDeliverySource;
 use Laravel\Sanctum\Sanctum;
 
@@ -129,7 +129,7 @@ it('preserves CBB history with separate provenance and never borrows another spo
     $f['game']->forceFill(['status' => 'STATUS_FINAL', 'game_date' => $tip->toDateString(), 'game_time' => $tip->toTimeString(), 'home_score' => 80, 'away_score' => 70])->save();
     $legacy = Prediction::factory()->create(['game_id' => $f['game']->id, 'predicted_spread' => 4.5, 'predicted_total' => 150]);
     CalculationRelease::factory()->approved()->create(['sport' => 'nba', 'phase' => 'pregame', 'effective_at' => now()->subDay()]);
-    $archive = app(BasketballHistoricalForecastArchive::class);
+    $archive = app(HistoricalForecastArchive::class);
     expect($archive->forGame($f['game']->fresh(), 'cbb'))->toBeNull();
     app(CbbCalculationReleaseRegistrar::class)->register('1.1.0', effectiveAt: now()->subMinute()->toImmutable());
     $snapshot = PredictionFeatureSnapshot::create(['sport' => 'cbb', 'prediction_table' => 'cbb_predictions', 'prediction_id' => $legacy->id, 'game_id' => $f['game']->id,

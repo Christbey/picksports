@@ -3,14 +3,14 @@
 namespace App\Services\CBB\Predictions;
 
 use App\Models\CalculationRelease;
-use App\Services\Predictions\Basketball\CanonicalBasketballReleaseRegistrar;
+use App\Services\Predictions\CanonicalRulesReleaseRegistrar;
 use Carbon\CarbonImmutable;
 
 class CbbCalculationReleaseRegistrar
 {
     public function __construct(
         private readonly CbbCalculationReleaseDefinition $definition,
-        private readonly CanonicalBasketballReleaseRegistrar $registrar,
+        private readonly CanonicalRulesReleaseRegistrar $registrar,
     ) {}
 
     public function register(

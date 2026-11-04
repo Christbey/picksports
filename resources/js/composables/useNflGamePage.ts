@@ -1,3 +1,7 @@
+import {
+    predictionNumber as toNumber,
+    normalizeNarrativeContent,
+} from '@/lib/predictionNormalization';
 import { normalizeDepthChartContext } from '@/lib/depthChartContext';
 import type { ApiV2Stat } from '@/types';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
@@ -10,7 +14,10 @@ import {
     parseLinescores,
 } from '@/composables/useGameDataUtils';
 import { useTeamTrends } from '@/composables/useTeamTrends';
-import { finiteValue, recentRecord } from '@/lib/gameOutcome';
+import {
+    finiteValue as toOptionalNumber,
+    recentRecord,
+} from '@/lib/gameOutcome';
 import {
     NFL_LIVE_STATUSES,
     liveSnapshotWarning,
@@ -43,37 +50,15 @@ const fallbackGame = (gameId: number): NflPageGame => ({
     venue: '',
 });
 
-const toNumber = (value: unknown): number => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-};
-
-const toOptionalNumber = (value: unknown): number | null => {
-    return finiteValue(value);
-};
-
 const normalizeNarrative = (
     rawNarrative: unknown,
 ): NflPagePrediction['narrative'] => {
-    if (!rawNarrative || typeof rawNarrative !== 'object') return null;
-
+    const content = normalizeNarrativeContent(rawNarrative);
+    if (!content) return null;
     const source = rawNarrative as Record<string, unknown>;
     const plan = source.betting_plan;
-
     return {
-        summary: typeof source.summary === 'string' ? source.summary : '',
-        key_points: Array.isArray(source.key_points)
-            ? source.key_points
-                  .map((point) => String(point))
-                  .filter((point) => point.length > 0)
-            : [],
-        risk_note: typeof source.risk_note === 'string' ? source.risk_note : '',
-        generated_by:
-            typeof source.generated_by === 'string' ? source.generated_by : '',
-        social_caption:
-            typeof source.social_caption === 'string'
-                ? source.social_caption
-                : null,
+        ...content,
         betting_plan:
             plan && typeof plan === 'object'
                 ? {

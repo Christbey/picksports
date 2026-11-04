@@ -1,3 +1,10 @@
+import {
+    predictionNumber as toNumber,
+    optionalPredictionNumber as toOptionalNumber,
+    normalizePredictionConfidence,
+    normalizeNarrativeContent,
+    normalizeModernBettingPlan,
+} from '@/lib/predictionNormalization';
 import { normalizeDepthChartContext } from '@/lib/depthChartContext';
 import { computed, onMounted, ref } from 'vue';
 import { useApiV2Client } from '@/composables/useApiV2Client';
@@ -68,22 +75,6 @@ const fallbackGame = (gameId: number): MlbPageGame => ({
     season_type: '',
     game_time: null,
 });
-
-const toNumber = (value: unknown): number => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-};
-
-const toOptionalNumber = (value: unknown): number | null => {
-    if (value === null || value === undefined || value === '') return null;
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-};
-
-const stringList = (value: unknown): string[] =>
-    Array.isArray(value)
-        ? value.map((item) => String(item)).filter((item) => item.length > 0)
-        : [];
 
 const objectValue = <T>(value: unknown): T | null =>
     value && typeof value === 'object' && !Array.isArray(value)
@@ -173,7 +164,7 @@ const normalizeMlbTeamMetrics = (
     };
 };
 
-const normalizeMlbPrediction = (
+export const normalizeMlbPrediction = (
     rawPrediction: unknown,
 ): MlbPagePrediction | null => {
     const source = Array.isArray(rawPrediction)
@@ -192,151 +183,19 @@ const normalizeMlbPrediction = (
         return null;
     }
 
-    const confidenceScore = toOptionalNumber(record.confidence_score);
-    const confidenceLevel =
-        typeof record.confidence_level === 'string'
-            ? record.confidence_level
-            : confidenceScore === null
-              ? 'unavailable'
-              : confidenceScore >= 75
-                ? 'high'
-                : confidenceScore >= 60
-                  ? 'medium'
-                  : 'low';
-    const rawConfidenceContext = record.confidence_context;
-    const confidenceContext =
-        rawConfidenceContext && typeof rawConfidenceContext === 'object'
-            ? {
-                  label:
-                      typeof (rawConfidenceContext as Record<string, unknown>)
-                          .label === 'string'
-                          ? ((rawConfidenceContext as Record<string, unknown>)
-                                .label as string)
-                          : null,
-                  tier:
-                      typeof (rawConfidenceContext as Record<string, unknown>)
-                          .tier === 'string'
-                          ? ((rawConfidenceContext as Record<string, unknown>)
-                                .tier as string)
-                          : null,
-                  model_level:
-                      typeof (rawConfidenceContext as Record<string, unknown>)
-                          .model_level === 'string'
-                          ? ((rawConfidenceContext as Record<string, unknown>)
-                                .model_level as string)
-                          : typeof (
-                                  rawConfidenceContext as Record<
-                                      string,
-                                      unknown
-                                  >
-                              ).raw_level === 'string'
-                            ? ((rawConfidenceContext as Record<string, unknown>)
-                                  .raw_level as string)
-                            : null,
-                  reason_codes: Array.isArray(
-                      (rawConfidenceContext as Record<string, unknown>)
-                          .reason_codes,
-                  )
-                      ? (
-                            (rawConfidenceContext as Record<string, unknown>)
-                                .reason_codes as unknown[]
-                        )
-                            .map((item) => String(item))
-                            .filter((item) => item.length > 0)
-                      : [],
-                  sample_games: toOptionalNumber(
-                      (rawConfidenceContext as Record<string, unknown>)
-                          .sample_games,
-                  ),
-              }
-            : null;
-
+    const { confidenceScore, confidenceLevel, confidenceContext } =
+        normalizePredictionConfidence(record);
     const rawNarrative = record.narrative;
-    const narrative =
-        rawNarrative && typeof rawNarrative === 'object'
-            ? {
-                  summary:
-                      typeof (rawNarrative as Record<string, unknown>)
-                          .summary === 'string'
-                          ? ((rawNarrative as Record<string, unknown>)
-                                .summary as string)
-                          : '',
-                  key_points: Array.isArray(
-                      (rawNarrative as Record<string, unknown>).key_points,
-                  )
-                      ? (
-                            (rawNarrative as Record<string, unknown>)
-                                .key_points as unknown[]
-                        )
-                            .map((point) => String(point))
-                            .filter((point) => point.length > 0)
-                      : [],
-                  risk_note:
-                      typeof (rawNarrative as Record<string, unknown>)
-                          .risk_note === 'string'
-                          ? ((rawNarrative as Record<string, unknown>)
-                                .risk_note as string)
-                          : '',
-                  generated_by:
-                      typeof (rawNarrative as Record<string, unknown>)
-                          .generated_by === 'string'
-                          ? ((rawNarrative as Record<string, unknown>)
-                                .generated_by as string)
-                          : '',
-                  social_caption:
-                      typeof (rawNarrative as Record<string, unknown>)
-                          .social_caption === 'string'
-                          ? ((rawNarrative as Record<string, unknown>)
-                                .social_caption as string)
-                          : null,
-                  betting_plan: (() => {
-                      const plan = (rawNarrative as Record<string, unknown>)
-                          .betting_plan;
-                      if (!plan || typeof plan !== 'object') return null;
-
-                      const betPick =
-                          typeof (plan as Record<string, unknown>).bet_pick ===
-                          'string'
-                              ? ((plan as Record<string, unknown>)
-                                    .bet_pick as string)
-                              : '';
-                      const reasoning =
-                          typeof (plan as Record<string, unknown>).reasoning ===
-                          'string'
-                              ? ((plan as Record<string, unknown>)
-                                    .reasoning as string)
-                              : '';
-
-                      return betPick !== '' && reasoning !== ''
-                          ? {
-                                bet_pick: betPick,
-                                reasoning,
-                                classification:
-                                    typeof (plan as Record<string, unknown>)
-                                        .classification === 'string'
-                                        ? ((plan as Record<string, unknown>)
-                                              .classification as string)
-                                        : null,
-                                for_bet: stringList(
-                                    (plan as Record<string, unknown>).for_bet,
-                                ),
-                                against_bet: stringList(
-                                    (plan as Record<string, unknown>)
-                                        .against_bet,
-                                ),
-                                pass_reasons: stringList(
-                                    (plan as Record<string, unknown>)
-                                        .pass_reasons,
-                                ),
-                                reason_codes: stringList(
-                                    (plan as Record<string, unknown>)
-                                        .reason_codes,
-                                ),
-                            }
-                          : null;
-                  })(),
-              }
-            : null;
+    const content = normalizeNarrativeContent(rawNarrative);
+    const narrativeSource = rawNarrative as Record<string, unknown> | null;
+    const narrative = content
+        ? {
+              ...content,
+              betting_plan: normalizeModernBettingPlan(
+                  narrativeSource?.betting_plan,
+              ),
+          }
+        : null;
 
     return {
         home_win_probability: toNumber(record.home_win_probability),

@@ -10,7 +10,15 @@ import {
 } from '@/lib/playerPropPresentation';
 import type { ApiV2PlayerProp } from '@/types/api-v2';
 
-const props = defineProps<{ date: string; game: string; market: string }>();
+const props = withDefaults(
+    defineProps<{
+        date: string;
+        game: string;
+        market: string;
+        enabled?: boolean;
+    }>(),
+    { enabled: true },
+);
 const api = useApiV2Client();
 const rows = ref<ApiV2PlayerProp[]>([]);
 const search = ref('');
@@ -31,6 +39,7 @@ const freshness = (date?: string | null) => {
         : 'Stored quote';
 };
 async function load() {
+    if (!props.enabled) return;
     request?.abort();
     const controller = new AbortController();
     request = controller;
@@ -66,7 +75,7 @@ function movePage(next: number) {
     void load();
 }
 watch(
-    () => [props.date, props.game, props.market],
+    () => [props.date, props.game, props.market, props.enabled],
     () => {
         clearTimeout(timer);
         page.value = 1;
@@ -74,6 +83,7 @@ watch(
     },
 );
 function scheduleSearch() {
+    if (!props.enabled) return;
     request?.abort();
     rows.value = [];
     loading.value = true;

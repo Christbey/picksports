@@ -3,7 +3,7 @@ import { useViewerAccess } from '@/composables/useViewerAccess';
 const { isAdmin } = useViewerAccess();
 import { Link } from '@inertiajs/vue3';
 import { BarChart3, TrendingDown, TrendingUp, X } from 'lucide-vue-next';
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,8 @@ import {
 } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { useApiV2Client } from '@/composables/useApiV2Client';
+import { usePlayerPropsBoard } from '@/composables/usePlayerPropsBoard';
+import type { PlayerPropsPageProps } from '@/types/player-props-board';
 import AppLayout from '@/layouts/AppLayout.vue';
 import {
     formatPropStat,
@@ -32,256 +33,33 @@ import NflPlayerPropCard from '@/components/player-props/NflPlayerPropCard.vue';
 import NflAllPropsBrowser from './NflAllPropsBrowser.vue';
 import type { CoverRecord, Recommendation } from '@/lib/playerPropTypes';
 
-type DateOption = {
-    value: string;
-    label: string;
-};
-
-type GameOption = {
-    id: number;
-    label: string;
-    date: string;
-    time: string;
-};
-
-type MarketOption = {
-    value: string;
-    label: string;
-};
-
-type PlayerPropsFilters = {
-    view?: 'recommendations' | 'all';
-    date: string | null;
-    game: string | number | null;
-    market: string | null;
-};
-
-type PlayerPropsMeta = {
-    diagnostics?: {
-        raw_prop_count?: number;
-        analyzed_prop_count?: number;
-        recommendation_candidate_count?: number;
-        missing_player_link_count?: number;
-    };
-    warnings?: string[];
-};
-
-type PlayerPropsResponse = {
-    sport: string;
-    data: Recommendation[];
-    dates: DateOption[];
-    games: GameOption[];
-    markets: MarketOption[];
-    filters: PlayerPropsFilters;
-    meta?: PlayerPropsMeta;
-};
-
-const props = defineProps<{
-    sport: string;
-    sportSlug: string;
-    filters: PlayerPropsFilters;
-    sportLabel: string;
-    description: string;
-}>();
-
-const selectedView = ref<'recommendations' | 'all'>(
-    props.sport === 'NFL' && props.filters.view === 'all'
-        ? 'all'
-        : 'recommendations',
-);
-const switchView = (view: 'recommendations' | 'all') => {
-    selectedView.value = view;
-    updateBrowserUrl({
-        date: selectedDate.value,
-        game: selectedGame.value,
-        market: selectedMarket.value,
-    });
-};
-const selectedDate = ref(props.filters.date || '');
-const selectedGame = ref(
-    props.filters.game !== null ? String(props.filters.game) : '',
-);
-const selectedMarket = ref(props.filters.market || '');
-const recommendations = ref<Recommendation[]>([]);
-const dates = ref<DateOption[]>([]);
-const games = ref<GameOption[]>([]);
-const markets = ref<MarketOption[]>([]);
-const commonMarkets = computed(() => {
-    const keys = [
-        'player_pass_yds',
-        'player_rush_yds',
-        'player_reception_yds',
-        'player_receptions',
-        'player_anytime_td',
-    ];
-    return keys.flatMap((key) =>
-        markets.value.filter((market) => market.value === key),
-    );
-});
-const boardMeta = ref<PlayerPropsMeta | null>(null);
-const loading = ref(true);
-const error = ref<string | null>(null);
-const visibleLimit = ref(18);
-const playerSearch = ref('');
-const searchedRecommendations = computed(() => {
-    const query = playerSearch.value.trim().toLowerCase();
-    return recommendations.value.filter(
-        (rec) =>
-            !query ||
-            [
-                rec.player.name,
-                rec.player.team,
-                rec.game.home_team,
-                rec.game.away_team,
-            ].some((value) => value?.toLowerCase().includes(query)),
-    );
-});
-const api = useApiV2Client();
-let boardAbortController: AbortController | null = null;
-
-const filteredGames = computed(() => {
-    if (!selectedDate.value) {
-        return games.value;
-    }
-
-    return games.value.filter((game) => game.date === selectedDate.value);
-});
-
-const hasActiveFilters = computed(
-    () =>
-        selectedDate.value !== '' ||
-        selectedGame.value !== '' ||
-        selectedMarket.value !== '',
-);
-
-const visibleRecommendations = computed(() =>
-    searchedRecommendations.value.slice(0, visibleLimit.value),
-);
-
-const emptyStateTitle = computed(() => {
-    const diagnostics = boardMeta.value?.diagnostics;
-    if (!diagnostics) return 'No Recommendations Available';
-
-    if ((diagnostics.raw_prop_count ?? 0) === 0) {
-        return 'No Props Synced For This Filter';
-    }
-
-    if ((diagnostics.analyzed_prop_count ?? 0) === 0) {
-        return 'Props Need Analysis';
-    }
-
-    return 'No Recommendation-Ready Props';
-});
-
-const emptyStateMessage = computed(() => {
-    const diagnostics = boardMeta.value?.diagnostics;
-    const warning = boardMeta.value?.warnings?.[0];
-    if (warning) return warning;
-
-    if (!diagnostics) {
-        return 'Check back later or sync player props to see betting recommendations.';
-    }
-
-    if ((diagnostics.raw_prop_count ?? 0) === 0) {
-        return 'No player props were found for the selected date, game, or market.';
-    }
-
-    if ((diagnostics.analyzed_prop_count ?? 0) === 0) {
-        return 'Player props are synced, but the recommendation analysis has not run for this slate yet.';
-    }
-
-    return 'Props were analyzed, but none currently clear the recommendation threshold for this filter.';
-});
-
-const onDateChange = () => {
-    selectedGame.value = '';
-    applyFilters();
-};
-
-const onGameChange = () => {
-    applyFilters();
-};
-
-const onMarketChange = () => {
-    applyFilters();
-};
-
-const applyFilters = () => {
-    void loadBoard();
-};
-
-const buildQueryParams = (): Record<string, string> => {
-    const params: Record<string, string> = { limit: '75' };
-    if (selectedDate.value) params.date = selectedDate.value;
-    if (selectedGame.value) params.game = selectedGame.value;
-    if (selectedMarket.value) params.market = selectedMarket.value;
-
-    return params;
-};
-
-const clearFilters = () => {
-    selectedDate.value = '';
-    selectedGame.value = '';
-    selectedMarket.value = '';
-    void loadBoard();
-};
-
-const updateBrowserUrl = (filters: PlayerPropsFilters) => {
-    const url = new URL(window.location.href);
-    url.search = '';
-    if (selectedView.value === 'all') url.searchParams.set('view', 'all');
-
-    if (filters.date) url.searchParams.set('date', filters.date);
-    if (filters.game !== null && filters.game !== '')
-        url.searchParams.set('game', String(filters.game));
-    if (filters.market) url.searchParams.set('market', filters.market);
-
-    window.history.replaceState({}, '', `${url.pathname}${url.search}`);
-};
-
-const loadBoard = async () => {
-    boardAbortController?.abort();
-    const controller = new AbortController();
-    boardAbortController = controller;
-    loading.value = true;
-    error.value = null;
-
-    try {
-        const payload = await api.playerProps.board<PlayerPropsResponse>(
-            props.sportSlug,
-            {
-                query: buildQueryParams(),
-                init: { signal: controller.signal },
-            },
-        );
-        if (controller.signal.aborted) return;
-        if (!payload) {
-            error.value = 'Unable to load player props.';
-            return;
-        }
-
-        recommendations.value = payload.data || [];
-        visibleLimit.value = 18;
-        dates.value = payload.dates || [];
-        games.value = payload.games || [];
-        markets.value = payload.markets || [];
-        boardMeta.value = payload.meta || null;
-
-        selectedDate.value = payload.filters.date || '';
-        selectedGame.value =
-            payload.filters.game !== null ? String(payload.filters.game) : '';
-        selectedMarket.value = payload.filters.market || '';
-        updateBrowserUrl(payload.filters);
-    } catch (err) {
-        if (controller.signal.aborted) return;
-        error.value =
-            err instanceof Error ? err.message : 'Unable to load player props.';
-    } finally {
-        if (boardAbortController === controller) {
-            loading.value = false;
-        }
-    }
-};
+const props = defineProps<PlayerPropsPageProps>();
+const {
+    selectedView,
+    selectedDate,
+    selectedGame,
+    selectedMarket,
+    recommendations,
+    dates,
+    markets,
+    commonMarkets,
+    loading,
+    error,
+    visibleLimit,
+    playerSearch,
+    searchedRecommendations,
+    filteredGames,
+    hasActiveFilters,
+    visibleRecommendations,
+    emptyStateTitle,
+    emptyStateMessage,
+    filtersReady,
+    switchView,
+    onDateChange,
+    onGameChange,
+    onMarketChange,
+    clearFilters,
+} = usePlayerPropsBoard(props);
 
 const getConfidenceColor = (rec: Recommendation) => {
     const tier = rec.confidence_decomposition?.signal_quality?.tier;
@@ -439,14 +217,12 @@ const toggleModelDetails = (id: number) => {
 };
 
 onMounted(() => {
-    void loadBoard();
     freshnessTimer = setInterval(() => {
         nowMs.value = Date.now();
     }, 60_000);
 });
 
 onBeforeUnmount(() => {
-    boardAbortController?.abort();
     clearInterval(freshnessTimer);
 });
 </script>
@@ -1243,8 +1019,16 @@ onBeforeUnmount(() => {
                     </Button>
                 </div>
             </template>
+            <p
+                v-if="selectedView === 'all' && error"
+                role="alert"
+                class="text-sm text-amber-700 dark:text-amber-300"
+            >
+                {{ error }}
+            </p>
             <NflAllPropsBrowser
-                v-else
+                v-if="selectedView === 'all'"
+                :enabled="filtersReady"
                 :date="selectedDate"
                 :game="selectedGame"
                 :market="selectedMarket"

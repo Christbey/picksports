@@ -83,7 +83,7 @@ This inventory is based on `php artisan route:list --path=api/v2 --json` and `ph
 | `GET` | `/api/v2/sports/{sport}/metrics/teams` | — | 200 `SportTeamMetricCollectionResponse` | — |
 | `GET` | `/api/v2/sports/{sport}/metrics/teams/available-seasons` | — | 200 `SportAvailableSeasonsResponse` | — |
 | `GET` | `/api/v2/sports/{sport}/player-props` | — | 200 `SportPlayerPropCollectionResponse` | — |
-| `GET` | `/api/v2/sports/{sport}/player-props/board` | — | 200 `SportPlayerPropBoardResponse` | — |
+| `GET` | `/api/v2/sports/{sport}/player-props/board` | `date`, `game`, `market`, `limit`, `filters_only` | 200 `SportPlayerPropBoardResponse` | — |
 | `GET` | `/api/v2/sports/{sport}/players` | — | 200 `SportPlayerCollectionResponse` | — |
 | `GET` | `/api/v2/sports/{sport}/players/{player}` | — | 200 `SportPlayerResponse` | — |
 | `GET` | `/api/v2/sports/{sport}/players/{player}/player-props` | — | 200 `SportPlayerPropCollectionResponse` | — |

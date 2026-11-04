@@ -45,6 +45,9 @@ class V2OpenApiGenerateCommand extends Command
         'home_line' => ['type' => 'number', 'minimum' => -60, 'maximum' => 60, 'multipleOf' => 0.5],
         'window' => ['type' => 'string', 'enum' => ['season_to_date', 'previous_season']],
         'active' => ['type' => 'boolean'],
+        'filters_only' => ['type' => 'boolean', 'default' => false],
+        'game' => ['type' => 'integer'],
+        'limit' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 150],
         'as_of_date' => ['type' => 'string', 'format' => 'date'],
         'before_date' => ['type' => 'string', 'format' => 'date'],
         'bookmaker' => ['type' => 'string'],
@@ -377,6 +380,9 @@ class V2OpenApiGenerateCommand extends Command
         }
         if ($routeName === 'v2.sports.games.matchup-signals.show') {
             return ['window'];
+        }
+        if ($routeName === 'v2.sports.player-props.board') {
+            return ['date', 'game', 'market', 'limit', 'filters_only'];
         }
         if (str_contains($routeName, 'stats.team.season-averages') || str_contains($routeName, 'teams.stats.season-averages')) {
             return $this->queryParametersByFamily['season-averages'];

@@ -4,11 +4,11 @@ namespace App\Services\CBB\Predictions;
 
 use App\Models\CBB\Game;
 use App\Services\CBB\CbbPregameEligibility;
-use App\Services\Predictions\Basketball\EstablishedBasketballCutoverReadiness;
+use App\Services\Predictions\EstablishedModelCutoverReadiness;
 
 class CbbCanonicalCutoverReadinessService
 {
-    public function __construct(private readonly EstablishedBasketballCutoverReadiness $readiness) {}
+    public function __construct(private readonly EstablishedModelCutoverReadiness $readiness) {}
 
     /** @return array<string, mixed> */
     public function report(?int $season = null): array

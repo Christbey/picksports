@@ -11,6 +11,7 @@ use App\Services\CBB\CbbDataQuality;
 use App\Services\CBB\CbbPregameEligibility;
 use App\Services\CBB\CbbSeasonInitializer;
 use App\Services\CBB\CbbSeasonInputs;
+use App\Services\Predictions\PredictionDeliverySource;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -35,6 +36,7 @@ class GeneratePrediction extends AbstractCollegeBasketballPredictionGenerator
 
     public function execute(Model $game, bool $dispatchNarratives = true): ?Model
     {
+        app(PredictionDeliverySource::class)->assertLegacyWriterAvailable('cbb');
         $start = $game->sportEvent?->starts_at ?? app(SportsDateWindowService::class)->gameDateTimeUtc($game->getRawOriginal('game_date'), $game->game_time);
         if (! ctype_digit((string) $game->espn_event_id) || ! $game->homeTeam || ! $game->awayTeam
             || ! $this->shouldGeneratePredictionForGame($game, $game->homeTeam, $game->awayTeam)

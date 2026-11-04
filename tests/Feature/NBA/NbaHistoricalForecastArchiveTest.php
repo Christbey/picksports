@@ -10,7 +10,7 @@ use App\Models\SportEvent;
 use App\Models\User;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportPredictionReader;
-use App\Services\NBA\NbaHistoricalForecastArchive;
+use App\Services\Predictions\HistoricalForecastArchive;
 use Laravel\Sanctum\Sanctum;
 
 function nbaArchiveFixture(): array
@@ -45,11 +45,11 @@ it('prefers immutable observed NBA snapshots to overwritten historical rows', fu
         'features' => [], 'outputs' => ['predicted_spread' => 3.5, 'predicted_total' => 210, 'win_probability' => .55],
         'generated_at' => $kickoff->subHour(), 'features_available_at' => $kickoff->subHours(2), 'game_start_at' => $kickoff,
         'pregame_safe' => true, 'availability_status' => 'observed_pregame']);
-    $result = app(NbaHistoricalForecastArchive::class)->forGame($game);
+    $result = app(HistoricalForecastArchive::class)->forGame($game, 'nba');
     expect($result['source'])->toBe('legacy_archive')->and($result['snapshot_id'])->toBe($snapshot->id)
         ->and($result['known_before_kickoff'])->toBeTrue()->and($result['predicted_spread'])->toBe(3.5);
     $snapshot->forceFill(['pregame_safe' => false])->save();
-    expect(app(NbaHistoricalForecastArchive::class)->forGame($game)['known_before_kickoff'])->toBeFalse();
+    expect(app(HistoricalForecastArchive::class)->forGame($game, 'nba')['known_before_kickoff'])->toBeFalse();
 });
 
 it('never uses historical NBA forecasts over native revisions or for active and post-cutover games', function (string $variant) {
@@ -64,7 +64,7 @@ it('never uses historical NBA forecasts over native revisions or for active and 
     } else {
         config(['prediction_lifecycle.canonical_reads.nba' => false]);
     }
-    expect(app(NbaHistoricalForecastArchive::class)->forGame($game))->toBeNull();
+    expect(app(HistoricalForecastArchive::class)->forGame($game, 'nba'))->toBeNull();
 })->with(['draft', 'withdrawn', 'superseded', 'active', 'post_cutover', 'legacy_mode']);
 
 it('retains NBA history authentication and subscription permission gates', function () {

@@ -3,11 +3,11 @@
 namespace App\Services\NBA\Predictions;
 
 use App\Models\NBA\Game;
-use App\Services\Predictions\Basketball\EstablishedBasketballCutoverReadiness;
+use App\Services\Predictions\EstablishedModelCutoverReadiness;
 
 class NbaCanonicalCutoverReadinessService
 {
-    public function __construct(private readonly EstablishedBasketballCutoverReadiness $readiness) {}
+    public function __construct(private readonly EstablishedModelCutoverReadiness $readiness) {}
 
     /** @return array<string, mixed> */
     public function report(?int $season = null): array

@@ -12,7 +12,7 @@ use App\Models\CBB\TeamMetric;
 use App\Models\SportEvent;
 use App\Services\CBB\CbbPregameEligibility;
 use App\Services\Predictions\Basketball\BasketballInputSnapshotBuilder;
-use App\Services\Predictions\Basketball\EstablishedBasketballModel;
+use App\Services\Predictions\EstablishedModelTransport;
 use Illuminate\Database\Eloquent\Model;
 
 class CbbInputSnapshotBuilder extends BasketballInputSnapshotBuilder
@@ -30,7 +30,7 @@ class CbbInputSnapshotBuilder extends BasketballInputSnapshotBuilder
             throw new PredictionLifecycleException('CBB canonical kickoff and neutral-site identity must match the linked game.');
         }
 
-        return app(EstablishedBasketballModel::class)->capture(
+        return app(EstablishedModelTransport::class)->capture(
             parent::build($event, $release), $release, 'cbb', CbbFullModelReleaseDefinition::INPUT_SCHEMA_VERSION,
             CbbFullModelReleaseDefinition::FORECAST_SOURCE, CbbFullModelReleaseDefinition::configurationKeys(),
             fn () => app(GeneratePrediction::class)->preview($game),

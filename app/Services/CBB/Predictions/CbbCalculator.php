@@ -6,7 +6,7 @@ use App\Application\Predictions\Data\CalculationReleaseData;
 use App\Application\Predictions\Data\EventInputSnapshotData;
 use App\Application\Predictions\Data\PredictionOutput;
 use App\Services\Predictions\Basketball\CanonicalBasketballCalculator;
-use App\Services\Predictions\Basketball\EstablishedBasketballModel;
+use App\Services\Predictions\EstablishedModelTransport;
 
 class CbbCalculator extends CanonicalBasketballCalculator
 {
@@ -17,7 +17,7 @@ class CbbCalculator extends CanonicalBasketballCalculator
             return parent::calculate($snapshot, $release);
         }
 
-        return app(EstablishedBasketballModel::class)->calculate(
+        return app(EstablishedModelTransport::class)->calculate(
             $snapshot, $release, 'cbb', CbbFullModelReleaseDefinition::INPUT_SCHEMA_VERSION, CbbFullModelReleaseDefinition::FORECAST_SOURCE,
         );
     }

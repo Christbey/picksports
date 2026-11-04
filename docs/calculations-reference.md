@@ -481,7 +481,6 @@ observed production behavior are explicitly distinguished there.
 Source:
 - `app/Actions/Sports/AbstractAmericanFootballPredictionGenerator.php`
 - concrete classes:
-  - `app/Actions/NFL/GeneratePrediction.php`
   - `app/Actions/CFB/GeneratePrediction.php`
 
 Spread:

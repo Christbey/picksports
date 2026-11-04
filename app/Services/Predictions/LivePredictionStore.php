@@ -8,6 +8,7 @@ use App\Models\CFB\Game as CfbGame;
 use App\Models\LivePredictionSnapshot;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\CFB\Live\LiveSnapshotRecorder;
+use App\Services\WCBB\Predictions\WcbbLegacyLiveBaseline;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
@@ -34,12 +35,13 @@ class LivePredictionStore
         $sport = $this->sport($game);
         $snapshot = $this->latest($game);
         $baseline = $snapshot?->baseline;
-        if (is_array($baseline) && ($baseline['pinned'] ?? false) && $this->selected($baseline, $sport, $snapshot)) {
+        if (is_array($baseline) && ($baseline['pinned'] ?? false) && $this->selected($baseline, $sport, $snapshot, $game)) {
             return LivePregameForecast::fromArray($baseline);
         }
         $context = $this->predictions->forGame($game, $sport);
         if ($context === null) {
-            return null;
+            return $sport === 'wcbb' && $this->predictions->usesCanonical($sport)
+                ? app(WcbbLegacyLiveBaseline::class)->forGame($game) : null;
         }
 
         return new LivePregameForecast($context->predictedSpread, $context->predictedTotal, $context->homeWinProbability, [
@@ -51,11 +53,12 @@ class LivePredictionStore
         ]);
     }
 
-    private function selected(array $baseline, string $sport, ?LivePredictionSnapshot $snapshot = null): bool
+    private function selected(array $baseline, string $sport, ?LivePredictionSnapshot $snapshot = null, ?Model $game = null): bool
     {
         $canonical = $this->predictions->usesCanonical($sport);
         if (($baseline['prediction_source'] ?? null) !== ($canonical ? 'canonical' : 'legacy')) {
-            return false;
+            return $canonical && $sport === 'wcbb' && $game !== null
+                && app(WcbbLegacyLiveBaseline::class)->matches($game, $baseline);
         }
 
         if ($snapshot?->relationLoaded('baselineValidity')) {
@@ -145,7 +148,7 @@ class LivePredictionStore
                 'live_seconds_remaining' => $projection['seconds_remaining'] ?? null, 'live_updated_at' => $snapshot->observed_at]);
         }
         $snapshot = $this->latest($game);
-        if ($snapshot?->status !== 'live' || ! $this->selected((array) $snapshot->baseline, $this->sport($game), $snapshot)) {
+        if ($snapshot?->status !== 'live' || ! $this->selected((array) $snapshot->baseline, $this->sport($game), $snapshot, $game)) {
             return self::EMPTY_FIELDS;
         }
 

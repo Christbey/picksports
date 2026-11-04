@@ -5,6 +5,7 @@ namespace App\Services\Predictions;
 use App\Exceptions\Predictions\PredictionLifecycleException;
 use App\Models\SportEvent;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
+use App\Services\WCBB\Predictions\WcbbLegacyLiveBaseline;
 use Illuminate\Database\Eloquent\Model;
 
 class EstablishedModelCutoverReadiness
@@ -85,7 +86,12 @@ class EstablishedModelCutoverReadiness
         $nativeInflight = $this->predictions->queryForSport($sport, array_filter(['season' => $season]))
             ->whereIn('predictions.sport_event_id', $inflight->pluck('sport_event_id'))
             ->select('predictions.sport_event_id')->pluck('predictions.sport_event_id');
-        $inflightHolds = $inflight->whereNotIn('sport_event_id', $nativeInflight)->pluck('id')->values()->all();
+        $legacyInflight = $inflight->whereNotIn('sport_event_id', $nativeInflight);
+        $compatibleLive = $sport === 'wcbb'
+            ? $gameModel::whereIn('id', $legacyInflight->pluck('id'))->with('sportEvent')->get()
+                ->filter(fn ($game) => app(WcbbLegacyLiveBaseline::class)->forGame($game) !== null)->pluck('id')->all()
+            : [];
+        $inflightHolds = $legacyInflight->whereNotIn('id', $compatibleLive)->pluck('id')->values()->all();
         if ($inflightHolds !== []) {
             $blockers[] = 'inflight_legacy_baselines_require_compatibility';
         }
@@ -95,7 +101,7 @@ class EstablishedModelCutoverReadiness
         }
 
         return [...$report, ...($eligible === null ? [] : ['scheduled_slate_event_count' => $scheduledCount, 'held_placeholder_game_ids' => $held->pluck('id')->values()->all(), 'identity_mismatch_game_ids' => $identityHolds]), 'identity_mismatch_game_ids' => $identityHolds, 'selected_release_id' => $release?->id,
-            'inflight_legacy_game_ids' => $inflightHolds, 'unlinked_slate_game_ids' => $unlinked, 'slate_event_count' => $games->count(), 'full_model_forecast_event_count' => $fullModelEvents->count(),
+            'inflight_legacy_game_ids' => $inflightHolds, 'compatible_legacy_live_game_ids' => $compatibleLive, 'unlinked_slate_game_ids' => $unlinked, 'slate_event_count' => $games->count(), 'full_model_forecast_event_count' => $fullModelEvents->count(),
             'missing_full_model_forecast_game_ids' => $missing, 'readiness_blockers' => $blockers,
             'read_transport_ready' => $transportReady, 'model_performance_review_required' => true,
             'ready_for_cutover' => $blockers === [],

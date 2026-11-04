@@ -39,8 +39,11 @@ const freshness = (date?: string | null) => {
         : 'Stored quote';
 };
 async function load() {
-    if (!props.enabled) return;
     request?.abort();
+    if (!props.enabled) {
+        loading.value = true;
+        return;
+    }
     const controller = new AbortController();
     request = controller;
     loading.value = true;

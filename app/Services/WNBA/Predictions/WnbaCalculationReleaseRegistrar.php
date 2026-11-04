@@ -21,7 +21,8 @@ class WnbaCalculationReleaseRegistrar
         ?CarbonImmutable $effectiveAt = null,
     ): CalculationRelease {
         return $this->registrar->register(
-            $this->definition,
+            $semanticVersion === WnbaFullModelReleaseDefinition::SEMANTIC_VERSION
+                ? new WnbaFullModelReleaseDefinition : $this->definition,
             WnbaCalculator::class,
             WnbaInputSnapshotBuilder::class,
             $semanticVersion,

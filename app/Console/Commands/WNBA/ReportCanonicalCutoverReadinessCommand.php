@@ -2,40 +2,17 @@
 
 namespace App\Console\Commands\WNBA;
 
+use App\Console\Commands\Sports\Canonical\AbstractReportCanonicalCutoverReadinessCommand;
 use App\Services\WNBA\Predictions\WnbaCanonicalCutoverReadinessService;
-use Illuminate\Console\Command;
 
-class ReportCanonicalCutoverReadinessCommand extends Command
+class ReportCanonicalCutoverReadinessCommand extends AbstractReportCanonicalCutoverReadinessCommand
 {
-    protected $signature = 'wnba:report-canonical-cutover-readiness
-        {--season= : Limit the report to a WNBA season}
-        {--json : Emit machine-readable JSON}
-        {--fail-on-not-ready : Return a failure code when cutover requirements are incomplete}';
+    protected $signature = 'wnba:report-canonical-cutover-readiness {--season=} {--offseason} {--json} {--fail-on-not-ready}';
 
-    protected $description = 'Report whether WNBA canonical predictions and evaluations are ready for API cutover';
+    protected $description = 'Report WNBA canonical cutover readiness';
 
-    public function handle(WnbaCanonicalCutoverReadinessService $readiness): int
+    protected function readinessClass(): string
     {
-        $report = $readiness->report(
-            filled($this->option('season')) ? (int) $this->option('season') : null,
-        );
-
-        if ($this->option('json')) {
-            $this->line(json_encode($report, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
-        } else {
-            $this->table(
-                ['Check', 'Value'],
-                collect($report)->map(fn (mixed $value, string $key): array => [
-                    $key,
-                    is_bool($value) ? ($value ? 'yes' : 'no') : ($value ?? 'all'),
-                ])->values()->all(),
-            );
-        }
-
-        if ($this->option('fail-on-not-ready') && ! $report['ready_for_cutover']) {
-            return self::FAILURE;
-        }
-
-        return self::SUCCESS;
+        return WnbaCanonicalCutoverReadinessService::class;
     }
 }

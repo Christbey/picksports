@@ -277,6 +277,9 @@ it('serves WNBA predictions from stored canonical outputs when the reader cutove
 
 it('reports concrete WNBA cutover gaps and becomes ready after safe generation', function () {
     $fixture = canonicalWnbaFixture();
+    config(['prediction_lifecycle.canonical_pipeline.wnba' => true]);
+    $tip = $fixture['event']->fresh()->starts_at->utc();
+    $fixture['game']->update(['game_date' => $tip->toDateString(), 'game_time' => $tip->toTimeString()]);
     $readiness = app(WnbaCanonicalCutoverReadinessService::class);
 
     expect($readiness->report(2026))
@@ -289,7 +292,7 @@ it('reports concrete WNBA cutover gaps and becomes ready after safe generation',
     ])->assertFailed();
 
     app(WnbaCalculationReleaseRegistrar::class)->register(
-        effectiveAt: now()->subMinute()->toImmutable(),
+        '1.1.0', effectiveAt: now()->subMinute()->toImmutable(),
     );
     app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
 

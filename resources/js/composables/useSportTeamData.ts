@@ -1,4 +1,5 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { gameOutcome } from '@/lib/gameOutcome';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import type { BreadcrumbItem, Game } from '@/types';
 import type { ApiV2SportSlug, GameDepthChartTeam } from '@/types';
@@ -77,43 +78,27 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
         return isHome ? game.away_team : game.home_team;
     };
 
-    const getGameResult = (game: Game): string | null => {
-        if (
-            game.status !== 'STATUS_FINAL' ||
-            game.home_score == null ||
-            game.away_score == null
-        )
-            return null;
-        const tid = teamId.value;
-        const isHome = game.home_team_id === tid;
-        const teamScore = isHome ? game.home_score : game.away_score;
-        const oppScore = isHome ? game.away_score : game.home_score;
-        return teamScore > oppScore ? 'W' : 'L';
+    const getGameResult = (game: Game) =>
+        game.status === 'STATUS_FINAL' ? gameOutcome(game, teamId.value) : null;
+
+    const summarizeRecord = (games: Game[]) => {
+        const results = games.map(getGameResult);
+        const count = (result: 'W' | 'L' | 'T') =>
+            results.filter((value) => value === result).length;
+        return {
+            wins: count('W'),
+            losses: count('L'),
+            ties: count('T'),
+            games: results.filter(Boolean).length,
+        };
     };
-
-    const record = computed(() => {
-        const wins = recentGames.value.filter(
-            (g) => getGameResult(g) === 'W',
-        ).length;
-        const losses = recentGames.value.filter(
-            (g) => getGameResult(g) === 'L',
-        ).length;
-        return { wins, losses };
-    });
-
-    const recentForm = computed(() => {
-        return recentGames.value
-            .slice(0, 5)
-            .map((g) => getGameResult(g))
-            .filter(Boolean);
-    });
-
-    const recentRecord = computed(() => {
-        const last5 = recentGames.value.slice(0, 5);
-        const wins = last5.filter((g) => getGameResult(g) === 'W').length;
-        const losses = last5.length - wins;
-        return { wins, losses, games: last5.length };
-    });
+    const record = computed(() => summarizeRecord(recentGames.value));
+    const recentForm = computed(() =>
+        recentGames.value.slice(0, 5).map(getGameResult).filter(Boolean),
+    );
+    const recentRecord = computed(() =>
+        summarizeRecord(recentGames.value.slice(0, 5)),
+    );
 
     const headerInfoItems = computed(() => {
         if (!props.config.headerInfo || !teamData.value) return [];
@@ -201,8 +186,7 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
                       (metric: any) => toNumber(metric.season) === season,
                   )
                 : allMetricsRaw;
-        const baseMetrics =
-            seasonMetrics.length > 0 ? seasonMetrics : allMetricsRaw;
+        const baseMetrics = seasonMetrics;
         const byTeam = Array.from(
             new Map(
                 baseMetrics.map((metric: any) => [
@@ -273,8 +257,7 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
                       (game) => toNumber((game as any).season) === metricSeason,
                   )
                 : games;
-        const sourceGames =
-            seasonScopedGames.length > 0 ? seasonScopedGames : games;
+        const sourceGames = seasonScopedGames;
 
         recentGames.value = sourceGames
             .filter((game) => game.status === 'STATUS_FINAL')
@@ -331,7 +314,10 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
             const supplemental: Promise<unknown>[] = [
                 api.teams
                     .games(sport, fetchId, {
-                        query: { per_page: 200 },
+                        query: {
+                            per_page: 200,
+                            ...(season !== null ? { season } : {}),
+                        },
                         init: { signal: requestController.signal },
                     })
                     .then((response) =>

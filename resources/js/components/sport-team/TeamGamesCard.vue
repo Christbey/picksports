@@ -123,7 +123,9 @@ const statChipsForGame = (game: Game): string[] => {
                             :class="
                                 getGameResult(game) === 'W'
                                     ? 'text-green-600 dark:text-green-400'
-                                    : 'text-red-600 dark:text-red-400'
+                                    : getGameResult(game) === 'L'
+                                      ? 'text-red-600 dark:text-red-400'
+                                      : 'text-muted-foreground'
                             "
                         >
                             {{ getGameResult(game) }}

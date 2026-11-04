@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, useId } from 'vue';
 import { Link } from '@inertiajs/vue3';
 import { formatNumber } from '@/components/sport-team-metrics-helpers';
 import type { Column } from '@/components/SportTeamMetrics.vue';
@@ -9,6 +10,16 @@ defineProps<{
     teamLink: (id: number) => string;
     sortLabel: string;
 }>();
+
+const expandedTeams = ref<number[]>([]);
+const boardId = useId();
+const toggleId = (id: number) => `${boardId}-nfl-team-metrics-toggle-${id}`;
+const panelId = (id: number) => `${boardId}-nfl-team-metrics-${id}`;
+function toggleTeam(id: number): void {
+    expandedTeams.value = expandedTeams.value.includes(id)
+        ? expandedTeams.value.filter((teamId) => teamId !== id)
+        : [...expandedTeams.value, id];
+}
 
 const groups = [
     {
@@ -195,52 +206,84 @@ function updated(metric: any): string {
                     Small sample: {{ metric.games_played }} completed games.
                     Missing or insufficient metrics display —.
                 </p>
-                <details class="mt-3 border-t pt-3">
-                    <summary class="cursor-pointer text-sm font-medium">
-                        View offense, defense & situational details
-                    </summary>
-                    <p class="mt-3 text-xs text-muted-foreground">
-                        Yardage averages use reported games only. Turnover
-                        margin requires complete stats for both teams. Model
-                        ratings are descriptive estimates, not win
-                        probabilities. Opponent rank groups use current Elo
-                        ranks.
-                    </p>
-                    <section
-                        v-for="group in groups"
-                        :key="group.title"
-                        class="mt-4"
+                <div class="mt-3 border-t pt-3">
+                    <button
+                        type="button"
+                        class="min-h-11 cursor-pointer rounded-md text-left text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                        :id="toggleId(metric.id)"
+                        :aria-expanded="expandedTeams.includes(metric.id)"
+                        :aria-controls="panelId(metric.id)"
+                        @click="toggleTeam(metric.id)"
                     >
-                        <h3 class="text-sm font-semibold">{{ group.title }}</h3>
-                        <dl
-                            class="mt-2 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4"
+                        {{
+                            expandedTeams.includes(metric.id) ? 'Hide' : 'View'
+                        }}
+                        offense, defense &amp; situational details
+                        <span class="sr-only">
+                            for
+                            {{
+                                metric.team?.display_name || 'Unknown team'
+                            }}</span
                         >
-                            <div
-                                v-for="col in columns.filter((column) =>
-                                    group.labels.includes(column.label),
-                                )"
-                                :key="col.label"
-                                class="min-w-0 rounded-lg bg-muted/30 p-3"
+                    </button>
+                    <div
+                        :id="panelId(metric.id)"
+                        :hidden="!expandedTeams.includes(metric.id)"
+                        role="region"
+                        :aria-labelledby="toggleId(metric.id)"
+                    >
+                        <template v-if="expandedTeams.includes(metric.id)">
+                            <p class="mt-3 text-xs text-muted-foreground">
+                                Yardage averages use reported games only.
+                                Turnover margin requires complete stats for both
+                                teams. Model ratings are descriptive estimates,
+                                not win probabilities. Opponent rank groups use
+                                current Elo ranks.
+                            </p>
+                            <section
+                                v-for="group in groups"
+                                :key="group.title"
+                                class="mt-4"
                             >
-                                <dt class="text-xs text-muted-foreground">
-                                    {{ descriptions[col.label] ?? col.label }}
-                                </dt>
-                                <dd
-                                    class="mt-1 font-medium tabular-nums"
-                                    :class="col.class?.(metric)"
+                                <h3 class="text-sm font-semibold">
+                                    {{ group.title }}
+                                </h3>
+                                <dl
+                                    class="mt-2 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4"
                                 >
-                                    {{ col.value(metric) }}
-                                </dd>
-                                <dd
-                                    v-if="sample(metric, col.label)"
-                                    class="mt-1 text-xs text-muted-foreground"
-                                >
-                                    {{ sample(metric, col.label) }}
-                                </dd>
-                            </div>
-                        </dl>
-                    </section>
-                </details>
+                                    <div
+                                        v-for="col in columns.filter((column) =>
+                                            group.labels.includes(column.label),
+                                        )"
+                                        :key="col.label"
+                                        class="min-w-0 rounded-lg bg-muted/30 p-3"
+                                    >
+                                        <dt
+                                            class="text-xs text-muted-foreground"
+                                        >
+                                            {{
+                                                descriptions[col.label] ??
+                                                col.label
+                                            }}
+                                        </dt>
+                                        <dd
+                                            class="mt-1 font-medium tabular-nums"
+                                            :class="col.class?.(metric)"
+                                        >
+                                            {{ col.value(metric) }}
+                                        </dd>
+                                        <dd
+                                            v-if="sample(metric, col.label)"
+                                            class="mt-1 text-xs text-muted-foreground"
+                                        >
+                                            {{ sample(metric, col.label) }}
+                                        </dd>
+                                    </div>
+                                </dl>
+                            </section>
+                        </template>
+                    </div>
+                </div>
             </template>
         </div>
     </section>

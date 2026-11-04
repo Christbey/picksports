@@ -3,7 +3,7 @@ import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import vue from '@vitejs/plugin-vue';
-import { createSSRApp } from 'vue';
+import { createSSRApp, h } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import { compareMetricValues } from '../../resources/js/components/sport-team-metrics-helpers.ts';
 
@@ -60,14 +60,24 @@ const fixture = {
     sample_sizes: { games: 2, home: 2, away: 0, yards_per_game: 1 },
     updated_at: '2026-09-20T12:00:00Z',
 };
-const render = (rows) =>
+const render = (rows, expanded = []) =>
     renderToString(
-        createSSRApp(component, {
-            metrics: rows,
-            columns: config.columns,
-            teamLink: (id) => `/nfl/teams/${id}`,
-            sortLabel: 'Net EPA/Play',
-        }),
+        createSSRApp(
+            {
+                ...component,
+                setup(props, context) {
+                    const bindings = component.setup(props, context);
+                    bindings.expandedTeams.value = expanded;
+                    return bindings;
+                },
+            },
+            {
+                metrics: rows,
+                columns: config.columns,
+                teamLink: (id) => `/nfl/teams/${id}`,
+                sortLabel: 'Net EPA/Play',
+            },
+        ),
     );
 
 test('defensive metrics start best-first and nulls sort last in both directions', () => {
@@ -95,15 +105,22 @@ test('NFL starts with regular season and preserves fractional turnover rates', (
 });
 test('core stats remain visible while advanced metrics are collapsed with samples', async () => {
     const html = await render([fixture]);
-    const primary = html.split('<details')[0];
+    const primary = html;
     assert.match(primary, /1-0-1/);
     assert.match(primary, /#8/);
     assert.match(primary, /0\.125/);
     assert.match(primary, /Small sample: 2/);
     assert.match(primary, /Calculated/);
     assert.doesNotMatch(html, /<details[^>]*\bopen\b/);
-    assert.match(html, /1 game/);
-    assert.match(html, /Heuristic rating/);
+    assert.match(html, /aria-expanded="false"/);
+    assert.match(html, /<section[^>]*aria-label="NFL team rankings"/);
+    assert.doesNotMatch(html, /<form/);
+    assert.doesNotMatch(html, /Heuristic rating|Offense &amp; defense/);
+    const expanded = await render([fixture], [fixture.id]);
+    assert.match(expanded, /aria-expanded="true"/);
+    assert.match(expanded, /id="[^"]*-nfl-team-metrics-1"/);
+    assert.match(expanded, /1 game/);
+    assert.match(expanded, /Heuristic rating/);
 });
 test('legacy samples remain unknown and empty results are explained', async () => {
     const html = await render([
@@ -118,4 +135,55 @@ test('legacy samples remain unknown and empty results are explained', async () =
     assert.match(html, /Recalculation required/);
     assert.doesNotMatch(html, /0\.125/);
     assert.match(await render([]), /No teams match/);
+});
+
+test('each disclosure has a team-specific name and a stable labelled panel even while collapsed', async () => {
+    const rows = [
+        fixture,
+        { ...fixture, id: 2, team: { id: 3, display_name: 'Other Team' } },
+    ];
+    const html = await render(rows);
+    assert.match(html, /for Test Team/);
+    assert.match(html, /for Other Team/);
+    const controls = [...html.matchAll(/<button\b[^>]*>/g)].map(([tag]) => ({
+        id: tag.match(/\bid="([^"]+)"/)?.[1],
+        panel: tag.match(/aria-controls="([^"]+)"/)?.[1],
+        type: tag.match(/type="([^"]+)"/)?.[1],
+    }));
+    assert.equal(controls.length, 2);
+    for (const control of controls) {
+        assert.equal(control.type, 'button');
+        assert.ok(control.id);
+        assert.ok(control.panel);
+        assert.match(
+            html,
+            new RegExp(
+                `id="${control.panel}"[^>]*hidden[^>]*role="region"[^>]*aria-labelledby="${control.id}"`,
+            ),
+        );
+    }
+    assert.equal(new Set(controls.map((control) => control.panel)).size, 2);
+    assert.doesNotMatch(html, /Heuristic rating|Offense &amp; defense/);
+    const opened = await render(rows, [fixture.id]);
+    assert.equal((opened.match(/aria-expanded="true"/g) ?? []).length, 1);
+    assert.equal((opened.match(/aria-expanded="false"/g) ?? []).length, 1);
+});
+
+test('two board instances never reuse disclosure or panel identifiers', async () => {
+    const props = {
+        metrics: [fixture],
+        columns: config.columns,
+        teamLink: (id) => `/nfl/teams/${id}`,
+        sortLabel: 'Net EPA/Play',
+    };
+    const html = await renderToString(
+        createSSRApp({
+            render: () => h('main', [h(component, props), h(component, props)]),
+        }),
+    );
+    const ids = [...html.matchAll(/\bid="([^"]*nfl-team-metrics[^\"]*)"/g)].map(
+        ([, id]) => id,
+    );
+    assert.equal(ids.length, 4);
+    assert.equal(new Set(ids).size, 4);
 });

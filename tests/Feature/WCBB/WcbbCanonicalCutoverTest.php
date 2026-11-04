@@ -9,6 +9,7 @@ use App\Application\Sports\ReadModels\LivePregameForecast;
 use App\Exceptions\Predictions\PredictionLifecycleException;
 use App\Models\BetDecision;
 use App\Models\CalculationRelease;
+use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
 use App\Models\PredictionFeatureSnapshot;
 use App\Models\SportEvent;
@@ -290,3 +291,18 @@ it('rejects unsafe WCBB live compatibility anchors and never rescues withdrawn n
         ->and($store->fields($f['game']->fresh()))->toBe(LivePredictionStore::EMPTY_FIELDS)
         ->and(BetDecision::count())->toBe(0);
 })->with(['missing', 'late', 'invalid', 'other_table', 'post_cutover', 'withdrawn']);
+
+it('retains bad-metric holds after a WCBB game finishes without inventing a retrospective pregame forecast', function () {
+    config(['prediction_lifecycle.canonical_pipeline.wcbb' => true, 'prediction_lifecycle.canonical_reads.wcbb' => true]);
+    $f = wcbbCutoverFixture();
+    $legacy = Prediction::factory()->create(['game_id' => $f['game']->id]);
+    $before = $legacy->fresh()->getAttributes();
+    TeamMetric::where('team_id', $f['away']->id)->update(['offensive_efficiency' => 0, 'defensive_efficiency' => 0, 'tempo' => 0]);
+    $release = app(WcbbCalculationReleaseRegistrar::class)->register('1.1.0', effectiveAt: now()->subMinute()->toImmutable());
+    expect(app(WcbbPregameInputReadiness::class)->holds($f['game']->fresh(), $release))->toHaveCount(3);
+    $this->travel(2)->days();
+    $f['game']->update(['status' => 'STATUS_FINAL', 'home_score' => 86, 'away_score' => 46]);
+    expect(fn () => app(GenerateCanonicalPrediction::class)->execute($f['game']->fresh()))->toThrow(PredictionLifecycleException::class)
+        ->and(CanonicalPrediction::count())->toBe(0)->and(CalculationRun::count())->toBe(0)
+        ->and(BetDecision::count())->toBe(0)->and($legacy->fresh()->getAttributes())->toBe($before);
+});

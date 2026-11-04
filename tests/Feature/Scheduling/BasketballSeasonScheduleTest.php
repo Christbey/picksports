@@ -43,8 +43,10 @@ it('schedules basketball predictions for the ending year with active preseason c
         ->and($recovery->filtersPass(app()))->toBeTrue()
         ->and($recovery->onOneServer)->toBeTrue()
         ->and($recovery->withoutOverlapping)->toBeTrue();
-    expect($events->firstWhere('description', 'NBA: Ensure Pregame Prediction Coverage')->command)
-        ->toContain('--days-forward=7');
+    foreach (['NBA', 'CBB'] as $sport) {
+        expect($events->firstWhere('description', $sport.': Ensure Pregame Prediction Coverage')->command)
+            ->toContain('--days-forward=8');
+    }
     foreach (['NBA: Sync Scoreboard (Today + 7 Days)', 'CBB: Sync Current Week'] as $name) {
         expect($events->firstWhere('description', $name)->command)->toContain('--sync');
     }

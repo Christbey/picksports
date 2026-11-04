@@ -438,7 +438,7 @@ $scheduleSportPipeline = function (
 */
 
 foreach (['nba' => $nbaInSeason, 'cbb' => $cbbInSeason, 'wcbb' => $wcbbInSeason] as $sport => $inSeason) {
-    $command = "sports:ensure-basketball-predictions {$sport}".($sport === 'nba' ? ' --days-forward=7' : '');
+    $command = "sports:ensure-basketball-predictions {$sport}".(in_array($sport, ['nba', 'cbb'], true) ? ' --days-forward=8' : '');
     $name = strtoupper($sport).': Ensure Pregame Prediction Coverage';
     $event = Schedule::command($command)
         ->everyFiveMinutes()

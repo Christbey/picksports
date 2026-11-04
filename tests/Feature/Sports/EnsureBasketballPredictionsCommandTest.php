@@ -2,12 +2,15 @@
 
 use App\Actions\NBA\GenerateCanonicalPrediction;
 use App\Actions\NBA\GeneratePrediction;
+use App\Models\BetDecision;
 use App\Models\CanonicalPrediction;
 use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
 use App\Models\SportEvent;
+use App\Services\Api\V2\SportContextResolver;
 use App\Services\Sports\PipelineCommandRunner;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
@@ -168,3 +171,35 @@ it('does not refresh forecasts when a prerequisite fails and releases the recove
 it('rejects NBA recovery flags for college basketball', function () {
     $this->artisan('sports:ensure-basketball-predictions cbb --refresh-existing')->assertFailed();
 });
+
+it('schedules missing NBA and CBB coverage across the full readiness horizon without refreshing existing forecasts', function (string $sport) {
+    $event = collect(app(Schedule::class)->events())
+        ->firstWhere('description', strtoupper($sport).': Ensure Pregame Prediction Coverage');
+    expect($event)->not->toBeNull()->and($event->command)->toContain("sports:ensure-basketball-predictions {$sport} --days-forward=8")
+        ->and($event->command)->not->toContain('--refresh-existing')->and($event->expression)->toBe('*/5 * * * *');
+})->with(['nba', 'cbb']);
+
+it('fills eighth-day NBA and CBB forecasts once while retaining narrower explicit windows', function (string $sport) {
+    config(["prediction_lifecycle.canonical_pipeline.{$sport}" => true, "prediction_lifecycle.canonical_reads.{$sport}" => false]);
+    $context = app(SportContextResolver::class)->resolve($sport);
+    $gameClass = $context->models['game'];
+    $teamClass = $context->models['team'];
+    $tip = now()->addDays(8)->startOfDay()->addHours(20);
+    $event = SportEvent::factory()->create(['sport' => $sport, 'season' => 2027, 'starts_at' => $tip]);
+    $utc = $event->fresh()->starts_at->utc();
+    $game = $gameClass::factory()->create(['season' => 2027, 'season_type' => 2, 'status' => 'STATUS_SCHEDULED',
+        'sport_event_id' => $event->id, 'game_date' => $utc->toDateString(), 'game_time' => $utc->toTimeString(),
+        'home_team_id' => $teamClass::factory(), 'away_team_id' => $teamClass::factory()]);
+    $action = 'App\\Actions\\'.strtoupper($sport).'\\GenerateCanonicalPrediction';
+    $this->mock($action)->shouldReceive('execute')->once()
+        ->withArgs(fn ($actual, $publish, $trigger) => $actual->id === $game->id && $publish && $trigger === 'coverage')
+        ->andReturnUsing(fn () => CanonicalPrediction::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id, 'phase' => 'pregame', 'publication_state' => 'published']));
+    $this->mock(PipelineCommandRunner::class)->shouldNotReceive('call');
+    $this->artisan('sports:ensure-basketball-predictions', ['sport' => $sport, '--days-forward' => $sport === 'nba' ? 7 : 2])
+        ->expectsOutput('Pregame coverage: 0 generated; 0 still missing.')->assertSuccessful();
+    $this->artisan('sports:ensure-basketball-predictions', ['sport' => $sport, '--days-forward' => 8])
+        ->expectsOutput('Pregame coverage: 1 generated; 0 still missing.')->assertSuccessful();
+    $this->artisan('sports:ensure-basketball-predictions', ['sport' => $sport, '--days-forward' => 8])
+        ->expectsOutput('Pregame coverage: 0 generated; 0 still missing.')->assertSuccessful();
+    expect(CanonicalPrediction::where('sport', $sport)->count())->toBe(1)->and(BetDecision::count())->toBe(0);
+})->with(['nba', 'cbb']);

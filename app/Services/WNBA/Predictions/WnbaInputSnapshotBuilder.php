@@ -2,6 +2,7 @@
 
 namespace App\Services\WNBA\Predictions;
 
+use App\Actions\WNBA\GeneratePrediction;
 use App\Application\Predictions\Data\CalculationReleaseData;
 use App\Application\Predictions\Data\EventInputSnapshotData;
 use App\Contracts\Predictions\EventInputSnapshotBuilder;
@@ -11,6 +12,7 @@ use App\Models\WNBA\Game;
 use App\Models\WNBA\PlayerInjury;
 use App\Models\WNBA\Team;
 use App\Models\WNBA\TeamMetric;
+use App\Services\Predictions\EstablishedModelTransport;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 
@@ -54,7 +56,7 @@ class WnbaInputSnapshotBuilder implements EventInputSnapshotBuilder
             $awayInjuries,
         );
 
-        return new EventInputSnapshotData(
+        $snapshot = new EventInputSnapshotData(
             schemaVersion: WnbaCalculationReleaseDefinition::INPUT_SCHEMA_VERSION,
             inputs: [
                 'event' => [
@@ -78,6 +80,18 @@ class WnbaInputSnapshotBuilder implements EventInputSnapshotBuilder
                 'point_in_time_policy' => 'captured_before_event_start',
                 'excluded_unversioned_inputs' => ['legacy_prediction', 'read_time_betting_value'],
             ],
+        );
+        if (data_get($release->configuration, 'forecast.source') !== null) {
+            $game->setRelation('sportEvent', $event);
+            if (! app(WnbaCanonicalCutoverReadinessService::class)->identityMatches($game)) {
+                throw new PredictionLifecycleException('WNBA canonical kickoff identity must match the linked game.');
+            }
+        }
+
+        return app(EstablishedModelTransport::class)->capture(
+            $snapshot, $release, 'wnba', WnbaFullModelReleaseDefinition::INPUT_SCHEMA_VERSION,
+            WnbaFullModelReleaseDefinition::FORECAST_SOURCE, WnbaFullModelReleaseDefinition::configurationKeys(),
+            fn () => app(GeneratePrediction::class)->preview($game),
         );
     }
 

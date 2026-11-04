@@ -4,6 +4,7 @@ namespace App\Actions\WNBA;
 
 use App\Actions\Sports\AbstractPredictionGenerator;
 use App\Models\WNBA\EloRating;
+use App\Models\WNBA\Game;
 use App\Models\WNBA\Prediction;
 use App\Models\WNBA\TeamMetric;
 use App\Services\WNBA\WnbaPredictionSignalService;
@@ -42,6 +43,12 @@ class GeneratePrediction extends AbstractPredictionGenerator
         } finally {
             $this->usingHistoricalReconstructionContext = false;
         }
+    }
+
+    /** @return array<string, mixed>|null */
+    public function preview(Game $game): ?array
+    {
+        return $this->makePredictionData($game);
     }
 
     protected function calculatePredictedSpread(

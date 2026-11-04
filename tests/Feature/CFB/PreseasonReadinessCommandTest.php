@@ -211,13 +211,13 @@ it('backtests cfb prediction performance by week buckets with calibration bucket
 
 it('pins the backend and frontend home-spread convention', function () {
     $predictionSummary = File::get(resource_path('js/components/game-page/PredictionSummaryCard.vue'));
-    $unifiedCard = File::get(resource_path('js/components/predictions/UnifiedPredictionCard.vue'));
+    $predictionTracking = File::get(resource_path('js/composables/usePredictionTracking.ts'));
     $publicSport = File::get(resource_path('js/pages/PublicSport.vue'));
     $bettingAnalysis = File::get(resource_path('js/components/BettingAnalysisCard.vue'));
 
     expect($predictionSummary)->toContain('-Number(prediction.predicted_spread)')
         ->and(File::get(resource_path('js/lib/pregameBetCalls.ts')))->toContain('modelLine !== null ? -modelLine : number(assessment.model_home_margin)')
-        ->and($unifiedCard)->toContain('defaultLine: spread !== null ? Number((-spread).toFixed(1)) : null,')
+        ->and(preg_replace('/\s+/', ' ', $predictionTracking))->toContain('defaultLine: spread !== null ? Number((-spread).toFixed(1)) : null,')
         ->and($publicSport)->toContain('const homeLine = -numeric;')
         ->and($bettingAnalysis)->toContain('return formatHomeSpreadLine(bet.model_home_line ?? bet.model_line);');
 });

@@ -140,3 +140,31 @@ it('passes actual NFL season averages and records separately from stored histori
         ->assertJsonPath('data.0.stats.times_covered_season.games', 1);
     expect(data_get($prop->fresh()->confidence_decomposition, 'stat_summary.season_avg'))->toBe(270);
 });
+
+it('preserves stored matchup evidence and projection in the NFL board payload without rescoring', function (string $status) {
+    $game = nflPropTimeGame('2026-09-18', '00:15:00');
+    $prop = PlayerProp::where('game_id', $game->id)->firstOrFail();
+    $evidence = [
+        'version' => 'nfl-position-matchup-v1',
+        'status' => $status,
+        'factor' => $status === 'applied' ? 0.85 : 1,
+        'position' => 'QB',
+        'field' => 'passing_yards',
+        'historical_games' => 5,
+        'covered_history_games' => $status === 'applied' ? 5 : 0,
+        'opponent' => $status === 'applied' ? [
+            'rank' => 2, 'games' => 5, 'allowed_average' => 210,
+            'comparison_average' => 220,
+        ] : null,
+    ];
+    $context = ['pace_factor' => 1, 'opponent_factor' => $evidence['factor'],
+        'minutes_factor' => 1, 'combined_factor' => $evidence['factor'], 'opponent_evidence' => $evidence];
+    $snapshot = [...$prop->confidence_decomposition, 'projected_mean' => 229.5, 'projection_context' => $context];
+    $prop->update(['confidence_decomposition' => $snapshot]);
+
+    $this->getJson('/api/v2/sports/nfl/player-props/board?date=2026-09-17')
+        ->assertOk()->assertJsonPath('data.0.context.opponent_evidence', $evidence)
+        ->assertJsonPath('data.0.confidence_decomposition.projected_mean', 229.5);
+
+    expect($prop->fresh()->confidence_decomposition)->toBe($snapshot);
+})->with(['applied', 'unavailable']);

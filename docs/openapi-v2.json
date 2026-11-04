@@ -5033,23 +5033,6 @@
                         }
                     },
                     {
-                        "name": "search",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "page",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer",
-                            "minimum": 1
-                        }
-                    },
-                    {
                         "name": "date",
                         "in": "query",
                         "required": false,
@@ -5059,33 +5042,7 @@
                         }
                     },
                     {
-                        "name": "from_date",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string",
-                            "format": "date"
-                        }
-                    },
-                    {
-                        "name": "to_date",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string",
-                            "format": "date"
-                        }
-                    },
-                    {
-                        "name": "game_id",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer"
-                        }
-                    },
-                    {
-                        "name": "player_id",
+                        "name": "game",
                         "in": "query",
                         "required": false,
                         "schema": {
@@ -5101,29 +5058,22 @@
                         }
                     },
                     {
-                        "name": "bookmaker",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "recommended_side",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "per_page",
+                        "name": "limit",
                         "in": "query",
                         "required": false,
                         "schema": {
                             "type": "integer",
                             "minimum": 1,
-                            "maximum": 100
+                            "maximum": 150
+                        }
+                    },
+                    {
+                        "name": "filters_only",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean",
+                            "default": false
                         }
                     }
                 ],

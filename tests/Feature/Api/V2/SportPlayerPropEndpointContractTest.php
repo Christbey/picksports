@@ -567,3 +567,36 @@ function assertV2PlayerPropContractHasNoNarrativeLeakage(array $payload): void
         expect($encoded)->not->toContain($forbidden);
     }
 }
+
+it('loads filter choices without reading recommendation rows or diagnostics and isolates its cache', function () {
+    actAsV2PlayerPropContractUser();
+    $analyzer = Mockery::mock(PlayerPropAnalyzer::class);
+    $analyzer->shouldReceive('getAvailableDatesForSport')->twice()->with('NBA')
+        ->andReturn(collect([['value' => '2026-06-10', 'label' => 'Jun 10']]));
+    $analyzer->shouldReceive('getAvailableGamesForSport')->twice()->with('NBA', '2026-06-10')
+        ->andReturn(collect([['id' => 99, 'label' => 'BOS @ NYK', 'date' => '2026-06-10', 'time' => '7:00 PM']]));
+    $analyzer->shouldReceive('getAvailableMarketsForSport')->twice()->with('NBA', '2026-06-10', 99)
+        ->andReturn(collect([['value' => 'player_points', 'label' => 'Points']]));
+    $analyzer->shouldReceive('precomputedRecommendations')->once()
+        ->with('NBA', '2026-06-10', 99, 'player_points', 75)->andReturn(collect());
+    $analyzer->shouldReceive('precomputedRecommendationDiagnostics')->once()
+        ->with('NBA', '2026-06-10', 99, 'player_points')
+        ->andReturn(['raw_prop_count' => 0]);
+    app()->instance(PlayerPropAnalyzer::class, $analyzer);
+
+    $url = '/api/v2/sports/nba/player-props/board?date=2026-06-10&game=99&market=player_points';
+    $this->getJson($url.'&filters_only=1')->assertOk()
+        ->assertJsonPath('data', [])
+        ->assertJsonPath('dates.0.value', '2026-06-10')
+        ->assertJsonPath('games.0.id', 99)
+        ->assertJsonPath('markets.0.value', 'player_points')
+        ->assertJsonPath('filters.game', 99)
+        ->assertJsonPath('meta.tier.mode', 'filters_only')
+        ->assertJsonPath('meta.diagnostics', [])
+        ->assertJsonPath('meta.warnings', []);
+    $this->getJson($url)->assertOk()
+        ->assertJsonPath('meta.tier.mode', 'recommendation_board')
+        ->assertJsonPath('meta.diagnostics.raw_prop_count', 0);
+    $this->getJson($url.'&filters_only=1')->assertOk()->assertJsonPath('meta.tier.mode', 'filters_only');
+    $this->getJson($url.'&filters_only=invalid')->assertUnprocessable()->assertJsonValidationErrors('filters_only');
+});

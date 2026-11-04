@@ -33,11 +33,13 @@ class SportPlayerPropController extends Controller
             'game' => ['nullable', 'integer'],
             'market' => ['nullable', 'string', 'max:100'],
             'limit' => ['nullable', 'integer', 'min:1', 'max:150'],
+            'filters_only' => ['sometimes', 'boolean'],
         ]);
 
         $gameFilter = isset($validated['game']) ? (int) $validated['game'] : null;
         $marketFilter = $validated['market'] ?? null;
         $limit = isset($validated['limit']) ? (int) $validated['limit'] : 75;
+        $filtersOnly = $request->boolean('filters_only');
         $payload = $cache->remember(
             SportsViewCache::SEGMENT_PLAYER_PROPS_PAGE,
             $cache->contextHash([
@@ -46,19 +48,20 @@ class SportPlayerPropController extends Controller
                 'game' => $gameFilter,
                 'market' => $marketFilter,
                 'limit' => $limit,
+                'filters_only' => $filtersOnly,
             ]),
             (int) config('performance.player_props_cache_seconds', 60),
-            function () use ($analyzer, $context, $sportCode, $validated, $gameFilter, $marketFilter, $limit): array {
+            function () use ($analyzer, $context, $sportCode, $validated, $gameFilter, $marketFilter, $limit, $filtersOnly): array {
                 $dates = $analyzer->getAvailableDatesForSport($sportCode)->values();
                 $resolvedDate = $this->resolveBoardDate($dates, $validated['date'] ?? null);
-                $recommendations = $analyzer->precomputedRecommendations(
+                $recommendations = $filtersOnly ? collect() : $analyzer->precomputedRecommendations(
                     sport: $sportCode,
                     dateFilter: $resolvedDate,
                     gameFilter: $gameFilter,
                     marketFilter: $marketFilter,
                     limit: $limit,
                 );
-                $diagnostics = $analyzer->precomputedRecommendationDiagnostics(
+                $diagnostics = $filtersOnly ? [] : $analyzer->precomputedRecommendationDiagnostics(
                     sport: $sportCode,
                     dateFilter: $resolvedDate,
                     gameFilter: $gameFilter,
@@ -81,13 +84,13 @@ class SportPlayerPropController extends Controller
                         'sport' => $context->slug,
                         'contract' => 'sports.player-props.board',
                         'tier' => [
-                            'mode' => 'recommendation_board',
+                            'mode' => $filtersOnly ? 'filters_only' : 'recommendation_board',
                             'allowed_field_groups' => ['identity', 'market', 'odds', 'recommendation', 'stats_summary', 'grading', 'freshness'],
                             'withheld_field_groups' => ['raw_data'],
                         ],
                         'freshness' => [],
                         'diagnostics' => $diagnostics,
-                        'warnings' => $recommendations->isEmpty()
+                        'warnings' => ! $filtersOnly && $recommendations->isEmpty()
                             ? [$this->emptyBoardWarning($diagnostics)]
                             : [],
                         'limit' => $limit,

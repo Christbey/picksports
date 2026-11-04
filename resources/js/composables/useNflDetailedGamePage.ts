@@ -1,9 +1,9 @@
-import { computed, watch } from 'vue';
+import { computed } from 'vue';
 import { useGameDepthCharts } from '@/composables/useGameDepthCharts';
 import { formatNumber, getBetterValue } from '@/composables/useFormatters';
 import { useNflGamePage } from '@/composables/useNflGamePage';
 import { useSportGameLayout } from '@/composables/useSportGameLayout';
-import { trackViewItem } from '@/lib/analytics';
+import { useGameViewTracking } from '@/composables/useGameViewTracking';
 
 const formatSpread = (spread: number | string): string => {
     const numSpread = typeof spread === 'string' ? parseFloat(spread) : spread;
@@ -173,28 +173,12 @@ export function useNflDetailedGamePage(gameId: number) {
         },
     });
 
-    watch(
-        () => [
-            currentGame.value.id,
-            awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? null,
-            homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? null,
-        ],
-        () => {
-            const awayLabel =
-                awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? 'Away';
-            const homeLabel =
-                homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? 'Home';
-
-            trackViewItem({
-                itemId: currentGame.value.id,
-                itemName: `${awayLabel} @ ${homeLabel}`,
-                sport: 'nfl',
-                homeTeam: homeLabel,
-                awayTeam: awayLabel,
-            });
-        },
-        { immediate: true },
-    );
+    useGameViewTracking({
+        gameId: () => currentGame.value.id,
+        sport: () => 'nfl',
+        awayTeam: () => awayTeam.value,
+        homeTeam: () => homeTeam.value,
+    });
 
     return {
         pageProps,

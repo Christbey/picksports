@@ -1,5 +1,5 @@
 import { useAsyncPolling } from '@/composables/useAsyncPolling';
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { flattenApiV2Stats } from '@/composables/useApiV2StatsAdapter';
 import {
@@ -15,7 +15,7 @@ import {
 } from '@/composables/useGameDataUtils';
 import { useSportGameLayoutFromConfig } from '@/composables/useSportGameLayout';
 import { useTeamTrends } from '@/composables/useTeamTrends';
-import { trackViewItem } from '@/lib/analytics';
+import { useGameViewTracking } from '@/composables/useGameViewTracking';
 import { getCfbPostseasonLabel } from '@/lib/cfbPostseason';
 import type {
     NflPageGame,
@@ -391,28 +391,12 @@ export function useCfbDetailedGamePage(gameId: number) {
         },
     });
 
-    watch(
-        () => [
-            currentGame.value.id,
-            awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? null,
-            homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? null,
-        ],
-        () => {
-            const away =
-                awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? 'Away';
-            const home =
-                homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? 'Home';
-
-            trackViewItem({
-                itemId: currentGame.value.id,
-                itemName: `${away} @ ${home}`,
-                sport: 'cfb',
-                homeTeam: home,
-                awayTeam: away,
-            });
-        },
-        { immediate: true },
-    );
+    useGameViewTracking({
+        gameId: () => currentGame.value.id,
+        sport: () => 'cfb',
+        awayTeam: () => awayTeam.value,
+        homeTeam: () => homeTeam.value,
+    });
 
     return {
         pageProps,

@@ -1,3 +1,4 @@
+import { optionalPredictionNumber as numericValue } from '@/lib/predictionNormalization';
 import { computed } from 'vue';
 import { predictionWeather } from '@/lib/predictionWeather';
 import { pregameBetCalls } from '@/lib/pregameBetCalls';
@@ -58,16 +59,6 @@ export function usePredictionCardRecommendation(
         return Array.isArray(value)
             ? value.filter((item): item is string => typeof item === 'string')
             : [];
-    }
-
-    function numericValue(value: unknown): number | null {
-        if (value === null || value === undefined || value === '') {
-            return null;
-        }
-
-        const numeric = Number(value);
-
-        return Number.isFinite(numeric) ? numeric : null;
     }
 
     function cfbSignalContext(): Record<string, unknown> {

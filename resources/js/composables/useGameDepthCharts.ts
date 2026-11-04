@@ -1,4 +1,5 @@
-import { onMounted, ref } from 'vue';
+import { computed, onMounted } from 'vue';
+import { useAsyncResource } from '@/composables/useAsyncResource';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import type { ApiV2SportSlug, GameDepthChartsData } from '@/types';
 
@@ -7,25 +8,19 @@ export function useGameDepthCharts(
     gameId: number,
     options: { autoLoad?: boolean } = {},
 ) {
-    const depthCharts = ref<GameDepthChartsData | null>(null);
-    const loading = ref(false);
-    const error = ref<string | null>(null);
     const api = useApiV2Client();
-
-    const load = async () => {
-        try {
-            loading.value = true;
-            error.value = null;
-
-            const payload = await api.games.depthCharts(sport, gameId);
-
-            depthCharts.value = payload?.data ?? null;
-        } catch (e) {
-            error.value =
-                e instanceof Error ? e.message : 'Unable to load depth charts';
-        } finally {
-            loading.value = false;
-        }
+    const resource = useAsyncResource(
+        async (signal): Promise<GameDepthChartsData | null> => {
+            const payload = await api.games.depthCharts(sport, gameId, {
+                init: { signal },
+            });
+            return payload?.data ?? null;
+        },
+        { errorMessage: 'Unable to load depth charts', clearOnError: false },
+    );
+    const depthCharts = computed(() => resource.data.value);
+    const load = async (): Promise<void> => {
+        await resource.execute();
     };
 
     if (options.autoLoad !== false) {
@@ -34,8 +29,8 @@ export function useGameDepthCharts(
 
     return {
         depthCharts,
-        depthChartsLoading: loading,
-        depthChartsError: error,
+        depthChartsLoading: resource.isLoading,
+        depthChartsError: resource.error,
         reloadDepthCharts: load,
     };
 }

@@ -85,6 +85,8 @@ const fixture = (extra = {}) => ({
         },
         cover_record: {
             season: record(1, 1),
+            last_5: record(3, 5),
+            last_10: record(7, 10),
             last_season: record(11, 15),
             all_time: record(44, 75),
             vs_opponent: record(4, 8),
@@ -106,8 +108,30 @@ const render = async (
     }
 };
 const primary = (html) => html.split('<details')[0];
+const details = (html) => html.slice(html.indexOf('<details'));
+const text = (html) =>
+    html
+        .replace(/<!--.*?-->/gs, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+const hitRates = (html) =>
+    [
+        ...primary(html).matchAll(
+            /<dt\b[^>]*>(.*?)<\/dt>\s*<dd\b[^>]*>(.*?)<\/dd>/gs,
+        ),
+    ].map(([, label, value]) => [text(label), text(value)]);
+const historyRows = (html) =>
+    [...details(html).matchAll(/<tr\b[^>]*>(.*?)<\/tr>/gs)]
+        .map(([, row]) => row)
+        .filter((row) => row.includes('scope="row"'))
+        .map((row) =>
+            [...row.matchAll(/<t[hd]\b[^>]*>(.*?)<\/t[hd]>/gs)].map(
+                ([, cell]) => text(cell),
+            ),
+        );
 
-test('pick price and compact history remain visible with detailed history collapsed', async () => {
+test('pick, price and four hit-rate summaries are visible while research stays collapsed', async () => {
     const html = await render();
     const front = primary(html);
     for (const value of [
@@ -116,45 +140,60 @@ test('pick price and compact history remain visible with detailed history collap
         'Rushing Attempts',
         '-110',
         'Test book',
-        'L5',
-        'L10',
-        'Season',
-        'H2H',
-        '1/1',
-        '4/8',
         '12:00 PM CDT',
-    ]) {
-        assert.ok(front.includes(value), value);
-    }
-    assert.equal((front.match(/<dt /g) ?? []).length, 4);
-    assert.doesNotMatch(front, /Signal score|Probability edge|Last 17/);
-    assert.equal((html.match(/scope="row"/g) ?? []).length, 5);
-    for (const label of [
-        'This season',
-        'Last season',
-        'All available',
-        'vs ATL',
-        'vs NFC',
+        'Estimated hit chance',
+        '70.0%',
+        'Season average',
+        'Model estimate · not calibrated',
+        'Hits at this line · historical results, not win probabilities',
     ])
-        assert.ok(html.includes(label), label);
-    assert.match(html, /Research &amp; history/);
+        assert.ok(front.includes(value), value);
+    assert.deepEqual(hitRates(html), [
+        ['L5', '3/5'],
+        ['L10', '7/10'],
+        ['Season', '1/1'],
+        ['H2H', '4/8'],
+    ]);
+    assert.doesNotMatch(
+        front,
+        /scope="row"|All available|Last season|Signal score|Probability edge/,
+    );
+    assert.match(html, /<details class=/);
     assert.doesNotMatch(html, /<details[^>]*\bopen\b/);
-    assert.match(front, /70\.0%/);
-    assert.doesNotMatch(html, /52\.0%|\+18\.0 pp|Signal score/);
+    assert.match(details(html), /Research &amp; history/);
+    assert.deepEqual(historyRows(html), [
+        ['This season', '1–0–0', '100.0%'],
+        ['Last season', '11–4–0', '73.3%'],
+        ['All available', '44–31–0', '58.7%'],
+        ['vs ATL', '4–4–0', '50.0%'],
+        ['vs NFC', '33–20–0', '62.3%'],
+        ['Last 10', '7–3–0', '70.0%'],
+        ['Last 5', '3–2–0', '60.0%'],
+    ]);
 });
 
-test('missing history stays unavailable instead of reporting zero covers', async () => {
+test('missing history shows four empty summaries and five unavailable research rows', async () => {
     const rec = fixture();
     rec.stats.cover_record = null;
     rec.stats.season_summary = null;
     const html = await render(rec);
-    assert.equal((primary(html).match(/—/g) ?? []).length, 4);
-    assert.equal((html.match(/scope="row"/g) ?? []).length, 5);
-    assert.equal((html.match(/<td[^>]*>\s*N\/A/g) ?? []).length, 10);
-    assert.doesNotMatch(html, /0\/0/);
+    assert.deepEqual(hitRates(html), [
+        ['L5', '—'],
+        ['L10', '—'],
+        ['Season', '—'],
+        ['H2H', '—'],
+    ]);
+    assert.deepEqual(historyRows(html), [
+        ['This season', 'N/A', 'N/A'],
+        ['Last season', 'N/A', 'N/A'],
+        ['All available', 'N/A', 'N/A'],
+        ['vs opponent', 'N/A', 'N/A'],
+        ['vs conference', 'N/A', 'N/A'],
+    ]);
+    assert.doesNotMatch(html, /0\/0|\(2025\)|\(2026\)/);
 });
 
-test('uncalibrated estimates stay disclosed while detailed model diagnostics require admin access', async () => {
+test('public cards disclose uncalibrated estimates while model diagnostics remain admin-only', async () => {
     const rec = fixture({
         confidence_decomposition: {
             probability_method: 'discretized_normal_uncalibrated',
@@ -165,17 +204,26 @@ test('uncalibrated estimates stay disclosed while detailed model diagnostics req
     assert.match(primary(publicHtml), /Model estimate · not calibrated/);
     assert.doesNotMatch(
         publicHtml,
-        /Model details|Probabilities exclude pushes/,
+        /Model details|Signal score|Fair market probability|Probability edge|Probabilities exclude pushes|current-team stats/,
     );
+
     const adminHtml = await render(rec, undefined, true);
-    assert.match(adminHtml, /Model estimate, not calibrated/);
-    assert.match(adminHtml, /Probabilities exclude pushes/);
+    const researchText = text(details(adminHtml));
+    assert.match(researchText, /Model estimate, not calibrated/);
+    assert.match(researchText, /Probabilities exclude pushes/);
     assert.match(
-        adminHtml,
+        researchText,
         /Uses 2026 current-team stats; 1 current-season games/,
     );
-    assert.match(adminHtml, /52\.0%/);
-    assert.match(adminHtml, /\+18\.0 pp/);
+    assert.match(researchText, /Signal score \(not win %\) 80\/100/);
+    assert.match(researchText, /Under probability 70\.0%/);
+    assert.match(researchText, /Fair market probability 52\.0%/);
+    assert.match(researchText, /Probability edge \+18\.0 pp/);
+    assert.doesNotMatch(
+        primary(adminHtml),
+        /Model details|Signal score|Probability edge|current-team stats/,
+    );
+    assert.doesNotMatch(await render(rec), /Model details/);
 });
 
 test('zero wins and pushes are explicit; win rate excludes pushes', async () => {
@@ -188,23 +236,25 @@ test('zero wins and pushes are explicit; win rate excludes pushes', async () => 
     assert.match(html, /Games include pushes; win % excludes them/);
 });
 
-test('quotes disclose recorded update time and stale or unknown availability', async () => {
+test('quote freshness respects its recorded window and missing timestamps stay explicit', async () => {
     const fetched = Date.parse('2026-09-20T15:10:00Z');
-    assert.doesNotMatch(
-        primary(await render(fixture(), fetched + 86400000)),
-        /Quote expired/,
-    );
+    const fresh = primary(await render(fixture(), fetched + 86400000));
+    assert.match(fresh, /Line updated:/);
+    assert.doesNotMatch(fresh, /Quote expired|Quote age unavailable/);
+
+    const stale = primary(await render(fixture(), fetched + 86400001));
+    assert.match(stale, /Line updated:/);
     assert.match(
-        primary(await render(fixture(), fetched + 86400001)),
-        /Quote expired/,
+        stale,
+        /role="status"[^>]*>Quote expired — check the current line and price/,
     );
+
+    const missing = primary(await render(fixture({ fetched_at: null })));
     assert.match(
-        primary(await render(fixture(), fetched + 86400001)),
-        /Line updated:/,
+        missing,
+        /role="status"[^>]*>Quote age unavailable — verify the line and price/,
     );
-    const unknown = primary(await render(fixture({ fetched_at: null })));
-    assert.match(unknown, /Quote age unavailable/);
-    assert.doesNotMatch(unknown, /Line updated:/);
+    assert.doesNotMatch(missing, /Line updated:|Quote expired/);
 });
 
 test('settled results remain visible and side aware, with zero actual values retained', async () => {

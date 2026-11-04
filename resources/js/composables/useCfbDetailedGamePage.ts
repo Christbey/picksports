@@ -1,3 +1,4 @@
+import { useAsyncPolling } from '@/composables/useAsyncPolling';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { flattenApiV2Stats } from '@/composables/useApiV2StatsAdapter';
@@ -240,27 +241,28 @@ export function useCfbDetailedGamePage(gameId: number) {
         }
     };
 
-    let scoreboardTimer: ReturnType<typeof setInterval> | undefined;
-    onMounted(() => {
-        void load();
-        scoreboardTimer = setInterval(async () => {
-            if (document.hidden || currentGame.value.status === 'STATUS_FINAL')
-                return;
+    const polling = useAsyncPolling(
+        async () => {
             try {
                 const response = await api.games.show('cfb', gameId, {
                     init: { signal: requestController.signal },
                 });
-                if (response?.data)
+                if (!requestController.signal.aborted && response?.data) {
                     currentGame.value = response.data as unknown as NflPageGame;
+                }
             } catch {
-                /* Keep the last scoreboard until the next refresh. */
+                // Keep the last scoreboard until the next refresh.
             }
-        }, 30000);
+        },
+        30_000,
+        () => !document.hidden && currentGame.value.status !== 'STATUS_FINAL',
+    );
+
+    onMounted(async () => {
+        await load();
+        polling.start();
     });
-    onBeforeUnmount(() => {
-        requestController.abort();
-        if (scoreboardTimer) clearInterval(scoreboardTimer);
-    });
+    onBeforeUnmount(() => requestController.abort());
 
     const awayLabel = computed(() => awayTeam.value?.abbreviation || null);
     const homeLabel = computed(() => homeTeam.value?.abbreviation || null);

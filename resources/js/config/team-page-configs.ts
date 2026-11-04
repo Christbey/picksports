@@ -231,10 +231,10 @@ export const createNflTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
     metricsGridCols: 'md:grid-cols-3 lg:grid-cols-5',
     headerInfo: (team, { record }) => {
         const items: { label: string; value: string }[] = [];
-        if (record.wins > 0 || record.losses > 0) {
+        if (record.wins > 0 || record.losses > 0 || record.ties > 0) {
             items.push({
                 label: 'Record',
-                value: `${record.wins}-${record.losses}`,
+                value: `${record.wins}-${record.losses}${record.ties ? `-${record.ties}` : ''}`,
             });
         }
         if (team.elo_rating) {

@@ -1,3 +1,26 @@
+export interface NflPropMatchupEvidence {
+    version: string;
+    status: 'applied' | 'unavailable';
+    factor: number;
+    position: string;
+    field: string | null;
+    ranked_teams?: number;
+    historical_games?: number;
+    covered_history_games?: number;
+    league_average?: number;
+    average_opponent_rank?: number | null;
+    average_opponent_allowed?: number | null;
+    average_opponent_adjusted?: number | null;
+    opponent?: {
+        games: number;
+        rank: number;
+        allowed_average: number;
+        opposing_offense_average: number;
+        adjusted_average: number;
+        comparison_average: number;
+    } | null;
+}
+
 export type CoverRecord = {
     games: number;
     over: number;
@@ -76,6 +99,7 @@ export type Recommendation = {
     context?: {
         pace_factor: number;
         opponent_factor: number;
+        opponent_evidence?: NflPropMatchupEvidence | null;
         minutes_factor: number;
         combined_factor: number;
     } | null;
@@ -83,6 +107,7 @@ export type Recommendation = {
     match_quality_score?: number | null;
     confidence_decomposition?: {
         schema_version?: string;
+        projected_mean?: number;
         probability_method?: string;
         probability_basis?: string;
         push_probability?: number;

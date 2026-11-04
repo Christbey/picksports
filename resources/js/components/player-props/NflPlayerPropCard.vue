@@ -2,6 +2,7 @@
 import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import PropHitRateStrip from './PropHitRateStrip.vue';
+import NflPropMatchupEvidence from './NflPropMatchupEvidence.vue';
 import { useViewerAccess } from '@/composables/useViewerAccess';
 const { isAdmin } = useViewerAccess();
 import {
@@ -169,6 +170,14 @@ const result = computed(() => {
                     formatPropStat(rec.stats.season_avg)
                 }}</strong>
             </div>
+            <NflPropMatchupEvidence
+                v-if="
+                    rec.context?.opponent_evidence?.version ===
+                    'nfl-position-matchup-v1'
+                "
+                :evidence="rec.context.opponent_evidence"
+                :projection="rec.confidence_decomposition?.projected_mean"
+            />
             <PropHitRateStrip
                 :records="[
                     { label: 'L5', record: rec.stats.cover_record?.last_5 },

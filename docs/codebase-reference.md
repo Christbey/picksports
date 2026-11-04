@@ -306,6 +306,7 @@ Stats, injuries, and markets:
 
 Capability-specific additions:
 - NFL research, live snapshots, matchup signals and market history
+- NFL recommendation cards consume stored `context.opponent_evidence` version `nfl-position-matchup-v1` and `confidence_decomposition.projected_mean`. Position allowances and covered-defense ranks remain separate from individual projections; unavailable evidence stays explicit, and missing or unknown versions omit the panel. Board reads preserve the stored snapshot without rescoring.
 - CFB live betting
 - CBB/WCBB tournament forecasts
 - NBA/MLB playoff forecasts

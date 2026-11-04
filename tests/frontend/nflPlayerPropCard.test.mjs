@@ -283,3 +283,74 @@ test('settled results remain visible and side aware, with zero actual values ret
         /Actual:/,
     );
 });
+
+test('matchup evidence separates positional allowance from the player projection', async () => {
+    const html = await render(
+        fixture({
+            context: {
+                opponent_evidence: {
+                    version: 'nfl-position-matchup-v1',
+                    status: 'applied',
+                    factor: 0.85,
+                    position: 'WR',
+                    field: 'receiving_yards',
+                    ranked_teams: 30,
+                    historical_games: 6,
+                    covered_history_games: 6,
+                    average_opponent_rank: 18,
+                    average_opponent_allowed: 140,
+                    average_opponent_adjusted: 130,
+                    opponent: {
+                        games: 5,
+                        rank: 2,
+                        allowed_average: 110,
+                        comparison_average: 115,
+                    },
+                },
+            },
+            confidence_decomposition: { projected_mean: 100.5 },
+        }),
+    );
+    assert.match(html, /Defense rank: 2 of 30 covered teams/);
+    assert.match(html, /Allows 110.*per game to this position/s);
+    assert.match(html, /Matchup adjustment: -15.0%/);
+    assert.match(html, /Projection after adjustments: 100.5/);
+    assert.match(html, /Position totals are not individual player allowances/);
+});
+
+test('missing matchup data shows a neutral explanation instead of an invented rank', async () => {
+    const html = await render(
+        fixture({
+            context: {
+                opponent_evidence: {
+                    version: 'nfl-position-matchup-v1',
+                    status: 'unavailable',
+                    factor: 1,
+                    position: 'TE',
+                    field: 'receptions',
+                },
+            },
+        }),
+    );
+    assert.match(html, /Insufficient comparable data/);
+    assert.doesNotMatch(html, /Defense rank:/);
+    assert.doesNotMatch(html, /Projection after adjustments:/);
+});
+
+test('legacy and unknown evidence versions leave the card unchanged', async () => {
+    for (const context of [null, {}, { opponent_evidence: { version: 'future-version' } }]) {
+        assert.doesNotMatch(await render(fixture({ context })), /Opponent matchup/);
+    }
+});
+
+test('neutral matchup evidence retains zero allowances and omits a missing projection', async () => {
+    const html = await render(fixture({ context: { opponent_evidence: {
+        version: 'nfl-position-matchup-v1', status: 'applied', factor: 1,
+        position: 'WR', field: 'receptions', ranked_teams: 6,
+        historical_games: 5, covered_history_games: 5,
+        opponent: { rank: 1, games: 5, allowed_average: 0, comparison_average: 0 },
+    } } }));
+    assert.match(html, /Allows 0.*per game to this position/s);
+    assert.match(html, /Matchup adjustment: \+0.0%/);
+    assert.doesNotMatch(html, /Projection after adjustments:/);
+});

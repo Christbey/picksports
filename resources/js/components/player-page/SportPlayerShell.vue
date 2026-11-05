@@ -1,112 +1,30 @@
 <script setup lang="ts">
-import type { UrlMethodPair } from '@inertiajs/core';
 import { Head, Link } from '@inertiajs/vue3';
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed } from 'vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useApiV2Client } from '@/composables/useApiV2Client';
 import AppLayout from '@/layouts/AppLayout.vue';
-import type { ApiV2Query, ApiV2SportSlug, BreadcrumbItem } from '@/types';
+import type { BreadcrumbItem } from '@/types';
 
-type HrefLike = string | UrlMethodPair;
+import type {
+    PlayerPageProps,
+    PlayerStat,
+    SummaryCard,
+    GameLogColumn,
+} from '@/types/player-page';
+import { usePlayerPageData } from '@/composables/usePlayerPageData';
+import { toNumber } from '@/lib/playerPagePresentation';
 
-interface Player {
-    id: number;
-    team_id: number;
-    first_name: string | null;
-    last_name: string | null;
-    full_name?: string | null;
-    name: string;
-    jersey_number: string | null;
-    position: string | null;
-    height: string | null;
-    weight: string | null;
-    headshot_url: string | null;
-    active_injuries_count?: number;
-    active_injuries?: Array<{
-        id: number;
-        status: string | null;
-        detail: string | null;
-        type: string | null;
-        return_date: string | null;
-        source_updated_at?: string | null;
-    }>;
-    team: {
-        id: number;
-        name: string;
-        display_name: string;
-        abbreviation: string;
-    } | null;
-}
-
-interface PlayerProp {
-    id: number;
-    market: string;
-    line: number;
-    over_price: number;
-    under_price: number;
-    game: {
-        id: number;
-        home_team: string;
-        away_team: string;
-    };
-}
-
-interface PlayerStat {
-    id: number;
-    [key: string]: number | string | null | undefined | PlayerStat['game'];
-    game: {
-        id: number;
-        game_date: string | null;
-        home_team_id: number;
-        away_team_id: number;
-        home_team: { abbreviation: string; name: string } | null;
-        away_team: { abbreviation: string; name: string } | null;
-    } | null;
-}
-
-interface SummaryCard {
-    label: string;
-    value: (stats: PlayerStat[]) => string;
-    rankKey?: string;
-}
-
-interface GameLogColumn {
-    label: string;
-    value: (stat: PlayerStat) => string | number;
-    className?: string;
-}
-
-interface SportPlayerShellConfig {
-    sport: ApiV2SportSlug;
-    sportLabel: string;
-    predictionsHref: string;
-    teamLink?: (id: number) => HrefLike;
-    gameLink?: (id: number) => HrefLike;
-    showPlayerProps?: boolean;
-    statsQuery?: ApiV2Query;
-    leaderboardQuery?: ApiV2Query;
-    summaryCards?: SummaryCard[];
-    gameLogColumns?: GameLogColumn[];
-}
-
-const props = defineProps<{
-    config: SportPlayerShellConfig;
-    playerId: number;
-}>();
-
-const playerData = ref<Player | null>(null);
-const playerProps = ref<PlayerProp[]>([]);
-const gameLogs = ref<PlayerStat[]>([]);
-const leaderboardRows = ref<Record<string, unknown>[]>([]);
-const leaderboardRanks = ref<Record<string, { rank: number; total: number }>>(
-    {},
-);
-const loading = ref(true);
-const error = ref<string | null>(null);
-const api = useApiV2Client();
-let supplementalIdleHandle: number | null = null;
-let supplementalTimeoutHandle: number | null = null;
+const props = defineProps<PlayerPageProps>();
+const {
+    playerData,
+    playerProps,
+    gameLogs,
+    leaderboardRows,
+    leaderboardRanks,
+    loading,
+    error,
+} = usePlayerPageData(props);
 
 const breadcrumbs = computed<BreadcrumbItem[]>(() => {
     const items: BreadcrumbItem[] = [
@@ -132,90 +50,6 @@ const formatDate = (dateString: string | null): string => {
 
 const formatOdds = (odds: number): string =>
     odds > 0 ? `+${odds}` : odds.toString();
-
-const toNumber = (value: unknown): number => {
-    const numeric = Number(value);
-    return Number.isFinite(numeric) ? numeric : 0;
-};
-
-const teamName = (
-    team:
-        | {
-              abbreviation?: string | null;
-              name?: string | null;
-              display_name?: string | null;
-          }
-        | string
-        | null
-        | undefined,
-): string => {
-    if (!team) return 'TBD';
-    if (typeof team === 'string') return team;
-
-    return team.abbreviation || team.name || team.display_name || 'TBD';
-};
-
-const normalizePlayer = (
-    player: Record<string, unknown> | null,
-): Player | null => {
-    if (!player) return null;
-
-    const fullName =
-        (player.full_name as string | null | undefined) ||
-        (player.display_name as string | null | undefined) ||
-        (player.name as string | null | undefined) ||
-        null;
-    const name = fullName || 'Player';
-
-    return {
-        ...(player as unknown as Player),
-        name,
-        full_name: fullName,
-        first_name: (player.first_name as string | null | undefined) ?? null,
-        last_name: (player.last_name as string | null | undefined) ?? null,
-    };
-};
-
-const normalizeStatRow = (row: Record<string, unknown>): PlayerStat => {
-    const stats =
-        row.stats && typeof row.stats === 'object'
-            ? (row.stats as Record<string, unknown>)
-            : {};
-
-    return {
-        ...stats,
-        ...row,
-        game: (row.game as PlayerStat['game']) ?? null,
-    } as PlayerStat;
-};
-
-const normalizePlayerProp = (prop: Record<string, unknown>): PlayerProp => {
-    const game = (
-        prop.game && typeof prop.game === 'object'
-            ? (prop.game as Record<string, unknown>)
-            : {}
-    ) as {
-        id?: number;
-        home_team?: string | Record<string, unknown> | null;
-        away_team?: string | Record<string, unknown> | null;
-    };
-
-    return {
-        ...(prop as unknown as PlayerProp),
-        line: toNumber(prop.line),
-        over_price: toNumber(prop.over_price),
-        under_price: toNumber(prop.under_price),
-        game: {
-            id: Number(game.id ?? prop.game_id ?? 0),
-            home_team: teamName(
-                game.home_team as Parameters<typeof teamName>[0],
-            ),
-            away_team: teamName(
-                game.away_team as Parameters<typeof teamName>[0],
-            ),
-        },
-    };
-};
 
 const defaultSummaryCards: SummaryCard[] = [
     {
@@ -429,104 +263,6 @@ const getOpponent = (
         name: opp?.abbreviation || opp?.name || '???',
     };
 };
-
-const loadSupplementalData = async () => {
-    const requests: Promise<unknown>[] = [];
-
-    if (props.config.showPlayerProps) {
-        requests.push(
-            api.players
-                .playerProps(props.config.sport, props.playerId, {
-                    query: { per_page: 12 },
-                })
-                .then((response) => {
-                    playerProps.value = (response?.data ?? []).map(
-                        normalizePlayerProp,
-                    );
-                }),
-        );
-    }
-
-    if (props.config.leaderboardQuery !== null) {
-        requests.push(
-            api.leaderboards
-                .players(props.config.sport, {
-                    query: {
-                        ...(props.config.leaderboardQuery ?? {}),
-                        focus_player_id: props.playerId,
-                    },
-                })
-                .then((response) => {
-                    leaderboardRows.value = response?.data ?? [];
-                    const ranks = response?.meta?.focus_ranks;
-                    leaderboardRanks.value =
-                        ranks && typeof ranks === 'object'
-                            ? (ranks as Record<
-                                  string,
-                                  { rank: number; total: number }
-                              >)
-                            : {};
-                }),
-        );
-    }
-
-    await Promise.allSettled(requests);
-};
-
-const scheduleSupplementalData = () => {
-    if ('requestIdleCallback' in window) {
-        supplementalIdleHandle = window.requestIdleCallback(
-            () => void loadSupplementalData(),
-            { timeout: 1_500 },
-        );
-        return;
-    }
-
-    supplementalTimeoutHandle = globalThis.setTimeout(
-        () => void loadSupplementalData(),
-        500,
-    );
-};
-
-onMounted(async () => {
-    try {
-        await Promise.all([
-            api.players
-                .show(props.config.sport, props.playerId)
-                .then((response) => {
-                    playerData.value = normalizePlayer(response?.data ?? null);
-                }),
-            api.stats
-                .players(props.config.sport, {
-                    query: {
-                        ...(props.config.statsQuery ?? {}),
-                        player_id: props.playerId,
-                        per_page: 100,
-                    },
-                })
-                .then((response) => {
-                    gameLogs.value = (response?.data ?? []).map(
-                        normalizeStatRow,
-                    );
-                }),
-        ]);
-    } catch (e) {
-        error.value =
-            e instanceof Error ? e.message : 'Failed to load player data';
-    } finally {
-        loading.value = false;
-        scheduleSupplementalData();
-    }
-});
-
-onBeforeUnmount(() => {
-    if (supplementalIdleHandle !== null && 'cancelIdleCallback' in window) {
-        window.cancelIdleCallback(supplementalIdleHandle);
-    }
-    if (supplementalTimeoutHandle !== null) {
-        globalThis.clearTimeout(supplementalTimeoutHandle);
-    }
-});
 </script>
 
 <template>

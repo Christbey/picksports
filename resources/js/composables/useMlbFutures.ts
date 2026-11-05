@@ -1,3 +1,13 @@
+import type { MarketOdds, MarketEdge } from '@/types/futures';
+import {
+    formatPct,
+    formatEdgePoints,
+    formatAmericanOdds,
+    toPct,
+    formatTeam,
+    statusTagClass,
+    meterClass,
+} from '@/lib/futuresPresentation';
 import { computed, onMounted, ref, watch, onScopeDispose } from 'vue';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { inject, type InjectionKey } from 'vue';
@@ -8,23 +18,7 @@ type ForecastTeam = {
     name?: string | null;
     league?: string | null;
 };
-type MarketOdds = {
-    bookmaker: string;
-    market_key: string;
-    price: number | null;
-    implied_probability: number | null;
-    fetched_at: string | null;
-    odds_api_sport_key: string;
-};
-type MarketEdge = {
-    model_probability: number | null;
-    market_probability: number | null;
-    edge_probability: number | null;
-    edge_percent_points: number | null;
-    fair_price: number | null;
-    market_price: number | null;
-    has_edge: boolean;
-};
+
 type PlayoffForecast = {
     id: number;
     team_id: number;
@@ -63,23 +57,7 @@ export function useMlbFutures() {
             ? availableSeasons.value
             : [selectedSeason.value ?? new Date().getFullYear()],
     );
-    const formatPct = (value: number, digits = 1) =>
-        `${(value * 100).toFixed(digits)}%`;
-    const formatEdgePoints = (value: number | null | undefined) => {
-        if (value === null || value === undefined) return '-';
-        const rounded = value.toFixed(1);
-        return value >= 0 ? `+${rounded}pp` : `${rounded}pp`;
-    };
-    const formatAmericanOdds = (value: number | null | undefined) => {
-        if (value === null || value === undefined) return '-';
-        return value > 0 ? `+${value}` : `${value}`;
-    };
-    const toPct = (value: number) => Math.max(0, Math.min(100, value * 100));
-    const formatTeam = (team: ForecastTeam | null, fallback: number) => {
-        if (!team) return `Team ${fallback}`;
-        const full = `${team.location ?? ''} ${team.name ?? ''}`.trim();
-        return full || team.abbreviation || `Team ${fallback}`;
-    };
+
     const visibleForecasts = computed(() =>
         onlyPlusEv.value
             ? forecasts.value.filter(
@@ -194,22 +172,7 @@ export function useMlbFutures() {
         if (make >= 0.35) return 'Bubble';
         return 'Longshot';
     };
-    const statusTagClass = (row: PlayoffForecast) => {
-        const make = row.playoff_make_probability;
-        if (make >= 0.85)
-            return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200';
-        if (make >= 0.55)
-            return 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-200';
-        if (make >= 0.35)
-            return 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200';
-        return 'bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200';
-    };
-    const meterClass = (value: number) => {
-        const pct = toPct(value);
-        if (pct >= 70) return 'bg-emerald-500';
-        if (pct >= 45) return 'bg-amber-500';
-        return 'bg-rose-500';
-    };
+
     const fetchForecasts = async () => {
         if (disposed || !selectedSeason.value) return;
         const request = ++latestForecastRequest;

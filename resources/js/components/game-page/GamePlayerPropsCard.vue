@@ -68,13 +68,11 @@ const props = withDefaults(
     },
 );
 
-const recommendations = ref<PlayerPropRecommendation[]>([]);
-const markets = ref<MarketOption[]>([]);
 const selectedMarket = ref('');
-const responseError = ref<string | null>(null);
 const api = useApiV2Client();
-const propsResource = useApiV2Resource<ApiV2PlayerProp>(() =>
+const propsResource = useApiV2Resource<ApiV2PlayerProp>((signal) =>
     api.playerProps.forGame(props.sportSlug, props.gameId, {
+        init: { signal },
         query: {
             per_page: Math.max(props.limit, 25),
         },
@@ -82,7 +80,7 @@ const propsResource = useApiV2Resource<ApiV2PlayerProp>(() =>
 );
 
 const loading = computed(() => propsResource.isLoading.value);
-const error = computed(() => responseError.value ?? propsResource.error.value);
+const error = computed(() => propsResource.error.value);
 
 const marketOptions = computed(() => [
     { value: '', label: 'All' },
@@ -222,33 +220,22 @@ const marketOptionsFor = (rows: PlayerPropRecommendation[]): MarketOption[] => {
         .map((market) => ({ value: market, label: market }));
 };
 
-const loadProps = async () => {
-    responseError.value = null;
+const recommendations = computed<PlayerPropRecommendation[]>(() => {
+    const rows = propsResource.data.value;
+    return Array.isArray(rows)
+        ? rows.filter(hasPropRecommendation).map(mapPlayerProp)
+        : [];
+});
+const markets = computed(() => marketOptionsFor(recommendations.value));
 
-    const payload = await propsResource.execute();
-
-    if (!payload) {
-        responseError.value = 'Unable to load player props.';
-        recommendations.value = [];
-        markets.value = [];
-
-        return;
-    }
-
-    const rows = Array.isArray(payload.data) ? payload.data : [];
-
-    recommendations.value = rows
-        .filter(hasPropRecommendation)
-        .map(mapPlayerProp);
-    markets.value = marketOptionsFor(recommendations.value);
-
+watch(markets, (options) => {
     if (
         selectedMarket.value &&
-        !markets.value.some((market) => market.value === selectedMarket.value)
+        !options.some((market) => market.value === selectedMarket.value)
     ) {
         selectedMarket.value = '';
     }
-};
+});
 
 const marketLabel = (value: string) =>
     markets.value.find((market) => market.value === value)?.label ?? value;
@@ -291,12 +278,14 @@ const formatPercent = (value: number | null | undefined) => {
     return `${(Math.abs(numeric) <= 1 ? numeric * 100 : numeric).toFixed(1)}%`;
 };
 
-onMounted(loadProps);
+onMounted(() => {
+    void propsResource.execute();
+});
 
 watch(
-    () => props.gameId,
+    () => [props.sportSlug, props.gameId, props.limit],
     () => {
-        void loadProps();
+        void propsResource.execute();
     },
 );
 </script>

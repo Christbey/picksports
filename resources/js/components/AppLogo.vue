@@ -1,3 +1,8 @@
+<script setup lang="ts">
+import { usePickSportsTheme } from '@/composables/usePickSportsTheme';
+const picksports = usePickSportsTheme();
+</script>
+
 <template>
     <div class="flex items-center gap-2">
         <div
@@ -5,10 +10,14 @@
         >
             <span class="text-sm font-bold text-white">PS</span>
         </div>
-        <h1
-            class="text-xl font-bold text-gray-900 group-data-[collapsible=icon]:hidden dark:text-white"
+        <component
+            :is="picksports ? 'span' : 'h1'"
+            class="text-xl font-bold tracking-tight group-data-[collapsible=icon]:hidden"
+            :class="
+                picksports ? 'text-foreground' : 'text-gray-900 dark:text-white'
+            "
         >
-            PickSports
-        </h1>
+            PickSports<span v-if="picksports" class="text-primary">.</span>
+        </component>
     </div>
 </template>

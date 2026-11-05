@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePickSportsTheme } from "@/composables/usePickSportsTheme"
 import type { DialogContentEmits, DialogContentProps } from "reka-ui"
 import type { HTMLAttributes } from "vue"
 import { reactiveOmit } from "@vueuse/core"
@@ -9,6 +10,7 @@ import {
   DialogPortal,
   useForwardPropsEmits,
 } from "reka-ui"
+import { useDialogFocusReturn } from "@/composables/useDialogFocusReturn"
 import { cn } from "@/lib/utils"
 import SheetOverlay from "./SheetOverlay.vue"
 
@@ -21,6 +23,8 @@ defineOptions({
   inheritAttrs: false,
 })
 
+const picksports = usePickSportsTheme()
+
 const props = withDefaults(defineProps<SheetContentProps>(), {
   side: "right",
 })
@@ -29,6 +33,10 @@ const emits = defineEmits<DialogContentEmits>()
 const delegatedProps = reactiveOmit(props, "class", "side")
 
 const forwarded = useForwardPropsEmits(delegatedProps, emits)
+const { onOpenAutoFocus, onCloseAutoFocus } = useDialogFocusReturn({
+  open: event => emits("openAutoFocus", event),
+  close: event => emits("closeAutoFocus", event),
+})
 </script>
 
 <template>
@@ -46,8 +54,8 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
           && 'data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-0 top-0 h-auto border-b',
         side === 'bottom'
           && 'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto border-t',
-        props.class)"
-      v-bind="{ ...$attrs, ...forwarded }"
+        picksports && 'ps-theme', props.class)"
+      v-bind="{ ...$attrs, ...forwarded, onOpenAutoFocus, onCloseAutoFocus }"
     >
       <slot />
 

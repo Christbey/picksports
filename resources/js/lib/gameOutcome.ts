@@ -8,7 +8,10 @@ export const finiteValue = (value: unknown): number | null => {
 };
 
 export const gameOutcome = (
-    game: RecentGameListItem,
+    game: Pick<
+        RecentGameListItem,
+        'status' | 'home_team_id' | 'away_team_id' | 'home_score' | 'away_score'
+    >,
     teamId: number,
 ): 'W' | 'L' | 'T' | null => {
     if (game.status && game.status !== 'STATUS_FINAL') return null;

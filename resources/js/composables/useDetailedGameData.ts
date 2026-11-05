@@ -1,8 +1,10 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { ApiError } from '@/composables/useApiClient';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { flattenApiV2Stats } from '@/composables/useApiV2StatsAdapter';
 import type {
     ApiEnvelope,
+    BasketballHistoricalPrediction,
     Game,
     Prediction,
     Team,
@@ -37,6 +39,9 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
     const homeTeam = ref<Team | null>(null);
     const awayTeam = ref<Team | null>(null);
     const prediction = ref<Prediction | Record<string, unknown> | null>(null);
+    const historicalPrediction = ref<BasketballHistoricalPrediction | null>(
+        null,
+    );
     const homeMetrics = ref<TeamMetric | null>(null);
     const awayMetrics = ref<TeamMetric | null>(null);
     const homeTeamStats = ref<TeamStatsEntry | null>(null);
@@ -67,11 +72,28 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                 api.games.show(options.sport, options.gameId, {
                     init: { signal },
                 }),
-                api.predictions.forGame(options.sport, options.gameId, {
-                    init: { signal },
-                }),
+                api.predictions
+                    .forGame(options.sport, options.gameId, {
+                        init: { signal },
+                    })
+                    .catch((error: unknown) => {
+                        if (error instanceof ApiError && error.status === 404)
+                            return null;
+                        throw error;
+                    }),
             ]);
 
+            const archive = (
+                gameData as unknown as {
+                    historical_prediction?: BasketballHistoricalPrediction | null;
+                }
+            )?.historical_prediction;
+            historicalPrediction.value =
+                ['nba', 'cbb', 'wcbb', 'wnba'].includes(options.sport) &&
+                archive &&
+                ['legacy_archive', 'legacy_history'].includes(archive.source)
+                    ? archive
+                    : null;
             const fullGame = gameData?.data as unknown as Game | undefined;
             if (fullGame) {
                 game.value = fullGame;
@@ -79,9 +101,7 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                 awayTeam.value = fullGame.away_team ?? awayTeam.value;
             }
 
-            if (predictionData) {
-                prediction.value = predictionData?.data ?? null;
-            }
+            prediction.value = predictionData?.data ?? null;
 
             loading.value = false;
             const supplemental: Promise<unknown>[] = [];
@@ -249,6 +269,7 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
         homeTeam,
         awayTeam,
         prediction,
+        historicalPrediction,
         homeMetrics,
         awayMetrics,
         homeTeamStats,

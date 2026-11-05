@@ -8,6 +8,7 @@ import { renderToString } from 'vue/server-renderer';
 
 let server;
 let component;
+let setViewerAdmin;
 before(async () => {
     server = await createServer({
         configFile: false,
@@ -15,13 +16,25 @@ before(async () => {
         server: { middlewareMode: true, hmr: false, ws: false, watch: null },
         optimizeDeps: { noDiscovery: true, include: [] },
         resolve: {
-            alias: {
-                '@': fileURLToPath(
-                    new URL('../../resources/js', import.meta.url),
-                ),
-            },
+            alias: [
+                {
+                    find: '@/composables/useViewerAccess',
+                    replacement: fileURLToPath(
+                        new URL('./fixtures/viewerAccess.mjs', import.meta.url),
+                    ),
+                },
+                {
+                    find: '@',
+                    replacement: fileURLToPath(
+                        new URL('../../resources/js', import.meta.url),
+                    ),
+                },
+            ],
         },
     });
+    ({ setViewerAdmin } = await server.ssrLoadModule(
+        '/tests/frontend/fixtures/viewerAccess.mjs',
+    ));
     component = (
         await server.ssrLoadModule(
             '/resources/js/components/player-props/NflPlayerPropCard.vue',
@@ -72,6 +85,8 @@ const fixture = (extra = {}) => ({
         },
         cover_record: {
             season: record(1, 1),
+            last_5: record(3, 5),
+            last_10: record(7, 10),
             last_season: record(11, 15),
             all_time: record(44, 75),
             vs_opponent: record(4, 8),
@@ -80,11 +95,43 @@ const fixture = (extra = {}) => ({
     },
     ...extra,
 });
-const render = (rec = fixture(), nowMs = Date.parse('2026-09-20T16:00:00Z')) =>
-    renderToString(createSSRApp(component, { rec, nowMs }));
+const render = async (
+    rec = fixture(),
+    nowMs = Date.parse('2026-09-20T16:00:00Z'),
+    admin = false,
+) => {
+    setViewerAdmin(admin);
+    try {
+        return await renderToString(createSSRApp(component, { rec, nowMs }));
+    } finally {
+        setViewerAdmin(false);
+    }
+};
 const primary = (html) => html.split('<details')[0];
+const details = (html) => html.slice(html.indexOf('<details'));
+const text = (html) =>
+    html
+        .replace(/<!--.*?-->/gs, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+const hitRates = (html) =>
+    [
+        ...primary(html).matchAll(
+            /<dt\b[^>]*>(.*?)<\/dt>\s*<dd\b[^>]*>(.*?)<\/dd>/gs,
+        ),
+    ].map(([, label, value]) => [text(label), text(value)]);
+const historyRows = (html) =>
+    [...details(html).matchAll(/<tr\b[^>]*>(.*?)<\/tr>/gs)]
+        .map(([, row]) => row)
+        .filter((row) => row.includes('scope="row"'))
+        .map((row) =>
+            [...row.matchAll(/<t[hd]\b[^>]*>(.*?)<\/t[hd]>/gs)].map(
+                ([, cell]) => text(cell),
+            ),
+        );
 
-test('pick, price and exactly five history rows are visible without expanding details', async () => {
+test('pick, price and four hit-rate summaries are visible while research stays collapsed', async () => {
     const html = await render();
     const front = primary(html);
     for (const value of [
@@ -93,57 +140,90 @@ test('pick, price and exactly five history rows are visible without expanding de
         'Rushing Attempts',
         '-110',
         'Test book',
-        'This season',
-        '(2026)',
-        'Last season',
-        '(2025)',
-        'All available',
-        'vs ATL',
-        'vs NFC',
-        '1/1',
-        '11/15',
-        '44/75',
-        '4/8',
-        '33/53',
         '12:00 PM CDT',
+        'Estimated hit chance',
+        '70.0%',
+        'Season average',
+        'Model estimate · not calibrated',
+        'Hits at this line · historical results, not win probabilities',
     ])
         assert.ok(front.includes(value), value);
-    assert.equal((front.match(/scope="row"/g) ?? []).length, 5);
+    assert.deepEqual(hitRates(html), [
+        ['L5', '3/5'],
+        ['L10', '7/10'],
+        ['Season', '1/1'],
+        ['H2H', '4/8'],
+    ]);
     assert.doesNotMatch(
         front,
-        /Pending|Signal score|Probability edge|Quote fetched|Last 17/,
+        /scope="row"|All available|Last season|Signal score|Probability edge/,
     );
     assert.match(html, /<details class=/);
     assert.doesNotMatch(html, /<details[^>]*\bopen\b/);
-    assert.match(html, /More details/);
-    assert.match(html, /70\.0%/);
-    assert.match(html, /52\.0%/);
-    assert.match(html, /\+18\.0 pp/);
+    assert.match(details(html), /Research &amp; history/);
+    assert.deepEqual(historyRows(html), [
+        ['This season', '1–0–0', '100.0%'],
+        ['Last season', '11–4–0', '73.3%'],
+        ['All available', '44–31–0', '58.7%'],
+        ['vs ATL', '4–4–0', '50.0%'],
+        ['vs NFC', '33–20–0', '62.3%'],
+        ['Last 10', '7–3–0', '70.0%'],
+        ['Last 5', '3–2–0', '60.0%'],
+    ]);
 });
 
-test('missing history remains five N/A rows, never zero covers', async () => {
+test('missing history shows four empty summaries and five unavailable research rows', async () => {
     const rec = fixture();
     rec.stats.cover_record = null;
     rec.stats.season_summary = null;
-    const html = primary(await render(rec));
-    assert.equal((html.match(/scope="row"/g) ?? []).length, 5);
-    assert.equal((html.match(/<td[^>]*>\s*N\/A/g) ?? []).length, 5);
+    const html = await render(rec);
+    assert.deepEqual(hitRates(html), [
+        ['L5', '—'],
+        ['L10', '—'],
+        ['Season', '—'],
+        ['H2H', '—'],
+    ]);
+    assert.deepEqual(historyRows(html), [
+        ['This season', 'N/A', 'N/A'],
+        ['Last season', 'N/A', 'N/A'],
+        ['All available', 'N/A', 'N/A'],
+        ['vs opponent', 'N/A', 'N/A'],
+        ['vs conference', 'N/A', 'N/A'],
+    ]);
     assert.doesNotMatch(html, /0\/0|\(2025\)|\(2026\)/);
 });
 
-test('new model estimates disclose their history basis and lack of calibration inside details', async () => {
-    const html = await render(
-        fixture({
-            confidence_decomposition: {
-                probability_method: 'discretized_normal_uncalibrated',
-                history: { model_season: 2026, current_season_games: 1 },
-            },
-        }),
+test('public cards disclose uncalibrated estimates while model diagnostics remain admin-only', async () => {
+    const rec = fixture({
+        confidence_decomposition: {
+            probability_method: 'discretized_normal_uncalibrated',
+            history: { model_season: 2026, current_season_games: 1 },
+        },
+    });
+    const publicHtml = await render(rec);
+    assert.match(primary(publicHtml), /Model estimate · not calibrated/);
+    assert.doesNotMatch(
+        publicHtml,
+        /Model details|Signal score|Fair market probability|Probability edge|Probabilities exclude pushes|current-team stats/,
     );
-    assert.match(html, /Model estimate, not calibrated/);
-    assert.match(html, /Probabilities exclude pushes/);
-    assert.match(html, /Uses 2026 current-team stats; 1 current-season games/);
-    assert.doesNotMatch(primary(html), /not calibrated/);
+
+    const adminHtml = await render(rec, undefined, true);
+    const researchText = text(details(adminHtml));
+    assert.match(researchText, /Model estimate, not calibrated/);
+    assert.match(researchText, /Probabilities exclude pushes/);
+    assert.match(
+        researchText,
+        /Uses 2026 current-team stats; 1 current-season games/,
+    );
+    assert.match(researchText, /Signal score \(not win %\) 80\/100/);
+    assert.match(researchText, /Under probability 70\.0%/);
+    assert.match(researchText, /Fair market probability 52\.0%/);
+    assert.match(researchText, /Probability edge \+18\.0 pp/);
+    assert.doesNotMatch(
+        primary(adminHtml),
+        /Model details|Signal score|Probability edge|current-team stats/,
+    );
+    assert.doesNotMatch(await render(rec), /Model details/);
 });
 
 test('zero wins and pushes are explicit; win rate excludes pushes', async () => {
@@ -156,21 +236,25 @@ test('zero wins and pushes are explicit; win rate excludes pushes', async () => 
     assert.match(html, /Games include pushes; win % excludes them/);
 });
 
-test('public quotes show recorded update time without operational warnings', async () => {
+test('quote freshness respects its recorded window and missing timestamps stay explicit', async () => {
     const fetched = Date.parse('2026-09-20T15:10:00Z');
-    assert.doesNotMatch(
-        primary(await render(fixture(), fetched + 86400000)),
-        /Quote expired/,
+    const fresh = primary(await render(fixture(), fetched + 86400000));
+    assert.match(fresh, /Line updated:/);
+    assert.doesNotMatch(fresh, /Quote expired|Quote age unavailable/);
+
+    const stale = primary(await render(fixture(), fetched + 86400001));
+    assert.match(stale, /Line updated:/);
+    assert.match(
+        stale,
+        /role="status"[^>]*>Quote expired — check the current line and price/,
     );
-    assert.doesNotMatch(
-        primary(await render(fixture(), fetched + 86400001)),
-        /Quote expired/,
+
+    const missing = primary(await render(fixture({ fetched_at: null })));
+    assert.match(
+        missing,
+        /role="status"[^>]*>Quote age unavailable — verify the line and price/,
     );
-    assert.match(primary(await render(fixture(), fetched + 86400001)), /Line updated:/);
-    assert.doesNotMatch(
-        primary(await render(fixture({ fetched_at: null }))),
-        /Quote age unavailable|Line updated:/,
-    );
+    assert.doesNotMatch(missing, /Line updated:|Quote expired/);
 });
 
 test('settled results remain visible and side aware, with zero actual values retained', async () => {
@@ -198,4 +282,75 @@ test('settled results remain visible and side aware, with zero actual values ret
         primary(await render(fixture({ actual_value: 0 }))),
         /Actual:/,
     );
+});
+
+test('matchup evidence separates positional allowance from the player projection', async () => {
+    const html = await render(
+        fixture({
+            context: {
+                opponent_evidence: {
+                    version: 'nfl-position-matchup-v1',
+                    status: 'applied',
+                    factor: 0.85,
+                    position: 'WR',
+                    field: 'receiving_yards',
+                    ranked_teams: 30,
+                    historical_games: 6,
+                    covered_history_games: 6,
+                    average_opponent_rank: 18,
+                    average_opponent_allowed: 140,
+                    average_opponent_adjusted: 130,
+                    opponent: {
+                        games: 5,
+                        rank: 2,
+                        allowed_average: 110,
+                        comparison_average: 115,
+                    },
+                },
+            },
+            confidence_decomposition: { projected_mean: 100.5 },
+        }),
+    );
+    assert.match(html, /Defense rank: 2 of 30 covered teams/);
+    assert.match(html, /Allows 110.*per game to this position/s);
+    assert.match(html, /Matchup adjustment: -15.0%/);
+    assert.match(html, /Projection after adjustments: 100.5/);
+    assert.match(html, /Position totals are not individual player allowances/);
+});
+
+test('missing matchup data shows a neutral explanation instead of an invented rank', async () => {
+    const html = await render(
+        fixture({
+            context: {
+                opponent_evidence: {
+                    version: 'nfl-position-matchup-v1',
+                    status: 'unavailable',
+                    factor: 1,
+                    position: 'TE',
+                    field: 'receptions',
+                },
+            },
+        }),
+    );
+    assert.match(html, /Insufficient comparable data/);
+    assert.doesNotMatch(html, /Defense rank:/);
+    assert.doesNotMatch(html, /Projection after adjustments:/);
+});
+
+test('legacy and unknown evidence versions leave the card unchanged', async () => {
+    for (const context of [null, {}, { opponent_evidence: { version: 'future-version' } }]) {
+        assert.doesNotMatch(await render(fixture({ context })), /Opponent matchup/);
+    }
+});
+
+test('neutral matchup evidence retains zero allowances and omits a missing projection', async () => {
+    const html = await render(fixture({ context: { opponent_evidence: {
+        version: 'nfl-position-matchup-v1', status: 'applied', factor: 1,
+        position: 'WR', field: 'receptions', ranked_teams: 6,
+        historical_games: 5, covered_history_games: 5,
+        opponent: { rank: 1, games: 5, allowed_average: 0, comparison_average: 0 },
+    } } }));
+    assert.match(html, /Allows 0.*per game to this position/s);
+    assert.match(html, /Matchup adjustment: \+0.0%/);
+    assert.doesNotMatch(html, /Projection after adjustments:/);
 });

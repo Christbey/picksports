@@ -44,7 +44,7 @@ export function useDashboardPolling(options: DashboardPollingOptions) {
             onFinish: () => {
                 isReloading = false;
                 if (!isMounted) return;
-                onFinish?.();
+                (onFinish ?? schedulePoll)();
             },
         });
     }

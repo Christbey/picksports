@@ -6,6 +6,7 @@ import type { BreadcrumbItem } from '@/types';
 
 type Props = {
     breadcrumbs?: BreadcrumbItem[];
+    picksports?: boolean;
 };
 
 const props = withDefaults(defineProps<Props>(), {
@@ -46,7 +47,7 @@ const resolvedBreadcrumbs = computed(() =>
 </script>
 
 <template>
-    <AppLayout :breadcrumbs="resolvedBreadcrumbs">
+    <AppLayout :breadcrumbs="resolvedBreadcrumbs" :picksports="picksports">
         <slot />
     </AppLayout>
 </template>

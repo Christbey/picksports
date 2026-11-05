@@ -63,7 +63,7 @@ test('board keeps its cards while refreshing and ignores superseded date respons
         });
         app = renderer.createApp({
             setup(props, context) {
-                state = component.setup(props, context);
+                state = component.setup(props, context).state;
                 return () => null;
             },
         });

@@ -118,16 +118,16 @@ function liveTrendLabel(game: LiveTile): string | null {
 <template>
     <section
         v-if="liveGames.length > 0"
-        class="ui-surface overflow-hidden p-3 md:p-4"
+        class="ui-surface overflow-hidden p-4 shadow-none sm:p-5"
         aria-label="Live games"
     >
-        <div class="mb-3 flex items-center justify-between">
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div class="flex items-center gap-2">
                 <span
                     class="inline-flex items-center gap-1.5 rounded-full border border-sky-300/60 bg-sky-500/12 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-sky-700 uppercase dark:border-sky-500/30 dark:bg-sky-500/20 dark:text-sky-300"
                 >
                     <Radio class="size-3.5" />
-                    Live
+                    {{ hasLiveGames ? 'Live' : 'Finals' }}
                 </span>
                 <p
                     class="text-sm font-semibold tracking-tight text-foreground/90"
@@ -145,7 +145,7 @@ function liveTrendLabel(game: LiveTile): string | null {
                 v-for="game in liveGames"
                 :key="`${game.sport}-${game.game_id}`"
                 :href="`/${game.sport.toLowerCase()}/games/${game.game_id}`"
-                class="ui-surface-subtle min-w-[280px] snap-start p-3 transition-all hover:-translate-y-0.5 hover:shadow-sm"
+                class="min-w-[260px] snap-start rounded-lg border border-border bg-muted/40 p-4 transition-colors hover:bg-muted sm:min-w-[280px]"
             >
                 <div class="mb-2 flex items-center justify-between">
                     <span class="ui-chip text-foreground/80">{{

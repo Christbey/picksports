@@ -10,7 +10,12 @@ defineProps<{
     showRecentForm?: boolean;
     powerRanking: { rank: number; total_teams: number } | null;
     teamMetrics: any;
-    recentRecord: { wins: number; losses: number; games: number };
+    recentRecord: {
+        wins: number;
+        losses: number;
+        ties?: number;
+        games: number;
+    };
     recentForm: unknown[];
 }>();
 </script>
@@ -58,7 +63,10 @@ defineProps<{
                 <div class="flex items-center justify-between">
                     <div>
                         <div class="text-4xl font-bold">
-                            {{ recentRecord.wins }}-{{ recentRecord.losses }}
+                            {{ recentRecord.wins }}-{{ recentRecord.losses
+                            }}<template v-if="recentRecord.ties"
+                                >-{{ recentRecord.ties }}</template
+                            >
                         </div>
                         <div class="mt-1 text-sm text-muted-foreground">
                             Last {{ recentRecord.games }} Games
@@ -73,7 +81,9 @@ defineProps<{
                                     'inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold',
                                     result === 'W'
                                         ? 'bg-green-600 text-white'
-                                        : 'bg-red-600 text-white',
+                                        : result === 'L'
+                                          ? 'bg-red-600 text-white'
+                                          : 'bg-muted text-muted-foreground',
                                 ]"
                             >
                                 {{ result }}

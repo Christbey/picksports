@@ -209,9 +209,7 @@ function forecastEligibility(forecast: MlbStartingPitcherForecast): string {
             class="mt-4 rounded-lg border border-border/60 bg-background/55 p-3"
         >
             <div class="grid gap-3 md:grid-cols-[1fr_auto_1fr] md:items-center">
-                <div
-                    class="rounded-md border border-border/50 bg-card/70 p-3"
-                >
+                <div class="rounded-md border border-border/50 bg-card/70 p-3">
                     <div class="flex items-center justify-between gap-3">
                         <div class="flex min-w-0 items-center gap-2.5">
                             <img
@@ -302,9 +300,7 @@ function forecastEligibility(forecast: MlbStartingPitcherForecast): string {
                     vs
                 </div>
 
-                <div
-                    class="rounded-md border border-border/50 bg-card/70 p-3"
-                >
+                <div class="rounded-md border border-border/50 bg-card/70 p-3">
                     <div class="flex items-center justify-between gap-3">
                         <div class="flex min-w-0 items-center gap-2.5">
                             <img

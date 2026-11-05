@@ -8,6 +8,7 @@ import TeamRecentGamesSection from '@/components/game-page/TeamRecentGamesSectio
 import type {
     LivePredictionData,
     NflPagePrediction,
+    NflHistoricalPrediction,
     NflTeamStats,
     RecentGameListItem,
     GamePageGame,
@@ -19,6 +20,7 @@ const props = withDefaults(
         section: 'prediction' | 'analysis' | 'recent';
         game?: GamePageGame;
         prediction?: NflPagePrediction | null;
+        historicalPrediction?: NflHistoricalPrediction | null;
         awayLabel?: string | null;
         homeLabel?: string | null;
         formatNumber?: (
@@ -88,6 +90,7 @@ const props = withDefaults(
         v-if="section === 'prediction' && game?.status === 'STATUS_FINAL'"
         :game="game"
         :prediction="prediction"
+        :historical-prediction="historicalPrediction"
         :home-label="homeLabel"
     />
     <NFLPredictionModelCard

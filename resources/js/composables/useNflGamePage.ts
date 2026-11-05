@@ -1,3 +1,8 @@
+import {
+    predictionNumber as toNumber,
+    normalizeNarrativeContent,
+} from '@/lib/predictionNormalization';
+import { normalizeDepthChartContext } from '@/lib/depthChartContext';
 import type { ApiV2Stat } from '@/types';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useApiV2Client } from '@/composables/useApiV2Client';
@@ -9,7 +14,10 @@ import {
     parseLinescores,
 } from '@/composables/useGameDataUtils';
 import { useTeamTrends } from '@/composables/useTeamTrends';
-import { finiteValue, recentRecord } from '@/lib/gameOutcome';
+import {
+    finiteValue as toOptionalNumber,
+    recentRecord,
+} from '@/lib/gameOutcome';
 import {
     NFL_LIVE_STATUSES,
     liveSnapshotWarning,
@@ -19,6 +27,7 @@ import type {
     LivePredictionData,
     NflPageGame,
     NflPagePrediction,
+    NflHistoricalPrediction,
     NflPageTeam,
     NflTeamStats,
     PredictionAnalysisSummary,
@@ -41,102 +50,15 @@ const fallbackGame = (gameId: number): NflPageGame => ({
     venue: '',
 });
 
-const toNumber = (value: unknown): number => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-};
-
-const toOptionalNumber = (value: unknown): number | null => {
-    return finiteValue(value);
-};
-
-const normalizeDepthChartContext = (
-    rawContext: unknown,
-): NflPagePrediction['depth_chart_context'] => {
-    if (!rawContext || typeof rawContext !== 'object') return null;
-
-    const source = rawContext as Record<string, unknown>;
-    const type =
-        source.type === 'injury_weighting' || source.type === 'starter_fallback'
-            ? source.type
-            : null;
-
-    if (!type) return null;
-
-    return {
-        type,
-        applied:
-            typeof source.applied === 'boolean' ? source.applied : undefined,
-        home_out_weighted: toOptionalNumber(source.home_out_weighted),
-        away_out_weighted: toOptionalNumber(source.away_out_weighted),
-        home_questionable_weighted: toOptionalNumber(
-            source.home_questionable_weighted,
-        ),
-        away_questionable_weighted: toOptionalNumber(
-            source.away_questionable_weighted,
-        ),
-        spread_adjustment: toOptionalNumber(source.spread_adjustment),
-        total_adjustment: toOptionalNumber(source.total_adjustment),
-        win_probability_adjustment: toOptionalNumber(
-            source.win_probability_adjustment,
-        ),
-        injury_model_source:
-            typeof source.injury_model_source === 'string'
-                ? source.injury_model_source
-                : null,
-        injury_spread_model_source:
-            typeof source.injury_spread_model_source === 'string'
-                ? source.injury_spread_model_source
-                : null,
-        injury_total_model_source:
-            typeof source.injury_total_model_source === 'string'
-                ? source.injury_total_model_source
-                : null,
-        home_pitcher_source:
-            typeof source.home_pitcher_source === 'string'
-                ? source.home_pitcher_source
-                : null,
-        away_pitcher_source:
-            typeof source.away_pitcher_source === 'string'
-                ? source.away_pitcher_source
-                : null,
-        home_depth_chart_fallback_used:
-            typeof source.home_depth_chart_fallback_used === 'boolean'
-                ? source.home_depth_chart_fallback_used
-                : undefined,
-        away_depth_chart_fallback_used:
-            typeof source.away_depth_chart_fallback_used === 'boolean'
-                ? source.away_depth_chart_fallback_used
-                : undefined,
-        probable_pitcher_injury_applied:
-            typeof source.probable_pitcher_injury_applied === 'boolean'
-                ? source.probable_pitcher_injury_applied
-                : undefined,
-    };
-};
-
 const normalizeNarrative = (
     rawNarrative: unknown,
 ): NflPagePrediction['narrative'] => {
-    if (!rawNarrative || typeof rawNarrative !== 'object') return null;
-
+    const content = normalizeNarrativeContent(rawNarrative);
+    if (!content) return null;
     const source = rawNarrative as Record<string, unknown>;
     const plan = source.betting_plan;
-
     return {
-        summary: typeof source.summary === 'string' ? source.summary : '',
-        key_points: Array.isArray(source.key_points)
-            ? source.key_points
-                  .map((point) => String(point))
-                  .filter((point) => point.length > 0)
-            : [],
-        risk_note: typeof source.risk_note === 'string' ? source.risk_note : '',
-        generated_by:
-            typeof source.generated_by === 'string' ? source.generated_by : '',
-        social_caption:
-            typeof source.social_caption === 'string'
-                ? source.social_caption
-                : null,
+        ...content,
         betting_plan:
             plan && typeof plan === 'object'
                 ? {
@@ -163,6 +85,9 @@ export const normalizePrediction = (
     if (!rawPrediction || typeof rawPrediction !== 'object') return null;
 
     const source = rawPrediction as Record<string, unknown>;
+    const spread = toOptionalNumber(source.predicted_spread);
+    const canonical =
+        source.phase === 'pregame' && typeof source.revision === 'number';
 
     return {
         sport: typeof source.sport === 'string' ? source.sport : undefined,
@@ -172,7 +97,7 @@ export const normalizePrediction = (
         game_id: toNumber(source.game_id),
         home_elo: toOptionalNumber(source.home_elo) ?? '',
         away_elo: toOptionalNumber(source.away_elo) ?? '',
-        predicted_spread: toOptionalNumber(source.predicted_spread) ?? '',
+        predicted_spread: spread === null ? '' : canonical ? -spread : spread,
         predicted_total: toOptionalNumber(source.predicted_total) ?? '',
         win_probability: toOptionalNumber(source.win_probability) ?? '',
         confidence_score: toNumber(source.confidence_score),
@@ -205,6 +130,7 @@ export const normalizePrediction = (
         narrative: normalizeNarrative(source.narrative),
         depth_chart_context: normalizeDepthChartContext(
             source.depth_chart_context,
+            toOptionalNumber,
         ),
     };
 };
@@ -215,6 +141,7 @@ export function useNflGamePage(gameId: number) {
     const homeTeam = ref<NflPageTeam | null>(null);
     const awayTeam = ref<NflPageTeam | null>(null);
     const prediction = ref<NflPagePrediction | null>(null);
+    const historicalPrediction = ref<NflHistoricalPrediction | null>(null);
     const homeTeamStats = ref<NflTeamStats | null>(null);
     const awayTeamStats = ref<NflTeamStats | null>(null);
     const homeRecentGames = ref<RecentGameListItem[]>([]);
@@ -356,11 +283,16 @@ export function useNflGamePage(gameId: number) {
             const page = await api.games.page<{
                 game: NflPageGame;
                 prediction: Record<string, unknown> | null;
+                historical_prediction?: NflHistoricalPrediction | null;
                 team_stats: ApiV2Stat[];
             }>('nfl', gameId, requestOptions);
             if (!page?.data?.game) throw new Error('Game data is unavailable.');
             const gameData = { data: page.data.game };
             const predictionData = { data: page?.data?.prediction };
+            historicalPrediction.value =
+                page.data.historical_prediction?.source === 'legacy_archive'
+                    ? page.data.historical_prediction
+                    : null;
             const stats = flattenApiV2Stats(
                 page?.data?.team_stats ?? [],
             ) as unknown as NflTeamStats[];
@@ -589,6 +521,7 @@ export function useNflGamePage(gameId: number) {
         homeTeam,
         awayTeam,
         prediction,
+        historicalPrediction,
         homeTeamStats,
         awayTeamStats,
         homeRecentGames,

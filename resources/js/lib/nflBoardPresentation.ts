@@ -38,9 +38,17 @@ export function nflBoardPresentation(
     const game = prediction.game;
     const team = (s: 'home' | 'away') =>
         teamLabel(s === 'home' ? game?.home_team : game?.away_team);
-    const margin = numberValue(
-        forecast.predicted_spread ?? prediction.predicted_spread,
-    );
+    const storedMargin = numberValue(prediction.predicted_spread);
+    const canonical =
+        record(prediction).phase === 'pregame' &&
+        typeof record(prediction).revision === 'number';
+    const margin =
+        numberValue(forecast.predicted_spread) ??
+        (storedMargin === null
+            ? null
+            : canonical
+              ? -storedMargin
+              : storedMargin);
     const total = numberValue(
         forecast.predicted_total ?? prediction.predicted_total,
     );

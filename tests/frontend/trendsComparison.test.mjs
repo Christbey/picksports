@@ -48,8 +48,9 @@ test('conditional patterns remain in details but cannot become pregame highlight
     const wrapper = {
         ...component,
         setup(props, context) {
-            bindings = component.setup(props, context);
-            return bindings;
+            const result = component.setup(props, context);
+            bindings = result.state;
+            return result;
         },
     };
     const conditional = 'When DET lead after Q1 they win 100%';
@@ -275,8 +276,9 @@ test('changing the window updates the reactive patterns while head-to-head stays
     const wrapper = {
         ...component,
         setup(props, context) {
-            bindings = component.setup(props, context);
-            return bindings;
+            const result = component.setup(props, context);
+            bindings = result.state;
+            return result;
         },
     };
     await renderToString(

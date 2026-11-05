@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HistoricalForecastReview from '@/components/game-page/HistoricalForecastReview.vue';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import BettingPlanCard from '@/components/game-page/BettingPlanCard.vue';
 import DepthChartCard from '@/components/game-page/DepthChartCard.vue';
@@ -13,8 +14,13 @@ const props = defineProps<{
     gameId: number;
 }>();
 
-const { pageProps, recentSectionProps, depthChartsAvailable, loadTrends } =
-    useMlbDetailedGamePage(props.gameId);
+const {
+    pageProps,
+    recentSectionProps,
+    depthChartsAvailable,
+    loadTrends,
+    historicalPrediction,
+} = useMlbDetailedGamePage(props.gameId);
 const { depthCharts, reloadDepthCharts } = useGameDepthCharts(
     'mlb',
     props.gameId,
@@ -98,6 +104,10 @@ onBeforeUnmount(() => {
 <template>
     <SportDetailedGamePage v-bind="pageProps">
         <template #afterPrediction>
+            <HistoricalForecastReview
+                :historical-prediction="historicalPrediction"
+                start-label="first pitch"
+            />
             <BettingPlanCard
                 :prediction="pageProps.prediction"
                 :betting-plan="pageProps.prediction?.narrative?.betting_plan"

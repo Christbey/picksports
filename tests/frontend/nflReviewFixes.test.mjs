@@ -283,3 +283,25 @@ test('research renders evidence and history only after their controls are expand
         );
     }
 });
+
+test('NFL page normalizes canonical home handicaps without changing historical margins', async () => {
+    const { normalizePrediction } = await server.ssrLoadModule('/resources/js/composables/useNflGamePage.ts');
+    assert.equal(normalizePrediction({ id: 'native', phase: 'pregame', revision: 1, predicted_spread: -7 }).predicted_spread, 7);
+    assert.equal(normalizePrediction({ id: 1, predicted_spread: 7 }).predicted_spread, 7);
+    assert.equal(normalizePrediction({ id: 'native', phase: 'pregame', revision: 1, predicted_spread: null }).predicted_spread, '');
+});
+
+test('final result displays archived pregame projections separately without native or betting claims', async () => {
+    const { default: component } = await server.ssrLoadModule('/resources/js/components/game-page/NflFinalResultCard.vue');
+    const archive = { source: 'legacy_archive', prediction_id: 10, snapshot_id: 20, generated_at: '2026-09-01T12:00:00Z', known_before_kickoff: true, predicted_spread: 3.5, predicted_total: 43, win_probability: 0.6 };
+    const html = await renderToString(createSSRApp(component, { game: { status: 'STATUS_FINAL', home_score: 24, away_score: 17 }, prediction: null, historicalPrediction: archive }));
+    assert.match(html, /Archived pregame forecast/);
+    assert.match(html, /observed before kickoff/);
+    assert.match(html, /no betting approval/);
+    assert.ok(html.includes('3.5'));
+    assert.ok(html.includes('43.0'));
+    assert.doesNotMatch(html, /not a verified pregame snapshot/);
+    const native = await renderToString(createSSRApp(component, { game: { status: 'STATUS_FINAL', home_score: 24, away_score: 17 }, prediction: { predicted_spread: 5, predicted_total: 44 }, historicalPrediction: archive }));
+    assert.doesNotMatch(native, /Archived pregame forecast/);
+    assert.ok(native.includes('44.0'));
+});

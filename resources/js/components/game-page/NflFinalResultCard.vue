@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { finiteValue } from '@/lib/gameOutcome';
-import type { GamePageGame, NflPagePrediction } from '@/types';
+import type {
+    GamePageGame,
+    NflPagePrediction,
+    NflHistoricalPrediction,
+} from '@/types';
 const props = defineProps<{
     game: GamePageGame;
     prediction?: NflPagePrediction | null;
+    historicalPrediction?: NflHistoricalPrediction | null;
     homeLabel?: string | null;
 }>();
 const actual = computed(() => {
@@ -14,14 +19,24 @@ const actual = computed(() => {
         ? null
         : { margin: home - away, total: home + away };
 });
+const archive = computed(() =>
+    !props.prediction && props.historicalPrediction?.source === 'legacy_archive'
+        ? props.historicalPrediction
+        : null,
+);
 const modelTotal = computed(() => {
-    const value = finiteValue(props.prediction?.predicted_total);
+    const value = finiteValue(
+        props.prediction?.predicted_total ?? archive.value?.predicted_total,
+    );
     return value !== null && value >= 0 ? value : null;
 });
 const rows = computed(() => [
     {
         label: `${props.homeLabel || 'Home'} scoring margin`,
-        model: finiteValue(props.prediction?.predicted_spread),
+        model: finiteValue(
+            props.prediction?.predicted_spread ??
+                archive.value?.predicted_spread,
+        ),
         actual: actual.value?.margin ?? null,
     },
     {
@@ -81,7 +96,11 @@ const number = (value: number | null) =>
                 </tbody>
             </table>
         </div>
-        <p class="text-xs text-muted-foreground">
+        <p v-if="archive" class="text-xs text-muted-foreground">
+            Archived pregame forecast · observed before kickoff. Historical
+            review only; no betting approval.
+        </p>
+        <p v-else class="text-xs text-muted-foreground">
             Stored model values, not a verified pregame snapshot. Winner grade
             is the recorded model result, not wager performance.
         </p>

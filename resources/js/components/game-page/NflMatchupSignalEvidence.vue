@@ -1,20 +1,37 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import NflMatchupCatalog from './NflMatchupCatalog.vue';
+import NflEpaMatchupContext from './NflEpaMatchupContext.vue';
 import {
     defenseEvidenceText,
     distinctMatchupSignals,
     signalStatus,
     type NflMatchupSignalData,
+    type NflMatchupSignal,
 } from '@/lib/nflMatchupSignals';
 
 const props = defineProps<{
     data: NflMatchupSignalData;
     adminDiagnostics?: boolean;
 }>();
-const highlights = computed(() =>
-    distinctMatchupSignals(props.data.matchup.signals).slice(0, 4),
-);
+const highlights = computed(() => {
+    const directions = new Map<number, NflMatchupSignal>();
+    for (const signal of props.data.matchup.signals) {
+        if (
+            signal.evidence.metric === 'epa' &&
+            signal.status !== 'insufficient_data' &&
+            !directions.has(signal.offense_team_id)
+        ) {
+            directions.set(signal.offense_team_id, signal);
+        }
+    }
+    return [
+        ...directions.values(),
+        ...distinctMatchupSignals(props.data.matchup.signals).filter(
+            (signal) => signal.evidence.metric !== 'epa',
+        ),
+    ].slice(0, 4);
+});
 const team = (id: number) =>
     Object.values(props.data.situational).find((side) => side.team_id === id)
         ?.label ?? `Team ${id}`;
@@ -79,6 +96,7 @@ const unavailable = computed(() =>
                     >
                 </h3>
                 <p class="mt-1 text-sm">{{ signal.label }}</p>
+                <NflEpaMatchupContext :signal="signal" />
                 <p
                     v-if="signal.evidence.offense.display_value"
                     class="mt-2 text-xs text-muted-foreground"

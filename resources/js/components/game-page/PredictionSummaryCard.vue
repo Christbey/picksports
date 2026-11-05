@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { PredictionSummary } from '@/types';
+import { computed } from 'vue';
 
-defineProps<{
+const props = defineProps<{
     title?: string;
     awayLabel?: string | null;
     homeLabel?: string | null;
@@ -16,8 +17,19 @@ defineProps<{
     homeBarClass: string;
 }>();
 
+const evidence = computed(
+    () => props.prediction.audit_context ?? props.prediction.evidence,
+);
+const reconstructed = computed(
+    () => evidence.value?.run_type === 'historical_reconstruction',
+);
+const provisional = computed(() => evidence.value?.provisional === true);
 const confidenceDisplayLabel = (prediction: PredictionSummary) =>
-    prediction.confidence_context?.label || prediction.confidence_level;
+    reconstructed.value
+        ? 'Reconstructed'
+        : provisional.value
+          ? 'Provisional'
+          : prediction.confidence_context?.label || prediction.confidence_level;
 
 const homeSpreadLine = (prediction: PredictionSummary): number =>
     -Number(prediction.predicted_spread);
@@ -58,6 +70,18 @@ const formatSignedHomeSpread = (
             }}</CardTitle>
         </CardHeader>
         <CardContent>
+            <p
+                v-if="reconstructed || provisional"
+                class="ui-surface-subtle mb-4 p-3 text-sm text-muted-foreground"
+            >
+                <template v-if="reconstructed">
+                    Reconstructed after tipoff. Reported separately from pregame
+                    forecasts.
+                </template>
+                <template v-else>
+                    Provisional forecast based on limited current-season data.
+                </template>
+            </p>
             <div class="mb-6">
                 <div
                     class="mb-2 flex items-center justify-between text-sm font-medium"

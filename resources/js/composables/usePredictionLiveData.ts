@@ -1,3 +1,4 @@
+import { predictionHomeMargin } from '@/lib/predictionSpread';
 import type {
     DashboardPrediction,
     LivePredictionData,
@@ -39,7 +40,10 @@ interface NormalizedPredictionLiveState {
 export function isPredictionListItem(
     prediction: PredictionCardInput,
 ): prediction is PredictionListItem {
-    return typeof (prediction as PredictionListItem).game === 'object';
+    return (
+        (prediction as PredictionListItem).game !== null &&
+        typeof (prediction as PredictionListItem).game === 'object'
+    );
 }
 
 export function normalizePredictionLiveState(
@@ -66,7 +70,7 @@ export function normalizePredictionLiveState(
             liveSecondsRemaining: prediction.live_seconds_remaining ?? null,
             liveOutsRemaining: prediction.live_outs_remaining ?? null,
             preGameWinProbability: prediction.win_probability ?? 0,
-            preGamePredictedSpread: prediction.predicted_spread ?? 0,
+            preGamePredictedSpread: predictionHomeMargin(prediction, true) ?? 0,
             preGamePredictedTotal: prediction.predicted_total ?? 0,
         };
     }
@@ -109,7 +113,7 @@ export function normalizePredictionLiveState(
             null,
         liveOutsRemaining: prediction.live_outs_remaining ?? null,
         preGameWinProbability: prediction.win_probability ?? 0,
-        preGamePredictedSpread: prediction.predicted_spread ?? 0,
+        preGamePredictedSpread: predictionHomeMargin(prediction) ?? 0,
         preGamePredictedTotal: prediction.predicted_total ?? 0,
     };
 }

@@ -225,13 +225,18 @@ const uniqueCodes = computed(() =>
 
         <template v-else>
             <p class="mt-3 text-sm text-foreground/90">
-                {{ lockedMessage || 'Betting plan is not available yet.' }}
+                {{
+                    lockedMessage ||
+                    (prediction
+                        ? 'No betting recommendation is available for this forecast.'
+                        : 'No betting plan is available.')
+                }}
             </p>
             <p v-if="lockedMessage" class="mt-1 text-xs text-muted-foreground">
                 Additional access may be required for this betting plan.
             </p>
             <p v-else class="mt-1 text-xs text-muted-foreground">
-                Check back after the latest prediction narrative refresh.
+                A betting plan requires an available recommendation or analysis.
             </p>
         </template>
     </section>

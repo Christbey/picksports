@@ -3,12 +3,15 @@
 use App\Models\NBA\Game;
 use App\Models\NBA\Player;
 use App\Models\NBA\PlayerInjury;
+use App\Models\NBA\PlayerProp;
 use App\Models\NBA\PlayerStat;
 use App\Models\NBA\PlayoffForecast;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
 use App\Models\NBA\TeamMetric;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('nba public sport page renders public summary data', function () {
@@ -291,24 +294,94 @@ test('public sport pages advertise only configured destinations', function (stri
     ],
 ]);
 
-test('public player prop summaries do not generate narratives during page loads', function () {
+test('public player prop summaries read stored recommendations without running analysis', function (string $slug, string $sportCode) {
     $analyzer = Mockery::mock(PlayerPropAnalyzer::class);
     $analyzer->shouldReceive('getAvailableDatesForSport')
         ->once()
-        ->with('WNBA')
+        ->with($sportCode)
         ->andReturn(collect());
-    $analyzer->shouldReceive('analyzeProps')
+    $analyzer->shouldNotReceive('analyzeProps');
+    $analyzer->shouldReceive('precomputedRecommendations')
         ->once()
-        ->with('WNBA', 3, null, null, null, false)
+        ->with($sportCode, null, null, null, 5)
         ->andReturn(collect());
 
     app()->instance(PlayerPropAnalyzer::class, $analyzer);
     $this->withoutVite();
 
-    $this->get('/wnba')
+    $this->get('/'.$slug)
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('PublicSport')
             ->where('summary.propsCount', 0)
         );
+})->with([
+    'NBA' => ['nba', 'NBA'],
+    'NFL' => ['nfl', 'NFL'],
+    'MLB' => ['mlb', 'MLB'],
+    'CBB' => ['cbb', 'CBB'],
+    'WNBA' => ['wnba', 'WNBA'],
+]);
+
+test('public prop reads preserve the selected date and five-card limit', function (array $dates, ?string $expected) {
+    $this->travelTo(Carbon::parse('2026-11-04 12:00:00'));
+    $analyzer = Mockery::mock(PlayerPropAnalyzer::class);
+    $analyzer->shouldReceive('getAvailableDatesForSport')->once()->with('NBA')
+        ->andReturn(collect($dates)->map(fn (string $date): array => ['value' => $date]));
+    $analyzer->shouldNotReceive('analyzeProps');
+    $analyzer->shouldReceive('precomputedRecommendations')->once()->with('NBA', $expected, null, null, 5)->andReturn(collect());
+    app()->instance(PlayerPropAnalyzer::class, $analyzer);
+    $this->withoutVite()->get('/nba')->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->component('PublicSport')->where('summary.propsCount', 0));
+})->with([
+    'today' => [['2026-11-03', '2026-11-04', '2026-11-05'], '2026-11-04'],
+    'next available' => [['2026-11-03', '2026-11-06', '2026-11-07'], '2026-11-06'],
+    'latest stored past date' => [['2026-11-01', '2026-11-03'], '2026-11-03'],
+    'no stored dates' => [[], null],
+]);
+
+test('public NBA cards render stored values and never mutate prop snapshots', function () {
+    $this->travelTo(Carbon::parse('2026-11-04 12:00:00'));
+    $game = Game::factory()->create([
+        'home_team_id' => Team::factory()->create()->id,
+        'away_team_id' => Team::factory()->create()->id,
+        'season' => 2026, 'game_date' => '2026-11-04', 'status' => 'STATUS_SCHEDULED',
+    ]);
+    $player = Player::factory()->create(['team_id' => $game->home_team_id]);
+    $props = collect(range(1, 7))->map(fn (int $index) => PlayerProp::create([
+        'game_id' => $game->id, 'player_id' => $player->id, 'player_name' => $player->full_name,
+        'market' => 'player_points', 'bookmaker' => "fixture-{$index}", 'line' => 20.5,
+        'over_price' => 110, 'under_price' => -130, 'recommended_side' => 'Under',
+        'confidence_score' => 92 - $index, 'predicted_over_probability' => 35.0,
+        'edge_probability' => 10.0, 'fetched_at' => now(),
+        'confidence_decomposition' => [
+            'schema_version' => 'player-prop-signal-v2',
+            'stat_summary' => ['season_avg' => 18.0, 'recent_avg' => 19.0, 'last5_avg' => 17.0],
+            'cover_record' => ['season' => ['games' => 10, 'hits' => 7], 'last_5' => ['games' => 5, 'hits' => 4]],
+        ],
+    ]));
+    $unmatched = PlayerProp::create([
+        'game_id' => $game->id, 'player_name' => 'Unmatched provider-only player', 'market' => 'player_points',
+        'bookmaker' => 'unmatched', 'line' => 15.5, 'recommended_side' => 'Over', 'confidence_score' => 59,
+        'predicted_over_probability' => 73.0, 'confidence_decomposition' => ['fixture' => 'unchanged'],
+    ]);
+    $before = PlayerProp::orderBy('id')->get()->map->getRawOriginal()->all();
+    $mutations = [];
+    DB::listen(function ($query) use (&$mutations): void {
+        if (preg_match('/^\s*(insert|update|delete)/i', $query->sql) && str_contains($query->sql, 'nba_player_props')) {
+            $mutations[] = $query->sql;
+        }
+    });
+    $this->withoutVite()->get('/nba')->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->component('PublicSport')->has('featuredProps', 5)->where('summary.propsCount', 5)
+        ->where('featuredProps.0.id', $props->first()->id)
+        ->where('featuredProps.0.recommendation', 'Under')
+        ->where('featuredProps.0.odds', -130)
+        ->where('featuredProps.0.confidence', 91)
+        ->where('featuredProps.0.stats.season_avg', 18)
+        ->where('featuredProps.0.stats.times_covered_season.hits', 7)
+    );
+    expect($mutations)->toBeEmpty()
+        ->and(PlayerProp::orderBy('id')->get()->map->getRawOriginal()->all())->toBe($before)
+        ->and((float) $unmatched->fresh()->predicted_over_probability)->toBe(73.0);
 });

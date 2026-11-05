@@ -1,9 +1,9 @@
-import { computed, watch } from 'vue';
+import { computed } from 'vue';
 import { useBasketballGamePage } from '@/composables/useBasketballGamePage';
 import { formatNumber, getBetterValue } from '@/composables/useFormatters';
 import { formatVenueLabel } from '@/composables/useGameDataUtils';
 import { useSportGameLayout } from '@/composables/useSportGameLayout';
-import { trackViewItem } from '@/lib/analytics';
+import { useGameViewTracking } from '@/composables/useGameViewTracking';
 import type {
     ApiEnvelope,
     Game,
@@ -59,6 +59,7 @@ export function useBasketballDetailedGamePage(
         homeTeam,
         awayTeam,
         prediction,
+        historicalPrediction,
         homeMetrics,
         awayMetrics,
         homeTeamStats,
@@ -178,6 +179,9 @@ export function useBasketballDetailedGamePage(
 
     const insightsProps = computed(() => ({
         gameStatus: currentGame.value.status,
+        historicalPrediction: !prediction.value
+            ? historicalPrediction.value
+            : null,
         awayLabel: awayTeam.value?.abbreviation || null,
         homeLabel: homeTeam.value?.abbreviation || null,
         homeTeamId: currentGame.value.home_team_id,
@@ -198,28 +202,12 @@ export function useBasketballDetailedGamePage(
         getBetterValue,
     }));
 
-    watch(
-        () => [
-            options.gameId,
-            awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? null,
-            homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? null,
-        ],
-        () => {
-            const awayLabel =
-                awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? 'Away';
-            const homeLabel =
-                homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? 'Home';
-
-            trackViewItem({
-                itemId: options.gameId,
-                itemName: `${awayLabel} @ ${homeLabel}`,
-                sport: options.sport,
-                homeTeam: homeLabel,
-                awayTeam: awayLabel,
-            });
-        },
-        { immediate: true },
-    );
+    useGameViewTracking({
+        gameId: () => options.gameId,
+        sport: () => options.sport,
+        awayTeam: () => awayTeam.value,
+        homeTeam: () => homeTeam.value,
+    });
 
     return {
         config,

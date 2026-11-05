@@ -1,8 +1,13 @@
 <script setup lang="ts">
+import HistoricalForecastReview from '@/components/game-page/HistoricalForecastReview.vue';
 import BasketballBoxScoreCard from '@/components/game-page/BasketballBoxScoreCard.vue';
 import TeamMetricsComparisonCard from '@/components/game-page/TeamMetricsComparisonCard.vue';
 import TopPerformersCard from '@/components/game-page/TopPerformersCard.vue';
-import type { TeamMetricsData, TopPerformer } from '@/types';
+import type {
+    TeamMetricsData,
+    TopPerformer,
+    BasketballHistoricalPrediction,
+} from '@/types';
 
 interface BasketballTeamStats {
     field_goals_made: number;
@@ -23,6 +28,7 @@ interface BasketballTeamStats {
 withDefaults(
     defineProps<{
         gameStatus: string;
+        historicalPrediction?: BasketballHistoricalPrediction | null;
         awayLabel?: string | null;
         homeLabel?: string | null;
         homeTeamId: number;
@@ -47,6 +53,7 @@ withDefaults(
         ) => string;
     }>(),
     {
+        historicalPrediction: null,
         awayLabel: null,
         homeLabel: null,
         homeTeamStats: null,
@@ -64,37 +71,45 @@ withDefaults(
 </script>
 
 <template>
-    <template v-if="showRecap">
-        <BasketballBoxScoreCard
-            v-if="
-                gameStatus === 'STATUS_FINAL' && homeTeamStats && awayTeamStats
-            "
+    <div>
+        <HistoricalForecastReview
+            v-if="gameStatus === 'STATUS_FINAL'"
+            :historical-prediction="historicalPrediction"
+        />
+        <template v-if="showRecap">
+            <BasketballBoxScoreCard
+                v-if="
+                    gameStatus === 'STATUS_FINAL' &&
+                    homeTeamStats &&
+                    awayTeamStats
+                "
+                :away-label="awayLabel"
+                :home-label="homeLabel"
+                :away-team-stats="awayTeamStats"
+                :home-team-stats="homeTeamStats"
+                :get-better-value="getBetterValue"
+                :layout="boxScoreLayout"
+            />
+
+            <TopPerformersCard
+                v-if="gameStatus === 'STATUS_FINAL' && topPerformers.length > 0"
+                :performers="topPerformers"
+                :mode="performersMode"
+                :home-team-id="homeTeamId"
+                :home-label="homeLabel"
+                :away-label="awayLabel"
+            />
+        </template>
+
+        <TeamMetricsComparisonCard
+            v-if="showMetrics && homeMetrics && awayMetrics"
+            :title="metricsTitle"
             :away-label="awayLabel"
             :home-label="homeLabel"
-            :away-team-stats="awayTeamStats"
-            :home-team-stats="homeTeamStats"
+            :away-metrics="awayMetrics"
+            :home-metrics="homeMetrics"
+            :format-number="formatNumber"
             :get-better-value="getBetterValue"
-            :layout="boxScoreLayout"
         />
-
-        <TopPerformersCard
-            v-if="gameStatus === 'STATUS_FINAL' && topPerformers.length > 0"
-            :performers="topPerformers"
-            :mode="performersMode"
-            :home-team-id="homeTeamId"
-            :home-label="homeLabel"
-            :away-label="awayLabel"
-        />
-    </template>
-
-    <TeamMetricsComparisonCard
-        v-if="showMetrics && homeMetrics && awayMetrics"
-        :title="metricsTitle"
-        :away-label="awayLabel"
-        :home-label="homeLabel"
-        :away-metrics="awayMetrics"
-        :home-metrics="homeMetrics"
-        :format-number="formatNumber"
-        :get-better-value="getBetterValue"
-    />
+    </div>
 </template>

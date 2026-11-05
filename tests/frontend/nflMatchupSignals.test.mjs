@@ -343,11 +343,80 @@ test('shows the dated performance baseline to public viewers', async () => {
     );
     const data = fixture();
     data.matchup.baseline = {
-        mode: 'last_complete_week', through_week: 3,
-        through_date: '2026-09-28', games: 48,
+        mode: 'last_complete_week',
+        through_week: 3,
+        through_date: '2026-09-28',
+        games: 48,
         label: '2026 season through Week 3 (2026-09-28)',
     };
     const html = await renderToString(createSSRApp(component, { data }));
-    assert.match(html, /Performance baseline: 2026 season through Week 3 \(2026-09-28\)/);
+    assert.match(
+        html,
+        /Performance baseline: 2026 season through Week 3 \(2026-09-28\)/,
+    );
     assert.match(html, /Current game personnel remain game-specific/);
+});
+
+test('EPA interpretation distinguishes strength clashes from offensive disadvantages and incomplete evidence', async () => {
+    const { epaInterpretation } =
+        await import('../../resources/js/lib/nflMatchupSignals.ts');
+    const row = signal(1);
+    assert.match(epaInterpretation(row), /strength versus strength/);
+    row.evidence.offense.rank = 24;
+    assert.match(epaInterpretation(row), /potential offensive disadvantage/);
+    row.status = 'not_matched';
+    assert.match(epaInterpretation(row), /potential offensive disadvantage/);
+    row.evidence.offense.rank = 5;
+    row.evidence.offense.rank_end = 6;
+    assert.match(epaInterpretation(row), /Top-10 offense/);
+    row.status = 'insufficient_data';
+    assert.match(epaInterpretation(row), /unavailable/);
+    assert.equal(epaInterpretation(signal(51, 'matched', 'pass_epa')), null);
+});
+
+test('EPA context displays missing adjusted evidence without inventing an advantage or precision', async () => {
+    const { default: component } = await server.ssrLoadModule(
+        '/resources/js/components/game-page/NflMatchupCatalog.vue',
+    );
+    const data = fixture();
+    const row = data.matchup.signals[0];
+    row.evidence.epa_context = {
+        opponent_adjusted: {
+            offense: null,
+            defense: null,
+            definition: 'One-pass adjustment.',
+        },
+        splits: [],
+    };
+    Object.assign(row.evidence.offense, {
+        eligible: true,
+        scheduled_games: 4,
+        through_date: '2026-09-18',
+        league_average: 0,
+        sampling_interval: { lower: -0.1, upper: 0.2 },
+        recent_three: { value: 0.04, games: 3, plays: 180 },
+    });
+    const html = await renderToString(createSSRApp(component, { data }));
+    assert.match(html, /strength versus strength/);
+    assert.match(html, /180 eligible plays · 3 of 4 completed games/);
+    assert.match(html, /Latest included game: 2026-09-18/);
+    assert.match(html, /League team-average EPA: 0.000/);
+    assert.match(html, /90% game-resampling range: -0.100 to 0.200/);
+    assert.match(html, /Opponent-adjusted offense: Unavailable/);
+    assert.match(html, /Efficiency comparison/);
+    assert.match(html, /Prediction effect: none/);
+});
+
+test('highlights retain both EPA directions even when one misses the catalog condition', async () => {
+    const { default: component } = await server.ssrLoadModule(
+        '/resources/js/components/game-page/NflMatchupSignalEvidence.vue',
+    );
+    const data = fixture();
+    const reverse = signal(1, 'not_matched', 'epa', 2);
+    reverse.evidence.offense.rank = 24;
+    data.matchup.signals.push(reverse);
+    const html = await renderToString(createSSRApp(component, { data }));
+    const highlights = html.split('Evaluated matchups')[0];
+    assert.match(highlights, /strength versus strength/);
+    assert.match(highlights, /potential offensive disadvantage/);
 });

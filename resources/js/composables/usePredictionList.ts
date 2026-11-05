@@ -16,9 +16,11 @@ export function usePredictionList<T>(
     const refreshing = ref(false);
     const refreshError = ref<string | null>(null);
     let latestRequest = 0;
+    let requestedPage = 1;
 
     const fetchPage = async (page = 1, background = false): Promise<void> => {
         if (background && (loading.value || refreshing.value)) return;
+        requestedPage = page;
         const request = ++latestRequest;
 
         try {
@@ -49,12 +51,19 @@ export function usePredictionList<T>(
         }
     };
 
+    const retryPage = () => {
+        if (loading.value || refreshing.value) return Promise.resolve();
+        return fetchPage(requestedPage, Boolean(refreshError.value));
+    };
+
     return {
         items,
         meta,
         loading,
         error,
         refreshError,
+        refreshing,
         fetchPage,
+        retryPage,
     };
 }

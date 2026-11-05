@@ -1,4 +1,4 @@
-import { computed, watch } from 'vue';
+import { computed } from 'vue';
 import { formatNumber } from '@/composables/useFormatters';
 import {
     formatVenueLabel,
@@ -6,7 +6,7 @@ import {
 } from '@/composables/useGameDataUtils';
 import { useMlbGamePage } from '@/composables/useMlbGamePage';
 import { useSportGameLayout } from '@/composables/useSportGameLayout';
-import { trackViewItem } from '@/lib/analytics';
+import { useGameViewTracking } from '@/composables/useGameViewTracking';
 import { isMlbSpringTrainingType } from '@/lib/mlbSeasonType';
 import MLBTeamController from '@/actions/App/Http/Controllers/MLB/TeamController';
 
@@ -17,6 +17,7 @@ export function useMlbDetailedGamePage(gameId: number) {
         homeTeam,
         awayTeam,
         prediction,
+        historicalPrediction,
         homeTrends,
         awayTrends,
         trendsLoading,
@@ -176,31 +177,16 @@ export function useMlbDetailedGamePage(gameId: number) {
         homeMetrics: homeMetrics.value,
     }));
 
-    watch(
-        () => [
-            currentGame.value.id,
-            awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? null,
-            homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? null,
-        ],
-        () => {
-            const awayLabel =
-                awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? 'Away';
-            const homeLabel =
-                homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? 'Home';
-
-            trackViewItem({
-                itemId: currentGame.value.id,
-                itemName: `${awayLabel} @ ${homeLabel}`,
-                sport: 'mlb',
-                homeTeam: homeLabel,
-                awayTeam: awayLabel,
-            });
-        },
-        { immediate: true },
-    );
+    useGameViewTracking({
+        gameId: () => currentGame.value.id,
+        sport: () => 'mlb',
+        awayTeam: () => awayTeam.value,
+        homeTeam: () => homeTeam.value,
+    });
 
     return {
         pageProps,
+        historicalPrediction,
         recentSectionProps,
         depthChartsAvailable,
         loadTrends,

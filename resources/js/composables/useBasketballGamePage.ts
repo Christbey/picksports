@@ -1,3 +1,12 @@
+import {
+    predictionNumber as toNumber,
+    optionalPredictionNumber as toOptionalNumber,
+    normalizePredictionConfidence,
+    normalizeNarrativeContent,
+    normalizeBasketballBettingPlan,
+} from '@/lib/predictionNormalization';
+import { predictionHomeMargin } from '@/lib/predictionSpread';
+import { normalizeDepthChartContext } from '@/lib/depthChartContext';
 import { computed } from 'vue';
 import { useDetailedGameData } from '@/composables/useDetailedGameData';
 import { formatDateLong, useGameStatus } from '@/composables/useFormatters';
@@ -42,82 +51,6 @@ interface BasketballTeamStats {
     fast_break_points?: number | null;
 }
 
-const toNumber = (value: unknown): number => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-};
-
-const toOptionalNumber = (value: unknown): number | null => {
-    if (value === null || value === undefined || value === '') return null;
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-};
-
-const normalizeDepthChartContext = (
-    rawContext: unknown,
-): PredictionSummary['depth_chart_context'] => {
-    if (!rawContext || typeof rawContext !== 'object') return null;
-
-    const source = rawContext as Record<string, unknown>;
-    const type =
-        source.type === 'injury_weighting' || source.type === 'starter_fallback'
-            ? source.type
-            : null;
-
-    if (!type) return null;
-
-    return {
-        type,
-        applied:
-            typeof source.applied === 'boolean' ? source.applied : undefined,
-        home_out_weighted: toOptionalNumber(source.home_out_weighted),
-        away_out_weighted: toOptionalNumber(source.away_out_weighted),
-        home_questionable_weighted: toOptionalNumber(
-            source.home_questionable_weighted,
-        ),
-        away_questionable_weighted: toOptionalNumber(
-            source.away_questionable_weighted,
-        ),
-        spread_adjustment: toOptionalNumber(source.spread_adjustment),
-        total_adjustment: toOptionalNumber(source.total_adjustment),
-        win_probability_adjustment: toOptionalNumber(
-            source.win_probability_adjustment,
-        ),
-        injury_model_source:
-            typeof source.injury_model_source === 'string'
-                ? source.injury_model_source
-                : null,
-        injury_spread_model_source:
-            typeof source.injury_spread_model_source === 'string'
-                ? source.injury_spread_model_source
-                : null,
-        injury_total_model_source:
-            typeof source.injury_total_model_source === 'string'
-                ? source.injury_total_model_source
-                : null,
-        home_pitcher_source:
-            typeof source.home_pitcher_source === 'string'
-                ? source.home_pitcher_source
-                : null,
-        away_pitcher_source:
-            typeof source.away_pitcher_source === 'string'
-                ? source.away_pitcher_source
-                : null,
-        home_depth_chart_fallback_used:
-            typeof source.home_depth_chart_fallback_used === 'boolean'
-                ? source.home_depth_chart_fallback_used
-                : undefined,
-        away_depth_chart_fallback_used:
-            typeof source.away_depth_chart_fallback_used === 'boolean'
-                ? source.away_depth_chart_fallback_used
-                : undefined,
-        probable_pitcher_injury_applied:
-            typeof source.probable_pitcher_injury_applied === 'boolean'
-                ? source.probable_pitcher_injury_applied
-                : undefined,
-    };
-};
-
 const normalizeBasketballStats = (
     stats: TeamStatsEntry | null,
 ): BasketballTeamStats | null => {
@@ -142,7 +75,7 @@ const normalizeBasketballStats = (
     };
 };
 
-const normalizePrediction = (
+export const normalizePrediction = (
     rawPrediction: unknown,
 ): PredictionSummary | null => {
     if (!rawPrediction || typeof rawPrediction !== 'object') return null;
@@ -153,215 +86,32 @@ const normalizePrediction = (
     )
         return null;
 
-    const confidenceScore = toOptionalNumber(source.confidence_score);
-    const confidenceLevel =
-        typeof source.confidence_level === 'string'
-            ? source.confidence_level
-            : confidenceScore === null
-              ? 'unavailable'
-              : confidenceScore >= 75
-                ? 'high'
-                : confidenceScore >= 60
-                  ? 'medium'
-                  : 'low';
-    const rawConfidenceContext = source.confidence_context;
-    const confidenceContext =
-        rawConfidenceContext && typeof rawConfidenceContext === 'object'
-            ? {
-                  label:
-                      typeof (rawConfidenceContext as Record<string, unknown>)
-                          .label === 'string'
-                          ? ((rawConfidenceContext as Record<string, unknown>)
-                                .label as string)
-                          : null,
-                  tier:
-                      typeof (rawConfidenceContext as Record<string, unknown>)
-                          .tier === 'string'
-                          ? ((rawConfidenceContext as Record<string, unknown>)
-                                .tier as string)
-                          : null,
-                  model_level:
-                      typeof (rawConfidenceContext as Record<string, unknown>)
-                          .model_level === 'string'
-                          ? ((rawConfidenceContext as Record<string, unknown>)
-                                .model_level as string)
-                          : typeof (
-                                  rawConfidenceContext as Record<
-                                      string,
-                                      unknown
-                                  >
-                              ).raw_level === 'string'
-                            ? ((rawConfidenceContext as Record<string, unknown>)
-                                  .raw_level as string)
-                            : null,
-                  reason_codes: Array.isArray(
-                      (rawConfidenceContext as Record<string, unknown>)
-                          .reason_codes,
-                  )
-                      ? (
-                            (rawConfidenceContext as Record<string, unknown>)
-                                .reason_codes as unknown[]
-                        )
-                            .map((item) => String(item))
-                            .filter((item) => item.length > 0)
-                      : [],
-                  sample_games: toOptionalNumber(
-                      (rawConfidenceContext as Record<string, unknown>)
-                          .sample_games,
-                  ),
-              }
-            : null;
-
+    const { confidenceScore, confidenceLevel, confidenceContext } =
+        normalizePredictionConfidence(source);
     const rawNarrative = source.narrative;
-    const narrative =
-        rawNarrative && typeof rawNarrative === 'object'
-            ? {
-                  summary:
-                      typeof (rawNarrative as Record<string, unknown>)
-                          .summary === 'string'
-                          ? ((rawNarrative as Record<string, unknown>)
-                                .summary as string)
-                          : '',
-                  key_points: Array.isArray(
-                      (rawNarrative as Record<string, unknown>).key_points,
-                  )
-                      ? (
-                            (rawNarrative as Record<string, unknown>)
-                                .key_points as unknown[]
-                        )
-                            .map((point) => String(point))
-                            .filter((point) => point.length > 0)
-                      : [],
-                  risk_note:
-                      typeof (rawNarrative as Record<string, unknown>)
-                          .risk_note === 'string'
-                          ? ((rawNarrative as Record<string, unknown>)
-                                .risk_note as string)
-                          : '',
-                  generated_by:
-                      typeof (rawNarrative as Record<string, unknown>)
-                          .generated_by === 'string'
-                          ? ((rawNarrative as Record<string, unknown>)
-                                .generated_by as string)
-                          : '',
-                  social_caption:
-                      typeof (rawNarrative as Record<string, unknown>)
-                          .social_caption === 'string'
-                          ? ((rawNarrative as Record<string, unknown>)
-                                .social_caption as string)
-                          : null,
-                  betting_plan: (() => {
-                      const plan = (rawNarrative as Record<string, unknown>)
-                          .betting_plan;
-                      if (!plan || typeof plan !== 'object') return null;
-
-                      const betPick =
-                          typeof (plan as Record<string, unknown>).bet_pick ===
-                          'string'
-                              ? ((plan as Record<string, unknown>)
-                                    .bet_pick as string)
-                              : '';
-                      const reasoning =
-                          typeof (plan as Record<string, unknown>).reasoning ===
-                          'string'
-                              ? ((plan as Record<string, unknown>)
-                                    .reasoning as string)
-                              : '';
-
-                      if (betPick !== '' && reasoning !== '') {
-                          return {
-                              bet_pick: betPick,
-                              reasoning,
-                              classification:
-                                  typeof (plan as Record<string, unknown>)
-                                      .classification === 'string'
-                                      ? ((plan as Record<string, unknown>)
-                                            .classification as string)
-                                      : null,
-                              for_bet: Array.isArray(
-                                  (plan as Record<string, unknown>).for_bet,
-                              )
-                                  ? (
-                                        (plan as Record<string, unknown>)
-                                            .for_bet as unknown[]
-                                    )
-                                        .map((item) => String(item))
-                                        .filter((item) => item.length > 0)
-                                  : [],
-                              against_bet: Array.isArray(
-                                  (plan as Record<string, unknown>).against_bet,
-                              )
-                                  ? (
-                                        (plan as Record<string, unknown>)
-                                            .against_bet as unknown[]
-                                    )
-                                        .map((item) => String(item))
-                                        .filter((item) => item.length > 0)
-                                  : [],
-                              pass_reasons: Array.isArray(
-                                  (plan as Record<string, unknown>)
-                                      .pass_reasons,
-                              )
-                                  ? (
-                                        (plan as Record<string, unknown>)
-                                            .pass_reasons as unknown[]
-                                    )
-                                        .map((item) => String(item))
-                                        .filter((item) => item.length > 0)
-                                  : [],
-                              reason_codes: Array.isArray(
-                                  (plan as Record<string, unknown>)
-                                      .reason_codes,
-                              )
-                                  ? (
-                                        (plan as Record<string, unknown>)
-                                            .reason_codes as unknown[]
-                                    )
-                                        .map((item) => String(item))
-                                        .filter((item) => item.length > 0)
-                                  : [],
-                          };
-                      }
-
-                      const legacySpreadLean =
-                          typeof (plan as Record<string, unknown>)
-                              .spread_lean === 'string'
-                              ? ((plan as Record<string, unknown>)
-                                    .spread_lean as string)
-                              : '';
-                      const legacyMoneylineHedge =
-                          typeof (plan as Record<string, unknown>)
-                              .moneyline_hedge === 'string'
-                              ? ((plan as Record<string, unknown>)
-                                    .moneyline_hedge as string)
-                              : '';
-
-                      if (
-                          legacySpreadLean === '' ||
-                          legacyMoneylineHedge === ''
-                      ) {
-                          return null;
-                      }
-
-                      return {
-                          bet_pick: legacySpreadLean,
-                          reasoning: legacyMoneylineHedge,
-                      };
-                  })(),
-                  context_layer:
-                      (rawNarrative as Record<string, unknown>).context_layer &&
-                      typeof (rawNarrative as Record<string, unknown>)
-                          .context_layer === 'object'
-                          ? ((rawNarrative as Record<string, unknown>)
-                                .context_layer as Record<string, unknown>)
-                          : null,
-              }
-            : null;
+    const content = normalizeNarrativeContent(rawNarrative);
+    const narrativeSource = rawNarrative as Record<string, unknown> | null;
+    const narrative = content
+        ? {
+              ...content,
+              betting_plan: normalizeBasketballBettingPlan(
+                  narrativeSource?.betting_plan,
+              ),
+              context_layer:
+                  narrativeSource?.context_layer &&
+                  typeof narrativeSource.context_layer === 'object'
+                      ? (narrativeSource.context_layer as Record<
+                            string,
+                            unknown
+                        >)
+                      : null,
+          }
+        : null;
 
     return {
         home_win_probability: toNumber(source.home_win_probability),
         away_win_probability: toNumber(source.away_win_probability),
-        predicted_spread: toNumber(source.predicted_spread),
+        predicted_spread: predictionHomeMargin(source) ?? 0,
         predicted_total: toNumber(source.predicted_total),
         confidence_level: confidenceLevel,
         confidence_context: confidenceContext,
@@ -369,6 +119,7 @@ const normalizePrediction = (
         narrative,
         depth_chart_context: normalizeDepthChartContext(
             source.depth_chart_context,
+            toOptionalNumber,
         ),
     };
 };
@@ -379,6 +130,7 @@ export function useBasketballGamePage(options: UseBasketballGamePageOptions) {
         homeTeam,
         awayTeam,
         prediction: rawPrediction,
+        historicalPrediction,
         homeMetrics,
         awayMetrics,
         homeTeamStats: rawHomeTeamStats,
@@ -452,6 +204,7 @@ export function useBasketballGamePage(options: UseBasketballGamePageOptions) {
         homeTeam,
         awayTeam,
         prediction,
+        historicalPrediction,
         homeMetrics,
         awayMetrics,
         homeTeamStats,

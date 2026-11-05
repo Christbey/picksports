@@ -3,6 +3,8 @@
 namespace App\Support;
 
 use App\Services\PlayerStats\NbaPlayerEpaCalculator;
+use Illuminate\Contracts\Database\Query\Expression;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -17,6 +19,42 @@ class InjuryImpactScorer
      * @var array<string, bool>
      */
     private array $columnExistsCache = [];
+
+    /** @var array<string, Collection<int, object>> */
+    private array $playerStatRows = [];
+
+    /**
+     * Load the same per-player lookback in one query for a list of injuries.
+     *
+     * @param  array<int, int>  $playerIds
+     */
+    public function preload(string $sport, array $playerIds): void
+    {
+        if (! $this->supportsEpaWeightedInjuryImpact($sport)) {
+            return;
+        }
+
+        $playerIds = array_values(array_filter(array_unique($playerIds), fn (int $id): bool => $id > 0 && ! array_key_exists("{$sport}:{$id}", $this->playerStatRows)));
+        if ($playerIds === []) {
+            return;
+        }
+
+        $table = "{$sport}_player_stats";
+        $rows = collect();
+        if (Schema::hasTable($table)) {
+            $ranked = DB::table($table)
+                ->whereIn('player_id', $playerIds)
+                ->select(['player_id', 'game_id', ...$this->statColumns($table)])
+                ->selectRaw('ROW_NUMBER() OVER (PARTITION BY player_id ORDER BY game_id DESC) as injury_row');
+            $rows = DB::query()->fromSub($ranked, 'injury_stats')
+                ->where('injury_row', '<=', $this->lookback($sport))
+                ->orderBy('player_id')->orderByDesc('game_id')->get()->groupBy('player_id');
+        }
+
+        foreach ($playerIds as $id) {
+            $this->playerStatRows["{$sport}:{$id}"] = $rows->get($id, collect());
+        }
+    }
 
     /**
      * Calibrated to mirror prediction logic:
@@ -168,30 +206,20 @@ class InjuryImpactScorer
             return 1.0;
         }
 
-        $statTable = "{$sport}_player_stats";
-        if (! Schema::hasTable($statTable)) {
-            return 1.0;
+        $key = "{$sport}:{$playerId}";
+        if (array_key_exists($key, $this->playerStatRows)) {
+            $rows = $this->playerStatRows[$key];
+        } else {
+            $statTable = "{$sport}_player_stats";
+            if (! Schema::hasTable($statTable)) {
+                return 1.0;
+            }
+            $rows = DB::table($statTable)
+                ->where('player_id', $playerId)
+                ->orderByDesc('game_id')
+                ->limit($this->lookback($sport))
+                ->get($this->statColumns($statTable));
         }
-
-        $lookback = (int) (config("{$sport}.prediction.injury_epa_lookback_games") ?? 10);
-        $lookback = max(3, min(30, $lookback));
-
-        $rows = DB::table($statTable)
-            ->where('player_id', $playerId)
-            ->orderByDesc('game_id')
-            ->limit($lookback)
-            ->get([
-                'points',
-                'assists',
-                DB::raw($this->coalescedNumericExpr($statTable, ['rebounds_total', 'rebounds'], 'rebounds_total')),
-                'steals',
-                'blocks',
-                'turnovers',
-                'field_goals_made',
-                'field_goals_attempted',
-                'free_throws_made',
-                'free_throws_attempted',
-            ]);
 
         if ($rows->isEmpty()) {
             return 1.0;
@@ -231,6 +259,22 @@ class InjuryImpactScorer
         }
 
         return max($min, min($max, $multiplier));
+    }
+
+    private function lookback(string $sport): int
+    {
+        return max(3, min(30, (int) (config("{$sport}.prediction.injury_epa_lookback_games") ?? 10)));
+    }
+
+    /** @return array<int, string|Expression> */
+    private function statColumns(string $table): array
+    {
+        return [
+            'points', 'assists',
+            DB::raw($this->coalescedNumericExpr($table, ['rebounds_total', 'rebounds'], 'rebounds_total')),
+            'steals', 'blocks', 'turnovers', 'field_goals_made', 'field_goals_attempted',
+            'free_throws_made', 'free_throws_attempted',
+        ];
     }
 
     private function supportsEpaWeightedInjuryImpact(string $sport): bool

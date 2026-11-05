@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 
 const emit = defineEmits<{
     refresh: [];
@@ -7,30 +9,24 @@ const emit = defineEmits<{
 </script>
 
 <template>
-    <div
-        class="relative min-h-svh flex-1 rounded-xl border border-sidebar-border/70 bg-white p-6 md:min-h-min dark:border-sidebar-border dark:bg-sidebar"
-    >
-        <h2 class="mb-4 text-xl font-semibold">Today's Predictions</h2>
-        <div class="py-12 text-center">
-            <p class="text-muted-foreground">
+    <Card class="gap-0 p-6 shadow-none sm:p-10">
+        <div class="mx-auto max-w-md py-6 text-center">
+            <p class="ps-eyebrow mb-3">The next slate starts here</p>
+            <h2 class="text-xl font-semibold tracking-tight">
+                Today's Predictions
+            </h2>
+            <p class="mt-3 text-sm leading-relaxed text-muted-foreground">
                 No predictions are available yet. Check back as game slates and
                 model runs update.
             </p>
-            <div class="mt-4 flex flex-wrap justify-center gap-2">
-                <Link
-                    href="/performance"
-                    class="rounded-md border border-sidebar-border bg-sidebar-accent/40 px-3 py-2 text-sm font-medium hover:bg-sidebar-accent/60"
+            <div class="mt-6 flex flex-wrap justify-center gap-2">
+                <Button as-child variant="outline" class="min-h-11"
+                    ><Link href="/performance">View Performance</Link></Button
                 >
-                    View Performance
-                </Link>
-                <button
-                    type="button"
-                    class="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                    @click="emit('refresh')"
+                <Button class="min-h-11" @click="emit('refresh')"
+                    >Refresh</Button
                 >
-                    Refresh
-                </button>
             </div>
         </div>
-    </div>
+    </Card>
 </template>

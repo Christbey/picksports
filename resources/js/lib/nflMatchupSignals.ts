@@ -1,3 +1,40 @@
+export interface PositionEpaSample {
+    eligible: boolean;
+    epa_per_play: number | null;
+    offensive_success_rate: number | null;
+    plays: number;
+    candidate_plays: number;
+    games: number;
+    expected_team_games: number;
+    games_with_any_plays: number;
+    rank: number | null;
+    league_teams: number;
+    target_mapping_coverage: number | null;
+    reason: string | null;
+}
+
+export interface PositionEpaMatchups {
+    version: string;
+    season: number;
+    definition: string;
+    source: string;
+    limitations: string[];
+    directions: Array<{
+        offense_team_id: number;
+        defense_team_id: number;
+        splits: Array<{
+            split: string;
+            offense: PositionEpaSample | null;
+            defense: PositionEpaSample | null;
+            previous_opponents: {
+                games: number;
+                weighted_epa_allowed: number | null;
+                basis: string;
+            };
+        }>;
+    }>;
+}
+
 export interface MatchupMetricEvidence {
     display_value?: string | null;
     player_name?: string | null;
@@ -7,6 +44,13 @@ export interface MatchupMetricEvidence {
     rank: number | null;
     games: number;
     plays?: number | null;
+    eligible?: boolean;
+    rank_end?: number | null;
+    scheduled_games?: number;
+    through_date?: string | null;
+    league_average?: number | null;
+    sampling_interval?: { lower: number; upper: number } | null;
+    recent_three?: { value: number; games: number; plays: number } | null;
 }
 
 export interface NflMatchupSignal {
@@ -21,6 +65,19 @@ export interface NflMatchupSignal {
         personnel_only?: boolean;
         offense_only?: boolean;
         metric: string;
+        epa_context?: {
+            opponent_adjusted: {
+                offense: MatchupMetricEvidence | null;
+                defense: MatchupMetricEvidence | null;
+                definition: string | null;
+            };
+            splits: Array<{
+                metric: string;
+                source?: string;
+                offense: MatchupMetricEvidence | null;
+                defense: MatchupMetricEvidence | null;
+            }>;
+        };
         definition?: string;
         source: string;
         offense: MatchupMetricEvidence;
@@ -51,6 +108,7 @@ export interface NflMatchupSignalData {
     matchup: {
         version: string;
         mode: string;
+        position_epa_matchups?: PositionEpaMatchups | null;
         season: number;
         target_season?: number;
         cutoff_at: string | null;
@@ -175,4 +233,37 @@ export function defenseEvidenceText(sample: MatchupMetricEvidence): string {
             ? 'Unavailable'
             : sample.value.toFixed(3);
     return `Defense ${value} · rank ${sample.rank ?? '—'} · ${sample.games} games`;
+}
+
+export function epaInterpretation(signal: NflMatchupSignal): string | null {
+    if (signal.evidence.metric !== 'epa') return null;
+    const { offense, defense } = signal.evidence;
+    if (
+        signal.status === 'insufficient_data' ||
+        offense.eligible === false ||
+        defense.eligible === false ||
+        offense.rank == null ||
+        defense.rank == null
+    ) {
+        return 'EPA matchup unavailable: qualifying samples are incomplete.';
+    }
+    const band = (sample: MatchupMetricEvidence) => {
+        const end = sample.rank_end ?? sample.rank!;
+        if (end <= 5) return 'Top-5';
+        if (end <= 10) return 'Top-10';
+        if (sample.rank! >= 23) return 'Bottom-10';
+        return 'Middle-ranked';
+    };
+    const o = band(offense),
+        d = band(defense);
+    const strong = (s: string) => s === 'Top-5' || s === 'Top-10';
+    const note =
+        strong(o) && strong(d)
+            ? 'strength versus strength'
+            : o === 'Bottom-10' && strong(d)
+              ? 'potential offensive disadvantage'
+              : strong(o) && d === 'Bottom-10'
+                ? 'potential offensive advantage'
+                : 'mixed efficiency profile';
+    return `${o} offense meets ${d.toLowerCase()} defense; ${note}.`;
 }

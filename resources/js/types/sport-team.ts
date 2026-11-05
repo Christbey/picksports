@@ -48,7 +48,7 @@ export interface TeamPageConfig {
 
     headerInfo?: (
         team: any,
-        computed: { record: { wins: number; losses: number } },
+        computed: { record: { wins: number; losses: number; ties: number } },
     ) => { label: string; value: string }[];
 
     statRankingKeys?: { key: string; descending?: boolean }[];

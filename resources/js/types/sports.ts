@@ -477,7 +477,15 @@ export interface PredictionSummary {
         odds_updated_at?: string | null;
         [key: string]: unknown;
     } | null;
+    evidence?: {
+        run_type?: string | null;
+        provisional?: boolean | null;
+        pregame_safe?: boolean | null;
+    } | null;
     audit_context?: {
+        run_type?: string | null;
+        provisional?: boolean | null;
+        pregame_safe?: boolean | null;
         prediction_generated_at?: string | null;
         prediction_locked_at?: string | null;
         feature_snapshot_at?: string | null;
@@ -671,6 +679,28 @@ export interface CfbScoringModel {
     generated_at: string | null;
     probability_status: string | null;
     recommendation_status: string;
+}
+
+export interface BasketballHistoricalPrediction {
+    source: 'legacy_archive' | 'legacy_history';
+    prediction_id: number;
+    snapshot_id: number | null;
+    generated_at: string | null;
+    known_before_kickoff: boolean;
+    predicted_spread: number | null;
+    predicted_total: number | null;
+    win_probability: number | null;
+}
+
+export interface NflHistoricalPrediction {
+    source: 'legacy_archive';
+    prediction_id: number;
+    snapshot_id: number;
+    generated_at: string;
+    known_before_kickoff: true;
+    predicted_spread: number | null;
+    predicted_total: number | null;
+    win_probability: number | null;
 }
 
 export interface NflPagePrediction {

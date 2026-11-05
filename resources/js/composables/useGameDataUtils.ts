@@ -73,7 +73,10 @@ export const parseBroadcastNetworks = (value: unknown): string[] => {
     }
 };
 
-export const getRecentForm = (games: GameRecord[], teamId: number): string => {
+const recentResults = (
+    games: GameRecord[],
+    teamId: number,
+): Array<'W' | 'L' | 'T'> => {
     return games
         .map((g) => {
             const isHome = g.home_team_id === teamId;
@@ -90,9 +93,11 @@ export const getRecentForm = (games: GameRecord[], teamId: number): string => {
             if (teamScore === oppScore) return 'T';
             return teamScore > oppScore ? 'W' : 'L';
         })
-        .filter((result): result is 'W' | 'L' | 'T' => result !== null)
-        .join('-');
+        .filter((result): result is 'W' | 'L' | 'T' => result !== null);
 };
+
+export const getRecentForm = (games: GameRecord[], teamId: number): string =>
+    recentResults(games, teamId).join('-');
 
 export const calculatePercentage = (
     made: number,
@@ -114,26 +119,10 @@ export const getWinLossRecord = (
     games: GameRecord[],
     teamId: number,
 ): string => {
-    const results = games
-        .map((g) => {
-            const isHome = g.home_team_id === teamId;
-            const teamScore = isHome ? g.home_score : g.away_score;
-            const oppScore = isHome ? g.away_score : g.home_score;
-            if (
-                teamScore === null ||
-                oppScore === null ||
-                !Number.isFinite(teamScore) ||
-                !Number.isFinite(oppScore)
-            ) {
-                return null;
-            }
-            if (teamScore === oppScore) return 'tie';
-            return teamScore > oppScore ? 'win' : 'loss';
-        })
-        .filter((result): result is 'win' | 'loss' | 'tie' => result !== null);
-    const wins = results.filter((result) => result === 'win').length;
-    const losses = results.filter((result) => result === 'loss').length;
-    const ties = results.filter((result) => result === 'tie').length;
+    const results = recentResults(games, teamId);
+    const wins = results.filter((result) => result === 'W').length;
+    const losses = results.filter((result) => result === 'L').length;
+    const ties = results.filter((result) => result === 'T').length;
 
     return ties > 0 ? `${wins}-${losses}-${ties}` : `${wins}-${losses}`;
 };

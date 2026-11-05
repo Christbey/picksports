@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { useClipboard } from '@vueuse/core';
-import { onBeforeUnmount, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
+import {
+    useAdminUserSearch,
+    type AdminUserSuggestion as UserLookupResult,
+} from '@/composables/useAdminUserSearch';
 import Heading from '@/components/Heading.vue';
 import { Button } from '@/components/ui/button';
 import { usePayloadInspector } from '@/composables/usePayloadInspector';
@@ -78,12 +82,6 @@ const props = defineProps<{
     groups: AdminGroup[];
 }>();
 
-interface UserLookupResult {
-    id: number;
-    name: string;
-    email: string;
-}
-
 const grantForm = useForm({
     email: '',
 });
@@ -106,106 +104,35 @@ const copiedLinkKey = ref<string | null>(null);
 const { copy } = useClipboard();
 
 const userSearch = ref('');
-const userSuggestions = ref<UserLookupResult[]>([]);
-const isSearchingUsers = ref(false);
-let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-let searchAbortController: AbortController | null = null;
+const userLookup = useAdminUserSearch((_, query) =>
+    foundingUserRoutes.search.url({ query: { query } }),
+);
+const userSuggestions = computed(
+    () => userLookup.suggestions.value.founding ?? [],
+);
+const isSearchingUsers = computed(
+    () => userLookup.searching.value.founding ?? false,
+);
 const groupUserSearch = ref<Record<number, string>>({});
-const groupUserSuggestions = ref<Record<number, UserLookupResult[]>>({});
-const isSearchingGroupUsers = ref<Record<number, boolean>>({});
-let groupUserSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-let groupUserSearchAbortController: AbortController | null = null;
+const groupLookup = useAdminUserSearch((groupId, query) =>
+    groupRoutes.users.search.url({ query: { group_id: groupId, query } }),
+);
+const groupUserSuggestions = groupLookup.suggestions;
+const isSearchingGroupUsers = groupLookup.searching;
 const payloadInspector = usePayloadInspector();
 const payloadInspectorLinks = payloadInspector.profileLinks({
     includePayload: true,
     includeWarnings: true,
 });
 
-async function fetchUserSuggestions(
-    url: string,
-    signal: AbortSignal,
-): Promise<UserLookupResult[]> {
-    const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-            Accept: 'application/json',
-        },
-        signal,
-    });
-
-    if (!response.ok) {
-        throw new Error('Failed user lookup.');
-    }
-
-    const payload = (await response.json()) as {
-        users?: UserLookupResult[];
-    };
-
-    return Array.isArray(payload.users) ? payload.users : [];
-}
-
-watch(userSearch, (value) => {
-    const query = value.trim();
-
-    if (searchDebounceTimer) {
-        clearTimeout(searchDebounceTimer);
-    }
-
-    if (query.length < 2) {
-        userSuggestions.value = [];
-        isSearchingUsers.value = false;
-        return;
-    }
-
-    searchDebounceTimer = setTimeout(async () => {
-        if (searchAbortController) {
-            searchAbortController.abort();
-        }
-
-        searchAbortController = new AbortController();
-        isSearchingUsers.value = true;
-
-        try {
-            userSuggestions.value = await fetchUserSuggestions(
-                foundingUserRoutes.search.url({
-                    query: { query },
-                }),
-                searchAbortController.signal,
-            );
-        } catch (error) {
-            if (error instanceof DOMException && error.name === 'AbortError') {
-                return;
-            }
-
-            userSuggestions.value = [];
-        } finally {
-            isSearchingUsers.value = false;
-        }
-    }, 250);
-});
-
-onBeforeUnmount(() => {
-    if (searchDebounceTimer) {
-        clearTimeout(searchDebounceTimer);
-    }
-
-    if (searchAbortController) {
-        searchAbortController.abort();
-    }
-
-    if (groupUserSearchDebounceTimer) {
-        clearTimeout(groupUserSearchDebounceTimer);
-    }
-
-    if (groupUserSearchAbortController) {
-        groupUserSearchAbortController.abort();
-    }
+watch(userSearch, (value) => userLookup.search('founding', value), {
+    flush: 'sync',
 });
 
 function selectUserSuggestion(user: UserLookupResult): void {
     grantForm.email = user.email;
     userSearch.value = `${user.name} (${user.email})`;
-    userSuggestions.value = [];
+    userLookup.clear('founding');
 }
 
 function grantFoundingAccess(): void {
@@ -214,7 +141,7 @@ function grantFoundingAccess(): void {
         onSuccess: () => {
             grantForm.reset();
             userSearch.value = '';
-            userSuggestions.value = [];
+            userLookup.clear('founding');
         },
     });
 }
@@ -254,65 +181,7 @@ function inviteToGroup(): void {
 }
 
 function searchAssignableUsers(groupId: number): void {
-    const query = (groupUserSearch.value[groupId] ?? '').trim();
-
-    if (groupUserSearchDebounceTimer) {
-        clearTimeout(groupUserSearchDebounceTimer);
-    }
-
-    if (query.length < 2) {
-        groupUserSuggestions.value = {
-            ...groupUserSuggestions.value,
-            [groupId]: [],
-        };
-        isSearchingGroupUsers.value = {
-            ...isSearchingGroupUsers.value,
-            [groupId]: false,
-        };
-        return;
-    }
-
-    groupUserSearchDebounceTimer = setTimeout(async () => {
-        if (groupUserSearchAbortController) {
-            groupUserSearchAbortController.abort();
-        }
-
-        groupUserSearchAbortController = new AbortController();
-        isSearchingGroupUsers.value = {
-            ...isSearchingGroupUsers.value,
-            [groupId]: true,
-        };
-
-        try {
-            const suggestions = await fetchUserSuggestions(
-                groupRoutes.users.search.url({
-                    query: {
-                        group_id: groupId,
-                        query,
-                    },
-                }),
-                groupUserSearchAbortController.signal,
-            );
-            groupUserSuggestions.value = {
-                ...groupUserSuggestions.value,
-                [groupId]: suggestions,
-            };
-        } catch (error) {
-            if (error instanceof DOMException && error.name === 'AbortError') {
-                return;
-            }
-
-            groupUserSuggestions.value = {
-                ...groupUserSuggestions.value,
-                [groupId]: [],
-            };
-        } finally {
-            isSearchingGroupUsers.value = {
-                ...isSearchingGroupUsers.value,
-                [groupId]: false,
-            };
-        }
-    }, 250);
+    groupLookup.search(groupId, groupUserSearch.value[groupId] ?? '');
 }
 
 function handleAssignableUserInput(groupId: number, event: Event): void {
@@ -335,10 +204,7 @@ function selectAssignableUser(groupId: number, user: UserLookupResult): void {
         ...groupUserSearch.value,
         [groupId]: `${user.name} (${user.email})`,
     };
-    groupUserSuggestions.value = {
-        ...groupUserSuggestions.value,
-        [groupId]: [],
-    };
+    groupLookup.clear(groupId);
 }
 
 function addUserToGroup(groupId: number): void {
@@ -354,10 +220,7 @@ function addUserToGroup(groupId: number): void {
                 ...groupUserSearch.value,
                 [groupId]: '',
             };
-            groupUserSuggestions.value = {
-                ...groupUserSuggestions.value,
-                [groupId]: [],
-            };
+            groupLookup.clear(groupId);
         },
     });
 }

@@ -1,270 +1,38 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
-import { computed, onMounted, ref, watch } from 'vue';
 import PredictionsPageShell from '@/components/predictions/PredictionsPageShell.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useApiV2Client } from '@/composables/useApiV2Client';
+import { provide } from 'vue';
+import { useMlbFutures, mlbFuturesKey } from '@/composables/useMlbFutures';
 
-type ForecastTeam = {
-    id: number;
-    abbreviation: string;
-    location?: string | null;
-    name?: string | null;
-    league?: string | null;
-};
-
-type MarketOdds = {
-    bookmaker: string;
-    market_key: string;
-    price: number | null;
-    implied_probability: number | null;
-    fetched_at: string | null;
-    odds_api_sport_key: string;
-};
-
-type MarketEdge = {
-    model_probability: number | null;
-    market_probability: number | null;
-    edge_probability: number | null;
-    edge_percent_points: number | null;
-    fair_price: number | null;
-    market_price: number | null;
-    has_edge: boolean;
-};
-
-type PlayoffForecast = {
-    id: number;
-    team_id: number;
-    season: number;
-    league: string | null;
-    league_rank: number | null;
-    projected_seed: number | null;
-    playoff_make_probability: number;
-    division_win_probability: number;
-    division_series_probability: number;
-    league_championship_series_probability: number;
-    league_championship_probability: number;
-    pennant_probability: number;
-    world_series_probability: number;
-    champion_probability: number;
-    selection_score: number;
-    team: ForecastTeam | null;
-    market_odds?: MarketOdds | null;
-    market_edge?: MarketEdge | null;
-};
-
-const forecasts = ref<PlayoffForecast[]>([]);
-const loading = ref(true);
-const error = ref<string | null>(null);
-const selectedSeason = ref<number | null>(null);
-const sortMode = ref<'model' | 'edge'>('model');
-const onlyPlusEv = ref(false);
-const availableSeasons = ref<number[]>([]);
-const api = useApiV2Client();
-let latestForecastRequest = 0;
-
-const availableSeasonOptions = computed(() =>
-    availableSeasons.value.length > 0
-        ? availableSeasons.value
-        : [selectedSeason.value ?? new Date().getFullYear()],
-);
-
-const formatPct = (value: number, digits = 1) =>
-    `${(value * 100).toFixed(digits)}%`;
-const formatEdgePoints = (value: number | null | undefined) => {
-    if (value === null || value === undefined) return '-';
-    const rounded = value.toFixed(1);
-    return value >= 0 ? `+${rounded}pp` : `${rounded}pp`;
-};
-const formatAmericanOdds = (value: number | null | undefined) => {
-    if (value === null || value === undefined) return '-';
-    return value > 0 ? `+${value}` : `${value}`;
-};
-const toPct = (value: number) => Math.max(0, Math.min(100, value * 100));
-const formatTeam = (team: ForecastTeam | null, fallback: number) => {
-    if (!team) return `Team ${fallback}`;
-    const full = `${team.location ?? ''} ${team.name ?? ''}`.trim();
-    return full || team.abbreviation || `Team ${fallback}`;
-};
-
-const visibleForecasts = computed(() =>
-    onlyPlusEv.value
-        ? forecasts.value.filter(
-              (row) => (row.market_edge?.edge_probability ?? 0) > 0,
-          )
-        : forecasts.value,
-);
-
-const edgeValue = (row: PlayoffForecast) =>
-    row.market_edge?.edge_probability ?? Number.NEGATIVE_INFINITY;
-const topByMake = computed(() =>
-    [...visibleForecasts.value]
-        .sort((a, b) => {
-            if (sortMode.value === 'edge') {
-                return edgeValue(b) - edgeValue(a);
-            }
-
-            return b.playoff_make_probability - a.playoff_make_probability;
-        })
-        .slice(0, 20),
-);
-const topByTitle = computed(() =>
-    [...visibleForecasts.value]
-        .sort((a, b) => b.champion_probability - a.champion_probability)
-        .slice(0, 20),
-);
-const bubbleWatch = computed(() =>
-    [...visibleForecasts.value]
-        .filter(
-            (row) =>
-                row.playoff_make_probability >= 0.25 &&
-                row.playoff_make_probability < 0.75,
-        )
-        .sort((a, b) => b.playoff_make_probability - a.playoff_make_probability)
-        .slice(0, 12),
-);
-
-const leagueBreakdown = computed(() => {
-    const byLeague = new Map<
-        string,
-        {
-            league: string;
-            teamsTracked: number;
-            projectedIn: number;
-            expectedBids: number;
-            predictedWinner: string;
-            winnerPennantProbability: number;
-        }
-    >();
-
-    for (const row of visibleForecasts.value) {
-        const league =
-            (row.league ?? row.team?.league ?? 'Unknown').trim() || 'Unknown';
-        const current = byLeague.get(league) ?? {
-            league,
-            teamsTracked: 0,
-            projectedIn: 0,
-            expectedBids: 0,
-            predictedWinner: formatTeam(row.team, row.team_id),
-            winnerPennantProbability:
-                row.pennant_probability ?? row.league_championship_probability,
-        };
-
-        current.teamsTracked += 1;
-        current.projectedIn += row.playoff_make_probability >= 0.5 ? 1 : 0;
-        current.expectedBids += row.playoff_make_probability;
-
-        if (
-            (row.pennant_probability ?? row.league_championship_probability) >
-            current.winnerPennantProbability
-        ) {
-            current.predictedWinner = formatTeam(row.team, row.team_id);
-            current.winnerPennantProbability =
-                row.pennant_probability ?? row.league_championship_probability;
-        }
-
-        byLeague.set(league, current);
-    }
-
-    return Array.from(byLeague.values())
-        .map((row) => ({
-            ...row,
-            expectedBids: Number(row.expectedBids.toFixed(2)),
-        }))
-        .sort((a, b) => b.projectedIn - a.projectedIn);
-});
-
-const projectedInCount = computed(
-    () =>
-        visibleForecasts.value.filter((f) => f.playoff_make_probability >= 0.5)
-            .length,
-);
-const avgTitleOdds = computed(() => {
-    if (visibleForecasts.value.length === 0) return 0;
-    return (
-        visibleForecasts.value.reduce(
-            (sum, row) => sum + row.champion_probability,
-            0,
-        ) / visibleForecasts.value.length
-    );
-});
-const topChampion = computed(() => topByTitle.value[0] ?? null);
-
-const statusTag = (row: PlayoffForecast) => {
-    const make = row.playoff_make_probability;
-    if (make >= 0.85) return 'High Probability';
-    if (make >= 0.55) return 'In Picture';
-    if (make >= 0.35) return 'Bubble';
-    return 'Longshot';
-};
-
-const statusTagClass = (row: PlayoffForecast) => {
-    const make = row.playoff_make_probability;
-    if (make >= 0.85)
-        return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200';
-    if (make >= 0.55)
-        return 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-200';
-    if (make >= 0.35)
-        return 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200';
-    return 'bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200';
-};
-
-const meterClass = (value: number) => {
-    const pct = toPct(value);
-    if (pct >= 70) return 'bg-emerald-500';
-    if (pct >= 45) return 'bg-amber-500';
-    return 'bg-rose-500';
-};
-
-const fetchForecasts = async () => {
-    if (!selectedSeason.value) return;
-    const request = ++latestForecastRequest;
-    loading.value = true;
-    error.value = null;
-
-    try {
-        const payload = await api.forecasts.index<PlayoffForecast>('mlb', {
-            query: { season: selectedSeason.value },
-        });
-        if (!payload) {
-            throw new Error('Failed to load MLB futures data');
-        }
-        if (request !== latestForecastRequest) return;
-        const meta = payload.meta as { available_seasons?: number[] };
-        forecasts.value = payload.data ?? [];
-        availableSeasons.value = meta.available_seasons ?? [];
-        if (
-            availableSeasons.value.length > 0 &&
-            selectedSeason.value !== null &&
-            !availableSeasons.value.includes(selectedSeason.value)
-        ) {
-            selectedSeason.value = availableSeasons.value[0];
-        }
-    } catch (e) {
-        if (request !== latestForecastRequest) return;
-        error.value =
-            e instanceof Error
-                ? e.message
-                : 'An error occurred while loading MLB futures.';
-        forecasts.value = [];
-    } finally {
-        if (request === latestForecastRequest) {
-            loading.value = false;
-        }
-    }
-};
-
-watch(selectedSeason, () => {
-    fetchForecasts();
-});
-
-onMounted(() => {
-    selectedSeason.value = new Date().getFullYear();
-});
+const state = useMlbFutures();
+provide(mlbFuturesKey, state);
+const {
+    loading,
+    error,
+    selectedSeason,
+    sortMode,
+    onlyPlusEv,
+    availableSeasonOptions,
+    formatPct,
+    formatEdgePoints,
+    formatAmericanOdds,
+    toPct,
+    formatTeam,
+    topByMake,
+    topByTitle,
+    bubbleWatch,
+    leagueBreakdown,
+    projectedInCount,
+    avgTitleOdds,
+    topChampion,
+    statusTag,
+    statusTagClass,
+    meterClass,
+} = state;
 </script>
-
 <template>
     <Head title="MLB Futures" />
 

@@ -295,13 +295,11 @@ class PublicSportPageController extends Controller
 
         $date = $this->defaultPropsDate($sportCode);
         $recommendations = $this->playerPropAnalyzer
-            ->analyzeProps(
+            ->precomputedRecommendations(
                 sport: $sportCode,
-                minGames: 3,
                 dateFilter: $date,
-                attachNarratives: false,
-            )
-            ->take(5);
+                limit: 5,
+            );
 
         return BettingRecommendationResource::collection($recommendations)->resolve();
     }

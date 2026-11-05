@@ -87,3 +87,9 @@ export type PlayerPageProps = {
     config: SportPlayerShellConfig;
     playerId: number;
 };
+
+export interface PlayerSummaryValue {
+    label: string;
+    value: string;
+    rank: { rank: number; total: number } | null;
+}

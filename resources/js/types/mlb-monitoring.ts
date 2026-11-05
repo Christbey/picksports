@@ -1,0 +1,150 @@
+export type ArtifactOption = {
+    id: string;
+    model_version: string;
+    model_type: string;
+    market_type: string;
+    status: string;
+    created_at: string | null;
+    promoted_at: string | null;
+};
+export type ArtifactLineage = ArtifactOption & {
+    training_run_id: string;
+    feature_version: string;
+    artifact_hash: string;
+    dataset_hash: string;
+    config_hash: string | null;
+    code_version: string | null;
+};
+export type Artifact = ArtifactLineage & {
+    sport: string;
+    evaluation_report_hash: string | null;
+    run_type: string | null;
+    metrics: Record<string, unknown> | null;
+    evaluation_summary: Record<string, unknown>;
+    promotion_checks: Record<string, boolean>;
+    promotion_markets: Record<string, unknown>;
+    promoted_markets: string[];
+    promotion_summary: Record<string, unknown>;
+    delta_convention: Record<string, string>;
+    public_output_changed: boolean;
+};
+export type DataHealth = {
+    season: number;
+    pregame_safe_snapshots: number;
+    latest_pregame_snapshot_at: string | null;
+    snapshot_age_hours: number | null;
+    pregame_market_quotes: number;
+    latest_market_quote_at: string | null;
+    quote_age_hours: number | null;
+    upcoming_games: number;
+    probable_pitchers_ready: number;
+    probable_pitcher_coverage: number | null;
+    games_with_market_quotes: number;
+    market_quote_coverage: number | null;
+    market_coverage: Array<{
+        market: string;
+        quote_count: number;
+        game_count: number;
+    }>;
+};
+export type Summary = {
+    shadow_observations: number;
+    decisions: number;
+    tracking_bets: number;
+    no_bets: number;
+    settled_decisions: number;
+    pending_decisions: number;
+    profit_units: number;
+    roi: number | null;
+    average_clv: number | null;
+    calibration_games: number;
+    baseline_brier: number | null;
+    challenger_brier: number | null;
+    brier_delta: number | null;
+};
+export type WeeklyPerformance = {
+    week_start: string;
+    games: number;
+    baseline_brier: number | null;
+    challenger_brier: number | null;
+    baseline_log_loss: number | null;
+    challenger_log_loss: number | null;
+    baseline_accuracy: number | null;
+    challenger_accuracy: number | null;
+    baseline_margin_mae: number | null;
+    challenger_margin_mae: number | null;
+    baseline_total_mae: number | null;
+    challenger_total_mae: number | null;
+};
+export type MarketPerformance = {
+    market: string;
+    decisions: number;
+    bets: number;
+    no_bets: number;
+    settled: number;
+    pending: number;
+    profit_units: number;
+    roi: number | null;
+    average_clv: number | null;
+    calibration_games: number;
+    baseline_brier: number | null;
+    challenger_brier: number | null;
+    brier_delta: number | null;
+};
+export type Observation = {
+    id: number;
+    game_id: number;
+    matchup: string;
+    game_date: string | null;
+    market_type: string;
+    baseline_output: number;
+    challenger_output: number;
+    output_delta: number;
+    status: string;
+    generated_at: string | null;
+    pregame_safe: boolean;
+    feature_hash: string | null;
+    inference_run_id: string;
+    decision: {
+        status: string;
+        side: string;
+        price: number | null;
+        edge: number | null;
+        is_bet: boolean;
+        is_public: boolean;
+        is_tracking_only: boolean;
+        reasons: string[];
+    } | null;
+    settlement: {
+        status: string;
+        profit_units: number | null;
+        clv: number | null;
+        settled_at: string | null;
+    } | null;
+};
+export type InferenceFailure = {
+    id: string;
+    run_type: string;
+    model_version: string;
+    feature_version: string;
+    status: string;
+    started_at: string | null;
+    completed_at: string | null;
+    error: string;
+};
+export type MlbMonitoringProps = {
+    artifacts: ArtifactOption[];
+    artifact: Artifact | null;
+    lineage: {
+        active: ArtifactLineage | null;
+        challenger: ArtifactLineage | null;
+    };
+    data_health: DataHealth;
+    summary: Summary;
+    market_performance: MarketPerformance[];
+    weekly_performance: WeeklyPerformance[];
+    evaluation_windows: Array<Record<string, unknown>>;
+    observations: Observation[];
+    no_bet_reasons: Array<{ reason: string; count: number }>;
+    inference_failures: InferenceFailure[];
+};

@@ -17,16 +17,16 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
     protected const TEAM_STAT_MODEL = '';
 
     /** @var array<string, mixed> Cached metadata for the current prediction */
-    private array $metadata = [];
+    protected array $metadata = [];
 
     /** @var array<string, mixed> True EPA rollout metadata */
-    private array $trueEpaMetadata = [];
+    protected array $trueEpaMetadata = [];
 
     /** @var array<string, mixed> Total model metadata */
-    private array $totalMetadata = [];
+    protected array $totalMetadata = [];
 
     /** @var array<string, mixed> Win probability calibration metadata */
-    private array $winProbabilityCalibrationMetadata = [];
+    protected array $winProbabilityCalibrationMetadata = [];
 
     protected function getGameModel(): string
     {
@@ -576,7 +576,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         return null;
     }
 
-    private function isHomeTeamOutcome(string $outcomeName, Model $game): bool
+    protected function isHomeTeamOutcome(string $outcomeName, Model $game): bool
     {
         $homeTeam = $game->homeTeam;
         $name = strtolower($outcomeName);

@@ -55,7 +55,7 @@ it('moves toward a home favorite when blending the bookmaker spread', function (
     $baseline = (new ReflectionMethod($ac, 'makePredictionData'))->invoke(app($ac), $game);
     $homeName = $sport === 'nba' ? $home->location.' '.$home->name : $home->school.' '.$home->mascot;
     $awayName = $sport === 'nba' ? $away->location.' '.$away->name : $away->school.' '.$away->mascot;
-    $game->odds_data = ['bookmakers' => [['key' => 'test', 'markets' => [[
+    $game->odds_data = ['home_team' => $homeName, 'away_team' => $awayName, 'bookmakers' => [['key' => 'test', 'markets' => [[
         'key' => 'spreads', 'outcomes' => [
             ['name' => $homeName, 'point' => -10, 'price' => -110],
             ['name' => $awayName, 'point' => 10, 'price' => -110],

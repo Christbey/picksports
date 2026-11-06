@@ -9,6 +9,7 @@ use App\Models\CBB\TeamMetric;
 use App\Models\CBB\TeamStat;
 use App\Services\CBB\CbbDataQuality;
 use App\Services\CBB\CbbPregameEligibility;
+use App\Services\CBB\CbbScoreMarginRatings;
 use App\Services\CBB\CbbSeasonInitializer;
 use App\Services\CBB\CbbSeasonInputs;
 use App\Services\Predictions\PredictionDeliverySource;
@@ -88,6 +89,46 @@ class GeneratePrediction extends AbstractCollegeBasketballPredictionGenerator
         app(CbbDataQuality::class)->reconciledGames($query);
     }
 
+    protected function modelVersion(): string
+    {
+        return config('cbb.prediction.score_margin.enabled', false) ? 'cbb-score-margin-v1' : parent::modelVersion();
+    }
+
+    protected function calculateWinProbability(float $spread): float
+    {
+        $probability = parent::calculateWinProbability($spread);
+
+        return config('cbb.prediction.score_margin.enabled', false)
+            ? max(0.001, min(0.999, $probability)) : $probability;
+    }
+
+    protected function calculatePredictedSpread(int $homeElo, int $awayElo, ?Model $homeMetrics, ?Model $awayMetrics, Model $game): float
+    {
+        if (! config('cbb.prediction.score_margin.enabled', false)) {
+            return parent::calculatePredictedSpread($homeElo, $awayElo, $homeMetrics, $awayMetrics, $game);
+        }
+        $ratings = app(CbbScoreMarginRatings::class)->forGame($game);
+        if (! $ratings['available']) {
+            $spread = parent::calculatePredictedSpread($homeElo, $awayElo, $homeMetrics, $awayMetrics, $game);
+            $this->metadata['score_margin_rating'] = $ratings;
+
+            return $spread;
+        }
+        $this->trueEpaMetadata = [];
+        $this->totalMetadata = [];
+        $this->winProbabilityCalibrationMetadata = [];
+        $market = $this->getVegasSpread($game);
+        $spread = (float) $ratings['home_margin'];
+        $this->metadata = ['score_margin_rating' => $ratings, 'baseline_model_spread' => $spread,
+            'vegas_spread' => $market, 'odds_market_availability' => $this->oddsMarketAvailability($game)];
+        if ($market !== null) {
+            $spread = (float) config('cbb.prediction.model_weight_with_vegas', 0.85) * $spread
+                - (float) config('cbb.prediction.vegas_weight', 0.15) * $market;
+        }
+
+        return round($spread, 1);
+    }
+
     protected function spreadComponentWeights(?Model $homeMetrics, ?Model $awayMetrics, array $homeForm, array $awayForm, array $config): array
     {
         $weights = [
@@ -107,6 +148,16 @@ class GeneratePrediction extends AbstractCollegeBasketballPredictionGenerator
         }
 
         return parent::getVegasSpread($game);
+    }
+
+    protected function isHomeTeamOutcome(string $outcomeName, Model $game): bool
+    {
+        $homeName = data_get($game->odds_data, 'home_team');
+        if (! is_string($homeName) || trim($homeName) === '') {
+            return false;
+        }
+
+        return mb_strtolower(trim($outcomeName)) === mb_strtolower(trim($homeName));
     }
 
     protected function winProbabilityCalibration(float $baseline): array
@@ -134,6 +185,9 @@ class GeneratePrediction extends AbstractCollegeBasketballPredictionGenerator
         }
         $metadata = $data['model_metadata'] ?? [];
         $metadata['season_inputs'] = $this->seasonEvidence;
+        if (isset($this->metadata['score_margin_rating'])) {
+            $metadata['score_margin_rating'] = $this->metadata['score_margin_rating'];
+        }
         $metadata['provisional'] = collect($this->seasonEvidence)->contains(fn (array $team): bool => $team['provisional']);
         $metadata['statistical_inputs_available'] = collect($this->seasonEvidence)->every(fn (array $team): bool => $team['source'] !== 'baseline');
         $metadata['probability_validation'] = 'uncalibrated';

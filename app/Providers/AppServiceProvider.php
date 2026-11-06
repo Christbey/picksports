@@ -9,6 +9,7 @@ use App\Actions\ESPN\NBA\SyncPlayerInjuries;
 use App\Events\GameFinalized;
 use App\Listeners\TriggerGameFinalizationGrading;
 use App\Models\DeveloperApiCredential;
+use App\Services\CBB\CbbScoreMarginRatings;
 use App\Services\CommandHeartbeatService;
 use App\Services\DeveloperPlatform\DeveloperApiCredentialAuthenticator;
 use App\Services\ESPN\BaseEspnService;
@@ -38,6 +39,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->scoped(CbbScoreMarginRatings::class);
         $this->app->when(SyncPlayers::class)
             ->needs(BaseEspnService::class)
             ->give(\App\Services\ESPN\CFB\EspnService::class);

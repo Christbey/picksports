@@ -717,6 +717,8 @@ it('blends vegas spread when odds data available', function () {
         'status' => 'STATUS_SCHEDULED',
         'season' => 2026,
         'odds_data' => [
+            'home_team' => $this->homeTeam->school,
+            'away_team' => $this->awayTeam->school,
             'bookmakers' => [
                 [
                     'key' => 'draftkings',

@@ -178,8 +178,47 @@ try {
                     await page.locator('tbody tr').first().waitFor();
                     assert.equal(await page.locator('tbody tr').count(), 100);
                 }
-                for (const width of [390, 1280]) {
+                for (const width of [320, 390, 1280]) {
                     await page.setViewportSize({ width, height: 900 });
+                    if (!before) {
+                        assert.equal(
+                            await page.evaluate(
+                                () =>
+                                    document.documentElement.scrollWidth <=
+                                    window.innerWidth + 1,
+                            ),
+                            true,
+                            `Page overflow at ${width}px`,
+                        );
+                        const regions = page
+                            .getByRole('region')
+                            .filter({ has: page.locator('table') });
+                        for (const region of await regions.all()) {
+                            assert.ok(await region.getAttribute('aria-label'));
+                            assert.equal(
+                                await region.getAttribute('tabindex'),
+                                '0',
+                            );
+                            const scrollable = await region.evaluate(
+                                (el) => el.scrollWidth > el.clientWidth + 1,
+                            );
+                            if (scrollable) {
+                                await region.focus();
+                                await page.keyboard.press('ArrowRight');
+                                await page.waitForFunction(
+                                    (el) => el.scrollLeft > 0,
+                                    await region.elementHandle(),
+                                );
+                                await region.evaluate(
+                                    (el) => (el.scrollLeft = 0),
+                                );
+                            }
+                        }
+                        await page.evaluate(() =>
+                            document.activeElement?.blur(),
+                        );
+                    }
+
                     for (const dark of [false, true]) {
                         await page.evaluate(
                             (value) =>

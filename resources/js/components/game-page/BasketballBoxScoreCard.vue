@@ -53,7 +53,13 @@ const betterClass = (row: BasketballStatRow, side: 'home' | 'away') =>
             <CardTitle class="tracking-tight">Box Score</CardTitle>
         </CardHeader>
         <CardContent>
-            <div v-if="layout === 'table'" class="ui-table-wrap">
+            <div
+                v-if="layout === 'table'"
+                role="region"
+                tabindex="0"
+                aria-label="Basketball box score"
+                class="ui-table-wrap max-w-full min-w-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
                 <table class="w-full">
                     <thead>
                         <tr class="border-b bg-muted/30">

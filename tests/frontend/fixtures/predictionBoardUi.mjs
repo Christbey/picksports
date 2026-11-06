@@ -1,6 +1,6 @@
 export function predictionBoardUi(sport, filterMode, scenario = 'normal') {
     const calls = [];
-    const flags = { live: false, fail: false };
+    const flags = { live: false, fail: scenario === 'error' };
     const row = (id) => ({
         id,
         game_id: id,
@@ -69,7 +69,7 @@ export function predictionBoardUi(sport, filterMode, scenario = 'normal') {
                     query: { ...options.query },
                     cache: options.init?.cache,
                 });
-                if (scenario === 'error' || flags.fail) return null;
+                if (flags.fail) return null;
                 const page = Number(options.query.page ?? 1);
                 return {
                     data:

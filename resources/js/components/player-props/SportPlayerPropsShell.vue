@@ -35,7 +35,7 @@ provide(playerPropsBoardKey, board);
 
             <div
                 v-if="sport === 'NFL'"
-                class="flex gap-2"
+                class="flex flex-wrap gap-2"
                 aria-label="Prop view"
             >
                 <Button

@@ -22,7 +22,7 @@ const {
 
 <template>
     <div class="flex flex-wrap items-center gap-3 border-y border-border py-3">
-        <div class="relative min-w-40 flex-1">
+        <div class="relative w-full min-w-0 sm:min-w-40 sm:flex-1">
             <Search
                 class="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground"
             />
@@ -39,7 +39,7 @@ const {
             id="week"
             v-model="week"
             aria-label="Week"
-            class="h-10 rounded-md border border-input bg-background px-3 text-sm"
+            class="h-11 max-w-full rounded-md border border-input bg-background px-3 text-sm sm:h-10"
             :disabled="!seasonType || loading"
             @change="applyFilters"
         >
@@ -58,7 +58,7 @@ const {
             v-model="selectedDate"
             aria-label="Game date"
             :disabled="!availableDates.length"
-            class="h-10 rounded-md border border-input bg-background px-3 text-sm"
+            class="h-11 max-w-full rounded-md border border-input bg-background px-3 text-sm sm:h-10"
         >
             <option v-if="!availableDates.length" value="">
                 No dates available
@@ -72,7 +72,7 @@ const {
                 type="button"
                 :aria-pressed="betViewMode === 'all'"
                 :class="[
-                    'rounded px-3 py-1.5 text-sm',
+                    'min-h-11 rounded px-3 py-1.5 text-sm sm:min-h-0',
                     betViewMode === 'all'
                         ? 'bg-background font-medium shadow-sm'
                         : 'text-muted-foreground',
@@ -85,7 +85,7 @@ const {
                 type="button"
                 :aria-pressed="betViewMode === 'recommended'"
                 :class="[
-                    'rounded px-3 py-1.5 text-sm',
+                    'min-h-11 rounded px-3 py-1.5 text-sm sm:min-h-0',
                     betViewMode === 'recommended'
                         ? 'bg-background font-medium shadow-sm'
                         : 'text-muted-foreground',

@@ -21,8 +21,13 @@ const {
             >
         </CardHeader>
         <CardContent>
-            <div class="ui-table-wrap">
-                <table class="w-full text-sm">
+            <div
+                role="region"
+                tabindex="0"
+                aria-label="NBA team playoff probabilities"
+                class="ui-table-wrap max-w-full min-w-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+                <table class="w-full min-w-[600px] text-sm sm:min-w-0">
                     <thead>
                         <tr class="border-b bg-muted/30 text-left">
                             <th class="p-2 font-medium">Team</th>

@@ -76,8 +76,8 @@ const server = await createServer({
                             `/__cleanup/${path}/${scenario}`,
                             `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${stylesheet}"></head><body><div id="app"></div><script type="module">
 import {createApp,nextTick} from 'vue';import Page from '/resources/js/${path}';import {cleanupProps,futuresRows} from '/tests/frontend/fixtures/frontendCleanup.mjs';
-globalThis.__cleanupCalls=[];globalThis.__futuresCalls=[];
-globalThis.__futuresApi={forecasts:{index:async(sport,options)=>{__futuresCalls.push({sport,query:options.query});if(${JSON.stringify(scenario)}==='failure')return null;return {data:${JSON.stringify(scenario)}==='empty'?[]:futuresRows(),meta:{available_seasons:[2026,2025],playoff_teams_per_conference:8,play_in_teams_per_conference:10}};}}};
+globalThis.__cleanupCalls=[];globalThis.__futuresCalls=[];globalThis.__futuresFail=${JSON.stringify(scenario)}==='failure';
+globalThis.__futuresApi={forecasts:{index:async(sport,options)=>{__futuresCalls.push({sport,query:options.query});if(globalThis.__futuresFail)return null;return {data:${JSON.stringify(scenario)}==='empty'?[]:futuresRows(),meta:{available_seasons:[2026,2025],playoff_teams_per_conference:8,play_in_teams_per_conference:10}};}}};
 const app=createApp(Page,cleanupProps(${JSON.stringify(kind)},${JSON.stringify(scenario)}));app.config.globalProperties.$page={props:{auth:{user:null}}};app.mount('#app');await nextTick();await new Promise(r=>setTimeout(r,0));globalThis.__cleanupReady=true;
 </script></body></html>`,
                         ),
@@ -213,8 +213,46 @@ try {
             );
             await page.waitForFunction(() => globalThis.__cleanupReady);
             assert.deepEqual(errors, []);
-            for (const width of [390, 1280]) {
+            for (const width of [320, 390, 1280]) {
                 await page.setViewportSize({ width, height: 900 });
+                if (
+                    !before &&
+                    (kind === 'nba' || kind === 'mlb' || kind === 'box')
+                ) {
+                    assert.equal(
+                        await page.evaluate(
+                            () =>
+                                document.documentElement.scrollWidth <=
+                                window.innerWidth + 1,
+                        ),
+                        true,
+                        `Page overflow at ${width}px`,
+                    );
+                    const regions = page
+                        .getByRole('region')
+                        .filter({ has: page.locator('table') });
+                    for (const region of await regions.all()) {
+                        assert.ok(await region.getAttribute('aria-label'));
+                        assert.equal(
+                            await region.getAttribute('tabindex'),
+                            '0',
+                        );
+                        const scrollable = await region.evaluate(
+                            (el) => el.scrollWidth > el.clientWidth + 1,
+                        );
+                        if (scrollable) {
+                            await region.focus();
+                            await page.keyboard.press('ArrowRight');
+                            await page.waitForFunction(
+                                (el) => el.scrollLeft > 0,
+                                await region.elementHandle(),
+                            );
+                            await region.evaluate((el) => (el.scrollLeft = 0));
+                        }
+                    }
+                    await page.evaluate(() => document.activeElement?.blur());
+                }
+
                 for (const dark of [false, true]) {
                     await page.evaluate(
                         (d) =>
@@ -311,6 +349,21 @@ try {
                         () => __futuresCalls.at(-1).query.season,
                     ),
                     2025,
+                );
+            }
+            if (!before && kind === 'nba' && scenario === 'failure') {
+                assert.equal(await page.locator('table').count(), 0);
+                await page.evaluate(() => {
+                    __futuresFail = false;
+                });
+                await page
+                    .getByRole('button', { name: 'Try again', exact: true })
+                    .click();
+                await page.locator('table').first().waitFor();
+                assert.equal(await page.getByRole('alert').count(), 0);
+                assert.equal(
+                    await page.evaluate(() => __futuresCalls.length),
+                    2,
                 );
             }
             if (kind === 'health' && scenario === 'normal') {

@@ -30,9 +30,12 @@ const getOpponent = (stat: PlayerStat) =>
             </div>
             <div
                 v-if="gameLogs.length > 0"
-                class="overflow-x-auto rounded-xl border border-border/70"
+                role="region"
+                tabindex="0"
+                aria-label="Player game log"
+                class="max-w-full min-w-0 overflow-x-auto rounded-xl border border-border/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
-                <table class="w-full text-sm">
+                <table class="w-full min-w-[600px] text-sm sm:min-w-0">
                     <thead>
                         <tr
                             class="border-b bg-muted/35 text-left text-muted-foreground"

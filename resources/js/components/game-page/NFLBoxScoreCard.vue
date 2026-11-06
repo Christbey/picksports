@@ -45,7 +45,12 @@ const populated = (side: 'away' | 'home') =>
                 </p>
                 <p>Populated fields do not certify a final statistics sync.</p>
             </div>
-            <div class="ui-table-wrap">
+            <div
+                role="region"
+                tabindex="0"
+                aria-label="NFL box score"
+                class="ui-table-wrap max-w-full min-w-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
                 <div class="min-w-0 space-y-3">
                     <div
                         class="grid grid-cols-7 gap-2 border-b bg-muted/30 py-2 text-xs font-medium sm:text-sm"

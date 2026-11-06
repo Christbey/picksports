@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DataRecovery from '@/components/DataRecovery.vue';
 import { provide, reactive } from 'vue';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/AppLayout.vue';
@@ -34,7 +35,7 @@ provide(playerPropsBoardKey, board);
 
             <div
                 v-if="sport === 'NFL'"
-                class="flex gap-2"
+                class="flex flex-wrap gap-2"
                 aria-label="Prop view"
             >
                 <Button
@@ -59,13 +60,12 @@ provide(playerPropsBoardKey, board);
             <PlayerPropsFilters :sport="sport" />
             <PlayerPropsRecommendations :sport="sport" />
 
-            <p
+            <DataRecovery
                 v-if="board.selectedView === 'all' && board.error"
-                role="alert"
-                class="text-sm text-amber-700 dark:text-amber-300"
-            >
-                {{ board.error }}
-            </p>
+                :message="board.error"
+                :busy="board.loading"
+                @retry="board.loadBoard"
+            />
             <NflAllPropsBrowser
                 v-if="board.selectedView === 'all'"
                 :enabled="board.filtersReady"

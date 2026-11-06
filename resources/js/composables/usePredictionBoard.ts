@@ -140,6 +140,8 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         loading,
         error,
         refreshError,
+        refreshing,
+        retryPage,
         fetchPage: fetchPredictions,
     } = usePredictionList<PredictionListItem>(async (page) => {
         if (filterMode.value === 'date' && !selectedDate.value) {
@@ -364,9 +366,11 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
             return;
         void fetchPredictions(meta.value?.current_page ?? 1, true);
     };
-    onMounted(async () => {
-        refreshTimer = setInterval(refreshBoard, 30000);
-        document.addEventListener('visibilitychange', refreshBoard);
+    let initialized = false;
+    const initializeBoard = async () => {
+        isBootstrapping.value = true;
+        loading.value = true;
+        error.value = null;
         try {
             await fetchAvailableSeasons();
 
@@ -376,6 +380,7 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
                 await setDefaultSeasonWeekFilters();
             }
 
+            initialized = true;
             isBootstrapping.value = false;
             await fetchPredictions(1);
         } catch (e) {
@@ -384,6 +389,16 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
             isBootstrapping.value = false;
             loading.value = false;
         }
+    };
+    const retryPredictions = async () => {
+        if (loading.value || refreshing.value) return;
+        if (!initialized) await initializeBoard();
+        else await retryPage();
+    };
+    onMounted(() => {
+        refreshTimer = setInterval(refreshBoard, 30000);
+        document.addEventListener('visibilitychange', refreshBoard);
+        void initializeBoard();
     });
     onBeforeUnmount(() => {
         if (refreshTimer) clearInterval(refreshTimer);
@@ -418,6 +433,8 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         loading,
         error,
         refreshError,
+        refreshing,
+        retryPredictions,
         fetchPredictions,
     };
 }

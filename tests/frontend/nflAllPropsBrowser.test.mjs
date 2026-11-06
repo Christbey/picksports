@@ -134,7 +134,7 @@ test('failed all-props requests expose retry without claiming no quotes exist', 
     try {
         const { bindings, html } = await mount();
         assert.match(await html(), /Unable to load all props/);
-        assert.match(await html(), /Retry/);
+        assert.match(await html(), /Try again/);
         assert.doesNotMatch(await html(), /No stored quotes match/);
         globalThis.fetch = async () =>
             new Response(JSON.stringify(fixture()), {

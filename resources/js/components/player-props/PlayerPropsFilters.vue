@@ -16,7 +16,9 @@ defineProps<{ sport: string }>();
         <Card>
             <CardContent class="pt-6">
                 <div class="flex min-w-0 flex-wrap items-end gap-4">
-                    <div class="min-w-[200px] flex-1 space-y-2">
+                    <div
+                        class="w-full min-w-0 space-y-2 sm:min-w-[200px] sm:flex-1"
+                    >
                         <Label for="date">Game Date</Label>
                         <select
                             id="date"
@@ -35,7 +37,9 @@ defineProps<{ sport: string }>();
                         </select>
                     </div>
 
-                    <div class="min-w-[200px] flex-1 space-y-2">
+                    <div
+                        class="w-full min-w-0 space-y-2 sm:min-w-[200px] sm:flex-1"
+                    >
                         <Label for="game">Matchup</Label>
                         <select
                             id="game"
@@ -55,7 +59,9 @@ defineProps<{ sport: string }>();
                         </select>
                     </div>
 
-                    <div class="min-w-[180px] flex-1 space-y-2">
+                    <div
+                        class="w-full min-w-0 space-y-2 sm:min-w-[180px] sm:flex-1"
+                    >
                         <Label for="market">Prop Type</Label>
                         <select
                             id="market"

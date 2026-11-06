@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { provide } from 'vue';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import DataRecovery from '@/components/DataRecovery.vue';
 import {
     usePredictionBoard,
     predictionBoardKey,
@@ -14,22 +14,29 @@ import PredictionBoardPagination from '@/components/predictions/PredictionBoardP
 const props = defineProps<PredictionsBoardProps>();
 const board = usePredictionBoard(props);
 provide(predictionBoardKey, board);
-const { error, refreshError } = board;
+const { error, refreshError, loading, refreshing, retryPredictions } = board;
 </script>
 
 <template>
     <div class="space-y-4">
-        <p v-if="refreshError" role="status" class="text-sm text-amber-600">
-            {{ refreshError }}
-        </p>
+        <DataRecovery
+            v-if="refreshError"
+            :message="refreshError"
+            :busy="refreshing || loading"
+            stale
+            @retry="retryPredictions"
+        />
         <PredictionBoardHeader />
 
         <PredictionBoardToolbar />
         <PredictionBoardFilters />
 
-        <Alert v-if="error" variant="destructive">
-            <AlertDescription>{{ error }}</AlertDescription>
-        </Alert>
+        <DataRecovery
+            v-if="error"
+            :message="error"
+            :busy="loading"
+            @retry="retryPredictions"
+        />
 
         <PredictionBoardResults />
 

@@ -168,8 +168,56 @@ try {
                         exact: true,
                     })
                     .waitFor();
-            for (const width of [390, 1280]) {
+            for (const width of [320, 390, 1280]) {
                 await page.setViewportSize({ width, height: 900 });
+                if (!before) {
+                    assert.equal(
+                        await page.evaluate(
+                            () =>
+                                document.documentElement.scrollWidth <=
+                                window.innerWidth + 1,
+                        ),
+                        true,
+                        `Page overflow at ${width}px`,
+                    );
+                    if (width < 640 && scenario === 'normal') {
+                        for (const control of await page
+                            .locator(
+                                '#prediction-search, #week, #game-date, [aria-label="Board view"] button, [aria-label="Prediction pages"] button',
+                            )
+                            .all()) {
+                            const rect = await control.boundingBox();
+                            assert.ok(
+                                rect.height >= 44 && rect.width >= 44,
+                                'Mobile controls need 44px touch targets',
+                            );
+                        }
+                    }
+                    const regions = page
+                        .getByRole('region')
+                        .filter({ has: page.locator('table') });
+                    for (const region of await regions.all()) {
+                        assert.ok(await region.getAttribute('aria-label'));
+                        assert.equal(
+                            await region.getAttribute('tabindex'),
+                            '0',
+                        );
+                        const scrollable = await region.evaluate(
+                            (el) => el.scrollWidth > el.clientWidth + 1,
+                        );
+                        if (scrollable) {
+                            await region.focus();
+                            await page.keyboard.press('ArrowRight');
+                            await page.waitForFunction(
+                                (el) => el.scrollLeft > 0,
+                                await region.elementHandle(),
+                            );
+                            await region.evaluate((el) => (el.scrollLeft = 0));
+                        }
+                    }
+                    await page.evaluate(() => document.activeElement?.blur());
+                }
+
                 for (const dark of [false, true]) {
                     await page.evaluate(
                         (value) =>
@@ -189,6 +237,27 @@ try {
                             `Layout changed: ${key}`,
                         );
                 }
+            }
+            if (!before && scenario === 'error') {
+                assert.equal(
+                    await page
+                        .getByText('No prediction dates available yet', {
+                            exact: true,
+                        })
+                        .count(),
+                    0,
+                );
+                await page.evaluate(() => {
+                    __boardFlags.fail = false;
+                });
+                await page
+                    .getByRole('button', { name: 'Try again', exact: true })
+                    .click();
+                await page
+                    .locator(`a[href="/${sport}/games/1"]`)
+                    .first()
+                    .waitFor();
+                assert.equal(await page.getByRole('alert').count(), 0);
             }
             if (scenario === 'normal') {
                 await page
@@ -299,6 +368,38 @@ try {
                             .count(),
                         2,
                     );
+                    if (!before) {
+                        await page.evaluate(() => {
+                            __boardFlags.fail = false;
+                        });
+                        await page
+                            .getByRole('button', {
+                                name: 'Try again',
+                                exact: true,
+                            })
+                            .click();
+                        await page.waitForFunction(
+                            () =>
+                                !document.body.innerText.includes(
+                                    'Live refresh delayed',
+                                ),
+                        );
+                        assert.equal(
+                            await page.evaluate(
+                                () => __boardCalls.at(-1).query.page,
+                            ),
+                            2,
+                        );
+                        assert.equal(
+                            await page
+                                .getByRole('button', {
+                                    name: 'Hide analysis for AWY3 at HOM3',
+                                    exact: true,
+                                })
+                                .getAttribute('aria-expanded'),
+                            'true',
+                        );
+                    }
                 }
             }
             assert.deepEqual(errors, []);

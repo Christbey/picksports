@@ -8,12 +8,12 @@ const { selectedSeason, sortMode, onlyPlusEv, availableSeasonOptions } =
     <Card>
         <CardContent class="pt-6">
             <div class="flex flex-wrap items-end gap-4">
-                <div class="min-w-[220px]">
-                    <p class="ui-kicker">Season</p>
+                <div class="w-full min-w-0 sm:w-auto sm:min-w-[220px]">
+                    <label for="season" class="ui-kicker">Season</label>
                     <select
                         id="season"
                         v-model.number="selectedSeason"
-                        class="ui-select mt-1"
+                        class="ui-select mt-1 min-h-11 sm:min-h-0"
                     >
                         <option
                             v-for="season in availableSeasonOptions"
@@ -24,19 +24,19 @@ const { selectedSeason, sortMode, onlyPlusEv, availableSeasonOptions } =
                         </option>
                     </select>
                 </div>
-                <div class="min-w-[220px]">
-                    <p class="ui-kicker">Sort</p>
+                <div class="w-full min-w-0 sm:w-auto sm:min-w-[220px]">
+                    <label for="sort-mode" class="ui-kicker">Sort</label>
                     <select
                         id="sort-mode"
                         v-model="sortMode"
-                        class="ui-select mt-1"
+                        class="ui-select mt-1 min-h-11 sm:min-h-0"
                     >
                         <option value="model">Model Probability</option>
                         <option value="edge">Best Edge</option>
                     </select>
                 </div>
                 <label
-                    class="mt-5 inline-flex items-center gap-2 text-sm font-medium text-muted-foreground"
+                    class="mt-0 inline-flex min-h-11 items-center gap-2 text-sm font-medium text-muted-foreground sm:mt-5 sm:min-h-0"
                 >
                     <input
                         v-model="onlyPlusEv"

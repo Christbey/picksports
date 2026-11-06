@@ -306,3 +306,53 @@ test('recommended filters preserve sport-specific gates and model-context preced
         true,
     );
 });
+
+test('retry repeats a failed page with current filters and ignores duplicate clicks', async () => {
+    const pending = deferred();
+    let fail = false;
+    const board = mount(
+        { sport: 'nba', filterMode: 'date' },
+        async (_, options) => {
+            if (fail) throw new Error('Offline');
+            if (options.query.page === 2) return pending.promise;
+            return response();
+        },
+    );
+    try {
+        await flush();
+        fail = true;
+        await board.state.fetchPredictions(2);
+        assert.equal(board.state.error.value, 'Offline');
+        fail = false;
+        const retry = board.state.retryPredictions();
+        await board.state.retryPredictions();
+        assert.equal(board.calls.at(-1).options.query.page, 2);
+        assert.equal(board.calls.at(-1).options.query.from_date, '2026-09-26');
+        assert.equal(board.calls.filter((c) => c.kind === 'index').length, 3);
+        pending.resolve(response([row(2)], 2));
+        await retry;
+        assert.equal(board.state.error.value, null);
+        assert.equal(board.state.meta.value.current_page, 2);
+    } finally {
+        board.close();
+    }
+});
+test('retry restarts failed metadata bootstrap before requesting predictions', async () => {
+    const board = mount({ sport: 'nba', filterMode: 'date' });
+    try {
+        globalThis.__predictionBoardApi.predictions.availableDates =
+            async () => {
+                throw new Error('Dates offline');
+            };
+        await flush();
+        assert.equal(board.state.error.value, 'Dates offline');
+        globalThis.__predictionBoardApi.predictions.availableDates =
+            async () => ({ data: ['2026-09-26'] });
+        await board.state.retryPredictions();
+        assert.equal(board.state.error.value, null);
+        assert.equal(board.state.predictions.value.length, 1);
+        assert.equal(board.calls.at(-1).options.query.from_date, '2026-09-26');
+    } finally {
+        board.close();
+    }
+});

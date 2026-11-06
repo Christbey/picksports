@@ -187,7 +187,7 @@ test('NBA fallback warning and MLB missing metadata retain distinct behavior', a
     });
     await flush();
     assert.equal(
-        s.error.value,
+        s.notice.value,
         'No rows for 2026; showing latest available season 2025.',
     );
     ({ state: s, calls } = mount('mlb', t));
@@ -197,3 +197,23 @@ test('NBA fallback warning and MLB missing metadata retain distinct behavior', a
     assert.equal(s.error.value, null);
     assert.equal(s.forecasts.value[0].id, 2);
 });
+
+for (const sport of ['nba', 'mlb']) {
+    test(`${sport}: failed reads recover with the selected season; empty success is not an error`, async (t) => {
+        const { state: s, calls } = mount(sport, t);
+        await flush();
+        calls[0].reject(new Error('Offline'));
+        await flush();
+        assert.equal(s.error.value, 'Offline');
+        const season = s.selectedSeason.value;
+        const retry = s.fetchForecasts();
+        assert.equal(s.error.value, null);
+        assert.equal(s.loading.value, true);
+        assert.equal(calls[1].query.season, season);
+        calls[1].resolve({ data: [] });
+        await retry;
+        assert.equal(s.error.value, null);
+        assert.equal(s.loading.value, false);
+        assert.deepEqual(s.forecasts.value, []);
+    });
+}

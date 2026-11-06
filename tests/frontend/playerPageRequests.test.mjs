@@ -308,3 +308,130 @@ test('the timeout fallback is cancelled on close and cannot start late supplemen
         delete globalThis.__playerPageApi;
     }
 });
+
+test('null primary responses are recoverable failures; duplicate retries wait for both reads', async () => {
+    const oldWindow = globalThis.window;
+    let idleCount = 0,
+        fail = true,
+        shows = 0;
+    globalThis.window = {
+        requestIdleCallback() {
+            idleCount++;
+            return 1;
+        },
+        cancelIdleCallback() {},
+    };
+    const pending = deferred();
+    globalThis.__playerPageApi = api(
+        async () => {
+            shows++;
+            return fail ? null : { data: { id: 7, full_name: 'Recovered' } };
+        },
+        async () => (fail ? null : pending.promise),
+    );
+    const { app, state } = mount();
+    try {
+        await flush();
+        assert.match(state.error.value, /could not be loaded/);
+        assert.deepEqual(state.gameLogs.value, []);
+        fail = false;
+        const retry = state.loadPlayer();
+        await state.loadPlayer();
+        await flush();
+        assert.equal(state.loading.value, true);
+        assert.equal(shows, 2);
+        pending.resolve({ data: [] });
+        await retry;
+        assert.equal(state.error.value, null);
+        assert.equal(state.playerData.value.name, 'Recovered');
+        assert.equal(state.loading.value, false);
+        assert.equal(idleCount, 1);
+    } finally {
+        app.unmount();
+        globalThis.window = oldWindow;
+        delete globalThis.__playerPageApi;
+    }
+});
+test('supplemental failures have independent recovery without reloading player or game log', async () => {
+    const oldWindow = globalThis.window;
+    let idle,
+        fail = true,
+        primary = 0;
+    globalThis.window = {
+        requestIdleCallback(fn) {
+            idle = fn;
+            return 1;
+        },
+        cancelIdleCallback() {},
+    };
+    globalThis.__playerPageApi = api(
+        async () => {
+            primary++;
+            return { data: { id: 7, full_name: 'Player' } };
+        },
+        async () => ({ data: [] }),
+        async () => (fail ? null : { data: [] }),
+        async () => ({
+            data: [],
+            meta: { focus_ranks: { yards: { rank: 1, total: 32 } } },
+        }),
+    );
+    const { app, state } = mount();
+    try {
+        await flush();
+        idle();
+        await flush();
+        assert.match(state.supplementalError.value, /could not be loaded/);
+        assert.equal(state.error.value, null);
+        assert.equal(state.leaderboardRanks.value.yards.rank, 1);
+        fail = false;
+        await state.loadSupplementalData();
+        assert.equal(state.supplementalError.value, null);
+        assert.equal(primary, 1);
+        assert.equal(state.supplementalLoading.value, false);
+    } finally {
+        app.unmount();
+        globalThis.window = oldWindow;
+        delete globalThis.__playerPageApi;
+    }
+});
+test('a rejected primary read waits for its sibling and retry does not accept late writes after close', async () => {
+    const oldWindow = globalThis.window;
+    globalThis.window = {
+        requestIdleCallback() {
+            return 1;
+        },
+        cancelIdleCallback() {},
+    };
+    const stats = deferred();
+    let retry = false;
+    const late = deferred();
+    let signal;
+    globalThis.__playerPageApi = api(
+        async (s, id, o) => {
+            signal = o.init.signal;
+            if (retry) return late.promise;
+            throw new Error('Offline');
+        },
+        async () => (retry ? { data: [] } : stats.promise),
+    );
+    const { app, state } = mount();
+    try {
+        await flush();
+        assert.equal(state.loading.value, true);
+        stats.resolve({ data: [] });
+        await flush();
+        assert.equal(state.error.value, 'Offline');
+        retry = true;
+        const reading = state.loadPlayer();
+        app.unmount();
+        assert.equal(signal.aborted, true);
+        late.resolve({ data: { name: 'Late' } });
+        await reading;
+        assert.equal(state.playerData.value, null);
+    } finally {
+        app.unmount();
+        globalThis.window = oldWindow;
+        delete globalThis.__playerPageApi;
+    }
+});

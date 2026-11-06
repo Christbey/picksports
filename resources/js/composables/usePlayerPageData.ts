@@ -23,7 +23,11 @@ export function usePlayerPageData(props: PlayerPageProps) {
     const loading = ref(true);
     const error = ref<string | null>(null);
     const api = useApiV2Client();
-    const controller = new AbortController();
+    let controller = new AbortController();
+    let supplementalController = new AbortController();
+    const supplementalLoading = ref(false);
+    const supplementalError = ref<string | null>(null);
+    let supplementalScheduled = false;
     let disposed = false;
     const isActive = () => !disposed && !controller.signal.aborted;
     let supplementalIdleHandle: number | null = null;
@@ -31,6 +35,13 @@ export function usePlayerPageData(props: PlayerPageProps) {
 
     const loadSupplementalData = async () => {
         if (!isActive()) return;
+        if (supplementalLoading.value) return;
+        supplementalController.abort();
+        const current = new AbortController();
+        supplementalController = current;
+        const active = () => !disposed && !current.signal.aborted;
+        supplementalLoading.value = true;
+        supplementalError.value = null;
         const requests: Promise<unknown>[] = [];
 
         if (props.config.showPlayerProps) {
@@ -38,10 +49,14 @@ export function usePlayerPageData(props: PlayerPageProps) {
                 api.players
                     .playerProps(props.config.sport, props.playerId, {
                         query: { per_page: 12 },
-                        init: { signal: controller.signal },
+                        init: { signal: current.signal },
                     })
                     .then((response) => {
-                        if (!isActive()) return;
+                        if (!active()) return;
+                        if (!response)
+                            throw new Error(
+                                'Some player props or rankings could not be loaded.',
+                            );
                         playerProps.value = (response?.data ?? []).map(
                             normalizePlayerProp,
                         );
@@ -57,10 +72,14 @@ export function usePlayerPageData(props: PlayerPageProps) {
                             ...(props.config.leaderboardQuery ?? {}),
                             focus_player_id: props.playerId,
                         },
-                        init: { signal: controller.signal },
+                        init: { signal: current.signal },
                     })
                     .then((response) => {
-                        if (!isActive()) return;
+                        if (!active()) return;
+                        if (!response)
+                            throw new Error(
+                                'Some player props or rankings could not be loaded.',
+                            );
                         leaderboardRows.value = response?.data ?? [];
                         const ranks = response?.meta?.focus_ranks;
                         leaderboardRanks.value =
@@ -74,11 +93,18 @@ export function usePlayerPageData(props: PlayerPageProps) {
             );
         }
 
-        await Promise.allSettled(requests);
+        const results = await Promise.allSettled(requests);
+        if (!active()) return;
+        if (results.some((result) => result.status === 'rejected')) {
+            supplementalError.value =
+                'Some player props or rankings could not be loaded.';
+        }
+        supplementalLoading.value = false;
     };
 
     const scheduleSupplementalData = () => {
-        if (!isActive()) return;
+        if (!isActive() || supplementalScheduled) return;
+        supplementalScheduled = true;
         if ('requestIdleCallback' in window) {
             supplementalIdleHandle = window.requestIdleCallback(
                 () => void loadSupplementalData(),
@@ -93,15 +119,27 @@ export function usePlayerPageData(props: PlayerPageProps) {
         );
     };
 
-    onMounted(async () => {
+    const loadPlayer = async () => {
+        if (disposed || (loading.value && primaryStarted)) return;
+        primaryStarted = true;
+        controller.abort();
+        const current = new AbortController();
+        controller = current;
+        const active = () => !disposed && !current.signal.aborted;
+        loading.value = true;
+        error.value = null;
         try {
-            await Promise.all([
+            const results = await Promise.allSettled([
                 api.players
                     .show(props.config.sport, props.playerId, {
-                        init: { signal: controller.signal },
+                        init: { signal: current.signal },
                     })
                     .then((response) => {
-                        if (!isActive()) return;
+                        if (!active()) return;
+                        if (!response?.data)
+                            throw new Error(
+                                'Player information could not be loaded.',
+                            );
                         playerData.value = normalizePlayer(
                             response?.data ?? null,
                         );
@@ -113,30 +151,41 @@ export function usePlayerPageData(props: PlayerPageProps) {
                             player_id: props.playerId,
                             per_page: 100,
                         },
-                        init: { signal: controller.signal },
+                        init: { signal: current.signal },
                     })
                     .then((response) => {
-                        if (!isActive()) return;
+                        if (!active()) return;
+                        if (!response)
+                            throw new Error(
+                                'Player game log could not be loaded.',
+                            );
                         gameLogs.value = (response?.data ?? []).map(
                             normalizeStatRow,
                         );
                     }),
             ]);
+            const failure = results.find(
+                (result) => result.status === 'rejected',
+            );
+            if (failure?.status === 'rejected') throw failure.reason;
         } catch (e) {
-            if (!isActive()) return;
+            if (!active()) return;
             error.value =
                 e instanceof Error ? e.message : 'Failed to load player data';
         } finally {
-            if (isActive()) {
+            if (active()) {
                 loading.value = false;
                 scheduleSupplementalData();
             }
         }
-    });
+    };
+    let primaryStarted = false;
+    onMounted(() => void loadPlayer());
 
     onBeforeUnmount(() => {
         disposed = true;
         controller.abort();
+        supplementalController.abort();
         if (supplementalIdleHandle !== null && 'cancelIdleCallback' in window) {
             window.cancelIdleCallback(supplementalIdleHandle);
         }
@@ -153,5 +202,9 @@ export function usePlayerPageData(props: PlayerPageProps) {
         leaderboardRanks,
         loading,
         error,
+        loadPlayer,
+        supplementalLoading,
+        supplementalError,
+        loadSupplementalData,
     };
 }

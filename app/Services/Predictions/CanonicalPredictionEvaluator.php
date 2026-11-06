@@ -7,6 +7,7 @@ use App\Models\CanonicalPrediction;
 use App\Models\PredictionEvaluation;
 use App\Models\PredictionMarket;
 use App\Models\SportEventResult;
+use App\Services\CBB\Predictions\CbbPregameMarketSnapshot;
 use App\Services\CFB\Predictions\CfbCandidateReview;
 use App\Services\CFB\Predictions\CfbForecastCandidates;
 use Illuminate\Support\Collection;
@@ -19,6 +20,8 @@ class CanonicalPredictionEvaluator
     public const CFB_MARKET_SCORING_VERSION = 'canonical-cfb-candidates-v1';
 
     public const NFL_MARKET_SCORING_VERSION = 'canonical-nfl-market-v2';
+
+    public const CBB_MARKET_SCORING_VERSION = 'canonical-cbb-market-v1';
 
     public function __construct(private readonly CanonicalPayloadHasher $hasher) {}
 
@@ -151,8 +154,8 @@ class CanonicalPredictionEvaluator
             'spread_convention' => $spreadConvention,
         ];
 
-        if ($prediction->sport === 'nfl') {
-            $marketComparison['pregame_market'] = $this->nflPregameMarketComparison(
+        if (in_array($prediction->sport, ['nfl', 'cbb'], true)) {
+            $marketComparison['pregame_market'] = $this->pregameMarketComparison(
                 $prediction,
                 $actualHomeMargin,
                 $actualTotal,
@@ -211,6 +214,10 @@ class CanonicalPredictionEvaluator
             return self::CFB_MARKET_SCORING_VERSION;
         }
 
+        if ($prediction->sport === 'cbb') {
+            return self::CBB_MARKET_SCORING_VERSION;
+        }
+
         return $prediction->sport === 'nfl'
             && data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'pregame_market.available') === true
                 ? self::NFL_MARKET_SCORING_VERSION
@@ -218,7 +225,7 @@ class CanonicalPredictionEvaluator
     }
 
     /** @return array<string, mixed> */
-    private function nflPregameMarketComparison(
+    private function pregameMarketComparison(
         CanonicalPrediction $prediction,
         int $actualHomeMargin,
         int $actualTotal,
@@ -230,6 +237,16 @@ class CanonicalPredictionEvaluator
             'pregame_market',
             [],
         );
+        if ($prediction->sport === 'cbb' && ! array_key_exists('pregame_market', (array) $prediction->calculationRun?->inputSnapshot?->inputs)) {
+            $prediction->loadMissing('sportEvent.cbbGame');
+            $game = $prediction->sportEvent?->cbbGame;
+            if ($game !== null && $prediction->generated_at !== null && $prediction->sportEvent?->starts_at !== null) {
+                $snapshot = app(CbbPregameMarketSnapshot::class)->capture(
+                    $game, $prediction->generated_at, $prediction->sportEvent->starts_at->toImmutable(),
+                );
+                $snapshot['evidence_origin'] = 'archived_quotes_known_at_forecast';
+            }
+        }
         $spread = (array) data_get($snapshot, 'consensus.spread', []);
         $total = (array) data_get($snapshot, 'consensus.total', []);
         $marketHomeLine = $this->optionalNumber($spread['line'] ?? null);
@@ -263,6 +280,7 @@ class CanonicalPredictionEvaluator
 
         return [
             'available' => ($snapshot['available'] ?? false) === true,
+            ...($prediction->sport === 'cbb' ? ['consensus' => $snapshot['consensus'] ?? [], 'quotes' => $snapshot['quotes'] ?? [], 'evidence_origin' => $snapshot['evidence_origin'] ?? 'frozen_input_snapshot', 'market_coverage' => $snapshot['market_coverage'] ?? []] : []),
             'source' => $snapshot['source'] ?? null,
             'event_input_snapshot_id' => $prediction->calculationRun?->inputSnapshot?->public_id,
             'game_odds_snapshot_id' => $snapshot['game_odds_snapshot_id'] ?? null,
@@ -270,6 +288,7 @@ class CanonicalPredictionEvaluator
             'spread' => [
                 'market_home_line' => $marketHomeLine,
                 'model_home_margin' => round($predictedHomeMargin, 4),
+                ...($prediction->sport === 'cbb' ? ['selection_price' => $spreadSide === 'home' ? ($spread['price'] ?? null) : ($spreadSide === 'away' ? data_get($spread, 'opposite_quote.price') : null)] : []),
                 'edge_points' => $spreadEdge === null ? null : round($spreadEdge, 4),
                 'selection' => $spreadSide,
                 'selection_line' => $spreadSelectionLine,
@@ -281,6 +300,7 @@ class CanonicalPredictionEvaluator
             'total' => [
                 'market_line' => $marketTotal,
                 'model_total' => round($predictedTotal, 4),
+                ...($prediction->sport === 'cbb' ? ['selection_price' => $totalSide === 'over' ? ($total['price'] ?? null) : ($totalSide === 'under' ? data_get($total, 'opposite_quote.price') : null)] : []),
                 'edge_points' => $totalEdge === null ? null : round($totalEdge, 4),
                 'selection' => $totalSide,
                 'result_value' => $totalResultValue,

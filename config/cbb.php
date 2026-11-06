@@ -293,6 +293,8 @@ return [
         ],
 
         // Ensemble weights (sum to 1.0)
+        'score_margin' => ['enabled' => false],
+        'pregame_market' => ['maximum_quote_age_minutes' => 2160],
         'elo_weight' => 0.25,
         'efficiency_weight' => 0.40,
         'form_weight' => 0.35,

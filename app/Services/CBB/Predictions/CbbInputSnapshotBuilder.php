@@ -13,10 +13,13 @@ use App\Models\SportEvent;
 use App\Services\CBB\CbbPregameEligibility;
 use App\Services\Predictions\Basketball\BasketballInputSnapshotBuilder;
 use App\Services\Predictions\EstablishedModelTransport;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 
 class CbbInputSnapshotBuilder extends BasketballInputSnapshotBuilder
 {
+    private ?string $marketCapturedAt = null;
+
     public function build(SportEvent $event, CalculationReleaseData $release): EventInputSnapshotData
     {
         $game = $event->cbbGame()->with(['homeTeam', 'awayTeam'])->first();
@@ -30,11 +33,55 @@ class CbbInputSnapshotBuilder extends BasketballInputSnapshotBuilder
             throw new PredictionLifecycleException('CBB canonical kickoff and neutral-site identity must match the linked game.');
         }
 
+        $snapshot = parent::build($event, $release);
+        if (data_get($release->configuration['forecast']['configuration']['cbb.prediction'] ?? [], 'score_margin.enabled') === true) {
+            $game = $this->withFrozenMarket($game, $snapshot);
+        }
+
         return app(EstablishedModelTransport::class)->capture(
-            parent::build($event, $release), $release, 'cbb', CbbFullModelReleaseDefinition::INPUT_SCHEMA_VERSION,
+            $snapshot, $release, 'cbb', CbbFullModelReleaseDefinition::INPUT_SCHEMA_VERSION,
             CbbFullModelReleaseDefinition::FORECAST_SOURCE, CbbFullModelReleaseDefinition::configurationKeys(),
             fn () => app(GeneratePrediction::class)->preview($game),
         );
+    }
+
+    private function withFrozenMarket(Game $game, EventInputSnapshotData $snapshot): Game
+    {
+        $game = clone $game;
+        $market = (array) data_get($snapshot->inputs, 'pregame_market', []);
+        $consensus = (array) ($market['consensus'] ?? []);
+        $home = trim($game->homeTeam->school.' '.$game->homeTeam->mascot);
+        $away = trim($game->awayTeam->school.' '.$game->awayTeam->mascot);
+        $markets = [];
+        foreach (['spread' => 'spreads', 'total' => 'totals'] as $kind => $key) {
+            $quote = $consensus[$kind] ?? null;
+            if (! is_array($quote)) {
+                continue;
+            }
+            $markets[] = ['key' => $key, 'outcomes' => [
+                ['name' => $kind === 'spread' ? $home : 'Over', 'point' => $quote['line'], 'price' => $quote['price']],
+                ['name' => $kind === 'spread' ? $away : 'Under', 'point' => data_get($quote, 'opposite_quote.line'), 'price' => data_get($quote, 'opposite_quote.price')],
+            ]];
+        }
+        $game->odds_data = ['home_team' => $home, 'away_team' => $away,
+            'bookmakers' => [['key' => data_get($consensus, 'spread.bookmaker_key'), 'markets' => $markets]]];
+        $observedAt = data_get($consensus, 'spread.freshness_observed_at');
+        $game->odds_updated_at = is_string($observedAt) ? CarbonImmutable::parse($observedAt) : null;
+
+        return $game;
+    }
+
+    protected function additionalInputs(SportEvent $event, Model $game, CarbonImmutable $capturedAt, CarbonImmutable $cutoffAt, CalculationReleaseData $release): array
+    {
+        $market = app(CbbPregameMarketSnapshot::class)->capture($game, $capturedAt, $cutoffAt);
+        $this->marketCapturedAt = $market['captured_at'] ?? null;
+
+        return ['pregame_market' => $market];
+    }
+
+    protected function additionalSourceTimestamps(SportEvent $event, Model $game): array
+    {
+        return ['pregame_market' => $this->marketCapturedAt];
     }
 
     protected function sport(): string

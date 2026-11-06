@@ -33,13 +33,13 @@ class GameOddsSnapshotRecorder
         if ($latestSnapshot && (string) $latestSnapshot->payload_hash === $payloadHash) {
             // A fresh successful fetch can confirm an unchanged market. Keep
             // that observation immutable instead of letting deduplication make
-            // football quotes permanently stale after their first capture.
+            // pregame quotes permanently stale after their first capture.
             $refreshAfterMinutes = max(1, (int) floor(
                 ($sport === 'cfb'
                     ? (int) config('cfb.predictions.spread_value.maximum_quote_age_minutes', 60)
                     : (int) config('nfl.predictions.pregame_market.maximum_quote_age_minutes', 60)) / 2,
             ));
-            if (! in_array($sport, ['nfl', 'cfb'], true)
+            if (! in_array($sport, ['nfl', 'cfb', 'cbb'], true)
                 || $latestSnapshot->captured_at === null
                 || $latestSnapshot->captured_at->gt($capturedAt->copy()->subMinutes($refreshAfterMinutes))) {
                 return null;

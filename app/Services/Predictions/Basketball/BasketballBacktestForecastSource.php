@@ -42,7 +42,7 @@ class BasketballBacktestForecastSource
             ->where("{$sport}_games.status", 'STATUS_FINAL')->whereNotNull("{$sport}_games.home_score")->whereNotNull("{$sport}_games.away_score")
             ->where('predictions.generated_at', '<=', now())->where('predictions.published_at', '<=', now())
             ->when($replayLimit !== null, fn ($query) => $query->whereHas('sportEvent.cbbGame.plays')->reorder()->orderByDesc('cbb_games.game_date')->orderByDesc('cbb_games.id'))
-            ->withOnly(['markets', 'calculationRun:id,event_input_snapshot_id,calculation_release_id,status',
+            ->withOnly(['markets', 'latestEvaluation', 'calculationRun:id,event_input_snapshot_id,calculation_release_id,status',
                 'calculationRun.inputSnapshot', 'calculationRun.release:id,status', 'sportEvent:id,starts_at',
                 "sportEvent.{$sport}Game:id,sport_event_id,season,season_type,home_team_id,away_team_id,home_score,away_score,game_date,game_time",
                 "sportEvent.{$sport}Game.homeTeam:id,abbreviation,".($sport === 'cbb' ? 'school' : ($sport === 'wnba' ? 'location,name' : 'location')), "sportEvent.{$sport}Game.awayTeam:id,abbreviation,".($sport === 'cbb' ? 'school' : ($sport === 'wnba' ? 'location,name' : 'location'))])
@@ -82,6 +82,10 @@ class BasketballBacktestForecastSource
             return null;
         }
         $market = data_get($input->inputs, 'pregame_market.available') === true ? (array) data_get($input->inputs, 'pregame_market.consensus', []) : [];
+        if ($sport === 'cbb' && ! array_key_exists('pregame_market', (array) $input->inputs)
+            && data_get($prediction->latestEvaluation?->market_comparison, 'pregame_market.available') === true) {
+            $market = (array) data_get($prediction->latestEvaluation->market_comparison, 'pregame_market.consensus', []);
+        }
         $homeLine = $this->number(data_get($market, 'spread.line'));
         $moneyline = $prediction->markets->first(fn ($m) => $m->market_type === 'moneyline' && $m->selection === 'home');
 

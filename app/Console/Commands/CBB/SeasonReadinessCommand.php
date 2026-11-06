@@ -33,6 +33,9 @@ class SeasonReadinessCommand extends Command
             ->whereIn('game_id', $games->pluck('id'))->orderByDesc('id')->get()->unique('prediction_id');
         $native = app(PredictionDeliverySource::class)->usesCanonical('cbb');
         $available = $native ? app(CanonicalSportPredictionQuery::class)->queryForSport('cbb')->reorder()->pluck('cbb_games.id')->all() : [];
+        $marketCoverage = $native ? app(CanonicalSportPredictionQuery::class)->queryForSport('cbb')
+            ->whereIn('cbb_games.id', $upcoming->pluck('id'))->get()
+            ->map(fn ($prediction) => (array) data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'pregame_market.market_coverage', [])) : collect();
         $missing = $upcoming->filter(fn (Game $game): bool => $native ? ! in_array($game->id, $available, true) : $game->prediction === null)->count();
         $issues = [];
         if ($missing > 0) {
@@ -61,6 +64,8 @@ class SeasonReadinessCommand extends Command
             'observed_pregame_snapshots' => $snapshots->where('pregame_safe', true)->count(),
             'reconstructed_snapshots' => $snapshots->filter(fn ($snapshot): bool => data_get($snapshot->lineage_metadata, 'run_type') === 'historical_reconstruction')->count(),
             'provisional_predictions' => $provisional,
+            'upcoming_frozen_spread_lines' => $marketCoverage->where('spread', true)->count(),
+            'upcoming_frozen_total_lines' => $marketCoverage->where('total', true)->count(),
             'upcoming_missing_odds' => $upcoming->whereNull('odds_updated_at')->count(),
             'upcoming_stale_odds' => $upcoming->filter(fn (Game $game): bool => $game->odds_updated_at !== null && $game->odds_updated_at->lt(now()->subHours(36)))->count(),
             'issues' => $issues,

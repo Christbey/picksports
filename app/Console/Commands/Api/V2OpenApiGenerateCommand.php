@@ -24,7 +24,7 @@ class V2OpenApiGenerateCommand extends Command
         'games' => ['status', 'season', 'from_date', 'to_date', 'per_page'],
         'predictions' => ['season', 'season_type', 'week', 'from_date', 'to_date', 'status', 'team_id', 'game_id', 'include', 'market', 'per_page'],
         'teams' => ['conference', 'division', 'league', 'search', 'per_page'],
-        'players' => ['season', 'team_id', 'position', 'status', 'search', 'per_page'],
+        'players' => ['team_id', 'position', 'status', 'search', 'per_page'],
         'metrics.teams' => ['season', 'season_type', 'team_id', 'per_page'],
         'stats' => ['season', 'season_type', 'week', 'from_date', 'to_date', 'game_id', 'team_id', 'player_id', 'stat_type', 'team_type', 'per_page'],
         'season-averages' => ['season', 'season_type', 'team_id', 'per_page'],
@@ -375,6 +375,9 @@ class V2OpenApiGenerateCommand extends Command
     {
         if (in_array($routeName, ['v2.sports.games.live-betting.show', 'v2.sports.games.live-snapshot.show', 'v2.sports.games.research.show'], true)) {
             return [];
+        }
+        if ($routeName === 'v2.sports.players.index') {
+            return ['season', ...$this->queryParametersByFamily['players']];
         }
         if ($routeName === 'v2.sports.teams.players.index') {
             return ['season', 'position', 'status', 'search', 'per_page'];

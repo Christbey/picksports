@@ -5289,14 +5289,6 @@
                         }
                     },
                     {
-                        "name": "season",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer"
-                        }
-                    },
-                    {
                         "name": "team_id",
                         "in": "query",
                         "required": false,

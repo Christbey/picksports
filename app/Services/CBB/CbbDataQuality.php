@@ -3,6 +3,7 @@
 namespace App\Services\CBB;
 
 use App\Models\CBB\Game;
+use App\Support\Sports\CbbSeasonTypes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -19,7 +20,7 @@ class CbbDataQuality
     public function reconciledGames(Builder $query): Builder
     {
         return $this->realGames($query)->where('status', 'STATUS_FINAL')
-            ->whereIn('season_type', [2, 3, 'regular', 'regular_season', 'postseason'])
+            ->whereIn('season_type', CbbSeasonTypes::analytics())
             ->whereDate('game_date', '<=', now('UTC')->toDateString())
             ->whereNotNull('home_score')->whereNotNull('away_score')
             ->has('teamStats', '=', 2)

@@ -4,6 +4,7 @@ namespace App\Services\CBB;
 
 use App\Models\CBB\Game;
 use App\Models\CBB\TeamMetric;
+use App\Support\Sports\CbbSeasonTypes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -80,7 +81,7 @@ class CbbSeasonInputs
         $quality = app(CbbDataQuality::class);
 
         return $quality->reconciledGames(Game::query())->where('season', $season)
-            ->whereIn('season_type', [2, 3, 'regular', 'postseason'])
+            ->whereIn('season_type', CbbSeasonTypes::analytics())
             ->where('game_date', '<', $target->getRawOriginal('game_date'))
             ->where(fn (Builder $query) => $query->where('home_team_id', $teamId)->orWhere('away_team_id', $teamId))
             ->with('teamStats')->orderBy('game_date')->orderBy('id')->get()

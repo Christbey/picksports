@@ -39,17 +39,17 @@ function cbbSeasonInputFinal(Team $home, Team $away, string $date, int $season, 
     return $game;
 }
 
-it('uses reconciled regressed prior-season inputs on opening day', function (): void {
-    cbbSeasonInputFinal($this->home, $this->away, '2026-03-01', 2026);
+it('uses reconciled regressed prior-season inputs on opening day', function (string $seasonType): void {
+    cbbSeasonInputFinal($this->home, $this->away, '2026-03-01', 2026)->update(['season_type' => $seasonType]);
     $result = app(CbbSeasonInputs::class)->forTeam($this->home->id, $this->game);
     expect($result['evidence'])->toMatchArray(['source' => 'prior_season', 'current_games' => 0, 'prior_games' => 1, 'provisional' => true])
         ->and((float) $result['metric']->offensive_efficiency)->toBe(110.0)
         ->and((float) $result['metric']->defensive_efficiency)->toBe(95.0);
-});
+})->with(['2', 'Regular Season', 'regular_season']);
 
 it('excludes corrupt historical boxes and does not use target or future results', function (): void {
     $bad = cbbSeasonInputFinal($this->home, $this->away, '2026-03-01', 2026);
-    $bad->update(['home_score' => 99]);
+    $bad->update(['home_score' => 99, 'season_type' => 'Regular Season']);
     cbbSeasonInputFinal($this->home, $this->away, '2026-11-03', 2027);
     cbbSeasonInputFinal($this->home, $this->away, '2026-11-04', 2027);
     $result = app(CbbSeasonInputs::class)->forTeam($this->home->id, $this->game);

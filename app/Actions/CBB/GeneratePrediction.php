@@ -91,7 +91,11 @@ class GeneratePrediction extends AbstractCollegeBasketballPredictionGenerator
 
     protected function modelVersion(): string
     {
-        return config('cbb.prediction.score_margin.enabled', false) ? 'cbb-score-margin-v1' : parent::modelVersion();
+        if (! config('cbb.prediction.score_margin.enabled', false)) {
+            return parent::modelVersion();
+        }
+
+        return config('cbb.prediction.score_margin.peer_prior.enabled', false) ? 'cbb-score-margin-v2' : 'cbb-score-margin-v1';
     }
 
     protected function calculateWinProbability(float $spread): float

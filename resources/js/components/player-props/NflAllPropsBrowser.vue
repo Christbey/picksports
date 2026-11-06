@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DataRecovery from '@/components/DataRecovery.vue';
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -125,17 +126,19 @@ onBeforeUnmount(() => {
                 recommended bet. Missing prices remain unavailable.
             </p>
         </div>
-        <p role="status" class="text-sm text-muted-foreground">
+        <p v-if="!error" role="status" class="text-sm text-muted-foreground">
             {{
                 loading
                     ? 'Loading all props…'
                     : `${total} stored quotes · page ${page} of ${lastPage}`
             }}
         </p>
-        <div v-if="error" role="alert">
-            <p>{{ error }}</p>
-            <Button variant="outline" @click="load">Retry</Button>
-        </div>
+        <DataRecovery
+            v-if="error"
+            :message="error"
+            :busy="loading"
+            @retry="load"
+        />
         <p
             v-else-if="!loading && !rows.length"
             class="text-sm text-muted-foreground"

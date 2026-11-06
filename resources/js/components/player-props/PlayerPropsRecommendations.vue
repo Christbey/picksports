@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DataRecovery from '@/components/DataRecovery.vue';
 import { BarChart3 } from 'lucide-vue-next';
 
 import { Button } from '@/components/ui/button';
@@ -40,23 +41,28 @@ const toggleModelDetails = (id: number) => {
 
 <template>
     <section v-if="board.selectedView === 'recommendations'" class="space-y-6">
-        <p
-            v-if="
-                board.selectedView === 'recommendations' &&
-                board.error &&
-                board.recommendations.length
-            "
-            role="alert"
-            class="text-sm text-amber-700 dark:text-amber-300"
+        <h3
+            v-if="board.error && !board.recommendations.length"
+            class="text-xl font-semibold tracking-tight"
         >
-            {{ board.error }} Showing the previous results.
-        </p>
+            Unable To Load Player Props
+        </h3>
+        <DataRecovery
+            v-if="board.error"
+            :message="board.error"
+            :busy="board.loading"
+            :stale="board.recommendations.length > 0"
+            @retry="board.loadBoard"
+        />
         <div
             v-if="
                 board.selectedView === 'recommendations' &&
                 board.loading &&
                 board.recommendations.length === 0
             "
+            role="status"
+            aria-label="Loading player props"
+            aria-busy="true"
             class="py-16 text-center"
         >
             <p class="text-muted-foreground">Loading player props...</p>
@@ -65,20 +71,7 @@ const toggleModelDetails = (id: number) => {
         <div
             v-else-if="
                 board.selectedView === 'recommendations' &&
-                board.error &&
-                board.recommendations.length === 0
-            "
-            class="py-16 text-center"
-        >
-            <h3 class="mb-2 text-xl font-semibold tracking-tight">
-                Unable To Load Player Props
-            </h3>
-            <p class="text-muted-foreground">{{ board.error }}</p>
-        </div>
-
-        <div
-            v-else-if="
-                board.selectedView === 'recommendations' &&
+                !board.error &&
                 board.recommendations.length === 0
             "
             class="py-16 text-center"
@@ -92,7 +85,7 @@ const toggleModelDetails = (id: number) => {
             </p>
         </div>
 
-        <template v-else-if="board.selectedView === 'recommendations'">
+        <template v-else-if="board.recommendations.length > 0">
             <p
                 v-if="board.searchedRecommendations.length === 0"
                 class="py-12 text-center text-muted-foreground"

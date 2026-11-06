@@ -52,6 +52,7 @@ export function useNbaFutures() {
     const forecasts = ref<PlayoffForecast[]>([]);
     const loading = ref(true);
     const error = ref<string | null>(null);
+    const notice = ref<string | null>(null);
     const selectedSeason = ref<number>(new Date().getFullYear());
     const sortMode = ref<'model' | 'edge'>('model');
     const onlyPlusEv = ref(false);
@@ -240,6 +241,7 @@ export function useNbaFutures() {
 
         loading.value = true;
         error.value = null;
+        notice.value = null;
 
         try {
             const payload = await api.forecasts.index<PlayoffForecast>('nba', {
@@ -278,10 +280,12 @@ export function useNbaFutures() {
                 selectedSeason.value = availableSeasons.value[0];
             }
 
-            if (forecasts.value.length === 0) {
-                error.value = `No NBA futures rows found for season ${requestedSeason}.`;
-            } else if (fallbackApplied && resolvedSeason !== requestedSeason) {
-                error.value = `No rows for ${requestedSeason}; showing latest available season ${resolvedSeason}.`;
+            if (
+                forecasts.value.length &&
+                fallbackApplied &&
+                resolvedSeason !== requestedSeason
+            ) {
+                notice.value = `No rows for ${requestedSeason}; showing latest available season ${resolvedSeason}.`;
             }
         } catch (e) {
             if (e instanceof DOMException && e.name === 'AbortError') {
@@ -317,6 +321,7 @@ export function useNbaFutures() {
     return {
         loading,
         error,
+        notice,
         selectedSeason,
         sortMode,
         onlyPlusEv,

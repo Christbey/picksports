@@ -15,12 +15,19 @@ const {
     showEmptyClearAction,
     gameHref,
     loading,
+    error,
     config,
 } = usePredictionBoardContext();
 </script>
 
 <template>
-    <div v-if="loading" class="grid gap-4">
+    <div
+        v-if="loading"
+        role="status"
+        aria-label="Loading predictions"
+        aria-busy="true"
+        class="grid gap-4"
+    >
         <Card v-for="i in 3" :key="i">
             <CardHeader>
                 <Skeleton class="h-4 w-48" />
@@ -33,7 +40,7 @@ const {
     </div>
 
     <div
-        v-else-if="filteredPredictions.length > 0"
+        v-else-if="!error && filteredPredictions.length > 0"
         class="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card"
     >
         <template
@@ -49,7 +56,7 @@ const {
         </template>
     </div>
 
-    <Card v-else class="border-dashed">
+    <Card v-else-if="!error" class="border-dashed">
         <CardContent class="flex flex-col items-center gap-3 py-12 text-center">
             <div class="rounded-full bg-muted p-3 text-muted-foreground">
                 <CalendarX2

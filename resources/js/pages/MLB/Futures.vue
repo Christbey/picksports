@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
 import PredictionsPageShell from '@/components/predictions/PredictionsPageShell.vue';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import DataRecovery from '@/components/DataRecovery.vue';
 import { Skeleton } from '@/components/ui/skeleton';
 import { provide } from 'vue';
 import { useMlbFutures, mlbFuturesKey } from '@/composables/useMlbFutures';
@@ -12,7 +12,7 @@ import MlbFuturesForecasts from '@/components/predictions/MlbFuturesForecasts.vu
 import MlbFuturesTitleOdds from '@/components/predictions/MlbFuturesTitleOdds.vue';
 const state = useMlbFutures();
 provide(mlbFuturesKey, state);
-const { loading, error } = state;
+const { loading, error, forecasts, fetchForecasts } = state;
 </script>
 <template>
     <Head title="MLB Futures" />
@@ -28,15 +28,31 @@ const { loading, error } = state;
         <div class="space-y-5">
             <MlbFuturesFilters />
 
-            <Alert v-if="error" variant="destructive">
-                <AlertDescription>{{ error }}</AlertDescription>
-            </Alert>
+            <DataRecovery
+                v-if="error"
+                :message="error"
+                :busy="loading"
+                @retry="fetchForecasts"
+            />
 
-            <div v-if="loading" class="space-y-3">
+            <div
+                v-if="loading"
+                role="status"
+                aria-label="Loading futures"
+                aria-busy="true"
+                class="space-y-3"
+            >
                 <Skeleton v-for="i in 8" :key="i" class="h-12 w-full" />
             </div>
 
-            <template v-else>
+            <p
+                v-else-if="!error && !forecasts.length"
+                role="status"
+                class="py-12 text-center text-muted-foreground"
+            >
+                No futures available for this season.
+            </p>
+            <template v-else-if="!error">
                 <MlbFuturesSummary />
 
                 <MlbFuturesBreakdown />

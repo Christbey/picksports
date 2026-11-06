@@ -179,10 +179,14 @@ test('loading, failure, stale-data and empty-search states remain distinct', asy
     });
     assert.match(failed, /Unable To Load Player Props/);
     assert.match(failed, /Offline/);
+    assert.match(failed, /role="alert"/);
+    assert.match(failed, /Try again/);
     assert.doesNotMatch(failed, /Test Player|No Recommendations Available/);
     const stale = await render({ state: { ...stateFor(), error: 'Offline' } });
     assert.match(stale, /Showing the previous results/);
     assert.match(stale, /Test Player/);
+    assert.match(stale, /role="status"/);
+    assert.match(stale, /Try again/);
     const empty = await render({
         state: {
             ...stateFor([]),

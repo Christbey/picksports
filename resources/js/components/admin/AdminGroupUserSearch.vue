@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UserSearchInput from '@/components/UserSearchInput.vue';
 import { Button } from '@/components/ui/button';
 import { useAdminSettingsContext } from '@/composables/useAdminSettings';
 import type { AdminGroup } from '@/types/admin-settings';
@@ -7,7 +8,7 @@ const {
     groupUserSearch,
     isSearchingGroupUsers,
     groupUserSuggestions,
-    handleAssignableUserInput,
+    setGroupUserSearch,
     selectAssignableUser,
     assignMemberForm,
     addUserToGroup,
@@ -24,42 +25,15 @@ const {
             Add Existing User
         </p>
         <div class="mt-2 flex flex-col gap-3 sm:flex-row sm:items-start">
-            <div class="relative flex-1">
-                <input
-                    :value="groupUserSearch[group.id] ?? ''"
-                    type="text"
-                    placeholder="Search existing users by name or email"
-                    autocomplete="off"
-                    class="w-full rounded-lg border border-sidebar-border bg-white px-3 py-2 text-sm dark:bg-sidebar"
-                    @input="handleAssignableUserInput(group.id, $event)"
-                />
-                <div
-                    v-if="
-                        (isSearchingGroupUsers[group.id] ?? false) ||
-                        (groupUserSuggestions[group.id]?.length ?? 0) > 0
-                    "
-                    class="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-sidebar-border bg-white shadow-lg dark:bg-sidebar"
-                >
-                    <div
-                        v-if="isSearchingGroupUsers[group.id] ?? false"
-                        class="px-3 py-2 text-xs text-muted-foreground"
-                    >
-                        Searching...
-                    </div>
-                    <button
-                        v-for="user in groupUserSuggestions[group.id] ?? []"
-                        :key="user.id"
-                        type="button"
-                        class="block w-full border-t border-sidebar-border px-3 py-2 text-left text-sm first:border-t-0 hover:bg-sidebar-accent"
-                        @click="selectAssignableUser(group.id, user)"
-                    >
-                        <span class="font-medium">{{ user.name }}</span>
-                        <span class="ml-1 text-muted-foreground">{{
-                            user.email
-                        }}</span>
-                    </button>
-                </div>
-            </div>
+            <UserSearchInput
+                :model-value="groupUserSearch[group.id] ?? ''"
+                :aria-label="'Search existing users for ' + group.name"
+                placeholder="Search existing users by name or email"
+                :suggestions="groupUserSuggestions[group.id] ?? []"
+                :loading="isSearchingGroupUsers[group.id] ?? false"
+                @update:model-value="setGroupUserSearch(group.id, $event)"
+                @select="selectAssignableUser(group.id, $event)"
+            />
             <Button
                 type="button"
                 :disabled="

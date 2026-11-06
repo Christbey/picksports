@@ -11,13 +11,29 @@ const { chromium } = await import(
 );
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const baseline = process.env.ADMIN_SETTINGS_BASELINE_REF;
-const original = baseline
-    ? execFileSync(
-          'git',
-          ['show', `${baseline}:resources/js/pages/settings/Admin.vue`],
-          { cwd: root, encoding: 'utf8' },
-      )
-    : '';
+const beforePaths = {
+    AdminSettings: 'resources/js/pages/settings/Admin.vue',
+    AdminBracketGroups: 'resources/js/components/admin/AdminBracketGroups.vue',
+    AdminGroupCard: 'resources/js/components/admin/AdminGroupCard.vue',
+    AdminGroupUserSearch:
+        'resources/js/components/admin/AdminGroupUserSearch.vue',
+    AdminFoundingUsers: 'resources/js/components/admin/AdminFoundingUsers.vue',
+};
+function beforeSource(name) {
+    let source = execFileSync(
+        'git',
+        ['show', `${baseline}:${beforePaths[name]}`],
+        { cwd: root, encoding: 'utf8' },
+    );
+    for (const key of Object.keys(beforePaths).filter(
+        (key) => key !== 'AdminSettings',
+    ))
+        source = source.replaceAll(
+            `@/components/admin/${key}.vue`,
+            `@/components/admin/__Before${key}.vue`,
+        );
+    return source;
+}
 const manifest = JSON.parse(
     readFileSync(`${root}public/build/manifest.json`, 'utf8'),
 );
@@ -42,11 +58,13 @@ const server = await createServer({
         {
             name: 'admin-settings-fixture',
             resolveId(id) {
-                if (id.endsWith('__BeforeAdminSettings.vue'))
-                    return `${root}resources/js/pages/settings/__BeforeAdminSettings.vue`;
+                const name = id.match(/__Before(\w+)\.vue$/)?.[1];
+                if (name && beforePaths[name])
+                    return `${root}resources/js/components/admin/__Before${name}.vue`;
             },
             load(id) {
-                if (id.endsWith('__BeforeAdminSettings.vue')) return original;
+                const name = id.match(/__Before(\w+)\.vue$/)?.[1];
+                if (name && beforePaths[name]) return beforeSource(name);
             },
             configureServer(vite) {
                 vite.middlewares.use(
@@ -140,7 +158,7 @@ async function interactions(page) {
         ]),
     );
     assert.equal(
-        await page.getByRole('button', { name: /Stale User/ }).count(),
+        await page.getByRole('option', { name: /Stale User/ }).count(),
         0,
     );
     await search.fill('New user');
@@ -154,10 +172,8 @@ async function interactions(page) {
             { id: 91, name: 'New User', email: 'new@example.com' },
         ]),
     );
-    await page
-        .getByRole('button', { name: /New User.*new@example.com/ })
-        .focus();
-    await page.keyboard.press('Enter');
+    await search.press('ArrowDown');
+    await search.press('Enter');
     assert.equal(
         await page.locator('#founding-user-email').inputValue(),
         'new@example.com',
@@ -222,8 +238,9 @@ async function interactions(page) {
             { id: 51, name: 'Alpha User', email: 'alpha@example.com' },
         ]);
     });
+    await groupInputs.nth(0).focus();
     await page
-        .getByRole('button', { name: /Alpha User.*alpha@example.com/ })
+        .getByRole('option', { name: /Alpha User.*alpha@example.com/ })
         .click();
     assert.equal(
         await page
@@ -250,8 +267,9 @@ async function interactions(page) {
     await page.evaluate(() => __adminSettingsSuccess());
     assert.equal(await groupInputs.nth(0).inputValue(), '');
     assert.equal(await groupInputs.nth(1).inputValue(), 'Bravo');
+    await groupInputs.nth(1).focus();
     await page
-        .getByRole('button', { name: /Bravo User.*bravo@example.com/ })
+        .getByRole('option', { name: /Bravo User.*bravo@example.com/ })
         .click();
     await page
         .getByRole('button', { name: 'Add User', exact: true })
@@ -323,6 +341,7 @@ try {
     browser = await chromium.launch({
         headless: true,
         channel: process.env.PLAYWRIGHT_CHANNEL,
+        args: ['--disable-gpu', '--force-color-profile=srgb'],
     });
     const context = await browser.newContext({
         permissions: ['clipboard-read', 'clipboard-write'],

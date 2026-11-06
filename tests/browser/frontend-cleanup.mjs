@@ -239,7 +239,7 @@ try {
                     'Lineage',
                 ]) {
                     await page
-                        .getByRole('button', { name: tab, exact: true })
+                        .getByRole('tab', { name: tab, exact: true })
                         .click();
                     for (const dark of [false, true]) {
                         await page.evaluate(

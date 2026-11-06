@@ -119,29 +119,31 @@ class PublicSportPageController extends Controller
                 DB::raw($playerNameColumn.' as player_name'),
             ])
             ->where('injuries.is_active', true)
-            ->get()
-            ->map(function (object $row) use ($sport): array {
-                $impact = $this->injuryImpactScorer->describe(
-                    $sport,
-                    (int) ($row->player_id ?? 0),
-                    (string) ($row->status ?? '')
-                );
+            ->get();
 
-                return [
-                    'id' => (int) $row->id,
-                    'player_name' => $row->player_name ?: 'Unknown Player',
-                    'team_abbreviation' => $row->team_abbreviation,
-                    'status' => $row->status,
-                    'detail' => $row->detail,
-                    'type' => $row->type,
-                    'injury_date' => $row->injury_date,
-                    'return_date' => $row->return_date,
-                    'source_updated_at' => $this->normalizeDateTime($row->source_updated_at),
-                    'updated_at' => $this->normalizeDateTime($row->updated_at),
-                    'impact_score' => $impact['score'],
-                    'impact_label' => $impact['label'],
-                ];
-            });
+        $this->injuryImpactScorer->preload($sport, $rows->pluck('player_id')->filter()->map(fn ($id): int => (int) $id)->all());
+        $rows = $rows->map(function (object $row) use ($sport): array {
+            $impact = $this->injuryImpactScorer->describe(
+                $sport,
+                (int) ($row->player_id ?? 0),
+                (string) ($row->status ?? '')
+            );
+
+            return [
+                'id' => (int) $row->id,
+                'player_name' => $row->player_name ?: 'Unknown Player',
+                'team_abbreviation' => $row->team_abbreviation,
+                'status' => $row->status,
+                'detail' => $row->detail,
+                'type' => $row->type,
+                'injury_date' => $row->injury_date,
+                'return_date' => $row->return_date,
+                'source_updated_at' => $this->normalizeDateTime($row->source_updated_at),
+                'updated_at' => $this->normalizeDateTime($row->updated_at),
+                'impact_score' => $impact['score'],
+                'impact_label' => $impact['label'],
+            ];
+        });
 
         return [
             'top' => $rows

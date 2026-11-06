@@ -573,9 +573,8 @@ $scheduleDailySeasonJob(
     $cbbInSeason,
     'CBB: Sync Tournament Structure'
 );
-$scheduleWeeklySeasonJob(
-    'espn:sync-cbb-players',
-    0,
+$scheduleDailySeasonJob(
+    "espn:sync-cbb-players --season={$basketballSeasonYear} --include-prior --sync",
     '02:15',
     $cbbInSeason,
     'CBB: Sync Players'

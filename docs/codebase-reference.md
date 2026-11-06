@@ -584,6 +584,8 @@ Important field semantics:
 
 ### CBB / WCBB
 
+CBB season roster membership is stored in `cbb_roster_snapshots` and `cbb_roster_entries`, separately from the mutable player directory. Team-player API reads use the selected ending-year season and report snapshot provenance/coverage. Historical roster reads use the observed season profile and team, even for players who later transferred. Roster sync never deletes identities or box-score history. CBB forecast roster evidence is descriptive/experimental until separately validated; the incumbent spread calculation remains active.
+
 Primary models:
 - [app/Models/CBB/Team.php](/Users/bey/Herd/github/picksports/app/Models/CBB/Team.php)
 - [app/Models/CBB/Game.php](/Users/bey/Herd/github/picksports/app/Models/CBB/Game.php)

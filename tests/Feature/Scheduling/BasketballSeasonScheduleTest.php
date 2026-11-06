@@ -36,6 +36,11 @@ it('schedules basketball predictions for the ending year with active preseason c
             ->and($coverage->filtersPass(app()))->toBeTrue()
             ->and($coverage->onOneServer)->toBeTrue()->and($coverage->withoutOverlapping)->toBeTrue();
     }
+    $rosters = $events->firstWhere('description', 'CBB: Sync Players');
+    expect($rosters->command)->toContain('--season=2027', '--include-prior', '--sync')
+        ->and($rosters->expression)->toBe('15 2 * * *')
+        ->and($rosters->filtersPass(app()))->toBeTrue()
+        ->and($rosters->onOneServer)->toBeTrue()->and($rosters->withoutOverlapping)->toBeTrue();
     $recovery = $events->firstWhere('description', 'NBA: Recover Metrics and Upcoming Predictions');
     expect($recovery->expression)->toBe('17 * * * *')
         ->and($recovery->runInBackground)->toBeFalse()

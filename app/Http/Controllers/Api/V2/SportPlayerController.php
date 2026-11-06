@@ -39,7 +39,8 @@ class SportPlayerController extends Controller
                 ],
                 'tier' => [],
                 'freshness' => [],
-                'warnings' => [],
+                'warnings' => $players->rosterEvidence($context, $filters)['warnings'] ?? [],
+                ...($context->slug === 'cbb' ? ['roster' => $players->rosterEvidence($context, $filters)] : []),
             ],
         ]);
     }
@@ -93,7 +94,8 @@ class SportPlayerController extends Controller
                 ],
                 'tier' => [],
                 'freshness' => [],
-                'warnings' => [],
+                'warnings' => $players->rosterEvidence($context, ['team_id' => (int) $team, ...$filters])['warnings'] ?? [],
+                ...($context->slug === 'cbb' ? ['roster' => $players->rosterEvidence($context, ['team_id' => (int) $team, ...$filters])] : []),
             ],
         ]);
     }

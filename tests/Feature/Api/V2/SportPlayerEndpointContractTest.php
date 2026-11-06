@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\CBB\Player as CbbPlayer;
+use App\Models\CBB\RosterEntry;
+use App\Models\CBB\RosterSnapshot;
 use App\Models\CBB\Team as CbbTeam;
 use App\Models\CFB\Player as CfbPlayer;
 use App\Models\CFB\Team as CfbTeam;
@@ -15,6 +17,7 @@ use App\Models\WCBB\Player as WcbbPlayer;
 use App\Models\WCBB\Team as WcbbTeam;
 use App\Models\WNBA\Player as WnbaPlayer;
 use App\Models\WNBA\Team as WnbaTeam;
+use App\Support\BasketballSeason;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
@@ -183,6 +186,11 @@ it('lists v2 players for a team with sport, team, filter, pagination, freshness,
         'last_name' => 'Player',
         'position' => 'G',
     ]);
+
+    if ($slug === 'cbb') {
+        $snapshot = RosterSnapshot::factory()->create(['team_id' => $team->id, 'season' => BasketballSeason::forDate()]);
+        RosterEntry::factory()->create(['roster_snapshot_id' => $snapshot->id, 'player_id' => $player->id, 'attributes' => ['position' => 'G']]);
+    }
 
     $response = $this->getJson("/api/v2/sports/{$slug}/teams/{$team->id}/players?search=Contract&per_page=5")
         ->assertOk()

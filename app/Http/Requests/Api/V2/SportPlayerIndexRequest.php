@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\V2;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class SportPlayerIndexRequest extends FormRequest
 {
@@ -19,7 +20,8 @@ class SportPlayerIndexRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'team_id' => ['sometimes', 'integer', 'min:1'],
+            'team_id' => [Rule::requiredIf(fn (): bool => $this->route('sport') === 'cbb' && $this->has('season') && ! $this->route('team')), 'integer', 'min:1'],
+            ...($this->route('sport') === 'cbb' ? ['season' => ['sometimes', 'integer', 'min:2000', 'max:2100']] : []),
             'position' => ['sometimes', 'string', 'max:50'],
             'status' => ['sometimes', 'string', 'max:100'],
             'search' => ['sometimes', 'string', 'max:100'],
@@ -34,6 +36,7 @@ class SportPlayerIndexRequest extends FormRequest
     {
         $filters = $this->safe()->only([
             'team_id',
+            'season',
             'position',
             'status',
             'search',
@@ -46,7 +49,7 @@ class SportPlayerIndexRequest extends FormRequest
             }
         }
 
-        foreach (['team_id', 'per_page'] as $key) {
+        foreach (['team_id', 'season', 'per_page'] as $key) {
             if (array_key_exists($key, $filters)) {
                 $filters[$key] = (int) $filters[$key];
             }

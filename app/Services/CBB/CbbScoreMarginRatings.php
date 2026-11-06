@@ -4,6 +4,7 @@ namespace App\Services\CBB;
 
 use App\Models\CBB\Game;
 use App\Models\CBB\Team;
+use App\Services\Sports\SportsDateWindowService;
 use App\Support\Sports\CbbSeasonTypes;
 use Illuminate\Support\Collection;
 
@@ -58,6 +59,7 @@ class CbbScoreMarginRatings
             }
             $this->samples[$key] = [
                 'ratings' => $this->solve($this->edges($currentGames, $homeCourt), $prior, $priorWeight),
+                'prior_ratings' => $prior,
                 'prior_counts' => $priorCounts, 'current_counts' => $this->counts($currentGames),
                 'source_hash' => hash('sha256', $games->toJson().($peerEnabled ? $teams->values()->toJson() : '')), 'source_games' => $games->count(),
                 'prior_season_games' => $priorGames->count(), 'current_season_games' => $currentGames->count(),
@@ -77,10 +79,30 @@ class CbbScoreMarginRatings
                 'classification' => isset($sample['teams'][$id]) ? ['division' => $sample['teams'][$id]->division, 'conference' => $sample['teams'][$id]->conference] : null];
         }
         $available = $sides['home']['rating'] !== null && $sides['away']['rating'] !== null;
+        $baselineMargin = $available ? round($sides['home']['rating'] - $sides['away']['rating'] + ($target->neutral_site ? 0 : $homeCourt), 6) : null;
+        $roster = ['enabled' => (bool) config('cbb.prediction.roster.enabled', false), 'applied' => false];
+        if ($roster['enabled']) {
+            $service = app(CbbRosterStrength::class);
+            $asOf = $service->observationTime();
+            $tipoff = app(SportsDateWindowService::class)->gameDateTimeUtc($target->game_date, $target->game_time);
+            if ($tipoff !== null && $tipoff->lt($asOf)) {
+                $asOf = $tipoff->toImmutable();
+            }
+            foreach (['home' => $target->home_team_id, 'away' => $target->away_team_id] as $side => $teamId) {
+                $roster[$side] = $service->forTeam($teamId, (int) $target->season, $sample['prior_ratings'], $asOf);
+            }
+            if ($available && $roster['home']['available'] && $roster['away']['available']) {
+                $roster['candidate_spread_adjustment'] = round(
+                    $roster['home']['prior_adjustment'] * $priorWeight / ($priorWeight + $sides['home']['current_games'])
+                    - $roster['away']['prior_adjustment'] * $priorWeight / ($priorWeight + $sides['away']['current_games']), 6);
+                $roster['applied'] = (bool) config('cbb.prediction.roster.apply_adjustment', false);
+            }
+        }
 
         return ['version' => $coldStartEnabled ? 'score-margin-v3' : ($peerEnabled ? 'score-margin-v2' : 'score-margin-v1'), 'available' => $available,
             'reason' => $available ? null : 'missing_team_score_history',
-            'home_margin' => $available ? round($sides['home']['rating'] - $sides['away']['rating'] + ($target->neutral_site ? 0 : $homeCourt), 6) : null,
+            'home_margin' => $available ? round($baselineMargin + ($roster['applied'] ? $roster['candidate_spread_adjustment'] : 0), 6) : null,
+            'baseline_home_margin' => $baselineMargin, 'roster' => $roster,
             ...$sides, 'prior_retention' => $retention, 'current_prior_games' => $priorWeight,
             'cutoff_date_exclusive' => $cutoff, 'source_games' => $sample['source_games'], 'source_hash' => $sample['source_hash'],
             'source' => 'completed_score_history', 'probability_validation' => 'uncalibrated',

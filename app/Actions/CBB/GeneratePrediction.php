@@ -95,6 +95,10 @@ class GeneratePrediction extends AbstractCollegeBasketballPredictionGenerator
             return parent::modelVersion();
         }
 
+        if (config('cbb.prediction.roster.enabled', false) && config('cbb.prediction.roster.apply_adjustment', false)) {
+            return 'cbb-roster-v1';
+        }
+
         if (config('cbb.prediction.score_margin.peer_prior.enabled', false)) {
             return config('cbb.prediction.score_margin.cold_start_prior.enabled', false) ? 'cbb-score-margin-v3' : 'cbb-score-margin-v2';
         }

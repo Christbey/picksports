@@ -36,6 +36,11 @@ class Player extends Model
         return $this->belongsTo(Team::class, 'team_id');
     }
 
+    public function rosterEntries(): HasMany
+    {
+        return $this->hasMany(RosterEntry::class);
+    }
+
     public function playerStats(): HasMany
     {
         return $this->hasMany(PlayerStat::class, 'player_id');

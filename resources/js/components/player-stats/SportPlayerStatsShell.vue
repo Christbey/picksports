@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
 import SubscriptionBanner from '@/components/SubscriptionBanner.vue';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import DataRecovery from '@/components/DataRecovery.vue';
 import { provide } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import type { PlayerStatsProps } from '@/types/player-stats';
@@ -13,6 +13,9 @@ const board = usePlayerStats(props);
 provide(playerStatsKey, board);
 const {
     error,
+    loading,
+    players,
+    fetchPlayers,
     searchQuery,
     selectedSeasonType,
     sortDesc,
@@ -84,11 +87,15 @@ const {
                 </span>
             </div>
 
-            <Alert v-if="error" variant="destructive">
-                <AlertDescription>{{ error }}</AlertDescription>
-            </Alert>
+            <DataRecovery
+                v-if="error"
+                :message="error"
+                :busy="loading"
+                :stale="players.length > 0"
+                @retry="fetchPlayers"
+            />
 
-            <PlayerStatsResults />
+            <PlayerStatsResults v-if="!error || players.length > 0" />
         </div>
     </AppLayout>
 </template>

@@ -235,3 +235,46 @@ test('search and sorting reset show-more limits while retaining the complete loa
         delete globalThis.__playerStatsApi;
     }
 });
+
+test('ranking retries preserve selected season and local filters while retaining stale rows', async () => {
+    let fail = false;
+    const calls = [];
+    globalThis.__playerStatsApi = {
+        leaderboards: {
+            playerAvailableSeasons: async () => ({ data: [2025] }),
+            players: async (s, options) => {
+                calls.push(options.query);
+                if (fail) return null;
+                return {
+                    data: [
+                        {
+                            player_id: 1,
+                            games_played: 10,
+                            points_per_game: 0,
+                            player: { full_name: 'Player' },
+                        },
+                    ],
+                };
+            },
+        },
+    };
+    const { app, state: s } = mount();
+    try {
+        await flush();
+        s.searchQuery.value = 'Player';
+        const season = s.selectedSeason.value;
+        fail = true;
+        await s.fetchPlayers();
+        assert.match(s.error.value, /Failed to fetch/);
+        assert.equal(s.players.value.length, 1);
+        fail = false;
+        await s.fetchPlayers();
+        assert.equal(s.error.value, null);
+        assert.equal(s.selectedSeason.value, season);
+        assert.equal(s.searchQuery.value, 'Player');
+        assert.deepEqual(calls.at(-1), calls.at(-2));
+    } finally {
+        app.unmount();
+        delete globalThis.__playerStatsApi;
+    }
+});

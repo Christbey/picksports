@@ -1,8 +1,7 @@
 // Run npm run build first. Synthetic fixtures only; PLAYER_BASELINE_REF enables exact visual comparisons.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import vue from '@vitejs/plugin-vue';
@@ -55,7 +54,15 @@ const server = await createServer({
             },
             load(id) {
                 const name = id.match(/__BeforePlayer(\w+)\.vue$/)?.[1];
-                if (name) return sources[name];
+                if (name)
+                    return sources[name].replaceAll(
+                        "from './",
+                        "from '@/components/" +
+                            (name === 'SportPlayerShell'
+                                ? 'player-page'
+                                : 'player-stats') +
+                            '/',
+                    );
             },
             configureServer(vite) {
                 vite.middlewares.use(
@@ -81,6 +88,9 @@ import {createApp,h} from 'vue';
 import Shell from '/resources/js/components${source}';
 import {playerUi} from '/tests/frontend/fixtures/playerUi.mjs';
 const fixture=playerUi(${JSON.stringify(sport)});globalThis.__playerUiApi=fixture.api;globalThis.__playerUiCalls=fixture.calls;
+globalThis.__playerUiFailures={primary:${JSON.stringify(query.get('failure'))}==='primary',supplemental:${JSON.stringify(query.get('failure'))}==='supplemental',stats:${JSON.stringify(query.get('failure'))}==='stats'};
+for(const [group,key,kind] of [['players','show','primary'],['stats','players','primary'],['players','playerProps','supplemental'],['leaderboards','players',${stats ? '"stats"' : '"supplemental"'}]]){const original=fixture.api[group][key];fixture.api[group][key]=(...args)=>__playerUiFailures[kind]?Promise.resolve(null):original(...args);}
+
 window.requestIdleCallback=callback=>{queueMicrotask(()=>callback({didTimeout:false,timeRemaining:()=>50}));return 7;};
 createApp({setup(){return()=>h(Shell,${stats ? 'fixture.statsProps' : 'fixture.playerProps'},{afterHeader:({player})=>h('p',{'data-testid':'player-details'},'Details for '+player.name)});}}).mount('#app');
 </script></body></html>`,
@@ -113,13 +123,25 @@ createApp({setup(){return()=>h(Shell,${stats ? 'fixture.statsProps' : 'fixture.p
 });
 let browser;
 const images = new Map();
+let lastPng;
 async function screenshot(page) {
+    for (const region of await page
+        .getByRole('region')
+        .filter({ has: page.locator('table') })
+        .all()) {
+        await region.scrollIntoViewIfNeeded();
+        await region.evaluate((el) =>
+            el.scrollTo({ left: 0, behavior: 'instant' }),
+        );
+    }
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
     await page.mouse.move(0, 0);
     await page.addStyleTag({
         content:
             '*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}',
     });
     await page.evaluate(() => document.fonts.ready);
+    await page.screenshot({ animations: 'disabled', fullPage: true });
     let previous;
     for (let n = 0; n < 5; n++) {
         await page.evaluate(
@@ -128,9 +150,32 @@ async function screenshot(page) {
                     requestAnimationFrame(() => requestAnimationFrame(resolve)),
                 ),
         );
-        const hash = createHash('sha256')
-            .update(await page.screenshot({ animations: 'disabled' }))
-            .digest('hex');
+        const png = await page.screenshot({
+            animations: 'disabled',
+            fullPage: true,
+        });
+        lastPng = png;
+        const hash = await page.evaluate(async (base64) => {
+            const picture = new Image();
+            picture.src = 'data:image/png;base64,' + base64;
+            await picture.decode();
+            const canvas = document.createElement('canvas');
+            canvas.width = picture.width;
+            canvas.height = picture.height;
+            const context = canvas.getContext('2d');
+            context.drawImage(picture, 0, 0);
+            const pixels = context.getImageData(
+                0,
+                0,
+                canvas.width,
+                canvas.height,
+            ).data;
+            return Array.from(
+                new Uint8Array(await crypto.subtle.digest('SHA-256', pixels)),
+            )
+                .map((b) => b.toString(16).padStart(2, '0'))
+                .join('');
+        }, png.toString('base64'));
         if (hash === previous) return hash;
         previous = hash;
     }
@@ -141,6 +186,11 @@ try {
     browser = await chromium.launch({
         headless: true,
         channel: process.env.PLAYWRIGHT_CHANNEL,
+        args: [
+            '--disable-gpu',
+            '--force-color-profile=srgb',
+            '--disable-smooth-scrolling',
+        ],
     });
     for (const before of baseline ? [true, false] : [false]) {
         const page = await browser.newPage({
@@ -219,6 +269,7 @@ try {
                         );
                     }
 
+                    await page.evaluate(() => window.scrollTo(0, 0));
                     for (const dark of [false, true]) {
                         await page.evaluate(
                             (value) =>
@@ -230,13 +281,30 @@ try {
                         );
                         const key = `${kind}-${sport}-${width}-${dark}`;
                         const image = await screenshot(page);
-                        if (before) images.set(key, image);
-                        else if (baseline)
+                        if (before) {
+                            images.set(key, image);
+                            writeFileSync(
+                                '/tmp/player-baseline-' + key + '.png',
+                                lastPng,
+                            );
+                            writeFileSync(
+                                '/tmp/player-baseline-' + key + '.html',
+                                await page.locator('#app').innerHTML(),
+                            );
+                        } else if (baseline) {
+                            if (image !== images.get(key)) {
+                                writeFileSync('/tmp/player-after.png', lastPng);
+                                writeFileSync(
+                                    '/tmp/player-after.html',
+                                    await page.locator('#app').innerHTML(),
+                                );
+                            }
                             assert.equal(
                                 image,
                                 images.get(key),
                                 `Layout changed: ${key}`,
                             );
+                        }
                     }
                 }
                 if (kind === 'stats') {
@@ -295,6 +363,40 @@ try {
                 console.log(
                     `${kind} ${sport}: layouts, data and controls ${before ? 'baseline' : 'passed'}`,
                 );
+            }
+        if (!before)
+            for (const failure of ['primary', 'supplemental', 'stats']) {
+                const kind = failure === 'stats' ? 'stats' : 'player';
+                await page.goto(
+                    `http://127.0.0.1:${server.httpServer.address().port}/__player-shell?kind=${kind}&sport=nba&failure=${failure}`,
+                );
+                await page
+                    .getByRole('button', { name: 'Try again', exact: true })
+                    .waitFor();
+                if (failure === 'primary' || failure === 'stats')
+                    assert.equal(await page.locator('table').count(), 0);
+                await page.evaluate(() => {
+                    Object.keys(__playerUiFailures).forEach(
+                        (k) => (__playerUiFailures[k] = false),
+                    );
+                });
+                await page
+                    .getByRole('button', { name: 'Try again', exact: true })
+                    .click();
+                if (kind === 'stats')
+                    await page.locator('tbody tr').first().waitFor();
+                else
+                    await page
+                        .getByText('Season Averages (2 games)', { exact: true })
+                        .waitFor();
+                await page.waitForFunction(
+                    () => !document.body.innerText.includes('Try again'),
+                );
+                if (failure === 'supplemental')
+                    await page
+                        .getByText('Upcoming Props', { exact: true })
+                        .waitFor();
+                console.log(`${kind} ${failure}: retry recovered`);
             }
         await page.close();
     }

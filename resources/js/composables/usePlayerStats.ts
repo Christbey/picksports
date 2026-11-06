@@ -286,6 +286,7 @@ export function usePlayerStats(props: PlayerStatsProps) {
     return {
         ...toRefs(props),
         players,
+        fetchPlayers,
         loading,
         error,
         searchQuery,

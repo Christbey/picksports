@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DataRecovery from '@/components/DataRecovery.vue';
 import { Head } from '@inertiajs/vue3';
 import { Skeleton } from '@/components/ui/skeleton';
 import AppLayout from '@/layouts/AppLayout.vue';
@@ -15,6 +16,10 @@ const {
     gameLogs,
     loading,
     error,
+    loadPlayer,
+    supplementalError,
+    supplementalLoading,
+    loadSupplementalData,
     breadcrumbs,
     seasonSummaryValues,
     gameLogColumns,
@@ -30,14 +35,34 @@ const {
 
             <slot v-if="playerData" name="afterHeader" :player="playerData" />
 
+            <DataRecovery
+                v-if="supplementalError"
+                :message="supplementalError"
+                :busy="supplementalLoading"
+                :stale="playerProps.length > 0"
+                @retry="loadSupplementalData"
+            />
             <PlayerPropsCard :player-props="playerProps" />
 
-            <div v-if="loading" class="space-y-4">
+            <DataRecovery
+                v-if="error"
+                :message="error"
+                :busy="loading"
+                :stale="gameLogs.length > 0"
+                @retry="loadPlayer"
+            />
+            <div
+                v-if="loading"
+                role="status"
+                aria-label="Loading player"
+                aria-busy="true"
+                class="space-y-4"
+            >
                 <Skeleton class="h-32 w-full" />
                 <Skeleton class="h-64 w-full" />
             </div>
 
-            <template v-else>
+            <template v-else-if="!error || gameLogs.length > 0">
                 <PlayerSeasonSummary
                     :season-summary-values="seasonSummaryValues"
                     :games-count="gameLogs.length"
@@ -47,7 +72,7 @@ const {
                     :game-logs="gameLogs"
                     :game-log-columns="gameLogColumns"
                     :player-data="playerData"
-                    :error="error"
+                    :error="null"
                     :config="config"
                 />
             </template>

@@ -295,6 +295,7 @@ return [
         ],
 
         // Ensemble weights (sum to 1.0)
+        'roster' => ['enabled' => false, 'apply_adjustment' => false, 'maximum_age_hours' => 72],
         'score_margin' => ['enabled' => false, 'peer_prior' => ['enabled' => false, 'minimum_teams' => 8], 'cold_start_prior' => ['enabled' => false]],
         'pregame_market' => ['maximum_quote_age_minutes' => 2160],
         'elo_weight' => 0.25,

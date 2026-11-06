@@ -362,6 +362,7 @@ class V2OpenApiGenerateCommand extends Command
                 'in' => 'query',
                 'required' => false,
                 'schema' => $this->queryParameterSchemas[$parameter] ?? ['type' => 'string'],
+                ...($parameter === 'season' && in_array($routeName, ['v2.sports.players.index', 'v2.sports.teams.players.index'], true) ? ['description' => 'CBB team-roster ending-year season; defaults to the current basketball season. Requires team_id on the player directory endpoint.'] : []),
             ])
             ->values()
             ->all();
@@ -374,6 +375,12 @@ class V2OpenApiGenerateCommand extends Command
     {
         if (in_array($routeName, ['v2.sports.games.live-betting.show', 'v2.sports.games.live-snapshot.show', 'v2.sports.games.research.show'], true)) {
             return [];
+        }
+        if ($routeName === 'v2.sports.players.index') {
+            return ['season', ...$this->queryParametersByFamily['players']];
+        }
+        if ($routeName === 'v2.sports.teams.players.index') {
+            return ['season', 'position', 'status', 'search', 'per_page'];
         }
         if ($routeName === 'v2.sports.games.market-history.show') {
             return ['since', 'home_line'];

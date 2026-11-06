@@ -135,3 +135,5 @@ Required means the schema requires the field when submitting that body. Passkey 
 `SecurityReportRequest` accepts a report object or an array of report objects. The browser generates these reports; the success response is `{"ok":true}`.
 
 Native push registration can return **201** for a new registration or **200** for an existing one. Clients must accept both.
+
+CBB team-player collections additionally accept `season` (ending year, default current). The player-directory route requires `team_id` when selecting a roster season. Membership and season profile fields come from the latest known immutable roster observation; `meta.roster` identifies it and warnings distinguish missing/stale coverage. Other sports retain their existing player directory contracts.

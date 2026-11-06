@@ -33,6 +33,11 @@ class Team extends Model
         'elo_rating',
     ];
 
+    public function rosterSnapshots(): HasMany
+    {
+        return $this->hasMany(RosterSnapshot::class);
+    }
+
     public function players(): HasMany
     {
         return $this->hasMany(Player::class, 'team_id');

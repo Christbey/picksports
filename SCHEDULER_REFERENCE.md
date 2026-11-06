@@ -86,7 +86,7 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 - Sync tournament structure daily at `01:00`
 - Sync teams weekly on Sunday at `01:15`
 - Sync all team schedules weekly on Sunday at `01:30`
-- Sync players weekly on Sunday at `02:15`
+- Sync season-specific CBB rosters daily at `02:15`, with the explicit ending-year season and `--include-prior` to seed a missing previous-season observation once. The scheduled refresh runs inline (`--sync`) ahead of the `06:30` pregame pipeline; manually dispatched jobs still use the `sync` queue. Immutable observations exclude athletes absent from the latest verified roster without deleting player identities or historical stats. Failed/empty/partial provider responses retain the previous observation; model evidence marks stale or missing rosters.
 - Backfill stale games daily at `03:00`
 - Daily current-week sync at `02:00`
 - Live scoreboard sync every 5 minutes between `12:00` and `01:00`

@@ -5150,6 +5150,15 @@
                         }
                     },
                     {
+                        "name": "season",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "CBB team-roster ending-year season; defaults to the current basketball season. Requires team_id on the player directory endpoint."
+                    },
+                    {
                         "name": "team_id",
                         "in": "query",
                         "required": false,
@@ -8237,7 +8246,16 @@
                         }
                     },
                     {
-                        "name": "conference",
+                        "name": "season",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "CBB team-roster ending-year season; defaults to the current basketball season. Requires team_id on the player directory endpoint."
+                    },
+                    {
+                        "name": "position",
                         "in": "query",
                         "required": false,
                         "schema": {
@@ -8245,15 +8263,7 @@
                         }
                     },
                     {
-                        "name": "division",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "league",
+                        "name": "status",
                         "in": "query",
                         "required": false,
                         "schema": {

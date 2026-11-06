@@ -280,6 +280,8 @@ are described below; registration does not imply support for every sport.
 | `GET` | `/games/{game}/live-betting` | `v2.sports.games.live-betting.show` | CFB game component | `tests/Feature/CFB/LiveBettingTest.php` |
 | `GET` | `/daily-picks` | `v2.sports.daily-picks.index` | `dailyPicks.index()` | `tests/Feature/MLB/MlbDailyPickEngineTest.php` |
 
+CBB team-player reads select the latest season-specific roster observation known now. `season` is an optional ending-year filter (default current basketball season); `/players?season=...` also requires `team_id`. The collection and player fields stay unchanged, including historical team/jersey/position from the selected observation. `meta.roster` reports season, observation ID/time and availability; missing rosters return an empty collection with `season_roster_unavailable`, while stale observations are labeled. The mutable player team pointer is not a fallback roster. Other sports retain their existing player-list behavior.
+
 ## Common Filters
 
 | Endpoint family | Supported query filters |

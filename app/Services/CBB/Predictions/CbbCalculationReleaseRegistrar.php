@@ -22,6 +22,7 @@ class CbbCalculationReleaseRegistrar
     ): CalculationRelease {
         return $this->registrar->register(
             match ($semanticVersion) {
+                CbbColdStartReleaseDefinition::SEMANTIC_VERSION => new CbbColdStartReleaseDefinition,
                 CbbPeerPriorReleaseDefinition::SEMANTIC_VERSION => new CbbPeerPriorReleaseDefinition,
                 '1.2.0', CbbScoreMarginReleaseDefinition::SEMANTIC_VERSION => new CbbScoreMarginReleaseDefinition,
                 CbbFullModelReleaseDefinition::SEMANTIC_VERSION => new CbbFullModelReleaseDefinition,

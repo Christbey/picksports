@@ -299,3 +299,91 @@ it('does not invent a peer prior from an insufficient pool or target-day outcome
     expect($rating['available'])->toBeFalse()->and($rating['peer_prior']['groups'])->toBe([])
         ->and($rating['current_season_games'])->toBe(0);
 });
+
+function cbbColdStartHistory(Team $anchor): void
+{
+    $anchor->update(['division' => 'NCAA Division I', 'conference' => 'Test D1']);
+    for ($index = 0; $index < 8; $index++) {
+        $opponent = Team::factory()->create(['division' => 'NCAA Division II', 'conference' => 'Non-NCAA Division I']);
+        cbbMarginFinal($anchor, $opponent, 40);
+    }
+}
+
+it('uses a supported sparse-history prior for unclassified newcomers without assigning a division', function (): void {
+    cbbColdStartHistory($this->home);
+    $this->away->update(['division' => null, 'conference' => null]);
+    config(['cbb.prediction.score_margin.peer_prior.enabled' => true]);
+    $service = app(CbbScoreMarginRatings::class);
+    expect($service->forGame($this->game)['available'])->toBeFalse();
+    config(['cbb.prediction.score_margin.cold_start_prior.enabled' => true]);
+    $rating = $service->forGame($this->game);
+    expect($rating['available'])->toBeTrue()->and($rating['version'])->toBe('score-margin-v3')
+        ->and($rating['home_margin'])->toBe(34.0)
+        ->and($rating['away'])->toMatchArray(['rating' => -20.0, 'prior_games' => 0, 'prior_source' => 'sparse_history_peer', 'peer_group' => null])
+        ->and($rating['cold_start_prior'])->toMatchArray(['teams' => 8, 'minimum_teams' => 8, 'history_games_below' => 8, 'rating' => -20.0])
+        ->and($this->away->fresh()->division)->toBeNull()
+        ->and($this->away->fresh()->conference)->toBeNull();
+});
+
+it('retains an unavailable cold-start rating when its historical pool is too small', function (): void {
+    cbbColdStartHistory($this->home);
+    $this->away->update(['division' => null, 'conference' => null]);
+    config(['cbb.prediction.score_margin.peer_prior.enabled' => true,
+        'cbb.prediction.score_margin.cold_start_prior.enabled' => true,
+        'cbb.prediction.score_margin.peer_prior.minimum_teams' => 9]);
+    $rating = app(CbbScoreMarginRatings::class)->forGame($this->game);
+    expect($rating['available'])->toBeFalse()->and($rating['away']['prior_source'])->toBe('none')
+        ->and($rating['cold_start_prior']['rating'])->toBeNull()->and($rating['cold_start_prior']['teams'])->toBe(8);
+});
+
+it('preserves supported division priors and existing score history when cold-start support is enabled', function (bool $withHistory): void {
+    cbbColdStartHistory($this->home);
+    $this->away->update(['division' => $withHistory ? null : 'NCAA Division II', 'conference' => $withHistory ? null : 'Non-NCAA Division I']);
+    if ($withHistory) {
+        cbbMarginFinal($this->home, $this->away, 40);
+    }
+    config(['cbb.prediction.score_margin.peer_prior.enabled' => true]);
+    $service = app(CbbScoreMarginRatings::class);
+    $old = $service->forGame($this->game);
+    config(['cbb.prediction.score_margin.cold_start_prior.enabled' => true]);
+    $new = $service->forGame($this->game);
+    expect($new['home_margin'])->toBe($old['home_margin'])
+        ->and($new['away']['prior_source'])->toBe($withHistory ? 'team_score_history' : 'peer_group');
+})->with([true, false]);
+
+it('does not substitute a sparse prior for an explicitly classified but unsupported division', function (): void {
+    cbbColdStartHistory($this->home);
+    $this->away->update(['division' => 'NCAA Division I', 'conference' => 'Test D1']);
+    config(['cbb.prediction.score_margin.peer_prior.enabled' => true, 'cbb.prediction.score_margin.cold_start_prior.enabled' => true]);
+    $rating = app(CbbScoreMarginRatings::class)->forGame($this->game);
+    expect($rating['available'])->toBeFalse()->and($rating['cold_start_prior']['rating'])->toBe(-20.0)
+        ->and($rating['away']['prior_source'])->toBe('none');
+});
+
+it('learns cold-start support only from prior-season games before the cutoff', function (): void {
+    cbbColdStartHistory($this->home);
+    $this->away->update(['division' => null, 'conference' => null]);
+    cbbMarginFinal($this->home, $this->away, 100, '2026-11-06', 2026);
+    cbbMarginFinal($this->home, $this->away, 100, '2026-11-07', 2027);
+    cbbMarginFinal($this->home, $this->away, 20, '2026-11-04', 2027);
+    config(['cbb.prediction.score_margin.peer_prior.enabled' => true, 'cbb.prediction.score_margin.cold_start_prior.enabled' => true]);
+    $rating = app(CbbScoreMarginRatings::class)->forGame($this->game);
+    expect($rating['cold_start_prior'])->toMatchArray(['rating' => -20.0, 'teams' => 8])
+        ->and($rating['away']['prior_games'])->toBe(0)->and($rating['away']['current_games'])->toBe(1)
+        ->and($rating['source_games'])->toBe(9)->and(round($rating['home_margin'], 1))->toBe(31.2);
+});
+
+it('freezes cold-start provenance and pregame quote evidence under release 1.4.0', function (): void {
+    cbbColdStartHistory($this->home);
+    $this->away->update(['division' => null, 'conference' => null]);
+    $quote = cbbRecordMarket($this->game, $this->event);
+    app(CbbCalculationReleaseRegistrar::class)->register('1.4.0', effectiveAt: now()->subMinute()->toImmutable());
+    $prediction = app(GenerateCanonicalPrediction::class)->execute($this->game->fresh());
+    $inputs = $prediction->calculationRun->inputSnapshot->inputs;
+    expect($prediction->publication_state)->toBe('published')->and($prediction->model_version)->toBe('1.4.0')
+        ->and(data_get($inputs, 'established_model.model_version'))->toBe('cbb-score-margin-v3')
+        ->and((float) data_get($inputs, 'established_model.outputs.predicted_spread'))->toBe(29.7)
+        ->and(data_get($inputs, 'established_model.model_metadata.score_margin_rating.away.prior_source'))->toBe('sparse_history_peer')
+        ->and(data_get($inputs, 'pregame_market.game_odds_snapshot_id'))->toBe($quote->id)
+        ->and(data_get($inputs, 'pregame_market.consensus.spread.line'))->toBe(-5.5);
+});

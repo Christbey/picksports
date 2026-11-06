@@ -217,3 +217,20 @@ it('normalizes score-rating evidence before JSON hashing and SQL persistence', f
     expect($prediction->publication_state)->toBe('published')
         ->and(data_get($prediction->output_metadata, 'model_metadata.score_margin_rating.home_margin'))->toBe($ratings['home_margin']);
 });
+
+it('grades historical CBB markets independently of stored boundary probabilities', function (float $probability): void {
+    cbbRecordMarket($this->game, $this->event);
+    $preview = app(GeneratePrediction::class)->preview($this->game->fresh());
+    $preview['win_probability'] = $probability;
+    $this->mock(GeneratePrediction::class)->shouldReceive('preview')->once()->andReturn($preview);
+    app(CbbCalculationReleaseRegistrar::class)->register('1.1.0', effectiveAt: now()->subMinute()->toImmutable());
+    $prediction = app(GenerateCanonicalPrediction::class)->execute($this->game->fresh());
+    $this->travelTo($this->event->starts_at->addHour());
+    $result = SportEventResult::factory()->create(['sport_event_id' => $this->event->id, 'home_score' => 90, 'away_score' => 70]);
+    $evaluation = app(CanonicalPredictionEvaluator::class)->evaluate($prediction, $result);
+    expect($evaluation->errors['log_loss'])->toBeNull()
+        ->and($evaluation->errors['probability_metric_status'])->toBe('boundary_probability_log_loss_unavailable')
+        ->and(data_get($evaluation->market_comparison, 'pregame_market.spread.result'))->toBe('loss')
+        ->and(data_get($evaluation->market_comparison, 'pregame_market.total.result'))->toBe('win')
+        ->and((float) $prediction->markets->first(fn ($market) => $market->market_type === 'moneyline' && $market->selection === 'home')->probability)->toBe($probability);
+})->with([0.0, 1.0]);

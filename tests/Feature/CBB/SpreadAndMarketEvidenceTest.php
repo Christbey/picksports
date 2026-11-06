@@ -182,3 +182,23 @@ it('grades pushes and leaves an absent total ungraded', function (): void {
     expect(data_get($evaluation->market_comparison, 'pregame_market.spread.result'))->toBe('push')
         ->and(data_get($evaluation->market_comparison, 'pregame_market.total.result'))->toBeNull();
 });
+
+it('updates prior score strength gradually from completed current-season games only', function (): void {
+    cbbMarginFinal($this->home, $this->away, 100);
+    cbbMarginFinal($this->home, $this->away, 20, '2026-11-04', 2027);
+    cbbMarginFinal($this->home, $this->away, 100, '2026-11-07', 2027);
+    $rating = app(CbbScoreMarginRatings::class)->forGame($this->game);
+    expect(round($rating['home_margin'], 1))->toBe(60.0)
+        ->and($rating['source_games'])->toBe(2)
+        ->and($rating['home']['current_games'])->toBe(1)
+        ->and($rating['away']['prior_games'])->toBe(1);
+});
+
+it('persists a fresh confirmation of an unchanged CBB market after thirty minutes', function (): void {
+    $first = cbbRecordMarket($this->game, $this->event);
+    $this->travel(31)->minutes();
+    $second = cbbRecordMarket($this->game, $this->event);
+    expect($second->id)->not->toBe($first->id);
+    $market = app(CbbPregameMarketSnapshot::class)->capture($this->game, now()->toImmutable(), $this->event->starts_at->toImmutable());
+    expect($market['game_odds_snapshot_id'])->toBe($second->id)->and($market['available'])->toBeTrue();
+});

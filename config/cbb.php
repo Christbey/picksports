@@ -1,5 +1,7 @@
 <?php
 
+use App\Support\Sports\CbbSeasonTypes;
+
 return [
 
     /*
@@ -31,7 +33,7 @@ return [
 
     'season' => [
         'default' => env('CBB_DEFAULT_SEASON'),
-        'analytics_types' => [2, 3],
+        'analytics_types' => CbbSeasonTypes::ANALYTICS,
         'types' => [
             'preseason' => 1,
             'regular' => 2,
@@ -293,7 +295,7 @@ return [
         ],
 
         // Ensemble weights (sum to 1.0)
-        'score_margin' => ['enabled' => false],
+        'score_margin' => ['enabled' => false, 'peer_prior' => ['enabled' => false, 'minimum_teams' => 8]],
         'pregame_market' => ['maximum_quote_age_minutes' => 2160],
         'elo_weight' => 0.25,
         'efficiency_weight' => 0.40,

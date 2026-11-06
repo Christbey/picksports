@@ -35,10 +35,11 @@ beforeEach(function () {
     $this->opponent2 = Team::factory()->create(['elo_rating' => 1450]);
 });
 
-it('calculates basic team metrics for a season', function () {
+it('calculates basic team metrics for a season', function (string $seasonType) {
     // Create 2 completed games for the team
     $game1 = cbbMetricsGame([
         'season' => 2026,
+        'season_type' => $seasonType,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
         'status' => 'STATUS_FINAL',
@@ -46,6 +47,7 @@ it('calculates basic team metrics for a season', function () {
 
     $game2 = cbbMetricsGame([
         'season' => 2026,
+        'season_type' => $seasonType,
         'home_team_id' => $this->opponent2->id,
         'away_team_id' => $this->team->id,
         'status' => 'STATUS_FINAL',
@@ -140,7 +142,7 @@ it('calculates basic team metrics for a season', function () {
 
     // Possession coefficient should be saved
     expect((float) $metric->possession_coefficient)->toBe(config('cbb.metrics.possession_coefficient'));
-});
+})->with(['2', 'Regular Season', 'regular_season']);
 
 it('returns null when no completed games exist', function () {
     $action = new CalculateTeamMetrics;

@@ -234,3 +234,68 @@ it('grades historical CBB markets independently of stored boundary probabilities
         ->and(data_get($evaluation->market_comparison, 'pregame_market.total.result'))->toBe('win')
         ->and((float) $prediction->markets->first(fn ($market) => $market->market_type === 'moneyline' && $market->selection === 'home')->probability)->toBe($probability);
 })->with([0.0, 1.0]);
+
+it('uses archived regular season labels while excluding preseason scores', function (string $seasonType): void {
+    cbbMarginFinal($this->home, $this->away, 40)->update(['season_type' => $seasonType]);
+    cbbMarginFinal($this->home, $this->away, 100)->update(['season_type' => 'Preseason']);
+    $rating = app(CbbScoreMarginRatings::class)->forGame($this->game);
+    expect($rating['source_games'])->toBe(1)
+        ->and($rating['prior_season_games'])->toBe(1)
+        ->and($rating['home_margin'])->toBe(28.0);
+})->with(['Regular Season', 'regular_season', 'regular', '2', '3', 'Postseason', 'Post Season']);
+
+function cbbPeerHistory(int $pairs = 8): void
+{
+    for ($index = 0; $index < $pairs; $index++) {
+        $home = Team::factory()->create(['division' => 'NCAA Division I', 'conference' => 'Test D1']);
+        $away = Team::factory()->create(['division' => 'NCAA Basketball', 'conference' => 'Non-NCAA Division I']);
+        cbbMarginFinal($home, $away, 40)->update(['season_type' => 'Regular Season']);
+    }
+}
+
+it('learns missing-team priors from supported prior-season peer groups without assuming unknown classifications', function (): void {
+    cbbPeerHistory();
+    $this->home->update(['division' => 'NCAA Basketball', 'conference' => 'NCAA Division I']);
+    $this->away->update(['division' => 'NCAA Basketball', 'conference' => 'Non-NCAA Division I']);
+    $service = app(CbbScoreMarginRatings::class);
+    expect($service->forGame($this->game)['available'])->toBeFalse();
+    config(['cbb.prediction.score_margin.peer_prior.enabled' => true]);
+    $rating = $service->forGame($this->game);
+    expect($rating['available'])->toBeTrue()
+        ->and($rating['home_margin'])->toBe(40.0)
+        ->and($rating['home']['prior_games'])->toBe(0)
+        ->and($rating['home']['prior_source'])->toBe('peer_group')
+        ->and($rating['home']['peer_group'])->toBe('division_i')
+        ->and($rating['peer_prior']['groups']['non_division_i'])->toMatchArray(['rating' => -20.0, 'teams' => 8]);
+    $unknown = Team::factory()->create(['division' => null, 'conference' => null]);
+    $target = clone $this->game;
+    $target->away_team_id = $unknown->id;
+    $missing = $service->forGame($target);
+    expect($missing['available'])->toBeFalse()->and($missing['away']['prior_source'])->toBe('none');
+});
+
+it('retains between-group strength when regressing known teams and freezes the new release configuration', function (): void {
+    cbbPeerHistory(7);
+    $this->home->update(['division' => 'NCAA Division I', 'conference' => 'Test D1']);
+    $this->away->update(['division' => 'NCAA Division II', 'conference' => 'Non-NCAA Division I']);
+    cbbMarginFinal($this->home, $this->away, 40);
+    app(CbbCalculationReleaseRegistrar::class)->register('1.3.0', effectiveAt: now()->subMinute()->toImmutable());
+    $prediction = app(GenerateCanonicalPrediction::class)->execute($this->game->fresh());
+    $inputs = $prediction->calculationRun->inputSnapshot->inputs;
+    expect($prediction->model_version)->toBe('1.3.0')
+        ->and(data_get($inputs, 'established_model.model_version'))->toBe('cbb-score-margin-v2')
+        ->and((float) data_get($inputs, 'established_model.outputs.predicted_spread'))->toBe(40.0)
+        ->and(data_get($inputs, 'established_model.model_metadata.score_margin_rating.home.prior_source'))->toBe('team_score_history')
+        ->and(data_get($inputs, 'established_model.model_metadata.score_margin_rating.peer_prior.enabled'))->toBeTrue();
+});
+
+it('does not invent a peer prior from an insufficient pool or target-day outcomes', function (): void {
+    cbbPeerHistory(7);
+    $this->home->update(['division' => 'NCAA Division I']);
+    $this->away->update(['division' => 'NCAA Division III', 'conference' => 'Non-NCAA Division I']);
+    cbbMarginFinal($this->home, $this->away, 100, '2026-11-06', 2027);
+    config(['cbb.prediction.score_margin.peer_prior.enabled' => true]);
+    $rating = app(CbbScoreMarginRatings::class)->forGame($this->game);
+    expect($rating['available'])->toBeFalse()->and($rating['peer_prior']['groups'])->toBe([])
+        ->and($rating['current_season_games'])->toBe(0);
+});

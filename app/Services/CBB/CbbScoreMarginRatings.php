@@ -19,8 +19,9 @@ class CbbScoreMarginRatings
         $retention = 1 - max(0.0, min(1.0, (float) config('cbb.elo.offseason_regression_factor', 0.3)));
         $cutoff = min($target->getRawOriginal('game_date'), now('UTC')->addDay()->toDateString());
         $peerEnabled = (bool) config('cbb.prediction.score_margin.peer_prior.enabled', false);
+        $coldStartEnabled = $peerEnabled && (bool) config('cbb.prediction.score_margin.cold_start_prior.enabled', false);
         $minimumPeers = max(1, (int) config('cbb.prediction.score_margin.peer_prior.minimum_teams', 8));
-        $key = json_encode([(int) $target->season, $cutoff, $homeCourt, $priorWeight, $retention, CbbSeasonTypes::analytics(), $peerEnabled, $minimumPeers]);
+        $key = json_encode([(int) $target->season, $cutoff, $homeCourt, $priorWeight, $retention, CbbSeasonTypes::analytics(), $peerEnabled, $minimumPeers, $coldStartEnabled]);
         if (! isset($this->samples[$key])) {
             $games = app(CbbDataQuality::class)->realGames(Game::query())
                 ->whereIn('season', [(int) $target->season - 1, (int) $target->season])
@@ -32,8 +33,11 @@ class CbbScoreMarginRatings
             $priorGames = $games->where('season', (int) $target->season - 1);
             $currentGames = $games->where('season', (int) $target->season);
             $rawPrior = $this->solve($this->edges($priorGames, $homeCourt));
+            $priorCounts = $this->counts($priorGames);
             $teams = $peerEnabled ? Team::query()->orderBy('id')->get(['id', 'conference', 'division'])->keyBy('id') : collect();
             $peers = $peerEnabled ? $this->peerPriors($rawPrior, $teams, $minimumPeers) : [];
+            $sparseRatings = $coldStartEnabled ? array_filter($rawPrior, fn (int $id): bool => ($priorCounts[$id] ?? 0) < $priorWeight, ARRAY_FILTER_USE_KEY) : [];
+            $coldStartPrior = count($sparseRatings) >= $minimumPeers ? round((float) collect($sparseRatings)->median(), 6) : null;
             $prior = [];
             $priorSources = [];
             foreach ($rawPrior as $id => $rating) {
@@ -47,14 +51,20 @@ class CbbScoreMarginRatings
                 if (! array_key_exists($id, $prior) && isset($peers[$group])) {
                     $prior[$id] = $peers[$group]['rating'];
                     $priorSources[$id] = 'peer_group';
+                } elseif (! array_key_exists($id, $prior) && $group === null && $coldStartPrior !== null) {
+                    $prior[$id] = $coldStartPrior;
+                    $priorSources[$id] = 'sparse_history_peer';
                 }
             }
             $this->samples[$key] = [
                 'ratings' => $this->solve($this->edges($currentGames, $homeCourt), $prior, $priorWeight),
-                'prior_counts' => $this->counts($priorGames), 'current_counts' => $this->counts($currentGames),
+                'prior_counts' => $priorCounts, 'current_counts' => $this->counts($currentGames),
                 'source_hash' => hash('sha256', $games->toJson().($peerEnabled ? $teams->values()->toJson() : '')), 'source_games' => $games->count(),
                 'prior_season_games' => $priorGames->count(), 'current_season_games' => $currentGames->count(),
                 'peers' => $peers, 'prior_sources' => $priorSources, 'teams' => $teams,
+                'cold_start_prior' => ['enabled' => $coldStartEnabled, 'rating' => $coldStartPrior,
+                    'teams' => count($sparseRatings), 'minimum_teams' => $minimumPeers,
+                    'history_games_below' => $priorWeight, 'source' => 'prior_season_sparse_score_history'],
             ];
         }
         $sample = $this->samples[$key];
@@ -68,7 +78,7 @@ class CbbScoreMarginRatings
         }
         $available = $sides['home']['rating'] !== null && $sides['away']['rating'] !== null;
 
-        return ['version' => $peerEnabled ? 'score-margin-v2' : 'score-margin-v1', 'available' => $available,
+        return ['version' => $coldStartEnabled ? 'score-margin-v3' : ($peerEnabled ? 'score-margin-v2' : 'score-margin-v1'), 'available' => $available,
             'reason' => $available ? null : 'missing_team_score_history',
             'home_margin' => $available ? round($sides['home']['rating'] - $sides['away']['rating'] + ($target->neutral_site ? 0 : $homeCourt), 6) : null,
             ...$sides, 'prior_retention' => $retention, 'current_prior_games' => $priorWeight,
@@ -76,6 +86,7 @@ class CbbScoreMarginRatings
             'source' => 'completed_score_history', 'probability_validation' => 'uncalibrated',
             'prior_season_games' => $sample['prior_season_games'], 'current_season_games' => $sample['current_season_games'],
             'season_types' => CbbSeasonTypes::analytics(),
+            'cold_start_prior' => $sample['cold_start_prior'],
             'peer_prior' => ['enabled' => $peerEnabled, 'minimum_teams' => $minimumPeers, 'groups' => $sample['peers'], 'classification_source' => 'stored_team_profile']];
     }
 

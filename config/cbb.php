@@ -295,7 +295,7 @@ return [
         ],
 
         // Ensemble weights (sum to 1.0)
-        'score_margin' => ['enabled' => false, 'peer_prior' => ['enabled' => false, 'minimum_teams' => 8]],
+        'score_margin' => ['enabled' => false, 'peer_prior' => ['enabled' => false, 'minimum_teams' => 8], 'cold_start_prior' => ['enabled' => false]],
         'pregame_market' => ['maximum_quote_age_minutes' => 2160],
         'elo_weight' => 0.25,
         'efficiency_weight' => 0.40,

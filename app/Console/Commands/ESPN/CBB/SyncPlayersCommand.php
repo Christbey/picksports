@@ -10,6 +10,7 @@ use App\Models\CBB\Team;
 use App\Support\BasketballSeason;
 use Illuminate\Database\Eloquent\Builder;
 use Throwable;
+use UnexpectedValueException;
 
 class SyncPlayersCommand extends AbstractSyncPlayersCommand
 {
@@ -51,7 +52,7 @@ class SyncPlayersCommand extends AbstractSyncPlayersCommand
             $query->take(max(1, (int) $this->option('limit')));
         }
         $teams = $query->get();
-        $success = $missing = $failed = 0;
+        $success = $missing = $failed = $rejected = $priorGaps = 0;
         foreach ($teams as $team) {
             if (! $this->option('sync')) {
                 FetchPlayers::dispatch((string) $team->espn_id, $season, (bool) $this->option('include-prior'));
@@ -60,17 +61,40 @@ class SyncPlayersCommand extends AbstractSyncPlayersCommand
             }
             try {
                 $count = app(SyncPlayers::class)->execute((string) $team->espn_id, $season);
-                if ($count > 0 && $this->option('include-prior') && ! RosterSnapshot::knownAt($team->id, $season - 1, now())) {
-                    app(SyncPlayers::class)->execute((string) $team->espn_id, $season - 1);
-                }
-                $count > 0 ? $success++ : $missing++;
+            } catch (UnexpectedValueException $exception) {
+                $rejected++;
+                $this->warn('Current roster rejected for team '.$team->id.': '.$exception->getMessage());
+
+                continue;
             } catch (Throwable $exception) {
                 report($exception);
                 $failed++;
-                $this->warn('Roster rejected for team '.$team->id.': '.$exception->getMessage());
+                $this->warn('Roster write failed for team '.$team->id.': '.$exception->getMessage());
+
+                continue;
+            }
+            if ($count === 0) {
+                $missing++;
+
+                continue;
+            }
+            $success++;
+            if ($this->option('include-prior') && ! RosterSnapshot::knownAt($team->id, $season - 1, now())) {
+                try {
+                    if (app(SyncPlayers::class)->execute((string) $team->espn_id, $season - 1) === 0) {
+                        $priorGaps++;
+                    }
+                } catch (UnexpectedValueException $exception) {
+                    $priorGaps++;
+                    $this->warn('Prior-season roster unavailable for team '.$team->id.': '.$exception->getMessage());
+                } catch (Throwable $exception) {
+                    report($exception);
+                    $failed++;
+                    $this->warn('Prior-season roster write failed for team '.$team->id.': '.$exception->getMessage());
+                }
             }
         }
-        $this->info($this->option('sync') ? "CBB season {$season} rosters: {$success} synced, {$missing} unavailable, {$failed} failed." : 'CBB season '.$season.' roster jobs dispatched: '.$teams->count());
+        $this->info($this->option('sync') ? "CBB season {$season} rosters: {$success} synced, {$missing} unavailable, {$rejected} rejected, {$priorGaps} prior gaps, {$failed} failed." : 'CBB season '.$season.' roster jobs dispatched: '.$teams->count());
 
         return $failed > 0 || $teams->isEmpty() || ($this->option('sync') && $success === 0) ? self::FAILURE : self::SUCCESS;
     }

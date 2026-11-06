@@ -67,7 +67,7 @@ class SyncPlayers extends AbstractSyncPlayers
                     $profile['headshot_url'] = $player?->headshot_url ?: $profile['headshot_url'];
                     $player = Player::query()->updateOrCreate(['espn_id' => $profile['espn_id']], [...$profile, 'team_id' => $team->id]);
                 } else {
-                    $player ??= Player::query()->create([...$profile, 'team_id' => $team->id]);
+                    $player ??= Player::query()->firstOrCreate(['espn_id' => $profile['espn_id']], [...$profile, 'team_id' => $team->id]);
                 }
                 $snapshot->entries()->create(['player_id' => $player->id, 'attributes' => $memberProfile]);
             }

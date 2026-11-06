@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UserSearchInput from '@/components/UserSearchInput.vue';
 import { Button } from '@/components/ui/button';
 import { useAdminSettingsContext } from '@/composables/useAdminSettings';
 const {
@@ -102,46 +103,16 @@ const {
                 class="flex flex-col gap-3 sm:flex-row sm:items-start"
                 @submit.prevent="grantFoundingAccess"
             >
-                <div class="relative flex-1">
-                    <label
-                        class="mb-1 block text-xs font-medium text-muted-foreground"
-                        for="founding-user-search"
-                    >
-                        User Search
-                    </label>
-                    <input
-                        id="founding-user-search"
-                        v-model="userSearch"
-                        type="text"
-                        required
-                        placeholder="Search by name or email (min 2 chars)"
-                        autocomplete="off"
-                        class="w-full rounded-lg border border-sidebar-border bg-white px-3 py-2 text-sm dark:bg-sidebar"
-                    />
-                    <div
-                        v-if="isSearchingUsers || userSuggestions.length > 0"
-                        class="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-sidebar-border bg-white shadow-lg dark:bg-sidebar"
-                    >
-                        <div
-                            v-if="isSearchingUsers"
-                            class="px-3 py-2 text-xs text-muted-foreground"
-                        >
-                            Searching...
-                        </div>
-                        <button
-                            v-for="user in userSuggestions"
-                            :key="user.id"
-                            type="button"
-                            class="block w-full border-t border-sidebar-border px-3 py-2 text-left text-sm first:border-t-0 hover:bg-sidebar-accent"
-                            @click="selectUserSuggestion(user)"
-                        >
-                            <span class="font-medium">{{ user.name }}</span>
-                            <span class="ml-1 text-muted-foreground">{{
-                                user.email
-                            }}</span>
-                        </button>
-                    </div>
-                </div>
+                <UserSearchInput
+                    id="founding-user-search"
+                    v-model="userSearch"
+                    label="User Search"
+                    required
+                    placeholder="Search by name or email (min 2 chars)"
+                    :suggestions="userSuggestions"
+                    :loading="isSearchingUsers"
+                    @select="selectUserSuggestion"
+                />
                 <div class="flex-1">
                     <label
                         class="mb-1 block text-xs font-medium text-muted-foreground"

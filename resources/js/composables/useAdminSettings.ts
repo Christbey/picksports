@@ -106,16 +106,8 @@ export function useAdminSettings(props: AdminSettingsProps) {
         groupLookup.search(groupId, groupUserSearch.value[groupId] ?? '');
     }
 
-    function handleAssignableUserInput(groupId: number, event: Event): void {
-        const target = event.target;
-        if (!(target instanceof HTMLInputElement)) {
-            return;
-        }
-
-        groupUserSearch.value = {
-            ...groupUserSearch.value,
-            [groupId]: target.value,
-        };
+    function setGroupUserSearch(groupId: number, value: string): void {
+        groupUserSearch.value = { ...groupUserSearch.value, [groupId]: value };
         searchAssignableUsers(groupId);
     }
 
@@ -223,7 +215,7 @@ export function useAdminSettings(props: AdminSettingsProps) {
         revokeFoundingAccess,
         createGroup,
         inviteToGroup,
-        handleAssignableUserInput,
+        setGroupUserSearch,
         selectAssignableUser,
         addUserToGroup,
         removeUserFromGroup,

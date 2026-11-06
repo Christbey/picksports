@@ -1,0 +1,171 @@
+<script setup lang="ts">
+import { ref } from 'vue';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import {
+    Sheet,
+    SheetContent,
+    SheetHeader,
+    SheetTitle,
+    SheetDescription,
+} from '@/components/ui/sheet';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+} from '@/components/ui/dialog';
+import {
+    Collapsible,
+    CollapsibleTrigger,
+    CollapsibleContent,
+} from '@/components/ui/collapsible';
+import UserSearchInput from '@/components/UserSearchInput.vue';
+const selected = ref('overview');
+const sheetOpen = ref(false),
+    dialogOpen = ref(false),
+    customFocus = ref(false),
+    showOpener = ref(true);
+const query = ref(''),
+    suggestions = ref<{ id: number; name: string; email: string }[]>([]),
+    picked = ref('');
+const updates = ref<string[]>([]),
+    drawerEvents = ref<string[]>([]);
+const users = [
+    { id: 1, name: 'Maria One', email: 'maria@example.com' },
+    { id: 2, name: 'Martin Two', email: 'martin@example.com' },
+];
+function search(value: string) {
+    query.value = value;
+    suggestions.value = value.length >= 2 ? users : [];
+}
+function choose(user: (typeof users)[number]) {
+    picked.value = user.email;
+    query.value = `${user.name} (${user.email})`;
+    suggestions.value = [];
+}
+function dialogClose(event: Event) {
+    if (customFocus.value) {
+        event.preventDefault();
+        document.getElementById('custom-target')?.focus();
+    }
+}
+</script>
+<template>
+    <main class="mx-auto max-w-3xl space-y-6 p-6">
+        <h1 class="text-xl font-semibold">Shared controls</h1>
+        <Tabs
+            v-model="selected"
+            class="space-y-4"
+            @update:model-value="updates.push($event)"
+        >
+            <TabsList aria-label="Example sections">
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="disabled" disabled>Unavailable</TabsTrigger>
+                <TabsTrigger value="details">Details</TabsTrigger>
+                <TabsTrigger value="history">History</TabsTrigger>
+            </TabsList>
+            <TabsContent value="overview"
+                ><p>Overview panel</p>
+                <Button>Overview action</Button></TabsContent
+            >
+            <TabsContent value="details"
+                ><p>Details panel</p>
+                <Button>Details action</Button></TabsContent
+            >
+            <TabsContent value="history"><p>History panel</p></TabsContent>
+        </Tabs>
+        <Button id="external-tab-update" @click="selected = 'history'"
+            >Show history externally</Button
+        >
+        <output id="tab-events" class="sr-only">{{ updates.join(',') }}</output>
+        <Tabs default-value="first" orientation="vertical">
+            <TabsList aria-label="Vertical examples"
+                ><TabsTrigger value="first">Vertical first</TabsTrigger
+                ><TabsTrigger value="second"
+                    >Vertical second</TabsTrigger
+                ></TabsList
+            >
+            <TabsContent value="first">First vertical panel</TabsContent
+            ><TabsContent value="second">Second vertical panel</TabsContent>
+        </Tabs>
+        <form @submit.prevent="updates.push('form-submitted')">
+            <UserSearchInput
+                id="founding-user-search"
+                :model-value="query"
+                label="User Search"
+                required
+                placeholder="Search by name or email (min 2 chars)"
+                :suggestions="suggestions"
+                @update:model-value="search"
+                @select="choose"
+            />
+            <Button id="after-search" class="mt-3">Continue</Button>
+            <output id="picked" class="sr-only">{{ picked }}</output>
+        </form>
+        <Collapsible
+            ><CollapsibleTrigger as-child
+                ><Button variant="outline"
+                    >Show supporting details</Button
+                ></CollapsibleTrigger
+            ><CollapsibleContent
+                ><p>Supporting details content</p></CollapsibleContent
+            ></Collapsible
+        >
+        <Button v-if="showOpener" id="drawer-opener" @click="sheetOpen = true"
+            >Open drawer</Button
+        >
+        <Sheet v-model:open="sheetOpen"
+            ><SheetContent
+                @open-auto-focus="drawerEvents.push('open')"
+                @close-auto-focus="drawerEvents.push('close')"
+                ><SheetHeader
+                    ><SheetTitle>Example drawer</SheetTitle
+                    ><SheetDescription
+                        >Keyboard focus remains in this
+                        drawer.</SheetDescription
+                    ></SheetHeader
+                ><label for="drawer-input">Drawer name</label
+                ><input id="drawer-input" class="rounded border p-2" /><Button
+                    id="drawer-last"
+                    >Drawer action</Button
+                ><Button @click="showOpener = false"
+                    >Remove opener</Button
+                ></SheetContent
+            ></Sheet
+        >
+        <output id="drawer-events" class="sr-only">{{
+            drawerEvents.join(',')
+        }}</output>
+        <Button
+            id="dialog-opener"
+            @click="
+                customFocus = false;
+                dialogOpen = true;
+            "
+            >Open dialog</Button
+        >
+        <Button
+            id="custom-dialog-opener"
+            @click="
+                customFocus = true;
+                dialogOpen = true;
+            "
+            >Open custom dialog</Button
+        >
+        <Button id="custom-target">Custom focus destination</Button>
+        <Dialog v-model:open="dialogOpen"
+            ><DialogContent @close-auto-focus="dialogClose"
+                ><DialogHeader
+                    ><DialogTitle>Example dialog</DialogTitle
+                    ><DialogDescription
+                        >Dialog keyboard test.</DialogDescription
+                    ></DialogHeader
+                ><label for="dialog-input">Dialog name</label
+                ><input
+                    id="dialog-input"
+                    class="rounded border p-2" /></DialogContent
+        ></Dialog>
+    </main>
+</template>

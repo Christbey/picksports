@@ -153,6 +153,7 @@ const breadcrumbs: BreadcrumbItem[] = [
                         @update:model-value="loadSignalGrades"
                     >
                         <TabsList
+                            aria-label="NFL monitoring sections"
                             class="grid h-auto w-full grid-cols-4 sm:w-auto"
                         >
                             <TabsTrigger value="observations">

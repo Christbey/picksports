@@ -51,6 +51,7 @@ const {
                 </div>
                 <Tabs v-model="activeSignalType" class="w-full lg:w-auto">
                     <TabsList
+                        aria-label="Signal type"
                         class="grid h-auto w-full grid-cols-2 lg:grid-cols-5"
                     >
                         <TabsTrigger

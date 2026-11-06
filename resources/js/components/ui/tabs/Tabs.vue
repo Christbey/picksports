@@ -1,28 +1,17 @@
 <script setup lang="ts">
-import { provide, ref } from 'vue'
-
-const props = defineProps<{
-    defaultValue?: string
-    modelValue?: string
-}>()
-
-const emit = defineEmits<{
-    'update:modelValue': [value: string]
-}>()
-
-const activeTab = ref(props.modelValue || props.defaultValue || '')
-
-const setActiveTab = (value: string) => {
-    activeTab.value = value
-    emit('update:modelValue', value)
-}
-
-provide('activeTab', activeTab)
-provide('setActiveTab', setActiveTab)
+import {
+    TabsRoot,
+    useForwardPropsEmits,
+    type TabsRootEmits,
+    type TabsRootProps,
+} from 'reka-ui';
+const props = withDefaults(defineProps<TabsRootProps<string>>(), {
+    defaultValue: '',
+    activationMode: 'manual',
+});
+const emit = defineEmits<TabsRootEmits<string>>();
+const forwarded = useForwardPropsEmits(props, emit);
 </script>
-
 <template>
-    <div class="w-full">
-        <slot />
-    </div>
+    <TabsRoot v-bind="forwarded" class="w-full"><slot /></TabsRoot>
 </template>

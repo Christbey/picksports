@@ -297,7 +297,7 @@ try {
                         document.querySelector('#app')?.textContent.length > 0,
                 );
                 await page
-                    .getByRole('button', { name: 'Observations', exact: true })
+                    .getByRole('tab', { name: 'Observations', exact: true })
                     .waitFor();
                 await page.evaluate(
                     (value) =>
@@ -313,13 +313,11 @@ try {
                     'Signal Grades',
                     'Lineage',
                 ]) {
-                    await page
-                        .getByRole('button', { name, exact: true })
-                        .click();
+                    await page.getByRole('tab', { name, exact: true }).click();
                     assert.ok(
                         (
                             await page
-                                .getByRole('button', { name, exact: true })
+                                .getByRole('tab', { name, exact: true })
                                 .getAttribute('class')
                         )
                             .split(' ')

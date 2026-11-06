@@ -38,7 +38,10 @@ const { breadcrumbs } = state;
                 <MlbMonitoringSummary />
 
                 <Tabs default-value="live" class="space-y-4">
-                    <TabsList class="grid h-auto w-full grid-cols-5">
+                    <TabsList
+                        aria-label="MLB monitoring sections"
+                        class="grid h-auto w-full grid-cols-5"
+                    >
                         <TabsTrigger value="live">Live</TabsTrigger>
                         <TabsTrigger value="weekly">Weekly</TabsTrigger>
                         <TabsTrigger value="markets">Markets</TabsTrigger>

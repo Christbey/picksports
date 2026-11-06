@@ -212,7 +212,7 @@ const sportsTeamSchema = computed(() =>
 
                 <template v-if="config.useTabs">
                     <Tabs default-value="overview" class="w-full">
-                        <TabsList class="w-full">
+                        <TabsList aria-label="Team details" class="w-full">
                             <TabsTrigger value="overview">Overview</TabsTrigger>
                             <TabsTrigger
                                 v-if="config.seasonStatTiles"

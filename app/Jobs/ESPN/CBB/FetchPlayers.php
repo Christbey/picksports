@@ -9,6 +9,7 @@ use App\Models\CBB\Team;
 use App\Services\ESPN\CBB\EspnService;
 use App\Support\BasketballSeason;
 use Illuminate\Support\Facades\Log;
+use UnexpectedValueException;
 
 class FetchPlayers extends BulkEspnJob
 {
@@ -33,10 +34,23 @@ class FetchPlayers extends BulkEspnJob
         $action = new SyncPlayers($service);
 
         if ($this->teamEspnId) {
-            $count = $action->execute($this->teamEspnId, $this->season);
+            try {
+                $count = $action->execute($this->teamEspnId, $this->season);
+            } catch (UnexpectedValueException $exception) {
+                Log::warning('CBB: Current roster observation rejected', ['team_espn_id' => $this->teamEspnId, 'season' => $this->season, 'reason' => $exception->getMessage()]);
+
+                return;
+            }
             $team = Team::query()->where('espn_id', $this->teamEspnId)->firstOrFail();
             if ($count > 0 && $this->includePrior && ! RosterSnapshot::knownAt($team->id, $this->season - 1, now())) {
-                $action->execute($this->teamEspnId, $this->season - 1);
+                try {
+                    $priorCount = $action->execute($this->teamEspnId, $this->season - 1);
+                    if ($priorCount === 0) {
+                        Log::warning('CBB: Prior roster unavailable', ['team_espn_id' => $this->teamEspnId, 'season' => $this->season - 1]);
+                    }
+                } catch (UnexpectedValueException $exception) {
+                    Log::warning('CBB: Prior roster observation rejected', ['team_espn_id' => $this->teamEspnId, 'season' => $this->season - 1, 'reason' => $exception->getMessage()]);
+                }
             }
             Log::info("CBB: Synced {$count} players for team {$this->teamEspnId} from ESPN");
         } else {

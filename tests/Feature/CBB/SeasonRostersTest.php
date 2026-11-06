@@ -19,6 +19,7 @@ use App\Services\ESPN\CBB\EspnService;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
 
@@ -284,4 +285,52 @@ it('reports uninitialized roster storage safely during an additive schema rollou
     $this->getJson('/api/v2/sports/cbb/teams/'.$this->team->id.'/players?season=2027')->assertSuccessful()
         ->assertJsonCount(0, 'data')->assertJsonPath('meta.roster.status', 'not_initialized')
         ->assertJsonPath('meta.warnings.0', 'season_roster_storage_unavailable');
+});
+it('keeps a verified current refresh successful when its historical provider roster is incomplete', function (): void {
+    $service = Mockery::mock(EspnService::class);
+    $service->shouldReceive('getRosterForSeason')->with('142', 2027)->once()->andReturn(cbbSeasonRosterPayload());
+    $service->shouldReceive('getRosterForSeason')->with('142', 2026)->once()->andReturn(cbbSeasonRosterPayload(season: 2026, ids: [1, 2, 3]));
+    $this->instance(EspnService::class, $service);
+    $this->artisan('espn:sync-cbb-players', ['teamEspnId' => '142', '--season' => 2027, '--sync' => true, '--include-prior' => true])
+        ->expectsOutputToContain('1 synced, 0 unavailable, 0 rejected, 1 prior gaps, 0 failed')->assertSuccessful();
+    expect(RosterSnapshot::query()->where('season', 2027)->count())->toBe(1)
+        ->and(RosterSnapshot::query()->where('season', 2026)->count())->toBe(0);
+});
+it('fails an inline refresh with no verified current roster and preserves the rejection warning', function (): void {
+    $service = Mockery::mock(EspnService::class);
+    $service->shouldReceive('getRosterForSeason')->with('142', 2027)->once()->andReturn(cbbSeasonRosterPayload(season: 2026));
+    $this->instance(EspnService::class, $service);
+    $this->artisan('espn:sync-cbb-players', ['teamEspnId' => '142', '--season' => 2027, '--sync' => true])
+        ->expectsOutputToContain('0 synced, 0 unavailable, 1 rejected')->assertFailed();
+    expect(RosterSnapshot::count())->toBe(0);
+});
+it('does not discard verified current membership when another team has rejected provider data', function (): void {
+    $other = Team::factory()->create(['espn_id' => '99']);
+    Game::factory()->create(['season' => 2027, 'home_team_id' => $this->team->id, 'away_team_id' => $other->id]);
+    $service = Mockery::mock(EspnService::class);
+    $service->shouldReceive('getRosterForSeason')->with('142', 2027)->once()->andReturn(cbbSeasonRosterPayload());
+    $service->shouldReceive('getRosterForSeason')->with('99', 2027)->once()->andReturn(cbbSeasonRosterPayload('99', ids: [1, 2, 3]));
+    $this->instance(EspnService::class, $service);
+    $this->artisan('espn:sync-cbb-players', ['--season' => 2027, '--sync' => true])
+        ->expectsOutputToContain('1 synced, 0 unavailable, 1 rejected')->assertSuccessful();
+    expect(RosterSnapshot::knownAt($this->team->id, 2027, now()))->not->toBeNull()
+        ->and(RosterSnapshot::knownAt($other->id, 2027, now()))->toBeNull();
+});
+it('still fails the refresh for an unexpected roster write error', function (): void {
+    $service = Mockery::mock(EspnService::class);
+    $service->shouldReceive('getRosterForSeason')->with('142', 2027)->once()->andThrow(new RuntimeException('Simulated storage failure'));
+    $this->instance(EspnService::class, $service);
+    $this->artisan('espn:sync-cbb-players', ['teamEspnId' => '142', '--season' => 2027, '--sync' => true])
+        ->expectsOutputToContain('1 failed')->assertFailed();
+});
+it('does not retry a valid current queue refresh because prior roster coverage is partial', function (): void {
+    Http::fake([
+        '*teams/142/roster?season=2027' => Http::response(cbbSeasonRosterPayload()),
+        '*teams/142/roster?season=2026' => Http::response(cbbSeasonRosterPayload(season: 2026, ids: [1, 2, 3])),
+    ]);
+    Log::spy();
+    (new FetchPlayers('142', 2027, true))->handle();
+    expect(RosterSnapshot::query()->where('season', 2027)->count())->toBe(1)
+        ->and(RosterSnapshot::query()->where('season', 2026)->count())->toBe(0);
+    Log::shouldHaveReceived('warning')->with('CBB: Prior roster observation rejected', Mockery::on(fn ($context): bool => $context['season'] === 2026))->once();
 });

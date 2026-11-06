@@ -4,7 +4,7 @@ namespace App\Services\CBB\Predictions;
 
 class CbbScoreMarginReleaseDefinition extends CbbFullModelReleaseDefinition
 {
-    public const SEMANTIC_VERSION = '1.2.0';
+    public const SEMANTIC_VERSION = '1.2.1';
 
     public function semanticVersion(): string
     {

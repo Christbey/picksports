@@ -101,7 +101,7 @@ it('captures quote ids prices and independent spread coverage before tipoff', fu
 it('freezes market evidence in the new release and grades ATS and totals without mutable odds', function (): void {
     cbbMarginFinal($this->home, $this->away, 40);
     $snapshot = cbbRecordMarket($this->game, $this->event);
-    app(CbbCalculationReleaseRegistrar::class)->register('1.2.0', effectiveAt: now()->subMinute()->toImmutable());
+    app(CbbCalculationReleaseRegistrar::class)->register('1.2.1', effectiveAt: now()->subMinute()->toImmutable());
     $prediction = app(GenerateCanonicalPrediction::class)->execute($this->game->fresh());
     $input = $prediction->calculationRun->inputSnapshot;
     expect(data_get($input->inputs, 'pregame_market.game_odds_snapshot_id'))->toBe($snapshot->id)
@@ -174,7 +174,7 @@ it('grades pushes and leaves an absent total ungraded', function (): void {
     $payload['bookmakers'][0]['markets'][0]['outcomes'][1]['point'] = -6;
     app(GameOddsSnapshotRecorder::class)->record('cbb', $this->game,
         ['id' => 'push-odds', 'commence_time' => $this->event->starts_at->toIso8601String()], $payload);
-    app(CbbCalculationReleaseRegistrar::class)->register('1.2.0', effectiveAt: now()->subMinute()->toImmutable());
+    app(CbbCalculationReleaseRegistrar::class)->register('1.2.1', effectiveAt: now()->subMinute()->toImmutable());
     $prediction = app(GenerateCanonicalPrediction::class)->execute($this->game->fresh());
     $this->travelTo($this->event->starts_at->addHour());
     $result = SportEventResult::factory()->create(['sport_event_id' => $this->event->id, 'home_score' => 86, 'away_score' => 80]);
@@ -202,3 +202,35 @@ it('persists a fresh confirmation of an unchanged CBB market after thirty minute
     $market = app(CbbPregameMarketSnapshot::class)->capture($this->game, now()->toImmutable(), $this->event->starts_at->toImmutable());
     expect($market['game_odds_snapshot_id'])->toBe($second->id)->and($market['available'])->toBeTrue();
 });
+
+it('normalizes score-rating evidence before JSON hashing and SQL persistence', function (): void {
+    $middle = Team::factory()->create();
+    cbbMarginFinal($this->home, $middle, 7);
+    cbbMarginFinal($middle, $this->away, 11);
+    cbbMarginFinal($this->home, $this->away, 19);
+    $ratings = app(CbbScoreMarginRatings::class)->forGame($this->game);
+    foreach ([$ratings['home']['rating'], $ratings['away']['rating'], $ratings['home_margin']] as $value) {
+        expect($value)->toBe(round($value, 6));
+    }
+    app(CbbCalculationReleaseRegistrar::class)->register('1.2.1', effectiveAt: now()->subMinute()->toImmutable());
+    $prediction = app(GenerateCanonicalPrediction::class)->execute($this->game->fresh());
+    expect($prediction->publication_state)->toBe('published')
+        ->and(data_get($prediction->output_metadata, 'model_metadata.score_margin_rating.home_margin'))->toBe($ratings['home_margin']);
+});
+
+it('grades historical CBB markets independently of stored boundary probabilities', function (float $probability): void {
+    cbbRecordMarket($this->game, $this->event);
+    $preview = app(GeneratePrediction::class)->preview($this->game->fresh());
+    $preview['win_probability'] = $probability;
+    $this->mock(GeneratePrediction::class)->shouldReceive('preview')->once()->andReturn($preview);
+    app(CbbCalculationReleaseRegistrar::class)->register('1.1.0', effectiveAt: now()->subMinute()->toImmutable());
+    $prediction = app(GenerateCanonicalPrediction::class)->execute($this->game->fresh());
+    $this->travelTo($this->event->starts_at->addHour());
+    $result = SportEventResult::factory()->create(['sport_event_id' => $this->event->id, 'home_score' => 90, 'away_score' => 70]);
+    $evaluation = app(CanonicalPredictionEvaluator::class)->evaluate($prediction, $result);
+    expect($evaluation->errors['log_loss'])->toBeNull()
+        ->and($evaluation->errors['probability_metric_status'])->toBe('boundary_probability_log_loss_unavailable')
+        ->and(data_get($evaluation->market_comparison, 'pregame_market.spread.result'))->toBe('loss')
+        ->and(data_get($evaluation->market_comparison, 'pregame_market.total.result'))->toBe('win')
+        ->and((float) $prediction->markets->first(fn ($market) => $market->market_type === 'moneyline' && $market->selection === 'home')->probability)->toBe($probability);
+})->with([0.0, 1.0]);

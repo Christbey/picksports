@@ -38,14 +38,14 @@ class CbbScoreMarginRatings
         $sample = $this->samples[$key];
         $sides = [];
         foreach (['home' => $target->home_team_id, 'away' => $target->away_team_id] as $side => $id) {
-            $sides[$side] = ['rating' => $sample['ratings'][$id] ?? null,
+            $sides[$side] = ['rating' => isset($sample['ratings'][$id]) ? round($sample['ratings'][$id], 6) : null,
                 'prior_games' => $sample['prior_counts'][$id] ?? 0, 'current_games' => $sample['current_counts'][$id] ?? 0];
         }
         $available = $sides['home']['rating'] !== null && $sides['away']['rating'] !== null;
 
         return ['version' => 'score-margin-v1', 'available' => $available,
             'reason' => $available ? null : 'missing_team_score_history',
-            'home_margin' => $available ? $sides['home']['rating'] - $sides['away']['rating'] + ($target->neutral_site ? 0 : $homeCourt) : null,
+            'home_margin' => $available ? round($sides['home']['rating'] - $sides['away']['rating'] + ($target->neutral_site ? 0 : $homeCourt), 6) : null,
             ...$sides, 'prior_retention' => $retention, 'current_prior_games' => $priorWeight,
             'cutoff_date_exclusive' => $cutoff, 'source_games' => $sample['source_games'], 'source_hash' => $sample['source_hash'],
             'source' => 'completed_score_history', 'probability_validation' => 'uncalibrated'];

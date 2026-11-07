@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePickSportsTheme } from "@/composables/usePickSportsTheme"
 import type { DialogContentEmits, DialogContentProps } from "reka-ui"
 import type { HTMLAttributes } from "vue"
 import { reactiveOmit } from "@vueuse/core"
@@ -21,6 +22,8 @@ interface SheetContentProps extends DialogContentProps {
 defineOptions({
   inheritAttrs: false,
 })
+
+const picksports = usePickSportsTheme()
 
 const props = withDefaults(defineProps<SheetContentProps>(), {
   side: "right",
@@ -51,7 +54,7 @@ const { onOpenAutoFocus, onCloseAutoFocus } = useDialogFocusReturn({
           && 'data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-0 top-0 h-auto border-b',
         side === 'bottom'
           && 'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto border-t',
-        props.class)"
+        picksports && 'ps-theme', props.class)"
       v-bind="{ ...$attrs, ...forwarded, onOpenAutoFocus, onCloseAutoFocus }"
     >
       <slot />

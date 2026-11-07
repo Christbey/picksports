@@ -1,20 +1,27 @@
 <script setup lang="ts">
 import { router, usePage } from '@inertiajs/vue3';
-import { computed, onBeforeUnmount, onMounted } from 'vue';
+import { computed, onBeforeUnmount, onMounted, provide } from 'vue';
 import AppContent from '@/components/AppContent.vue';
 import AppShell from '@/components/AppShell.vue';
 import AppSidebar from '@/components/AppSidebar.vue';
 import AppSidebarHeader from '@/components/AppSidebarHeader.vue';
 import LazyFeedbackSubmissionModal from '@/components/LazyFeedbackSubmissionModal.vue';
+import { pickSportsThemeKey } from '@/composables/usePickSportsTheme';
 import type { AppPageProps, BreadcrumbItem } from '@/types';
 
 type Props = {
     breadcrumbs?: BreadcrumbItem[];
+    picksports?: boolean;
 };
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
     breadcrumbs: () => [],
 });
+
+provide(
+    pickSportsThemeKey,
+    computed(() => props.picksports ?? false),
+);
 
 const page = usePage<AppPageProps>();
 const impersonation = computed(() => page.props.impersonation);
@@ -123,7 +130,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <AppShell variant="sidebar">
+    <AppShell
+        variant="sidebar"
+        :class="picksports ? 'ps-theme ps-workspace' : undefined"
+    >
         <AppSidebar />
         <AppContent variant="sidebar" class="overflow-x-hidden">
             <AppSidebarHeader :breadcrumbs="breadcrumbs" />

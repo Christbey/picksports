@@ -77,12 +77,30 @@ export function predictionBoardUi(sport, filterMode, scenario = 'normal') {
                             ? []
                             : options.query.per_page === 1
                               ? [row(1)]
-                              : [row(page * 2 - 1), row(page * 2)],
+                              : scenario === 'dense'
+                                ? Array.from({ length: 69 }, (_, index) => ({
+                                      ...row(index + 1),
+                                      weather_forecast: {
+                                          available: true,
+                                          temperature_f: Number(
+                                              (52.1 + index / 10).toFixed(1),
+                                          ),
+                                          wind_speed_mph: 6.5,
+                                          wind_gust_mph: 6.7,
+                                          precipitation_inches: 0,
+                                          source: 'model_snapshot',
+                                          provider: 'Fixture',
+                                          forecast_valid_at:
+                                              '2026-11-07T20:00:00Z',
+                                          received_at: '2026-11-07T15:00:00Z',
+                                      },
+                                  }))
+                                : [row(page * 2 - 1), row(page * 2)],
                     meta: {
                         pagination: {
                             current_page: page,
                             last_page: 2,
-                            total: 4,
+                            total: scenario === 'dense' ? 69 : 4,
                         },
                     },
                 };

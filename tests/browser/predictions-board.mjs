@@ -1,7 +1,7 @@
 // Run npm run build first. Synthetic fixtures only; BOARD_BASELINE_REF enables exact visual comparisons.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
@@ -42,11 +42,26 @@ const server = await createServer({
         {
             name: 'predictions-board-fixture',
             resolveId(id) {
+                if (id.endsWith('__BeforePredictionBoardResults.vue'))
+                    return `${root}resources/js/components/predictions/__BeforePredictionBoardResults.vue`;
                 if (id.endsWith('__BeforePredictions.vue'))
                     return `${root}resources/js/components/__BeforePredictions.vue`;
             },
             load(id) {
-                if (id.endsWith('__BeforePredictions.vue')) return original;
+                if (id.endsWith('__BeforePredictions.vue'))
+                    return original.replace(
+                        '@/components/predictions/PredictionBoardResults.vue',
+                        '@/components/predictions/__BeforePredictionBoardResults.vue',
+                    );
+                if (id.endsWith('__BeforePredictionBoardResults.vue'))
+                    return execFileSync(
+                        'git',
+                        [
+                            'show',
+                            `${baseline}:resources/js/components/predictions/PredictionBoardResults.vue`,
+                        ],
+                        { cwd: root, encoding: 'utf8' },
+                    );
             },
             configureServer(vite) {
                 vite.middlewares.use(
@@ -97,6 +112,7 @@ createApp(Board,{config:fixture.config}).mount('#app');
     server: { host: '127.0.0.1', port: 0, hmr: false, ws: false, watch: null },
 });
 const images = new Map();
+const denseScreenshots = new Map();
 let browser;
 async function imageHash(page) {
     await page.mouse.move(0, 0);
@@ -124,6 +140,7 @@ async function imageHash(page) {
 const scenarios = [
     ['nba', 'date', 'normal'],
     ['cfb', 'seasonWeek', 'normal'],
+    ['cfb', 'seasonWeek', 'dense'],
     ['cfb', 'date', 'normal'],
     ['mlb', 'date', 'normal'],
     ['nba', 'none', 'normal'],
@@ -135,6 +152,7 @@ try {
     browser = await chromium.launch({
         headless: true,
         channel: process.env.PLAYWRIGHT_CHANNEL,
+        args: ['--disable-gpu', '--force-color-profile=srgb'],
     });
     for (const before of baseline ? [true, false] : [false]) {
         const page = await browser.newPage({
@@ -151,12 +169,14 @@ try {
                 ? route.continue()
                 : route.abort(),
         );
-        for (const [sport, mode, scenario] of scenarios) {
+        for (const [sport, mode, scenario] of process.env.READER_FOCUSED
+            ? [['cfb', 'seasonWeek', 'dense']]
+            : scenarios) {
             await page.goto(
                 `http://127.0.0.1:${server.httpServer.address().port}/__predictions-board/${sport}-${mode}-${scenario}-${before}?sport=${sport}&mode=${mode}&scenario=${scenario}&before=${before ? 1 : 0}`,
                 { waitUntil: 'domcontentloaded' },
             );
-            if (scenario === 'normal')
+            if (scenario === 'normal' || scenario === 'dense')
                 await page.locator(`a[href="/${sport}/games/1"]`).waitFor();
             else if (scenario === 'error')
                 await page
@@ -168,6 +188,99 @@ try {
                         exact: true,
                     })
                     .waitFor();
+            if (scenario === 'dense') {
+                if (!before) {
+                    const list = page.getByRole('list', {
+                        name: 'Prediction matchups',
+                    });
+                    assert.equal(await list.locator(':scope > li').count(), 69);
+                }
+                if (process.env.SAFARI_READER_SHARED_SCRIPT)
+                    await page.addScriptTag({
+                        path: process.env.SAFARI_READER_SHARED_SCRIPT,
+                    });
+                if (process.env.SAFARI_READER_SCRIPT)
+                    await page.addScriptTag({
+                        path: process.env.SAFARI_READER_SCRIPT,
+                    });
+                let baselineArticleFound = false;
+                for (const expanded of [false, true]) {
+                    if (expanded)
+                        for (let i = 0; i < 3; i++)
+                            await page
+                                .getByRole('button', { name: /^Show analysis/ })
+                                .first()
+                                .click();
+                    for (const width of [320, 390, 1280]) {
+                        await page.setViewportSize({ width, height: 900 });
+                        const height = await page.evaluate(
+                            () => document.documentElement.scrollHeight,
+                        );
+                        for (const top of [0, 400, 900, 2400, height - 900]) {
+                            await page.evaluate((y) => scrollTo(0, y), top);
+                            const hash = await imageHash(page);
+                            const key = `dense-${expanded}-${width}-${top}`;
+                            if (before) {
+                                images.set(key, hash);
+                                denseScreenshots.set(
+                                    key,
+                                    await page.screenshot({
+                                        animations: 'disabled',
+                                    }),
+                                );
+                            } else if (baseline) {
+                                if (hash !== images.get(key)) {
+                                    writeFileSync(
+                                        '/tmp/cfb-reader-visual-before.png',
+                                        denseScreenshots.get(key),
+                                    );
+                                    writeFileSync(
+                                        '/tmp/cfb-reader-visual-after.png',
+                                        await page.screenshot({
+                                            animations: 'disabled',
+                                        }),
+                                    );
+                                }
+                                assert.equal(
+                                    hash,
+                                    images.get(key),
+                                    `Board appearance changed: ${key}`,
+                                );
+                            }
+                            if (process.env.SAFARI_READER_SCRIPT) {
+                                const detection = await page.evaluate(() => {
+                                    ReaderArticleFinderJS.resetArticleInformation();
+                                    const available =
+                                        ReaderArticleFinderJS.isReaderModeAvailable();
+                                    return {
+                                        available,
+                                        article:
+                                            !!ReaderArticleFinderJS.articleNode(),
+                                    };
+                                });
+                                baselineArticleFound ||=
+                                    detection.available || detection.article;
+                                if (!before)
+                                    assert.deepEqual(
+                                        detection,
+                                        { available: false, article: false },
+                                        `Reader detected the board at ${width}px, scroll ${top}, expanded=${expanded}`,
+                                    );
+                            }
+                        }
+                    }
+                }
+                if (before && process.env.SAFARI_READER_SCRIPT)
+                    assert.ok(
+                        baselineArticleFound,
+                        'Baseline must reproduce Reader detection',
+                    );
+                assert.deepEqual(errors, []);
+                console.log(
+                    `CFB 69-game weather slate: scrolling, analysis, ${baseline ? 'exact visuals, ' : ''}${process.env.SAFARI_READER_SCRIPT ? 'Reader detection ' : ''}${before ? 'baseline reproduced' : 'passed'}`,
+                );
+                continue;
+            }
             for (const width of [320, 390, 1280]) {
                 await page.setViewportSize({ width, height: 900 });
                 if (!before) {

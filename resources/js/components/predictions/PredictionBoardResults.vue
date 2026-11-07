@@ -39,13 +39,16 @@ const {
         </Card>
     </div>
 
-    <div
+    <ul
         v-else-if="!error && filteredPredictions.length > 0"
+        role="list"
+        aria-label="Prediction matchups"
         class="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card"
     >
-        <template
+        <li
             v-for="prediction in filteredPredictions"
             :key="prediction.game.id"
+            class="min-w-0"
         >
             <UnifiedPredictionCard
                 :prediction="prediction"
@@ -53,8 +56,8 @@ const {
                 :sport="config.sport"
                 compact
             />
-        </template>
-    </div>
+        </li>
+    </ul>
 
     <Card v-else-if="!error" class="border-dashed">
         <CardContent class="flex flex-col items-center gap-3 py-12 text-center">

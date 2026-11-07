@@ -6,6 +6,7 @@ import NflTeamMetricsBoard from '@/components/NflTeamMetricsBoard.vue';
 import { compareMetricValues } from '@/components/sport-team-metrics-helpers';
 import SeasonSelect from '@/components/SeasonSelect.vue';
 import SubscriptionBanner from '@/components/SubscriptionBanner.vue';
+import DataRecovery from '@/components/DataRecovery.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -69,11 +70,16 @@ const sport = computed(() => props.config.sport as ApiV2SportSlug);
 const isNfl = computed(() => sport.value === 'nfl');
 const pageRequestController = new AbortController();
 let metricsRequestController: AbortController | null = null;
+let disposed = false;
+let loadedQuery: string | null = null;
+const seasonsError = ref<string | null>(null);
+const seasonsLoading = ref(false);
 
 const fetchAvailableSeasons = async () => {
     const payload = await api.metrics.teamAvailableSeasons(sport.value, {
         init: { signal: pageRequestController.signal },
     });
+    if (disposed || pageRequestController.signal.aborted) return;
     if (!payload) {
         throw new Error('Failed to fetch available seasons');
     }
@@ -154,6 +160,7 @@ const sortedMetrics = computed(() => {
 });
 
 const fetchMetrics = async () => {
+    if (disposed) return;
     metricsRequestController?.abort();
     const controller = new AbortController();
     metricsRequestController = controller;
@@ -161,7 +168,6 @@ const fetchMetrics = async () => {
     try {
         loading.value = true;
         error.value = null;
-        metrics.value = [];
 
         const query: Record<string, string | number> = { per_page: 500 };
         if (selectedSeason.value) {
@@ -171,17 +177,25 @@ const fetchMetrics = async () => {
             query.season_type = selectedSeasonType.value;
         }
 
+        const queryKey = JSON.stringify(query);
+        if (queryKey !== loadedQuery) {
+            metrics.value = [];
+            tierLimit.value = null;
+            tierName.value = null;
+        }
         const response = await api.metrics.teams(sport.value, {
             query,
             init: { signal: controller.signal },
         });
-        if (!response) throw new Error('Failed to fetch team metrics');
         if (
+            disposed ||
             controller.signal.aborted ||
             metricsRequestController !== controller
         )
             return;
 
+        if (!response) throw new Error('Failed to fetch team metrics');
+        loadedQuery = queryKey;
         metrics.value = response.data ?? [];
         const tier =
             response.meta?.tier && typeof response.meta.tier === 'object'
@@ -196,10 +210,15 @@ const fetchMetrics = async () => {
             (response as any).tier_name ??
             null;
     } catch (e) {
-        if (e instanceof DOMException && e.name === 'AbortError') return;
+        if (
+            disposed ||
+            controller.signal.aborted ||
+            metricsRequestController !== controller
+        )
+            return;
         error.value = e instanceof Error ? e.message : 'An error occurred';
     } finally {
-        if (metricsRequestController === controller) {
+        if (!disposed && metricsRequestController === controller) {
             loading.value = false;
         }
     }
@@ -240,19 +259,25 @@ watch(selectedSeasonType, () => {
     fetchMetrics();
 });
 
-onMounted(async () => {
+const loadSeasons = async () => {
+    if (disposed || seasonsLoading.value) return;
+    seasonsLoading.value = true;
+    seasonsError.value = null;
     try {
         await fetchAvailableSeasons();
     } catch {
-        availableSeasons.value = [];
+        if (!disposed)
+            seasonsError.value =
+                'Available seasons could not be loaded. Try again to restore the season selector.';
+    } finally {
+        if (!disposed) seasonsLoading.value = false;
     }
-
-    if (!selectedSeason.value) {
-        await fetchMetrics();
-    }
-});
+    if (!disposed && !selectedSeason.value) await fetchMetrics();
+};
+onMounted(() => void loadSeasons());
 
 onBeforeUnmount(() => {
+    disposed = true;
     pageRequestController.abort();
     metricsRequestController?.abort();
 });
@@ -284,23 +309,30 @@ onBeforeUnmount(() => {
                 <Card>
                     <CardContent class="pt-6">
                         <div class="flex flex-wrap items-end gap-4">
-                            <div class="space-y-2">
+                            <div class="w-full space-y-2 sm:w-auto">
                                 <p class="ui-kicker">Season</p>
                                 <SeasonSelect
                                     id="metrics-season"
+                                    class="[&_select]:h-11 sm:[&_select]:h-10"
                                     v-model="selectedSeason"
                                     :options="availableSeasons"
                                 />
                             </div>
                             <div
                                 v-if="config.seasonTypeOptions?.length"
-                                class="space-y-2"
+                                class="w-full space-y-2 sm:w-auto"
                             >
-                                <p class="ui-kicker">Season Type</p>
+                                <p
+                                    id="metrics-season-type-label"
+                                    class="ui-kicker"
+                                >
+                                    Season Type
+                                </p>
                                 <select
                                     id="metrics-season-type"
+                                    aria-labelledby="metrics-season-type-label"
                                     v-model="selectedSeasonType"
-                                    class="flex h-10 min-w-[180px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none"
+                                    class="flex h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none sm:h-10 sm:min-w-[180px]"
                                 >
                                     <option v-if="!isNfl" value="">All</option>
                                     <option
@@ -312,9 +344,12 @@ onBeforeUnmount(() => {
                                     </option>
                                 </select>
                             </div>
-                            <div class="min-w-[200px] flex-1">
+                            <div
+                                class="w-full min-w-0 sm:min-w-[200px] sm:flex-1"
+                            >
                                 <Input
                                     v-model="searchQuery"
+                                    aria-label="Search teams"
                                     placeholder="Search by team name..."
                                     class="w-full"
                                 />
@@ -331,7 +366,7 @@ onBeforeUnmount(() => {
                                     <select
                                         id="nfl-metrics-sort"
                                         :value="sortBy"
-                                        class="h-10 w-full rounded-md border border-input bg-background px-3"
+                                        class="h-11 w-full rounded-md border border-input bg-background px-3 sm:h-10"
                                         @change="
                                             toggleSort(
                                                 (
@@ -351,7 +386,7 @@ onBeforeUnmount(() => {
                                 </label>
                                 <Button
                                     variant="outline"
-                                    class="h-10"
+                                    class="h-11 sm:h-10"
                                     @click="sortDesc = !sortDesc"
                                     >{{
                                         sortDesc
@@ -370,7 +405,7 @@ onBeforeUnmount(() => {
                                             : 'outline'
                                     "
                                     size="sm"
-                                    class="h-9"
+                                    class="h-11 sm:h-9"
                                     @click="toggleSort(option.key)"
                                 >
                                     {{ option.label }}
@@ -419,23 +454,46 @@ onBeforeUnmount(() => {
                     </span>
                 </div>
 
-                <Alert v-if="error" variant="destructive">
-                    <AlertDescription>{{ error }}</AlertDescription>
-                </Alert>
+                <DataRecovery
+                    v-if="seasonsError"
+                    :message="seasonsError"
+                    :busy="seasonsLoading"
+                    @retry="loadSeasons"
+                />
+                <DataRecovery
+                    v-if="error"
+                    :message="error"
+                    :busy="loading"
+                    :stale="metrics.length > 0"
+                    @retry="fetchMetrics"
+                />
 
-                <div v-if="loading" class="space-y-2">
+                <p
+                    v-if="loading && metrics.length"
+                    role="status"
+                    class="text-sm text-muted-foreground"
+                >
+                    Updating team metrics…
+                </p>
+                <div
+                    v-if="loading && !metrics.length"
+                    role="status"
+                    aria-label="Loading team metrics"
+                    aria-busy="true"
+                    class="w-full space-y-2 sm:w-auto"
+                >
                     <Skeleton v-for="i in 10" :key="i" class="h-12 w-full" />
                 </div>
 
                 <NflTeamMetricsBoard
-                    v-else-if="isNfl && !error"
+                    v-else-if="isNfl && (!error || metrics.length > 0)"
                     :metrics="sortedMetrics"
                     :columns="config.columns"
                     :team-link="config.teamLink"
                     :sort-label="activeSortLabel"
                 />
 
-                <Card v-else-if="!error">
+                <Card v-else-if="!error || metrics.length > 0">
                     <CardHeader>
                         <div class="ui-kicker">Standings</div>
                         <CardTitle class="tracking-tight"
@@ -443,8 +501,15 @@ onBeforeUnmount(() => {
                         >
                     </CardHeader>
                     <CardContent>
-                        <div class="ui-table-wrap">
-                            <table class="w-full text-sm">
+                        <div
+                            role="region"
+                            tabindex="0"
+                            aria-label="Team rankings"
+                            class="ui-table-wrap max-w-full min-w-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                        >
+                            <table
+                                class="w-full min-w-[600px] text-sm sm:min-w-0"
+                            >
                                 <thead>
                                     <tr class="border-b bg-muted/35 text-left">
                                         <th class="p-2 font-medium">#</th>
@@ -459,6 +524,19 @@ onBeforeUnmount(() => {
                                     </tr>
                                 </thead>
                                 <tbody>
+                                    <tr v-if="!sortedMetrics.length">
+                                        <td
+                                            :colspan="config.columns.length + 2"
+                                            role="status"
+                                            class="p-6 text-center text-muted-foreground"
+                                        >
+                                            {{
+                                                searchQuery
+                                                    ? 'No teams match your search.'
+                                                    : 'No team metrics available for these filters.'
+                                            }}
+                                        </td>
+                                    </tr>
                                     <tr
                                         v-for="(metric, index) in sortedMetrics"
                                         :key="metric.id"

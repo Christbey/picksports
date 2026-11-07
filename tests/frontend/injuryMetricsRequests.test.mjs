@@ -8,6 +8,7 @@ import {
     injuryConfig,
     metricsConfig,
     injuryRows,
+    metricRows,
 } from './fixtures/injuryMetricsUi.mjs';
 let server, components;
 before(async () => {
@@ -182,7 +183,127 @@ test('injuries cancel superseded reads and discard late errors, rows, warnings, 
     await s.fetchInjuries();
     assert.equal(calls.length, 3);
 });
-for (const kind of ['injuries']) {
+test('metrics recover metadata failure before selecting a season and preserve the season-type query', async (t) => {
+    let fail = true;
+    const calls = [];
+    const { state: s } = mount('metrics', t, {
+        metrics: {
+            teamAvailableSeasons: async () =>
+                fail ? null : { data: [2025, 2026] },
+            teams: async (sport, options) => {
+                calls.push(options.query);
+                return {
+                    data: metricRows(),
+                    meta: { tier: { limit: 2, name: 'free' } },
+                };
+            },
+        },
+    });
+    await flush();
+    assert.match(s.seasonsError.value, /Available seasons/);
+    assert.deepEqual(calls[0], { per_page: 500, season_type: '2' });
+    fail = false;
+    await s.loadSeasons();
+    await flush();
+    assert.equal(s.seasonsError.value, null);
+    assert.equal(s.selectedSeason.value, '2026');
+    assert.deepEqual(calls[1], {
+        per_page: 500,
+        season: '2026',
+        season_type: '2',
+    });
+    assert.equal(s.tierLimit.value, 2);
+});
+test('metrics retain stale rows for the same query, clear them for different filters, and ignore obsolete failures', async (t) => {
+    const calls = [];
+    const { state: s } = mount('metrics', t, {
+        metrics: {
+            teamAvailableSeasons: async () => ({ data: [2026, 2025] }),
+            teams: (sport, options) => {
+                const d = deferred();
+                calls.push({ ...d, ...options });
+                return d.promise;
+            },
+        },
+    });
+    await flush();
+    calls[0].resolve({
+        data: metricRows(),
+        meta: { tier: { limit: 2, name: 'free' } },
+    });
+    await flush();
+    s.searchQuery.value = 'Home';
+    const retry = s.fetchMetrics();
+    assert.equal(s.metrics.value.length, 2);
+    calls[1].reject(new Error('Offline'));
+    await retry;
+    assert.equal(s.metrics.value.length, 2);
+    assert.equal(s.error.value, 'Offline');
+    s.selectedSeason.value = '2025';
+    await flush();
+    assert.deepEqual(s.metrics.value, []);
+    assert.equal(s.tierLimit.value, null);
+    s.selectedSeasonType.value = '3';
+    await flush();
+    assert.equal(calls[2].init.signal.aborted, true);
+    calls[2].reject(new Error('obsolete'));
+    await flush();
+    assert.equal(s.error.value, null);
+    assert.equal(s.loading.value, true);
+    calls[3].resolve({ data: metricRows(), meta: {} });
+    await flush();
+    assert.equal(s.error.value, null);
+    assert.equal(s.searchQuery.value, 'Home');
+    assert.equal(s.sortedMetrics.value.length, 1);
+});
+test('closing during seasons bootstrap prevents later metrics reads and mutations', async (t) => {
+    const seasons = deferred();
+    let signal,
+        reads = 0;
+    const { app, state: s } = mount('metrics', t, {
+        metrics: {
+            teamAvailableSeasons: (sport, options) => {
+                signal = options.init.signal;
+                return seasons.promise;
+            },
+            teams: async () => {
+                reads++;
+                return { data: [] };
+            },
+        },
+    });
+    app.unmount();
+    assert.equal(signal.aborted, true);
+    seasons.resolve({ data: [2026] });
+    await flush();
+    assert.deepEqual(s.availableSeasons.value, []);
+    assert.equal(reads, 0);
+    await s.fetchMetrics();
+    await s.loadSeasons();
+    assert.equal(reads, 0);
+});
+test('closing during a metrics read ignores late success and failure', async (t) => {
+    const d = deferred();
+    let signal;
+    const { app, state: s } = mount('metrics', t, {
+        metrics: {
+            teamAvailableSeasons: async () => ({ data: [2026] }),
+            teams: (sport, options) => {
+                signal = options.init.signal;
+                return d.promise;
+            },
+        },
+    });
+    await flush();
+    app.unmount();
+    assert.equal(signal.aborted, true);
+    d.reject(new Error('Late'));
+    await flush();
+    assert.equal(s.error.value, null);
+    assert.deepEqual(s.metrics.value, []);
+});
+
+for (const kind of ['injuries', 'metrics']) {
     test(`${kind}: successful empty responses are not request failures`, async (t) => {
         const { state: s } = mount(kind, t, {
             injuries: { index: async () => ({ data: [], meta: {} }) },

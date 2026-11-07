@@ -39,6 +39,11 @@ class FetchPlayerInjuries extends BulkEspnJob implements ShouldBeUnique
             }
         } finally {
             $code = Artisan::call('cfb:sync-official-availability', ['--days-forward' => 8]);
+            $summary = json_decode(trim(Artisan::output()), true);
+            Log::info('CFB: Official availability ingest finished', [
+                'reports' => $summary['reports'] ?? null, 'partial_reports' => $summary['partial_reports'] ?? null,
+                'uncovered_teams' => $summary['uncovered_teams'] ?? null, 'source_failures' => $summary['source_failures'] ?? [],
+            ]);
             if ($code !== 0) {
                 Log::warning('CFB: Official availability sync incomplete; missing coverage remains unknown', ['exit_code' => $code]);
             }

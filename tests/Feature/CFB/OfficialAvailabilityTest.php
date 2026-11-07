@@ -191,3 +191,17 @@ it('publishes official absences in the current injury table and does not let ESP
     $action->execute('77');
     expect($row->fresh()->is_active)->toBeTrue();
 });
+
+it('reports empty successful HTTP responses as incomplete ingestion rather than success', function () {
+    config()->set('cfb_availability.conferences', ['Big Ten' => $this->source]);
+    Http::fake(fn () => Http::response([]));
+    $this->artisan('cfb:sync-official-availability', ['--season' => 2026, '--game' => $this->game->id])->assertExitCode(2);
+    expect(AvailabilityReport::count())->toBe(0);
+});
+
+it('reports complete ingestion only when both game reports are actually covered', function () {
+    config()->set('cfb_availability.conferences', ['Big Ten' => $this->source]);
+    Http::fake(fn () => Http::response(['report' => $this->report]));
+    $this->artisan('cfb:sync-official-availability', ['--season' => 2026, '--game' => $this->game->id])->assertSuccessful();
+    expect(AvailabilityReport::count())->toBe(2);
+});

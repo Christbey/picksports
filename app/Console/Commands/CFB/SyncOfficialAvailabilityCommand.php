@@ -35,8 +35,9 @@ class SyncOfficialAvailabilityCommand extends Command
         $summary['coverage'] = $games->map(fn ($g) => ['game_id' => $g->id,
             'home' => $evidence->forGame($g, $g->home_team_id)['coverage'],
             'away' => $evidence->forGame($g, $g->away_team_id)['coverage']])->all();
+        $summary['uncovered_teams'] = collect($summary['coverage'])->sum(fn ($row) => (int) ! $row['home']['complete'] + (int) ! $row['away']['complete']);
         $this->line(json_encode($summary, JSON_THROW_ON_ERROR));
 
-        return $summary['source_failures'] === [] && $summary['partial_reports'] === 0 ? self::SUCCESS : 2;
+        return $summary['source_failures'] === [] && $summary['partial_reports'] === 0 && $summary['uncovered_teams'] === 0 ? self::SUCCESS : 2;
     }
 }

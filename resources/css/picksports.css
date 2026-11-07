@@ -87,3 +87,18 @@
     outline-offset: 5px;
     border-radius: 0.25rem;
 }
+
+/* Keep the existing application beta indicator clear of homepage navigation. */
+@media (min-width: 640px) and (max-width: 1439px) {
+    .ps-theme .ps-home-primary-nav {
+        padding-right: 6rem;
+    }
+}
+
+@media (max-width: 639px) {
+    .ps-theme .ps-home-explore-nav {
+        justify-content: flex-start;
+        gap: 1rem;
+        padding-right: 5rem;
+    }
+}

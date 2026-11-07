@@ -12,7 +12,7 @@ defineProps<{ authenticated: boolean; canRegister: boolean }>();
     >
         <nav
             aria-label="Primary navigation"
-            class="ps-container flex h-20 items-center justify-between gap-4"
+            class="ps-home-primary-nav ps-container flex h-20 items-center justify-between gap-4"
         >
             <PickSportsBrand compact />
             <div
@@ -51,7 +51,7 @@ defineProps<{ authenticated: boolean; canRegister: boolean }>();
         </nav>
         <nav
             aria-label="Explore PickSports"
-            class="ps-container flex items-center justify-center gap-8 border-t border-border text-xs font-medium text-muted-foreground md:hidden"
+            class="ps-home-explore-nav ps-container flex items-center justify-center gap-8 border-t border-border text-xs font-medium text-muted-foreground md:hidden"
         >
             <a href="#sports" class="inline-flex min-h-11 items-center"
                 >Sports</a

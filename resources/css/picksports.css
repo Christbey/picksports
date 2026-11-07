@@ -102,3 +102,19 @@
         padding-right: 5rem;
     }
 }
+
+/* The dashboard opts in at the workspace root, including its sidebar. */
+.ps-workspace {
+    background: var(--background);
+    color: var(--foreground);
+}
+
+.ps-workspace [data-slot='app-sidebar-header'] button {
+    min-height: 2.75rem;
+}
+
+@media (min-width: 640px) {
+    .ps-workspace [data-slot='app-sidebar-header'] {
+        padding-right: 6rem;
+    }
+}

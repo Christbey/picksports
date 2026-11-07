@@ -5,8 +5,10 @@ use App\Actions\CFB\GenerateCanonicalPrediction;
 use App\Http\Resources\Api\V2\CanonicalSportPredictionResource;
 use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
+use App\Models\CFB\AvailabilityReport;
 use App\Models\CFB\FpiRating;
 use App\Models\CFB\Game;
+use App\Models\CFB\Player;
 use App\Models\CFB\Prediction;
 use App\Models\CFB\Team;
 use App\Models\CFB\TeamMetric;
@@ -339,7 +341,7 @@ it('holds an apparent CFB edge without two priced books and calibrated cover evi
     foreach (['home', 'away'] as $side) {
         FpiRating::factory()->create(['team_id' => $fixture[$side]->id, 'season' => 2026, 'week' => 0, 'fpi' => $side === 'home' ? 15 : 0]);
     }
-    $this->mock(CfbPlayerEvidenceService::class)->shouldReceive('quarterback')->andReturn(['status' => 'last_observed']);
+    $this->mock(CfbPlayerEvidenceService::class)->shouldReceive('quarterback')->andReturn(['status' => 'last_observed', 'injury_coverage_complete' => true]);
     $prediction = app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
     $modelHomeLine = (float) $prediction->markets
         ->where('market_type', 'spread')
@@ -444,6 +446,7 @@ it('holds an apparent CFB edge without two priced books and calibrated cover evi
 });
 
 it('keeps a large CFB spread disagreement on watch when team samples do not support it', function () {
+    $this->mock(CfbPlayerEvidenceService::class)->shouldReceive('quarterback')->andReturn(['status' => 'last_observed', 'injury_coverage_complete' => true]);
     $definition = [
         'sport' => 'cfb', 'game' => Game::class, 'team' => Team::class,
         'metric' => TeamMetric::class, 'legacy_prediction' => Prediction::class,
@@ -653,3 +656,27 @@ it('serializes prepared canonical predictions without database access or recalcu
         ->and(DB::getQueryLog())->toBeEmpty();
     DB::disableQueryLog();
 })->with('canonical football sports');
+
+it('freezes official CFB injuries and explicitly warns when the opposing availability report is missing', function () {
+    $definition = [
+        'sport' => 'cfb', 'game' => Game::class, 'team' => Team::class,
+        'metric' => TeamMetric::class, 'legacy_prediction' => Prediction::class,
+        'generator' => GenerateCanonicalPrediction::class, 'registrar' => CfbCalculationReleaseRegistrar::class,
+        'readiness' => CfbCanonicalCutoverReadinessService::class, 'team_names' => ['school' => 'University', 'mascot' => 'Hawks'],
+        'metric_season_type' => false,
+    ];
+    $fixture = canonicalFootballFixture($definition);
+    app(CfbCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
+    $player = Player::factory()->create(['espn_id' => 'injured-qb', 'team_id' => $fixture['home']->id, 'full_name' => 'Starting Quarterback', 'position' => 'QB']);
+    $report = AvailabilityReport::create(['game_id' => $fixture['game']->id, 'team_id' => $fixture['home']->id,
+        'source' => 'official_B10', 'source_url' => 'https://bigten.org/fb/availability-reports/', 'report_key' => 'test',
+        'payload_hash' => str_repeat('a', 64), 'state' => 'complete', 'reported_at' => now()->subMinutes(2), 'observed_at' => now(),
+        'entries' => [['player_id' => $player->id, 'name' => $player->full_name, 'status' => 'out', 'source_status' => 'Out']], 'issues' => []]);
+    $prediction = app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
+    $snapshot = $prediction->calculationRun->inputSnapshot;
+    expect(data_get($snapshot->inputs, 'home.injuries.0.player_id'))->toBe($player->id)
+        ->and(data_get($snapshot->inputs, 'home.injuries.0.availability_report_id'))->toBe($report->id)
+        ->and(data_get($snapshot->inputs, 'home.availability.injury_coverage_complete'))->toBeTrue()
+        ->and(data_get($snapshot->inputs, 'away.availability.injury_coverage'))->toBe('unknown')
+        ->and(data_get($prediction->output_metadata, 'input_quality.risk_flags'))->toContain('away_injury_coverage_unknown');
+});

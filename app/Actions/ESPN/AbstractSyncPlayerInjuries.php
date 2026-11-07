@@ -115,7 +115,7 @@ abstract class AbstractSyncPlayerInjuries
 
             if ($this->injuryPayloadReliable) {
                 $removedIds = $existingRows
-                    ->filter(fn (object $row, string $key): bool => (bool) $row->is_active && ! $presentKeys->has($key))
+                    ->filter(fn (object $row, string $key): bool => (bool) $row->is_active && $this->canRetireInjury($row) && ! $presentKeys->has($key))
                     ->pluck('id');
 
                 if ($removedIds->isNotEmpty()) {
@@ -171,6 +171,11 @@ abstract class AbstractSyncPlayerInjuries
     /**
      * @param  array<string, mixed>  $row
      */
+    protected function canRetireInjury(object $row): bool
+    {
+        return true;
+    }
+
     private function currentInjuryMatches(object $existing, array $row): bool
     {
         foreach ($row as $column => $value) {

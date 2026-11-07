@@ -10,6 +10,7 @@ use App\Models\CFB\GameWeather;
 use App\Models\CFB\PlayerInjury;
 use App\Models\CFB\TeamMetric;
 use App\Models\SportEvent;
+use App\Services\CFB\Availability\AvailabilityEvidence;
 use App\Services\CFB\CfbPlayerEvidenceService;
 use App\Services\CFB\CfbTeamEvidenceService;
 use App\Services\CFB\Data\CfbHistoricalPlayQuality;
@@ -38,6 +39,7 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
         }
 
         $inputs = $snapshot->inputs;
+        $inputs['require_availability_coverage'] = true;
         $inputs['event']['venue'] = $event->cfbGame->venue_name ?: $event->cfbGame->venue;
         $inputs['event']['week'] = (int) $event->cfbGame->week;
         $sourceTimestamps = $snapshot->sourceTimestamps;
@@ -67,7 +69,11 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
             $inputs[$side]['evidence_windows'] = app(CfbTeamEvidenceService::class)
                 ->forGame($game, $inputs[$side]['team_id']);
             $inputs[$side]['availability'] = app(CfbPlayerEvidenceService::class)
-                ->quarterback($game, $inputs[$side]['team_id']);
+                ->quarterback($game, $inputs[$side]['team_id'], $snapshot->capturedAt);
+            $availability = app(AvailabilityEvidence::class);
+            $evidence = $availability->forGame($game, $inputs[$side]['team_id'], $snapshot->capturedAt);
+            $inputs[$side]['injuries'] = $availability->snapshotInjuries($evidence['injuries']);
+            $sourceTimestamps[$side.'_official_availability'] = $evidence['coverage']['reported_at'];
             $prior = TeamMetric::where('team_id', $inputs[$side]['team_id'])
                 ->where('season', $event->season - 1)
                 ->where('updated_at', '<=', $snapshot->capturedAt)

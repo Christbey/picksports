@@ -25,6 +25,10 @@ class CfbPredictionInputQuality
                 || ! is_numeric($metrics['points_allowed_per_game'] ?? null)) {
                 $flags[] = $side.'_missing_team_metrics';
             }
+            if (data_get($inputs, 'require_availability_coverage', false)
+                && ! data_get($inputs, $side.'.availability.injury_coverage_complete', false)) {
+                $flags[] = $side.'_injury_coverage_unknown';
+            }
             if (data_get($inputs, $side.'.availability.quarterback_hold', false)) {
                 $flags[] = $side.'_quarterback_unresolved';
             }

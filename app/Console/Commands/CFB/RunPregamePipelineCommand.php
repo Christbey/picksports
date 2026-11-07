@@ -14,6 +14,7 @@ use App\Models\CFB\GameDataCheck;
 use App\Models\CFB\PlayerInjury;
 use App\Models\CFB\TeamMetric;
 use App\Models\MarketQuote;
+use App\Services\CFB\Availability\AvailabilityEvidence;
 use App\Services\CFB\CfbEpaBaselineEvidence;
 use App\Services\CFB\Data\CfbCfbdTeamBoxscoreSync;
 use App\Services\CFB\Data\CfbDataReadiness;
@@ -155,6 +156,10 @@ class RunPregamePipelineCommand extends Command
                 }
                 Cache::put($personnelKey, true, now()->addHours(24));
             }
+            if ($this->call('cfb:sync-official-availability', ['--season' => (int) $season, '--days-forward' => (int) $days,
+                ...($this->option('game') ? ['--game' => $this->option('game')] : [])]) !== self::SUCCESS) {
+                $this->warn('Official availability coverage is incomplete; missing reports remain unknown in forecasts.');
+            }
             $teams = $games->flatMap(fn ($g) => [$g->homeTeam, $g->awayTeam])->filter()->unique('id');
             $teamFailures = [];
             foreach ($teams as $team) {
@@ -172,8 +177,13 @@ class RunPregamePipelineCommand extends Command
                     // Direct action: do not generate before queued injury work finishes.
                     $injuries->execute((string) $team->espn_id);
                     if (! $injuries->lastSyncReliable()) {
-                        $this->warn("Injury feed unavailable for team {$team->id}; affected games remain pending.");
-                        $teamFailures[] = $team->id;
+                        $official = app(AvailabilityEvidence::class);
+                        $covered = $games->filter(fn ($game) => in_array($team->id, [$game->home_team_id, $game->away_team_id]))
+                            ->every(fn ($game) => $official->forGame($game, $team->id)['coverage']['complete']);
+                        if (! $covered) {
+                            $teamFailures[] = $team->id;
+                        }
+                        $this->warn("ESPN injury coverage unavailable for team {$team->id}; only games with complete official reports can continue.");
                     }
                 } catch (\Throwable $error) {
                     report($error);

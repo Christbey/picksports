@@ -72,7 +72,7 @@ const server = await createServer({
                     res.end(
                         await vite.transformIndexHtml(
                             '/__homepage' + req.url,
-                            `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${css}"></head><body><div id="app"></div><script type="module">import {createApp,h,reactive,nextTick} from 'vue';import Home from '/resources/js/${before ? '__HomepageBefore.vue' : 'pages/Welcome.vue'}';import {homepagePerformance} from '/tests/frontend/fixtures/homepageDesign.mjs';globalThis.__homepageProps=reactive({performance:homepagePerformance(${JSON.stringify(kind)}),canRegister:${register}});globalThis.__homepagePage=reactive({props:{auth:{user:${auth ? '{id:1}' : 'null'}}}});const app=createApp({setup(){return()=>h(Home,__homepageProps);}});app.config.globalProperties.$page=__homepagePage;app.mount('#app');await nextTick();globalThis.__homepageReady=true;</script></body></html>`,
+                            `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${css}"><style>.beta-indicator{top:5rem}@media(min-width:640px){.beta-indicator{top:.75rem}}</style></head><body><div class="beta-indicator pointer-events-none fixed right-3 z-[100] rounded-full border border-amber-300 bg-amber-100/95 px-2.5 py-1 text-[10px] font-bold tracking-[0.2em] text-amber-900 shadow-sm dark:border-amber-700 dark:bg-amber-900/90" aria-label="Beta indicator">BETA</div><div id="app"></div><script type="module">import {createApp,h,reactive,nextTick} from 'vue';import Home from '/resources/js/${before ? '__HomepageBefore.vue' : 'pages/Welcome.vue'}';import {homepagePerformance} from '/tests/frontend/fixtures/homepageDesign.mjs';globalThis.__homepageProps=reactive({performance:homepagePerformance(${JSON.stringify(kind)}),canRegister:${register}});globalThis.__homepagePage=reactive({props:{auth:{user:${auth ? '{id:1}' : 'null'}}}});const app=createApp({setup(){return()=>h(Home,__homepageProps);}});app.config.globalProperties.$page=__homepagePage;app.mount('#app');await nextTick();globalThis.__homepageReady=true;</script></body></html>`,
                         ),
                     );
                 });
@@ -215,6 +215,30 @@ try {
                     if (previous.has(key))
                         assert.deepEqual(destinations, previous.get(key));
                     await checkOverflow(page);
+                    const collisions = await page.evaluate(() => {
+                        const beta = document
+                            .querySelector('.beta-indicator')
+                            .getBoundingClientRect();
+                        return [...document.querySelectorAll('header a')]
+                            .filter((link) => {
+                                if (!link.getClientRects().length) return false;
+                                const range = document.createRange();
+                                range.selectNodeContents(link);
+                                const r = range.getBoundingClientRect();
+                                return (
+                                    r.left < beta.right &&
+                                    r.right > beta.left &&
+                                    r.top < beta.bottom &&
+                                    r.bottom > beta.top
+                                );
+                            })
+                            .map((link) => link.textContent.trim());
+                    });
+                    assert.deepEqual(
+                        collisions,
+                        [],
+                        'Beta indicator overlaps navigation',
+                    );
                     await contrast(page);
                     assert.equal(
                         await page

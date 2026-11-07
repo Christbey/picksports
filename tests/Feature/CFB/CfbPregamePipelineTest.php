@@ -37,6 +37,7 @@ beforeEach(function () {
     Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026,
         'home_team_id' => $home->id, 'away_team_id' => $away->id, 'status' => 'STATUS_SCHEDULED']);
     $this->mock(SyncGameMetadata::class)->shouldReceive('execute')->andReturn(true)->byDefault();
+    Artisan::command('cfb:sync-official-availability {--season=} {--days-forward=} {--game=}', fn () => 0);
     $this->steps = new ArrayObject;
     $this->mock(CfbSharedInputRunner::class)->shouldReceive('run')->andReturnUsing(function ($command, $arguments) {
         $code = Artisan::call($command, $arguments);

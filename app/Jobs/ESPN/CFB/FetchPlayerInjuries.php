@@ -6,6 +6,7 @@ use App\Actions\ESPN\CFB\SyncPlayerInjuries;
 use App\Jobs\ESPN\BulkEspnJob;
 use App\Services\ESPN\CFB\EspnService;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
 
 class FetchPlayerInjuries extends BulkEspnJob implements ShouldBeUnique
@@ -28,12 +29,19 @@ class FetchPlayerInjuries extends BulkEspnJob implements ShouldBeUnique
         $service = new EspnService;
         $action = new SyncPlayerInjuries($service);
 
-        if ($this->teamEspnId) {
-            $count = $action->execute($this->teamEspnId);
-            Log::info("CFB: Synced {$count} player injuries for team {$this->teamEspnId} from ESPN");
-        } else {
-            $count = $action->syncAllTeams();
-            Log::info("CFB: Synced {$count} total player injuries from ESPN");
+        try {
+            if ($this->teamEspnId) {
+                $count = $action->execute($this->teamEspnId);
+                Log::info("CFB: Synced {$count} player injuries for team {$this->teamEspnId} from ESPN");
+            } else {
+                $count = $action->syncAllTeams();
+                Log::info("CFB: Synced {$count} total player injuries from ESPN");
+            }
+        } finally {
+            $code = Artisan::call('cfb:sync-official-availability', ['--days-forward' => 8]);
+            if ($code !== 0) {
+                Log::warning('CFB: Official availability sync incomplete; missing coverage remains unknown', ['exit_code' => $code]);
+            }
         }
     }
 }

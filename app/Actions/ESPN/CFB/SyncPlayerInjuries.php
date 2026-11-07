@@ -27,4 +27,11 @@ class SyncPlayerInjuries extends AbstractSyncPlayerInjuries
     {
         return $this->injuryPayloadObserved && $this->injuryPayloadReliable;
     }
+
+    protected function canRetireInjury(object $row): bool
+    {
+        $source = data_get(json_decode((string) $row->raw_payload, true), 'source');
+
+        return ! is_string($source) || (! str_starts_with($source, 'official_') && $source !== 'source_verified_user_requested_correction');
+    }
 }

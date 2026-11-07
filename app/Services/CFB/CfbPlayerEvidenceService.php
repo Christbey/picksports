@@ -3,9 +3,10 @@
 namespace App\Services\CFB;
 
 use App\Models\CFB\Game;
-use App\Models\CFB\PlayerInjury;
 use App\Models\CFB\PlayerProp;
 use App\Models\CFB\PlayerStat;
+use App\Services\CFB\Availability\AvailabilityEvidence;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 
 class CfbPlayerEvidenceService
@@ -21,18 +22,13 @@ class CfbPlayerEvidenceService
             ->get()->sortByDesc(fn ($row) => $row->game->game_date->format('Y-m-d').' '.$row->game->game_time)->values();
     }
 
-    public function injuries(Game $game, int $teamId): Collection
+    public function injuries(Game $game, int $teamId, ?CarbonInterface $asOf = null): Collection
     {
-        return PlayerInjury::with('player')->where('team_id', $teamId)->where('is_active', true)
-            ->where('updated_at', '<=', now())
-            ->where(fn ($q) => $q->whereNull('source_updated_at')->orWhere('source_updated_at', '<=', now()))
-            ->where(fn ($q) => $q->whereNull('injury_date')->orWhereDate('injury_date', '<=', $game->game_date))
-            ->where(fn ($q) => $q->whereNull('return_date')->orWhereDate('return_date', '>=', $game->game_date))
-            ->whereRaw("LOWER(status) NOT IN ('active', 'available', 'probable')")->get();
+        return app(AvailabilityEvidence::class)->forGame($game, $teamId, $asOf)['injuries'];
     }
 
     /** The last observed passer is evidence, never a confirmed starter. */
-    public function quarterback(Game $game, int $teamId): array
+    public function quarterback(Game $game, int $teamId, ?CarbonInterface $asOf = null): array
     {
         $history = $this->history($game, $teamId);
         $lastGameId = $history->first()?->game_id;
@@ -40,13 +36,16 @@ class CfbPlayerEvidenceService
             ->sortByDesc('passing_attempts')->values();
         $leader = $passers->first();
         $ambiguous = $leader && $passers->count() > 1 && $leader->passing_attempts === $passers[1]->passing_attempts;
-        $injuries = $this->injuries($game, $teamId);
+        $evidence = app(AvailabilityEvidence::class)->forGame($game, $teamId, $asOf);
+        $injuries = $evidence['injuries'];
         $conflict = $leader && $injuries->contains('player_id', $leader->player_id);
 
         return ['status' => ! $leader ? 'unknown' : ($conflict || $ambiguous ? 'unresolved' : 'last_observed'),
             'last_observed_player_id' => $leader?->player_id, 'source_game_id' => $lastGameId,
             'confirmed_starter' => false, 'quarterback_hold' => (bool) ($conflict || $ambiguous),
-            'injury_coverage' => $injuries->isEmpty() ? 'unknown_or_no_reported_injuries' : 'reported',
+            'injury_coverage' => $evidence['coverage']['state'],
+            'injury_coverage_complete' => $evidence['coverage']['complete'],
+            'injury_coverage_evidence' => $evidence['coverage'],
             'replacement_player_id' => null];
     }
 

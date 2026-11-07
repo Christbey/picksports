@@ -10,8 +10,7 @@ import TeamRosterCard from '@/components/sport-team/TeamRosterCard.vue';
 import TeamSeasonStatsCard from '@/components/sport-team/TeamSeasonStatsCard.vue';
 import TeamTrendsLinear from '@/components/sport-team/TeamTrendsLinear.vue';
 import TeamTrendsTabbed from '@/components/sport-team/TeamTrendsTabbed.vue';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Card, CardContent } from '@/components/ui/card';
+import DataRecovery from '@/components/DataRecovery.vue';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSportTeamData } from '@/composables/useSportTeamData';
@@ -24,6 +23,11 @@ const props = defineProps<{
 }>();
 
 const {
+    loadTeam,
+    retrySection,
+    sectionErrors,
+    sectionLoading,
+    teamSectionLabels,
     teamData,
     teamMetrics,
     seasonStats,
@@ -176,11 +180,7 @@ const sportsTeamSchema = computed(() =>
             v-else-if="!teamData && error"
             class="flex h-full flex-1 flex-col gap-4 p-4"
         >
-            <Card>
-                <CardContent class="p-6">
-                    <p class="text-destructive">{{ error }}</p>
-                </CardContent>
-            </Card>
+            <DataRecovery :message="error" :busy="loading" @retry="loadTeam" />
         </div>
 
         <div v-else-if="teamData" class="flex h-full flex-1 flex-col gap-4 p-4">
@@ -190,9 +190,20 @@ const sportsTeamSchema = computed(() =>
                 :header-info-items="headerInfoItems"
             />
 
-            <Alert v-if="error" variant="destructive">
-                <AlertDescription>{{ error }}</AlertDescription>
-            </Alert>
+            <DataRecovery
+                v-if="error"
+                :message="error"
+                :busy="loading"
+                stale
+                @retry="loadTeam"
+            />
+            <DataRecovery
+                v-for="(message, section) in sectionErrors"
+                :key="section"
+                :message="`${teamSectionLabels[section]}: ${message}`"
+                :busy="sectionLoading[section] || loading"
+                @retry="retrySection(section)"
+            />
 
             <div v-if="loading" class="space-y-4">
                 <Skeleton class="h-32 w-full" />

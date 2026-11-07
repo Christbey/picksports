@@ -263,8 +263,8 @@ test('board leads with games, collapses season insights, and labels filter contr
         setup(props, context) {
             const bindings = component.setup(props, context);
             bindings.loading.value = false;
-            bindings.predictions.value = [prediction(0.72, 8.8, -13.5)];
-            bindings.selectedDate.value = '2026-09-20';
+            bindings.state.predictions.value = [prediction(0.72, 8.8, -13.5)];
+            bindings.state.selectedDate.value = '2026-09-20';
             return bindings;
         },
     };

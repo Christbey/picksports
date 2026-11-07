@@ -1,0 +1,93 @@
+export const injuryRows = () => [
+    {
+        id: 1,
+        player_id: 7,
+        team_id: 1,
+        player_name: 'Test Player',
+        team_abbreviation: 'HOM',
+        position: 'QB',
+        status: 'Out',
+        detail: 'Fixture injury',
+        is_active: true,
+        expected_impact: 0,
+        impact_level: 'high',
+        availability_probability: 0,
+        depth_rank: 1,
+        is_starter: true,
+        source_updated_at: '2026-11-06T10:00:00Z',
+    },
+    {
+        id: 2,
+        player_id: 8,
+        team_id: 2,
+        player_name: 'Questionable Player',
+        team_abbreviation: 'AWY',
+        status: 'Questionable',
+        detail: 'Monitoring availability',
+        is_active: true,
+        expected_impact: 1,
+        impact_level: 'medium',
+    },
+];
+export const metricRows = () => [
+    {
+        id: 1,
+        team_id: 1,
+        team: {
+            id: 1,
+            display_name: 'Home Team',
+            name: 'Home Team',
+            abbreviation: 'HOM',
+            location: 'Home',
+        },
+        rating: 0,
+        wins: 3,
+        losses: 2,
+        sample_sizes: { offensive_epa_plays: 100 },
+        updated_at: '2026-11-06T10:00:00Z',
+    },
+    {
+        id: 2,
+        team_id: 2,
+        team: {
+            id: 2,
+            display_name: 'Away Team',
+            name: 'Away Team',
+            abbreviation: 'AWY',
+            location: 'Away',
+        },
+        rating: 1,
+        wins: 2,
+        losses: 3,
+        sample_sizes: { offensive_epa_plays: 90 },
+        updated_at: '2026-11-06T10:00:00Z',
+    },
+];
+export const injuryConfig = (sport) => ({
+    sport,
+    title: sport.toUpperCase() + ' Injuries',
+    subtitle: 'Stored injury information',
+    breadcrumbHref: `/${sport}/injuries`,
+    actionableOnly: sport === 'nfl',
+});
+export const metricsConfig = (sport) => ({
+    sport,
+    title: sport.toUpperCase() + ' Team Metrics',
+    subtitle: 'Team rankings',
+    breadcrumbHref: `/${sport}/team-metrics`,
+    teamLink: (id) => `/${sport}/teams/${id}`,
+    defaultSort: 'rating',
+    defaultSeasonType: '2',
+    seasonTypeOptions: [
+        { value: '2', label: 'Regular Season' },
+        { value: '3', label: 'Postseason' },
+    ],
+    sortOptions: [
+        { key: 'rating', label: 'Rating', getValue: (row) => row.rating },
+    ],
+    columns: [
+        { label: 'Record', value: (row) => `${row.wins}-${row.losses}` },
+        { label: 'Net', value: (row) => String(row.rating) },
+        { label: 'Off EPA', value: () => '0.00' },
+    ],
+});

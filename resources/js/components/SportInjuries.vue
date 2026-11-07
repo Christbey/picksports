@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
 import { Activity, AlertTriangle, Clock3 } from 'lucide-vue-next';
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
+import DataRecovery from '@/components/DataRecovery.vue';
+import { useAsyncResource } from '@/composables/useAsyncResource';
 import RenderErrorBoundary from '@/components/RenderErrorBoundary.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -58,15 +60,12 @@ const breadcrumbs: BreadcrumbItem[] = [
     },
 ];
 
-const loading = ref(true);
-const error = ref<string | null>(null);
 const rows = ref<InjuryRow[]>([]);
 const freshness = ref<InjuryFreshness | null>(null);
 const warnings = ref<string[]>([]);
 const search = ref('');
 const severityFilter = ref<'all' | 'out' | 'questionable' | 'other'>('all');
 const api = useApiV2Client();
-const requestController = new AbortController();
 
 const filtered = computed(() => {
     const query = search.value.trim().toLowerCase();
@@ -227,11 +226,8 @@ function formatTimestamp(value: string | null | undefined): string {
     }).format(date);
 }
 
-async function fetchInjuries() {
-    loading.value = true;
-    error.value = null;
-
-    try {
+const injuryRequest = useAsyncResource(
+    async (signal) => {
         const payload = await api.injuries.index<InjuryRow>(
             props.config.sport as ApiV2SportSlug,
             {
@@ -240,28 +236,26 @@ async function fetchInjuries() {
                     limit: 500,
                     ...(props.config.actionableOnly ? { actionable: 1 } : {}),
                 },
-                init: { signal: requestController.signal },
+                init: { signal },
             },
         );
-        if (!payload) {
-            throw new Error('Failed to load injuries');
-        }
-        rows.value = Array.isArray(payload?.data) ? payload.data : [];
-        freshness.value = (payload?.meta?.freshness as InjuryFreshness) ?? null;
-        warnings.value = Array.isArray(payload?.meta?.warnings)
-            ? payload.meta.warnings
-            : [];
-    } catch (e) {
-        if (e instanceof DOMException && e.name === 'AbortError') return;
-        error.value =
-            e instanceof Error ? e.message : 'Failed to load injuries';
-    } finally {
-        loading.value = false;
-    }
-}
-
-onMounted(fetchInjuries);
-onBeforeUnmount(() => requestController.abort());
+        if (!payload) throw new Error('Failed to load injuries');
+        return payload;
+    },
+    { clearOnError: false },
+);
+const loading = injuryRequest.isLoading;
+const error = injuryRequest.error;
+const fetchInjuries = () => injuryRequest.execute();
+watch(injuryRequest.data, (payload) => {
+    if (!payload) return;
+    rows.value = Array.isArray(payload.data) ? payload.data : [];
+    freshness.value = (payload.meta?.freshness as InjuryFreshness) ?? null;
+    warnings.value = Array.isArray(payload.meta?.warnings)
+        ? payload.meta.warnings
+        : [];
+});
+onMounted(() => void fetchInjuries());
 </script>
 
 <template>
@@ -306,9 +300,12 @@ onBeforeUnmount(() => requestController.abort());
                 <Card>
                     <CardContent class="pt-6">
                         <div class="flex flex-wrap items-end gap-3">
-                            <div class="min-w-[240px] flex-1">
+                            <div
+                                class="w-full min-w-0 sm:min-w-[240px] sm:flex-1"
+                            >
                                 <Input
                                     v-model="search"
+                                    aria-label="Search injuries"
                                     placeholder="Search team, player, status..."
                                     class="w-full"
                                 />
@@ -321,7 +318,8 @@ onBeforeUnmount(() => requestController.abort());
                                             : 'outline'
                                     "
                                     size="sm"
-                                    class="h-9"
+                                    class="h-11 sm:h-9"
+                                    :aria-pressed="severityFilter === 'all'"
                                     @click="severityFilter = 'all'"
                                 >
                                     All
@@ -333,7 +331,8 @@ onBeforeUnmount(() => requestController.abort());
                                             : 'outline'
                                     "
                                     size="sm"
-                                    class="h-9"
+                                    class="h-11 sm:h-9"
+                                    :aria-pressed="severityFilter === 'out'"
                                     @click="severityFilter = 'out'"
                                 >
                                     Out
@@ -345,7 +344,10 @@ onBeforeUnmount(() => requestController.abort());
                                             : 'outline'
                                     "
                                     size="sm"
-                                    class="h-9"
+                                    class="h-11 sm:h-9"
+                                    :aria-pressed="
+                                        severityFilter === 'questionable'
+                                    "
                                     @click="severityFilter = 'questionable'"
                                 >
                                     Q / D2D
@@ -357,7 +359,8 @@ onBeforeUnmount(() => requestController.abort());
                                             : 'outline'
                                     "
                                     size="sm"
-                                    class="h-9"
+                                    class="h-11 sm:h-9"
+                                    :aria-pressed="severityFilter === 'other'"
                                     @click="severityFilter = 'other'"
                                 >
                                     Other
@@ -396,30 +399,46 @@ onBeforeUnmount(() => requestController.abort());
                     >
                 </div>
 
-                <Alert v-if="error" variant="destructive">
-                    <AlertDescription>{{ error }}</AlertDescription>
-                </Alert>
+                <DataRecovery
+                    v-if="error"
+                    :message="error"
+                    :busy="loading"
+                    :stale="rows.length > 0"
+                    @retry="fetchInjuries"
+                />
 
-                <Alert v-else-if="warnings.length > 0 && !freshness?.is_stale">
+                <Alert v-if="warnings.length > 0 && !freshness?.is_stale">
                     <AlertTriangle class="size-4" />
                     <AlertDescription>{{
                         warnings.join(' ')
                     }}</AlertDescription>
                 </Alert>
 
-                <Card v-else-if="loading">
+                <p
+                    v-if="loading && rows.length"
+                    role="status"
+                    class="text-sm text-muted-foreground"
+                >
+                    Updating injuries…
+                </p>
+                <Card
+                    v-if="loading && !rows.length"
+                    role="status"
+                    aria-label="Loading injuries"
+                    aria-busy="true"
+                >
                     <CardContent class="py-8 text-sm text-muted-foreground">
                         Loading injuries...
                     </CardContent>
                 </Card>
 
-                <Card v-else-if="grouped.length === 0">
+                <Card v-else-if="!error && grouped.length === 0">
                     <CardContent class="py-8 text-sm text-muted-foreground">
                         No actionable injuries found.
                     </CardContent>
                 </Card>
 
-                <div v-else class="grid gap-4">
+                <div v-else-if="grouped.length > 0" class="grid gap-4">
                     <Card v-for="group in grouped" :key="group.team">
                         <CardHeader>
                             <div
@@ -450,7 +469,7 @@ onBeforeUnmount(() => requestController.abort());
                                 <div
                                     v-for="injury in group.injuries"
                                     :key="injury.id"
-                                    class="ui-surface-subtle p-3"
+                                    class="ui-surface-subtle min-w-0 p-3 [overflow-wrap:anywhere]"
                                 >
                                     <div
                                         class="flex flex-wrap items-center gap-2"

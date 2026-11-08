@@ -54,7 +54,7 @@ class CfbQuarterbackEvidence
         $replacement = $candidates->first();
         $result['replacement_player_id'] = $replacement['player_id'];
         $result['replacement_name'] = $replacement['name'];
-        $result['identity_basis'] = 'only_available_observed_backup_not_confirmed_starter';
+        $result['identity_basis'] = 'only_observed_backup_without_recorded_absence_not_confirmed';
         $result['status'] = 'insufficient_play_evidence';
         $profiles = [];
         $baseline = ['plays' => 0, 'epa' => 0.0, 'games' => []];

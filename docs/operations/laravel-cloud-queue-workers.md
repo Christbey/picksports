@@ -44,7 +44,7 @@ Existing `--queued` CFB pipelines retain their bounded dispatch path.
 Dispatchers run in the foreground and do not spawn concurrent calculation
 processes on web compute. A unique lock coalesces the same pending/running
 command for up to 24 hours; it is released on completion or terminal failure.
-Scheduled commands have one attempt and a 1,700-second bulk timeout (110 seconds
+After each scheduled bulk command, the worker exits cleanly and Cloud restarts it, releasing command instances and cached graphs before the next command. Scheduled commands have one attempt and a 1,700-second bulk timeout (110 seconds
 for live dispatch), below worker timeouts and the Redis lease. Nonzero exit codes
 fail the job. Worker completion records success/failure, duration and peak PHP
 memory; dispatch alone never records successful completion. Command output goes

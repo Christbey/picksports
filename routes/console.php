@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\ApiIdempotencyKey;
+use App\Models\CommandHeartbeat;
 use App\Models\NFL\Game;
 use App\Services\CFB\Predictions\CfbCalculationReleaseDefinition;
 use App\Services\CommandHeartbeatService;
@@ -1461,7 +1463,7 @@ $pruneFailedJobsEvent = Schedule::command('queue:prune-failed --hours=168')
     ->runInBackground();
 $attachCommandHeartbeat($pruneFailedJobsEvent, 'queue:prune-failed --hours=168', 'Queue: Prune Failed Jobs');
 
-$pruneCommandHeartbeatsCommand = 'model:prune --model=App\\Models\\CommandHeartbeat';
+$pruneCommandHeartbeatsCommand = 'model:prune --model='.escapeshellarg(CommandHeartbeat::class);
 $pruneCommandHeartbeatsEvent = Schedule::command($pruneCommandHeartbeatsCommand)
     ->dailyAt('03:25')
     ->name('Maintenance: Prune Command Heartbeats')
@@ -1474,7 +1476,7 @@ $attachCommandHeartbeat(
     'Maintenance: Prune Command Heartbeats',
 );
 
-$pruneApiIdempotencyKeysCommand = 'model:prune --model=App\\Models\\ApiIdempotencyKey';
+$pruneApiIdempotencyKeysCommand = 'model:prune --model='.escapeshellarg(ApiIdempotencyKey::class);
 $pruneApiIdempotencyKeysEvent = Schedule::command($pruneApiIdempotencyKeysCommand)
     ->dailyAt('03:30')
     ->name('Maintenance: Prune API Idempotency Keys')

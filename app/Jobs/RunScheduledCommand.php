@@ -42,18 +42,24 @@ class RunScheduledCommand implements ShouldBeUnique, ShouldQueue
         $started = hrtime(true);
         $sport = $heartbeats->inferSportFromCommand($this->commandLine);
         $metadata = ['scheduled_name' => $this->scheduledName, 'queue' => $this->queue];
-        $code = Artisan::call($this->commandLine, [], new ConsoleOutput);
-        $metadata += ['exit_code' => $code, 'duration_ms' => (int) ((hrtime(true) - $started) / 1_000_000),
-            'peak_memory_bytes' => memory_get_peak_usage(true)];
-        if ($code !== 0) {
-            throw new RuntimeException('Scheduled command exited with code '.$code);
-        }
-        $heartbeats->recordSuccess($this->commandLine, $sport, 'worker', $metadata);
-        if ($this->heartbeatUrl) {
-            try {
-                Http::connectTimeout(3)->timeout(5)->get($this->heartbeatUrl)->throw();
-            } catch (Throwable $error) {
-                report($error);
+        try {
+            $code = Artisan::call($this->commandLine, [], new ConsoleOutput);
+            $metadata += ['exit_code' => $code, 'duration_ms' => (int) ((hrtime(true) - $started) / 1_000_000),
+                'peak_memory_bytes' => memory_get_peak_usage(true)];
+            if ($code !== 0) {
+                throw new RuntimeException('Scheduled command exited with code '.$code);
+            }
+            $heartbeats->recordSuccess($this->commandLine, $sport, 'worker', $metadata);
+            if ($this->heartbeatUrl) {
+                try {
+                    Http::connectTimeout(3)->timeout(5)->get($this->heartbeatUrl)->throw();
+                } catch (Throwable $error) {
+                    report($error);
+                }
+            }
+        } finally {
+            if ($this->queue === 'sync') {
+                app('queue.worker')->shouldQuit = true;
             }
         }
     }

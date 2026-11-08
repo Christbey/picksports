@@ -36,6 +36,7 @@ it('records completion and external success only after the command succeeds on i
     expect($heartbeat->source)->toBe('worker')->and($heartbeat->status)->toBe('success')
         ->and($heartbeat->metadata['exit_code'])->toBe(0)->and($heartbeat->metadata['duration_ms'])->toBeGreaterThanOrEqual(0);
     Http::assertSentCount(1);
+    expect(app('queue.worker')->shouldQuit)->toBeTrue();
 });
 
 it('fails visibly without success heartbeats when a worker command fails', function () {
@@ -48,7 +49,7 @@ it('fails visibly without success heartbeats when a worker command fails', funct
     } catch (RuntimeException $error) {
         $job->failed($error);
     }
-    expect(CommandHeartbeat::sole()->status)->toBe('failure');
+    expect(CommandHeartbeat::sole()->status)->toBe('failure')->and(app('queue.worker')->shouldQuit)->toBeTrue();
     Http::assertNothingSent();
 });
 
@@ -59,4 +60,14 @@ it('makes every scheduled command a lightweight foreground dispatcher', function
         }
         expect($event->command)->toContain('ops:dispatch-scheduled')->and($event->runInBackground)->toBeFalse();
     }
+});
+
+it('preserves quoted command arguments when a scheduled command executes without a shell', function () {
+    $received = null;
+    Artisan::command('memory-test:options {--model=}', function () use (&$received) {
+        $received = $this->option('model');
+    });
+    $job = new RunScheduledCommand('memory-test:options --model='.escapeshellarg(CommandHeartbeat::class), 'Memory Test');
+    $job->handle(app(CommandHeartbeatService::class));
+    expect($received)->toBe(CommandHeartbeat::class);
 });

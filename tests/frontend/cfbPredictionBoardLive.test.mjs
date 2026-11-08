@@ -171,6 +171,7 @@ for (const filterMode of ['date', 'seasonWeek']) {
                             data: [
                                 {
                                     id: 'canonical-public-id',
+                                    sport: 'cfb',
                                     game_id: 1,
                                     status,
                                     projection: {},
@@ -183,7 +184,16 @@ for (const filterMode of ['date', 'seasonWeek']) {
                                     },
                                 },
                             ],
-                            meta: { pagination: { current_page: 2 } },
+                            meta: {
+                                pagination: { current_page: 2 },
+                                board: {
+                                    version: 'a'.repeat(64),
+                                    mode:
+                                        options.query.view === 'live'
+                                            ? 'live'
+                                            : 'replace',
+                                },
+                            },
                         };
                     },
                 },
@@ -220,6 +230,7 @@ for (const filterMode of ['date', 'seasonWeek']) {
                 assert.equal(calls[1].options.query.week, '5');
                 assert.equal(calls[1].options.query.season_type, '2');
             }
+            assert.equal(calls[initialCalls - 1].options.query.view, 'board');
             assert.equal(intervals.get(1).delay, 30000);
             intervals.get(1).callback();
             await flush();
@@ -235,6 +246,11 @@ for (const filterMode of ['date', 'seasonWeek']) {
             listeners.get('visibilitychange')();
             await flush();
             assert.equal(calls.length, initialCalls + 2);
+            assert.equal(calls[initialCalls + 1].options.query.view, 'live');
+            assert.equal(
+                calls[initialCalls + 1].options.query.board_version,
+                'a'.repeat(64),
+            );
             intervals.get(1).callback();
             await flush();
             assert.equal(

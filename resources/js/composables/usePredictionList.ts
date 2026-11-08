@@ -7,7 +7,7 @@ export interface PagedResponse<T> {
 }
 
 export function usePredictionList<T>(
-    fetcher: (page: number) => Promise<PagedResponse<T>>,
+    fetcher: (page: number, background?: boolean) => Promise<PagedResponse<T>>,
 ) {
     const items = ref<T[]>([]);
     const meta = ref<PaginationMeta | null>(null);
@@ -30,7 +30,7 @@ export function usePredictionList<T>(
                 error.value = null;
             }
             refreshError.value = null;
-            const data = await fetcher(page);
+            const data = await fetcher(page, background);
             if (request !== latestRequest) return;
 
             items.value = data.data;

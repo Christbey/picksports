@@ -54,7 +54,7 @@ it('prunes retained command heartbeats once daily on one server', function () {
     );
 
     expect($event)->not->toBeNull()
-        ->and((string) $event?->command)->toContain('model:prune --model=App\\Models\\CommandHeartbeat')
+        ->and((string) $event?->command)->toContain('model:prune --model=', 'CommandHeartbeat')
         ->and($event?->expression)->toBe('25 3 * * *')
         ->and($event?->onOneServer)->toBeTrue()
         ->and($event?->withoutOverlapping)->toBeTrue()

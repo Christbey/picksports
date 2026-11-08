@@ -275,3 +275,35 @@ it('hydrates dashboard forecast graphs in bounded unsorted batches without losin
         DB::disableQueryLog();
     }
 });
+
+it('opts CFB boards into compact replacement and live responses without changing the full API', function () {
+    config()->set('prediction_lifecycle.canonical_reads.cfb', true);
+    $prediction = vueCanonicalFixture('cfb');
+    $game = $prediction->sportEvent->cfbGame;
+    $game->update(['status' => 'STATUS_IN_PROGRESS', 'home_score' => 7, 'away_score' => 0]);
+    $this->actingAs(User::factory()->create());
+    $url = '/api/v2/sports/cfb/predictions?season=2026';
+    $full = $this->getJson($url)->assertSuccessful()->assertJsonMissingPath('meta.board')->json('data.0');
+    $board = $this->getJson($url.'&view=board')->assertSuccessful()->assertJsonPath('meta.board.mode', 'replace');
+    expect($board->json('data.0.projection'))->toBe($full['projection'])
+        ->and($board->json('data.0.weather_forecast'))->toBe($full['weather_forecast']);
+    $version = $board->json('meta.board.version');
+    $game->update(['home_score' => 0, 'away_score' => 14, 'period' => 2, 'game_clock' => '03:00']);
+    $live = $this->getJson($url.'&view=live&board_version='.$version)->assertSuccessful()
+        ->assertJsonPath('meta.board.mode', 'live')->assertJsonMissingPath('data.0.projection')
+        ->assertJsonMissingPath('data.0.audit_context')->assertJsonPath('data.0.game.home_score', 0)
+        ->assertJsonPath('data.0.game.away_score', 14)->assertJsonPath('data.0.game.clock', '03:00');
+    expect($live->json('meta.pagination'))->toBe($board->json('meta.pagination'));
+    $prediction->update(['publication_state' => 'withdrawn', 'withdrawn_at' => now()]);
+    $this->getJson($url.'&view=live&board_version='.$version)->assertSuccessful()
+        ->assertJsonPath('meta.board.mode', 'replace')->assertJsonCount(0, 'data')->assertJsonPath('meta.pagination.total', 0);
+});
+
+it('validates board delivery selectors without weakening prediction access', function () {
+    $url = '/api/v2/sports/cfb/predictions';
+    $this->getJson($url.'?view=board')->assertUnauthorized();
+    $this->actingAs(User::factory()->create());
+    $this->getJson($url.'?view=invalid')->assertUnprocessable();
+    $this->getJson($url.'?view=live&board_version=bad')->assertUnprocessable();
+    $this->getJson('/api/v2/sports/nfl/predictions?view=board')->assertUnprocessable();
+});

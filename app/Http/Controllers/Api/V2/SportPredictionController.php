@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V2;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V2\SportPredictionIndexRequest;
+use App\Services\Api\V2\CfbPredictionBoardPayload;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportPredictionReader;
 use Illuminate\Http\JsonResponse;
@@ -22,15 +23,22 @@ class SportPredictionController extends Controller
         $paginator = $predictions->queryFor($context)->paginate($context, $filters, $request->user());
         $paginator->setCollection($predictions->resources($context, $paginator->getCollection()));
 
-        return response()->json([
-            'data' => $paginator->getCollection()->values(),
-            'meta' => $this->collectionMeta($context->slug, $filters, [
-                'current_page' => $paginator->currentPage(),
-                'per_page' => $paginator->perPage(),
-                'total' => $paginator->total(),
-                'last_page' => $paginator->lastPage(),
-            ]) + $predictions->sourceMeta($context),
-        ]);
+        $pagination = [
+            'current_page' => $paginator->currentPage(), 'per_page' => $paginator->perPage(),
+            'total' => $paginator->total(), 'last_page' => $paginator->lastPage(),
+        ];
+        $meta = $this->collectionMeta($context->slug, $filters, $pagination) + $predictions->sourceMeta($context);
+        if ($context->slug === 'cfb' && isset($filters['view'])) {
+            $payload = app(CfbPredictionBoardPayload::class)->response(
+                $paginator->getCollection()->map(fn ($resource) => $resource->resolve($request))->values()->all(),
+                $pagination,
+                $filters['view'] === 'live' ? ($filters['board_version'] ?? null) : null,
+            );
+
+            return response()->json(['data' => $payload['data'], 'meta' => [...$meta, 'board' => $payload['board']]]);
+        }
+
+        return response()->json(['data' => $paginator->getCollection()->values(), 'meta' => $meta]);
     }
 
     public function show(

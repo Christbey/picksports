@@ -13,9 +13,10 @@ use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportGameQuery;
 use App\Services\PerformanceStatistics;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 
-function vueCanonicalFixture(string $sport, float $homeLine = 4.5, float $homeProbability = 0.65): CanonicalPrediction
+function vueCanonicalFixture(string $sport, float $homeLine = 4.5, float $homeProbability = 0.65, array $metadata = []): CanonicalPrediction
 {
     $event = SportEvent::factory()->create(['sport' => $sport, 'season' => 2026, 'starts_at' => now()->addHour()]);
     $namespace = strtoupper($sport);
@@ -34,7 +35,7 @@ function vueCanonicalFixture(string $sport, float $homeLine = 4.5, float $homePr
     $prediction = CanonicalPrediction::factory()->create([
         'sport' => $sport, 'sport_event_id' => $event->id, 'calculation_run_id' => $run->id,
         'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null,
-        'detail_source' => null, 'detail_sport' => null, 'detail_id' => null,
+        'detail_source' => null, 'detail_sport' => null, 'detail_id' => null, 'output_metadata' => $metadata,
     ]);
     PredictionMarket::factory()->create(['prediction_id' => $prediction->id, 'selection' => 'home', 'probability' => $homeProbability]);
     PredictionMarket::factory()->create(['prediction_id' => $prediction->id, 'market_type' => 'spread', 'selection' => 'home', 'projected_line' => $homeLine]);
@@ -144,3 +145,32 @@ it('preserves sportsbook spread signs through the dashboard card convention', fu
     'West Virginia home underdog' => [3.1, 0.374],
     'pick em' => [0.0, 0.5],
 ]);
+
+it('keeps kickoff and publication tie order without SQL sorting full dashboard prediction rows', function () {
+    config()->set('prediction_lifecycle.canonical_reads.cfb', true);
+    $predictions = collect();
+    foreach (['08:00:00', '08:05:00', '08:05:00', '08:10:00'] as $time) {
+        Carbon::setTestNow('2026-10-10 '.$time);
+        $predictions->push(vueCanonicalFixture('cfb', metadata: ['diagnostic_payload' => str_repeat('stored-input-', 5000)]));
+    }
+    Carbon::setTestNow('2026-10-10 12:00:00');
+    foreach ($predictions as $index => $prediction) {
+        $kickoff = now()->setTime($index === 3 ? 13 : 14, 0)->utc();
+        $prediction->sportEvent->update(['starts_at' => $kickoff]);
+        $prediction->sportEvent->cfbGame->update(['game_date' => $kickoff->toDateString(), 'game_time' => $kickoff->toTimeString()]);
+    }
+    $expected = [3, 2, 1, 0];
+    DB::enableQueryLog();
+    try {
+        $this->actingAs(User::factory()->create())->get(route('dashboard'))
+            ->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('sports', 1)->has('sports.0.predictions', 4)
+            ->where('sports.0.predictions', fn ($rows) => collect($rows)->pluck('id')->all() === collect($expected)->map(fn ($index) => $predictions[$index]->public_id)->all())
+            ->where('stats.total_predictions_today', 4));
+        $slateQueries = collect(DB::getQueryLog())->pluck('query')->filter(fn (string $sql): bool => preg_match('/select ["`]predictions["`]\\.\\*/i', $sql) === 1 && str_contains($sql, 'join'));
+        expect($slateQueries)->toHaveCount(1)
+            ->and(strtolower($slateQueries->sole()))->not->toContain('order by');
+    } finally {
+        DB::disableQueryLog();
+    }
+});

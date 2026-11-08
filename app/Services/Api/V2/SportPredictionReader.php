@@ -54,7 +54,7 @@ class SportPredictionReader
             $nflBoards = $context->slug === 'nfl' ? app(NflPredictionBoardContext::class)->forPredictions($predictions) : collect();
 
             return $predictions->map(fn (CanonicalPrediction $prediction): JsonResource => new CanonicalSportPredictionResource(
-                $prediction, $context, $this->canonicalPresentations->forPrediction($prediction, $nflBoards->get($prediction->id)),
+                $prediction, $context, fn () => $this->canonicalPresentations->forPrediction($prediction, $nflBoards->get($prediction->id)),
             ));
         }
 

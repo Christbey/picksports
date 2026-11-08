@@ -1,0 +1,219 @@
+{
+    "full": {
+        "id": "fixture-forecast",
+        "sport": "cfb",
+        "game_id": 644,
+        "phase": "pregame",
+        "revision": 1,
+        "status": "STATUS_SCHEDULED",
+        "projection": {
+            "predicted_spread": -2.58,
+            "predicted_total": 53.0,
+            "home_win_probability": 0.605874,
+            "away_win_probability": 0.394126,
+            "confidence_score": null
+        },
+        "game": {
+            "id": 644,
+            "status": "STATUS_SCHEDULED",
+            "game_date": "2026-11-07",
+            "game_time": "18:00:00",
+            "season_type": 2,
+            "week": 10,
+            "home_score": null,
+            "away_score": null,
+            "home_team": {
+                "id": 1,
+                "abbreviation": "KU",
+                "logo_url": null
+            },
+            "away_team": {
+                "id": 2,
+                "abbreviation": "UCF",
+                "logo_url": null
+            }
+        },
+        "model_bet_context": {
+            "model_home_spread": -2.58,
+            "home_spread": -3,
+            "total": 52.5
+        },
+        "weather_forecast": {
+            "available": false,
+            "source": "missing"
+        },
+        "value_signal": {
+            "has_playable_value": false,
+            "play_count": 0,
+            "decision_status": "pass",
+            "decision_summary": "Tracking only",
+            "decision_notes": ["Preserve decision explanation"],
+            "best": null,
+            "spread_assessment": {
+                "model_home_margin": 2.58,
+                "market_home_line": -3,
+                "risk_flags": ["uncalibrated"],
+                "summary": "Tracking only"
+            },
+            "football_signals": {
+                "catalog_count": 400,
+                "applied": 0,
+                "triggered": 1,
+                "missing_inputs": 0,
+                "signals": [
+                    {
+                        "id": "matched",
+                        "side": "home",
+                        "label": "Matched signal",
+                        "market": "spread",
+                        "matched": true,
+                        "contribution_points": 0.0,
+                        "status": "tracking_only",
+                        "sample_games": 20,
+                        "input_support": {
+                            "large_unused_detail": "unused evidence"
+                        }
+                    },
+                    {
+                        "id": "unmatched",
+                        "side": "home",
+                        "label": "Matched signal",
+                        "market": "spread",
+                        "matched": false,
+                        "contribution_points": 0.0,
+                        "status": "tracking_only",
+                        "sample_games": 20,
+                        "input_support": {
+                            "large_unused_detail": "unused evidence"
+                        }
+                    }
+                ]
+            },
+            "signal_contributions": {
+                "active_spread_signals": 1,
+                "active_total_signals": 0,
+                "signals": [
+                    {
+                        "signal": "weather",
+                        "market": "spread",
+                        "active": true,
+                        "contribution_points": 0.2,
+                        "debug": "not rendered"
+                    },
+                    {
+                        "signal": "inactive",
+                        "market": "total",
+                        "active": false,
+                        "contribution_points": 0,
+                        "debug": "not rendered"
+                    }
+                ]
+            },
+            "market_confirmation": {
+                "debug": "not used by board"
+            }
+        },
+        "audit_context": {
+            "input_snapshot_id": "fixture"
+        },
+        "evidence_windows": {
+            "home": {
+                "large_evidence": "not rendered"
+            }
+        },
+        "updated_at": "2026-11-07T10:53:54-06:00"
+    },
+    "compact": {
+        "id": "fixture-forecast",
+        "sport": "cfb",
+        "game_id": 644,
+        "status": "STATUS_SCHEDULED",
+        "projection": {
+            "predicted_spread": -2.58,
+            "predicted_total": 53.0,
+            "home_win_probability": 0.605874,
+            "away_win_probability": 0.394126,
+            "confidence_score": null
+        },
+        "game": {
+            "id": 644,
+            "status": "STATUS_SCHEDULED",
+            "game_date": "2026-11-07",
+            "game_time": "18:00:00",
+            "season_type": 2,
+            "week": 10,
+            "home_score": null,
+            "away_score": null,
+            "home_team": {
+                "id": 1,
+                "abbreviation": "KU",
+                "logo_url": null
+            },
+            "away_team": {
+                "id": 2,
+                "abbreviation": "UCF",
+                "logo_url": null
+            }
+        },
+        "model_bet_context": {
+            "model_home_spread": -2.58,
+            "home_spread": -3,
+            "total": 52.5
+        },
+        "weather_forecast": {
+            "available": false,
+            "source": "missing"
+        },
+        "value_signal": {
+            "has_playable_value": false,
+            "play_count": 0,
+            "decision_status": "pass",
+            "decision_summary": "Tracking only",
+            "decision_notes": ["Preserve decision explanation"],
+            "best": null,
+            "spread_assessment": {
+                "model_home_margin": 2.58,
+                "market_home_line": -3,
+                "risk_flags": ["uncalibrated"],
+                "summary": "Tracking only"
+            },
+            "football_signals": {
+                "catalog_count": 400,
+                "applied": 0,
+                "triggered": 1,
+                "missing_inputs": 0,
+                "signals": [
+                    {
+                        "id": "matched",
+                        "side": "home",
+                        "label": "Matched signal",
+                        "market": "spread",
+                        "matched": true,
+                        "contribution_points": 0.0,
+                        "status": "tracking_only",
+                        "sample_games": 20
+                    }
+                ]
+            },
+            "signal_contributions": {
+                "active_spread_signals": 1,
+                "active_total_signals": 0,
+                "signals": [
+                    {
+                        "signal": "weather",
+                        "market": "spread",
+                        "active": true,
+                        "contribution_points": 0.2
+                    },
+                    {
+                        "signal": "inactive",
+                        "market": "total",
+                        "active": false,
+                        "contribution_points": 0
+                    }
+                ]
+            }
+        },
+        "updated_at": "2026-11-07T10:53:54-06:00"
+    }
+}

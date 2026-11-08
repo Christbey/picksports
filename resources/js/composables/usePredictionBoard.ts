@@ -10,6 +10,7 @@ import {
     type InjectionKey,
 } from 'vue';
 import { currentSlateDate, footballSeason } from '@/lib/predictionPeriod';
+import { createBoardDelivery } from '@/lib/predictionBoardDelivery';
 import { mapV2Prediction } from '@/lib/predictionBoardPresentation';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { usePredictionList } from '@/composables/usePredictionList';
@@ -134,6 +135,15 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         return value;
     };
 
+    const loadBoard = createBoardDelivery(
+        (query) =>
+            api.predictions.index(props.config.sport, {
+                query,
+                init: { cache: 'no-store' },
+            }),
+        () => props.config.sport === 'cfb',
+    );
+
     const {
         items: predictions,
         meta,
@@ -143,26 +153,22 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         refreshing,
         retryPage,
         fetchPage: fetchPredictions,
-    } = usePredictionList<PredictionListItem>(async (page) => {
-        if (filterMode.value === 'date' && !selectedDate.value) {
-            return { data: [], meta: null };
-        }
-
-        const payload = await api.predictions.index(props.config.sport, {
-            query: buildQuery(page),
-            init: { cache: 'no-store' },
-        });
-
-        if (!payload) throw new Error('Failed to fetch predictions');
-
-        return {
-            data: payload.data.map(mapV2Prediction),
-            meta:
-                (payload.meta.pagination as unknown as
-                    | PaginationMeta
-                    | undefined) ?? null,
-        };
-    });
+    } = usePredictionList<PredictionListItem>(
+        async (page, background = false) => {
+            if (filterMode.value === 'date' && !selectedDate.value) {
+                return { data: [], meta: null };
+            }
+            const payload = await loadBoard(buildQuery(page), background);
+            if (!payload) throw new Error('Failed to fetch predictions');
+            return {
+                data: payload.data.map(mapV2Prediction),
+                meta:
+                    (payload.meta.pagination as unknown as
+                        | PaginationMeta
+                        | undefined) ?? null,
+            };
+        },
+    );
 
     const formatDateLabel = (dateStr: string) => {
         const [y, m, d] = dateStr.split('-').map(Number);

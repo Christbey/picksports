@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\V2;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class SportPredictionIndexRequest extends FormRequest
 {
@@ -19,6 +20,8 @@ class SportPredictionIndexRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'view' => ['sometimes', Rule::in(['board', 'live']), Rule::prohibitedIf($this->route('sport') !== 'cfb')],
+            'board_version' => ['sometimes', 'string', 'regex:/^[a-f0-9]{64}$/', 'prohibited_unless:view,live'],
             'season' => ['sometimes', 'integer'],
             'season_type' => ['sometimes', 'string', 'max:50'],
             'week' => ['sometimes', 'integer', 'min:0'],
@@ -44,6 +47,8 @@ class SportPredictionIndexRequest extends FormRequest
     public function validatedFilters(): array
     {
         $filters = $this->safe()->only([
+            'view',
+            'board_version',
             'season',
             'season_type',
             'week',

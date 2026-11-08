@@ -681,6 +681,7 @@ it('freezes official CFB injuries and explicitly warns when the opposing availab
         ->and(data_get($snapshot->inputs, 'away.availability.injury_coverage'))->toBe('unknown')
         ->and(data_get($prediction->output_metadata, 'input_quality.risk_flags'))->toContain('away_injury_coverage_unknown')
         ->and(data_get($snapshot->inputs, 'home.quarterback_replacement.version'))->toBe(CfbQuarterbackEvidence::VERSION);
+    config()->set('prediction_lifecycle.canonical_reads.cfb', true);
     $context = app(SportContextResolver::class)->resolve('cfb');
     $loaded = app(CanonicalSportPredictionQuery::class)->find($context, $prediction->public_id);
     $presentation = app(CanonicalPredictionPresentationService::class)->forPrediction($loaded);

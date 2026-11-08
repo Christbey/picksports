@@ -153,11 +153,11 @@ it('schedules expired idempotency key pruning once daily on one server', functio
     );
 
     expect($event)->not->toBeNull()
-        ->and((string) $event?->command)->toContain('model:prune --model=App\\Models\\ApiIdempotencyKey')
+        ->and((string) $event?->command)->toContain('ops:dispatch-scheduled', 'model:prune --model=', 'ApiIdempotencyKey')
         ->and($event?->expression)->toBe('30 3 * * *')
         ->and($event?->onOneServer)->toBeTrue()
         ->and($event?->withoutOverlapping)->toBeTrue()
-        ->and($event?->runInBackground)->toBeTrue();
+        ->and($event?->runInBackground)->toBeFalse();
 });
 
 it('protects authenticated v2 data mutations with write throttling and idempotency', function () {

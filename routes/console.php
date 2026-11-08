@@ -7,6 +7,7 @@ use App\Services\NFL\Predictions\NflPregameHorizon;
 use App\Services\Predictions\PredictionDeliverySource;
 use App\Support\BasketballSeason;
 use App\Support\CFB\CfbWeek;
+use Illuminate\Console\Application;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -102,6 +103,21 @@ $resolveExternalHeartbeatUrl = function (string $sourceName) use ($legacyLiveSco
 };
 
 $attachCommandHeartbeat = function ($event, string $command, string $sourceName) use ($resolveExternalHeartbeatUrl): void {
+    if (! str_contains($command, '--queued')) {
+        $event->command = Application::formatCommandString('ops:dispatch-scheduled')
+            .' '.escapeshellarg($command).' --name='.escapeshellarg($sourceName);
+        if ($url = $resolveExternalHeartbeatUrl($sourceName)) {
+            $event->command .= ' --heartbeat-url='.escapeshellarg($url);
+        }
+        $event->runInBackground = false;
+        $event->onFailure(function () use ($command, $sourceName): void {
+            $service = app(CommandHeartbeatService::class);
+            $service->recordFailure($command, $service->inferSportFromCommand($command), 'schedule',
+                'Scheduled worker dispatch failed', ['scheduled_name' => $sourceName]);
+        });
+
+        return;
+    }
     $service = app(CommandHeartbeatService::class);
     $sport = $service->inferSportFromCommand($command);
     $startedAtCacheKey = 'scheduled-command-started:'.sha1($sourceName.'|'.$command);
@@ -1509,13 +1525,14 @@ $cfbDailyBoardEvent = Schedule::command('cfb:daily-board')
 $attachCommandHeartbeat($cfbDailyBoardEvent, 'cfb:daily-board', 'CFB: Publish Daily Forecast and Player Prop Board');
 $scheduleDailySeasonJob("cfb:grade-player-props --season={$fallSeasonYear}", '08:40', $cfbInSeason, 'CFB: Grade Player Props');
 
-Schedule::command('cfb:sync-live-betting')
+$cfbLiveBettingEvent = Schedule::command('cfb:sync-live-betting')
     ->everyTwoMinutes()
     ->when($cfbInSeason)
     ->withoutOverlapping(10)
     ->onOneServer()
     ->runInBackground()
     ->name('CFB: Capture Live Betting Snapshots');
+$attachCommandHeartbeat($cfbLiveBettingEvent, 'cfb:sync-live-betting', 'CFB: Capture Live Betting Snapshots');
 
 // Official evidence ingestion and immutable research revisions are separate from canonical predictions.
 $nflResearchIngestionCommand = 'nfl:research-pipeline --days-forward=7 --limit=8 --ingest-only';

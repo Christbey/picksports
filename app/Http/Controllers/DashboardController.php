@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\CanonicalDashboardPredictionResource;
 use App\Http\Resources\DashboardPredictionResource;
-use App\Models\CanonicalPrediction;
 use App\Models\Healthcheck;
 use App\Models\MLB\Prediction as MLBPrediction;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
@@ -110,15 +109,24 @@ class DashboardController extends Controller
         if ($canonical->supports($context)) {
             // The dashboard sorts by kickoff below. Sorting full JSON rows in MySQL
             // is expensive, so retain publication tie-breaking in the bounded slate.
-            $predictions = $canonical->queryForSport($context->slug)
+            $rows = collect();
+            $query = $canonical->queryForSport($context->slug)
                 ->whereBetween('sport_events.starts_at', [now()->startOfDay()->utc(), now()->endOfDay()->utc()])
-                ->reorder()
-                ->get()
-                ->sortBy([['published_at', 'desc'], ['id', 'desc']])
-                ->values();
-            app(LivePredictionStore::class)->preload($predictions->map(fn ($prediction) => $prediction->sportEvent?->getRelation($context->slug.'Game'))->filter());
+                ->reorder();
+            (clone $query)->select('predictions.id')->setEagerLoads([])
+                ->chunkById(5, function ($ids) use ($query, $context, $config, $rows): void {
+                    $predictions = (clone $query)->whereKey($ids->modelKeys())->get();
+                    app(LivePredictionStore::class)->preload($predictions->map(fn ($prediction) => $prediction->sportEvent?->getRelation($context->slug.'Game'))->filter());
+                    foreach ($predictions as $prediction) {
+                        $rows->push([
+                            'published_at' => $prediction->published_at,
+                            'id' => $prediction->id,
+                            'payload' => (new CanonicalDashboardPredictionResource($prediction, $context, $config))->resolve(),
+                        ]);
+                    }
+                }, 'predictions.id', 'id');
 
-            return $predictions->map(fn (CanonicalPrediction $prediction): array => (new CanonicalDashboardPredictionResource($prediction, $context, $config))->resolve());
+            return $rows->sortBy([['published_at', 'desc'], ['id', 'desc']])->pluck('payload')->values();
         }
 
         $predictions = $config['prediction_model']::with(['game.homeTeam', 'game.awayTeam'])

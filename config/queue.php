@@ -37,7 +37,7 @@ return [
             'memory' => 384,
         ],
         'sync' => [
-            'purpose' => 'Bulk ESPN teams, rosters, schedules, depth charts, and historical backfills',
+            'purpose' => 'Serialized scheduled commands, bulk ESPN teams, rosters, schedules, depth charts, and historical backfills',
             'timeout' => 1800,
             'tries' => 3,
             'backoff' => 30,

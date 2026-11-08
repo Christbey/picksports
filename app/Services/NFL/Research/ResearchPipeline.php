@@ -94,7 +94,7 @@ class ResearchPipeline
             }
             $analysis = data_get($preview, 'model_metadata.analysis_layer', []);
             $eligibility = app(RecommendationEligibility::class)->evaluate($analysis, $preview['model_metadata'], $holds);
-            $original = ResearchRevision::where('game_id', $game->id)->oldest('id')->first();
+            $original = ResearchRevision::baselineForGame($game->id);
             $baseline = $original?->baseline ?? ($storedForecast !== null ? Arr::only($storedForecast, ['predicted_spread', 'predicted_total', 'win_probability', 'confidence_score', 'model_version', 'updated_at']) : null) ?? [];
             if ($market === []) {
                 $eligibility = app(RecommendationEligibility::class)->evaluate($analysis, $preview['model_metadata'], [...$holds, 'spread_quote_missing']);
@@ -105,7 +105,7 @@ class ResearchPipeline
             if ($propHolds !== []) {
                 $props = array_map(fn ($prop) => [...$prop, 'status' => 'hold', 'research_holds' => $propHolds], $props);
             }
-            $previous = ResearchRevision::where('game_id', $game->id)->latest('id')->first();
+            $previous = ResearchRevision::latestSummaryForGame($game->id);
             $brief = [
                 'requested_by' => $requestedBy,
                 'stored_prediction_hash' => $storedForecast !== null ? $this->storedPredictionHash($storedForecast) : null,
@@ -136,7 +136,7 @@ class ResearchPipeline
             // is unchanged. Repeated reviews of that same report still deduplicate.
             $renewEvidence = $previous && $report && $previous->report_id !== $report->id;
             if ($previous && ! $renewEvidence && data_get($previous->brief, 'material_hash', $previous->input_hash) === $materialHash) {
-                return $previous;
+                return ResearchRevision::query()->find($previous->id);
             }
             $brief['material_hash'] = $materialHash;
             $hash = $materialHash;

@@ -32,8 +32,20 @@ class CanonicalSportPredictionQuery
     ): LengthAwarePaginator {
         $this->requireSupport($context);
 
-        return $this->queryForSport($context->slug, $filters)
+        $query = $this->queryForSport($context->slug, $filters);
+        // Sort only IDs: full frozen JSON documents can make even LIMIT 1
+        // spill to a costly database filesort. Hydrate just the selected page.
+        $paginator = (clone $query)->select('predictions.id')->setEagerLoads([])
             ->paginate(min((int) ($filters['per_page'] ?? self::DEFAULT_PER_PAGE), self::MAX_PER_PAGE));
+        $ids = $paginator->getCollection()->modelKeys();
+        if ($ids === []) {
+            return $paginator;
+        }
+        $predictions = $query->reorder()->whereKey($ids)->get()->keyBy('id');
+        $paginator->setCollection(collect($ids)
+            ->map(fn ($id) => $predictions->get($id))->filter()->values());
+
+        return $paginator;
     }
 
     public function find(

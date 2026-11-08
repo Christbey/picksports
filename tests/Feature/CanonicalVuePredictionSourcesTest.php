@@ -174,3 +174,43 @@ it('keeps kickoff and publication tie order without SQL sorting full dashboard p
         DB::disableQueryLog();
     }
 });
+
+it('paginates canonical forecasts with ordered IDs before hydrating large JSON rows', function (string $sport) {
+    config()->set("prediction_lifecycle.canonical_reads.{$sport}", true);
+    $rows = collect();
+    foreach (['08:00:00', '08:05:00', '08:05:00', '08:10:00'] as $time) {
+        Carbon::setTestNow('2026-10-10 '.$time);
+        $rows->push(vueCanonicalFixture($sport, metadata: ['large_document' => str_repeat('frozen-evidence-', 5000)]));
+    }
+    Carbon::setTestNow('2026-10-10 12:00:00');
+    $outside = vueCanonicalFixture($sport);
+    $outside->sportEvent->{$sport.'Game'}->update(['game_date' => '2026-10-11']);
+    $user = User::factory()->create();
+    DB::enableQueryLog();
+    try {
+        foreach ([1 => [3, 2], 2 => [1, 0], 3 => []] as $page => $indices) {
+            $response = $this->actingAs($user)->getJson('/api/v2/sports/'.$sport.'/predictions?season=2026&from_date=2026-10-10&to_date=2026-10-10&per_page=2&page='.$page)
+                ->assertSuccessful()->assertJsonPath('meta.pagination.current_page', $page)
+                ->assertJsonPath('meta.pagination.per_page', 2)->assertJsonPath('meta.pagination.total', 4)->assertJsonPath('meta.pagination.last_page', 2);
+            expect(collect($response->json('data'))->pluck('id')->all())
+                ->toBe(collect($indices)->map(fn ($index) => $rows[$index]->public_id)->all());
+            foreach ($response->json('data') as $prediction) {
+                expect($prediction['predicted_spread'])->toBe(4.5)
+                    ->and($prediction['win_probability'])->toBe(0.65)
+                    ->and($prediction['game']['home_team']['abbreviation'])->not->toBeNull()
+                    ->and($prediction['audit_context']['input_snapshot_id'])->not->toBeNull();
+            }
+        }
+        $queries = collect(DB::getQueryLog())->pluck('query');
+        $hydration = $queries->filter(fn ($sql) => preg_match('/select ["`]predictions["`]\.\*/i', $sql) === 1 && str_contains($sql, 'game_date'));
+        expect($hydration)->toHaveCount(2);
+        foreach ($hydration as $sql) {
+            expect(strtolower($sql))->not->toContain('order by')
+                ->and(strtolower($sql))->toContain(' in ');
+        }
+        $orderedIds = $queries->filter(fn ($sql) => preg_match('/select ["`]predictions["`]\.["`]id["`]/i', $sql) === 1 && str_contains(strtolower($sql), 'order by'));
+        expect($orderedIds)->toHaveCount(3);
+    } finally {
+        DB::disableQueryLog();
+    }
+})->with(['cfb', 'nfl', 'nba', 'cbb', 'wcbb', 'wnba', 'mlb']);

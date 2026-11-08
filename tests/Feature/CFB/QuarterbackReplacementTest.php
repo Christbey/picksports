@@ -179,3 +179,24 @@ it('holds an estimate when too few passing attempts have verified participant-li
     unset($profile);
     expect(app(CfbQuarterbackAdjustment::class)->estimate($evidence, $this->policy)['applied'])->toBeFalse();
 });
+
+it('retains a replacement quarterbacks prior-school history without blending it into the current teams baseline', function () {
+    $prior = Game::factory()->create(['home_team_id' => $this->away->id, 'away_team_id' => $this->home->id,
+        'season' => 2025, 'season_type' => '2', 'status' => 'STATUS_FINAL', 'game_date' => '2025-10-18']);
+    PlayerStat::create(['game_id' => $prior->id, 'team_id' => $this->away->id, 'player_id' => $this->backup->id, 'passing_attempts' => 20]);
+    foreach (['boxscore', 'plays'] as $component) {
+        GameDataCheck::create(['game_id' => $prior->id, 'component' => $component, 'validator_version' => 'test',
+            'source_path' => 'test', 'state' => 'complete', 'source_hash' => 'revision', 'accepted_at' => now(), 'discrepancies' => [], 'evidence' => []]);
+    }
+    for ($i = 0; $i < 20; $i++) {
+        Play::create(['game_id' => $prior->id, 'possession_team_id' => $this->away->id, 'espn_play_id' => 'transfer-'.$i,
+            'source_revision' => 'revision', 'period' => 1, 'play_type' => 'Pass Reception', 'true_epa' => -0.2,
+            'is_epa_eligible' => true, 'epa_calculated_at' => now(), 'source_state' => ['participants' => [
+                ['type' => 'passer', 'athlete' => ['id' => $this->backup->espn_id]]]]]);
+    }
+    $evidence = ($this->capture)();
+    $profile = collect($evidence['profiles'])->firstWhere('player_id', $this->backup->id);
+    expect($profile['weighted_plays'])->toBe(50.0)->and($profile['games'])->toHaveCount(3)
+        ->and($profile['team_ids'])->toContain($this->home->id, $this->away->id)
+        ->and($evidence['baseline']['plays'])->toBe(80)->and($evidence['baseline']['games'])->toHaveCount(2);
+});

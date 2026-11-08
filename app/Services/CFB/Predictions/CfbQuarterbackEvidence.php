@@ -35,7 +35,7 @@ class CfbQuarterbackEvidence
         $players = Player::where('team_id', $teamId)->where('position', 'QB')
             ->where('updated_at', '<=', $captured)->where('updated_at', '<', $cutoff)->get()->keyBy('id');
         $result['starter_name'] = $players->get($starter)?->full_name;
-        $rows = PlayerStat::with('game')->where('team_id', $teamId)->whereIn('player_id', $players->keys())
+        $rows = PlayerStat::with('game')->whereIn('player_id', $players->keys())
             ->where('updated_at', '<=', $captured)->where('updated_at', '<', $cutoff)->where('passing_attempts', '>', 0)
             ->whereHas('game', fn ($q) => $q->where('status', 'STATUS_FINAL')->where('id', '!=', $target->id)
                 ->whereIn('season_type', ['2', '3', 'regular', 'postseason'])->whereBetween('season', [$target->season - 1, $target->season])
@@ -58,7 +58,7 @@ class CfbQuarterbackEvidence
         $result['status'] = 'insufficient_play_evidence';
         $profiles = [];
         $baseline = ['plays' => 0, 'epa' => 0.0, 'games' => []];
-        $expectedCurrentGames = $rows->filter(fn ($s) => $s->game->season === $target->season)->pluck('game_id')->unique()->count();
+        $expectedCurrentGames = $rows->filter(fn ($s) => $s->team_id === $teamId && $s->game->season === $target->season)->pluck('game_id')->unique()->count();
         $expectedAttempts = $rows->groupBy('player_id')->map(fn ($r) => $r->sum('passing_attempts'));
         $attributedPasses = [];
         $rejectedGames = [];
@@ -80,7 +80,8 @@ class CfbQuarterbackEvidence
                     $latest = $proof->updated_at;
                 }
             }
-            $plays = Play::where('game_id', $game->id)->where('possession_team_id', $teamId)->where('source_revision', $revision)
+            $historicTeams = $rows->where('game_id', $game->id)->pluck('team_id')->unique();
+            $plays = Play::where('game_id', $game->id)->whereIn('possession_team_id', $historicTeams)->where('source_revision', $revision)
                 ->where('updated_at', '<=', $captured)->where('updated_at', '<', $cutoff)
                 ->where('epa_calculated_at', '<=', $captured)->where('epa_calculated_at', '<', $cutoff)
                 ->where('is_epa_eligible', true)->whereNotNull('true_epa')->get()
@@ -99,7 +100,8 @@ class CfbQuarterbackEvidence
 
                         return $id === null ? null : (string) $id;
                     })->filter()->unique();
-                $qbs = $players->filter(fn ($p) => $ids->contains((string) $p->espn_id));
+                $qbs = $players->filter(fn ($p) => $ids->contains((string) $p->espn_id)
+                    && $rows->contains(fn ($r) => $r->game_id === $game->id && $r->player_id === $p->id && $r->team_id === $play->possession_team_id));
                 if ($qbs->count() !== 1 || ! is_finite((float) $play->true_epa)) {
                     continue;
                 }
@@ -108,13 +110,14 @@ class CfbQuarterbackEvidence
                     $attributedPasses[$id] = ($attributedPasses[$id] ?? 0) + 1;
                 }
                 $weight = $game->season === $target->season ? 1.0 : 0.5;
-                $profiles[$id] ??= ['player_id' => $id, 'plays' => 0, 'weighted_plays' => 0.0, 'epa' => 0.0, 'games' => [], 'play_ids' => []];
+                $profiles[$id] ??= ['player_id' => $id, 'plays' => 0, 'weighted_plays' => 0.0, 'epa' => 0.0, 'games' => [], 'team_ids' => [], 'play_ids' => []];
                 $profiles[$id]['plays']++;
                 $profiles[$id]['weighted_plays'] += $weight;
                 $profiles[$id]['epa'] += (float) $play->true_epa * $weight;
                 $profiles[$id]['games'][$game->id] = true;
+                $profiles[$id]['team_ids'][$play->possession_team_id] = true;
                 $profiles[$id]['play_ids'][] = $play->id;
-                if ($game->season === $target->season) {
+                if ($game->season === $target->season && $play->possession_team_id === $teamId) {
                     $baseline['plays']++;
                     $baseline['epa'] += (float) $play->true_epa;
                     $baseline['games'][$game->id] = true;
@@ -125,6 +128,7 @@ class CfbQuarterbackEvidence
         }
         foreach ($profiles as &$profile) {
             $profile['games'] = array_keys($profile['games']);
+            $profile['team_ids'] = array_keys($profile['team_ids']);
             $expected = $expectedAttempts->get($profile['player_id'], 0);
             $profile['passing_identity_coverage'] = $expected > 0 ? min(1, ($attributedPasses[$profile['player_id']] ?? 0) / $expected) : 0;
             $profile['epa_per_play'] = $profile['epa'] / $profile['weighted_plays'];

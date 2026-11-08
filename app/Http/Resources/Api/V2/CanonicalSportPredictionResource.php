@@ -88,6 +88,7 @@ class CanonicalSportPredictionResource extends JsonResource
                     array_flip(['version', 'status', 'validated', 'betting_approved', 'models', 'limitations'])),
                 'market_evaluation' => data_get($evaluation?->market_comparison, 'cfb_comparison'),
                 'forecast_coordination' => data_get($prediction->output_metadata, 'forecast_coordination'),
+                'quarterback_adjustment' => data_get($prediction->output_metadata, 'quarterback_adjustment'),
                 'raw_home_win_probability' => $homeProbability,
             ] : []),
             'market_aware_projection' => $this->presentation->marketAwareProjection,

@@ -16,6 +16,15 @@ class CfbCalculator extends CanonicalFootballCalculator
 {
     public function calculate(EventInputSnapshotData $snapshot, CalculationReleaseData $release): PredictionOutput
     {
+        $estimates = [];
+        $qb = app(CfbQuarterbackAdjustment::class);
+        if (data_get($release->configuration, 'quarterback_replacement.enabled', false)) {
+            foreach (['home', 'away'] as $side) {
+                $estimates[$side] = $qb->estimate(data_get($snapshot->inputs, $side.'.quarterback_replacement', []),
+                    $release->configuration['quarterback_replacement']);
+            }
+            $snapshot = $qb->baselineSnapshot($snapshot, $estimates);
+        }
         $output = $this->calculateBaseline($snapshot, $release);
         if (isset($snapshot->inputs['scoring_challenger'])) {
             $output = app(CfbScoringChallenger::class)->apply($output, $snapshot->inputs['scoring_challenger']);
@@ -29,7 +38,9 @@ class CfbCalculator extends CanonicalFootballCalculator
             $output = new PredictionOutput($output->markets, [...$output->metadata, 'comparison_forecasts' => $suite], $output->diagnostics, $output->generatedAt);
         }
 
-        return app(CfbForecastCoordinator::class)->apply($output, $snapshot, $release->configuration);
+        $output = app(CfbForecastCoordinator::class)->apply($output, $snapshot, $release->configuration);
+
+        return $estimates === [] ? $output : $qb->apply($output, $estimates, (float) $release->configuration['spread']['probability_coefficient']);
     }
 
     private function calculateBaseline(EventInputSnapshotData $snapshot, CalculationReleaseData $release): PredictionOutput

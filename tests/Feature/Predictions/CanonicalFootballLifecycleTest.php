@@ -27,6 +27,7 @@ use App\Services\CFB\CfbPlayerEvidenceService;
 use App\Services\CFB\Predictions\CfbCalculationReleaseRegistrar;
 use App\Services\CFB\Predictions\CfbCanonicalCutoverReadinessService;
 use App\Services\CFB\Predictions\CfbCanonicalSpreadValueSignalService;
+use App\Services\CFB\Predictions\CfbQuarterbackEvidence;
 use App\Services\NFL\Predictions\NflCalculationReleaseRegistrar;
 use App\Services\NFL\Predictions\NflCanonicalCutoverReadinessService;
 use App\Services\NFL\Predictions\NflRecommendationInputBuilder;
@@ -678,5 +679,11 @@ it('freezes official CFB injuries and explicitly warns when the opposing availab
         ->and(data_get($snapshot->inputs, 'home.injuries.0.availability_report_id'))->toBe($report->id)
         ->and(data_get($snapshot->inputs, 'home.availability.injury_coverage_complete'))->toBeTrue()
         ->and(data_get($snapshot->inputs, 'away.availability.injury_coverage'))->toBe('unknown')
-        ->and(data_get($prediction->output_metadata, 'input_quality.risk_flags'))->toContain('away_injury_coverage_unknown');
+        ->and(data_get($prediction->output_metadata, 'input_quality.risk_flags'))->toContain('away_injury_coverage_unknown')
+        ->and(data_get($snapshot->inputs, 'home.quarterback_replacement.version'))->toBe(CfbQuarterbackEvidence::VERSION);
+    $context = app(SportContextResolver::class)->resolve('cfb');
+    $loaded = app(CanonicalSportPredictionQuery::class)->find($context, $prediction->public_id);
+    $presentation = app(CanonicalPredictionPresentationService::class)->forPrediction($loaded);
+    $payload = (new CanonicalSportPredictionResource($loaded, $context, $presentation))->resolve(request());
+    expect(data_get($payload, 'quarterback_adjustment.home.applied'))->toBeFalse();
 });

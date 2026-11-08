@@ -55,7 +55,7 @@ it('fails visibly without success heartbeats when a worker command fails', funct
 
 it('makes every scheduled command a lightweight foreground dispatcher', function () {
     foreach (app(Schedule::class)->events() as $event) {
-        if (! $event->command || str_contains($event->command, '--queued')) {
+        if (! $event->command) {
             continue;
         }
         expect($event->command)->toContain('ops:dispatch-scheduled')->and($event->runInBackground)->toBeFalse();
@@ -70,4 +70,13 @@ it('preserves quoted command arguments when a scheduled command executes without
     $job = new RunScheduledCommand('memory-test:options --model='.escapeshellarg(CommandHeartbeat::class), 'Memory Test');
     $job->handle(app(CommandHeartbeatService::class));
     expect($received)->toBe(CommandHeartbeat::class);
+});
+
+it('leaves completion reporting to nested pipeline workers', function () {
+    Http::fake();
+    Artisan::shouldReceive('call')->once()->andReturn(0);
+    (new RunScheduledCommand('cfb:run-pregame-pipeline --queued', 'CFB: Generate Canonical Predictions', 'https://example.test/heartbeat'))
+        ->handle(app(CommandHeartbeatService::class));
+    expect(CommandHeartbeat::count())->toBe(0);
+    Http::assertNothingSent();
 });

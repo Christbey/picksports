@@ -43,11 +43,14 @@ class RunScheduledCommand implements ShouldBeUnique, ShouldQueue
         $sport = $heartbeats->inferSportFromCommand($this->commandLine);
         $metadata = ['scheduled_name' => $this->scheduledName, 'queue' => $this->queue];
         try {
-            $code = Artisan::call($this->commandLine, [], new ConsoleOutput);
+            $code = Artisan::call(str_replace('\\', '\\\\', $this->commandLine), [], new ConsoleOutput);
             $metadata += ['exit_code' => $code, 'duration_ms' => (int) ((hrtime(true) - $started) / 1_000_000),
                 'peak_memory_bytes' => memory_get_peak_usage(true)];
             if ($code !== 0) {
                 throw new RuntimeException('Scheduled command exited with code '.$code);
+            }
+            if (str_contains($this->commandLine, '--queued')) {
+                return;
             }
             $heartbeats->recordSuccess($this->commandLine, $sport, 'worker', $metadata);
             if ($this->heartbeatUrl) {

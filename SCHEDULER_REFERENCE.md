@@ -13,8 +13,8 @@ The web scheduler dispatches work through `ops:dispatch-scheduled`; it does not
 execute heavy sport commands. `RunScheduledCommand` coalesces duplicate queued
 or running commands and uses the existing single `sync` consumer to serialize
 bulk calculations. Live scoreboard/detail dispatch and CFB live betting retain
-the separate `default` queue. Existing CFB `--queued` commands keep their own
-bounded worker path. Cadences, season guards and command arguments are retained.
+the separate `default` queue. CFB `--queued` commands also dispatch off web compute and keep their own
+bounded batch jobs and completion heartbeats. Cadences, season guards and command arguments are retained.
 Worker completion, not dispatch, records execution heartbeats. See
 `docs/operations/laravel-cloud-queue-workers.md` for timeouts and rollout checks.
 

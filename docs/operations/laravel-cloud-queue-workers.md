@@ -39,7 +39,7 @@ Keep only the scheduler dispatcher on the web application process. Scheduled
 commands are wrapped by `ops:dispatch-scheduled` and execute through
 `RunScheduledCommand` on the existing Redis workers. Live scoreboard/detail
 dispatchers and CFB live betting use `default`; other scheduled work uses `sync`.
-Existing `--queued` CFB pipelines retain their bounded dispatch path.
+CFB `--queued` commands also run off web compute and retain their existing bounded batch jobs and completion heartbeats.
 
 Dispatchers run in the foreground and do not spawn concurrent calculation
 processes on web compute. A unique lock coalesces the same pending/running

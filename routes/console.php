@@ -105,64 +105,16 @@ $resolveExternalHeartbeatUrl = function (string $sourceName) use ($legacyLiveSco
 };
 
 $attachCommandHeartbeat = function ($event, string $command, string $sourceName) use ($resolveExternalHeartbeatUrl): void {
-    if (! str_contains($command, '--queued')) {
-        $event->command = Application::formatCommandString('ops:dispatch-scheduled')
-            .' '.escapeshellarg($command).' --name='.escapeshellarg($sourceName);
-        if ($url = $resolveExternalHeartbeatUrl($sourceName)) {
-            $event->command .= ' --heartbeat-url='.escapeshellarg($url);
-        }
-        $event->runInBackground = false;
-        $event->onFailure(function () use ($command, $sourceName): void {
-            $service = app(CommandHeartbeatService::class);
-            $service->recordFailure($command, $service->inferSportFromCommand($command), 'schedule',
-                'Scheduled worker dispatch failed', ['scheduled_name' => $sourceName]);
-        });
-
-        return;
+    $event->command = Application::formatCommandString('ops:dispatch-scheduled')
+        .' '.escapeshellarg($command).' --name='.escapeshellarg($sourceName);
+    if ($url = $resolveExternalHeartbeatUrl($sourceName)) {
+        $event->command .= ' --heartbeat-url='.escapeshellarg($url);
     }
-    $service = app(CommandHeartbeatService::class);
-    $sport = $service->inferSportFromCommand($command);
-    $startedAtCacheKey = 'scheduled-command-started:'.sha1($sourceName.'|'.$command);
-
-    $event->before(function () use ($startedAtCacheKey): void {
-        Cache::put($startedAtCacheKey, (int) round(microtime(true) * 1000), now()->addHours(8));
-    });
-
-    $metadata = function () use ($event, $sourceName, $startedAtCacheKey): array {
-        $startedAtMs = Cache::pull($startedAtCacheKey);
-
-        return [
-            'scheduled_name' => $sourceName,
-            'exit_code' => $event->exitCode,
-            'duration_ms' => is_numeric($startedAtMs)
-                ? max(0, (int) round(microtime(true) * 1000) - (int) $startedAtMs)
-                : null,
-        ];
-    };
-
-    $queuedCfb = str_starts_with($command, 'cfb:run-pregame-pipeline') && str_contains($command, '--queued');
-    if (! $queuedCfb && ($externalHeartbeatUrl = $resolveExternalHeartbeatUrl($sourceName))) {
-        $event->pingOnSuccess($externalHeartbeatUrl);
-    }
-
-    $event->onSuccess(function () use ($service, $command, $sport, $metadata, $queuedCfb) {
-        if ($queuedCfb) {
-            $metadata();
-
-            return;
-        }
-        $service->recordSuccess($command, $sport, 'schedule', $metadata());
-    });
-
-    $event->onFailure(function () use ($service, $command, $sport, $metadata) {
-        $details = $metadata();
-        $service->recordFailure(
-            $command,
-            $sport,
-            'schedule',
-            'Scheduled command exited with code '.($details['exit_code'] ?? 'unknown'),
-            $details,
-        );
+    $event->runInBackground = false;
+    $event->onFailure(function () use ($command, $sourceName): void {
+        $service = app(CommandHeartbeatService::class);
+        $service->recordFailure($command, $service->inferSportFromCommand($command), 'schedule',
+            'Scheduled worker dispatch failed', ['scheduled_name' => $sourceName]);
     });
 };
 

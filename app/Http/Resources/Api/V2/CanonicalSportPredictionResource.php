@@ -17,7 +17,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class CanonicalSportPredictionResource extends JsonResource
 {
-    public function __construct(mixed $resource, private readonly SportContext $context, private readonly CanonicalPredictionPresentationData $presentation)
+    public function __construct(mixed $resource, private readonly SportContext $context, private readonly CanonicalPredictionPresentationData|\Closure $presentation)
     {
         parent::__construct($resource);
     }
@@ -25,8 +25,22 @@ class CanonicalSportPredictionResource extends JsonResource
     /** @return array<string, mixed> */
     public function toArray(Request $request): array
     {
+        $prediction = $this->resource;
+        $run = $prediction->calculationRun;
+        $snapshot = $run?->inputSnapshot;
+        $render = fn (): array => $this->predictionPayload($request);
+        $readSnapshot = fn (): array => $snapshot ? $snapshot->withCachedJsonArrays($render) : $render();
+
+        return $prediction->withCachedJsonArrays(
+            fn (): array => $run ? $run->withCachedJsonArrays($readSnapshot) : $readSnapshot(),
+        );
+    }
+
+    private function predictionPayload(Request $request): array
+    {
         /** @var CanonicalPrediction $prediction */
         $prediction = $this->resource;
+        $presentation = $this->presentation instanceof \Closure ? ($this->presentation)() : $this->presentation;
         $game = $this->gameModel($prediction);
         $homeMoneyline = $this->market($prediction, 'moneyline', 'home');
         $awayMoneyline = $this->market($prediction, 'moneyline', 'away');
@@ -36,8 +50,8 @@ class CanonicalSportPredictionResource extends JsonResource
         $awayProbability = $this->number($awayMoneyline?->probability);
         $confidence = $prediction->sport === 'cfb' ? null : $this->number($homeMoneyline?->confidence_score);
         $evaluation = $prediction->latestEvaluation;
-        $confidenceContext = $this->presentation->confidenceContext;
-        $valueSignal = $this->presentation->valueSignal;
+        $confidenceContext = $presentation->confidenceContext;
+        $valueSignal = $presentation->valueSignal;
         $live = app(LivePredictionStore::class)->forPrediction($prediction, $this->context->slug);
         if (! in_array($game?->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD', 'STATUS_SUSPENDED', 'STATUS_DELAYED'], true)) {
             $live = LivePredictionStore::EMPTY_FIELDS;
@@ -76,12 +90,12 @@ class CanonicalSportPredictionResource extends JsonResource
                 'home' => data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'home.evidence_windows'),
                 'away' => data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'away.evidence_windows'),
             ] : null,
-            'public_recommendation' => app(MlbRecommendationPresentation::class)->summary($this->presentation->recommendation),
+            'public_recommendation' => app(MlbRecommendationPresentation::class)->summary($presentation->recommendation),
             'model_bet_context' => [
                 'model_home_spread' => $this->number($homeSpread?->projected_line),
-                ...$this->presentation->modelBetContext,
+                ...$presentation->modelBetContext,
             ],
-            'weather_forecast' => $this->presentation->weatherForecast,
+            'weather_forecast' => $presentation->weatherForecast,
             'value_signal' => $valueSignal,
             ...($prediction->sport === 'cfb' ? [
                 'comparison_forecasts' => array_intersect_key((array) data_get($prediction->output_metadata, 'comparison_forecasts', []),
@@ -91,11 +105,11 @@ class CanonicalSportPredictionResource extends JsonResource
                 'quarterback_adjustment' => data_get($prediction->output_metadata, 'quarterback_adjustment'),
                 'raw_home_win_probability' => $homeProbability,
             ] : []),
-            'market_aware_projection' => $this->presentation->marketAwareProjection,
-            'recommendation' => $this->presentation->recommendation,
+            'market_aware_projection' => $presentation->marketAwareProjection,
+            'recommendation' => $presentation->recommendation,
             'pro_signal_layer' => null,
-            'nfl_board' => $this->presentation->nflBoard === null ? null : [
-                ...$this->presentation->nflBoard,
+            'nfl_board' => $presentation->nflBoard === null ? null : [
+                ...$presentation->nflBoard,
                 'can_retry_research' => (bool) $request->user()?->isAdmin()
                     && in_array($game?->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true)
                     && $prediction->sportEvent?->starts_at?->isFuture(),

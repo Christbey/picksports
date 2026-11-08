@@ -9,8 +9,10 @@ use App\Models\PredictionMarket;
 use App\Models\SportEvent;
 use App\Models\User;
 use App\Models\UserBet;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportGameQuery;
+use App\Services\Api\V2\SportPredictionReader;
 use App\Services\PerformanceStatistics;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -214,3 +216,39 @@ it('paginates canonical forecasts with ordered IDs before hydrating large JSON r
         DB::disableQueryLog();
     }
 })->with(['cfb', 'nfl', 'nba', 'cbb', 'wcbb', 'wnba', 'mlb']);
+
+it('decodes frozen inputs once per API resource and releases the document after serialization', function () {
+    config()->set('prediction_lifecycle.canonical_reads.cfb', true);
+    $prediction = vueCanonicalFixture('cfb');
+    $context = app(SportContextResolver::class)->resolve('cfb');
+    $prediction = app(CanonicalSportPredictionQuery::class)->find($context, $prediction->public_id);
+    $snapshot = $prediction->calculationRun->inputSnapshot;
+    $tracked = new class extends EventInputSnapshot
+    {
+        public int $inputDecodes = 0;
+
+        public function fromJson($value, $asObject = false)
+        {
+            if ($value !== null && $value === $this->getRawOriginal('inputs')) {
+                $this->inputDecodes++;
+            }
+
+            return parent::fromJson($value, $asObject);
+        }
+    };
+    $tracked->setRawAttributes($snapshot->getAttributes(), true)->setRelations($snapshot->getRelations());
+    $prediction->calculationRun->setRelation('inputSnapshot', $tracked);
+    $resource = app(SportPredictionReader::class)->resource($context, $prediction);
+    expect($tracked->inputDecodes)->toBe(0);
+    $first = $resource->resolve();
+    expect($tracked->inputDecodes)->toBe(1)
+        ->and($first['id'])->toBe($prediction->public_id)
+        ->and($first['predicted_spread'])->toBe(4.5);
+    foreach ([$prediction, $prediction->calculationRun, $tracked] as $model) {
+        $class = $model instanceof EventInputSnapshot ? EventInputSnapshot::class : get_class($model);
+        expect((new ReflectionProperty($class, 'decodedJsonArrays'))->getValue($model))->toBeEmpty()
+            ->and($model->isDirty())->toBeFalse();
+    }
+    expect($resource->resolve())->toBe($first)
+        ->and($tracked->inputDecodes)->toBe(2);
+});

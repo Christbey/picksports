@@ -34,6 +34,7 @@ class CfbQuarterbackEvidence
         $result['status'] = 'replacement_unresolved';
         $players = Player::where('team_id', $teamId)->where('position', 'QB')
             ->where('updated_at', '<=', $captured)->where('updated_at', '<', $cutoff)->get()->keyBy('id');
+        $result['starter_name'] = $players->get($starter)?->full_name;
         $rows = PlayerStat::with('game')->where('team_id', $teamId)->whereIn('player_id', $players->keys())
             ->where('updated_at', '<=', $captured)->where('updated_at', '<', $cutoff)->where('passing_attempts', '>', 0)
             ->whereHas('game', fn ($q) => $q->where('status', 'STATUS_FINAL')->where('id', '!=', $target->id)

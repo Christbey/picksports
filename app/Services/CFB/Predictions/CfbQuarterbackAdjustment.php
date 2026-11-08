@@ -14,6 +14,12 @@ class CfbQuarterbackAdjustment
         $result = ['status' => $evidence['status'] ?? 'unavailable', 'applied' => false,
             'starter_player_id' => $evidence['starter_player_id'] ?? null,
             'replacement_player_id' => $evidence['replacement_player_id'] ?? null,
+            'starter_name' => $evidence['starter_name'] ?? null, 'replacement_name' => $evidence['replacement_name'] ?? null,
+            'identity_basis' => $evidence['identity_basis'] ?? null, 'absence_status' => $evidence['absence_status'] ?? null,
+            'source_available_at' => $evidence['source_available_at'] ?? null,
+            'samples' => collect($evidence['profiles'] ?? [])->map(fn ($p) => collect($p)->only([
+                'player_id', 'plays', 'weighted_plays', 'games', 'passing_identity_coverage']))->all(),
+            'rejected_game_ids' => $evidence['rejected_game_ids'] ?? [],
             'offense_points_adjustment' => null, 'validation_status' => 'provisional_not_prospectively_validated'];
         if (($evidence['version'] ?? null) !== CfbQuarterbackEvidence::VERSION || ($evidence['status'] ?? null) !== 'captured') {
             return $result;

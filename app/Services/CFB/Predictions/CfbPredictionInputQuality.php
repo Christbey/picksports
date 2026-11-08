@@ -29,6 +29,10 @@ class CfbPredictionInputQuality
                 && ! data_get($inputs, $side.'.availability.injury_coverage_complete', false)) {
                 $flags[] = $side.'_injury_coverage_unknown';
             }
+            $replacement = data_get($inputs, $side.'.quarterback_replacement.status');
+            if ($replacement !== null && $replacement !== 'not_required') {
+                $flags[] = $side.'_quarterback_replacement_unvalidated';
+            }
             if (data_get($inputs, $side.'.availability.quarterback_hold', false)) {
                 $flags[] = $side.'_quarterback_unresolved';
             }

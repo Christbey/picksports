@@ -16,12 +16,17 @@ class CfbCalculationReleaseDefinition extends FootballCalculationReleaseDefiniti
 
     public const INPUT_SCHEMA_VERSION = 'cfb-pregame-v1';
 
-    public const SEMANTIC_VERSION = '1.10.1';
+    public const SEMANTIC_VERSION = '1.11.0';
 
     /** @return array<string, mixed> */
     public function configuration(): array
     {
         $configuration = parent::configuration();
+        $configuration['quarterback_replacement'] = ['enabled' => true, 'version' => CfbQuarterbackEvidence::VERSION,
+            'minimum_plays' => 40, 'minimum_games' => 2, 'prior_plays' => 100,
+            'minimum_identity_coverage' => 0.8, 'minimum_current_game_coverage' => 0.75,
+            'maximum_plays_per_game' => 45, 'maximum_team_points' => 6.0,
+            'validation_status' => 'provisional_not_prospectively_validated'];
         $configuration['forecast_coordination'] = config('cfb_forecast_coordination', ['enabled' => false]);
         $configuration['candidate_suite'] = ['enabled' => true, 'version' => CfbForecastCandidates::VERSION, 'promotion' => 'shadow_only'];
         $configuration['scoring_challenger'] = ['artifact_id' => config('cfb.scoring.artifact_id'), 'mode' => 'shadow_until_promoted'];

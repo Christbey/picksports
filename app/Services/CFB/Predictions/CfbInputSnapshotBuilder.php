@@ -74,6 +74,12 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
             $evidence = $availability->forGame($game, $inputs[$side]['team_id'], $snapshot->capturedAt);
             $inputs[$side]['injuries'] = $availability->snapshotInjuries($evidence['injuries']);
             $sourceTimestamps[$side.'_official_availability'] = $evidence['coverage']['reported_at'];
+            if (data_get($release->configuration, 'quarterback_replacement.enabled', false)) {
+                $inputs[$side]['quarterback_replacement'] = app(CfbQuarterbackEvidence::class)->capture(
+                    $game, $inputs[$side]['team_id'], $inputs[$side]['availability'], $inputs[$side]['injuries'],
+                    $snapshot->capturedAt, $snapshot->cutoffAt);
+                $sourceTimestamps[$side.'_quarterback_replacement'] = $inputs[$side]['quarterback_replacement']['source_available_at'] ?? null;
+            }
             $prior = TeamMetric::where('team_id', $inputs[$side]['team_id'])
                 ->where('season', $event->season - 1)
                 ->where('updated_at', '<=', $snapshot->capturedAt)

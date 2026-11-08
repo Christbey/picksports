@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\CachesJsonArrayCasts;
 use App\Support\SportCatalog;
 use Database\Factories\CanonicalPredictionFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -17,6 +18,8 @@ use LogicException;
 class CanonicalPrediction extends Model
 {
     /** @use HasFactory<CanonicalPredictionFactory> */
+    use CachesJsonArrayCasts;
+
     use HasFactory, HasUlids;
 
     public const DETAIL_SOURCE_LEGACY_SPORT_PREDICTION = 'legacy_sport_prediction';

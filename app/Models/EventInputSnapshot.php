@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\CachesJsonArrayCasts;
 use App\Models\Concerns\HasPublicUlid;
 use Database\Factories\EventInputSnapshotFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -13,6 +14,8 @@ use LogicException;
 class EventInputSnapshot extends Model
 {
     /** @use HasFactory<EventInputSnapshotFactory> */
+    use CachesJsonArrayCasts;
+
     use HasFactory, HasPublicUlid;
 
     protected $fillable = [

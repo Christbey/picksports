@@ -19,6 +19,19 @@ class CanonicalDashboardPredictionResource extends JsonResource
     public function toArray(Request $request): array
     {
         $prediction = $this->resource;
+        $run = $prediction->calculationRun;
+        $snapshot = $run?->inputSnapshot;
+        $render = fn (): array => $this->dashboardPayload($request);
+        $readSnapshot = fn (): array => $snapshot ? $snapshot->withCachedJsonArrays($render) : $render();
+
+        return $prediction->withCachedJsonArrays(
+            fn (): array => $run ? $run->withCachedJsonArrays($readSnapshot) : $readSnapshot(),
+        );
+    }
+
+    private function dashboardPayload(Request $request): array
+    {
+        $prediction = $this->resource;
         $payload = (new CanonicalSportPredictionResource(
             $prediction,
             $this->context,

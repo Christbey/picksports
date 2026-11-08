@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\CachesJsonArrayCasts;
 use Database\Factories\CalculationRunFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -14,6 +15,8 @@ use LogicException;
 class CalculationRun extends Model
 {
     /** @use HasFactory<CalculationRunFactory> */
+    use CachesJsonArrayCasts;
+
     use HasFactory, HasUuids;
 
     public const STATUSES = ['pending', 'running', 'succeeded', 'failed'];

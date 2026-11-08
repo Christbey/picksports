@@ -8,7 +8,12 @@ use App\Models\PredictionFeatureSnapshot;
 use App\Models\SportEvent;
 use App\Models\User;
 use App\Services\NFL\NflHistoricalForecastArchive;
+use Illuminate\Support\Carbon;
 use Laravel\Sanctum\Sanctum;
+
+// Keep the one-hour mismatch fixture away from repeated daylight-saving clock times.
+beforeEach(fn () => $this->travelTo(Carbon::parse('2026-10-10 12:00:00', 'America/Chicago')));
+afterEach(fn () => $this->travelBack());
 
 function nflHistoricalArchiveFixture(): array
 {

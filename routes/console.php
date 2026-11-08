@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\ApiIdempotencyKey;
+use App\Models\CommandHeartbeat;
 use App\Models\NFL\Game;
 use App\Services\CFB\Predictions\CfbCalculationReleaseDefinition;
 use App\Services\CommandHeartbeatService;
@@ -7,6 +9,7 @@ use App\Services\NFL\Predictions\NflPregameHorizon;
 use App\Services\Predictions\PredictionDeliverySource;
 use App\Support\BasketballSeason;
 use App\Support\CFB\CfbWeek;
+use Illuminate\Console\Application;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -102,49 +105,16 @@ $resolveExternalHeartbeatUrl = function (string $sourceName) use ($legacyLiveSco
 };
 
 $attachCommandHeartbeat = function ($event, string $command, string $sourceName) use ($resolveExternalHeartbeatUrl): void {
-    $service = app(CommandHeartbeatService::class);
-    $sport = $service->inferSportFromCommand($command);
-    $startedAtCacheKey = 'scheduled-command-started:'.sha1($sourceName.'|'.$command);
-
-    $event->before(function () use ($startedAtCacheKey): void {
-        Cache::put($startedAtCacheKey, (int) round(microtime(true) * 1000), now()->addHours(8));
-    });
-
-    $metadata = function () use ($event, $sourceName, $startedAtCacheKey): array {
-        $startedAtMs = Cache::pull($startedAtCacheKey);
-
-        return [
-            'scheduled_name' => $sourceName,
-            'exit_code' => $event->exitCode,
-            'duration_ms' => is_numeric($startedAtMs)
-                ? max(0, (int) round(microtime(true) * 1000) - (int) $startedAtMs)
-                : null,
-        ];
-    };
-
-    $queuedCfb = str_starts_with($command, 'cfb:run-pregame-pipeline') && str_contains($command, '--queued');
-    if (! $queuedCfb && ($externalHeartbeatUrl = $resolveExternalHeartbeatUrl($sourceName))) {
-        $event->pingOnSuccess($externalHeartbeatUrl);
+    $event->command = Application::formatCommandString('ops:dispatch-scheduled')
+        .' '.escapeshellarg($command).' --name='.escapeshellarg($sourceName);
+    if ($url = $resolveExternalHeartbeatUrl($sourceName)) {
+        $event->command .= ' --heartbeat-url='.escapeshellarg($url);
     }
-
-    $event->onSuccess(function () use ($service, $command, $sport, $metadata, $queuedCfb) {
-        if ($queuedCfb) {
-            $metadata();
-
-            return;
-        }
-        $service->recordSuccess($command, $sport, 'schedule', $metadata());
-    });
-
-    $event->onFailure(function () use ($service, $command, $sport, $metadata) {
-        $details = $metadata();
-        $service->recordFailure(
-            $command,
-            $sport,
-            'schedule',
-            'Scheduled command exited with code '.($details['exit_code'] ?? 'unknown'),
-            $details,
-        );
+    $event->runInBackground = false;
+    $event->onFailure(function () use ($command, $sourceName): void {
+        $service = app(CommandHeartbeatService::class);
+        $service->recordFailure($command, $service->inferSportFromCommand($command), 'schedule',
+            'Scheduled worker dispatch failed', ['scheduled_name' => $sourceName]);
     });
 };
 
@@ -1445,7 +1415,7 @@ $pruneFailedJobsEvent = Schedule::command('queue:prune-failed --hours=168')
     ->runInBackground();
 $attachCommandHeartbeat($pruneFailedJobsEvent, 'queue:prune-failed --hours=168', 'Queue: Prune Failed Jobs');
 
-$pruneCommandHeartbeatsCommand = 'model:prune --model=App\\Models\\CommandHeartbeat';
+$pruneCommandHeartbeatsCommand = 'model:prune --model='.escapeshellarg(CommandHeartbeat::class);
 $pruneCommandHeartbeatsEvent = Schedule::command($pruneCommandHeartbeatsCommand)
     ->dailyAt('03:25')
     ->name('Maintenance: Prune Command Heartbeats')
@@ -1458,7 +1428,7 @@ $attachCommandHeartbeat(
     'Maintenance: Prune Command Heartbeats',
 );
 
-$pruneApiIdempotencyKeysCommand = 'model:prune --model=App\\Models\\ApiIdempotencyKey';
+$pruneApiIdempotencyKeysCommand = 'model:prune --model='.escapeshellarg(ApiIdempotencyKey::class);
 $pruneApiIdempotencyKeysEvent = Schedule::command($pruneApiIdempotencyKeysCommand)
     ->dailyAt('03:30')
     ->name('Maintenance: Prune API Idempotency Keys')
@@ -1509,13 +1479,14 @@ $cfbDailyBoardEvent = Schedule::command('cfb:daily-board')
 $attachCommandHeartbeat($cfbDailyBoardEvent, 'cfb:daily-board', 'CFB: Publish Daily Forecast and Player Prop Board');
 $scheduleDailySeasonJob("cfb:grade-player-props --season={$fallSeasonYear}", '08:40', $cfbInSeason, 'CFB: Grade Player Props');
 
-Schedule::command('cfb:sync-live-betting')
+$cfbLiveBettingEvent = Schedule::command('cfb:sync-live-betting')
     ->everyTwoMinutes()
     ->when($cfbInSeason)
     ->withoutOverlapping(10)
     ->onOneServer()
     ->runInBackground()
     ->name('CFB: Capture Live Betting Snapshots');
+$attachCommandHeartbeat($cfbLiveBettingEvent, 'cfb:sync-live-betting', 'CFB: Capture Live Betting Snapshots');
 
 // Official evidence ingestion and immutable research revisions are separate from canonical predictions.
 $nflResearchIngestionCommand = 'nfl:research-pipeline --days-forward=7 --limit=8 --ingest-only';

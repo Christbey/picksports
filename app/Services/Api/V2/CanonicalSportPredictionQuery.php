@@ -57,7 +57,7 @@ class CanonicalSportPredictionQuery
 
         return $this->queryForSport($context->slug)
             ->where('predictions.public_id', (string) $prediction)
-            ->firstOrFail();
+            ->reorder()->firstOrFail();
     }
 
     public function findForGame(
@@ -69,7 +69,10 @@ class CanonicalSportPredictionQuery
 
         $resolvedGame = $this->games->find($context, $game, $user, 'identity');
 
-        return $this->queryForSport($context->slug, ['game_id' => $resolvedGame->getKey()])->firstOrFail();
+        $query = $this->queryForSport($context->slug, ['game_id' => $resolvedGame->getKey()]);
+        $id = (clone $query)->select('predictions.id')->setEagerLoads([])->firstOrFail()->id;
+
+        return $query->reorder()->whereKey($id)->firstOrFail();
     }
 
     /** @return Collection<int, int> */

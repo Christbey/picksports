@@ -15,7 +15,11 @@ class NflResearchController extends Controller
     {
         abort_unless($sport === 'nfl', 404);
         $resolved = $games->find($sports->resolve($sport), $game, $request->user(), 'identity');
-        $rows = ResearchRevision::where('game_id', $resolved->getKey())->latest('id')->limit(20)->get();
+        $ids = ResearchRevision::where('game_id', $resolved->getKey())->latest('id')->limit(20)->pluck('id');
+        $revisions = ResearchRevision::query()->whereKey($ids)->get([
+            'id', 'created_at', 'baseline', 'revised', 'brief', 'market', 'evaluation',
+        ])->keyBy('id');
+        $rows = $ids->map(fn ($id) => $revisions->get($id))->filter()->values();
 
         return response()->json([
             'data' => [

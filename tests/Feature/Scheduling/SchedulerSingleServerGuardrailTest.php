@@ -54,11 +54,11 @@ it('prunes retained command heartbeats once daily on one server', function () {
     );
 
     expect($event)->not->toBeNull()
-        ->and((string) $event?->command)->toContain('model:prune --model=App\\Models\\CommandHeartbeat')
+        ->and((string) $event?->command)->toContain('model:prune --model=', 'CommandHeartbeat')
         ->and($event?->expression)->toBe('25 3 * * *')
         ->and($event?->onOneServer)->toBeTrue()
         ->and($event?->withoutOverlapping)->toBeTrue()
-        ->and($event?->runInBackground)->toBeTrue();
+        ->and($event?->runInBackground)->toBeFalse();
 });
 
 it('runs the infrastructure health check hourly with a bounded single-server lock', function () {
@@ -295,25 +295,12 @@ it('runs incremental epa and stale ai reconciliation in bounded foreground passe
         ->and($aiReconciliation?->runInBackground)->toBeFalse();
 });
 
-it('records scheduled command duration and exit code for production profiling', function () {
-    $event = collect(app(Schedule::class)->events())->first(
-        fn ($event): bool => $event->description === 'Maintenance: Reconcile Stale AI Generations'
-    );
-
-    $event->callBeforeCallbacks(app());
+it('does not report completed work when the scheduler only dispatched it', function () {
+    $event = collect(app(Schedule::class)->events())->firstWhere('description', 'Maintenance: Reconcile Stale AI Generations');
+    expect($event->command)->toContain('ops:dispatch-scheduled');
     $event->exitCode = 0;
     $event->callAfterCallbacks(app());
-
-    $heartbeat = CommandHeartbeat::query()
-        ->where('source', 'schedule')
-        ->where('command', 'like', 'ai:reconcile-stale-generations%')
-        ->latest('id')
-        ->firstOrFail();
-
-    expect($heartbeat->metadata)
-        ->toHaveKey('duration_ms')
-        ->toHaveKey('exit_code', 0)
-        ->and($heartbeat->metadata['duration_ms'])->toBeGreaterThanOrEqual(0);
+    expect(CommandHeartbeat::count())->toBe(0);
 });
 
 it('keeps queue reservations longer than the longest configured sync job', function () {

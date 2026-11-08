@@ -57,10 +57,10 @@ it('schedules shadow decisions and settlement feedback after nba nfl and mlb pre
         ->and($mlbSettlement?->expression)->toBe('50 4 * * *')
         ->and($mlbInference?->expression)->toBe('10 6 * * *')
         ->and($mlbInference?->withoutOverlapping)->toBeTrue()
-        ->and($mlbInference?->runInBackground)->toBeTrue()
+        ->and($mlbInference?->runInBackground)->toBeFalse()
         ->and($mlbPeriodInference?->expression)->toBe('12 6 * * *')
         ->and($mlbPeriodInference?->withoutOverlapping)->toBeTrue()
-        ->and($mlbPeriodInference?->runInBackground)->toBeTrue()
+        ->and($mlbPeriodInference?->runInBackground)->toBeFalse()
         ->and($mlbShadow?->expression)->toBe('15 6 * * *');
 
     $reflection = new ReflectionObject($mlbInference);
@@ -68,7 +68,7 @@ it('schedules shadow decisions and settlement feedback after nba nfl and mlb pre
     $afterCallbacks = $reflection->getProperty('afterCallbacks');
 
     expect($filters->getValue($mlbInference))->not->toBeEmpty()
-        ->and($afterCallbacks->getValue($mlbInference))->toHaveCount(2);
+        ->and($afterCallbacks->getValue($mlbInference))->toHaveCount(1);
 });
 
 it('refreshes MLB snapshots shadow inference and decisions after every odds sync window', function () {
@@ -105,14 +105,14 @@ it('refreshes MLB snapshots shadow inference and decisions after every odds sync
     foreach ([$predictionRefresh, $dailyPicksRefresh, $shadowRefresh, $periodRefresh, $decisionRefresh] as $event) {
         expect($event)->not->toBeNull()
             ->and($event->withoutOverlapping)->toBeTrue()
-            ->and($event->runInBackground)->toBeTrue();
+            ->and($event->runInBackground)->toBeFalse();
 
         $reflection = new ReflectionObject($event);
         $filters = $reflection->getProperty('filters');
         $afterCallbacks = $reflection->getProperty('afterCallbacks');
 
         expect($filters->getValue($event))->not->toBeEmpty()
-            ->and($afterCallbacks->getValue($event))->toHaveCount(2);
+            ->and($afterCallbacks->getValue($event))->toHaveCount(1);
     }
 });
 
@@ -155,7 +155,7 @@ it('schedules bounded single-server weekly model training for MLB and NFL', func
         ->and($mlb?->withoutOverlapping)->toBeTrue()
         ->and($mlb?->expiresAt)->toBe(360)
         ->and($mlb?->onOneServer)->toBeTrue()
-        ->and($mlb?->runInBackground)->toBeTrue()
+        ->and($mlb?->runInBackground)->toBeFalse()
         ->and($mlbPeriod)->not->toBeNull()
         ->and((string) $mlbPeriod?->command)->toContain('mlb:train-period-models --from-season=2021')
         ->and($mlbPeriod?->expression)->toBe('20 7 * * 1')
@@ -163,7 +163,7 @@ it('schedules bounded single-server weekly model training for MLB and NFL', func
         ->and($mlbPeriod?->withoutOverlapping)->toBeTrue()
         ->and($mlbPeriod?->expiresAt)->toBe(360)
         ->and($mlbPeriod?->onOneServer)->toBeTrue()
-        ->and($mlbPeriod?->runInBackground)->toBeTrue()
+        ->and($mlbPeriod?->runInBackground)->toBeFalse()
         ->and($nfl)->not->toBeNull()
         ->and((string) $nfl?->command)->toContain('sports:train-weekly-model-challenger nfl')
         ->and($nfl?->expression)->toBe('40 12 * * 2')
@@ -171,7 +171,7 @@ it('schedules bounded single-server weekly model training for MLB and NFL', func
         ->and($nfl?->withoutOverlapping)->toBeTrue()
         ->and($nfl?->expiresAt)->toBe(360)
         ->and($nfl?->onOneServer)->toBeTrue()
-        ->and($nfl?->runInBackground)->toBeTrue();
+        ->and($nfl?->runInBackground)->toBeFalse();
 });
 
 it('audits NFL frozen spread validation daily after grading without fetching odds', function () {

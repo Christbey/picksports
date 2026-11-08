@@ -150,7 +150,7 @@ it('schedules final-score reconciliation before the nightly team metric refresh'
         ->and($reconciliation?->withoutOverlapping)->toBeTrue()
         ->and($reconciliation?->expiresAt)->toBe(60)
         ->and($reconciliation?->onOneServer)->toBeTrue()
-        ->and($reconciliation?->runInBackground)->toBeTrue()
+        ->and($reconciliation?->runInBackground)->toBeFalse()
         ->and($metricRefresh)->not->toBeNull()
         ->and($metricRefresh?->expression)->toBe('30 5 * * *');
 });

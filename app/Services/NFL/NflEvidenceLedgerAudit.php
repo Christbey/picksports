@@ -20,16 +20,21 @@ class NflEvidenceLedgerAudit
         $games = Game::with('sportEvent:id,starts_at')->select(['id', 'sport_event_id', 'season', 'season_type', 'name', 'short_name', 'game_date', 'game_time', 'status', 'home_score', 'away_score'])->where('season', $season)->whereIn('season_type', ['2', 'regular'])->get()->keyBy('id');
         if ($canonical) {
             $snapshots = app(NflEvidenceForecastSource::class)->forGames($games, $version);
-            $captures = PredictionFeatureSnapshot::query()->where('sport', 'nfl')->where('prediction_table', 'predictions')
+            $captureQuery = PredictionFeatureSnapshot::query()->where('sport', 'nfl')->where('prediction_table', 'predictions')
                 ->where('blend_version', NflEvidenceCapture::NATIVE_POLICY)
                 ->whereIn('canonical_prediction_id', $snapshots->pluck('canonical_prediction_id'))
-                ->where('pregame_safe', true)->where('availability_status', 'observed_pregame')->where('generated_at', '<=', now())
-                ->orderByDesc('generated_at')->orderByDesc('id')->get([
-                    'id', 'game_id', 'canonical_prediction_id', 'prediction_id',
-                    'features->evidence->canonical_lineage->calculation_run_id as source_run',
-                    'features->evidence->canonical_lineage->event_input_snapshot_id as source_input',
-                ]);
-            foreach ($captures as $capture) {
+                ->where('pregame_safe', true)->where('availability_status', 'observed_pregame')->where('generated_at', '<=', now());
+            $captureIds = (clone $captureQuery)->orderByDesc('generated_at')->orderByDesc('id')->pluck('id');
+            $captures = $captureIds->chunk(25)->flatMap(fn ($ids) => PredictionFeatureSnapshot::query()->whereKey($ids)->get([
+                'id', 'game_id', 'canonical_prediction_id', 'prediction_id',
+                'features->evidence->canonical_lineage->calculation_run_id as source_run',
+                'features->evidence->canonical_lineage->event_input_snapshot_id as source_input',
+            ]))->keyBy('id');
+            foreach ($captureIds as $captureId) {
+                $capture = $captures->get($captureId);
+                if ($capture === null) {
+                    continue;
+                }
                 $forecast = $snapshots->get($capture->game_id);
                 if ($forecast && $forecast->id === null && $forecast->canonical_prediction_id === $capture->canonical_prediction_id
                     && (int) $capture->prediction_id === $forecast->canonical_prediction_id

@@ -108,8 +108,14 @@ class DashboardController extends Controller
         $context = app(SportContextResolver::class)->resolve(strtolower($sport));
         $canonical = app(CanonicalSportPredictionQuery::class);
         if ($canonical->supports($context)) {
+            // The dashboard sorts by kickoff below. Sorting full JSON rows in MySQL
+            // is expensive, so retain publication tie-breaking in the bounded slate.
             $predictions = $canonical->queryForSport($context->slug)
-                ->whereBetween('sport_events.starts_at', [now()->startOfDay()->utc(), now()->endOfDay()->utc()])->get();
+                ->whereBetween('sport_events.starts_at', [now()->startOfDay()->utc(), now()->endOfDay()->utc()])
+                ->reorder()
+                ->get()
+                ->sortBy([['published_at', 'desc'], ['id', 'desc']])
+                ->values();
             app(LivePredictionStore::class)->preload($predictions->map(fn ($prediction) => $prediction->sportEvent?->getRelation($context->slug.'Game'))->filter());
 
             return $predictions->map(fn (CanonicalPrediction $prediction): array => (new CanonicalDashboardPredictionResource($prediction, $context, $config))->resolve());

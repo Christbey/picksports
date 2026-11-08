@@ -16,6 +16,7 @@ import {
 import { useSportGameLayoutFromConfig } from '@/composables/useSportGameLayout';
 import { useTeamTrends } from '@/composables/useTeamTrends';
 import { useGameViewTracking } from '@/composables/useGameViewTracking';
+import { predictionHomeMargin } from '@/lib/predictionSpread';
 import { getCfbPostseasonLabel } from '@/lib/cfbPostseason';
 import type {
     NflPageGame,
@@ -162,8 +163,11 @@ export function useCfbDetailedGamePage(gameId: number) {
             }
 
             if (predictionData?.data) {
-                prediction.value =
-                    predictionData.data as unknown as NflPagePrediction;
+                prediction.value = {
+                    ...predictionData.data,
+                    predicted_spread:
+                        predictionHomeMargin(predictionData.data) ?? '',
+                } as unknown as NflPagePrediction;
             }
 
             loading.value = false;

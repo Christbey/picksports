@@ -6,9 +6,11 @@ export function predictionHomeMargin(
     if (!prediction || typeof prediction !== 'object') return null;
     const value = prediction as Record<string, unknown>;
     const spread = value.predicted_spread;
-    if (spread === null || spread === undefined || spread === '') return null;
+    if (typeof spread !== 'number' && typeof spread !== 'string') return null;
+    if (typeof spread === 'string' && !spread.trim()) return null;
     const parsed = Number(spread);
     if (!Number.isFinite(parsed)) return null;
+    if (parsed === 0) return 0;
     const canonicalMarket =
         !usesHomeMargin &&
         value.phase === 'pregame' &&

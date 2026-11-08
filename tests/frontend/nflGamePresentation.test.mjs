@@ -3,7 +3,7 @@ import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import vue from '@vitejs/plugin-vue';
-import { createSSRApp } from 'vue';
+import { createSSRApp, createRenderer, nextTick } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import { formatDateLong } from '../../resources/js/composables/useFormatters.ts';
 import { nflBoxScoreRows } from '../../resources/js/lib/nflBoxScore.ts';
@@ -92,7 +92,19 @@ let server;
 before(async () => {
     server = await createServer({
         configFile: false,
-        plugins: [vue()],
+        plugins: [
+            vue(),
+            {
+                name: 'forecast-page-api',
+                enforce: 'pre',
+                load(id) {
+                    if (id.endsWith('/composables/useApiV2Client.ts'))
+                        return 'export const useApiV2Client = () => globalThis.__forecastPageApi;';
+                    if (id.endsWith('/composables/useGameViewTracking.ts'))
+                        return 'export const useGameViewTracking = () => {};';
+                },
+            },
+        ],
         server: { middlewareMode: true, hmr: false, ws: false, watch: null },
         optimizeDeps: { noDiscovery: true, include: [] },
         resolve: {
@@ -108,7 +120,7 @@ after(async () => {
     await server?.close();
 });
 
-const forecastHtml = async (prediction, gameStatus) => {
+const forecastHtml = async (prediction, gameStatus, labels = {}) => {
     const { default: component } = await server.ssrLoadModule(
         '/resources/js/components/game-page/NFLPredictionModelCard.vue',
     );
@@ -118,6 +130,7 @@ const forecastHtml = async (prediction, gameStatus) => {
             gameStatus,
             awayLabel: 'DET',
             homeLabel: 'BUF',
+            ...labels,
             formatNumber: (value, decimals = 1) =>
                 value == null ? '—' : Number(value).toFixed(decimals),
             formatSpread: (value) =>
@@ -137,7 +150,7 @@ test('forecast leads with model spread and total, preserves sign and marks even 
     assert.match(html, /BUF model spread/);
     assert.match(html, /-3\.5/);
     assert.match(html, /48\.5/);
-    assert.match(html, /BUF favored/);
+    assert.match(html, /BUF projected to win by 3\.5/);
     assert.match(html, /BUF to win/);
     assert.match(html, /aria-label="Model pick"/);
     assert.match(html, /63\.0%/);
@@ -153,8 +166,8 @@ test('forecast leads with model spread and total, preserves sign and marks even 
     assert.doesNotMatch(even, /favored|Win probability unavailable/);
     const away = await forecastHtml({ predicted_spread: -3.5 });
     assert.match(away, /\+3\.5/);
-    assert.match(away, /DET favored/);
-    assert.match(away, /Pick unavailable/);
+    assert.match(away, /DET projected to win by 3\.5/);
+    assert.match(away, /Winner unavailable/);
 });
 
 test('missing or invalid forecast values never become zero, a favorite or a fake probability', async () => {
@@ -232,7 +245,158 @@ test('pregame forecast stays explicitly labeled during live play', async () => {
     );
     assert.match(html, /Pregame forecast/);
     assert.match(html, /do not update during live play/);
-    assert.match(html, /Moneyline pick/);
+    assert.match(html, /Predicted winner/);
     assert.match(html, /Pregame win outlook/);
     assert.doesNotMatch(html, /60\.0% model win/);
+});
+
+const renderer = createRenderer({
+    createElement: () => ({}),
+    createText: () => ({}),
+    createComment: () => ({}),
+    insert() {},
+    remove() {},
+    setText() {},
+    setElementText() {},
+    parentNode: () => null,
+    nextSibling: () => null,
+    patchProp() {},
+});
+
+test('CFB page converts canonical home lines once and preserves legacy margins and forecast fields', async () => {
+    const { useCfbDetailedGamePage } = await server.ssrLoadModule(
+        '/resources/js/composables/useCfbDetailedGamePage.ts',
+    );
+    for (const fixture of [
+        {
+            source: {
+                phase: 'pregame',
+                revision: 100,
+                predicted_spread: -2.58,
+            },
+            margin: 2.58,
+            team: 'KU',
+            line: '-2.6',
+        },
+        {
+            source: {
+                phase: 'pregame',
+                revision: 1,
+                predicted_spread: 2.58,
+                win_probability: 0.394126,
+            },
+            margin: -2.58,
+            team: 'UCF',
+            line: '+2.6',
+        },
+        {
+            source: { predicted_spread: 2.58 },
+            margin: 2.58,
+            team: 'KU',
+            line: '-2.6',
+        },
+        {
+            source: { phase: 'pregame', revision: 1, predicted_spread: 0 },
+            margin: 0,
+            team: null,
+            line: '0.0',
+        },
+        {
+            source: { phase: 'pregame', revision: 1, predicted_spread: null },
+            margin: '',
+            team: null,
+            line: null,
+        },
+        ...['', ' ', false, 'bad', Infinity].map((predicted_spread) => ({
+            source: { phase: 'pregame', revision: 1, predicted_spread },
+            margin: '',
+            team: null,
+            line: null,
+        })),
+    ]) {
+        const raw = {
+            id: '01m6vewnpenrbbr7vgfeaet7mk',
+            sport: 'cfb',
+            game_id: 644,
+            win_probability: 0.605874,
+            predicted_total: 53,
+            confidence_context: {
+                probability_status: 'uncalibrated_model_estimate',
+            },
+            scoring_model: { state: 'available' },
+            comparison_forecasts: { version: 'test' },
+            ...fixture.source,
+        };
+        globalThis.__forecastPageApi = {
+            games: {
+                show: async () => ({
+                    data: {
+                        id: 644,
+                        status: 'STATUS_FINAL',
+                        home_team: { abbreviation: 'KU' },
+                        away_team: { abbreviation: 'UCF' },
+                    },
+                }),
+            },
+            predictions: { forGame: async () => ({ data: raw }) },
+            stats: { teams: async () => ({ data: [] }) },
+        };
+        let state;
+        const app = renderer.createApp({
+            setup() {
+                state = useCfbDetailedGamePage(644);
+                return () => null;
+            },
+        });
+        app.mount({});
+        try {
+            await new Promise((resolve) => setImmediate(resolve));
+            await nextTick();
+            const prediction = state.predictionSectionProps.value.prediction;
+            assert.deepEqual(prediction, {
+                ...raw,
+                predicted_spread: fixture.margin,
+            });
+            assert.equal(raw.predicted_spread, fixture.source.predicted_spread);
+            const html = await forecastHtml(prediction, 'STATUS_FINAL', {
+                awayLabel: 'UCF',
+                homeLabel: 'KU',
+            });
+            if (fixture.team) {
+                assert.ok(html.includes(fixture.line));
+                assert.ok(
+                    html.includes(`${fixture.team} projected to win by 2.6`),
+                );
+            } else if (fixture.line) assert.match(html, /Even matchup/);
+            else assert.match(html, /Unavailable/);
+            if (fixture.team)
+                assert.ok(html.includes(`${fixture.team} to win`));
+            assert.match(html, /Predicted winner/);
+            assert.match(html, /Uncalibrated model estimate/);
+            assert.ok(
+                html.indexOf('Uncalibrated model estimate') <
+                    html.indexOf('<details'),
+            );
+            assert.doesNotMatch(html, /Moneyline pick/);
+        } finally {
+            app.unmount();
+            delete globalThis.__forecastPageApi;
+        }
+    }
+});
+
+test('forecast does not label calibrated or unspecified estimates as uncalibrated', async () => {
+    for (const confidence_context of [
+        undefined,
+        { probability_status: 'calibrated' },
+    ]) {
+        const html = await forecastHtml({
+            sport: 'nfl',
+            predicted_spread: 3.5,
+            win_probability: 0.63,
+            confidence_context,
+        });
+        assert.doesNotMatch(html, /Uncalibrated model estimate/);
+        assert.match(html, /Predicted winner/);
+    }
 });

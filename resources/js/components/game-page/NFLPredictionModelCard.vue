@@ -32,7 +32,7 @@ const probability = computed(() => {
 const favorite = computed(() => {
     if (margin.value === null) return 'Unavailable';
     if (margin.value === 0) return 'Even matchup';
-    return `${margin.value > 0 ? props.homeLabel || 'Home' : props.awayLabel || 'Away'} favored`;
+    return `${margin.value > 0 ? props.homeLabel || 'Home' : props.awayLabel || 'Away'} projected to win by ${props.formatNumber(Math.abs(margin.value), 1)} points`;
 });
 const winner = computed(() => {
     if (probability.value === null) return null;
@@ -71,10 +71,10 @@ const winner = computed(() => {
                     <p
                         class="text-xs font-semibold tracking-wider text-sky-700 uppercase dark:text-sky-300"
                     >
-                        Moneyline pick
+                        Predicted winner
                     </p>
                     <p class="mt-1 text-2xl font-semibold tracking-tight">
-                        {{ winner?.label ?? 'Pick unavailable' }}
+                        {{ winner?.label ?? 'Winner unavailable' }}
                     </p>
                 </div>
                 <div
@@ -125,6 +125,16 @@ const winner = computed(() => {
                 >
                     <p class="text-xs text-muted-foreground">
                         Pregame win outlook
+                    </p>
+                    <p
+                        v-if="
+                            prediction.confidence_context
+                                ?.probability_status ===
+                            'uncalibrated_model_estimate'
+                        "
+                        class="mt-1 text-xs text-muted-foreground"
+                    >
+                        Uncalibrated model estimate
                     </p>
                     <div v-if="probability !== null" class="mt-2 space-y-2">
                         <div class="flex items-end justify-between gap-4">

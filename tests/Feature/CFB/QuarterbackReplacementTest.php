@@ -149,6 +149,10 @@ it('uses replacement impact once in the full calculator and retains the generic 
         ->and($adjusted->diagnostics['availability_adjustment'])->toEqual(0)
         ->and($adjusted->diagnostics['projected_total'])->toEqualWithDelta($base->diagnostics['projected_total'] - 3.4286, 0.0001)
         ->and($adjusted->metadata['input_quality']['risk_flags'])->toContain('home_quarterback_unresolved', 'home_quarterback_replacement_unvalidated');
+    $withChallenger = [...$inputs, 'scoring_challenger' => ['promoted' => true, 'state' => 'unavailable']];
+    $held = $calculator->calculate($snapshot($withChallenger), $release($config));
+    expect(data_get($held->diagnostics, 'quarterback_adjustment.home.applied'))->toBeFalse()
+        ->and(data_get($held->diagnostics, 'quarterback_adjustment.home.status'))->toBe('challenger_personnel_overlap_unresolved');
     unset($config['quarterback_replacement']);
     $older = $calculator->calculate($snapshot($inputs), $release($config));
     expect($older->diagnostics)->not->toHaveKey('quarterback_adjustment')

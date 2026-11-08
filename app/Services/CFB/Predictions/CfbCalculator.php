@@ -22,6 +22,10 @@ class CfbCalculator extends CanonicalFootballCalculator
             foreach (['home', 'away'] as $side) {
                 $estimates[$side] = $qb->estimate(data_get($snapshot->inputs, $side.'.quarterback_replacement', []),
                     $release->configuration['quarterback_replacement']);
+                if ($estimates[$side]['applied'] && data_get($snapshot->inputs, 'scoring_challenger.promoted', false)) {
+                    $estimates[$side] = [...$estimates[$side], 'applied' => false,
+                        'status' => 'challenger_personnel_overlap_unresolved', 'offense_points_adjustment' => null];
+                }
             }
             $snapshot = $qb->baselineSnapshot($snapshot, $estimates);
         }

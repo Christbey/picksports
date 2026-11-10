@@ -4,7 +4,6 @@ namespace App\Http\Resources\Api\V2;
 
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game;
-use App\Models\PredictionMarket;
 use App\Services\Api\V2\CanonicalPredictionPresentationData;
 use App\Services\Api\V2\SportContext;
 use App\Services\CFB\Live\LiveBoardPresentation;
@@ -42,10 +41,10 @@ class CanonicalSportPredictionResource extends JsonResource
         $prediction = $this->resource;
         $presentation = $this->presentation instanceof \Closure ? ($this->presentation)() : $this->presentation;
         $game = $this->gameModel($prediction);
-        $homeMoneyline = $this->market($prediction, 'moneyline', 'home');
-        $awayMoneyline = $this->market($prediction, 'moneyline', 'away');
-        $homeSpread = $this->market($prediction, 'spread', 'home');
-        $total = $this->market($prediction, 'total', 'combined');
+        $homeMoneyline = $prediction->marketFor('moneyline', 'home');
+        $awayMoneyline = $prediction->marketFor('moneyline', 'away');
+        $homeSpread = $prediction->marketFor('spread', 'home');
+        $total = $prediction->marketFor('total', 'combined');
         $homeProbability = $this->number($homeMoneyline?->probability);
         $awayProbability = $this->number($awayMoneyline?->probability);
         $confidence = $prediction->sport === 'cfb' ? null : $this->number($homeMoneyline?->confidence_score);
@@ -186,14 +185,6 @@ class CanonicalSportPredictionResource extends JsonResource
             'generated_at' => $prediction->generated_at?->toIso8601String(),
             'artifact_id' => $model['artifact_id'] ?? null,
             'recommendation_status' => 'requires_market_validation'];
-    }
-
-    private function market(CanonicalPrediction $prediction, string $type, string $selection): ?PredictionMarket
-    {
-        return $prediction->markets->first(
-            fn (PredictionMarket $market): bool => $market->market_type === $type
-                && $market->selection === $selection,
-        );
     }
 
     /** @return array<string, mixed>|null */

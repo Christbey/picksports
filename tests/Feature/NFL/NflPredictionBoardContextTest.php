@@ -107,15 +107,35 @@ it('displays stored stale lines without making them eligible for research approv
         ->and(app(ResearchPipeline::class)->marketIsFresh($prediction->game))->toBeFalse();
 });
 
-it('loads slate research in two batched queries, without per-game lookups or provider calls', function () {
-    [$first] = boardFixture();
+it('loads each game’s newest NFL research by ID in two batched queries', function () {
+    [$first, $report, $revision] = boardFixture();
     [$second] = boardFixture();
+    $latestReport = $report->replicate()->fill(['researched_at' => now()->subMinute()]);
+    $latestReport->save();
+    $report->replicate()->fill(['sport' => 'nba'])->save();
+    $revision->replicate()->fill([
+        'report_id' => $latestReport->id,
+        'input_hash' => str_repeat('c', 64),
+        'revised' => ['win_probability' => .81],
+        'created_at' => now()->subMinutes(2),
+    ])->save();
+
     DB::enableQueryLog();
     DB::flushQueryLog();
-    $result = app(NflPredictionBoardContext::class)->forPredictions(collect([$first, $second]));
-    $queries = DB::getQueryLog();
-    DB::disableQueryLog();
-    expect($result)->toHaveCount(2)->and($queries)->toHaveCount(2);
+    try {
+        $result = app(NflPredictionBoardContext::class)->forPredictions(collect([$first, $second]));
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+    }
+
+    expect($result)->toHaveCount(2)
+        ->and($result[$first->id]['forecast']['win_probability'])->toBe(.81)
+        ->and($result[$first->id]['research']['status'])->toBe('reviewed')
+        ->and($result[$second->id]['forecast']['win_probability'])->toBe(.742)
+        ->and($queries)->toHaveCount(2)
+        ->and($queries[0])->toContain('inner join (select MAX(id) as id')
+        ->and($queries[1])->toContain('inner join (select MAX(id) as id');
 });
 
 it('publishes compact board context and absolute kickoff through the prediction endpoint', function () {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { provide } from 'vue';
+import { provide, watch } from 'vue';
 import DataRecovery from '@/components/DataRecovery.vue';
 import {
     usePredictionBoard,
@@ -15,6 +15,14 @@ const props = defineProps<PredictionsBoardProps>();
 const board = usePredictionBoard(props);
 provide(predictionBoardKey, board);
 const { error, refreshError, loading, refreshing, retryPredictions } = board;
+
+if (props.config.sport === 'cfb' && typeof window !== 'undefined') {
+    watch(
+        loading,
+        () => window.dispatchEvent(new Event('picksports:board-settled')),
+        { once: true, flush: 'post' },
+    );
+}
 </script>
 
 <template>

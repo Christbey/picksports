@@ -2,6 +2,7 @@
 
 namespace App\Services\Api\V2;
 
+use App\Application\Sports\ReadModels\BettingForecast;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game as CfbGame;
 use App\Services\BettingRecommendations\GameBettingRecommendationService;
@@ -19,7 +20,7 @@ class CanonicalPredictionPresentationService
 
     public function forPrediction(CanonicalPrediction $prediction, ?array $nflBoard = null): CanonicalPredictionPresentationData
     {
-        $market = $prediction->markets->first(fn ($market): bool => $market->market_type === 'moneyline' && $market->selection === 'home');
+        $market = $prediction->marketFor('moneyline', 'home');
         $confidence = is_numeric($market?->confidence_score) ? (float) $market->confidence_score : null;
         $game = $prediction->sportEvent?->getRelation($prediction->sport.'Game');
 
@@ -37,7 +38,7 @@ class CanonicalPredictionPresentationService
         return new CanonicalPredictionPresentationData(
             nflBoard: $nflBoard,
             recommendation: $prediction->sport === 'mlb'
-                ? app(MlbRecommendationPresentation::class)->sanitize(app(MlbPredictionRecommendationService::class)->forPrediction($mlbForecast)) : null,
+                ? $this->mlbRecommendation($mlbForecast) : null,
             marketAwareProjection: $prediction->sport === 'mlb'
                 ? app(MlbMarketAwareProjectionService::class)->forPrediction($mlbForecast) : null,
             confidenceContext: $this->confidenceContext($prediction, $confidence),
@@ -45,6 +46,12 @@ class CanonicalPredictionPresentationService
             modelBetContext: app(PredictionModelBetContext::class)->forPrediction($prediction, $game),
             weatherForecast: $game instanceof CfbGame ? app(PredictionWeatherContext::class)->forPrediction($prediction, $game) : null,
         );
+    }
+
+    /** @return array<string, mixed> */
+    public function mlbRecommendation(BettingForecast $forecast): array
+    {
+        return app(MlbRecommendationPresentation::class)->sanitize(app(MlbPredictionRecommendationService::class)->forPrediction($forecast));
     }
 
     /** @return array<string, mixed> */

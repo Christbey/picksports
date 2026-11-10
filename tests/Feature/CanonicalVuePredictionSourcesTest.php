@@ -2,11 +2,13 @@
 
 use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
+use App\Models\CFB\LivePredictionSnapshot;
 use App\Models\EventInputSnapshot;
 use App\Models\NBA\Prediction;
 use App\Models\PredictionEvaluation;
 use App\Models\PredictionMarket;
 use App\Models\SportEvent;
+use App\Models\SubscriptionTier;
 use App\Models\User;
 use App\Models\UserBet;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
@@ -73,6 +75,8 @@ it('shows canonical forecasts on the dashboard without legacy predictions', func
         ->where('sports.0.predictions.0.win_probability', 0.65)
         ->where('sports.0.predictions.0.home_color', '004c54')
         ->where('sports.0.predictions.0.away_color', 'aa0000')
+        ->missing('sports.0.predictions.0.audit_context')
+        ->missing('sports.0.predictions.0.evidence_windows')
         ->where('stats.total_predictions_today', 1));
 
     $context = app(SportContextResolver::class)->resolve($sport);
@@ -83,6 +87,7 @@ it('shows canonical forecasts on the dashboard without legacy predictions', func
     $game->update(['status' => 'STATUS_IN_PROGRESS', 'home_score' => 14, 'away_score' => 7]);
     $this->getJson('/api/v2/live-scoreboard')->assertOk()
         ->assertJsonCount(1, 'data.games')->assertJsonPath('data.games.0.id', $prediction->public_id)
+        ->assertJsonStructure(['data' => ['games' => [['audit_context']]]])
         ->assertJsonPath('data.games.0.predicted_spread', -4.5)
         ->assertJsonPath('data.games.0.is_live', true)->assertJsonPath('data.games.0.home_score', 14);
     $this->getJson('/api/v2/sports/'.$sport.'/games/'.$game->id)->assertOk()
@@ -139,8 +144,9 @@ it('preserves sportsbook spread signs through the dashboard card convention', fu
     $response = $this->actingAs(User::factory()->create())->get(route('dashboard'))->assertOk();
     $prediction = $response->inertiaProps('sports.0.predictions.0');
 
+    $api = $this->getJson('/api/v2/sports/cfb/predictions')->assertSuccessful()->json('data.0');
     expect((float) -$prediction['predicted_spread'])->toBe($homeLine)
-        ->and((float) $prediction['model_bet_context']['model_home_spread'])->toBe($homeLine)
+        ->and((float) $api['model_bet_context']['model_home_spread'])->toBe($homeLine)
         ->and($prediction['win_probability'])->toBe($probability);
 })->with([
     'Pitt home favorite' => [-11.7, 0.875],
@@ -148,7 +154,7 @@ it('preserves sportsbook spread signs through the dashboard card convention', fu
     'pick em' => [0.0, 0.5],
 ]);
 
-it('keeps kickoff and publication tie order without SQL sorting full dashboard prediction rows', function () {
+it('keeps kickoff and publication tie order without SQL sorting full dashboard prediction rows', function (?int $limit) {
     config()->set('prediction_lifecycle.canonical_reads.cfb', true);
     $predictions = collect();
     foreach (['08:00:00', '08:05:00', '08:05:00', '08:10:00'] as $time) {
@@ -161,21 +167,35 @@ it('keeps kickoff and publication tie order without SQL sorting full dashboard p
         $prediction->sportEvent->update(['starts_at' => $kickoff]);
         $prediction->sportEvent->cfbGame->update(['game_date' => $kickoff->toDateString(), 'game_time' => $kickoff->toTimeString()]);
     }
-    $expected = [3, 2, 1, 0];
+    if ($limit !== null) {
+        config()->set('subscriptions.enforce_tiers', true);
+        SubscriptionTier::query()->create([
+            'name' => 'Free', 'slug' => 'free', 'features' => ['predictions_per_day' => $limit],
+            'is_active' => true, 'is_default' => true, 'sort_order' => 0,
+        ]);
+    }
+    $expected = array_slice([3, 2, 1, 0], 0, $limit);
+    $hydrated = [];
+    CanonicalPrediction::retrieved(function (CanonicalPrediction $prediction) use (&$hydrated): void {
+        if (array_key_exists('output_metadata', $prediction->getAttributes())) {
+            $hydrated[] = $prediction->public_id;
+        }
+    });
     DB::enableQueryLog();
     try {
         $this->actingAs(User::factory()->create())->get(route('dashboard'))
             ->assertOk()->assertInertia(fn (Assert $page) => $page
-            ->has('sports', 1)->has('sports.0.predictions', 4)
+            ->has('sports', 1)->has('sports.0.predictions', count($expected))
             ->where('sports.0.predictions', fn ($rows) => collect($rows)->pluck('id')->all() === collect($expected)->map(fn ($index) => $predictions[$index]->public_id)->all())
-            ->where('stats.total_predictions_today', 4));
+            ->where('stats.total_predictions_today', count($expected)));
+        expect($hydrated)->toEqualCanonicalizing(collect($expected)->map(fn ($index) => $predictions[$index]->public_id)->all());
         $slateQueries = collect(DB::getQueryLog())->pluck('query')->filter(fn (string $sql): bool => preg_match('/select ["`]predictions["`]\\.\\*/i', $sql) === 1 && str_contains($sql, 'join'));
         expect($slateQueries)->toHaveCount(1)
             ->and(strtolower($slateQueries->sole()))->not->toContain('order by');
     } finally {
         DB::disableQueryLog();
     }
-});
+})->with([null, 2]);
 
 it('paginates canonical forecasts with ordered IDs before hydrating large JSON rows', function (string $sport) {
     config()->set("prediction_lifecycle.canonical_reads.{$sport}", true);
@@ -408,3 +428,30 @@ it('returns a complete CFB startup response when there are no eligible forecasts
         ->assertJsonPath('meta.board.mode', 'replace')
         ->assertJsonCount(0, 'data');
 });
+
+it('keeps CFB live and weather fields identical between compact dashboard and full scoreboard rows', function (int $snapshotAge) {
+    config()->set('prediction_lifecycle.canonical_reads.cfb', true);
+    $prediction = vueCanonicalFixture('cfb');
+    $game = $prediction->sportEvent->cfbGame;
+    $game->update(['status' => 'STATUS_IN_PROGRESS', 'home_score' => 0, 'away_score' => 14, 'period' => 2, 'game_clock' => '05:00']);
+    $game->weather()->create([
+        'provider' => 'fixture', 'observed_at' => now(), 'temperature_f' => 52,
+        'wind_speed_mph' => 8, 'precipitation_inches' => 0,
+    ]);
+    LivePredictionSnapshot::create([
+        'game_id' => $game->id, 'state_hash' => hash('sha256', 'dashboard-live'), 'source' => 'scoreboard',
+        'status' => 'live', 'pregame' => [], 'state' => [], 'markets' => [], 'props' => [],
+        'projection' => ['spread' => -7, 'total' => 0, 'home_win_probability' => 0.25, 'seconds_remaining' => 2000],
+        'observed_at' => now()->subMinutes($snapshotAge),
+    ]);
+
+    $this->actingAs(User::factory()->create());
+    $dashboard = $this->get(route('dashboard'))->assertSuccessful()->inertiaProps('sports.0.predictions.0');
+    $scoreboard = $this->getJson('/api/v2/live-scoreboard')->assertSuccessful()->json('data.games.0');
+
+    expect($dashboard)->toEqual(array_intersect_key($scoreboard, $dashboard))
+        ->and($dashboard['home_score'])->toBe(0)
+        ->and($dashboard['weather_forecast']['source'])->toBe('latest_forecast')
+        ->and($dashboard['live_status'])->toBe($snapshotAge === 0 ? 'live' : 'stale')
+        ->and($dashboard['live_predicted_total'])->toBe($snapshotAge === 0 ? 0 : null);
+})->with([0, 4]);

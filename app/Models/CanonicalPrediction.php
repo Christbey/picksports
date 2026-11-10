@@ -244,6 +244,14 @@ class CanonicalPrediction extends Model
         return $this->hasMany(PredictionMarket::class, 'prediction_id');
     }
 
+    public function marketFor(string $type, string $selection): ?PredictionMarket
+    {
+        return $this->markets->first(
+            fn (PredictionMarket $market): bool => $market->market_type === $type
+                && $market->selection === $selection,
+        );
+    }
+
     public function evaluations(): HasMany
     {
         return $this->hasMany(PredictionEvaluation::class);

@@ -37,6 +37,7 @@ class DashboardController extends Controller
             : ($user->subscriptionTier()?->features['predictions_per_day'] ?? null);
         $sportConfigs = app(DashboardSportConfig::class)->viewable($user);
         $cacheKey = $this->sportsViewCache->contextHash([
+            'projection' => 'compact-v1',
             'date' => now()->toDateString(),
             'predictions_per_day' => $predictionsPerDay,
             'viewable_sports' => array_keys($sportConfigs),
@@ -54,7 +55,7 @@ class DashboardController extends Controller
                 $todayGameScope = fn (Builder $q) => $this->applyTodayGameWindow($q, $todayStartUtc, $todayEndUtc);
 
                 $todaysPredictions = collect($sportConfigs)
-                    ->flatMap(fn (array $config, string $sport) => $this->getPredictionsForSport($sport, $config, $todayGameScope));
+                    ->flatMap(fn (array $config, string $sport) => $this->getPredictionsForSport($sport, $config, $todayGameScope, $predictionsPerDay));
 
                 $predictionsBySport = $todaysPredictions
                     ->groupBy('sport')
@@ -102,7 +103,7 @@ class DashboardController extends Controller
         ]);
     }
 
-    private function getPredictionsForSport(string $sport, array $config, \Closure $todayGameScope): Collection
+    private function getPredictionsForSport(string $sport, array $config, \Closure $todayGameScope, ?int $predictionsPerDay): Collection
     {
         $context = app(SportContextResolver::class)->resolve(strtolower($sport));
         $canonical = app(CanonicalSportPredictionQuery::class);
@@ -112,7 +113,29 @@ class DashboardController extends Controller
             $rows = collect();
             $query = $canonical->queryForSport($context->slug)
                 ->whereBetween('sport_events.starts_at', [now()->startOfDay()->utc(), now()->endOfDay()->utc()])
-                ->reorder();
+                ->reorder()
+                ->withOnly([
+                    'markets',
+                    'sportEvent.'.$context->slug.'Game.homeTeam',
+                    'sportEvent.'.$context->slug.'Game.awayTeam',
+                    'latestEvaluation',
+                    ...match ($context->slug) {
+                        'cfb' => ['calculationRun:id,event_input_snapshot_id', 'calculationRun.inputSnapshot:id,inputs', 'sportEvent.cfbGame.weather', 'sportEvent.cfbGame.latestLiveSnapshot:cfb_live_prediction_snapshots.id,cfb_live_prediction_snapshots.game_id,status,projection,observed_at'],
+                        'mlb' => ['calculationRun.release', 'calculationRun.inputSnapshot'],
+                        default => [],
+                    },
+                ]);
+
+            if ($predictionsPerDay !== null && $predictionsPerDay >= 0) {
+                $ids = (clone $query)->setEagerLoads([])
+                    ->select(['predictions.id', 'sport_events.starts_at as dashboard_starts_at'])
+                    ->withCasts(['dashboard_starts_at' => 'immutable_datetime'])
+                    ->orderByDesc('predictions.published_at')->orderByDesc('predictions.id')->get()
+                    ->sortBy(fn (Model $prediction) => $prediction->dashboard_starts_at?->toIso8601String())
+                    ->take($predictionsPerDay)->modelKeys();
+                $query->whereKey($ids);
+            }
+
             (clone $query)->select('predictions.id')->setEagerLoads([])
                 ->chunkById(5, function ($ids) use ($query, $context, $config, $rows): void {
                     $predictions = (clone $query)->whereKey($ids->modelKeys())->get();
@@ -121,7 +144,7 @@ class DashboardController extends Controller
                         $rows->push([
                             'published_at' => $prediction->published_at,
                             'id' => $prediction->id,
-                            'payload' => (new CanonicalDashboardPredictionResource($prediction, $context, $config))->resolve(),
+                            'payload' => (new CanonicalDashboardPredictionResource($prediction, $context, $config, compact: true))->resolve(),
                         ]);
                     }
                 }, 'predictions.id', 'id');

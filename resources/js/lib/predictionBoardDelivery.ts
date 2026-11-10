@@ -1,4 +1,5 @@
 import type {
+    ApiV2Meta,
     ApiV2Prediction,
     ApiV2Query,
     ApiV2CollectionResponse,
@@ -87,15 +88,21 @@ export function createBoardDelivery(
         version: string;
         rows: ApiV2Prediction[];
     } | null = null;
-    return async (query: ApiV2Query, background = false) => {
+    return async (
+        query: ApiV2Query,
+        background = false,
+        resolveStartup?: (meta: ApiV2Meta) => ApiV2Query,
+    ) => {
         const request = ++latest;
         const key = JSON.stringify(query);
         const base = baseline?.key === key ? baseline : null;
         const compact = enabled();
-        const live = compact && background && base !== null;
+        const live = compact && !resolveStartup && background && base !== null;
         const payload = await fetcher({
             ...query,
-            ...(compact ? { view: live ? 'live' : 'board' } : {}),
+            ...(compact
+                ? { view: resolveStartup ? 'startup' : live ? 'live' : 'board' }
+                : {}),
             ...(live ? { board_version: base.version } : {}),
         });
         if (!payload || request !== latest) return payload;
@@ -104,16 +111,23 @@ export function createBoardDelivery(
         try {
             if (compact && payload.meta.board !== undefined && !delivery)
                 throw new Error('Invalid board response');
+            if (resolveStartup && delivery?.mode !== 'replace')
+                throw new Error('Invalid board startup response');
             if (delivery?.mode === 'live') {
                 if (!base || base.version !== delivery.version)
                     throw new Error('Board context changed');
                 rows = mergeBoardLivePredictions(base.rows, rows);
             }
+            const resolvedKey = resolveStartup
+                ? JSON.stringify(resolveStartup(payload.meta))
+                : key;
+            baseline = delivery
+                ? { key: resolvedKey, version: delivery.version, rows }
+                : null;
         } catch (error) {
             baseline = null;
             throw error;
         }
-        baseline = delivery ? { key, version: delivery.version, rows } : null;
         return { ...payload, data: rows };
     };
 }

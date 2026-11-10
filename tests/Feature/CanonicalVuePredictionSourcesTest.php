@@ -302,10 +302,14 @@ it('opts CFB boards into compact replacement and live responses without changing
 it('validates board delivery selectors without weakening prediction access', function () {
     $url = '/api/v2/sports/cfb/predictions';
     $this->getJson($url.'?view=board')->assertUnauthorized();
+    $this->getJson($url.'?view=startup')->assertUnauthorized();
     $this->actingAs(User::factory()->create());
     $this->getJson($url.'?view=invalid')->assertUnprocessable();
     $this->getJson($url.'?view=live&board_version=bad')->assertUnprocessable();
     $this->getJson('/api/v2/sports/nfl/predictions?view=board')->assertUnprocessable();
+    $this->getJson('/api/v2/sports/nfl/predictions?view=startup')->assertUnprocessable();
+    $this->getJson($url.'?view=startup&season=2025&week=0&from_date=2026-01-01')
+        ->assertUnprocessable()->assertInvalid(['season', 'week', 'from_date']);
 });
 
 it('returns the same CFB startup week as the prediction lookup without loading forecasts', function () {
@@ -361,4 +365,46 @@ it('keeps CFB board startup metadata behind the prediction access boundary', fun
         ->assertJsonPath('meta.board_period', ['season' => null, 'season_type' => null, 'week' => null]);
     $this->getJson('/api/v2/sports/nfl/predictions/available-seasons?view=board')
         ->assertSuccessful()->assertJsonMissingPath('meta.board_period');
+});
+
+it('serves the selected CFB period and compact page together with a usable live token', function () {
+    config()->set('prediction_lifecycle.canonical_reads.cfb', true);
+    $prediction = vueCanonicalFixture('cfb');
+    $game = $prediction->sportEvent->cfbGame;
+    $game->update(['season_type' => 2, 'week' => 0, 'status' => 'STATUS_IN_PROGRESS']);
+    $other = vueCanonicalFixture('cfb');
+    $other->sportEvent->cfbGame->update(['game_date' => now()->addWeek()->toDateString(), 'season_type' => 2, 'week' => 1]);
+    $this->actingAs(User::factory()->create());
+
+    $url = '/api/v2/sports/cfb/predictions';
+    $filters = '&season=2026&season_type=2&week=0';
+    $startup = $this->getJson($url.'?view=startup&page=1')->assertSuccessful()
+        ->assertJsonPath('meta.board_startup.seasons', [2026])
+        ->assertJsonPath('meta.board_startup.period', ['season' => 2026, 'season_type' => '2', 'week' => 0])
+        ->assertJsonPath('meta.filters.week', 0)
+        ->assertJsonPath('meta.board.mode', 'replace')
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $prediction->public_id)
+        ->assertJsonMissingPath('data.0.audit_context');
+
+    $explicit = $this->getJson($url.'?view=board'.$filters)->assertSuccessful()
+        ->assertJsonMissingPath('meta.board_startup');
+    expect($startup->json('data'))->toBe($explicit->json('data'))
+        ->and($startup->json('meta.pagination'))->toBe($explicit->json('meta.pagination'));
+
+    $game->update(['home_score' => 7]);
+    $this->getJson($url.'?view=live'.$filters.'&board_version='.$startup->json('meta.board.version'))
+        ->assertSuccessful()->assertJsonPath('meta.board.mode', 'live')
+        ->assertJsonPath('data.0.game.home_score', 7)->assertJsonMissingPath('data.0.projection');
+});
+
+it('returns a complete CFB startup response when there are no eligible forecasts', function () {
+    config()->set('prediction_lifecycle.canonical_reads.cfb', true);
+    $this->actingAs(User::factory()->create())->getJson('/api/v2/sports/cfb/predictions?view=startup')
+        ->assertSuccessful()
+        ->assertJsonPath('meta.board_startup.seasons', [])
+        ->assertJsonPath('meta.board_startup.period', ['season' => null, 'season_type' => null, 'week' => null])
+        ->assertJsonPath('meta.pagination.total', 0)
+        ->assertJsonPath('meta.board.mode', 'replace')
+        ->assertJsonCount(0, 'data');
 });

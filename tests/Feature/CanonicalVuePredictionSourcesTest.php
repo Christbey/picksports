@@ -276,18 +276,19 @@ it('decodes frozen inputs once per API resource and releases the document after 
 it('hydrates dashboard forecast graphs in bounded unsorted batches without losing slate order', function () {
     config(['prediction_lifecycle.canonical_reads.nba' => true]);
     $ids = [];
-    for ($i = 0; $i < 13; $i++) {
+    for ($i = 0; $i < 23; $i++) {
         $prediction = vueCanonicalFixture('nba', $i + 0.5);
         $ids[] = $prediction->public_id;
     }
     DB::enableQueryLog();
     try {
         $this->actingAs(User::factory()->create())->get(route('dashboard'))
-            ->assertOk()->assertInertia(fn (Assert $page) => $page->has('sports.0.predictions', 13)
-            ->where('stats.total_predictions_today', 13));
+            ->assertOk()->assertInertia(fn (Assert $page) => $page->has('sports.0.predictions', 23)
+            ->where('stats.total_predictions_today', 23)
+            ->where('sports.0.predictions', fn ($rows) => collect($rows)->pluck('id')->all() === array_reverse($ids)));
         $queries = collect(DB::getQueryLog())->pluck('query');
         $fullRows = $queries->filter(fn ($sql) => str_contains($sql, 'select "predictions".*') && str_contains($sql, 'join'));
-        expect($fullRows)->toHaveCount(3);
+        expect($fullRows)->toHaveCount(2);
         foreach ($fullRows as $sql) {
             expect($sql)->not->toContain('order by');
         }

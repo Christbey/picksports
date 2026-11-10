@@ -12,6 +12,7 @@ use App\Services\CBB\CbbScoreMarginRatings;
 use App\Services\CBB\Predictions\CbbCalculationReleaseRegistrar;
 use App\Services\CBB\Predictions\CbbPregameMarketSnapshot;
 use App\Services\OddsApi\GameOddsSnapshotRecorder;
+use App\Services\Predictions\CalculationReleaseManager;
 use App\Services\Predictions\CanonicalPredictionEvaluator;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
@@ -127,6 +128,36 @@ it('freezes market evidence in the new release and grades ATS and totals without
         ->assertJsonPath('data.pregame_market.consensus.spread.line', -5.5)
         ->assertJsonPath('data.market_evaluation.status', 'tracking_only');
 
+});
+
+it('removes the high total boost in the new CBB release while preserving the forecast inputs', function (): void {
+    cbbMarginFinal($this->home, $this->away, 20);
+    cbbRecordMarket($this->game, $this->event);
+    $registrar = app(CbbCalculationReleaseRegistrar::class);
+    $incumbent = $registrar->register('1.5.0', effectiveAt: now()->subMinute()->toImmutable());
+    $generator = app(GenerateCanonicalPrediction::class);
+    $before = $generator->execute($this->game->fresh());
+    $originalInputs = $before->calculationRun->inputSnapshot->inputs;
+
+    app(CalculationReleaseManager::class)->retire($incumbent);
+    $registrar->register('1.6.0');
+    $after = $generator->execute($this->game->fresh());
+    $newInputs = $after->calculationRun->inputSnapshot->inputs;
+    $oldTotal = data_get($originalInputs, 'established_model.model_metadata.total_model');
+    $newTotal = data_get($newInputs, 'established_model.model_metadata.total_model');
+    $expected = round($oldTotal['post_epa_total'] + $oldTotal['total_base_adjustment'] + $oldTotal['tournament_adjustment'], 1);
+
+    expect($oldTotal['high_total_boost'])->toBeGreaterThan(0)
+        ->and($after->publication_state)->toBe('published')
+        ->and($after->model_version)->toBe('1.6.0')
+        ->and((float) $newTotal['high_total_boost'])->toBe(0.0)
+        ->and($newTotal['post_epa_total'])->toBe($oldTotal['post_epa_total'])
+        ->and((float) $after->markets()->where('market_type', 'total')->firstOrFail()->projected_line)->toBe($expected)
+        ->and((float) $before->markets()->where('market_type', 'total')->firstOrFail()->projected_line)->toBeGreaterThan($expected)
+        ->and(data_get($newInputs, 'established_model.outputs.predicted_spread'))->toBe(data_get($originalInputs, 'established_model.outputs.predicted_spread'))
+        ->and(data_get($newInputs, 'established_model.outputs.win_probability'))->toBe(data_get($originalInputs, 'established_model.outputs.win_probability'))
+        ->and($newInputs['pregame_market'])->toBe($originalInputs['pregame_market'])
+        ->and($before->calculationRun->inputSnapshot->fresh()->inputs)->toBe($originalInputs);
 });
 
 it('recovers only archived quotes actually known before an older forecast without rewriting its input', function (): void {

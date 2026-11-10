@@ -20,15 +20,16 @@ class SportPredictionIndexRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'view' => ['sometimes', Rule::in(['board', 'live']), Rule::prohibitedIf($this->route('sport') !== 'cfb')],
+            'view' => ['sometimes', Rule::in(['startup', 'board', 'live']), Rule::prohibitedIf($this->route('sport') !== 'cfb')],
             'board_version' => ['sometimes', 'string', 'regex:/^[a-f0-9]{64}$/', 'prohibited_unless:view,live'],
-            'season' => ['sometimes', 'integer'],
-            'season_type' => ['sometimes', 'string', 'max:50'],
-            'week' => ['sometimes', 'integer', 'min:0'],
-            'from_date' => ['sometimes', 'date'],
+            'season' => ['sometimes', 'integer', 'prohibited_if:view,startup'],
+            'season_type' => ['sometimes', 'string', 'max:50', 'prohibited_if:view,startup'],
+            'week' => ['sometimes', 'integer', 'min:0', 'prohibited_if:view,startup'],
+            'from_date' => ['sometimes', 'date', 'prohibited_if:view,startup'],
             'to_date' => array_filter([
                 'sometimes',
                 'date',
+                'prohibited_if:view,startup',
                 $this->filled('from_date') ? 'after_or_equal:from_date' : null,
             ]),
             'status' => ['sometimes', 'string', 'max:100'],

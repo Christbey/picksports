@@ -123,6 +123,10 @@ export type ApiV2Meta = {
     warnings?: string[];
     generated_at?: string;
     board_period?: ApiV2PredictionBoardPeriod;
+    board_startup?: {
+        seasons: number[];
+        period: ApiV2PredictionBoardPeriod;
+    };
     [key: string]: unknown;
 };
 

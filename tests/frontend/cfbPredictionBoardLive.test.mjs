@@ -185,7 +185,21 @@ for (const filterMode of ['date', 'seasonWeek']) {
                                 },
                             ],
                             meta: {
-                                pagination: { current_page: 2 },
+                                pagination: {
+                                    current_page:
+                                        filterMode === 'seasonWeek' ? 1 : 2,
+                                },
+                                board_startup:
+                                    options.query.view === 'startup'
+                                        ? {
+                                              seasons: [2026],
+                                              period: {
+                                                  season: 2026,
+                                                  season_type: '2',
+                                                  week: 5,
+                                              },
+                                          }
+                                        : undefined,
                                 board: {
                                     version: 'a'.repeat(64),
                                     mode:
@@ -224,18 +238,24 @@ for (const filterMode of ['date', 'seasonWeek']) {
                 instance.$.setupState.board.predictions.value[0].id,
                 'canonical-public-id',
             );
-            const initialCalls = filterMode === 'seasonWeek' ? 2 : 1;
+            const initialCalls = 1;
             assert.equal(calls.length, initialCalls);
-            if (filterMode === 'seasonWeek') {
-                assert.equal(calls[1].options.query.week, '5');
-                assert.equal(calls[1].options.query.season_type, '2');
-            }
-            assert.equal(calls[initialCalls - 1].options.query.view, 'board');
+            assert.equal(
+                calls[0].options.query.view,
+                filterMode === 'seasonWeek' ? 'startup' : 'board',
+            );
             assert.equal(intervals.get(1).delay, 30000);
             intervals.get(1).callback();
             await flush();
             assert.equal(calls.length, initialCalls + 1);
-            assert.equal(calls[initialCalls].options.query.page, 2);
+            const pollQuery = calls[initialCalls].options.query;
+            assert.equal(pollQuery.page, filterMode === 'seasonWeek' ? 1 : 2);
+            if (filterMode === 'seasonWeek') {
+                assert.equal(pollQuery.week, '5');
+                assert.equal(pollQuery.season_type, '2');
+                assert.equal(pollQuery.view, 'live');
+                assert.equal(pollQuery.board_version, 'a'.repeat(64));
+            }
             assert.equal(calls[initialCalls].options.init.cache, 'no-store');
             globalThis.document.hidden = true;
             intervals.get(1).callback();

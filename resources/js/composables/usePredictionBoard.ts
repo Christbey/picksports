@@ -16,7 +16,7 @@ import { useApiV2Client } from '@/composables/useApiV2Client';
 import { usePredictionList } from '@/composables/usePredictionList';
 import type {
     ApiV2GameSummary,
-    ApiV2PredictionBoardPeriod,
+    ApiV2Meta,
     ApiV2Query,
     PaginationMeta,
     PredictionListItem,
@@ -26,6 +26,9 @@ export type PredictionsBoardProps = { config: SportPredictionsConfig };
 
 export function usePredictionBoard(props: PredictionsBoardProps) {
     const filterMode = computed(() => props.config.filterMode ?? 'date');
+    const usesSingleRequestStartup = computed(
+        () => props.config.sport === 'cfb' && filterMode.value === 'seasonWeek',
+    );
     const availableDates = ref<string[]>([]);
     const selectedDate = ref('');
     const today = ref('');
@@ -45,6 +48,7 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
     const api = useApiV2Client();
     const availableSeasons = ref<number[]>([]);
     const selectedSeason = ref('');
+    let initialized = false;
 
     const weekOptions = computed(() => {
         if (!props.config.seasonWeekConfig || !seasonType.value) return [];
@@ -140,6 +144,20 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         return value;
     };
 
+    const resolveStartup = (page: number, meta: ApiV2Meta): ApiV2Query => {
+        const startup = meta.board_startup;
+        if (!Array.isArray(startup?.seasons) || !startup.period)
+            throw new Error('Unable to load the current week. Please retry.');
+
+        availableSeasons.value = startup.seasons;
+        selectedSeason.value =
+            startup.period.season == null ? '' : String(startup.period.season);
+        setSeasonWeek(startup.period);
+        initialized = true;
+
+        return buildQuery(page);
+    };
+
     const loadBoard = createBoardDelivery(
         (query) =>
             api.predictions.index(props.config.sport, {
@@ -163,7 +181,12 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
             if (filterMode.value === 'date' && !selectedDate.value) {
                 return { data: [], meta: null };
             }
-            const payload = await loadBoard(buildQuery(page), background);
+            const payload =
+                !initialized && usesSingleRequestStartup.value
+                    ? await loadBoard({ page }, false, (meta) =>
+                          resolveStartup(page, meta),
+                      )
+                    : await loadBoard(buildQuery(page), background);
             if (!payload) throw new Error('Failed to fetch predictions');
             return {
                 data: payload.data.map(mapV2Prediction),
@@ -186,14 +209,9 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         return dateStr === today.value ? `${label} (Today)` : label;
     };
 
-    const fetchAvailableSeasons = async (): Promise<
-        ApiV2PredictionBoardPeriod | undefined
-    > => {
-        const needsBoardPeriod =
-            props.config.sport === 'cfb' && filterMode.value === 'seasonWeek';
+    const fetchAvailableSeasons = async () => {
         const payload = await api.predictions.availableSeasons(
             props.config.sport,
-            needsBoardPeriod ? { query: { view: 'board' } } : undefined,
         );
 
         if (!payload) {
@@ -205,15 +223,6 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
                   .map((season) => Number(season))
                   .filter((season) => Number.isFinite(season))
             : [];
-
-        const period = needsBoardPeriod
-            ? payload.meta?.board_period
-            : undefined;
-        if (period) {
-            selectedSeason.value =
-                period.season == null ? '' : String(period.season);
-            return period;
-        }
 
         if (!selectedSeason.value && availableSeasons.value.length > 0) {
             const currentYear =
@@ -391,18 +400,20 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
             return;
         void fetchPredictions(meta.value?.current_page ?? 1, true);
     };
-    let initialized = false;
     const initializeBoard = async () => {
         isBootstrapping.value = true;
         loading.value = true;
         error.value = null;
         try {
-            const period = await fetchAvailableSeasons();
+            if (usesSingleRequestStartup.value) {
+                await fetchPredictions(1);
+                return;
+            }
+
+            await fetchAvailableSeasons();
 
             if (filterMode.value === 'date') {
                 await fetchAvailableDates();
-            } else if (period) {
-                setSeasonWeek(period);
             } else if (filterMode.value === 'seasonWeek') {
                 await setDefaultSeasonWeekFilters();
             }

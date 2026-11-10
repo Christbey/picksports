@@ -18,17 +18,34 @@ class SportPredictionController extends Controller
         SportPredictionIndexRequest $request,
         SportContextResolver $sports,
         SportPredictionReader $predictions,
+        CfbPredictionBoardPeriod $boardPeriod,
     ): JsonResponse {
         $context = $sports->resolve($sport);
         $filters = $request->validatedFilters();
-        $paginator = $predictions->queryFor($context)->paginate($context, $filters, $request->user());
+        $query = $predictions->queryFor($context);
+        $user = $request->user();
+        $meta = [];
+
+        if (($filters['view'] ?? null) === 'startup') {
+            $seasons = $query->availableSeasons($context, $user);
+            $period = $boardPeriod->resolve($context, $query, $seasons, $user);
+            $period['season_type'] = match ($period['season_type']) {
+                '2', 'Regular Season', 'regular' => '2',
+                '3', 'Postseason', 'postseason' => '3',
+                default => null,
+            };
+            $filters += array_filter($period, fn (mixed $value): bool => $value !== null);
+            $meta['board_startup'] = ['seasons' => $seasons, 'period' => $period];
+        }
+
+        $paginator = $query->paginate($context, $filters, $user);
         $paginator->setCollection($predictions->resources($context, $paginator->getCollection()));
 
         $pagination = [
             'current_page' => $paginator->currentPage(), 'per_page' => $paginator->perPage(),
             'total' => $paginator->total(), 'last_page' => $paginator->lastPage(),
         ];
-        $meta = $this->collectionMeta($context->slug, $filters, $pagination) + $predictions->sourceMeta($context);
+        $meta += $this->collectionMeta($context->slug, $filters, $pagination) + $predictions->sourceMeta($context);
         if ($context->slug === 'cfb' && isset($filters['view'])) {
             $payload = app(CfbPredictionBoardPayload::class)->response(
                 $paginator->getCollection()->map(fn ($resource) => $resource->resolve($request))->values()->all(),

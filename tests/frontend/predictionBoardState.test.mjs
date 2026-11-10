@@ -89,10 +89,25 @@ const response = (data = [row()], page = 1) => ({
     data,
     meta: { pagination: { current_page: page, last_page: 3, total: 3 } },
 });
+const boardVersion = 'a'.repeat(64);
+const startupResponse = (data) => {
+    const payload = response(data);
+    return {
+        ...payload,
+        meta: {
+            ...payload.meta,
+            board: { version: boardVersion, mode: 'replace' },
+            board_startup: {
+                seasons: [2026, 2025],
+                period: { season: 2026, season_type: '2', week: 0 },
+            },
+        },
+    };
+};
 function mount(
     config,
-    index = async () => response(),
-    seasons = async () => ({ data: [2026, 2025] }),
+    index = async (_, options) =>
+        options.query.view === 'startup' ? startupResponse() : response(),
 ) {
     const original = {
         document: globalThis.document,
@@ -116,7 +131,7 @@ function mount(
         predictions: {
             availableSeasons: async (sport, options) => {
                 calls.push({ kind: 'seasons', sport, options });
-                return seasons();
+                return { data: [2026, 2025] };
             },
             availableDates: async (sport, options) => {
                 calls.push({ kind: 'dates', sport, options });
@@ -165,19 +180,29 @@ for (const filterMode of ['date', 'none', 'seasonWeek'])
                     ? ['seasons', 'index']
                     : filterMode === 'date'
                       ? ['seasons', 'dates', 'index']
-                      : ['seasons', 'dates', 'index', 'index'],
+                      : ['index'],
             );
             const call = board.calls.at(-1);
             assert.equal(call.options.init.cache, 'no-store');
             assert.equal(call.options.query.page, 1);
-            assert.equal(call.options.query.season, '2026');
+            if (filterMode !== 'seasonWeek')
+                assert.equal(call.options.query.season, '2026');
             if (filterMode === 'date') {
                 assert.equal(call.options.query.from_date, '2026-09-26');
                 assert.equal(call.options.query.to_date, '2026-09-26');
             }
             if (filterMode === 'seasonWeek') {
-                assert.equal(call.options.query.week, '0');
-                assert.equal(call.options.query.season_type, '2');
+                assert.deepEqual(call.options.query, {
+                    page: 1,
+                    view: 'startup',
+                });
+                assert.deepEqual(
+                    board.state.availableSeasons.value,
+                    [2026, 2025],
+                );
+                assert.equal(board.state.selectedSeason.value, '2026');
+                assert.equal(board.state.week.value, '0');
+                assert.equal(board.state.seasonType.value, 'Regular Season');
                 assert.equal(board.state.weekOptions.value[0].label, 'Week 0');
             }
             assert.equal(board.state.predictions.value[0].id, 'forecast-1');
@@ -188,24 +213,19 @@ for (const filterMode of ['date', 'none', 'seasonWeek'])
         assert.equal(board.intervals.size, 0);
         assert.equal(board.listeners.size, 0);
     });
-test('CFB starts with the resolved week and retries failed metadata without fetching a forecast to identify the week', async () => {
-    let metadataRequests = 0;
-    const version = 'a'.repeat(64);
+test('CFB retries a failed startup as one request and seeds the first live poll', async () => {
+    let startupRequests = 0;
     const board = mount(
         { sport: 'cfb', filterMode: 'seasonWeek' },
-        async () => ({
-            ...response(),
-            meta: {
-                ...response().meta,
-                board: { version, mode: 'replace' },
-            },
-        }),
-        async () => {
-            if (++metadataRequests === 1) return null;
+        async (_, options) => {
+            if (options.query.view === 'startup') {
+                return ++startupRequests === 1 ? null : startupResponse();
+            }
             return {
-                data: [2026, 2025],
+                ...response([row(1, { status: 'STATUS_IN_PROGRESS' })]),
                 meta: {
-                    board_period: { season: 2026, season_type: '2', week: 0 },
+                    ...response().meta,
+                    board: { version: boardVersion, mode: 'live' },
                 },
             };
         },
@@ -213,32 +233,31 @@ test('CFB starts with the resolved week and retries failed metadata without fetc
 
     try {
         await flush();
-        assert.match(
-            board.state.error.value,
-            /Failed to fetch available seasons/,
-        );
+        assert.match(board.state.error.value, /Failed to fetch predictions/);
         assert.deepEqual(
             board.calls.map((call) => call.kind),
-            ['seasons'],
+            ['index'],
         );
         await board.state.retryPredictions();
         assert.deepEqual(
-            board.calls.map((call) => call.kind),
-            ['seasons', 'seasons', 'index'],
+            board.calls.map((call) => call.options.query),
+            [
+                { page: 1, view: 'startup' },
+                { page: 1, view: 'startup' },
+            ],
         );
-        assert.deepEqual(board.calls[1].options.query, { view: 'board' });
-        const query = { page: 1, season: '2026', season_type: '2', week: '0' };
-        assert.deepEqual(board.calls[2].options.query, {
-            ...query,
-            view: 'board',
-        });
+        assert.equal(board.state.error.value, null);
         assert.equal(board.state.predictions.value[0].id, 'forecast-1');
         await board.state.fetchPredictions(1, true);
         assert.deepEqual(board.calls.at(-1).options.query, {
-            ...query,
+            page: 1,
+            season: '2026',
+            season_type: '2',
+            week: '0',
             view: 'live',
-            board_version: version,
+            board_version: boardVersion,
         });
+        assert.equal(board.state.predictions.value[0].predicted_spread, 0);
     } finally {
         board.close();
     }
@@ -286,11 +305,15 @@ test('season-type changes clear the week synchronously and search/recommended vi
             filterMode: 'seasonWeek',
             seasonWeekConfig: { regularSeasonWeeks: 15, postseasonOptions: [] },
         },
-        async () =>
-            response([
+        async (_, options) => {
+            const rows = [
                 row(1, { value_signal: { has_playable_value: true } }),
                 row(2),
-            ]),
+            ];
+            return options.query.view === 'startup'
+                ? startupResponse(rows)
+                : response(rows);
+        },
     );
     try {
         await flush();

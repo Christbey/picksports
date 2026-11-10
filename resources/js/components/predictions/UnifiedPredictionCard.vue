@@ -89,8 +89,12 @@ const {
                 >
                     <img
                         v-if="showAwayLogo()"
-                        :src="awayLogo()!"
                         alt=""
+                        width="20"
+                        height="20"
+                        :loading="deferTeamLogos ? 'lazy' : undefined"
+                        decoding="async"
+                        :src="awayLogo()!"
                         class="size-5 shrink-0 object-contain"
                         @error="handleAwayLogoError"
                     />
@@ -104,8 +108,12 @@ const {
                 >
                     <img
                         v-if="showHomeLogo()"
-                        :src="homeLogo()!"
                         alt=""
+                        width="20"
+                        height="20"
+                        :loading="deferTeamLogos ? 'lazy' : undefined"
+                        decoding="async"
+                        :src="homeLogo()!"
                         class="size-5 shrink-0 object-contain"
                         @error="handleHomeLogoError"
                     />
@@ -288,8 +296,14 @@ const {
                                 >
                                     <img
                                         v-if="showAwayLogo()"
-                                        :src="awayLogo()!"
                                         :alt="awayTeamLabel()"
+                                        :width="compact ? 24 : undefined"
+                                        :height="compact ? 24 : undefined"
+                                        :loading="compact ? 'lazy' : undefined"
+                                        :decoding="
+                                            compact ? 'async' : undefined
+                                        "
+                                        :src="awayLogo()!"
                                         class="h-6 w-6 rounded-full object-contain"
                                         @error="handleAwayLogoError"
                                     />
@@ -308,8 +322,14 @@ const {
                                     <span class="text-muted-foreground">@</span>
                                     <img
                                         v-if="showHomeLogo()"
-                                        :src="homeLogo()!"
                                         :alt="homeTeamLabel()"
+                                        :width="compact ? 24 : undefined"
+                                        :height="compact ? 24 : undefined"
+                                        :loading="compact ? 'lazy' : undefined"
+                                        :decoding="
+                                            compact ? 'async' : undefined
+                                        "
+                                        :src="homeLogo()!"
                                         class="h-6 w-6 rounded-full object-contain"
                                         @error="handleHomeLogoError"
                                     />

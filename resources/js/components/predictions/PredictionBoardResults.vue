@@ -46,7 +46,7 @@ const {
         class="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card"
     >
         <li
-            v-for="prediction in filteredPredictions"
+            v-for="(prediction, index) in filteredPredictions"
             :key="prediction.game.id"
             class="min-w-0"
         >
@@ -54,6 +54,7 @@ const {
                 :prediction="prediction"
                 :href="gameHref(prediction)"
                 :sport="config.sport"
+                :defer-team-logos="index >= 3"
                 compact
             />
         </li>

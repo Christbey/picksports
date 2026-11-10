@@ -4,6 +4,7 @@ export interface PredictionCardProps {
     href: string;
     sport?: string;
     compact?: boolean;
+    deferTeamLogos?: boolean;
 }
 export interface SavePickOption {
     betType: 'spread' | 'moneyline' | 'total_over' | 'total_under';

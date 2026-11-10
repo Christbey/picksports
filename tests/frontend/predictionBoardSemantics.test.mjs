@@ -108,3 +108,30 @@ test('loading and empty results preserve recovery states without an empty matchu
     assert.match(empty, /Clear Filters/);
     assert.doesNotMatch(empty, /aria-label="Prediction matchups"/);
 });
+
+test('compact matchups reserve logo space and defer images after the first rows', async () => {
+    const fixture = predictionBoardUi('cfb', 'seasonWeek', 'dense');
+    const { data } = await fixture.api.predictions.index('cfb', {
+        query: { page: 1 },
+    });
+    const rows = data.slice(0, 4);
+    rows.forEach((row, index) => {
+        row.game.home_team.logo_url = `https://a.espncdn.com/i/teamlogos/ncaa/500/${index + 1}.png`;
+        row.game.away_team.logo_url = '/custom-team.svg';
+    });
+
+    const html = await render(rows);
+    const logos = [...html.matchAll(/<img [^>]+>/g)].map(([logo]) => logo);
+    assert.equal(logos.length, 8);
+    for (const [index, logo] of logos.entries()) {
+        assert.match(logo, /width="20" height="20"/);
+        assert.match(logo, /\salt(?:=""|(?=\s))/);
+        assert.equal(logo.includes('loading="lazy"'), index >= 6);
+        assert.match(
+            logo,
+            index % 2 === 0
+                ? /src="\/custom-team.svg"/
+                : /src="https:\/\/a\.espncdn\.com\/combiner\/i\?img=%2Fi%2Fteamlogos%2Fncaa%2F500%2F\d\.png&amp;w=80&amp;h=80"/,
+        );
+    }
+});

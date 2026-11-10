@@ -762,3 +762,51 @@ test('collapsed cards cancel obsolete tracking and fetch the new game only on ex
         scope.stop();
     }
 });
+
+test('compact team logos fall back once and preserve custom and dashboard sources', async () => {
+    const { usePredictionCardGame } = await server.ssrLoadModule(
+        '/resources/js/composables/usePredictionCardGame.ts',
+    );
+    const original = 'https://a.espncdn.com/i/teamlogos/ncaa/500/57.png';
+    const custom = 'https://cdn.example.test/sports/logo.svg?signature=keep';
+    const input = reactive({
+        sport: 'cfb',
+        compact: true,
+        prediction: {
+            id: 'forecast',
+            game: {
+                id: 1,
+                status: 'STATUS_SCHEDULED',
+                home_team: { abbreviation: 'HOM', logo: original },
+                away_team: { abbreviation: 'AWY', logo: custom },
+            },
+        },
+    });
+    const errorFor = (src) => ({ currentTarget: { getAttribute: () => src } });
+    const scope = effectScope();
+    const card = scope.run(() => usePredictionCardGame(input));
+    try {
+        const small = card.homeLogo();
+        assert.notEqual(small, original);
+        assert.equal(new URL(small).searchParams.get('w'), '80');
+        assert.equal(card.awayLogo(), custom);
+        card.handleHomeLogoError(errorFor(small));
+        assert.equal(card.homeLogo(), original);
+        card.handleHomeLogoError(errorFor(small));
+        assert.equal(card.showHomeLogo(), true);
+        card.handleHomeLogoError(errorFor(original));
+        assert.equal(card.showHomeLogo(), false);
+        assert.equal(card.showAwayLogo(), true);
+
+        input.prediction.game.home_team.logo = original.replace(
+            '57.png',
+            '58.png',
+        );
+        await nextTick();
+        assert.equal(card.showHomeLogo(), true);
+        input.compact = false;
+        assert.equal(card.homeLogo(), input.prediction.game.home_team.logo);
+    } finally {
+        scope.stop();
+    }
+});

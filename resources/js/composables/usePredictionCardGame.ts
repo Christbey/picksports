@@ -8,6 +8,19 @@ import { getCfbPostseasonLabel } from '@/lib/cfbPostseason';
 import { liveForecastMessage } from '@/lib/predictionBoardLive';
 import type { PredictionCardProps } from '@/types/prediction-card';
 
+function compactTeamLogoUrl(source: string | null): string | null {
+    if (!source) return source;
+
+    const match =
+        /^https:\/\/a\.espncdn\.com(\/i\/teamlogos\/[a-z0-9_-]+\/500\/[a-z0-9_-]+\.png)$/.exec(
+            source,
+        );
+    if (!match) return source;
+
+    // The compact card uses 20–24 CSS pixels. 80px covers 3x displays.
+    return `https://a.espncdn.com/combiner/i?img=${encodeURIComponent(match[1])}&w=80&h=80`;
+}
+
 export function usePredictionCardGame(props: PredictionCardProps) {
     const predictionType = computed(() =>
         isPredictionListItem(props.prediction) ? props.prediction : null,
@@ -15,17 +28,51 @@ export function usePredictionCardGame(props: PredictionCardProps) {
     const dashboardType = computed(() =>
         isPredictionListItem(props.prediction) ? null : props.prediction,
     );
-    const awayLogoErrored = ref(false);
-    const homeLogoErrored = ref(false);
+    function useLogo(original: () => string | null) {
+        const candidate = computed(() =>
+            props.compact ? compactTeamLogoUrl(original()) : original(),
+        );
+        const failedVariant = ref<string | null>(null);
+        const failedOriginal = ref<string | null>(null);
+        const url = () =>
+            candidate.value === failedVariant.value
+                ? original()
+                : candidate.value;
+
+        return {
+            url,
+            show: () => Boolean(url()) && url() !== failedOriginal.value,
+            reset() {
+                failedVariant.value = null;
+                failedOriginal.value = null;
+            },
+            handleError(event?: Event) {
+                const source = url();
+                const attempted = (
+                    event?.currentTarget as HTMLImageElement | null
+                )?.getAttribute('src');
+                // Both the summary and expanded card can report the same failure.
+                if (attempted != null && attempted !== source) return;
+
+                if (source !== original()) failedVariant.value = source;
+                else failedOriginal.value = source;
+            },
+        };
+    }
+
+    const awayTeamLogo = useLogo(originalAwayLogo);
+    const homeTeamLogo = useLogo(originalHomeLogo);
     watch(
         [
             () => props.sport,
             () => props.prediction.id,
             () => predictionType.value?.game.id ?? dashboardType.value?.game_id,
+            originalAwayLogo,
+            originalHomeLogo,
         ],
         () => {
-            awayLogoErrored.value = false;
-            homeLogoErrored.value = false;
+            awayTeamLogo.reset();
+            homeTeamLogo.reset();
         },
     );
     const normalizedLiveState = computed(() =>
@@ -46,14 +93,14 @@ export function usePredictionCardGame(props: PredictionCardProps) {
         return team?.abbreviation ?? team?.school ?? team?.name ?? 'Home';
     }
 
-    function awayLogo(): string | null {
+    function originalAwayLogo(): string | null {
         if (dashboardType.value) return dashboardType.value.away_logo;
-        return predictionType.value?.game.away_team.logo ?? null;
+        return predictionType.value?.game.away_team?.logo ?? null;
     }
 
-    function homeLogo(): string | null {
+    function originalHomeLogo(): string | null {
         if (dashboardType.value) return dashboardType.value.home_logo;
-        return predictionType.value?.game.home_team.logo ?? null;
+        return predictionType.value?.game.home_team?.logo ?? null;
     }
 
     function isLive(): boolean {
@@ -116,22 +163,6 @@ export function usePredictionCardGame(props: PredictionCardProps) {
         return isWinning
             ? 'text-sky-700 dark:text-sky-300'
             : 'text-muted-foreground';
-    }
-
-    function showAwayLogo(): boolean {
-        return !!awayLogo() && !awayLogoErrored.value;
-    }
-
-    function showHomeLogo(): boolean {
-        return !!homeLogo() && !homeLogoErrored.value;
-    }
-
-    function handleAwayLogoError(): void {
-        awayLogoErrored.value = true;
-    }
-
-    function handleHomeLogoError(): void {
-        homeLogoErrored.value = true;
     }
 
     function weekLabel(): string | null {
@@ -487,8 +518,8 @@ export function usePredictionCardGame(props: PredictionCardProps) {
         dashboardChipClass,
         awayTeamLabel,
         homeTeamLabel,
-        awayLogo,
-        homeLogo,
+        awayLogo: awayTeamLogo.url,
+        homeLogo: homeTeamLogo.url,
         isLive,
         gameOuts,
         isFinal,
@@ -496,10 +527,10 @@ export function usePredictionCardGame(props: PredictionCardProps) {
         homeScore,
         showGameScore,
         teamScoreClass,
-        showAwayLogo,
-        showHomeLogo,
-        handleAwayLogoError,
-        handleHomeLogoError,
+        showAwayLogo: awayTeamLogo.show,
+        showHomeLogo: homeTeamLogo.show,
+        handleAwayLogoError: awayTeamLogo.handleError,
+        handleHomeLogoError: homeTeamLogo.handleError,
         weekLabel,
         gameDateTimeLabel,
         predictionFreshnessLabel,

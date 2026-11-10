@@ -136,8 +136,13 @@ class DashboardController extends Controller
                 $query->whereKey($ids);
             }
 
+            $batchSize = match ($context->slug) {
+                'nba', 'cbb', 'wcbb' => 20,
+                default => 5,
+            };
+
             (clone $query)->select('predictions.id')->setEagerLoads([])
-                ->chunkById(5, function ($ids) use ($query, $context, $config, $rows): void {
+                ->chunkById($batchSize, function ($ids) use ($query, $context, $config, $rows): void {
                     $predictions = (clone $query)->whereKey($ids->modelKeys())->get();
                     app(LivePredictionStore::class)->preload($predictions->map(fn ($prediction) => $prediction->sportEvent?->getRelation($context->slug.'Game'))->filter());
                     foreach ($predictions as $prediction) {

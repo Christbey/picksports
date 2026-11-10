@@ -15,6 +15,8 @@ import { mapV2Prediction } from '@/lib/predictionBoardPresentation';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { usePredictionList } from '@/composables/usePredictionList';
 import type {
+    ApiV2GameSummary,
+    ApiV2PredictionBoardPeriod,
     ApiV2Query,
     PaginationMeta,
     PredictionListItem,
@@ -64,6 +66,18 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         return props.config.seasonWeekConfig.postseasonOptions;
     });
 
+    const setSeasonWeek = (
+        game?: Pick<ApiV2GameSummary, 'season_type' | 'week'> | null,
+    ) => {
+        const type = String(game?.season_type ?? '');
+        seasonType.value = ['2', 'Regular Season', 'regular'].includes(type)
+            ? 'Regular Season'
+            : ['3', 'Postseason', 'postseason'].includes(type)
+              ? 'Postseason'
+              : '';
+        week.value = game?.week == null ? '' : String(game.week);
+    };
+
     const setDefaultSeasonWeekFilters = async () => {
         if (filterMode.value !== 'seasonWeek') return;
         const dates = await api.predictions.availableDates(props.config.sport, {
@@ -72,8 +86,7 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         if (!dates)
             throw new Error('Unable to load the current week. Please retry.');
         const date = currentSlateDate(dates.data, centralToday());
-        seasonType.value = '';
-        week.value = '';
+        setSeasonWeek();
         if (!date) return;
         const slate = await api.predictions.index(props.config.sport, {
             query: {
@@ -85,15 +98,7 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         });
         if (!slate)
             throw new Error('Unable to load the current week. Please retry.');
-        const game = slate.data[0]?.game;
-        if (!game) return;
-        const type = String(game.season_type ?? '');
-        seasonType.value = ['2', 'Regular Season', 'regular'].includes(type)
-            ? 'Regular Season'
-            : ['3', 'Postseason', 'postseason'].includes(type)
-              ? 'Postseason'
-              : '';
-        week.value = game.week == null ? '' : String(game.week);
+        setSeasonWeek(slate.data[0]?.game);
     };
 
     const buildQuery = (page: number): ApiV2Query => {
@@ -181,9 +186,14 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         return dateStr === today.value ? `${label} (Today)` : label;
     };
 
-    const fetchAvailableSeasons = async () => {
+    const fetchAvailableSeasons = async (): Promise<
+        ApiV2PredictionBoardPeriod | undefined
+    > => {
+        const needsBoardPeriod =
+            props.config.sport === 'cfb' && filterMode.value === 'seasonWeek';
         const payload = await api.predictions.availableSeasons(
             props.config.sport,
+            needsBoardPeriod ? { query: { view: 'board' } } : undefined,
         );
 
         if (!payload) {
@@ -195,6 +205,15 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
                   .map((season) => Number(season))
                   .filter((season) => Number.isFinite(season))
             : [];
+
+        const period = needsBoardPeriod
+            ? payload.meta?.board_period
+            : undefined;
+        if (period) {
+            selectedSeason.value =
+                period.season == null ? '' : String(period.season);
+            return period;
+        }
 
         if (!selectedSeason.value && availableSeasons.value.length > 0) {
             const currentYear =
@@ -378,10 +397,12 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         loading.value = true;
         error.value = null;
         try {
-            await fetchAvailableSeasons();
+            const period = await fetchAvailableSeasons();
 
             if (filterMode.value === 'date') {
                 await fetchAvailableDates();
+            } else if (period) {
+                setSeasonWeek(period);
             } else if (filterMode.value === 'seasonWeek') {
                 await setDefaultSeasonWeekFilters();
             }

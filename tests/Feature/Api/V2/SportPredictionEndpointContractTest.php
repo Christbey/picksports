@@ -25,6 +25,7 @@ use App\Models\WNBA\Prediction as WnbaPrediction;
 use App\Models\WNBA\Team as WnbaTeam;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
@@ -769,3 +770,20 @@ function v2PredictionContractAttributes(string $predictionModel, int $gameId, ar
         'model_metadata' => ['raw_inputs' => ['should_not' => 'leak']],
     ], $overrides), $columns);
 }
+
+it('resolves the CFB board period from legacy forecasts when canonical reads are disabled', function () {
+    config()->set('prediction_lifecycle.canonical_reads.cfb', false);
+    $this->travelTo(Carbon::parse('2026-08-29 15:00:00 UTC'));
+    v2PredictionContractActingAsBypassUser();
+    v2PredictionContractCreateGamePrediction(CfbTeam::class, CfbGame::class, CfbPrediction::class, [
+        'season' => 2026,
+        'season_type' => 2,
+        'week' => 0,
+        'game_date' => '2026-08-30 00:00:00',
+        'game_time' => '02:00:00',
+    ]);
+
+    $this->getJson('/api/v2/sports/cfb/predictions/available-seasons?view=board')
+        ->assertSuccessful()
+        ->assertJsonPath('meta.board_period', ['season' => 2026, 'season_type' => '2', 'week' => 0]);
+});

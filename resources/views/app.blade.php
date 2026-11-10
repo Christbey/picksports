@@ -244,21 +244,66 @@
         @endif
 
         <!-- Google Tag Manager -->
-        <script>
-            (function(w,d,s,l,i){
-                var load=function(){
-                    if(w.__psGtmLoaded){return;}w.__psGtmLoaded=true;
-                    w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});
-                    var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';
-                    j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
-                };
-                var schedule=function(){
-                    if('requestIdleCallback' in w){w.requestIdleCallback(load,{timeout:3000});}
-                    else{w.setTimeout(load,1500);}
-                };
-                if(d.readyState==='complete'){schedule();}
-                else{w.addEventListener('load',schedule,{once:true});}
-            })(window,document,'script','dataLayer','GTM-P5NFGS3P');
+        <script id="picksports-tag-manager" data-wait-for-board="{{ auth()->check() && request()->routeIs('cfb-predictions') ? 'true' : 'false' }}">
+            (() => {
+                window.dataLayer = window.dataLayer || [];
+                let waitForBoard = document.currentScript.dataset.waitForBoard === 'true';
+                let pageLoaded = document.readyState === 'complete';
+                let scheduled = false;
+                let deadline;
+                const releaseEvents = ['pointerdown', 'keydown', 'wheel', 'click', 'inertia:before', 'popstate'];
+
+                function load() {
+                    if (window.__psGtmLoaded) return;
+                    window.__psGtmLoaded = true;
+                    window.clearTimeout(deadline);
+                    window.removeEventListener('picksports:board-settled', onBoardSettled);
+                    releaseEvents.forEach((event) => window.removeEventListener(event, onInteraction, true));
+
+                    window.dataLayer.push({ 'gtm.start': Date.now(), event: 'gtm.js' });
+                    const script = document.createElement('script');
+                    script.async = true;
+                    script.src = 'https://www.googletagmanager.com/gtm.js?id=GTM-P5NFGS3P';
+                    document.head.appendChild(script);
+                }
+
+                function schedule() {
+                    if (scheduled || window.__psGtmLoaded) return;
+                    scheduled = true;
+                    if ('requestIdleCallback' in window) {
+                        window.requestIdleCallback(load, { timeout: 3000 });
+                    } else {
+                        window.setTimeout(load, 1500);
+                    }
+                }
+
+                function onBoardSettled() {
+                    waitForBoard = false;
+                    if (pageLoaded) schedule();
+                }
+
+                function onInteraction() {
+                    waitForBoard = false;
+                    if (pageLoaded) load();
+                }
+
+                function onPageLoad() {
+                    pageLoaded = true;
+                    if (waitForBoard) {
+                        // A slow board must not hold the container indefinitely.
+                        deadline = window.setTimeout(load, 1500);
+                    } else {
+                        schedule();
+                    }
+                }
+
+                if (waitForBoard) {
+                    window.addEventListener('picksports:board-settled', onBoardSettled, { once: true });
+                    releaseEvents.forEach((event) => window.addEventListener(event, onInteraction, { capture: true, passive: true }));
+                }
+                if (pageLoaded) onPageLoad();
+                else window.addEventListener('load', onPageLoad, { once: true });
+            })();
         </script>
         <!-- End Google Tag Manager -->
 

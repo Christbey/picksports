@@ -89,7 +89,11 @@ const response = (data = [row()], page = 1) => ({
     data,
     meta: { pagination: { current_page: page, last_page: 3, total: 3 } },
 });
-function mount(config, index = async () => response()) {
+function mount(
+    config,
+    index = async () => response(),
+    seasons = async () => ({ data: [2026, 2025] }),
+) {
     const original = {
         document: globalThis.document,
         setInterval: globalThis.setInterval,
@@ -110,9 +114,9 @@ function mount(config, index = async () => response()) {
     globalThis.clearInterval = (id) => intervals.delete(id);
     globalThis.__predictionBoardApi = {
         predictions: {
-            availableSeasons: async (sport) => {
-                calls.push({ kind: 'seasons', sport });
-                return { data: [2026, 2025] };
+            availableSeasons: async (sport, options) => {
+                calls.push({ kind: 'seasons', sport, options });
+                return seasons();
             },
             availableDates: async (sport, options) => {
                 calls.push({ kind: 'dates', sport, options });
@@ -184,6 +188,62 @@ for (const filterMode of ['date', 'none', 'seasonWeek'])
         assert.equal(board.intervals.size, 0);
         assert.equal(board.listeners.size, 0);
     });
+test('CFB starts with the resolved week and retries failed metadata without fetching a forecast to identify the week', async () => {
+    let metadataRequests = 0;
+    const version = 'a'.repeat(64);
+    const board = mount(
+        { sport: 'cfb', filterMode: 'seasonWeek' },
+        async () => ({
+            ...response(),
+            meta: {
+                ...response().meta,
+                board: { version, mode: 'replace' },
+            },
+        }),
+        async () => {
+            if (++metadataRequests === 1) return null;
+            return {
+                data: [2026, 2025],
+                meta: {
+                    board_period: { season: 2026, season_type: '2', week: 0 },
+                },
+            };
+        },
+    );
+
+    try {
+        await flush();
+        assert.match(
+            board.state.error.value,
+            /Failed to fetch available seasons/,
+        );
+        assert.deepEqual(
+            board.calls.map((call) => call.kind),
+            ['seasons'],
+        );
+        await board.state.retryPredictions();
+        assert.deepEqual(
+            board.calls.map((call) => call.kind),
+            ['seasons', 'seasons', 'index'],
+        );
+        assert.deepEqual(board.calls[1].options.query, { view: 'board' });
+        const query = { page: 1, season: '2026', season_type: '2', week: '0' };
+        assert.deepEqual(board.calls[2].options.query, {
+            ...query,
+            view: 'board',
+        });
+        assert.equal(board.state.predictions.value[0].id, 'forecast-1');
+        await board.state.fetchPredictions(1, true);
+        assert.deepEqual(board.calls.at(-1).options.query, {
+            ...query,
+            view: 'live',
+            board_version: version,
+        });
+    } finally {
+        board.close();
+    }
+});
+
 test('foreground requests supersede old responses while background requests retain cards and cannot overlap', async () => {
     const pending = [];
     const board = mount({ sport: 'cfb', filterMode: 'none' }, (_, options) => {

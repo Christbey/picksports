@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V2;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V2\SportPredictionIndexRequest;
 use App\Services\Api\V2\CfbPredictionBoardPayload;
+use App\Services\Api\V2\CfbPredictionBoardPeriod;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportPredictionReader;
 use Illuminate\Http\JsonResponse;
@@ -62,14 +63,20 @@ class SportPredictionController extends Controller
         Request $request,
         SportContextResolver $sports,
         SportPredictionReader $predictions,
+        CfbPredictionBoardPeriod $boardPeriod,
     ): JsonResponse {
         $context = $sports->resolve($sport);
+        $query = $predictions->queryFor($context);
+        $user = $request->user();
+        $seasons = $query->availableSeasons($context, $user);
+        $meta = $this->filterMeta($context->slug, 'sports.predictions.available-seasons')
+            + $predictions->sourceMeta($context);
 
-        return response()->json([
-            'data' => $predictions->queryFor($context)->availableSeasons($context, $request->user()),
-            'meta' => $this->filterMeta($context->slug, 'sports.predictions.available-seasons')
-                + $predictions->sourceMeta($context),
-        ]);
+        if ($context->slug === 'cfb' && $request->query('view') === 'board') {
+            $meta['board_period'] = $boardPeriod->resolve($context, $query, $seasons, $user);
+        }
+
+        return response()->json(['data' => $seasons, 'meta' => $meta]);
     }
 
     public function availableDates(

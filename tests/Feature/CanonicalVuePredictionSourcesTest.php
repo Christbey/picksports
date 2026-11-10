@@ -307,3 +307,58 @@ it('validates board delivery selectors without weakening prediction access', fun
     $this->getJson($url.'?view=live&board_version=bad')->assertUnprocessable();
     $this->getJson('/api/v2/sports/nfl/predictions?view=board')->assertUnprocessable();
 });
+
+it('returns the same CFB startup week as the prediction lookup without loading forecasts', function () {
+    config()->set('prediction_lifecycle.canonical_reads.cfb', true);
+    Carbon::setTestNow('2027-01-16 12:00:00 UTC');
+    $slates = [
+        ['2027-01-14', 2026, 3, 4],
+        ['2027-01-16', 2026, 3, 5],
+        ['2027-01-23', 2026, 3, 6],
+        ['2027-09-04', 2027, 2, 0],
+    ];
+    foreach ($slates as [$date, $season, $type, $week]) {
+        $prediction = vueCanonicalFixture('cfb');
+        $prediction->sportEvent->cfbGame->update([
+            'game_date' => $date, 'season' => $season, 'season_type' => $type, 'week' => $week,
+        ]);
+    }
+    $this->actingAs(User::factory()->create());
+    $url = '/api/v2/sports/cfb/predictions';
+    $this->getJson($url.'/available-seasons')->assertSuccessful()
+        ->assertJsonPath('data', [2027, 2026])->assertJsonMissingPath('meta.board_period');
+
+    DB::enableQueryLog();
+    try {
+        $this->getJson($url.'/available-seasons?view=board')->assertSuccessful()
+            ->assertJsonPath('data', [2027, 2026])
+            ->assertJsonPath('meta.board_period', ['season' => 2026, 'season_type' => '3', 'week' => 5]);
+        foreach (DB::getQueryLog() as $query) {
+            expect($query['query'])->not->toMatch('/select\s+(?:["`]?predictions["`]?\.)?\*\s+from\s+["`]?predictions\b/i');
+        }
+    } finally {
+        DB::disableQueryLog();
+    }
+
+    $this->getJson($url.'?season=2026&from_date=2027-01-16&to_date=2027-01-16&per_page=1')
+        ->assertSuccessful()->assertJsonPath('data.0.game.week', 5);
+
+    Carbon::setTestNow('2027-01-17 12:00:00 UTC');
+    $this->getJson($url.'/available-seasons?view=board')->assertSuccessful()
+        ->assertJsonPath('meta.board_period.week', 5);
+
+    Carbon::setTestNow('2027-08-01 12:00:00 UTC');
+    $this->getJson($url.'/available-seasons?view=board')->assertSuccessful()
+        ->assertJsonPath('meta.board_period', ['season' => 2027, 'season_type' => '2', 'week' => 0]);
+});
+
+it('keeps CFB board startup metadata behind the prediction access boundary', function () {
+    config()->set('prediction_lifecycle.canonical_reads.cfb', true);
+    $url = '/api/v2/sports/cfb/predictions/available-seasons?view=board';
+    $this->getJson($url)->assertUnauthorized();
+    $this->actingAs(User::factory()->create())->getJson($url)->assertSuccessful()
+        ->assertJsonPath('data', [])
+        ->assertJsonPath('meta.board_period', ['season' => null, 'season_type' => null, 'week' => null]);
+    $this->getJson('/api/v2/sports/nfl/predictions/available-seasons?view=board')
+        ->assertSuccessful()->assertJsonMissingPath('meta.board_period');
+});

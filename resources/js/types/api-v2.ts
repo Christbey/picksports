@@ -106,6 +106,12 @@ export type ApiV2FreshnessMeta = {
     [key: string]: unknown;
 };
 
+export type ApiV2PredictionBoardPeriod = {
+    season: number | null;
+    season_type: string | null;
+    week: number | null;
+};
+
 export type ApiV2Meta = {
     version?: 'v2' | string;
     sport?: ApiV2SportSlug;
@@ -116,6 +122,7 @@ export type ApiV2Meta = {
     freshness?: ApiV2FreshnessMeta;
     warnings?: string[];
     generated_at?: string;
+    board_period?: ApiV2PredictionBoardPeriod;
     [key: string]: unknown;
 };
 

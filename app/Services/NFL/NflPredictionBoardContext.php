@@ -24,12 +24,18 @@ class NflPredictionBoardContext
         if ($ids->isEmpty()) {
             return collect();
         }
-        $revisions = ResearchRevision::query()->whereIn('id', ResearchRevision::query()
-            ->selectRaw('MAX(id)')->whereIn('game_id', $ids)->groupBy('game_id'))
-            ->get(['id', 'game_id', 'report_id', 'revised', 'brief', 'market', 'created_at'])->keyBy('game_id');
-        $reports = SportsGameContextReport::query()->whereIn('id', SportsGameContextReport::query()
-            ->selectRaw('MAX(id)')->where('sport', 'nfl')->whereIn('game_id', $ids)->groupBy('game_id'))
-            ->get(['id', 'game_id', 'status', 'researched_at', 'expires_at'])->keyBy('game_id');
+        $latestRevisionIds = ResearchRevision::query()
+            ->selectRaw('MAX(id) as id')->whereIn('game_id', $ids)->groupBy('game_id');
+        $revisions = ResearchRevision::query()
+            ->joinSub($latestRevisionIds, 'latest_revisions', 'latest_revisions.id', '=', 'nfl_research_revisions.id')
+            ->get(['nfl_research_revisions.id', 'game_id', 'report_id', 'revised', 'brief', 'market', 'created_at'])->keyBy('game_id');
+
+        $latestReportIds = SportsGameContextReport::query()
+            ->selectRaw('MAX(id) as id')->where('sport', 'nfl')->whereIn('game_id', $ids)->groupBy('game_id');
+        $reports = SportsGameContextReport::query()
+            ->joinSub($latestReportIds, 'latest_reports', 'latest_reports.id', '=', 'sports_game_context_reports.id')
+            ->get(['sports_game_context_reports.id', 'game_id', 'status', 'researched_at', 'expires_at'])->keyBy('game_id');
+
         $pipeline = app(ResearchPipeline::class);
 
         return $predictions->mapWithKeys(function ($prediction) use ($revisions, $reports, $pipeline) {

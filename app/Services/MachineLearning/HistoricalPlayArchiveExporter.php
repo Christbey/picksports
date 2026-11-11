@@ -71,6 +71,7 @@ class HistoricalPlayArchiveExporter
         $parquetPath = $jsonlPath.'.parquet';
 
         try {
+            $gamePlayCounts = [];
             $rowCount = $this->writeJsonl(
                 $jsonlPath,
                 $tables,
@@ -78,6 +79,8 @@ class HistoricalPlayArchiveExporter
                 $sourceMaxId,
                 $schema,
                 $chunkSize,
+                $sport === 'mlb' && $format === 'parquet',
+                $gamePlayCounts,
             );
 
             if ($format === 'parquet') {
@@ -97,6 +100,7 @@ class HistoricalPlayArchiveExporter
                 rowCount: $rowCount,
                 schema: $schema,
                 schemaHash: $schemaHash,
+                gamePlayCounts: $gamePlayCounts,
             );
         } finally {
             @unlink($jsonlPath);
@@ -115,6 +119,8 @@ class HistoricalPlayArchiveExporter
         int $sourceMaxId,
         array $schema,
         int $chunkSize,
+        bool $recordGameCoverage,
+        array &$gamePlayCounts,
     ): int {
         $handle = fopen($path, 'wb');
         if (! is_resource($handle)) {
@@ -140,6 +146,9 @@ class HistoricalPlayArchiveExporter
                     throw new RuntimeException('Unable to write the temporary export file.');
                 }
                 $rowCount++;
+                if ($recordGameCoverage) {
+                    $gamePlayCounts[$row->game_id] = ($gamePlayCounts[$row->game_id] ?? 0) + 1;
+                }
             }
         } finally {
             fclose($handle);
@@ -192,6 +201,7 @@ class HistoricalPlayArchiveExporter
         int $rowCount,
         array $schema,
         string $schemaHash,
+        array $gamePlayCounts,
     ): DatasetExportManifest {
         $sha256 = hash_file('sha256', $outputPath);
         $size = filesize($outputPath);
@@ -255,6 +265,7 @@ class HistoricalPlayArchiveExporter
                 'metadata' => [
                     'partition' => $manifest['partition'],
                     'source' => $manifest['source'],
+                    ...($gamePlayCounts === [] ? [] : ['verified_game_play_counts' => $gamePlayCounts]),
                 ],
             ],
         );

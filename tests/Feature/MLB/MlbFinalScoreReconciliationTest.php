@@ -2,6 +2,7 @@
 
 use App\Actions\MLB\ReconcileGameScoreFromTeamStats;
 use App\Actions\Validation\Checks\FinalizedDataCompletenessCheck;
+use App\Models\DatasetExportManifest;
 use App\Models\MLB\Game;
 use App\Models\MLB\Play;
 use App\Models\MLB\Player;
@@ -10,6 +11,7 @@ use App\Models\MLB\Prediction;
 use App\Models\MLB\Team;
 use App\Models\MLB\TeamStat;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Facades\Storage;
 
 uses()->group('mlb');
 
@@ -252,3 +254,28 @@ function mlbCompleteFinalArtifacts(Game $game): void
         'graded_at' => now(),
     ]);
 }
+
+it('uses verified MLB archive coverage for the specific game and fails closed when the object is absent', function () {
+    $covered = mlbReconciliationGame(homeScore: 7, awayScore: 3, status: 'STATUS_FINAL');
+    $uncovered = mlbReconciliationGame(homeScore: 5, awayScore: 2, status: 'STATUS_FINAL');
+    $disk = Storage::fake('ml-local');
+    $manifest = DatasetExportManifest::factory()->create([
+        'season' => $covered->season,
+        'format' => 'parquet',
+        'row_count' => 2,
+        'size_bytes' => 4,
+        'metadata' => ['verified_game_play_counts' => [$covered->id => 2]],
+    ]);
+    $disk->put($manifest->object_key, 'data');
+    $disk->put($manifest->manifest_key, '{}');
+    $check = app(FinalizedDataCompletenessCheck::class);
+
+    $result = $check->run('mlb', config('validation.sports.mlb'));
+    $samples = collect($result['metadata']['sample_games'])->keyBy('game_id');
+    expect($samples[$covered->id]['reasons'])->not->toContain('missing_plays')
+        ->and($samples[$uncovered->id]['reasons'])->toContain('missing_plays')
+        ->and($result['metadata']['games_missing_plays'])->toBe(1);
+
+    $disk->delete($manifest->object_key);
+    expect($check->run('mlb', config('validation.sports.mlb'))['metadata']['games_missing_plays'])->toBe(2);
+});

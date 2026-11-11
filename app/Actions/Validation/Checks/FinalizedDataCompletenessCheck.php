@@ -3,6 +3,7 @@
 namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
+use App\Services\MachineLearning\MlbArchivedPlayCoverage;
 use App\Services\Predictions\CanonicalTeamGameEvaluator;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Database\Eloquent\Model;
@@ -36,6 +37,9 @@ class FinalizedDataCompletenessCheck implements ValidationCheck
             ->get();
 
         $pending = $canonical ? app(CanonicalTeamGameEvaluator::class)->pendingGameIds($games, $sport) : collect();
+        $archivedPlays = $sport === 'mlb'
+            ? app(MlbArchivedPlayCoverage::class)->forGames($games->where('plays_exists', false))
+            : [];
         $totalGames = $games->count();
         $missingPlayerStatsCount = 0;
         $missingTeamStatsCount = 0;
@@ -64,7 +68,7 @@ class FinalizedDataCompletenessCheck implements ValidationCheck
                 $reasons[] = 'missing_team_stats';
             }
 
-            if (! $game->plays_exists) {
+            if (! $game->plays_exists && ! isset($archivedPlays[$game->getKey()])) {
                 $missingPlaysCount++;
                 $flagged = true;
                 $reasons[] = 'missing_plays';

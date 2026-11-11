@@ -52,16 +52,19 @@ class EventInputSnapshot extends Model
 
     protected function decodeArrayAttribute($key, $value)
     {
-        $decoded = $this->decodeStoredArrayAttribute($key, $value);
-
         return $key === 'inputs'
-            ? app(CfbSnapshotInputStorage::class)->resolve($decoded)
-            : $decoded;
+            ? app(CfbSnapshotInputStorage::class)->resolve($this->decodeInlineInputs($value))
+            : $this->decodeStoredArrayAttribute($key, $value);
     }
 
     public function inlineInputs(): ?array
     {
-        return $this->decodeStoredArrayAttribute('inputs', $this->attributes['inputs'] ?? null);
+        return $this->decodeInlineInputs($this->attributes['inputs'] ?? null);
+    }
+
+    private function decodeInlineInputs(mixed $value): ?array
+    {
+        return $this->cachedJsonArray('inline:inputs', $value, fn () => $this->decodeStoredArrayAttribute('inputs', $value));
     }
 
     protected static function booted(): void

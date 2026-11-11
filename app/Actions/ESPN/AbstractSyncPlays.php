@@ -23,6 +23,8 @@ abstract class AbstractSyncPlays
 
     protected const SKIP_EMPTY_PLAY_ID = false;
 
+    protected const SKIP_UNCHANGED_REFRESH = false;
+
     public function __construct(
         protected BaseEspnService $espnService
     ) {}
@@ -43,6 +45,10 @@ abstract class AbstractSyncPlays
         }
 
         $playModel = $this->playModelClass();
+        if (static::SKIP_UNCHANGED_REFRESH) {
+            return $this->refreshBasketballPlays($game, $plays, $playModel);
+        }
+
         $playModel::query()->where('game_id', $game->id)->delete();
 
         $synced = 0;
@@ -53,18 +59,65 @@ abstract class AbstractSyncPlays
                 continue;
             }
 
-            $dto = $dtoClass::fromEspnResponse($playData, $index);
-
-            $playAttributes = $dto->toArray();
-            $playAttributes['game_id'] = $game->id;
-
-            $this->applyTeamRelations($playAttributes, $dto);
-
-            $playModel::create($playAttributes);
+            $playModel::create($this->playAttributes($game, $dtoClass::fromEspnResponse($playData, $index)));
             $synced++;
         }
 
         return $synced;
+    }
+
+    /** @param class-string<Model> $playModel */
+    private function refreshBasketballPlays(Model $game, array $plays, string $playModel): int
+    {
+        $dtoClass = $this->playDtoClass();
+        $teamIds = [];
+        $incoming = [];
+        foreach ($plays as $index => $playData) {
+            if ($this->shouldSkipPlay($playData)) {
+                continue;
+            }
+
+            $dto = $dtoClass::fromEspnResponse($playData, $index);
+            $attributes = [...$dto->toArray(), 'game_id' => $game->id, 'possession_team_id' => null];
+            if ($dto->possessionTeamEspnId) {
+                $espnId = $dto->possessionTeamEspnId;
+                if (! array_key_exists($espnId, $teamIds)) {
+                    $this->applyTeamRelations($attributes, $dto);
+                    $teamIds[$espnId] = $attributes['possession_team_id'];
+                }
+                $attributes['possession_team_id'] = $teamIds[$espnId];
+            }
+            $incoming[] = $attributes;
+        }
+
+        if ($incoming === []) {
+            return 0;
+        }
+
+        return $game->getConnection()->transaction(function () use ($game, $playModel, $incoming): int {
+            $game->newQuery()->lockForUpdate()->findOrFail($game->getKey());
+            $query = $playModel::query()->where('game_id', $game->id);
+            $stored = (clone $query)->orderBy('id')->get();
+            $sameCount = $stored->count() === count($incoming);
+            if ($sameCount && ! $stored->contains(fn (Model $play, int $index) => $play->fill($incoming[$index])->isDirty())) {
+                return count($incoming);
+            }
+
+            $query->delete();
+            foreach ($incoming as $attributes) {
+                $playModel::create($attributes);
+            }
+
+            return count($incoming);
+        }, 3);
+    }
+
+    private function playAttributes(Model $game, object $dto): array
+    {
+        $attributes = [...$dto->toArray(), 'game_id' => $game->id];
+        $this->applyTeamRelations($attributes, $dto);
+
+        return $attributes;
     }
 
     protected function fetchPlaysPayload(string $eventId): ?array

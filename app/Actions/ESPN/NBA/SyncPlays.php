@@ -18,6 +18,8 @@ class SyncPlays extends AbstractSyncPlays
 
     protected const PLAY_DTO_CLASS = BasketballPlayData::class;
 
+    protected const SKIP_UNCHANGED_REFRESH = true;
+
     protected const USE_GAME_PLAYS_PAYLOAD = true;
 
     protected const SKIP_EMPTY_PLAY_ID = true;

@@ -2,6 +2,7 @@
 
 use App\Models\ApiIdempotencyKey;
 use App\Models\CommandHeartbeat;
+use App\Models\MLB\Game as MlbGame;
 use App\Models\NFL\Game;
 use App\Services\CFB\Predictions\CfbCalculationReleaseDefinition;
 use App\Services\CommandHeartbeatService;
@@ -35,7 +36,19 @@ $inSeasonMonths = fn (array $months) => fn () => in_array(now()->month, $months,
 $nbaInSeason = $inSeasonMonths([10, 11, 12, 1, 2, 3, 4, 5, 6]); // Oct-Jun
 $cbbInSeason = $inSeasonMonths([10, 11, 12, 1, 2, 3, 4]); // Oct-Apr
 $wcbbInSeason = $inSeasonMonths([10, 11, 12, 1, 2, 3, 4]); // Oct-Apr
-$mlbInSeason = $inSeasonMonths([3, 4, 5, 6, 7, 8, 9, 10, 11]); // Mar-Nov
+$mlbInSeason = function (): bool {
+    $today = now(config('sports.business_timezone', config('app.timezone')));
+    if ($today->month !== 11) {
+        return $today->month >= 3 && $today->month <= 10;
+    }
+
+    return MlbGame::query()
+        ->where('season', $today->year)
+        ->whereIn('season_type', [config('mlb.season.types.postseason'), 'postseason', 'Post Season'])
+        ->whereBetween('game_date', [$today->copy()->subDays(2)->toDateString(), $today->copy()->addDays(3)->toDateString()])
+        ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_IN_PROGRESS', 'STATUS_DELAYED', 'STATUS_FINAL'])
+        ->exists();
+};
 $wnbaInSeason = $inSeasonMonths([4, 5, 6, 7, 8, 9, 10]); // Apr-Oct
 $nflInSeason = $inSeasonMonths([7, 8, 9, 10, 11, 12, 1, 2]); // Jul-Feb
 $nflDepthChartSeason = $inSeasonMonths([5, 6, 7, 8, 9, 10, 11, 12, 1, 2]); // May-Feb

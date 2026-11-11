@@ -17,7 +17,7 @@ class NflResearchController extends Controller
         $resolved = $games->find($sports->resolve($sport), $game, $request->user(), 'identity');
         $ids = ResearchRevision::where('game_id', $resolved->getKey())->latest('id')->limit(20)->pluck('id');
         $revisions = ResearchRevision::query()->whereKey($ids)->get([
-            'id', 'created_at', 'baseline', 'revised', 'brief', 'market', 'evaluation',
+            'id', 'created_at', 'baseline', 'revised', 'brief', 'payload_archive', 'market', 'evaluation',
         ])->keyBy('id');
         $rows = $ids->map(fn ($id) => $revisions->get($id))->filter()->values();
 

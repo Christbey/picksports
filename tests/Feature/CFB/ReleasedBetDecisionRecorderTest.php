@@ -84,3 +84,24 @@ it('records provisional selections with prices and policy identity without appro
         ->and($decision->model_probability)->toBeNull()->and($decision->projected_value)->toBeNull()
         ->and(data_get($decision->feature_snapshot, 'decision_policy_version'))->toBe('cfb-spread-decisions-2');
 });
+
+it('replays inline historical evidence and stores new identical diagnostics by immutable run reference', function () {
+    [$game, $prediction] = decisionFixture();
+    $signals = ['base_home_margin' => 8.5, 'trace' => str_repeat('x', 100_000)];
+    $prediction->calculationRun->update(['status' => 'succeeded', 'diagnostics' => ['football_signals' => $signals]]);
+    $this->mock(CfbCanonicalSpreadValueSignalService::class)->shouldReceive('forPrediction')->once()
+        ->andReturn(['has_playable_value' => false, 'football_signals' => $signals]);
+    $recorder = app(CfbReleasedBetDecisionRecorder::class);
+    $stored = $recorder->record($prediction, $game)->fresh();
+
+    expect($stored->feature_snapshot['signal'])->not->toHaveKey('football_signals')
+        ->and(strlen($stored->getRawOriginal('feature_snapshot')))->toBeLessThan(2000)
+        ->and($stored->feature_snapshot['football_signals_from_calculation_run'])->toBeTrue();
+
+    $historical = $stored->feature_snapshot;
+    unset($historical['football_signals_from_calculation_run']);
+    $historical['signal']['football_signals'] = $signals;
+    $legacy = new BetDecision(['feature_snapshot' => $historical]);
+    expect($recorder->replayFeatures($stored))->toBe($recorder->replayFeatures($legacy))
+        ->and($recorder->record($prediction, $game)->id)->toBe($stored->id);
+});

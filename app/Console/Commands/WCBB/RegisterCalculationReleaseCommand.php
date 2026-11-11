@@ -2,12 +2,11 @@
 
 namespace App\Console\Commands\WCBB;
 
+use App\Console\Commands\Sports\Canonical\AbstractRegisterCalculationReleaseCommand;
 use App\Services\WCBB\Predictions\WcbbCalculationReleaseDefinition;
 use App\Services\WCBB\Predictions\WcbbCalculationReleaseRegistrar;
-use Carbon\CarbonImmutable;
-use Illuminate\Console\Command;
 
-class RegisterCalculationReleaseCommand extends Command
+class RegisterCalculationReleaseCommand extends AbstractRegisterCalculationReleaseCommand
 {
     protected $signature = 'wcbb:register-calculation-release
         {--release-version=1.0.0 : Semantic version for the release}
@@ -18,20 +17,18 @@ class RegisterCalculationReleaseCommand extends Command
 
     protected $description = 'Register the frozen canonical WCBB pregame calculation release';
 
-    public function handle(WcbbCalculationReleaseRegistrar $registrar): int
+    protected function registrarClass(): string
     {
-        $release = $registrar->register(
-            semanticVersion: (string) ($this->option('release-version') ?: WcbbCalculationReleaseDefinition::SEMANTIC_VERSION),
-            approve: ! $this->option('draft'),
-            actor: (string) $this->option('actor'),
-            reason: (string) $this->option('reason'),
-            effectiveAt: filled($this->option('effective-at'))
-                ? CarbonImmutable::parse((string) $this->option('effective-at'))
-                : null,
-        );
+        return WcbbCalculationReleaseRegistrar::class;
+    }
 
-        $this->info("WCBB calculation release {$release->semantic_version} is {$release->status}.");
+    protected function sportLabel(): string
+    {
+        return 'WCBB';
+    }
 
-        return self::SUCCESS;
+    protected function releaseVersion(): string
+    {
+        return (string) ($this->option('release-version') ?: WcbbCalculationReleaseDefinition::SEMANTIC_VERSION);
     }
 }

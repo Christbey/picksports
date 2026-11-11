@@ -28,7 +28,7 @@ class NflPredictionBoardContext
             ->selectRaw('MAX(id) as id')->whereIn('game_id', $ids)->groupBy('game_id');
         $revisions = ResearchRevision::query()
             ->joinSub($latestRevisionIds, 'latest_revisions', 'latest_revisions.id', '=', 'nfl_research_revisions.id')
-            ->get(['nfl_research_revisions.id', 'game_id', 'report_id', 'revised', 'brief', 'market', 'created_at'])->keyBy('game_id');
+            ->get(['nfl_research_revisions.id', 'game_id', 'report_id', 'revised', 'brief', 'payload_archive', 'market', 'created_at'])->keyBy('game_id');
 
         $latestReportIds = SportsGameContextReport::query()
             ->selectRaw('MAX(id) as id')->where('sport', 'nfl')->whereIn('game_id', $ids)->groupBy('game_id');

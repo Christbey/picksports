@@ -3,10 +3,12 @@
 namespace App\Services\CFB;
 
 use App\Models\BetDecision;
+use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game;
 use App\Services\CFB\Predictions\CfbCanonicalSpreadValueSignalService;
 use Illuminate\Support\Str;
+use LogicException;
 
 /** Freeze decisions prospectively; recording a recommendation never places a wager. */
 class CfbReleasedBetDecisionRecorder
@@ -56,6 +58,14 @@ class CfbReleasedBetDecisionRecorder
             'captured_at' => $snapshot?->captured_at?->toIso8601String(),
             'generated_at' => $prediction->generated_at->toIso8601String(),
             'cover_probability_evidence' => $probability, 'signal' => $signal];
+        $evidenceHash = hash('sha256', json_encode([$features, $quote], JSON_THROW_ON_ERROR));
+        $run = $prediction->calculationRun;
+        $footballSignals = $signal['football_signals'] ?? null;
+        if ($run?->status === 'succeeded' && is_array($footballSignals)
+            && $footballSignals === data_get($run->diagnostics, 'football_signals')) {
+            unset($features['signal']['football_signals']);
+            $features['football_signals_from_calculation_run'] = true;
+        }
 
         return BetDecision::query()->firstOrCreate(['decision_hash' => $hash], [
             'decision_run_id' => (string) Str::uuid(),
@@ -78,11 +88,31 @@ class CfbReleasedBetDecisionRecorder
             'reason_codes' => ['cfb_canonical_prospective_decision'],
             'explanation' => ['authority' => 'cfb_canonical_prospective_decision', 'decision' => $bet ? 'bet' : ($provisional ? 'lean' : 'hold'),
                 'execution_status' => 'not_recorded', 'point_edge' => data_get($signal, 'best.edge'),
-                'decision_evidence_hash' => hash('sha256', json_encode([$features, $quote], JSON_THROW_ON_ERROR))],
+                'decision_evidence_hash' => $evidenceHash],
             'feature_snapshot' => $features,
             'market_snapshot' => ['immutable_entry_quote' => $quote !== null, 'quote' => $quote,
                 'confirmation' => data_get($signal, 'market_confirmation')],
             'decided_at' => $now, 'locked_at' => $now, 'game_start_at' => $start,
         ]);
+    }
+
+    /** Reconstruct frozen decision evidence for audit or replay. */
+    public function replayFeatures(BetDecision $decision): array
+    {
+        $features = $decision->feature_snapshot ?? [];
+        if (! ($features['football_signals_from_calculation_run'] ?? false)) {
+            return $features;
+        }
+
+        $run = CalculationRun::query()->find($features['calculation_run_id'], ['id', 'status', 'diagnostics']);
+        $signals = data_get($run?->diagnostics, 'football_signals');
+        if ($run?->status !== 'succeeded' || ! is_array($signals)) {
+            throw new LogicException('Frozen CFB decision diagnostics are unavailable.');
+        }
+
+        unset($features['football_signals_from_calculation_run']);
+        $features['signal']['football_signals'] = $signals;
+
+        return $features;
     }
 }

@@ -102,7 +102,7 @@ class ResearchPipelineCommand extends Command
             foreach ($revisionIds->chunk($batchSize) as $batchIds) {
                 $rows = ResearchRevision::query()
                     ->whereIn('id', $batchIds)
-                    ->get()
+                    ->get(['id', 'game_id', 'baseline', 'revised', 'brief', 'payload_archive', 'market'])
                     ->keyBy('id');
                 foreach ($batchIds as $id) {
                     $row = $rows->get($id);
@@ -136,7 +136,7 @@ class ResearchPipelineCommand extends Command
                         $query->from('nfl_research_revisions as latest')->select('latest.id')
                             ->whereColumn('latest.game_id', 'nfl_research_revisions.game_id')
                             ->orderByDesc('latest.id')->limit(1);
-                    })->get(['id', 'game_id', 'baseline', 'revised', 'brief', 'market'])->keyBy('game_id');
+                    })->get(['id', 'game_id', 'baseline', 'revised', 'brief', 'payload_archive', 'market'])->keyBy('game_id');
                 foreach ($batch as $game) {
                     $revision = $revisions->get($game->id);
                     if ($revision) {

@@ -470,7 +470,8 @@ class ResearchPipeline
             ->orderByDesc('captured_at')->orderByDesc('id')->get()
             ->unique(fn (MarketQuote $quote): string => $quote->bookmaker_key.':'.$quote->side)
             ->keyBy(fn (MarketQuote $quote): string => $quote->bookmaker_key.':'.$quote->side) : collect();
-        $playerProps = PlayerProp::query()->whereIn('id', collect($revision->brief['player_props'] ?? [])->pluck('prop_id'))->get()->keyBy('id');
+        $brief = $revision->brief;
+        $playerProps = PlayerProp::query()->whereIn('id', collect($brief['player_props'] ?? [])->pluck('prop_id'))->get()->keyBy('id');
         $results = [];
         foreach (['baseline', 'revised'] as $variant) {
             $p = $revision->$variant;
@@ -492,7 +493,7 @@ class ResearchPipeline
             }
         }
         $props = [];
-        foreach ($revision->brief['player_props'] ?? [] as $snapshot) {
+        foreach ($brief['player_props'] ?? [] as $snapshot) {
             $prop = $playerProps->get($snapshot['prop_id']);
             if (! $prop?->graded_at || $prop->actual_value === null) {
                 $props[] = ['prop_id' => $snapshot['prop_id'], 'status' => 'pending_player_stats'];
@@ -515,7 +516,7 @@ class ResearchPipeline
             $props[] = ['prop_id' => $snapshot['prop_id'], 'status' => 'graded', 'actual_value' => $prop->actual_value, 'variants' => $variants];
         }
         $propsPending = collect($props)->contains(fn (array $prop): bool => ($prop['status'] ?? null) === 'pending_player_stats');
-        $revision->update(['evaluation' => ['player_props' => $props, 'actual_margin' => $margin, 'actual_total' => $total, 'variants' => $results, 'eligible_at_capture' => data_get($revision->brief, 'eligibility.eligible', false), 'clv_status' => 'per_quote_when_matching_book_pregame_quote_within_30_minutes_exists', 'note' => 'Hypothetical one-unit returns per quote; not placed bets. Use one revision per game for aggregate evaluation.'], 'graded_at' => $propsPending ? null : now()]);
+        $revision->update(['evaluation' => ['player_props' => $props, 'actual_margin' => $margin, 'actual_total' => $total, 'variants' => $results, 'eligible_at_capture' => data_get($brief, 'eligibility.eligible', false), 'clv_status' => 'per_quote_when_matching_book_pregame_quote_within_30_minutes_exists', 'note' => 'Hypothetical one-unit returns per quote; not placed bets. Use one revision per game for aggregate evaluation.'], 'graded_at' => $propsPending ? null : now()]);
 
         return ! $propsPending;
     }

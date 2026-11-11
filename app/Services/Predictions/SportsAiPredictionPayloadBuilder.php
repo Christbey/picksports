@@ -91,7 +91,7 @@ class SportsAiPredictionPayloadBuilder
 
         $columns = ['id', 'created_at', 'revised', 'brief'];
 
-        return ResearchRevision::query()->find($revisionId, $columns)?->only($columns);
+        return ResearchRevision::query()->find($revisionId, [...$columns, 'payload_archive'])?->only($columns);
     }
 
     /**

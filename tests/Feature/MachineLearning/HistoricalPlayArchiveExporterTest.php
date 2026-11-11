@@ -4,6 +4,7 @@ use App\Models\DatasetExportManifest;
 use App\Models\MLB\Game;
 use App\Models\MLB\Play;
 use App\Models\MLB\Team;
+use App\Services\MachineLearning\ParquetExportRuntime;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
@@ -136,4 +137,29 @@ it('refuses to overwrite a corrupt immutable object', function () {
     expect(Storage::disk('archive-test')->get($manifest->object_key))->toBe('corrupt')
         ->and(Play::query()->count())->toBe(1)
         ->and(DatasetExportManifest::query()->count())->toBe(1);
+});
+
+it('records per-game coverage from the MLB rows sent to the parquet writer', function () {
+    [$home, $away] = Team::factory()->count(2)->create();
+    $games = Game::factory()->count(2)->create([
+        'season' => 2025,
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+    ]);
+    foreach ([$games[0], $games[0], $games[1]] as $index => $game) {
+        Play::query()->create(['game_id' => $game->id, 'sequence_number' => $index]);
+    }
+
+    $runtime = $this->mock(ParquetExportRuntime::class);
+    $runtime->shouldReceive('assertAvailable')->once();
+    $runtime->shouldReceive('convert')->once()->andReturnUsing(function (string $source, string $target) use ($games): void {
+        $rows = array_map(fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR), file($source));
+        expect(array_column($rows, 'game_id'))->toBe([$games[0]->id, $games[0]->id, $games[1]->id]);
+        file_put_contents($target, 'test converter output');
+    });
+
+    $this->artisan('ml:export-historical-plays mlb 2025 --format=parquet --chunk=1')->assertSuccessful();
+    $manifest = DatasetExportManifest::query()->sole();
+    expect($manifest->row_count)->toBe(3)
+        ->and($manifest->metadata['verified_game_play_counts'])->toBe([$games[0]->id => 2, $games[1]->id => 1]);
 });

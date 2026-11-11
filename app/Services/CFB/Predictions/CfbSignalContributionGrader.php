@@ -29,12 +29,12 @@ class CfbSignalContributionGrader
         $release = CalculationReleaseData::fromModel($run->release);
         $inputs = $snapshot->inputs;
         $configuration = $release->configuration;
-        $calculate = function (array $i, array $c) use ($snapshot, $release): array {
+        $calculate = function (array $i, array $c) use ($snapshot, $release, $inputs): array {
             if ($c !== $release->configuration && isset($i['football_signal_evidence'])) {
                 // A paired ablation holds the already fitted corrections fixed while changing one base term.
                 $i['football_signal_evidence']['baseline_hash'] = CfbFootballSignalEvidence::baselineHash($c);
             }
-            $counterfactual = $i !== $snapshot->inputs || $c !== $release->configuration;
+            $counterfactual = $i !== $inputs || $c !== $release->configuration;
             $calculationConfiguration = $c;
             if ($counterfactual) {
                 unset($calculationConfiguration['forecast_coordination']);

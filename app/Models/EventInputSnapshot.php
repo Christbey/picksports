@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\CachesJsonArrayCasts;
 use App\Models\Concerns\HasPublicUlid;
+use App\Services\Predictions\CfbSnapshotInputStorage;
 use Database\Factories\EventInputSnapshotFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -14,7 +15,9 @@ use LogicException;
 class EventInputSnapshot extends Model
 {
     /** @use HasFactory<EventInputSnapshotFactory> */
-    use CachesJsonArrayCasts;
+    use CachesJsonArrayCasts {
+        decodeArrayAttribute as private decodeStoredArrayAttribute;
+    }
 
     use HasFactory, HasPublicUlid;
 
@@ -45,6 +48,23 @@ class EventInputSnapshot extends Model
             'inputs' => 'array',
             'metadata' => 'array',
         ];
+    }
+
+    protected function decodeArrayAttribute($key, $value)
+    {
+        return $key === 'inputs'
+            ? app(CfbSnapshotInputStorage::class)->resolve($this->decodeInlineInputs($value))
+            : $this->decodeStoredArrayAttribute($key, $value);
+    }
+
+    public function inlineInputs(): ?array
+    {
+        return $this->decodeInlineInputs($this->attributes['inputs'] ?? null);
+    }
+
+    private function decodeInlineInputs(mixed $value): ?array
+    {
+        return $this->cachedJsonArray('inline:inputs', $value, fn () => $this->decodeStoredArrayAttribute('inputs', $value));
     }
 
     protected static function booted(): void

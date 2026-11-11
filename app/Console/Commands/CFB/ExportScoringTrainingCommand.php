@@ -13,6 +13,7 @@ use App\Services\CFB\Predictions\CfbStoredPregameQuote;
 use App\Services\CFB\Scoring\CfbScoringFeatures;
 use App\Services\CFB\Signals\CfbFootballSignalCatalog;
 use App\Services\CFB\Signals\CfbFootballSignalJointModel;
+use App\Services\Predictions\CfbSnapshotInputStorage;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -121,7 +122,7 @@ class ExportScoringTrainingCommand extends Command
                 if ($snapshot) {
                     foreach ($paths as $inputPath) {
                         $value = $snapshot->getAttribute(str_replace('.', '_', $inputPath));
-                        data_set($inputs, $inputPath, is_string($value) ? json_decode($value, true, 512, JSON_THROW_ON_ERROR) : $value);
+                        data_set($inputs, $inputPath, app(CfbSnapshotInputStorage::class)->resolveProjectedSection($value));
                     }
                 }
                 $signals = ['spread' => [], 'total' => []];

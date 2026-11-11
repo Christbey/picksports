@@ -65,6 +65,7 @@ class CfbFootballSignalEvidence
             $latest = $latest === null || $observed->gt($latest) ? $observed : $latest;
             $baseMargin = data_get($prediction->calculationRun->diagnostics, 'football_signals.base_home_margin', -(float) $spread->projected_line);
             $baseTotal = data_get($prediction->calculationRun->diagnostics, 'football_signals.base_total', (float) $total->projected_line);
+            $inputs = $snapshot->inputs;
             if ($replay) {
                 // Recalculate the target baseline on the original immutable inputs. Never
                 // substitute today's team ratings, and never relabel this as a live old forecast.
@@ -74,7 +75,7 @@ class CfbFootballSignalEvidence
                 $baselineRelease = new CalculationReleaseData('signal-training-replay', 'cfb', 'pregame',
                     'cfb-pregame-rules', 'rules', 'training-replay', 'frozen-input-replay', $baselineHash,
                     $snapshot->schema_version, $baselineConfiguration);
-                $frozen = new EventInputSnapshotData($snapshot->schema_version, $snapshot->inputs,
+                $frozen = new EventInputSnapshotData($snapshot->schema_version, $inputs,
                     $snapshot->captured_at, $snapshot->cutoff_at, $snapshot->latest_source_available_at,
                     $snapshot->source_timestamps ?? [], $snapshot->pregame_safety_status);
                 $output = app(CfbCalculator::class)->calculate($frozen, $baselineRelease);
@@ -84,14 +85,14 @@ class CfbFootballSignalEvidence
             }
             $residuals = ['spread' => $game->home_score - $game->away_score - $baseMargin,
                 'total' => $game->home_score + $game->away_score - $baseTotal];
-            if (isset($snapshot->inputs['historical_signals'])
-                && is_numeric(data_get($snapshot->inputs, 'home.metrics.fpi'))
-                && is_numeric(data_get($snapshot->inputs, 'away.metrics.fpi'))) {
+            if (isset($inputs['historical_signals'])
+                && is_numeric(data_get($inputs, 'home.metrics.fpi'))
+                && is_numeric(data_get($inputs, 'away.metrics.fpi'))) {
                 $jointRows[$game->id] = ['game_id' => $game->id, 'starts_at' => $kickoff->toIso8601String(),
-                    'residuals' => $residuals, 'features' => CfbFootballSignalJointModel::features($snapshot->inputs, $configuration['football_signals'])];
+                    'residuals' => $residuals, 'features' => CfbFootballSignalJointModel::features($inputs, $configuration['football_signals'])];
             }
             foreach (['home', 'away'] as $side) {
-                $features = CfbFootballSignalCatalog::features($snapshot->inputs, $side, data_get($configuration, 'football_signals.feature_policy', 'observed_only'));
+                $features = CfbFootballSignalCatalog::features($inputs, $side, data_get($configuration, 'football_signals.feature_policy', 'observed_only'));
                 foreach ($catalog as $id => $definition) {
                     $market = $definition['market'];
                     if (! isset($residuals[$market]) || CfbFootballSignalCatalog::evaluate($definition, $features) !== true) {

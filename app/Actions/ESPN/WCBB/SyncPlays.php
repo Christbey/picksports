@@ -17,4 +17,6 @@ class SyncPlays extends AbstractSyncPlays
     protected const TEAM_MODEL_CLASS = Team::class;
 
     protected const PLAY_DTO_CLASS = BasketballPlayData::class;
+
+    protected const SKIP_UNCHANGED_REFRESH = true;
 }

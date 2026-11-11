@@ -27,8 +27,17 @@ trait CachesJsonArrayCasts
 
     protected function castAttribute($key, $value)
     {
-        if (! $this->cacheJsonArrays || ($this->getCasts()[$key] ?? null) !== 'array') {
+        if (($this->getCasts()[$key] ?? null) !== 'array') {
             return parent::castAttribute($key, $value);
+        }
+
+        return $this->cachedJsonArray($key, $value, fn () => $this->decodeArrayAttribute($key, $value));
+    }
+
+    protected function cachedJsonArray(string $key, mixed $value, \Closure $decode): mixed
+    {
+        if (! $this->cacheJsonArrays) {
+            return $decode();
         }
 
         $cached = $this->decodedJsonArrays[$key] ?? null;
@@ -36,9 +45,14 @@ trait CachesJsonArrayCasts
             return $cached['decoded'];
         }
 
-        $decoded = parent::castAttribute($key, $value);
+        $decoded = $decode();
         $this->decodedJsonArrays[$key] = ['raw' => $value, 'decoded' => $decoded];
 
         return $decoded;
+    }
+
+    protected function decodeArrayAttribute($key, $value)
+    {
+        return parent::castAttribute($key, $value);
     }
 }

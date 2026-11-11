@@ -18,5 +18,7 @@ class SyncPlays extends AbstractSyncPlays
 
     protected const PLAY_DTO_CLASS = BasketballPlayData::class;
 
+    protected const SKIP_UNCHANGED_REFRESH = true;
+
     protected const GAME_LOOKUP_COLUMN = 'espn_event_id';
 }

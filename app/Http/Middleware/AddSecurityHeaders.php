@@ -23,10 +23,11 @@ class AddSecurityHeaders
         $cspDirectives = [
             "default-src 'self'",
             "base-uri 'self'",
-            "form-action 'self'",
+            // Meta Pixel's form transport posts to /tr/ in a hidden frame.
+            "form-action 'self' https://www.facebook.com/tr/",
             "object-src 'none'",
             "frame-ancestors 'self'",
-            "frame-src 'self' https://www.googletagmanager.com https://googleads.g.doubleclick.net https://tpc.googlesyndication.com https://ep2.adtrafficquality.google https://www.google.com",
+            "frame-src 'self' https://www.googletagmanager.com https://googleads.g.doubleclick.net https://tpc.googlesyndication.com https://ep2.adtrafficquality.google https://www.google.com https://www.facebook.com/tr/",
             // Inline bootstrap scripts/styles still exist in app.blade.php; keep allowed while in report-only.
             "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://static.cloudflareinsights.com https://connect.facebook.net https://pagead2.googlesyndication.com https://ep2.adtrafficquality.google",
             "script-src-elem 'self' 'unsafe-inline' https://www.googletagmanager.com https://static.cloudflareinsights.com https://connect.facebook.net https://pagead2.googlesyndication.com https://ep2.adtrafficquality.google",

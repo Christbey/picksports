@@ -1,5 +1,8 @@
 <?php
 
+use App\Models\MLB\Game;
+use App\Models\MLB\Team;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Schedule;
 
 uses()->group('sports');
@@ -184,3 +187,26 @@ it('audits NFL frozen spread validation daily after grading without fetching odd
         ->and($event->withoutOverlapping)->toBeTrue()
         ->and($event->command)->toContain('nfl:validate-spread-models')->not->toContain('sync-odds');
 });
+
+it('gates scheduled MLB backtests and scoreboard sync during the November offseason', function (?string $gameDate, string $status, bool $expected) {
+    $this->travelTo(CarbonImmutable::parse('2026-11-10 16:00', 'America/Chicago'));
+    if ($gameDate !== null) {
+        Game::factory()->postseason()->create([
+            'season' => 2026,
+            'game_date' => $gameDate,
+            'status' => $status,
+            'home_team_id' => Team::factory(),
+            'away_team_id' => Team::factory(),
+        ]);
+    }
+
+    $events = collect(app(Schedule::class)->events())->keyBy('description');
+    expect($events['MLB: Grade Pick Candidates']->filtersPass(app()))->toBe($expected)
+        ->and($events['MLB: Live Scoreboard Sync']->filtersPass(app()))->toBe($expected);
+})->with([
+    'empty offseason' => [null, 'STATUS_FINAL', false],
+    'older postseason final' => ['2026-11-04', 'STATUS_FINAL', false],
+    'recent postseason final' => ['2026-11-09', 'STATUS_FINAL', true],
+    'upcoming postseason game' => ['2026-11-12', 'STATUS_SCHEDULED', true],
+    'canceled postseason game' => ['2026-11-10', 'STATUS_CANCELED', false],
+]);

@@ -137,6 +137,8 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 
 ### MLB
 
+The shared MLB scheduler guard runs March through October. In November it requires a stored postseason game within the next three days or the previous two days, including today, so postseason sync and final grading can finish. Manual commands remain available throughout the year.
+
 - Daily schedule sync at `01:30`
 - Live scoreboard sync every 5 minutes between `13:00` and `04:00`
 - Game details sync every 30 minutes between `16:00` and `04:00`

@@ -56,6 +56,10 @@ class CanonicalSportPredictionResource extends JsonResource
             $live = LivePredictionStore::EMPTY_FIELDS;
         }
 
+        $cfbInputs = $prediction->sport === 'cfb'
+            ? $prediction->calculationRun?->inputSnapshot?->inlineInputs()
+            : null;
+
         return [
             'id' => $prediction->public_id,
             'sport' => $prediction->sport,
@@ -86,8 +90,8 @@ class CanonicalSportPredictionResource extends JsonResource
             'confidence_level' => $confidenceContext['tier'],
             'confidence_context' => $confidenceContext,
             'evidence_windows' => $prediction->sport === 'cfb' ? [
-                'home' => data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'home.evidence_windows'),
-                'away' => data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'away.evidence_windows'),
+                'home' => data_get($cfbInputs, 'home.evidence_windows'),
+                'away' => data_get($cfbInputs, 'away.evidence_windows'),
             ] : null,
             'public_recommendation' => app(MlbRecommendationPresentation::class)->summary($presentation->recommendation),
             'model_bet_context' => [

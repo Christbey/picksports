@@ -9,6 +9,7 @@ use App\Application\Predictions\Data\PredictionOutput;
 use App\Contracts\Predictions\EventInputSnapshotBuilder;
 use App\Contracts\Predictions\SportCalculator;
 use App\Exceptions\Predictions\PredictionLifecycleException;
+use App\Models\ApplicationSetting;
 use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
 use App\Models\EventInputSnapshot;
@@ -159,13 +160,16 @@ class PredictionLifecycleOrchestrator
                 'schema_version' => $snapshot->schemaVersion,
                 'content_hash' => $contentHash,
             ],
-            [
+            fn (): array => [
                 'sport' => $event->sport,
                 'captured_at' => $snapshot->capturedAt,
                 'cutoff_at' => $snapshot->cutoffAt,
                 'latest_source_available_at' => $snapshot->latestSourceAvailableAt,
                 'source_timestamps' => $snapshot->sourceTimestamps,
-                'inputs' => $snapshot->inputs,
+                'inputs' => $event->sport === 'cfb'
+                    && ApplicationSetting::getValue(CfbSnapshotInputStorage::WRITES_SETTING, false) === true
+                    ? app(CfbSnapshotInputStorage::class)->prepare($snapshot->inputs)
+                    : $snapshot->inputs,
                 'object_uri' => $snapshot->objectUri,
                 'pregame_safety_status' => $snapshot->pregameSafetyStatus,
                 'metadata' => $snapshot->metadata,

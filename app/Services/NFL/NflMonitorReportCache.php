@@ -62,6 +62,19 @@ class NflMonitorReportCache
         });
     }
 
+    public function hasRecentDemand(): bool
+    {
+        $cutoff = now()->subMinutes(30)->timestamp;
+
+        foreach (Cache::get(self::PREFIX.'scopes', []) as $entry) {
+            if (($entry['requested_at'] ?? 0) >= $cutoff) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function legacy(): array
     {
         return Cache::get(self::PREFIX.'legacy', ['grades' => [], 'generated_at' => null]);

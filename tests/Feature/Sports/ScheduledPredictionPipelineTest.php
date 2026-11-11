@@ -210,3 +210,20 @@ it('gates scheduled MLB backtests and scoreboard sync during the November offsea
     'upcoming postseason game' => ['2026-11-12', 'STATUS_SCHEDULED', true],
     'canceled postseason game' => ['2026-11-10', 'STATUS_CANCELED', false],
 ]);
+
+it('keeps sport pipelines closed in their offseason', function (string $sport, string $date) {
+    $this->travelTo(CarbonImmutable::parse($date.' 16:00', 'America/Chicago'));
+    $events = collect(app(Schedule::class)->events())
+        ->filter(fn ($event) => str_starts_with($event->description ?? '', $sport.':'));
+
+    expect($events)->not->toBeEmpty();
+    expect($events->filter(fn ($event) => $event->filtersPass(app()))->pluck('description')->all())->toBe([]);
+})->with([
+    ['NBA', '2026-07-15'],
+    ['CBB', '2026-06-15'],
+    ['WCBB', '2026-06-15'],
+    ['MLB', '2026-12-15'],
+    ['WNBA', '2026-11-10'],
+    ['NFL', '2026-04-15'],
+    ['CFB', '2026-05-15'],
+]);

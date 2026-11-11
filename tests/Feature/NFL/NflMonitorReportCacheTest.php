@@ -117,3 +117,17 @@ it('skips fresh background reports and builds newly requested scopes without wai
     $reports->read(null, ['from_season' => 2024]);
     expect($reports->refresh(3, false)['built'])->toBe(1);
 });
+
+it('only queues offseason monitor refreshes after a recent admin report request', function () {
+    $this->travelTo(Carbon::parse('2026-04-15 12:00', 'America/Chicago'));
+    $event = collect(app(Schedule::class)->events())->firstWhere('description', 'NFL: Refresh Admin Monitor Reports');
+
+    expect($event->filtersPass(app()))->toBeFalse();
+    app(NflMonitorReportCache::class)->read(null, []);
+    expect($event->filtersPass(app()))->toBeTrue();
+    $this->travel(31)->minutes();
+    expect($event->filtersPass(app()))->toBeFalse();
+
+    $this->travelTo(Carbon::parse('2026-11-10 12:00', 'America/Chicago'));
+    expect($event->filtersPass(app()))->toBeTrue();
+});

@@ -5,7 +5,10 @@ namespace App\Services\NFL;
 use App\Models\EventInputSnapshot;
 use App\Models\NFL\Game;
 use App\Models\PredictionFeatureSnapshot;
+use App\Services\Predictions\PredictionFeatureSnapshotArchive;
 use Carbon\CarbonImmutable;
+use Generator;
+use Illuminate\Support\Collection;
 
 class NflFrozenSpreadReplayAudit
 {
@@ -45,9 +48,8 @@ class NflFrozenSpreadReplayAudit
             'validation_note' => 'Retrospective diagnostic, not an independent holdout or full current-model regeneration',
             'production_modified' => false, 'promotion_allowed' => false,
             'dataset_exclusions' => $dataset['excluded'], 'completed_games' => count($rows), 'weeks' => [], 'games' => []];
-        foreach ($rows as $row) {
+        foreach ($this->withArchivedSnapshots($rows, $snapshots) as [$row, $snapshot]) {
             $game = $games->get($row['game_id']);
-            $snapshot = $snapshots->get($row['snapshot_id']);
             $metadata = $snapshot?->model_metadata ?? [];
             $recovery = null;
             if (in_array($variant, ['safeguards_v1', 'batch_v2'], true) && data_get($metadata, 'preseason_signal.reason') === 'true_epa_already_applied') {
@@ -85,6 +87,26 @@ class NflFrozenSpreadReplayAudit
         }
 
         return $report;
+    }
+
+    /** @param Collection<int, PredictionFeatureSnapshot> $snapshots */
+    private function withArchivedSnapshots(array $rows, Collection $snapshots): Generator
+    {
+        $archive = app(PredictionFeatureSnapshotArchive::class);
+
+        foreach (array_chunk($rows, PredictionFeatureSnapshotArchive::PREFETCH_BATCH_SIZE) as $batch) {
+            $models = $snapshots->toBase()->only(array_column($batch, 'snapshot_id'));
+            try {
+                $archive->prefetch($models);
+                foreach ($batch as $row) {
+                    yield [$row, $models->get($row['snapshot_id'])];
+                }
+            } finally {
+                foreach ($models as $snapshot) {
+                    $snapshot->releaseArchivePayload();
+                }
+            }
+        }
     }
 
     public function recoverPreseason(EventInputSnapshot $input, Game $game, array $row, array $features): ?array

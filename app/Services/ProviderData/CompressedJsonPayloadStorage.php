@@ -2,11 +2,18 @@
 
 namespace App\Services\ProviderData;
 
+use GuzzleHttp\Promise\Utils as Promises;
+use GuzzleHttp\Psr7\Utils as Streams;
+use Illuminate\Filesystem\AwsS3V3Adapter;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
 class CompressedJsonPayloadStorage
 {
+    public const PREFETCH_BATCH_SIZE = 4;
+
+    private const PREFETCH_BYTE_LIMIT = 4 * 1024 * 1024;
+
     /**
      * @param  array<array-key, mixed>  $payload
      * @return array{version:int,codec:string,disk:string,prefix:string,object_key:string,json_sha256:string,compressed_sha256:string,json_bytes:int,compressed_bytes:int}
@@ -62,17 +69,79 @@ class CompressedJsonPayloadStorage
         }
 
         try {
-            $compressed = stream_get_contents($stream, $this->compressedLimit() + 1);
+            $compressed = stream_get_contents($stream, $manifest['compressed_bytes'] + 1);
         } finally {
             fclose($stream);
         }
 
+        return $this->decode($manifest, $compressed);
+    }
+
+    /** @return array<string, array> Verified payloads keyed by object key. */
+    public function prefetch(array $manifests): array
+    {
+        if ($manifests === [] || count($manifests) > self::PREFETCH_BATCH_SIZE) {
+            return [];
+        }
+
+        $disk = Storage::disk($this->disk());
+        if (! $disk instanceof AwsS3V3Adapter) {
+            return [];
+        }
+
+        $objects = [];
+        $bytes = 0;
+        foreach ($manifests as $manifest) {
+            $this->validateManifest($manifest);
+            $key = $manifest['object_key'];
+            if (isset($objects[$key]) && $objects[$key] !== $manifest) {
+                return [];
+            }
+            if (! isset($objects[$key])) {
+                $objects[$key] = $manifest;
+                $bytes += $manifest['json_bytes'] + $manifest['compressed_bytes'];
+            }
+        }
+        if ($bytes > self::PREFETCH_BYTE_LIMIT) {
+            return [];
+        }
+
+        $requests = [];
+        $client = $disk->getClient();
+        $bucket = $disk->getConfig()['bucket'];
+        foreach ($objects as $key => $manifest) {
+            $requests[$key] = $client->getObjectAsync([
+                'Bucket' => $bucket,
+                'Key' => $disk->path($key),
+                'Range' => 'bytes=0-'.$manifest['compressed_bytes'],
+            ]);
+        }
+
+        $payloads = [];
+        $responses = Promises::unwrap($requests);
+        try {
+            foreach ($responses as $key => $response) {
+                $manifest = $objects[$key];
+                $compressed = Streams::copyToString($response['Body'], $manifest['compressed_bytes'] + 1);
+                $payloads[$key] = $this->decode($manifest, $compressed);
+            }
+        } finally {
+            foreach ($responses as $response) {
+                $response['Body']->close();
+            }
+        }
+
+        return $payloads;
+    }
+
+    private function decode(array $manifest, string|false $compressed): array
+    {
         if ($compressed === false || strlen($compressed) !== $manifest['compressed_bytes']
             || ! hash_equals($manifest['compressed_sha256'], hash('sha256', $compressed))) {
             throw new RuntimeException('Compressed payload failed size or checksum verification.');
         }
 
-        $json = @gzdecode($compressed, $this->jsonLimit() + 1);
+        $json = @gzdecode($compressed, $manifest['json_bytes'] + 1);
         if ($json === false || strlen($json) !== $manifest['json_bytes']
             || ! hash_equals($manifest['json_sha256'], hash('sha256', $json))) {
             throw new RuntimeException('Archived JSON failed decompression, size or checksum verification.');

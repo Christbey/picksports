@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\NFL\Game;
+use App\Services\Predictions\PredictionFeatureSnapshotArchive;
 use App\Services\Predictions\SnapshotMetadataStorage;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
@@ -15,6 +16,10 @@ class PredictionFeatureSnapshot extends Model
     protected $with = ['metadataPayload'];
 
     protected $hidden = ['metadataPayload'];
+
+    private ?array $cachedArchiveManifest = null;
+
+    private ?array $cachedArchivePayload = null;
 
     protected $fillable = [
         'sport',
@@ -58,9 +63,35 @@ class PredictionFeatureSnapshot extends Model
         ];
     }
 
+    protected function features(): Attribute
+    {
+        return Attribute::get(fn (?string $value): mixed => $this->fromJson($this->archivedJson($value, 'features_json')));
+    }
+
+    private function archivedJson(?string $value, string $field): ?string
+    {
+        if ($value === null || ! str_contains($value, '"'.PredictionFeatureSnapshotArchive::MARKER.'"')) {
+            return $value;
+        }
+
+        $archive = app(PredictionFeatureSnapshotArchive::class);
+        $manifest = $archive->manifest($value);
+        if ($manifest === null) {
+            return $value;
+        }
+
+        if ($this->cachedArchiveManifest !== $manifest) {
+            $this->cachedArchivePayload = $archive->read($manifest);
+            $this->cachedArchiveManifest = $manifest;
+        }
+
+        return $this->cachedArchivePayload[$field];
+    }
+
     protected function modelMetadata(): Attribute
     {
         return Attribute::get(function (?string $value): ?array {
+            $value = $this->archivedJson($value, 'model_metadata_json');
             if ($value !== null && str_starts_with($value, '"'.SnapshotMetadataStorage::REFERENCE_PREFIX)) {
                 $this->loadMissing('metadataPayload');
             }

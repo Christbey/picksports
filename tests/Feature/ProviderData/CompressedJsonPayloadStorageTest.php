@@ -1,6 +1,11 @@
 <?php
 
 use App\Services\ProviderData\CompressedJsonPayloadStorage;
+use Aws\MockHandler;
+use Aws\Result;
+use Aws\S3\S3Client;
+use GuzzleHttp\Psr7\Utils;
+use Illuminate\Filesystem\AwsS3V3Adapter;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Support\Facades\Storage;
 
@@ -102,4 +107,60 @@ it('rejects truncated gzip with an otherwise matching compressed checksum', func
     Storage::disk('payload-test')->put($manifest['object_key'], $compressed);
 
     expect(fn () => $this->archives->read($manifest))->toThrow(RuntimeException::class);
+});
+
+function mockPayloadPrefetchDisk(MockHandler $handler): void
+{
+    $client = new S3Client([
+        'version' => 'latest', 'region' => 'us-east-1',
+        'credentials' => ['key' => 'test', 'secret' => 'test'], 'handler' => $handler,
+    ]);
+    $disk = Mockery::mock(AwsS3V3Adapter::class);
+    $disk->shouldReceive('getClient')->andReturn($client);
+    $disk->shouldReceive('getConfig')->andReturn(['bucket' => 'test-bucket']);
+    $disk->shouldReceive('path')->andReturnUsing(fn (string $key) => 'prefix/'.$key);
+    Storage::set('payload-test', $disk);
+}
+
+it('prefetches distinct archive objects with bounded ranges and verifies both checksums', function () {
+    $first = $this->archives->archive(['value' => 1]);
+    $second = $this->archives->archive(['value' => 2]);
+    $commands = [];
+    $handler = new MockHandler;
+    foreach ([$first, $second] as $manifest) {
+        $body = Storage::disk('payload-test')->get($manifest['object_key']);
+        $handler->append(function ($command) use (&$commands, $body) {
+            $commands[] = [$command['Key'], $command['Range']];
+
+            return new Result(['Body' => Utils::streamFor($body)]);
+        });
+    }
+    mockPayloadPrefetchDisk($handler);
+
+    expect($this->archives->prefetch([$first, $second, $first]))->toBe([
+        $first['object_key'] => ['value' => 1],
+        $second['object_key'] => ['value' => 2],
+    ])->and($commands)->toBe([
+        ['prefix/'.$first['object_key'], 'bytes=0-'.$first['compressed_bytes']],
+        ['prefix/'.$second['object_key'], 'bytes=0-'.$second['compressed_bytes']],
+    ]);
+});
+
+it('falls back to lazy reads for local disks and batches outside the prefetch budget', function () {
+    $manifest = $this->archives->archive(['value' => 1]);
+    expect($this->archives->prefetch([$manifest]))->toBe([]);
+    mockPayloadPrefetchDisk(new MockHandler);
+
+    expect($this->archives->prefetch(array_fill(0, 5, $manifest)))->toBe([]);
+    $manifest['json_bytes'] = 4 * 1024 * 1024;
+    expect($this->archives->prefetch([$manifest]))->toBe([]);
+});
+
+it('rejects corrupted data during prefetch', function () {
+    $manifest = $this->archives->archive(['value' => 1]);
+    mockPayloadPrefetchDisk(new MockHandler([new Result([
+        'Body' => Utils::streamFor(str_repeat('x', $manifest['compressed_bytes'])),
+    ])]));
+
+    expect(fn () => $this->archives->prefetch([$manifest]))->toThrow(RuntimeException::class, 'checksum');
 });

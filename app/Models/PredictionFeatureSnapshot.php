@@ -81,11 +81,23 @@ class PredictionFeatureSnapshot extends Model
         }
 
         if ($this->cachedArchiveManifest !== $manifest) {
-            $this->cachedArchivePayload = $archive->read($manifest);
-            $this->cachedArchiveManifest = $manifest;
+            $this->cacheArchivePayload($manifest, $archive->read($manifest));
         }
 
         return $this->cachedArchivePayload[$field];
+    }
+
+    /** @param array{features_json:string,model_metadata_json:string} $payload */
+    public function cacheArchivePayload(array $manifest, array $payload): void
+    {
+        $this->cachedArchiveManifest = $manifest;
+        $this->cachedArchivePayload = $payload;
+    }
+
+    public function releaseArchivePayload(): void
+    {
+        $this->cachedArchiveManifest = null;
+        $this->cachedArchivePayload = null;
     }
 
     protected function modelMetadata(): Attribute

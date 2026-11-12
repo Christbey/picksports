@@ -2,12 +2,16 @@
 
 namespace App\Services\Predictions;
 
+use App\Models\PredictionFeatureSnapshot;
 use App\Services\ProviderData\CompressedJsonPayloadStorage;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use RuntimeException;
 
 class PredictionFeatureSnapshotArchive
 {
+    public const PREFETCH_BATCH_SIZE = CompressedJsonPayloadStorage::PREFETCH_BATCH_SIZE;
+
     public const MARKER = '_picksports_feature_archive';
 
     private const METADATA_SQL_PATHS = [
@@ -67,7 +71,26 @@ class PredictionFeatureSnapshotArchive
     /** @return array{features_json:string,model_metadata_json:string} */
     public function read(array $manifest): array
     {
-        $payload = $this->storage->read($manifest);
+        return $this->validatePayload($this->storage->read($manifest));
+    }
+
+    /** @param Collection<int, PredictionFeatureSnapshot> $snapshots */
+    public function prefetch(Collection $snapshots): void
+    {
+        $manifests = $snapshots->map(fn (PredictionFeatureSnapshot $snapshot) => $this->manifest($snapshot->getRawOriginal('model_metadata')))
+            ->filter();
+        $payloads = $this->storage->prefetch($manifests->all());
+        foreach ($manifests as $id => $manifest) {
+            $payload = $payloads[$manifest['object_key']] ?? null;
+            if ($payload !== null) {
+                $snapshots->get($id)->cacheArchivePayload($manifest, $this->validatePayload($payload));
+            }
+        }
+    }
+
+    /** @return array{features_json:string,model_metadata_json:string} */
+    private function validatePayload(array $payload): array
+    {
         if (! is_string($payload['features_json'] ?? null) || ! is_string($payload['model_metadata_json'] ?? null)) {
             throw new RuntimeException('Invalid archived feature snapshot payload.');
         }

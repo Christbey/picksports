@@ -390,6 +390,9 @@ it('keeps historical play replay and source validation while requiring plays in 
     cbbBacktestRetirementFixture('valid', daysAgo: 1);
     $source = app(BasketballBacktestForecastSource::class);
     expect($source->forCbbPlayReplay(2027, 1)->sole()->game->id)->toBe($game->id);
+    $game->plays()->delete();
+    expect($source->forCbbPlayReplay(2027, 1, [$game->id])->sole()->game->id)->toBe($game->id);
+    cbbReplayPlays($game);
     $this->artisan('cbb:backtest-live-from-plays', ['--forecast-source' => 'invalid'])->assertFailed();
     $this->artisan('cbb:backtest-live-from-plays', ['--forecast-source' => 'canonical', '--states-per-game' => 10])
         ->expectsOutputToContain('No playable snapshots')->assertSuccessful();

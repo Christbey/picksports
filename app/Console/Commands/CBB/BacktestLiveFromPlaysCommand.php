@@ -5,6 +5,7 @@ namespace App\Console\Commands\CBB;
 use App\Actions\CBB\UpdateLivePrediction;
 use App\Models\CBB\Game;
 use App\Models\CBB\Play;
+use App\Services\CBB\ArchivedReplayPlays;
 use App\Services\Predictions\Basketball\BasketballBacktestForecastSource;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
@@ -18,9 +19,9 @@ class BacktestLiveFromPlaysCommand extends Command
         {--states-per-game=3 : Number of play snapshots per game to test}
         {--detailed : Show sample rows}';
 
-    protected $description = 'Backtest CBB live predictions by replaying historical states from cbb_plays';
+    protected $description = 'Backtest CBB live predictions by replaying historical states from live or archived plays';
 
-    public function handle(UpdateLivePrediction $updater): int
+    public function handle(UpdateLivePrediction $updater, ArchivedReplayPlays $archive): int
     {
         $season = $this->option('season') ? (int) $this->option('season') : null;
         $limit = max(1, (int) $this->option('limit'));
@@ -33,20 +34,23 @@ class BacktestLiveFromPlaysCommand extends Command
 
             return self::FAILURE;
         }
+        $archive->loadIndex($season);
+        $archivedGames = $archive->gameIds();
+
         if ($source === 'canonical') {
-            $games = $this->canonicalGames($season, $limit);
+            $games = $this->canonicalGames($season, $limit, $archivedGames);
             $this->line('Forecast source: canonical pregame inputs. Retrospective preview uses current live formulas and possession context; grants no calibration or betting approval.');
         } else {
             $games = Game::query()
                 ->with(['prediction', 'homeTeam', 'awayTeam'])
                 ->where('status', 'STATUS_FINAL')
-                ->whereHas('plays')
+                ->where(fn ($query) => $query->whereHas('plays')->orWhereIntegerInRaw('id', $archivedGames))
                 ->whereHas('prediction')
                 ->when($season !== null, fn ($query) => $query->where('season', $season))
                 ->orderByDesc('game_date')
+                ->orderByDesc('id')
                 ->limit($limit)
                 ->get()->map(fn ($game) => (object) ['game' => $game, 'baseline' => $game->prediction]);
-
         }
 
         if ($games->isEmpty()) {
@@ -63,7 +67,12 @@ class BacktestLiveFromPlaysCommand extends Command
                 ->whereNotNull('home_score')
                 ->whereNotNull('away_score')
                 ->orderBy('sequence_number')
-                ->get();
+                ->orderBy('id')
+                ->get(['id', 'period', 'clock', 'home_score', 'away_score']);
+
+            if ($plays->isEmpty() && $archive->covers($game) && ! $game->plays()->exists()) {
+                $plays = $archive->scoredPlays($game);
+            }
 
             if ($plays->count() < $statesPerGame) {
                 continue;
@@ -138,9 +147,9 @@ class BacktestLiveFromPlaysCommand extends Command
         return self::SUCCESS;
     }
 
-    private function canonicalGames(?int $season, int $limit): Collection
+    private function canonicalGames(?int $season, int $limit, array $archivedGames): Collection
     {
-        return app(BasketballBacktestForecastSource::class)->forCbbPlayReplay($season, $limit)
+        return app(BasketballBacktestForecastSource::class)->forCbbPlayReplay($season, $limit, $archivedGames)
             ->map(fn ($row) => (object) ['game' => $row->game, 'baseline' => $row]);
     }
 

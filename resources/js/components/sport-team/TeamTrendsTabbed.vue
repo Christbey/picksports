@@ -13,25 +13,29 @@ defineProps<{
         v-if="trendsData && Object.keys(trendsData).length > 0"
         class="space-y-4"
     >
-        <Card v-for="(insights, key) in trendsData" :key="key">
-            <CardHeader>
-                <CardTitle>{{ trendLabel(key as string) }}</CardTitle>
-            </CardHeader>
-            <CardContent>
-                <ul class="space-y-2">
-                    <li
-                        v-for="(insight, idx) in insights"
-                        :key="idx"
-                        class="flex items-start gap-2 text-sm"
-                    >
-                        <span
-                            class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-                        />
-                        <span>{{ insight }}</span>
-                    </li>
-                </ul>
-            </CardContent>
-        </Card>
+        <ul role="list" aria-label="Trend categories" class="space-y-4">
+            <li v-for="(insights, key) in trendsData" :key="key">
+                <Card>
+                    <CardHeader>
+                        <CardTitle>{{ trendLabel(key as string) }}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <ul role="list" class="space-y-2">
+                            <li
+                                v-for="(insight, idx) in insights"
+                                :key="idx"
+                                class="flex items-start gap-2 text-sm"
+                            >
+                                <span
+                                    class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+                                />
+                                <span>{{ insight }}</span>
+                            </li>
+                        </ul>
+                    </CardContent>
+                </Card>
+            </li>
+        </ul>
 
         <Card
             v-if="lockedTrends && Object.keys(lockedTrends).length > 0"

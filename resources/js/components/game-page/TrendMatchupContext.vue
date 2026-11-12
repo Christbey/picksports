@@ -23,8 +23,12 @@ const {
                 {{ matchupRows.length === 1 ? 'split' : 'splits' }}
             </Badge>
         </div>
-        <div class="mt-3 grid gap-2 lg:grid-cols-2">
-            <div
+        <ul
+            role="list"
+            aria-label="Matchup history"
+            class="mt-3 grid gap-2 lg:grid-cols-2"
+        >
+            <li
                 v-for="row in matchupRows"
                 :key="row.key"
                 class="rounded-lg border border-border/60 bg-background/55 p-3"
@@ -78,7 +82,7 @@ const {
                     }}
                     {{ row.latest_meeting.home_abbreviation || 'Home' }}
                 </p>
-            </div>
-        </div>
+            </li>
+        </ul>
     </div>
 </template>

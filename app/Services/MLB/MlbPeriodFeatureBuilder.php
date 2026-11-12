@@ -469,23 +469,37 @@ class MlbPeriodFeatureBuilder
      */
     private function trustedPitcherFeaturesByGame(array $gameIds): array
     {
-        if ($gameIds === []) {
-            return [];
+        $features = [];
+
+        foreach (array_chunk($gameIds, 100) as $gameBatch) {
+            $rankedSnapshots = PredictionFeatureSnapshot::query()
+                ->where('sport', 'mlb')
+                ->whereIn('game_id', $gameBatch)
+                ->where('pregame_safe', true)
+                ->whereIn('availability_status', ['observed_pregame', 'verified_reconstruction'])
+                ->whereNotNull('features_available_at')
+                ->whereColumn('features_available_at', '<=', 'game_start_at')
+                ->select('id')
+                ->selectRaw('ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY features_available_at DESC, id DESC) AS snapshot_rank');
+
+            $latestIds = PredictionFeatureSnapshot::query()->getQuery()
+                ->fromSub($rankedSnapshots, 'ranked_snapshots')
+                ->where('snapshot_rank', 1)
+                ->select('id');
+
+            $snapshots = PredictionFeatureSnapshot::query()->whereIn('id', $latestIds)->get([
+                'id', 'game_id', 'pregame_safe', 'availability_status', 'game_start_at', 'features_available_at', 'features',
+            ]);
+
+            foreach ($snapshots as $snapshot) {
+                $pitcherFeatures = $this->trustedPitcherFeatures($snapshot);
+                if ($pitcherFeatures !== []) {
+                    $features[$snapshot->game_id] = $pitcherFeatures;
+                }
+            }
         }
 
-        return PredictionFeatureSnapshot::query()
-            ->where('sport', 'mlb')
-            ->whereIn('game_id', $gameIds)
-            ->where('pregame_safe', true)
-            ->whereIn('availability_status', ['observed_pregame', 'verified_reconstruction'])
-            ->whereNotNull('features_available_at')
-            ->whereColumn('features_available_at', '<=', 'game_start_at')
-            ->orderBy('features_available_at')
-            ->get()
-            ->groupBy('game_id')
-            ->map(fn (Collection $rows): array => $this->trustedPitcherFeatures($rows->last()))
-            ->filter()
-            ->all();
+        return $features;
     }
 
     /**

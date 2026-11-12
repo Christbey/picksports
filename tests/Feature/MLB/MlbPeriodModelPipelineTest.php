@@ -46,6 +46,33 @@ it('builds f3 and f5 training rows only from games completed earlier in time', f
         'away_linescores' => [1, 0, 0, 1, 0, 0, 0, 1, 0],
     ]);
 
+    $gameStart = Carbon::parse('2025-04-02 18:00:00');
+    foreach ([
+        [$gameStart->copy()->subHours(2), 1450, true],
+        [$gameStart->copy()->subHour(), 1510, true],
+        [$gameStart->copy()->subHour(), 1530, true],
+        [$gameStart->copy()->subMinutes(30), 1700, false],
+        [$gameStart->copy()->addMinute(), 1800, true],
+    ] as [$availableAt, $pitcherElo, $pregameSafe]) {
+        PredictionFeatureSnapshot::query()->create([
+            'sport' => 'mlb',
+            'prediction_table' => 'mlb_predictions',
+            'prediction_id' => $second->id,
+            'game_id' => $second->id,
+            'model_version' => 'mlb-rules-v1',
+            'feature_version' => 'core-v1',
+            'blend_version' => 'baseline-v1',
+            'features' => ['home_pitcher_elo' => $pitcherElo],
+            'outputs' => [],
+            'feature_hash' => hash('sha256', (string) $pitcherElo),
+            'generated_at' => $availableAt,
+            'game_start_at' => $gameStart,
+            'features_available_at' => $availableAt,
+            'pregame_safe' => $pregameSafe,
+            'availability_status' => 'observed_pregame',
+        ]);
+    }
+
     $rows = app(MlbPeriodFeatureBuilder::class)->historicalRows([2025]);
     $firstF3 = $rows->first(fn (array $row): bool => $row['game_id'] === $first->id
         && $row['market_type'] === 'first_3_moneyline');
@@ -59,7 +86,9 @@ it('builds f3 and f5 training rows only from games completed earlier in time', f
         ->and($secondF3['feature_home_prior_games'])->toBe(1)
         ->and($secondF3['feature_away_prior_games'])->toBe(1)
         ->and($secondF3['feature_home_period_elo'])->toBeLessThan(1500)
-        ->and($secondF3['feature_away_period_elo'])->toBeGreaterThan(1500);
+        ->and($secondF3['feature_away_period_elo'])->toBeGreaterThan(1500)
+        ->and($firstF3['feature_home_pitcher_elo'])->toBeNull()
+        ->and($secondF3['feature_home_pitcher_elo'])->toBe(1530.0);
 });
 
 it('limits period shadow snapshots in the database after choosing the latest snapshot per game', function () {

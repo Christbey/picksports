@@ -28,12 +28,13 @@ class BasketballBacktestForecastSource
     }
 
     /** @return Collection<int, object> */
-    public function forCbbPlayReplay(?int $season, int $limit): Collection
+    /** @param list<int> $archivedGames */
+    public function forCbbPlayReplay(?int $season, int $limit, array $archivedGames = []): Collection
     {
-        return $this->finalGames('cbb', $season, null, max(1, $limit));
+        return $this->finalGames('cbb', $season, null, max(1, $limit), $archivedGames);
     }
 
-    private function finalGames(string $sport, ?int $season, ?int $seasonType, ?int $replayLimit = null): Collection
+    private function finalGames(string $sport, ?int $season, ?int $seasonType, ?int $replayLimit = null, array $archivedGames = []): Collection
     {
         $this->validateSport($sport);
         $rows = collect();
@@ -41,7 +42,9 @@ class BasketballBacktestForecastSource
         app(CanonicalSportPredictionQuery::class)->queryForSport($sport, $filters)
             ->where("{$sport}_games.status", 'STATUS_FINAL')->whereNotNull("{$sport}_games.home_score")->whereNotNull("{$sport}_games.away_score")
             ->where('predictions.generated_at', '<=', now())->where('predictions.published_at', '<=', now())
-            ->when($replayLimit !== null, fn ($query) => $query->whereHas('sportEvent.cbbGame.plays')->reorder()->orderByDesc('cbb_games.game_date')->orderByDesc('cbb_games.id'))
+            ->when($replayLimit !== null, fn ($query) => $query
+                ->where(fn ($games) => $games->whereHas('sportEvent.cbbGame.plays')->orWhereIntegerInRaw('cbb_games.id', $archivedGames))
+                ->reorder()->orderByDesc('cbb_games.game_date')->orderByDesc('cbb_games.id'))
             ->withOnly(['markets', 'latestEvaluation', 'calculationRun:id,event_input_snapshot_id,calculation_release_id,status',
                 'calculationRun.inputSnapshot', 'calculationRun.release:id,status', 'sportEvent:id,starts_at',
                 "sportEvent.{$sport}Game:id,sport_event_id,season,season_type,home_team_id,away_team_id,home_score,away_score,game_date,game_time",

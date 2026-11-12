@@ -8,6 +8,7 @@ import { renderToString } from 'vue/server-renderer';
 
 let server;
 let component;
+let teamTrends;
 before(async () => {
     server = await createServer({
         configFile: false,
@@ -24,6 +25,9 @@ before(async () => {
     });
     ({ default: component } = await server.ssrLoadModule(
         '/resources/js/components/game-page/TrendsComparisonCard.vue',
+    ));
+    ({ default: teamTrends } = await server.ssrLoadModule(
+        '/resources/js/components/sport-team/TeamTrendsTabbed.vue',
     ));
 });
 after(async () => {
@@ -141,6 +145,14 @@ test('renders the actual last meeting date, season and score, without a betting 
         }),
     );
     assert.match(html, /December 15, 2024/);
+    assert.match(
+        html,
+        /<ul role="list" aria-label="Matchup history"[^>]*><!--\[--><li\b[^>]*>[\s\S]*?Head-to-head[\s\S]*?<\/li><!--\]--><\/ul>/,
+    );
+    assert.match(
+        html,
+        /<ul role="list" aria-label="Selected historical patterns"[^>]*><!--\[--><li\b[^>]*>[\s\S]*?Won the only sampled game\.[\s\S]*?<\/li><!--\]--><\/ul>/,
+    );
     assert.match(html, /2024 season/);
     assert.match(html, /BUF 48–42 DET/);
     assert.match(html, /Pattern rank 85\/100/);
@@ -321,4 +333,20 @@ test('changing the window updates the reactive patterns while head-to-head stays
     await nextTick();
     assert.equal(bindings.homeView.value, null);
     assert.deepEqual(bindings.allTrendCategories.value, []);
+});
+
+test('team trends group categories in a list and preserve locked insights', async () => {
+    const html = await renderToString(
+        createSSRApp(teamTrends, {
+            trendsData: { scoring: ['Won three of five games.'] },
+            lockedTrends: { passing: 'pro' },
+            trendLabel: (value) => value,
+        }),
+    );
+    assert.match(
+        html,
+        /<ul role="list" aria-label="Trend categories"[^>]*><!--\[--><li>/,
+    );
+    assert.match(html, /Won three of five games\./);
+    assert.match(html, /More Insights Available/);
 });

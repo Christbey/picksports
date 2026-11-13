@@ -176,11 +176,18 @@ class CollegeFootballDataService
     {
         $response = $this->request()
             ->retry([250, 1000], when: fn (\Throwable $error): bool => $error instanceof ConnectionException
-                || ($error instanceof RequestException && in_array($error->response->status(), [429, 500, 502, 503, 504], true)))
+                || ($error instanceof RequestException && ! self::isMonthlyQuotaExceeded($error)
+                    && in_array($error->response->status(), [429, 500, 502, 503, 504], true)))
             ->get($path, $this->sanitizeQuery($query))
             ->throw();
 
         return $response->json() ?? [];
+    }
+
+    public static function isMonthlyQuotaExceeded(RequestException $error): bool
+    {
+        return $error->response->status() === 429
+            && strcasecmp(trim((string) $error->response->json('message')), 'Monthly call quota exceeded.') === 0;
     }
 
     protected function request(): PendingRequest

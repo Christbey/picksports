@@ -2860,7 +2860,15 @@ class PlayerPropAnalyzer
 
         $query = $playerPropModel::query();
 
-        if ($date || $game) {
+        if ($sport === 'NFL' && ($date || $game)) {
+            $gameModel = $sportConfig['game_model'];
+            $games = $gameModel::query()->when($game, fn (Builder $games) => $games->whereKey($game));
+            if ($date) {
+                $this->wherePropGameDate($games, $date);
+            }
+
+            $query->whereIntegerInRaw('game_id', $games->pluck('id')->all());
+        } elseif ($date || $game) {
             $query->whereHas('game', function ($q) use ($date, $game) {
                 if ($date) {
                     $this->wherePropGameDate($q, $date);

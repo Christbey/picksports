@@ -31,19 +31,41 @@ class NflPropParticipation
             ->where('observed_at', '>=', Carbon::parse($games->min('game_date'))->subDays(7))
             ->where('observed_at', '<=', $props->pluck('game.game_date')->max())
             ->orderByDesc('observed_at')->orderByDesc('id')->get(['id', 'team_id', 'observed_at', 'source_updated_at']);
-        $entries = $reports->isEmpty() ? collect() : DB::table('nfl_player_injury_snapshot_entries as entries')
-            ->join('nfl_player_injury_snapshots as reports', 'reports.id', '=', 'entries.snapshot_id')
-            ->whereIn('reports.team_id', $teamIds)
-            ->whereBetween('reports.observed_at', [$reports->min('observed_at'), $reports->max('observed_at')])
-            ->whereIn('entries.player_id', $props->pluck('player_id')->filter()->unique())
-            ->get(['entries.snapshot_id', 'entries.player_id', 'entries.status', 'entries.observed_at', 'entries.source_updated_at'])->groupBy('snapshot_id');
         $reports->each(function ($report) {
             $report->observed_instant = CarbonImmutable::parse($report->observed_at, config('app.timezone'));
         });
         $reportsByTeam = $reports->groupBy('team_id');
         $reportCache = [];
+        foreach ($games as $game) {
+            $played = $dates->gameDateTimeUtc($game->game_date, $game->game_time);
+            if (! $played) {
+                continue;
+            }
 
-        return $props->mapWithKeys(function (PlayerProp $prop) use ($dates, $games, $reportsByTeam, $entries, $statsByPlayer, &$reportCache) {
+            // Select the latest full report before checking whether it contains a player.
+            $earliest = $played->subDays(7);
+            foreach ([$game->home_team_id, $game->away_team_id] as $team) {
+                $report = $reportsByTeam->get($team)?->first(fn ($row) => $row->observed_instant->lte($played)
+                    && $row->observed_instant->gte($earliest));
+                if ($report) {
+                    $reportCache[$team.':'.$game->id] = $report;
+                }
+            }
+        }
+
+        $entries = collect();
+        $playerIds = $props->pluck('player_id')->filter()->unique();
+        foreach (collect($reportCache)->pluck('id')->unique()->chunk(200) as $snapshotIds) {
+            $batch = DB::table('nfl_player_injury_snapshot_entries')
+                ->whereIntegerInRaw('snapshot_id', $snapshotIds->all())
+                ->whereIn('player_id', $playerIds)
+                ->get(['snapshot_id', 'player_id', 'status', 'observed_at', 'source_updated_at']);
+            foreach ($batch->groupBy('snapshot_id') as $id => $rows) {
+                $entries->put($id, $rows);
+            }
+        }
+
+        return $props->mapWithKeys(function (PlayerProp $prop) use ($dates, $games, $entries, $statsByPlayer, $reportCache) {
             $target = $prop->game;
             $kickoff = $target ? $dates->gameDateTimeUtc($target->game_date, $target->game_time) : null;
             $team = $prop->player?->team_id;
@@ -63,13 +85,7 @@ class NflPropParticipation
                     continue;
                 }
                 $played = $dates->gameDateTimeUtc($game->game_date, $game->game_time);
-                // Use the latest FULL report, so a resolved entry cannot linger from an older report.
-                $key = $team.':'.$game->id;
-                if (! array_key_exists($key, $reportCache)) {
-                    $reportCache[$key] = collect($reportsByTeam->get($team, []))->first(fn ($r) => $r->observed_instant->lte($played)
-                        && $r->observed_instant->gte($played->subDays(7)));
-                }
-                $report = $reportCache[$key];
+                $report = $reportCache[$team.':'.$game->id] ?? null;
                 $out = $report && (! $report->source_updated_at || CarbonImmutable::parse($report->source_updated_at, config('app.timezone'))->lte($played))
                     && collect($entries->get($report->id, []))->contains(fn ($entry) => (int) $entry->player_id === (int) $prop->player_id
                         && $entry->observed_at && CarbonImmutable::parse($entry->observed_at, config('app.timezone'))->lte($report->observed_instant)

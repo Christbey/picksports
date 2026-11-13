@@ -10,9 +10,13 @@ const props = defineProps<{
     awayLabel: string;
     homeLabel: string;
     window: string;
+    workspace?: boolean;
 }>();
 const emit = defineEmits<{ 'update:window': [value: string] }>();
 const mobileTeam = ref('away');
+const metricsHelpOpen = ref(false);
+const evidenceView = ref<'metrics' | 'comparison'>('metrics');
+const metricGroup = ref<'scoring' | 'execution'>('scoring');
 const windows = {
     recent_5: 'Last 5',
     recent_10: 'Last 10',
@@ -29,6 +33,19 @@ const labels: Record<string, string> = {
     red_zone_pct: 'Red-zone scoring %',
     yards_allowed: 'Yards allowed / game',
 };
+const visibleMetrics = computed(() =>
+    Object.entries(labels).filter(
+        ([key]) =>
+            !props.workspace ||
+            [
+                'points_for',
+                'points_against',
+                'margin',
+                'yards_allowed',
+            ].includes(key) ===
+                (metricGroup.value === 'scoring'),
+    ),
+);
 const sides = computed(() =>
     [
         { key: 'away', label: props.awayLabel, profile: props.away },
@@ -66,173 +83,261 @@ const date = (value: string | null | undefined) =>
                 {{ label }}
             </Button>
         </div>
-        <div
-            class="grid grid-cols-2 gap-2 md:hidden"
-            role="group"
-            aria-label="Team evidence selection"
+        <nav
+            v-if="workspace"
+            aria-label="Evidence views"
+            class="flex gap-1 rounded-lg bg-muted/40 p-1"
         >
             <Button
-                v-for="side in sides"
-                :key="side.key"
                 type="button"
-                :variant="mobileTeam === side.key ? 'default' : 'outline'"
-                :aria-pressed="mobileTeam === side.key"
-                @click="mobileTeam = side.key"
+                class="flex-1"
+                :variant="evidenceView === 'metrics' ? 'default' : 'ghost'"
+                :aria-pressed="evidenceView === 'metrics'"
+                @click="evidenceView = 'metrics'"
             >
-                {{ side.label }}
+                Metrics
             </Button>
-        </div>
-        <div class="grid gap-4 md:grid-cols-2">
+            <Button
+                type="button"
+                class="flex-1"
+                :variant="evidenceView === 'comparison' ? 'default' : 'ghost'"
+                :aria-pressed="evidenceView === 'comparison'"
+                @click="evidenceView = 'comparison'"
+            >
+                What changed?
+            </Button>
+        </nav>
+        <div
+            v-show="!workspace || evidenceView === 'metrics'"
+            class="space-y-4"
+        >
             <div
-                v-for="side in sides"
-                :key="side.key"
-                class="min-w-0 space-y-2"
-                :class="mobileTeam === side.key ? '' : 'hidden md:block'"
+                v-if="workspace"
+                role="group"
+                aria-label="Metric group"
+                class="grid grid-cols-2 gap-2"
             >
-                <h3 class="font-semibold">
-                    {{ side.label }} ·
-                    {{ side.evidence?.label ?? 'Evidence unavailable' }}
-                </h3>
-                <template v-if="side.evidence && side.evidence.sample_size > 0">
-                    <p class="text-sm">
-                        {{ side.evidence.record.wins }}–{{
-                            side.evidence.record.losses
-                        }}–{{ side.evidence.record.ties }} W–L–T ·
-                        {{ side.evidence.sample_size }}
-                        {{ side.evidence.sample_size === 1 ? 'game' : 'games' }}
-                    </p>
-                    <p class="text-xs text-muted-foreground">
-                        {{ date(side.evidence.from_date) }} –
-                        {{ date(side.evidence.through_date) }} · Seasons:
-                        {{ side.evidence.seasons.join(', ') || 'none' }}
-                    </p>
-                    <p
-                        v-if="side.evidence.seasons.length > 1"
-                        class="text-xs text-amber-600"
-                    >
-                        Cross-season sample: personnel and coaching may differ.
-                    </p>
-                    <div
-                        role="table"
-                        :aria-label="`${side.label} metrics and available game samples`"
-                        class="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] text-sm"
-                    >
-                        <div
-                            role="row"
-                            class="col-span-full grid grid-cols-subgrid"
-                        >
-                            <span role="columnheader" class="font-semibold"
-                                >Metric</span
-                            >
-                            <span
-                                role="columnheader"
-                                class="text-right font-semibold"
-                                >Average</span
-                            >
-                            <span
-                                role="columnheader"
-                                class="px-2 text-right font-semibold"
-                                >NFL rank</span
-                            >
-                            <span
-                                role="columnheader"
-                                class="text-right font-semibold"
-                                >Games</span
-                            >
-                        </div>
-                        <div
-                            v-for="(label, key) in labels"
-                            :key="key"
-                            role="row"
-                            class="col-span-full grid grid-cols-subgrid"
-                        >
-                            <span role="rowheader" class="border-t py-1">{{
-                                label
-                            }}</span>
-                            <span
-                                role="cell"
-                                class="border-t py-1 text-right tabular-nums"
-                            >
-                                {{ format(side.evidence.metrics[key]?.value) }}
-                            </span>
-                            <span
-                                role="cell"
-                                class="border-t px-2 py-1 text-right whitespace-nowrap tabular-nums"
-                            >
-                                <template
-                                    v-if="
-                                        side.evidence.metrics[key]?.rank != null
-                                    "
-                                >
-                                    {{
-                                        side.evidence.metrics[key]?.rank_tied
-                                            ? 'T-'
-                                            : ''
-                                    }}{{ side.evidence.metrics[key]?.rank }}/{{
-                                        side.evidence.metrics[key]?.ranked_teams
-                                    }}
-                                </template>
-                                <span v-else aria-label="Rank unavailable"
-                                    >—</span
-                                >
-                            </span>
-                            <span role="cell" class="border-t py-1 text-right">
-                                {{
-                                    side.evidence.metrics[key]?.sample_size ??
-                                    0
-                                }}/{{ side.evidence.sample_size }}
-                            </span>
-                        </div>
-                    </div>
-                    <div class="text-xs text-muted-foreground">
-                        Data last updated:
-                        {{
-                            side.evidence.latest_source_update ?? 'Unavailable'
-                        }}.
-                    </div>
-                </template>
-                <p
-                    v-else-if="side.evidence"
-                    class="text-sm text-muted-foreground"
+                <Button
+                    type="button"
+                    variant="outline"
+                    :aria-pressed="metricGroup === 'scoring'"
+                    @click="metricGroup = 'scoring'"
+                    >Scoring</Button
                 >
-                    No completed regular-season games in this window before the
-                    kickoff cutoff. No record or averages are available.
-                </p>
-                <p v-else class="text-sm text-muted-foreground">
-                    Could not load this team's evidence. No comparison is
-                    inferred.
-                </p>
+                <Button
+                    type="button"
+                    variant="outline"
+                    :aria-pressed="metricGroup === 'execution'"
+                    @click="metricGroup = 'execution'"
+                    >Execution</Button
+                >
             </div>
-        </div>
-        <details>
-            <summary
-                class="min-h-11 cursor-pointer content-center text-sm font-medium"
+            <div
+                class="grid grid-cols-2 gap-2 md:hidden"
+                role="group"
+                aria-label="Team evidence selection"
             >
-                How to read the metrics
-            </summary>
-            <p class="text-xs text-muted-foreground">
-                Regular season only. These windows overlap and are not
-                independent confirmations. Team selection changes this
-                statistics table only. Matchup history and patterns below cover
-                both teams.
-            </p>
-            <p class="text-xs text-muted-foreground">
-                Per-game averages exclude missing stats. Rank 1 is best; ties
-                share a rank. Ranks compare teams with recorded data in the same
-                window before kickoff. Sample sizes can differ.
-            </p>
-            <p class="text-xs text-muted-foreground">
-                EPA, pressure, injuries, weather and market value require
-                separately verified matchup inputs. This panel does not infer
-                them from scoring averages or claim a combined betting edge.
-            </p>
-        </details>
-        <details>
-            <summary
-                class="min-h-11 cursor-pointer content-center text-sm font-medium"
+                <Button
+                    v-for="side in sides"
+                    :key="side.key"
+                    type="button"
+                    :variant="mobileTeam === side.key ? 'default' : 'outline'"
+                    :aria-pressed="mobileTeam === side.key"
+                    @click="mobileTeam = side.key"
+                >
+                    {{ side.label }}
+                </Button>
+            </div>
+            <div class="grid gap-4 md:grid-cols-2">
+                <div
+                    v-for="side in sides"
+                    :key="side.key"
+                    class="min-w-0 space-y-2"
+                    :class="mobileTeam === side.key ? '' : 'hidden md:block'"
+                >
+                    <h3 class="font-semibold">
+                        {{ side.label }} ·
+                        {{ side.evidence?.label ?? 'Evidence unavailable' }}
+                    </h3>
+                    <template
+                        v-if="side.evidence && side.evidence.sample_size > 0"
+                    >
+                        <p class="text-sm">
+                            {{ side.evidence.record.wins }}–{{
+                                side.evidence.record.losses
+                            }}–{{ side.evidence.record.ties }} W–L–T ·
+                            {{ side.evidence.sample_size }}
+                            {{
+                                side.evidence.sample_size === 1
+                                    ? 'game'
+                                    : 'games'
+                            }}
+                        </p>
+                        <p class="text-xs text-muted-foreground">
+                            {{ date(side.evidence.from_date) }} –
+                            {{ date(side.evidence.through_date) }} · Seasons:
+                            {{ side.evidence.seasons.join(', ') || 'none' }}
+                        </p>
+                        <p
+                            v-if="side.evidence.seasons.length > 1"
+                            class="text-xs text-amber-600"
+                        >
+                            Cross-season sample: personnel and coaching may
+                            differ.
+                        </p>
+                        <table
+                            :aria-label="`${side.label} metrics and available game samples`"
+                            class="w-full text-sm"
+                        >
+                            <thead>
+                                <tr>
+                                    <th
+                                        scope="col"
+                                        class="text-left font-semibold"
+                                    >
+                                        Metric
+                                    </th>
+                                    <th
+                                        scope="col"
+                                        class="text-right font-semibold"
+                                    >
+                                        Average
+                                    </th>
+                                    <th
+                                        scope="col"
+                                        class="px-2 text-right font-semibold"
+                                    >
+                                        NFL rank
+                                    </th>
+                                    <th
+                                        scope="col"
+                                        class="text-right font-semibold"
+                                    >
+                                        Games
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="[key, label] in visibleMetrics"
+                                    :key="key"
+                                >
+                                    <th
+                                        scope="row"
+                                        class="border-t py-1 text-left font-normal"
+                                    >
+                                        {{ label }}
+                                    </th>
+                                    <td
+                                        class="border-t py-1 text-right tabular-nums"
+                                    >
+                                        {{
+                                            format(
+                                                side.evidence.metrics[key]
+                                                    ?.value,
+                                            )
+                                        }}
+                                    </td>
+                                    <td
+                                        class="border-t px-2 py-1 text-right whitespace-nowrap tabular-nums"
+                                    >
+                                        <template
+                                            v-if="
+                                                side.evidence.metrics[key]
+                                                    ?.rank != null
+                                            "
+                                        >
+                                            {{
+                                                side.evidence.metrics[key]
+                                                    ?.rank_tied
+                                                    ? 'T-'
+                                                    : ''
+                                            }}{{
+                                                side.evidence.metrics[key]
+                                                    ?.rank
+                                            }}/{{
+                                                side.evidence.metrics[key]
+                                                    ?.ranked_teams
+                                            }}
+                                        </template>
+                                        <span
+                                            v-else
+                                            aria-label="Rank unavailable"
+                                            >—</span
+                                        >
+                                    </td>
+                                    <td class="border-t py-1 text-right">
+                                        {{
+                                            side.evidence.metrics[key]
+                                                ?.sample_size ?? 0
+                                        }}/{{ side.evidence.sample_size }}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div class="text-xs text-muted-foreground">
+                            Data last updated:
+                            {{
+                                side.evidence.latest_source_update ??
+                                'Unavailable'
+                            }}.
+                        </div>
+                    </template>
+                    <p
+                        v-else-if="side.evidence"
+                        class="text-sm text-muted-foreground"
+                    >
+                        No completed regular-season games in this window before
+                        the kickoff cutoff. No record or averages are available.
+                    </p>
+                    <p v-else class="text-sm text-muted-foreground">
+                        Could not load this team's evidence. No comparison is
+                        inferred.
+                    </p>
+                </div>
+            </div>
+            <details
+                @toggle="
+                    metricsHelpOpen = (
+                        $event.currentTarget as HTMLDetailsElement
+                    ).open
+                "
+            >
+                <summary
+                    class="min-h-11 cursor-pointer content-center text-sm font-medium"
+                >
+                    How to read the metrics
+                </summary>
+                <ul
+                    v-if="metricsHelpOpen"
+                    class="list-disc space-y-1 pl-4 text-xs text-muted-foreground"
+                >
+                    <li>Regular season only. Windows overlap.</li>
+                    <li>Team selection changes the metrics table only.</li>
+                    <li>Averages exclude games with missing stats.</li>
+                    <li>
+                        Ranks use the same window before kickoff. Rank 1 is
+                        best. Ties share a rank.
+                    </li>
+                    <li>
+                        EPA, pressure, injuries, weather, and market value
+                        require separate evidence.
+                    </li>
+                </ul>
+            </details>
+        </div>
+        <component
+            :is="workspace ? 'section' : 'details'"
+            v-show="!workspace || evidenceView === 'comparison'"
+            aria-label="Team evidence comparison"
+        >
+            <component
+                :is="workspace ? 'h3' : 'summary'"
+                class="min-h-11 content-center text-sm font-medium"
+                :class="{ 'cursor-pointer': !workspace }"
             >
                 What changed? Last 5 vs preceding 10
-            </summary>
+            </component>
             <p class="mt-2 text-xs text-muted-foreground">
                 Non-overlapping samples; at least 3 recorded games on each side
                 required. Not opponent-adjusted or betting recommendations.
@@ -265,6 +370,6 @@ const date = (value: string | null | undefined) =>
                     </p>
                 </div>
             </div>
-        </details>
+        </component>
     </section>
 </template>

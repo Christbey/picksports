@@ -13,7 +13,7 @@ import {
 import TrendMatchupContext from '@/components/game-page/TrendMatchupContext.vue';
 import TrendContextualInsights from '@/components/game-page/TrendContextualInsights.vue';
 import TrendCategoryDetails from '@/components/game-page/TrendCategoryDetails.vue';
-const props = defineProps<TrendsComparisonProps>();
+const props = defineProps<TrendsComparisonProps & { workspace?: boolean }>();
 const state = useTrendsComparison(props);
 provide(trendsComparisonKey, state);
 const {
@@ -33,14 +33,20 @@ const views = {
     patterns: 'Patterns',
 };
 const viewClass = (view: string) =>
-    hasEvidence.value && mobileView.value !== view ? 'hidden md:block' : '';
+    hasEvidence.value && mobileView.value !== view
+        ? props.workspace
+            ? 'hidden'
+            : 'hidden md:block'
+        : '';
 </script>
 <template>
     <Card class="overflow-hidden py-0">
         <CardHeader class="gap-2 px-4 py-4 md:px-5">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <div class="ui-kicker">Pattern Signals</div>
+                    <div v-if="!workspace" class="ui-kicker">
+                        Pattern Signals
+                    </div>
                     <CardTitle class="mt-1 text-lg tracking-tight">
                         {{ displayTitle }}
                     </CardTitle>
@@ -79,13 +85,14 @@ const viewClass = (view: string) =>
             <nav
                 v-if="hasEvidence && !trendsLoading"
                 aria-label="Trends views"
-                class="mb-4 flex flex-wrap gap-1 rounded-lg border bg-muted/40 p-1 md:hidden"
+                class="mb-4 grid grid-cols-3 gap-1 rounded-xl border bg-muted/40 p-1"
+                :class="{ 'md:hidden': !workspace }"
             >
                 <Button
                     v-for="(label, view) in views"
                     :key="view"
                     type="button"
-                    class="min-h-11 flex-1 px-3"
+                    class="h-auto min-h-11 min-w-0 px-1 whitespace-normal sm:px-3"
                     :variant="mobileView === view ? 'default' : 'ghost'"
                     :aria-pressed="mobileView === view"
                     @click="mobileView = view"
@@ -97,6 +104,7 @@ const viewClass = (view: string) =>
                 v-if="hasEvidence && !trendsLoading"
                 v-model:window="selectedWindow"
                 :class="viewClass('evidence')"
+                :workspace="workspace"
                 class="mb-4"
                 :home="props.homeTrends?.team_evidence"
                 :away="props.awayTrends?.team_evidence"
@@ -160,7 +168,8 @@ const viewClass = (view: string) =>
                     <TrendMatchupContext />
                     <p
                         v-if="!matchupRows.length && hasEvidence"
-                        class="py-4 text-sm text-muted-foreground md:hidden"
+                        class="py-4 text-sm text-muted-foreground"
+                        :class="{ 'md:hidden': !workspace }"
                     >
                         No matchup history is available.
                     </p>

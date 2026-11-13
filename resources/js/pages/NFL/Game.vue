@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { Button } from '@/components/ui/button';
+import { Activity, ClipboardList, Shield, TrendingUp } from 'lucide-vue-next';
 import BettingPlanCard from '@/components/game-page/BettingPlanCard.vue';
 import DepthChartCard from '@/components/game-page/DepthChartCard.vue';
 import InjuryReportCard from '@/components/game-page/InjuryReportCard.vue';
@@ -40,11 +41,15 @@ const selectSection = (section: string) => {
     if (section === 'research' && !isAdmin.value) return;
     mobileSection.value = section;
 };
-const mobileSections = computed(() => ({
-    overview: 'Overview',
-    ...(isAdmin.value ? { research: 'Research' } : {}),
-    trends: 'Trends',
-    roster: 'Roster',
+const mobileSections = computed<
+    Record<string, { label: string; icon: typeof Activity }>
+>(() => ({
+    overview: { label: 'Overview', icon: Activity },
+    trends: { label: 'Trends', icon: TrendingUp },
+    roster: { label: 'Roster', icon: Shield },
+    ...(isAdmin.value
+        ? { research: { label: 'Research', icon: ClipboardList } }
+        : {}),
 }));
 // Keep panels mounted: navigation must not restart polling or fetch research again.
 const sectionClass = (section: string) =>
@@ -57,28 +62,30 @@ const sectionClass = (section: string) =>
     <SportDetailedGamePage
         v-bind="pageProps"
         compact-matchup
+        trends-workspace
         :linescore-class="sectionClass('overview')"
         :trends-class="sectionClass('trends')"
     >
         <template #afterHero>
             <nav
                 aria-label="Game sections"
-                class="grid grid-cols-2 gap-1 rounded-xl border bg-muted/40 p-1 sm:flex sm:w-fit sm:flex-wrap"
+                class="grid grid-cols-2 gap-2 rounded-2xl border border-border/70 bg-card p-2 sm:flex"
             >
                 <Button
-                    v-for="(label, key) in mobileSections"
+                    v-for="(section, key) in mobileSections"
                     :key="key"
                     type="button"
-                    class="min-h-11 justify-center px-4"
+                    class="min-h-11 min-w-0 flex-1 justify-start px-3 sm:justify-center"
                     :variant="mobileSection === key ? 'default' : 'ghost'"
                     :aria-pressed="mobileSection === key"
                     @click="selectSection(key)"
                 >
-                    {{ label }}
+                    <component :is="section.icon" aria-hidden="true" />
+                    {{ section.label }}
                 </Button>
             </nav>
             <p class="text-xs text-muted-foreground">
-                Latest saved game information · updates may be delayed.<span
+                <span
                     v-if="
                         analysisSectionProps.livePredictionData?.sourceUpdatedAt
                     "
@@ -89,18 +96,20 @@ const sectionClass = (section: string) =>
                             analysisSectionProps.livePredictionData
                                 .sourceUpdatedAt,
                         ).toLocaleString()
-                    }}.</span
+                    }}</span
                 >
+                <span v-else>Latest saved game information</span>
             </p>
             <div :class="sectionClass('overview')">
                 <NflGameEnhancements v-bind="predictionSectionProps" />
-                <button
+                <Button
                     type="button"
-                    class="min-h-11 w-full rounded-lg border px-4 py-3 text-left text-sm font-medium md:hidden"
+                    variant="outline"
+                    class="h-auto min-h-11 w-full justify-start whitespace-normal md:hidden"
                     @click="selectSection('roster')"
                 >
                     View injuries, availability &amp; depth charts →
-                </button>
+                </Button>
             </div>
             <div :class="sectionClass('roster')">
                 <p

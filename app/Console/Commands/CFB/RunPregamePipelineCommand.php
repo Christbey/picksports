@@ -149,15 +149,31 @@ class RunPregamePipelineCommand extends Command
                     return self::FAILURE;
                 }
             }
-            $personnelKey = 'cfb:personnel:v3:'.$season.':'.now('America/Chicago')->toDateString();
-            if (! $provider->monthlyQuotaExhausted() && ! Cache::has($personnelKey)) {
-                if ($this->refreshShared('cfb:sync-preseason-team-signals', ['--season' => (int) $season, '--include-coaches' => true, '--include-quarterbacks' => true, '--require-data' => true]) === self::SUCCESS) {
-                    Cache::put($personnelKey, true, now()->addHours(24));
-                } elseif (! $provider->monthlyQuotaExhausted()) {
-                    $this->error('Personnel source refresh failed; generation stopped.');
-
-                    return self::FAILURE;
+            $personnelRefreshes = [
+                ['cfb:personnel-season:v1:'.$season, now()->addDays(5), []],
+                ['cfb:personnel-current:v1:'.$season, now()->addDay(), [
+                    '--skip-returning-production' => true, '--skip-transfers' => true,
+                    '--skip-talent' => true, '--skip-recruiting' => true,
+                    '--include-coaches' => true, '--include-quarterbacks' => true,
+                ]],
+            ];
+            $personnelRefreshFailed = false;
+            foreach ($personnelRefreshes as [$key, $expiresAt, $options]) {
+                if ($provider->monthlyQuotaExhausted() || Cache::has($key)) {
+                    continue;
                 }
+                if ($this->refreshShared('cfb:sync-preseason-team-signals', [
+                    '--season' => (int) $season, '--require-data' => true, ...$options,
+                ]) === self::SUCCESS) {
+                    Cache::put($key, true, $expiresAt);
+                } elseif (! $provider->monthlyQuotaExhausted()) {
+                    $personnelRefreshFailed = true;
+                }
+            }
+            if ($personnelRefreshFailed) {
+                $this->error('Personnel source refresh failed; generation stopped.');
+
+                return self::FAILURE;
             }
             if ($this->call('cfb:sync-official-availability', ['--season' => (int) $season, '--days-forward' => (int) $days,
                 ...($this->option('game') ? ['--game' => $this->option('game')] : [])]) !== self::SUCCESS) {

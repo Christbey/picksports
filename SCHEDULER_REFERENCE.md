@@ -274,7 +274,7 @@ For implementation details, review:
 routes/console.php
 ```
 
-The CFB pregame pipeline checks CFBD quota at most hourly and logs the allowance, remaining calls, and reset time. Season-wide advanced stats, basic stats, and WEPA responses are shared across worker batches for one hour. When CFBD quota is exhausted, provider requests pause until reset or a quota check confirms available calls. The pipeline can proceed with verified season affiliations and stored FPI and team metrics up to 14 days old. Missing or stale required inputs hold the affected forecast, and existing release evidence checks still apply.
+The CFB pregame pipeline refreshes returning production, transfers, talent, and recruiting every five days. Head-coach continuity and quarterback usage refresh daily. Each refresh group retries independently on failure. The pipeline checks CFBD quota at most hourly and logs the allowance, remaining calls, and reset time. Season-wide advanced stats, basic stats, and WEPA responses are shared across worker batches for one hour. When CFBD quota is exhausted, provider requests pause until reset or a quota check confirms available calls. The pipeline can proceed with verified season affiliations and stored FPI and team metrics up to 14 days old. Missing or stale required inputs hold the affected forecast, and existing release evidence checks still apply.
 
 
 ### NFL prospective prop probability evaluation

@@ -6,6 +6,7 @@ use App\Models\CBB\Game as CbbGame;
 use App\Services\PerformanceStatistics;
 use App\Support\BasketballSeason;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -65,18 +66,19 @@ Route::get('/sitemap-news.xml', function () {
 })->name('sitemap-news');
 
 Route::get('/', function () {
-    $performanceStats = app(PerformanceStatistics::class);
-    $overall = $performanceStats->getOverallStats();
-    $recent = $performanceStats->getRecentPerformance();
-    $roi = $performanceStats->calculateROI();
+    $performance = Cache::flexible('home:performance:v1:'.now()->toDateString(), [60, 300], function (): array {
+        $statistics = app(PerformanceStatistics::class);
+
+        return [
+            'overall' => $statistics->getOverallStats(),
+            'recent' => $statistics->getRecentPerformance(),
+            'roi' => $statistics->calculateROI(),
+        ];
+    });
 
     return Inertia::render('Welcome', [
         'canRegister' => Features::enabled(Features::registration()),
-        'performance' => [
-            'overall' => $overall,
-            'recent' => $recent,
-            'roi' => $roi,
-        ],
+        'performance' => $performance,
     ]);
 })->name('home');
 

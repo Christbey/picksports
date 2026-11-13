@@ -210,11 +210,11 @@ test('final summary compares home-minus-away margin and total without grading mu
     assert.match(invalidTotal, /Unavailable/);
 });
 
-test('research renders evidence and history only after their controls are expanded', async () => {
+test('research renders evidence and history only when their views are selected', async () => {
     const { default: component } = await server.ssrLoadModule(
         '/resources/js/components/game-page/NflResearchBrief.vue',
     );
-    const renderResearch = async (expanded) => {
+    const renderResearch = async (view = null) => {
         const wrapper = {
             ...component,
             setup(props, context) {
@@ -248,33 +248,35 @@ test('research renders evidence and history only after their controls are expand
                         },
                     },
                 ];
-                if (expanded) {
-                    bindings.toggleGroup('supporting');
-                    bindings.showHistory.value = true;
-                }
+                if (view) bindings.selectView(view);
                 return bindings;
             },
         };
         return renderToString(createSSRApp(wrapper, { gameId: 1781 }));
     };
-    const closed = await renderResearch(false);
+    const closed = await renderResearch();
     assert.match(closed, /<form aria-label="Matchup research controls"/);
     assert.match(closed, /aria-label="Assessment checks"/);
     assert.match(
         closed,
         /The spread did not meet the required approval threshold/,
     );
-    assert.match(closed, /aria-expanded="false"/);
+    assert.match(closed, /aria-pressed="false"/);
+    assert.doesNotMatch(closed, /aria-pressed="true"/);
     assert.doesNotMatch(
         closed,
         /Detailed evidence marker|Detailed interpretation marker|example.com\/evidence|Original margin \/ total/,
     );
-    const opened = await renderResearch(true);
-    assert.match(opened, /aria-expanded="true"/);
+    const opened = await renderResearch('supporting');
+    assert.match(opened, /aria-pressed="true"/);
     assert.match(opened, /Detailed evidence marker/);
     assert.match(opened, /Detailed interpretation marker/);
     assert.match(opened, /https:\/\/example.com\/evidence/);
-    assert.match(opened, /Original margin \/ total/);
+    assert.doesNotMatch(opened, /Original margin \/ total/);
+    const history = await renderResearch('history');
+    assert.match(history, /<section aria-label="Forecast history"/);
+    assert.match(history, /Original margin \/ total/);
+    assert.doesNotMatch(history, /Detailed evidence marker/);
     if (process.env.RESEARCH_PREVIEW_PATH) {
         const { writeFile } = await import('node:fs/promises');
         await writeFile(
@@ -285,23 +287,67 @@ test('research renders evidence and history only after their controls are expand
 });
 
 test('NFL page normalizes canonical home handicaps without changing historical margins', async () => {
-    const { normalizePrediction } = await server.ssrLoadModule('/resources/js/composables/useNflGamePage.ts');
-    assert.equal(normalizePrediction({ id: 'native', phase: 'pregame', revision: 1, predicted_spread: -7 }).predicted_spread, 7);
-    assert.equal(normalizePrediction({ id: 1, predicted_spread: 7 }).predicted_spread, 7);
-    assert.equal(normalizePrediction({ id: 'native', phase: 'pregame', revision: 1, predicted_spread: null }).predicted_spread, '');
+    const { normalizePrediction } = await server.ssrLoadModule(
+        '/resources/js/composables/useNflGamePage.ts',
+    );
+    assert.equal(
+        normalizePrediction({
+            id: 'native',
+            phase: 'pregame',
+            revision: 1,
+            predicted_spread: -7,
+        }).predicted_spread,
+        7,
+    );
+    assert.equal(
+        normalizePrediction({ id: 1, predicted_spread: 7 }).predicted_spread,
+        7,
+    );
+    assert.equal(
+        normalizePrediction({
+            id: 'native',
+            phase: 'pregame',
+            revision: 1,
+            predicted_spread: null,
+        }).predicted_spread,
+        '',
+    );
 });
 
 test('final result displays archived pregame projections separately without native or betting claims', async () => {
-    const { default: component } = await server.ssrLoadModule('/resources/js/components/game-page/NflFinalResultCard.vue');
-    const archive = { source: 'legacy_archive', prediction_id: 10, snapshot_id: 20, generated_at: '2026-09-01T12:00:00Z', known_before_kickoff: true, predicted_spread: 3.5, predicted_total: 43, win_probability: 0.6 };
-    const html = await renderToString(createSSRApp(component, { game: { status: 'STATUS_FINAL', home_score: 24, away_score: 17 }, prediction: null, historicalPrediction: archive }));
+    const { default: component } = await server.ssrLoadModule(
+        '/resources/js/components/game-page/NflFinalResultCard.vue',
+    );
+    const archive = {
+        source: 'legacy_archive',
+        prediction_id: 10,
+        snapshot_id: 20,
+        generated_at: '2026-09-01T12:00:00Z',
+        known_before_kickoff: true,
+        predicted_spread: 3.5,
+        predicted_total: 43,
+        win_probability: 0.6,
+    };
+    const html = await renderToString(
+        createSSRApp(component, {
+            game: { status: 'STATUS_FINAL', home_score: 24, away_score: 17 },
+            prediction: null,
+            historicalPrediction: archive,
+        }),
+    );
     assert.match(html, /Archived pregame forecast/);
     assert.match(html, /observed before kickoff/);
     assert.match(html, /no betting approval/);
     assert.ok(html.includes('3.5'));
     assert.ok(html.includes('43.0'));
     assert.doesNotMatch(html, /not a verified pregame snapshot/);
-    const native = await renderToString(createSSRApp(component, { game: { status: 'STATUS_FINAL', home_score: 24, away_score: 17 }, prediction: { predicted_spread: 5, predicted_total: 44 }, historicalPrediction: archive }));
+    const native = await renderToString(
+        createSSRApp(component, {
+            game: { status: 'STATUS_FINAL', home_score: 24, away_score: 17 },
+            prediction: { predicted_spread: 5, predicted_total: 44 },
+            historicalPrediction: archive,
+        }),
+    );
     assert.doesNotMatch(native, /Archived pregame forecast/);
     assert.ok(native.includes('44.0'));
 });

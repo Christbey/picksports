@@ -381,7 +381,7 @@ it('reports WCBB metric holds and missed tipoffs while still failing genuine cov
 
     $command = 'sports:ensure-basketball-predictions wcbb --season=2027';
     $this->artisan($command)
-        ->expectsOutput('WCBB coverage: 1 missed tipoff; 1 held for unusable metrics.')
+        ->expectsOutput('WCBB coverage: 1 newly missed tipoff; 0 pending inputs; 1 held for unusable metrics; 0 deferred by batch limit.')
         ->expectsOutput('Pregame coverage: 0 generated; 0 still missing.')
         ->assertSuccessful();
     expect(CanonicalPrediction::count())->toBe(0);
@@ -390,7 +390,7 @@ it('reports WCBB metric holds and missed tipoffs while still failing genuine cov
     $invalid['event']->update(['neutral_site' => true]);
     $this->artisan($command)
         ->expectsOutputToContain('canonical kickoff and neutral-site identity must match')
-        ->expectsOutput('WCBB coverage: 1 missed tipoff; 1 held for unusable metrics.')
+        ->expectsOutput('WCBB coverage: 0 newly missed tipoff; 0 pending inputs; 1 held for unusable metrics; 0 deferred by batch limit.')
         ->expectsOutput('Pregame coverage: 0 generated; 1 still missing.')
         ->assertFailed();
     expect(CanonicalPrediction::count())->toBe(0);

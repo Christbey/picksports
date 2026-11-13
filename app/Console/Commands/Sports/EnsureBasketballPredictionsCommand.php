@@ -123,7 +123,7 @@ class EnsureBasketballPredictionsCommand extends Command
                     }
 
                     if ($tipoff === null || (blank($game->game_time) && $game->sportEvent?->starts_at === null)
-                        || ($canonical && ! $eligibility->identityMatches($game))) {
+                        || ($canonical && $game->sportEvent?->starts_at === null)) {
                         $pendingInputs++;
 
                         continue;

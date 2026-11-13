@@ -37,6 +37,7 @@ class CfbStoredPregameInputs
 
             $rating = FpiRating::where('team_id', $teamId)->where('season', $game->season)
                 ->where('week', '<=', $game->week)->where('updated_at', '<=', $now)
+                ->where('created_at', '<=', $now)->where('created_at', '<', $cutoff)
                 ->where('updated_at', '<', $cutoff)->orderByDesc('week')->orderByDesc('updated_at')->first();
             $metric = TeamMetric::where('team_id', $teamId)->where('season', $game->season)
                 ->where('updated_at', '<=', $now)->where('updated_at', '<', $cutoff)

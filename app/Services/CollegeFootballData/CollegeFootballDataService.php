@@ -185,8 +185,20 @@ class CollegeFootballDataService
             return $this->fetch($path, $query);
         }
 
+        return $this->seasonSnapshot($path, $query)['rows'];
+    }
+
+    /** @return array{rows: array, observed_at: string} */
+    public function getFpiSeasonSnapshot(int $year): array
+    {
+        return $this->seasonSnapshot('/ratings/fpi', ['year' => $year]);
+    }
+
+    /** @return array{rows: array, observed_at: string} */
+    private function seasonSnapshot(string $path, array $query): array
+    {
         ksort($query);
-        $key = $this->quotaCacheKey().':season-data:'.hash('sha256', json_encode([$this->baseUrl, $path, $query], JSON_THROW_ON_ERROR));
+        $key = $this->quotaCacheKey().':season-snapshot:v1:'.hash('sha256', json_encode([$this->baseUrl, $path, $query], JSON_THROW_ON_ERROR));
 
         return Cache::get($key) ?? Cache::lock($key.':fetch', 120)->block(110, function () use ($key, $path, $query): array {
             $cached = Cache::get($key);
@@ -195,13 +207,14 @@ class CollegeFootballDataService
             }
 
             $rows = $this->fetch($path, $query);
+            $snapshot = ['rows' => $rows, 'observed_at' => now()->toIso8601String()];
             if ($rows !== [] && array_is_list($rows) && collect($rows)->every(
                 fn ($row) => is_array($row) && (int) ($row['season'] ?? $row['year'] ?? $query['year']) === (int) $query['year']
             )) {
-                Cache::put($key, $rows, now()->addHour());
+                Cache::put($key, $snapshot, now()->addHour());
             }
 
-            return $rows;
+            return $snapshot;
         });
     }
 

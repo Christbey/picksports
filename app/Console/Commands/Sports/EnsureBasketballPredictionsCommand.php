@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Sports;
 
+use App\Actions\WCBB\GeneratePrediction as GenerateLegacyWcbbPrediction;
 use App\Exceptions\Predictions\WcbbUnusableMetricsException;
 use App\Models\CanonicalPrediction;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
@@ -61,7 +62,9 @@ class EnsureBasketballPredictionsCommand extends Command
             $actionClass = "App\\Actions\\{$namespace}\\".($canonical ? 'GenerateCanonicalPrediction' : 'GeneratePrediction');
             $query = $gameClass::query()->with(['homeTeam', 'awayTeam', 'sportEvent'])
                 ->where('season', $season)
-                ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_DELAYED', 'STATUS_IN_PROGRESS', 'STATUS_FINAL']);
+                ->whereIn('status', $sport === 'nba'
+                    ? ['STATUS_SCHEDULED', 'STATUS_DELAYED', 'STATUS_IN_PROGRESS', 'STATUS_FINAL']
+                    : ['STATUS_SCHEDULED', 'STATUS_DELAYED', 'STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD', 'STATUS_FINAL']);
             $dates->applyGameDateWindow($query, $dates->forwardWindow(null, max(0, (int) $this->option('days-forward'))));
             if ($refresh) {
                 $query->with('prediction')->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_DELAYED']);
@@ -94,24 +97,43 @@ class EnsureBasketballPredictionsCommand extends Command
             $generated = 0;
             $attempted = 0;
             $missing = 0;
+            $college = $sport !== 'nba';
             $placeholderGameIds = [];
+            $pendingInputs = 0;
+            $deferred = 0;
             $missedTipoffGameIds = [];
             $metricHoldGameIds = [];
             $limit = max(1, (int) $this->option('limit'));
             foreach ($query->lazyById(100) as $game) {
-                if ($sport === 'cbb' && $game->homeTeam !== null && $game->awayTeam !== null
-                    && ! $eligibility->teamsAreKnown($game->homeTeam, $game->awayTeam)) {
-                    $placeholderGameIds[] = $game->getKey();
-
-                    continue;
-                }
-
                 $tipoff = $game->sportEvent?->starts_at
                     ?? $dates->gameDateTimeUtc($game->getRawOriginal('game_date'), $game->game_time);
-                if ($sport === 'wcbb' && ($tipoff?->lte(now()) || in_array($game->status, ['STATUS_IN_PROGRESS', 'STATUS_FINAL'], true))) {
-                    $missedTipoffGameIds[] = $game->getKey();
+                if ($college) {
+                    if ($tipoff?->lte(now()) || ! in_array($game->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true)) {
+                        if (Cache::add("basketball-coverage:missed:{$sport}:{$season}:{$game->id}", true, now()->addDays(2))) {
+                            $missedTipoffGameIds[] = $game->getKey();
+                        }
 
-                    continue;
+                        continue;
+                    }
+
+                    if (! $eligibility->teamsAreKnown($game->homeTeam, $game->awayTeam)) {
+                        $placeholderGameIds[] = $game->getKey();
+
+                        continue;
+                    }
+
+                    if ($tipoff === null || (blank($game->game_time) && $game->sportEvent?->starts_at === null)
+                        || ($canonical && ! $eligibility->identityMatches($game))) {
+                        $pendingInputs++;
+
+                        continue;
+                    }
+
+                    if ($attempted >= $limit) {
+                        $deferred++;
+
+                        continue;
+                    }
                 }
 
                 try {
@@ -131,12 +153,17 @@ class EnsureBasketballPredictionsCommand extends Command
                     $prediction = $canonical
                         ? app($actionClass)->execute($game, true, 'coverage')
                         : app($actionClass)->execute($game, false);
+                    if ($sport === 'wcbb' && ! $canonical && $prediction === null
+                        && app(GenerateLegacyWcbbPrediction::class)->metricInputHolds($game) !== []) {
+                        $metricHoldGameIds[] = $game->getKey();
+
+                        continue;
+                    }
                     if (! $prediction instanceof Model || ($canonical && (! $prediction instanceof CanonicalPrediction || $prediction->publication_state !== 'published'))) {
                         throw new RuntimeException('Generator did not save a usable pregame prediction.');
                     }
                     $generated++;
                 } catch (WcbbUnusableMetricsException) {
-                    $attempted--;
                     $metricHoldGameIds[] = $game->getKey();
                 } catch (Throwable $exception) {
                     $missing++;
@@ -166,18 +193,21 @@ class EnsureBasketballPredictionsCommand extends Command
                 );
             }
             if ($placeholderGameIds !== []) {
-                $this->info('CBB placeholder matchups held: '.implode(', ', $placeholderGameIds).'.');
+                $this->info(strtoupper($sport).' placeholder matchups held: '.implode(', ', $placeholderGameIds).'.');
             }
-            if ($missedTipoffGameIds !== [] || $metricHoldGameIds !== []) {
-                Log::warning('WCBB pregame prediction coverage exceptions', [
-                    'season' => $season,
-                    'missed_tipoff_game_ids' => $missedTipoffGameIds,
-                    'unusable_metrics_game_ids' => $metricHoldGameIds,
+            if ($missedTipoffGameIds !== []) {
+                Log::warning('College basketball missed pregame tipoffs', [
+                    'sport' => $sport, 'season' => $season, 'game_ids' => $missedTipoffGameIds,
                 ]);
-                $this->warn(sprintf(
-                    'WCBB coverage: %d missed tipoff; %d held for unusable metrics.',
+            }
+            if ($college) {
+                $this->info(sprintf(
+                    '%s coverage: %d newly missed tipoff; %d pending inputs; %d held for unusable metrics; %d deferred by batch limit.',
+                    strtoupper($sport),
                     count($missedTipoffGameIds),
+                    $pendingInputs,
                     count($metricHoldGameIds),
+                    $deferred,
                 ));
             }
             $this->info("Pregame coverage: {$generated} generated; {$missing} still missing.");

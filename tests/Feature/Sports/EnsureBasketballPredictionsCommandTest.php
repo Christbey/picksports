@@ -224,3 +224,31 @@ it('reports CBB placeholder holds without failing or using the generation batch'
         ->expectsOutput('Pregame coverage: 1 generated; 0 still missing.')
         ->assertSuccessful();
 });
+
+it('records a college missed tipoff once while retrying a game with a recoverable input hold', function (string $sport) {
+    $namespace = strtoupper($sport);
+    $gameClass = "App\\Models\\{$namespace}\\Game";
+    $teamClass = "App\\Models\\{$namespace}\\Team";
+    $predictionClass = "App\\Models\\{$namespace}\\Prediction";
+    $actionClass = "App\\Actions\\{$namespace}\\GeneratePrediction";
+    config(["prediction_lifecycle.canonical_pipeline.{$sport}" => false]);
+    $teams = ['home_team_id' => $teamClass::factory(), 'away_team_id' => $teamClass::factory()];
+    $missed = $gameClass::factory()->create([
+        ...$teams, 'season' => 2027, 'status' => 'STATUS_FINAL', 'game_date' => '2026-10-20', 'game_time' => '16:00:00',
+    ]);
+    $upcoming = $gameClass::factory()->create([
+        ...$teams, 'season' => 2027, 'status' => 'STATUS_SCHEDULED', 'game_date' => '2026-10-21', 'game_time' => '',
+    ]);
+    $this->mock($actionClass)->shouldReceive('execute')->once()
+        ->withArgs(fn ($game, $narratives) => $game->id === $upcoming->id && $narratives === false)
+        ->andReturnUsing(fn ($game) => $predictionClass::factory()->create(['game_id' => $game->id]));
+
+    $this->artisan("sports:ensure-basketball-predictions {$sport}")
+        ->expectsOutput("{$namespace} coverage: 1 newly missed tipoff; 1 pending inputs; 0 held for unusable metrics; 0 deferred by batch limit.")
+        ->assertSuccessful();
+    $upcoming->update(['game_time' => '01:30:00']);
+    $this->artisan("sports:ensure-basketball-predictions {$sport}")
+        ->expectsOutput("{$namespace} coverage: 0 newly missed tipoff; 0 pending inputs; 0 held for unusable metrics; 0 deferred by batch limit.")
+        ->expectsOutput('Pregame coverage: 1 generated; 0 still missing.')->assertSuccessful();
+    expect($missed->prediction()->exists())->toBeFalse();
+})->with(['cbb', 'wcbb']);

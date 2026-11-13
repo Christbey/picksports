@@ -90,6 +90,14 @@ abstract class AbstractSyncOddsForGames
         return $updated;
     }
 
+    public function actionableGameCount(?int $daysAhead, ?string $oddsSportKey): int
+    {
+        return $this->localGamesQuery(
+            $this->effectiveSportKey($oddsSportKey),
+            $daysAhead !== null ? max(1, $daysAhead) : null,
+        )->count();
+    }
+
     /**
      * @return array{
      *   sport_key:string,

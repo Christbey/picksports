@@ -48,16 +48,14 @@ abstract class AbstractSyncOddsCommand extends Command
         $updated = $syncAction->execute($days, $oddsSport);
 
         if (static::REPORT_MATCH_COVERAGE) {
-            $diagnostics = $syncAction->diagnostics($days, $oddsSport);
-            $localGames = (int) ($diagnostics['local_games'] ?? 0);
-            $matchedEvents = (int) ($diagnostics['matched_events'] ?? 0);
+            $localGames = $syncAction->actionableGameCount($days, $oddsSport);
             $coverage = $localGames > 0
-                ? min(100.0, ($matchedEvents / $localGames) * 100)
+                ? min(100.0, ($updated / $localGames) * 100)
                 : 100.0;
 
             $this->line(sprintf(
                 'Odds match coverage: %d/%d local actionable games (%.1f%%).',
-                $matchedEvents,
+                $updated,
                 $localGames,
                 $coverage,
             ));

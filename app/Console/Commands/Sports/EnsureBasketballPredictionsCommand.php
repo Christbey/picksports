@@ -5,6 +5,7 @@ namespace App\Console\Commands\Sports;
 use App\Models\CanonicalPrediction;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\CommandHeartbeatService;
+use App\Services\Predictions\Basketball\CollegeBasketballPregameEligibility;
 use App\Services\Predictions\PredictionDeliverySource;
 use App\Services\Sports\PipelineCommandRunner;
 use App\Services\Sports\SportsDateWindowService;
@@ -28,7 +29,7 @@ class EnsureBasketballPredictionsCommand extends Command
 
     protected $description = 'Fill missing basketball predictions before tipoff and fail visibly when coverage cannot be repaired';
 
-    public function handle(SportsDateWindowService $dates, PipelineCommandRunner $runner): int
+    public function handle(SportsDateWindowService $dates, PipelineCommandRunner $runner, CollegeBasketballPregameEligibility $eligibility): int
     {
         $sport = strtolower((string) $this->argument('sport'));
         if (! in_array($sport, ['nba', 'cbb', 'wcbb'], true)) {
@@ -92,8 +93,16 @@ class EnsureBasketballPredictionsCommand extends Command
             $generated = 0;
             $attempted = 0;
             $missing = 0;
+            $placeholderGameIds = [];
             $limit = max(1, (int) $this->option('limit'));
             foreach ($query->lazyById(100) as $game) {
+                if ($sport === 'cbb' && $game->homeTeam !== null && $game->awayTeam !== null
+                    && ! $eligibility->teamsAreKnown($game->homeTeam, $game->awayTeam)) {
+                    $placeholderGameIds[] = $game->getKey();
+
+                    continue;
+                }
+
                 $tipoff = $game->sportEvent?->starts_at
                     ?? $dates->gameDateTimeUtc($game->getRawOriginal('game_date'), $game->game_time);
                 try {
@@ -143,6 +152,9 @@ class EnsureBasketballPredictionsCommand extends Command
                     'recovery',
                     ['generated' => $generated],
                 );
+            }
+            if ($placeholderGameIds !== []) {
+                $this->info('CBB placeholder matchups held: '.implode(', ', $placeholderGameIds).'.');
             }
             $this->info("Pregame coverage: {$generated} generated; {$missing} still missing.");
 

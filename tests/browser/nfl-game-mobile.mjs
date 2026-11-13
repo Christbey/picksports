@@ -19,6 +19,9 @@ const server = await createServer({
             name: 'nfl-mobile-fixture',
             enforce: 'pre',
             load(id) {
+                if (id.endsWith('/composables/useViewerAccess.ts')) {
+                    return 'import { ref } from "vue"; export const useViewerAccess = () => ({ isAdmin: ref(true) });';
+                }
                 if (id.endsWith('/composables/useNflDetailedGamePage.ts')) {
                     return "export { useFixturePage as useNflDetailedGamePage } from '/tests/browser/fixtures/nfl-mobile.mjs';";
                 }
@@ -125,19 +128,47 @@ try {
         );
         await checkWidth();
     };
+    const probeReader = async (view) => {
+        if (!process.env.SAFARI_READER_SCRIPT || !process.env.READER_FOCUSED)
+            return;
+        for (const top of [0, 400, 800, 1200]) {
+            const candidate = await page.evaluate((y) => {
+                scrollTo(0, y);
+                const finder = window.ReaderArticleFinderJS;
+                finder.resetArticleInformation();
+                const available = finder.isReaderModeAvailable();
+                const article = finder.articleNode();
+                return {
+                    available,
+                    article:
+                        article?.getAttribute('aria-label') ??
+                        article
+                            ?.querySelector('h2,h3,h4')
+                            ?.textContent?.trim() ??
+                        article?.tagName ??
+                        null,
+                };
+            }, top);
+            assert.equal(
+                candidate.available,
+                false,
+                `${view} at scroll position ${top}: ${candidate.article}`,
+            );
+        }
+    };
     const output = process.env.MOBILE_SCREENSHOT_DIR;
     if (output) await mkdir(output, { recursive: true });
-    for (const width of [320, 390, 767]) {
+    for (const width of process.env.READER_FOCUSED ? [390] : [320, 390, 767]) {
         await page.setViewportSize({ width, height: 844 });
         await page.goto(`${server.resolvedUrls.local[0]}__nfl-mobile`);
-        await page.getByText('Prediction Model', { exact: true }).waitFor();
+        await page.getByText('Pregame forecast', { exact: true }).waitFor();
         await assertVisible(
             page.getByRole('region', { name: 'Final result summary' }),
         );
         await checkMatchupRow();
         const count = researchRequests;
         await assertVisible(
-            page.getByText('Prediction Model', { exact: true }),
+            page.getByText('Pregame forecast', { exact: true }),
         );
         await assertVisible(page.getByText('Model total', { exact: true }));
         await assertVisible(page.getByText('48.5', { exact: true }).first());
@@ -202,21 +233,24 @@ try {
                 path: `${output}/overview-390.png`,
                 fullPage: true,
             });
+        if (process.env.SAFARI_READER_SCRIPT && process.env.READER_FOCUSED) {
+            await page.addScriptTag({ path: process.env.SAFARI_READER_SCRIPT });
+        }
         await select('Research');
         await assertVisible(
-            page.getByText('Prediction Model', { exact: true }),
+            page.getByText('Pregame forecast', { exact: true }),
             false,
         );
         await assertVisible(
             page.getByText('Matchup research', { exact: true }),
         );
         await page
-            .locator('summary')
-            .filter({ hasText: 'Supporting evidence' })
+            .getByRole('button', { name: /^Supporting evidence/ })
             .click();
         await assertVisible(
             page.getByText('Verified supporting claim.', { exact: true }),
         );
+        await probeReader('Research evidence');
         await checkWidth();
         await select('Roster');
         await page
@@ -229,6 +263,36 @@ try {
         const evidence = page.getByRole('region', {
             name: 'Team evidence windows',
         });
+        const trendsViews = page.getByRole('navigation', {
+            name: 'Trends views',
+        });
+        for (const name of ['History', 'Patterns']) {
+            await trendsViews
+                .getByRole('button', { name, exact: true })
+                .click();
+            await assertVisible(evidence, false);
+            await checkWidth();
+        }
+        await trendsViews
+            .getByRole('button', { name: 'Team Evidence' })
+            .click();
+        const comparison = evidence.getByRole('region', {
+            name: 'Team evidence comparison',
+        });
+        await evidence.getByRole('button', { name: 'What changed?' }).click();
+        await assertVisible(comparison);
+        await probeReader('Trends comparison');
+        await assertVisible(evidence.getByRole('table'), false);
+        await evidence.getByRole('button', { name: 'Metrics' }).click();
+        await assertVisible(comparison, false);
+        await probeReader('Trends metrics');
+        await evidence
+            .getByText('How to read the metrics', { exact: true })
+            .click();
+        await evidence
+            .getByText('Regular season only. Windows overlap.')
+            .waitFor({ state: 'visible' });
+        await probeReader('Trends metrics help');
         await assertVisible(evidence.getByRole('heading', { name: /^DET ·/ }));
         await assertVisible(
             evidence.getByRole('heading', { name: /^BUF ·/ }),
@@ -256,7 +320,7 @@ try {
             });
         await select('Overview');
         await assertVisible(
-            page.getByText('Prediction Model', { exact: true }),
+            page.getByText('Pregame forecast', { exact: true }),
         );
         assert.equal(
             researchRequests,
@@ -270,14 +334,14 @@ try {
         await assertVisible(nav);
         await select('Overview');
         await assertVisible(
-            page.getByText('Prediction Model', { exact: true }),
+            page.getByText('Pregame forecast', { exact: true }),
         );
         if (output && width === 390) {
             await page.evaluate(() =>
                 document.documentElement.classList.add('dark'),
             );
             await page
-                .getByText('Prediction Model', { exact: true })
+                .getByText('Pregame forecast', { exact: true })
                 .locator('xpath=ancestor::*[@data-slot="card"]')
                 .screenshot({ path: `${output}/forecast-desktop-dark.png` });
             await page.evaluate(() =>
@@ -300,7 +364,7 @@ try {
         await page.goto(
             `${server.resolvedUrls.local[0]}__nfl-mobile?phase=${phase}`,
         );
-        await page.getByText('Prediction Model', { exact: true }).waitFor();
+        await page.getByText('Pregame forecast', { exact: true }).waitFor();
         await assertVisible(
             page.getByRole('region', { name: 'Final result summary' }),
             false,

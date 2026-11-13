@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { Button } from '@/components/ui/button';
 import BettingPlanCard from '@/components/game-page/BettingPlanCard.vue';
 import DepthChartCard from '@/components/game-page/DepthChartCard.vue';
 import InjuryReportCard from '@/components/game-page/InjuryReportCard.vue';
@@ -35,13 +36,9 @@ watch(isAdmin, (allowed) => {
     if (!allowed && mobileSection.value === 'research')
         mobileSection.value = 'overview';
 });
-const mobileContent = ref<HTMLElement | null>(null);
-const selectSection = async (section: string) => {
+const selectSection = (section: string) => {
     if (section === 'research' && !isAdmin.value) return;
     mobileSection.value = section;
-    if (section === 'trends') return;
-    await nextTick();
-    mobileContent.value?.scrollIntoView({ block: 'start' });
 };
 const mobileSections = computed(() => ({
     overview: 'Overview',
@@ -66,24 +63,19 @@ const sectionClass = (section: string) =>
         <template #afterHero>
             <nav
                 aria-label="Game sections"
-                :class="isAdmin ? 'grid-cols-4' : 'grid-cols-3'"
-                class="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 grid gap-1 rounded-xl border bg-background p-1 shadow-lg md:static md:inset-auto md:mb-4 md:flex md:w-fit md:gap-2 md:shadow-none"
+                class="grid grid-cols-2 gap-1 rounded-xl border bg-muted/40 p-1 sm:flex sm:w-fit sm:flex-wrap"
             >
-                <button
+                <Button
                     v-for="(label, key) in mobileSections"
                     :key="key"
                     type="button"
-                    class="min-h-11 rounded-lg px-4 py-2 text-sm font-medium"
-                    :class="
-                        mobileSection === key
-                            ? 'bg-primary text-primary-foreground'
-                            : 'text-muted-foreground'
-                    "
+                    class="min-h-11 justify-center px-4"
+                    :variant="mobileSection === key ? 'default' : 'ghost'"
                     :aria-pressed="mobileSection === key"
                     @click="selectSection(key)"
                 >
                     {{ label }}
-                </button>
+                </Button>
             </nav>
             <p class="text-xs text-muted-foreground">
                 Latest saved game information · updates may be delayed.<span
@@ -100,7 +92,6 @@ const sectionClass = (section: string) =>
                     }}.</span
                 >
             </p>
-            <div ref="mobileContent" class="scroll-mt-36 md:hidden" />
             <div :class="sectionClass('overview')">
                 <NflGameEnhancements v-bind="predictionSectionProps" />
                 <button
@@ -191,7 +182,6 @@ const sectionClass = (section: string) =>
                 </p>
                 <NflGameEnhancements v-bind="recentSectionProps" />
             </div>
-            <div aria-hidden="true" class="h-24 shrink-0 md:hidden" />
         </template>
     </SportDetailedGamePage>
 </template>

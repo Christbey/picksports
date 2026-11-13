@@ -6,6 +6,7 @@ use App\Actions\WCBB\GeneratePrediction;
 use App\Application\Predictions\Data\CalculationReleaseData;
 use App\Application\Predictions\Data\EventInputSnapshotData;
 use App\Exceptions\Predictions\PredictionLifecycleException;
+use App\Exceptions\Predictions\WcbbUnusableMetricsException;
 use App\Models\SportEvent;
 use App\Models\WCBB\Game;
 use App\Models\WCBB\PlayerInjury;
@@ -36,7 +37,7 @@ class WcbbInputSnapshotBuilder extends BasketballInputSnapshotBuilder
             WcbbFullModelReleaseDefinition::FORECAST_SOURCE, WcbbFullModelReleaseDefinition::configurationKeys(),
             function () use ($game): ?array {
                 if (app(GeneratePrediction::class)->metricInputHolds($game) !== []) {
-                    throw new PredictionLifecycleException('WCBB pregame forecast held: unusable efficiency or tempo inputs.');
+                    throw new WcbbUnusableMetricsException('WCBB pregame forecast held: unusable efficiency or tempo inputs.');
                 }
 
                 return app(GeneratePrediction::class)->preview($game);

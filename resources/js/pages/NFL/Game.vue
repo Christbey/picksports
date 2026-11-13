@@ -39,6 +39,7 @@ const mobileContent = ref<HTMLElement | null>(null);
 const selectSection = async (section: string) => {
     if (section === 'research' && !isAdmin.value) return;
     mobileSection.value = section;
+    if (section === 'trends') return;
     await nextTick();
     mobileContent.value?.scrollIntoView({ block: 'start' });
 };

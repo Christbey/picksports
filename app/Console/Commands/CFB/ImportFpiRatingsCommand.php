@@ -7,6 +7,7 @@ use App\Models\CFB\Team;
 use App\Models\CfbdTeamMapping;
 use App\Services\CollegeFootballData\CollegeFootballDataService;
 use App\Support\CfbSeasonAffiliationResolver;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 
@@ -30,7 +31,10 @@ class ImportFpiRatingsCommand extends Command
 
         $this->info("Fetching CFB FPI ratings for {$season}...");
 
-        $rows = $service->getFpiRatings($season);
+        $snapshot = $service->getFpiSeasonSnapshot($season);
+        $rows = $snapshot['rows'];
+        $observedAt = CarbonImmutable::parse($snapshot['observed_at'])->timezone(config('app.timezone'));
+        $this->info('CFBD FPI observed at '.$observedAt->toIso8601String());
 
         if ($rows === []) {
             $this->warn("No FPI ratings were returned for {$season}.");
@@ -70,6 +74,15 @@ class ImportFpiRatingsCommand extends Command
                 'week' => $week,
             ]);
 
+            if ($rating->exists && $rating->updated_at?->gt($observedAt)) {
+                if (is_numeric($rating->fpi)) {
+                    $usable++;
+                    $usableTeamIds[] = (int) $team->id;
+                }
+
+                continue;
+            }
+
             if ($rating->exists) {
                 $updated++;
             } else {
@@ -83,7 +96,11 @@ class ImportFpiRatingsCommand extends Command
                 'defense' => $this->floatOrNull(data_get($row, 'efficiencies.defense')),
                 'special_teams' => $this->floatOrNull(data_get($row, 'efficiencies.specialTeams')),
             ]);
-            $rating->save();
+            if (! $rating->exists || $rating->isDirty()) {
+                $rating->created_at ??= now();
+                $rating->updated_at = $observedAt;
+                $rating->save(['timestamps' => false]);
+            }
             if (is_numeric($rating->fpi)) {
                 $usable++;
                 $usableTeamIds[] = (int) $team->id;

@@ -124,6 +124,8 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
             if (data_get($release->configuration, 'spread.rating_baseline') === 'fpi_points') {
                 $rating = FpiRating::where('team_id', $inputs[$side]['team_id'])
                     ->where('season', $event->season)->where('week', '<=', $game->week)
+                    ->where('created_at', '<=', $snapshot->capturedAt)
+                    ->where('created_at', '<', $snapshot->cutoffAt)
                     ->where('updated_at', '<=', $snapshot->capturedAt)
                     ->where('updated_at', '<', $snapshot->cutoffAt)
                     ->orderByDesc('week')->orderByDesc('updated_at')->first();

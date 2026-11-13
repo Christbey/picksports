@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Sports;
 
+use App\Exceptions\Predictions\WcbbUnusableMetricsException;
 use App\Models\CanonicalPrediction;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\CommandHeartbeatService;
@@ -94,6 +95,8 @@ class EnsureBasketballPredictionsCommand extends Command
             $attempted = 0;
             $missing = 0;
             $placeholderGameIds = [];
+            $missedTipoffGameIds = [];
+            $metricHoldGameIds = [];
             $limit = max(1, (int) $this->option('limit'));
             foreach ($query->lazyById(100) as $game) {
                 if ($sport === 'cbb' && $game->homeTeam !== null && $game->awayTeam !== null
@@ -105,6 +108,12 @@ class EnsureBasketballPredictionsCommand extends Command
 
                 $tipoff = $game->sportEvent?->starts_at
                     ?? $dates->gameDateTimeUtc($game->getRawOriginal('game_date'), $game->game_time);
+                if ($sport === 'wcbb' && ($tipoff?->lte(now()) || in_array($game->status, ['STATUS_IN_PROGRESS', 'STATUS_FINAL'], true))) {
+                    $missedTipoffGameIds[] = $game->getKey();
+
+                    continue;
+                }
+
                 try {
                     if ($tipoff === null || (blank($game->game_time) && $game->sportEvent?->starts_at === null)) {
                         throw new RuntimeException('Tipoff time is unavailable.');
@@ -126,6 +135,9 @@ class EnsureBasketballPredictionsCommand extends Command
                         throw new RuntimeException('Generator did not save a usable pregame prediction.');
                     }
                     $generated++;
+                } catch (WcbbUnusableMetricsException) {
+                    $attempted--;
+                    $metricHoldGameIds[] = $game->getKey();
                 } catch (Throwable $exception) {
                     $missing++;
                     $this->error("Game {$game->id}: {$exception->getMessage()}");
@@ -155,6 +167,18 @@ class EnsureBasketballPredictionsCommand extends Command
             }
             if ($placeholderGameIds !== []) {
                 $this->info('CBB placeholder matchups held: '.implode(', ', $placeholderGameIds).'.');
+            }
+            if ($missedTipoffGameIds !== [] || $metricHoldGameIds !== []) {
+                Log::warning('WCBB pregame prediction coverage exceptions', [
+                    'season' => $season,
+                    'missed_tipoff_game_ids' => $missedTipoffGameIds,
+                    'unusable_metrics_game_ids' => $metricHoldGameIds,
+                ]);
+                $this->warn(sprintf(
+                    'WCBB coverage: %d missed tipoff; %d held for unusable metrics.',
+                    count($missedTipoffGameIds),
+                    count($metricHoldGameIds),
+                ));
             }
             $this->info("Pregame coverage: {$generated} generated; {$missing} still missing.");
 

@@ -370,3 +370,28 @@ it('grades stored WCBB endpoint probabilities without rewriting the forecast', f
         ->and($evaluation->errors['brier_score'])->toEqual((1 - $probability) ** 2)
         ->and((float) $forecast->markets->first(fn ($market) => $market->market_type === 'moneyline' && $market->selection === 'home')->probability)->toBe($probability);
 })->with([0.0, 1.0]);
+
+it('reports WCBB metric holds and missed tipoffs while still failing genuine coverage errors', function () {
+    config(['prediction_lifecycle.canonical_pipeline.wcbb' => true, 'prediction_lifecycle.canonical_reads.wcbb' => true]);
+    $held = wcbbCutoverFixture();
+    TeamMetric::where('team_id', $held['home']->id)->update(['tempo' => 0]);
+    $started = wcbbCutoverFixture();
+    $started['game']->update(['status' => 'STATUS_IN_PROGRESS']);
+    app(WcbbCalculationReleaseRegistrar::class)->register('1.1.0', effectiveAt: now()->subMinute()->toImmutable());
+
+    $command = 'sports:ensure-basketball-predictions wcbb --season=2027';
+    $this->artisan($command)
+        ->expectsOutput('WCBB coverage: 1 missed tipoff; 1 held for unusable metrics.')
+        ->expectsOutput('Pregame coverage: 0 generated; 0 still missing.')
+        ->assertSuccessful();
+    expect(CanonicalPrediction::count())->toBe(0);
+
+    $invalid = wcbbCutoverFixture();
+    $invalid['event']->update(['neutral_site' => true]);
+    $this->artisan($command)
+        ->expectsOutputToContain('canonical kickoff and neutral-site identity must match')
+        ->expectsOutput('WCBB coverage: 1 missed tipoff; 1 held for unusable metrics.')
+        ->expectsOutput('Pregame coverage: 0 generated; 1 still missing.')
+        ->assertFailed();
+    expect(CanonicalPrediction::count())->toBe(0);
+});

@@ -128,78 +128,84 @@ const date = (value: string | null | undefined) =>
                     >
                         Cross-season sample: personnel and coaching may differ.
                     </p>
-                    <table class="w-full text-sm">
-                        <caption class="sr-only">
-                            {{
-                                side.label
-                            }}
-                            metrics and available game samples
-                        </caption>
-                        <thead>
-                            <tr>
-                                <th scope="col" class="text-left">Metric</th>
-                                <th scope="col" class="text-right">Average</th>
-                                <th scope="col" class="text-right">NFL rank</th>
-                                <th scope="col" class="text-right">Games</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr
-                                v-for="(label, key) in labels"
-                                :key="key"
-                                class="border-t"
+                    <div
+                        role="table"
+                        :aria-label="`${side.label} metrics and available game samples`"
+                        class="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] text-sm"
+                    >
+                        <div
+                            role="row"
+                            class="col-span-full grid grid-cols-subgrid"
+                        >
+                            <span role="columnheader" class="font-semibold"
+                                >Metric</span
                             >
-                                <td class="py-1">{{ label }}</td>
-                                <td class="text-right tabular-nums">
-                                    {{
-                                        format(
-                                            side.evidence.metrics[key]?.value,
-                                        )
-                                    }}
-                                </td>
-                                <td
-                                    class="px-2 text-right whitespace-nowrap tabular-nums"
+                            <span
+                                role="columnheader"
+                                class="text-right font-semibold"
+                                >Average</span
+                            >
+                            <span
+                                role="columnheader"
+                                class="px-2 text-right font-semibold"
+                                >NFL rank</span
+                            >
+                            <span
+                                role="columnheader"
+                                class="text-right font-semibold"
+                                >Games</span
+                            >
+                        </div>
+                        <div
+                            v-for="(label, key) in labels"
+                            :key="key"
+                            role="row"
+                            class="col-span-full grid grid-cols-subgrid"
+                        >
+                            <span role="rowheader" class="border-t py-1">{{
+                                label
+                            }}</span>
+                            <span
+                                role="cell"
+                                class="border-t py-1 text-right tabular-nums"
+                            >
+                                {{ format(side.evidence.metrics[key]?.value) }}
+                            </span>
+                            <span
+                                role="cell"
+                                class="border-t px-2 py-1 text-right whitespace-nowrap tabular-nums"
+                            >
+                                <template
+                                    v-if="
+                                        side.evidence.metrics[key]?.rank != null
+                                    "
                                 >
-                                    <template
-                                        v-if="
-                                            side.evidence.metrics[key]?.rank !=
-                                            null
-                                        "
-                                    >
-                                        {{
-                                            side.evidence.metrics[key]
-                                                ?.rank_tied
-                                                ? 'T-'
-                                                : ''
-                                        }}{{
-                                            side.evidence.metrics[key]?.rank
-                                        }}/{{
-                                            side.evidence.metrics[key]
-                                                ?.ranked_teams
-                                        }}
-                                    </template>
-                                    <span v-else aria-label="Rank unavailable"
-                                        >—</span
-                                    >
-                                </td>
-                                <td class="text-right">
                                     {{
-                                        side.evidence.metrics[key]
-                                            ?.sample_size ?? 0
-                                    }}/{{ side.evidence.sample_size }}
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    <p class="text-xs text-muted-foreground">
-                        Per-game averages; absent stats are excluded, not zero.
-                        Rank 1 is best; ties share a rank. Ranks compare teams
-                        with recorded data in the same window before kickoff;
-                        sample sizes can differ. Data last updated:
+                                        side.evidence.metrics[key]?.rank_tied
+                                            ? 'T-'
+                                            : ''
+                                    }}{{ side.evidence.metrics[key]?.rank }}/{{
+                                        side.evidence.metrics[key]?.ranked_teams
+                                    }}
+                                </template>
+                                <span v-else aria-label="Rank unavailable"
+                                    >—</span
+                                >
+                            </span>
+                            <span role="cell" class="border-t py-1 text-right">
+                                {{
+                                    side.evidence.metrics[key]?.sample_size ??
+                                    0
+                                }}/{{ side.evidence.sample_size }}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="text-xs text-muted-foreground">
+                        Data last updated:
                         {{
                             side.evidence.latest_source_update ?? 'Unavailable'
                         }}.
-                    </p>
+                    </div>
                 </template>
                 <p
                     v-else-if="side.evidence"
@@ -214,6 +220,18 @@ const date = (value: string | null | undefined) =>
                 </p>
             </div>
         </div>
+        <details>
+            <summary
+                class="min-h-11 cursor-pointer content-center text-sm font-medium"
+            >
+                How to read the metrics
+            </summary>
+            <p class="text-xs text-muted-foreground">
+                Per-game averages exclude missing stats. Rank 1 is best; ties
+                share a rank. Ranks compare teams with recorded data in the same
+                window before kickoff. Sample sizes can differ.
+            </p>
+        </details>
         <details>
             <summary
                 class="min-h-11 cursor-pointer content-center text-sm font-medium"

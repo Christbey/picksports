@@ -23,6 +23,8 @@ use App\Services\CFB\Data\CfbOfficialBoxscoreRepair;
 use App\Services\CFB\Data\CfbOfficialPlayTailRepair;
 use App\Services\CFB\Data\CfbPipelineStage;
 use App\Services\CFB\Data\CfbSharedInputRunner;
+use App\Services\CFB\Data\CfbStoredPregameInputs;
+use App\Services\CollegeFootballData\CollegeFootballDataService;
 use App\Services\Predictions\CalculationReleaseSelector;
 use App\Services\Validation\CfbValidationCoverage;
 use Illuminate\Console\Command;
@@ -131,30 +133,31 @@ class RunPregamePipelineCommand extends Command
             if ($games->isEmpty()) {
                 return $metadataFailures === [] ? self::SUCCESS : self::FAILURE;
             }
+            $provider = app(CollegeFootballDataService::class);
+            $provider->monitorQuota();
             $ratingsKey = 'cfb:pregame-ratings:v2:'.$season.':'.now('America/Chicago')->toDateString();
-            if (! Cache::has($ratingsKey)) {
-                if ($this->refreshShared('cfb:sync-season-affiliations', ['--season' => (int) $season]) !== self::SUCCESS) {
-                    $this->error('Season membership refresh failed; generation stopped.');
+            if (! $provider->monthlyQuotaExhausted() && ! Cache::has($ratingsKey)) {
+                $ratingsRefreshed = $this->refreshShared('cfb:sync-season-affiliations', ['--season' => (int) $season]) === self::SUCCESS
+                    && $this->refreshShared('cfb:import-fpi', ['--season' => (int) $season,
+                        '--week' => (int) $games->min('week'), '--require-data' => true,
+                        '--require-complete' => true]) === self::SUCCESS;
+                if ($ratingsRefreshed) {
+                    Cache::put($ratingsKey, true, now()->addHours(24));
+                } elseif (! $provider->monthlyQuotaExhausted()) {
+                    $this->error('Season membership or rating refresh failed; generation stopped.');
 
                     return self::FAILURE;
                 }
-                if ($this->refreshShared('cfb:import-fpi', ['--season' => (int) $season,
-                    '--week' => (int) $games->min('week'), '--require-data' => true,
-                    '--require-complete' => true]) !== self::SUCCESS) {
-                    $this->error('Rating/metric refresh failed; generation stopped.');
-
-                    return self::FAILURE;
-                }
-                Cache::put($ratingsKey, true, now()->addHours(24));
             }
             $personnelKey = 'cfb:personnel:v3:'.$season.':'.now('America/Chicago')->toDateString();
-            if (! Cache::has($personnelKey)) {
-                if ($this->refreshShared('cfb:sync-preseason-team-signals', ['--season' => (int) $season, '--include-coaches' => true, '--include-quarterbacks' => true, '--require-data' => true]) !== self::SUCCESS) {
+            if (! $provider->monthlyQuotaExhausted() && ! Cache::has($personnelKey)) {
+                if ($this->refreshShared('cfb:sync-preseason-team-signals', ['--season' => (int) $season, '--include-coaches' => true, '--include-quarterbacks' => true, '--require-data' => true]) === self::SUCCESS) {
+                    Cache::put($personnelKey, true, now()->addHours(24));
+                } elseif (! $provider->monthlyQuotaExhausted()) {
                     $this->error('Personnel source refresh failed; generation stopped.');
 
                     return self::FAILURE;
                 }
-                Cache::put($personnelKey, true, now()->addHours(24));
             }
             if ($this->call('cfb:sync-official-availability', ['--season' => (int) $season, '--days-forward' => (int) $days,
                 ...($this->option('game') ? ['--game' => $this->option('game')] : [])]) !== self::SUCCESS) {
@@ -275,6 +278,9 @@ class RunPregamePipelineCommand extends Command
             $metricTeamIds = $games->flatMap(fn ($game) => $coverage->requiredTeamIds($game))->unique()->values();
             $metricFailures = [];
             foreach ($metricTeamIds->chunk(10) as $batch) {
+                if ($provider->monthlyQuotaExhausted()) {
+                    break;
+                }
                 try {
                     $result = app(CfbSharedInputRunner::class)->run('cfb:calculate-team-metrics', ['--season' => (int) $season, '--team-ids' => $batch->implode(',')]);
                 } catch (\Throwable $error) {
@@ -282,6 +288,9 @@ class RunPregamePipelineCommand extends Command
                     $result = ['exit_code' => 1, 'output' => 'Metrics subprocess failed; its required teams remain held.'];
                 }
                 $this->line($result['output']);
+                if ($provider->monthlyQuotaExhausted()) {
+                    break;
+                }
                 if (($result['exit_code'] ?? 1) !== self::SUCCESS) {
                     $failed = $batch->all();
                     if (preg_match('/^CFB_METRIC_BATCH_RESULT=(.+)$/m', $result['output'], $match)) {
@@ -305,11 +314,18 @@ class RunPregamePipelineCommand extends Command
 
             $results = [];
             foreach ($games as $game) {
+                $quotaExhausted = $provider->monthlyQuotaExhausted();
+                $stored = $quotaExhausted || filled(config('services.collegefootballdata.api_key'))
+                    ? app(CfbStoredPregameInputs::class)->assess($game, now()->toImmutable())
+                    : null;
+                if ($stored !== null && ($quotaExhausted || $stored['holds'] !== [])) {
+                    $this->warn("Game {$game->id}: CFBD pregame input check ".json_encode($stored, JSON_THROW_ON_ERROR));
+                }
                 $requiredTeams = $coverage->requiredTeamIds($game);
                 $executed = false;
                 $generationAttempted = false;
                 $previousId = (int) CanonicalPrediction::where('sport_event_id', $game->sport_event_id)->max('id');
-                $inputs = ['metric_failures' => array_values(array_intersect($requiredTeams, $metricFailures)),
+                $inputs = ['stored_cfbd_inputs' => $stored, 'metric_failures' => array_values(array_intersect($requiredTeams, $metricFailures)),
                     'team_failures' => array_values(array_intersect($requiredTeams, $teamFailures)),
                     'history_failures' => array_values(array_intersect($requiredTeams, $historyFailures)),
                     'play_failures' => array_values(array_intersect($requiredTeams, $playFailures)), 'metadata_reliable' => ! in_array($game->id, $metadataFailures, true), 'game_updated_at' => $game->updated_at?->toISOString(),
@@ -319,8 +335,11 @@ class RunPregamePipelineCommand extends Command
                     'team_revisions' => TeamMetric::whereIn('team_id', [$game->home_team_id, $game->away_team_id])->max('updated_at'),
                     'quote_revision' => MarketQuote::where('sport', 'cfb')->where('game_id', $game->id)->max('id'),
                     'injury_revision' => PlayerInjury::whereIn('team_id', [$game->home_team_id, $game->away_team_id])->max('updated_at')];
-                $results[$game->id] = app(CfbPipelineStage::class)->run('game:'.$game->id, 'forecast', $inputs, function () use ($game, $historyFailures, $playFailures, $teamFailures, $metadataFailures, $metricFailures, $requiredTeams, $previousId, &$executed, &$generationAttempted) {
+                $results[$game->id] = app(CfbPipelineStage::class)->run('game:'.$game->id, 'forecast', $inputs, function () use ($game, $stored, $historyFailures, $playFailures, $teamFailures, $metadataFailures, $metricFailures, $requiredTeams, $previousId, &$executed, &$generationAttempted) {
                     $executed = true;
+                    if ($stored !== null && $stored['holds'] !== []) {
+                        return ['state' => 'blocked', 'reason' => 'unverified_or_stale_stored_cfbd_inputs'];
+                    }
                     if (array_intersect($requiredTeams, $metricFailures)) {
                         return ['state' => 'blocked', 'reason' => 'unreliable_team_metrics'];
                     }

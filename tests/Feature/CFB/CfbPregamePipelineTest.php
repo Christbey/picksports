@@ -7,8 +7,10 @@ use App\Actions\ESPN\CFB\SyncPlayers;
 use App\Jobs\CFB\RunPregamePipeline;
 use App\Models\CalculationRelease;
 use App\Models\CanonicalPrediction;
+use App\Models\CFB\FpiRating;
 use App\Models\CFB\Game;
 use App\Models\CFB\Team;
+use App\Models\CFB\TeamMetric;
 use App\Models\CFB\TeamSeasonAffiliation;
 use App\Models\CommandHeartbeat;
 use App\Models\SportEvent;
@@ -513,3 +515,26 @@ it('keeps ordinary pipeline weather within its validated future game selection',
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertSuccessful();
     expect($visited->getArrayCopy())->toBe([$selected->id]);
 });
+
+it('uses verified stored inputs during a quota outage and holds a game when its FPI expires', function (bool $stale) {
+    config(['services.collegefootballdata.api_key' => 'quota-test']);
+    Http::fake(['*/info' => Http::response([
+        'monthlyLimit' => 75000, 'remainingCalls' => 0, 'resetAt' => now()->addDay()->toIso8601String(),
+    ])]);
+    $game = Game::sole();
+    foreach ([$game->home_team_id, $game->away_team_id] as $teamId) {
+        TeamSeasonAffiliation::create(['team_id' => $teamId, 'season' => 2026,
+            'subdivision' => 'FBS', 'conference' => 'SEC', 'source' => 'cfbd_fbs_membership']);
+        FpiRating::factory()->create([
+            'team_id' => $teamId, 'season' => 2026, 'week' => $game->week, 'fpi' => 7,
+            'updated_at' => $stale ? now()->subDays(15) : now()->subDay(),
+        ]);
+        TeamMetric::create(['team_id' => $teamId, 'season' => 2026, 'calculation_date' => now()->toDateString()]);
+    }
+
+    $run = $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026]);
+    $run->assertExitCode($stale ? 2 : 0)->run();
+    expect(CanonicalPrediction::count())->toBe($stale ? 0 : 1);
+    expect($this->steps->getArrayCopy())->not->toContain('membership', 'ratings', 'personnel', 'metrics');
+    Http::assertSentCount(1);
+})->with([false, true]);

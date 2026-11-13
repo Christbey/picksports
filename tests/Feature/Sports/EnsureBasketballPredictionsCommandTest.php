@@ -203,3 +203,24 @@ it('fills eighth-day NBA and CBB forecasts once while retaining narrower explici
         ->expectsOutput('Pregame coverage: 0 generated; 0 still missing.')->assertSuccessful();
     expect(CanonicalPrediction::where('sport', $sport)->count())->toBe(1)->and(BetDecision::count())->toBe(0);
 })->with(['nba', 'cbb']);
+
+it('reports CBB placeholder holds without failing or using the generation batch', function () {
+    config(['prediction_lifecycle.canonical_pipeline.cbb' => false]);
+    $placeholder = App\Models\CBB\Team::factory()->create(['school' => 'TBD', 'abbreviation' => 'TBD', 'espn_id' => '-1']);
+    $home = App\Models\CBB\Team::factory()->create();
+    $away = App\Models\CBB\Team::factory()->create();
+    $attributes = [
+        'season' => 2027, 'season_type' => 2, 'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-10-21', 'game_time' => '01:30:00', 'home_team_id' => $home->id,
+    ];
+    $held = App\Models\CBB\Game::factory()->create([...$attributes, 'away_team_id' => $placeholder->id]);
+    $eligible = App\Models\CBB\Game::factory()->create([...$attributes, 'away_team_id' => $away->id]);
+    $this->mock(App\Actions\CBB\GeneratePrediction::class)->shouldReceive('execute')->once()
+        ->withArgs(fn ($game) => $game->id === $eligible->id)
+        ->andReturnUsing(fn ($game) => App\Models\CBB\Prediction::factory()->create(['game_id' => $game->id]));
+
+    $this->artisan('sports:ensure-basketball-predictions cbb --limit=1')
+        ->expectsOutput("CBB placeholder matchups held: {$held->id}.")
+        ->expectsOutput('Pregame coverage: 1 generated; 0 still missing.')
+        ->assertSuccessful();
+});

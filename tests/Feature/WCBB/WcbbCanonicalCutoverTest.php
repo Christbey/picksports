@@ -13,6 +13,7 @@ use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
 use App\Models\PredictionFeatureSnapshot;
 use App\Models\SportEvent;
+use App\Models\SportEventResult;
 use App\Models\User;
 use App\Models\WCBB\Game;
 use App\Models\WCBB\Prediction;
@@ -20,6 +21,7 @@ use App\Models\WCBB\Team;
 use App\Models\WCBB\TeamMetric;
 use App\Services\BettingRecommendations\GameBettingRecommendationService;
 use App\Services\Predictions\CalculationReleaseManager;
+use App\Services\Predictions\CanonicalPredictionEvaluator;
 use App\Services\Predictions\HistoricalForecastArchive;
 use App\Services\Predictions\LivePredictionStore;
 use App\Services\Predictions\PredictionDeliverySource;
@@ -306,3 +308,65 @@ it('retains bad-metric holds after a WCBB game finishes without inventing a retr
         ->and(CanonicalPrediction::count())->toBe(0)->and(CalculationRun::count())->toBe(0)
         ->and(BetDecision::count())->toBe(0)->and($legacy->fresh()->getAttributes())->toBe($before);
 });
+
+it('uses verified prior-season metrics for a zeroed WCBB row before tipoff under the recovery release', function () {
+    config([
+        'wcbb.prediction.use_previous_season_metrics_fallback' => false,
+        'prediction_lifecycle.canonical_pipeline.wcbb' => true,
+        'prediction_lifecycle.canonical_reads.wcbb' => true,
+    ]);
+    $fixture = wcbbCutoverFixture();
+    $homeMetric = TeamMetric::where('team_id', $fixture['home']->id)->firstOrFail();
+    $previousMetric = $homeMetric->replicate()->fill(['season' => 2026, 'tempo' => 73]);
+    $previousMetric->save();
+    $homeMetric->update(['offensive_efficiency' => 0, 'defensive_efficiency' => 0, 'tempo' => 0]);
+
+    $registrar = app(WcbbCalculationReleaseRegistrar::class);
+    $original = $registrar->register('1.1.0', effectiveAt: now()->subHour()->toImmutable());
+    expect(fn () => app(GenerateCanonicalPrediction::class)->execute($fixture['game']->fresh()))
+        ->toThrow(PredictionLifecycleException::class, 'unusable');
+
+    $effectiveAt = now()->subMinute()->toImmutable();
+    app(CalculationReleaseManager::class)->retire($original, $effectiveAt);
+    $registrar->register('1.1.1', effectiveAt: $effectiveAt);
+    $this->artisan('sports:ensure-basketball-predictions wcbb --season=2027')
+        ->expectsOutput('Pregame coverage: 1 generated; 0 still missing.')
+        ->assertSuccessful();
+    $forecast = CanonicalPrediction::where('sport_event_id', $fixture['event']->id)->sole();
+    $inputs = $forecast->calculationRun->inputSnapshot->inputs;
+
+    expect($forecast->publication_state)->toBe('published')
+        ->and(data_get($inputs, 'home.metrics.record_season'))->toBe(2026)
+        ->and(data_get($inputs, 'home.metrics.tempo'))->toEqual(73)
+        ->and(data_get($inputs, 'away.metrics.record_season'))->toBe(2027)
+        ->and($original->fresh()->configuration['inputs']['use_previous_season_metrics_fallback'])->toBeFalse();
+});
+
+it('keeps WCBB forecasts held when a zeroed current row has no usable prior-season replacement', function () {
+    $fixture = wcbbCutoverFixture();
+    TeamMetric::where('team_id', $fixture['home']->id)->update(['tempo' => 0]);
+    $release = app(WcbbCalculationReleaseRegistrar::class)->register('1.1.1', effectiveAt: now()->subMinute()->toImmutable());
+
+    expect(app(WcbbPregameInputReadiness::class)->holds($fixture['game']->fresh(), $release))->toHaveCount(1)
+        ->and(fn () => app(GenerateCanonicalPrediction::class)->execute($fixture['game']->fresh()))
+        ->toThrow(PredictionLifecycleException::class, 'unusable')
+        ->and(CanonicalPrediction::count())->toBe(0);
+});
+
+it('grades stored WCBB endpoint probabilities without rewriting the forecast', function (float $probability) {
+    $fixture = wcbbCutoverFixture();
+    $preview = app(GeneratePrediction::class)->preview($fixture['game']->fresh());
+    $preview['win_probability'] = $probability;
+    $this->partialMock(GeneratePrediction::class)->shouldReceive('preview')->once()->andReturn($preview);
+    app(WcbbCalculationReleaseRegistrar::class)->register('1.1.0', effectiveAt: now()->subMinute()->toImmutable());
+    $forecast = app(GenerateCanonicalPrediction::class)->execute($fixture['game']->fresh());
+    $result = SportEventResult::factory()->create([
+        'sport_event_id' => $fixture['event']->id, 'home_score' => 90, 'away_score' => 70,
+    ]);
+
+    $evaluation = app(CanonicalPredictionEvaluator::class)->evaluate($forecast, $result);
+    expect($evaluation->errors['log_loss'])->toBeNull()
+        ->and($evaluation->errors['probability_metric_status'])->toBe('boundary_probability_log_loss_unavailable')
+        ->and($evaluation->errors['brier_score'])->toEqual((1 - $probability) ** 2)
+        ->and((float) $forecast->markets->first(fn ($market) => $market->market_type === 'moneyline' && $market->selection === 'home')->probability)->toBe($probability);
+})->with([0.0, 1.0]);

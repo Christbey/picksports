@@ -131,8 +131,9 @@ class CanonicalPredictionEvaluator
         $homeLine = $this->requiredNumber($homeSpread->projected_line, 'home spread line');
         $predictedTotal = $this->requiredNumber($total->projected_line, 'predicted total');
 
-        $boundaryCbbProbability = $prediction->sport === 'cbb' && in_array($homeWinProbability, [0.0, 1.0], true);
-        if (($homeWinProbability <= 0 || $homeWinProbability >= 1) && ! $boundaryCbbProbability) {
+        $boundaryCollegeBasketballProbability = in_array($prediction->sport, ['cbb', 'wcbb'], true)
+            && in_array($homeWinProbability, [0.0, 1.0], true);
+        if (($homeWinProbability <= 0 || $homeWinProbability >= 1) && ! $boundaryCollegeBasketballProbability) {
             throw new PredictionLifecycleException('Home moneyline probability must be strictly between zero and one.');
         }
 
@@ -196,8 +197,8 @@ class CanonicalPredictionEvaluator
                 ...($teamErrors ? ['team_totals' => $teamErrors] : []),
                 'winner_correct' => $actualHomeWin === null ? null : ($homeWinProbability >= 0.5) === ($actualHomeWin === 1.0),
                 'brier_score' => $actualHomeWin === null ? null : round(($homeWinProbability - $actualHomeWin) ** 2, 8),
-                ...($boundaryCbbProbability ? ['probability_metric_status' => 'boundary_probability_log_loss_unavailable'] : []),
-                'log_loss' => $actualHomeWin === null || $boundaryCbbProbability ? null : round(-(($actualHomeWin * log($homeWinProbability))
+                ...($boundaryCollegeBasketballProbability ? ['probability_metric_status' => 'boundary_probability_log_loss_unavailable'] : []),
+                'log_loss' => $actualHomeWin === null || $boundaryCollegeBasketballProbability ? null : round(-(($actualHomeWin * log($homeWinProbability))
                     + ((1 - $actualHomeWin) * log(1 - $homeWinProbability))), 8),
                 'predicted_home_margin' => round($predictedHomeMargin, 4),
                 'home_margin_signed_error' => round($spreadSignedError, 4),

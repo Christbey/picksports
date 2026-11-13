@@ -21,8 +21,8 @@ class WcbbCalculationReleaseRegistrar
         ?CarbonImmutable $effectiveAt = null,
     ): CalculationRelease {
         return $this->registrar->register(
-            $semanticVersion === WcbbFullModelReleaseDefinition::SEMANTIC_VERSION
-                ? new WcbbFullModelReleaseDefinition : $this->definition,
+            in_array($semanticVersion, [WcbbFullModelReleaseDefinition::SEMANTIC_VERSION, WcbbFullModelReleaseDefinition::METRIC_RECOVERY_VERSION], true)
+                ? new WcbbFullModelReleaseDefinition($semanticVersion) : $this->definition,
             WcbbCalculator::class,
             WcbbInputSnapshotBuilder::class,
             $semanticVersion,

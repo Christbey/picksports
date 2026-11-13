@@ -13,6 +13,7 @@ use App\Models\WCBB\TeamMetric;
 use App\Services\Predictions\Basketball\BasketballInputSnapshotBuilder;
 use App\Services\Predictions\Basketball\CollegeBasketballPregameEligibility;
 use App\Services\Predictions\EstablishedModelTransport;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 
 class WcbbInputSnapshotBuilder extends BasketballInputSnapshotBuilder
@@ -40,6 +41,25 @@ class WcbbInputSnapshotBuilder extends BasketballInputSnapshotBuilder
 
                 return app(GeneratePrediction::class)->preview($game);
             },
+        );
+    }
+
+    protected function metricFor(
+        Model $game,
+        Model $team,
+        CarbonImmutable $capturedAt,
+        CarbonImmutable $cutoffAt,
+        CalculationReleaseData $release,
+    ): ?Model {
+        if (data_get($release->configuration, 'inputs.recover_invalid_team_metrics') !== true) {
+            return parent::metricFor($game, $team, $capturedAt, $cutoffAt, $release);
+        }
+
+        return app(GeneratePrediction::class)->metricWithPreviousSeasonFallback(
+            (int) $team->getKey(),
+            (int) $game->season,
+            $capturedAt,
+            $game->game_date->toDateString(),
         );
     }
 

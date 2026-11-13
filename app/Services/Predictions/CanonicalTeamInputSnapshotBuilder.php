@@ -92,7 +92,7 @@ abstract class CanonicalTeamInputSnapshotBuilder implements EventInputSnapshotBu
         );
     }
 
-    private function metricFor(
+    protected function metricFor(
         Model $game,
         Model $team,
         CarbonImmutable $capturedAt,

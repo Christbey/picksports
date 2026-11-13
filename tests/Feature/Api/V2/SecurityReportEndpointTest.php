@@ -3,6 +3,7 @@
 use App\Http\Middleware\AddSecurityHeaders;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 
@@ -44,3 +45,43 @@ test('browser reports remain public throttled and CSRF exempt after migration', 
     $route = Route::getRoutes()->getByName("v2.security.reports.{$report}");
     expect(collect($route->gatherMiddleware())->contains(fn ($middleware) => str_starts_with($middleware, 'throttle:')))->toBeTrue();
 })->with([['csp', 'CSP report received.'], ['integrity', 'Integrity policy report received.']]);
+
+test('integrity reports suppress retries while preserving distinct reports and expiry', function () {
+    Log::spy();
+    $report = ['type' => 'integrity-violation', 'age' => 0, 'body' => [
+        'documentURL' => 'https://example.com/dashboard',
+        'blockedURL' => 'https://example.com/build/assets/app.js',
+        'destination' => 'script',
+        'reportOnly' => true,
+    ]];
+    $retry = [...$report, 'age' => 100, 'attempts' => 1];
+    $other = $report;
+    $other['body']['blockedURL'] = 'https://example.com/unexpected.js';
+
+    $endpoint = '/api/v2/security/reports/integrity';
+    $this->postJson($endpoint, [$report, $retry, $other])->assertOk();
+    $this->postJson($endpoint, [$retry])->assertOk();
+    Log::shouldHaveReceived('warning')->with('Integrity policy report received.', Mockery::on(
+        fn (array $context) => $context['payload'] === [$report, $other],
+    ))->once();
+
+    $this->travel(61)->seconds();
+    $this->postJson($endpoint, [$retry])->assertOk();
+    Log::shouldHaveReceived('warning')->with('Integrity policy report received.', Mockery::on(
+        fn (array $context) => $context['payload'] === [$retry],
+    ))->once();
+});
+
+test('integrity reporting survives a cache failure', function () {
+    Log::spy();
+    Cache::shouldReceive('add')->once()->andThrow(new RuntimeException('Cache unavailable'));
+    $report = ['type' => 'integrity-violation', 'body' => [
+        'documentURL' => 'https://example.com/',
+        'blockedURL' => 'https://example.com/unexpected.js',
+    ]];
+
+    $this->postJson('/api/v2/security/reports/integrity', [$report])->assertOk();
+    Log::shouldHaveReceived('warning')->with('Integrity policy report received.', Mockery::on(
+        fn (array $context) => $context['payload'] === [$report],
+    ))->once();
+});

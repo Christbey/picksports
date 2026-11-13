@@ -169,3 +169,28 @@ it('bounds connection failures to three attempts as well', function () {
     expect(fn () => (new CollegeFootballDataService)->getAdvancedTeamSeasonStats(2026))->toThrow(ConnectionException::class);
     expect($attempts)->toBe(3);
 });
+
+it('shares complete season responses across clients without sharing different query variants', function () {
+    config(['services.collegefootballdata.api_key' => 'test']);
+    Http::fakeSequence()->push([['season' => 2026, 'team' => 'Georgia']])
+        ->push([['season' => 2026, 'team' => 'Alabama']]);
+
+    $first = (new CollegeFootballDataService)->getAdvancedTeamSeasonStats(2026, excludeGarbageTime: true);
+    expect((new CollegeFootballDataService)->getAdvancedTeamSeasonStats(2026, excludeGarbageTime: true))->toBe($first);
+    expect((new CollegeFootballDataService)->getAdvancedTeamSeasonStats(2026, excludeGarbageTime: false))->not->toBe($first);
+    Http::assertSentCount(2);
+});
+
+it('uses account quota to suppress outbound data calls until reset', function () {
+    config(['services.collegefootballdata.api_key' => 'test']);
+    $this->travelTo(now('UTC')->setDate(2026, 11, 30)->setTime(23, 0));
+    Http::fakeSequence()->push(['monthlyLimit' => 75000, 'remainingCalls' => 0, 'resetAt' => '2026-12-01T00:00:00Z'])
+        ->push([['team' => 'Georgia']]);
+    (new CollegeFootballDataService)->monitorQuota();
+    expect(fn () => (new CollegeFootballDataService)->getFbsTeams(2026))->toThrow(RequestException::class, 'Monthly call quota exceeded.');
+    Http::assertSentCount(1);
+
+    $this->travel(2)->hours();
+    expect((new CollegeFootballDataService)->getFbsTeams(2026))->toBe([['team' => 'Georgia']]);
+    Http::assertSentCount(2);
+});

@@ -2,10 +2,15 @@
 
 namespace App\Services\CollegeFootballData;
 
+use Carbon\CarbonImmutable;
+use GuzzleHttp\Psr7\Response as PsrResponse;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class CollegeFootballDataService
 {
@@ -174,12 +179,52 @@ class CollegeFootballDataService
      */
     public function get(string $path, array $query = []): array
     {
+        $query = $this->sanitizeQuery($query);
+        if (! isset($query['year']) || isset($query['team']) || isset($query['conference'])
+            || ! in_array($path, ['/stats/season', '/stats/season/advanced', '/wepa/team/season'], true)) {
+            return $this->fetch($path, $query);
+        }
+
+        ksort($query);
+        $key = $this->quotaCacheKey().':season-data:'.hash('sha256', json_encode([$this->baseUrl, $path, $query], JSON_THROW_ON_ERROR));
+
+        return Cache::get($key) ?? Cache::lock($key.':fetch', 120)->block(110, function () use ($key, $path, $query): array {
+            $cached = Cache::get($key);
+            if ($cached !== null) {
+                return $cached;
+            }
+
+            $rows = $this->fetch($path, $query);
+            if ($rows !== [] && array_is_list($rows) && collect($rows)->every(
+                fn ($row) => is_array($row) && (int) ($row['season'] ?? $row['year'] ?? $query['year']) === (int) $query['year']
+            )) {
+                Cache::put($key, $rows, now()->addHour());
+            }
+
+            return $rows;
+        });
+    }
+
+    private function fetch(string $path, array $query): array
+    {
+        if ($this->monthlyQuotaExhausted()) {
+            (new Response(new PsrResponse(429, ['Content-Type' => 'application/json'],
+                '{"message":"Monthly call quota exceeded."}')))->throw();
+        }
+
         $response = $this->request()
             ->retry([250, 1000], when: fn (\Throwable $error): bool => $error instanceof ConnectionException
                 || ($error instanceof RequestException && ! self::isMonthlyQuotaExceeded($error)
-                    && in_array($error->response->status(), [429, 500, 502, 503, 504], true)))
-            ->get($path, $this->sanitizeQuery($query))
-            ->throw();
+                    && in_array($error->response->status(), [429, 500, 502, 503, 504], true)), throw: false)
+            ->get($path, $query);
+
+        if ($response->status() === 429 && self::isMonthlyQuotaExceeded($response->toException())) {
+            $reset = now('UTC')->startOfMonth()->addMonth();
+            if (Cache::add($this->quotaCacheKey(), true, $reset)) {
+                Log::warning('CollegeFootballData monthly quota exhausted', ['requests_paused_until' => $reset->toIso8601String()]);
+            }
+        }
+        $response->throw();
 
         return $response->json() ?? [];
     }
@@ -188,6 +233,49 @@ class CollegeFootballDataService
     {
         return $error->response->status() === 429
             && strcasecmp(trim((string) $error->response->json('message')), 'Monthly call quota exceeded.') === 0;
+    }
+
+    public function monitorQuota(): void
+    {
+        if (blank($this->apiKey) || ! Cache::add($this->quotaCacheKey().':monitor', true, now()->addHour())) {
+            return;
+        }
+
+        try {
+            $info = $this->request()->get('/info')->throw()->json();
+            if (! is_numeric($info['monthlyLimit'] ?? null) || ! is_numeric($info['remainingCalls'] ?? null)) {
+                Log::warning('CollegeFootballData quota status unavailable');
+
+                return;
+            }
+
+            $reset = filled($info['resetAt'] ?? null)
+                ? CarbonImmutable::parse($info['resetAt']) : now('UTC')->startOfMonth()->addMonth();
+            if ($info['remainingCalls'] <= 0 && $reset->isFuture()) {
+                Cache::put($this->quotaCacheKey(), true, $reset);
+            } elseif ($info['remainingCalls'] > 0) {
+                Cache::forget($this->quotaCacheKey());
+            }
+
+            Log::log($info['remainingCalls'] <= $info['monthlyLimit'] * 0.10 ? 'warning' : 'info',
+                'CollegeFootballData quota status', [
+                    'monthly_limit' => (int) $info['monthlyLimit'],
+                    'remaining_calls' => (int) $info['remainingCalls'],
+                    'reset_at' => $reset->toIso8601String(),
+                ]);
+        } catch (\Throwable $error) {
+            Log::warning('CollegeFootballData quota status unavailable', ['exception' => $error::class]);
+        }
+    }
+
+    public function monthlyQuotaExhausted(): bool
+    {
+        return filled($this->apiKey) && Cache::has($this->quotaCacheKey());
+    }
+
+    private function quotaCacheKey(): string
+    {
+        return 'cfbd:monthly-quota:'.hash('sha256', (string) $this->apiKey);
     }
 
     protected function request(): PendingRequest

@@ -274,7 +274,7 @@ For implementation details, review:
 routes/console.php
 ```
 
-The CFB pregame pipeline now requires a successful daily FPI import and metric recalculation before injuries, odds, and canonical generation. Empty required imports stop generation and retry on the next run. New snapshots record individual rating provenance; missing opponent ratings remain an explicit spread hold.
+The CFB pregame pipeline checks CFBD quota at most hourly and logs the allowance, remaining calls, and reset time. Season-wide advanced stats, basic stats, and WEPA responses are shared across worker batches for one hour. When CFBD quota is exhausted, provider requests pause until reset or a quota check confirms available calls. The pipeline can proceed with verified season affiliations and stored FPI and team metrics up to 14 days old. Missing or stale required inputs hold the affected forecast, and existing release evidence checks still apply.
 
 
 ### NFL prospective prop probability evaluation

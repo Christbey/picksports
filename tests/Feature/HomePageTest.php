@@ -44,4 +44,13 @@ test('home page presents measured performance without synthetic fallback data', 
             ->where('performance.recent.overall.total_predictions', 0)
             ->where('performance.roi.total_bets', 0)
         );
+
+    $this->get('/')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Welcome')
+            ->where('performance.overall', $zeroOverall)
+            ->where('performance.recent.roi', $zeroRoi)
+            ->where('performance.roi', $zeroRoi)
+        );
 });

@@ -8,6 +8,7 @@ use App\Models\CFB\TeamSeasonAffiliation;
 use App\Services\CollegeFootballData\CollegeFootballDataService;
 use App\Services\ESPN\CFB\EspnService;
 use App\Support\CfbSeasonAffiliationResolver;
+use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
     $this->travelTo(now()->setDate(2026, 9, 19));
@@ -108,4 +109,24 @@ it('refuses a provider response that drops verified membership for the same seas
     $this->artisan('cfb:sync-season-affiliations', ['--season' => 2025, '--minimum-teams' => 1])->assertFailed();
     expect($missing->seasonAffiliation(2025)->subdivision)->toBe('FBS')
         ->and($team->seasonAffiliation(2025))->toBeNull();
+});
+
+it('reports a monthly provider quota rejection without retrying or overwriting affiliations', function () {
+    config(['services.collegefootballdata.api_key' => 'test']);
+    $team = Team::factory()->create();
+    $affiliation = TeamSeasonAffiliation::query()->create([
+        'team_id' => $team->id, 'season' => 2026, 'subdivision' => 'FBS',
+        'conference' => 'Sun Belt', 'source' => 'cfbd_fbs_membership',
+    ]);
+    $before = $affiliation->fresh()->getAttributes();
+    Http::fake(fn () => Http::response([
+        'message' => 'Monthly call quota exceeded.',
+    ], 429));
+
+    $this->artisan('cfb:sync-season-affiliations', ['--season' => 2026])
+        ->expectsOutput('CollegeFootballData monthly call quota exceeded. Season 2026 affiliations could not be refreshed.')
+        ->assertFailed();
+
+    Http::assertSentCount(1);
+    expect($affiliation->fresh()->getAttributes())->toBe($before);
 });

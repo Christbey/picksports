@@ -8,6 +8,7 @@ use App\Models\CfbdTeamMapping;
 use App\Services\CollegeFootballData\CollegeFootballDataService;
 use App\Support\CfbSeasonAffiliationResolver;
 use Illuminate\Console\Command;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\DB;
 
 class SyncSeasonAffiliationsCommand extends Command
@@ -24,7 +25,18 @@ class SyncSeasonAffiliationsCommand extends Command
 
             return self::FAILURE;
         }
-        $rows = $service->getFbsTeams($season);
+        try {
+            $rows = $service->getFbsTeams($season);
+        } catch (RequestException $error) {
+            if (! CollegeFootballDataService::isMonthlyQuotaExceeded($error)) {
+                throw $error;
+            }
+
+            $this->error("CollegeFootballData monthly call quota exceeded. Season {$season} affiliations could not be refreshed.");
+
+            return self::FAILURE;
+        }
+
         if (count($rows) < max(1, (int) $this->option('minimum-teams'))) {
             $this->error('Provider membership response is empty or incomplete; no affiliations changed.');
 

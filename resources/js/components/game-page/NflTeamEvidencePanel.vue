@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { Button } from '@/components/ui/button';
 import { formatDateLong } from '@/composables/useFormatters';
 import type { NflTeamEvidence } from '@/types';
 
@@ -45,7 +46,7 @@ const date = (value: string | null | undefined) =>
 
 <template>
     <section
-        class="space-y-4 rounded-lg border p-4"
+        class="space-y-4 rounded-lg border bg-background/35 p-3 sm:p-4"
         aria-label="Team evidence windows"
     >
         <div
@@ -53,51 +54,34 @@ const date = (value: string | null | undefined) =>
             role="group"
             aria-label="History window"
         >
-            <button
+            <Button
                 v-for="(label, key) in windows"
                 :key="key"
                 type="button"
-                class="min-h-11 rounded-md border px-3 py-2 text-sm"
-                :class="
-                    window === key
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-background'
-                "
+                class="h-auto min-h-11 px-2 whitespace-normal"
+                :variant="window === key ? 'default' : 'outline'"
                 :aria-pressed="window === key"
                 @click="emit('update:window', key)"
             >
                 {{ label }}
-            </button>
+            </Button>
         </div>
-        <p class="text-xs text-muted-foreground">
-            Regular season only. These windows overlap; they are not independent
-            confirmations. Head-to-head meetings remain separate below.
-        </p>
         <div
             class="grid grid-cols-2 gap-2 md:hidden"
             role="group"
             aria-label="Team evidence selection"
         >
-            <button
+            <Button
                 v-for="side in sides"
                 :key="side.key"
                 type="button"
-                class="min-h-11 rounded-md border px-3 py-2 text-sm font-medium"
-                :class="
-                    mobileTeam === side.key
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-background'
-                "
+                :variant="mobileTeam === side.key ? 'default' : 'outline'"
                 :aria-pressed="mobileTeam === side.key"
                 @click="mobileTeam = side.key"
             >
                 {{ side.label }}
-            </button>
+            </Button>
         </div>
-        <p class="text-xs text-muted-foreground md:hidden">
-            Team selection changes this statistics table only. Matchup history
-            and patterns below cover both teams.
-        </p>
         <div class="grid gap-4 md:grid-cols-2">
             <div
                 v-for="side in sides"
@@ -227,9 +211,20 @@ const date = (value: string | null | undefined) =>
                 How to read the metrics
             </summary>
             <p class="text-xs text-muted-foreground">
+                Regular season only. These windows overlap and are not
+                independent confirmations. Team selection changes this
+                statistics table only. Matchup history and patterns below cover
+                both teams.
+            </p>
+            <p class="text-xs text-muted-foreground">
                 Per-game averages exclude missing stats. Rank 1 is best; ties
                 share a rank. Ranks compare teams with recorded data in the same
                 window before kickoff. Sample sizes can differ.
+            </p>
+            <p class="text-xs text-muted-foreground">
+                EPA, pressure, injuries, weather and market value require
+                separately verified matchup inputs. This panel does not infer
+                them from scoring averages or claim a combined betting edge.
             </p>
         </details>
         <details>
@@ -271,10 +266,5 @@ const date = (value: string | null | undefined) =>
                 </div>
             </div>
         </details>
-        <p class="text-xs text-muted-foreground">
-            EPA, pressure, injuries, weather and market value require separately
-            verified matchup inputs. This panel does not infer them from scoring
-            averages or claim a combined betting edge.
-        </p>
     </section>
 </template>

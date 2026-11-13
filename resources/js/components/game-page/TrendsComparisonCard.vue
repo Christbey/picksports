@@ -3,7 +3,8 @@ import NflTeamEvidencePanel from '@/components/game-page/NflTeamEvidencePanel.vu
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { provide } from 'vue';
+import { provide, ref } from 'vue';
+import { Button } from '@/components/ui/button';
 import {
     useTrendsComparison,
     trendsComparisonKey,
@@ -25,6 +26,14 @@ const {
     matchupRows,
     displayTitle,
 } = state;
+const mobileView = ref('evidence');
+const views = {
+    evidence: 'Team Evidence',
+    history: 'History',
+    patterns: 'Patterns',
+};
+const viewClass = (view: string) =>
+    hasEvidence.value && mobileView.value !== view ? 'hidden md:block' : '';
 </script>
 <template>
     <Card class="overflow-hidden py-0">
@@ -67,9 +76,27 @@ const {
             </p>
         </CardHeader>
         <CardContent class="px-4 pb-4 md:px-5">
+            <nav
+                v-if="hasEvidence && !trendsLoading"
+                aria-label="Trends views"
+                class="mb-4 flex flex-wrap gap-1 rounded-lg border bg-muted/40 p-1 md:hidden"
+            >
+                <Button
+                    v-for="(label, view) in views"
+                    :key="view"
+                    type="button"
+                    class="min-h-11 flex-1 px-3"
+                    :variant="mobileView === view ? 'default' : 'ghost'"
+                    :aria-pressed="mobileView === view"
+                    @click="mobileView = view"
+                >
+                    {{ label }}
+                </Button>
+            </nav>
             <NflTeamEvidencePanel
                 v-if="hasEvidence && !trendsLoading"
                 v-model:window="selectedWindow"
+                :class="viewClass('evidence')"
                 class="mb-4"
                 :home="props.homeTrends?.team_evidence"
                 :away="props.awayTrends?.team_evidence"
@@ -88,78 +115,93 @@ const {
                 "
                 class="space-y-4"
             >
-                <div class="grid grid-cols-3 gap-2">
-                    <div
-                        class="rounded-lg border border-border/70 bg-muted/30 px-3 py-2"
-                    >
-                        <p
-                            class="text-xs tracking-wide text-muted-foreground uppercase"
+                <div :class="viewClass('patterns')">
+                    <div class="grid grid-cols-3 gap-2">
+                        <div
+                            class="rounded-lg border border-border/70 bg-muted/30 px-3 py-2"
                         >
-                            Categories
-                        </p>
-                        <p class="mt-1 text-xl font-semibold">
-                            {{ visibleCategories.length }}
-                        </p>
-                    </div>
-                    <div
-                        class="rounded-lg border border-border/70 bg-muted/30 px-3 py-2"
-                    >
-                        <p
-                            class="text-xs tracking-wide text-muted-foreground uppercase"
+                            <p
+                                class="text-xs tracking-wide text-muted-foreground uppercase"
+                            >
+                                Categories
+                            </p>
+                            <p class="mt-1 text-xl font-semibold">
+                                {{ visibleCategories.length }}
+                            </p>
+                        </div>
+                        <div
+                            class="rounded-lg border border-border/70 bg-muted/30 px-3 py-2"
                         >
-                            {{ awayLabel || 'Away' }} Signals
-                        </p>
-                        <p class="mt-1 text-xl font-semibold">
-                            {{ signalCountForSide(awayView) }}
-                        </p>
-                    </div>
-                    <div
-                        class="rounded-lg border border-border/70 bg-muted/30 px-3 py-2"
-                    >
-                        <p
-                            class="text-xs tracking-wide text-muted-foreground uppercase"
+                            <p
+                                class="text-xs tracking-wide text-muted-foreground uppercase"
+                            >
+                                {{ awayLabel || 'Away' }} Signals
+                            </p>
+                            <p class="mt-1 text-xl font-semibold">
+                                {{ signalCountForSide(awayView) }}
+                            </p>
+                        </div>
+                        <div
+                            class="rounded-lg border border-border/70 bg-muted/30 px-3 py-2"
                         >
-                            {{ homeLabel || 'Home' }} Signals
-                        </p>
-                        <p class="mt-1 text-xl font-semibold">
-                            {{ signalCountForSide(homeView) }}
-                        </p>
+                            <p
+                                class="text-xs tracking-wide text-muted-foreground uppercase"
+                            >
+                                {{ homeLabel || 'Home' }} Signals
+                            </p>
+                            <p class="mt-1 text-xl font-semibold">
+                                {{ signalCountForSide(homeView) }}
+                            </p>
+                        </div>
                     </div>
                 </div>
 
-                <TrendMatchupContext />
-
-                <TrendContextualInsights />
-
-                <div
-                    v-if="
-                        !hasEvidence &&
-                        topMatchupEdges &&
-                        topMatchupEdges.length > 0
-                    "
-                    class="rounded-lg border border-border/70 bg-muted/25 p-3"
-                >
-                    <h4 class="mb-2 text-sm font-semibold">
-                        Supporting Patterns
-                    </h4>
-                    <ul class="space-y-1 text-sm">
-                        <li
-                            v-for="(edge, idx) in topMatchupEdges"
-                            :key="idx"
-                            class="flex items-start gap-2"
-                        >
-                            <span
-                                class="mt-1 h-1.5 w-1.5 rounded-full bg-emerald-500"
-                            />
-                            <span>{{ edge }}</span>
-                        </li>
-                    </ul>
+                <div :class="viewClass('history')">
+                    <TrendMatchupContext />
+                    <p
+                        v-if="!matchupRows.length && hasEvidence"
+                        class="py-4 text-sm text-muted-foreground md:hidden"
+                    >
+                        No matchup history is available.
+                    </p>
                 </div>
 
-                <TrendCategoryDetails />
+                <div class="space-y-4" :class="viewClass('patterns')">
+                    <TrendContextualInsights />
+
+                    <div
+                        v-if="
+                            !hasEvidence &&
+                            topMatchupEdges &&
+                            topMatchupEdges.length > 0
+                        "
+                        class="rounded-lg border border-border/70 bg-muted/25 p-3"
+                    >
+                        <h4 class="mb-2 text-sm font-semibold">
+                            Supporting Patterns
+                        </h4>
+                        <ul class="space-y-1 text-sm">
+                            <li
+                                v-for="(edge, idx) in topMatchupEdges"
+                                :key="idx"
+                                class="flex items-start gap-2"
+                            >
+                                <span
+                                    class="mt-1 h-1.5 w-1.5 rounded-full bg-emerald-500"
+                                />
+                                <span>{{ edge }}</span>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <TrendCategoryDetails />
+                </div>
             </div>
 
-            <div v-else class="py-8 text-center text-muted-foreground">
+            <div
+                v-else-if="!hasEvidence || mobileView !== 'evidence'"
+                class="py-8 text-center text-muted-foreground"
+            >
                 {{ emptyText }}
             </div>
         </CardContent>

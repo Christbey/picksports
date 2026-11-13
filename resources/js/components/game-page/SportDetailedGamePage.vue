@@ -65,6 +65,7 @@ withDefaults(
         showTrends?: boolean;
         trendsTitle?: string;
         trendsClass?: string;
+        trendsWorkspace?: boolean;
         trendsSubtitle?: string;
         trendsLoading?: boolean;
         topMatchupEdges?: string[];
@@ -236,6 +237,7 @@ const resolveTeamName = (team: GamePageTeam | null, fallback: string): string =>
                     formatTierName &&
                     getRequiredTier
                 "
+                :workspace="trendsWorkspace"
                 :title="trendsTitle"
                 :subtitle="trendsSubtitle"
                 :trends-loading="trendsLoading"

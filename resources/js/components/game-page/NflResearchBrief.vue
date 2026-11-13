@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { useViewerAccess } from '@/composables/useViewerAccess';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { decisionLabel, researchReason } from '@/lib/researchDecision';
@@ -35,12 +37,24 @@ const api = useApiV2Client();
 const revisions = ref<Revision[]>([]);
 const error = ref('');
 const loading = ref(true);
-const openGroups = ref<string[]>([]);
-const showHistory = ref(false);
-function toggleGroup(group: string): void {
-    openGroups.value = openGroups.value.includes(group)
-        ? openGroups.value.filter((item) => item !== group)
-        : [...openGroups.value, group];
+const researchGroups = {
+    supporting: 'Supporting evidence',
+    opposing: 'Counterarguments',
+    prop_angles: 'Player prop context',
+    unresolved: 'Assumptions and unresolved questions',
+} as const;
+type ResearchGroup = keyof typeof researchGroups;
+const activeView = ref<ResearchGroup | 'history' | null>(null);
+const entryIndex = ref(0);
+const activeEntries = computed(() =>
+    activeView.value && activeView.value !== 'history'
+        ? (revisions.value[0]?.brief[activeView.value] ?? [])
+        : [],
+);
+const activeEntry = computed(() => activeEntries.value[entryIndex.value]);
+function selectView(view: ResearchGroup | 'history'): void {
+    activeView.value = activeView.value === view ? null : view;
+    entryIndex.value = 0;
 }
 const reasons = computed(() => [
     ...new Set(
@@ -153,150 +167,139 @@ onMounted(async () => {
                     </li>
                 </ul>
             </details>
-            <div
-                class="mt-4 gap-3 md:grid-cols-2"
-                :class="mobileCompact ? 'hidden md:grid' : 'grid'"
+            <nav
+                aria-label="Research views"
+                class="mt-4 grid gap-2 sm:grid-cols-2"
+                :class="{ 'hidden md:grid': mobileCompact }"
             >
-                <div
-                    v-for="group in [
-                        'supporting',
-                        'opposing',
-                        'prop_angles',
-                        'unresolved',
-                    ] as const"
+                <Button
+                    v-for="(label, group) in researchGroups"
                     :key="group"
-                    class="min-w-0 self-start rounded-lg border p-3"
+                    type="button"
+                    :variant="activeView === group ? 'default' : 'outline'"
+                    :aria-pressed="activeView === group"
+                    class="h-auto min-h-11 justify-between text-left whitespace-normal"
+                    @click="selectView(group)"
                 >
-                    <button
-                        type="button"
-                        class="flex min-h-11 w-full items-center justify-between gap-3 text-left font-medium"
-                        :aria-expanded="openGroups.includes(group)"
-                        :aria-controls="`research-${gameId}-${group}`"
-                        @click="toggleGroup(group)"
-                    >
+                    {{ label }}
+                    <Badge variant="secondary">{{
+                        revisions[0].brief[group].length
+                    }}</Badge>
+                </Button>
+                <Button
+                    type="button"
+                    :variant="activeView === 'history' ? 'default' : 'outline'"
+                    :aria-pressed="activeView === 'history'"
+                    class="justify-start"
+                    @click="selectView('history')"
+                >
+                    Forecast history
+                </Button>
+            </nav>
+            <section
+                v-if="activeView && activeView !== 'history'"
+                :aria-label="researchGroups[activeView]"
+                class="mt-4 rounded-xl border bg-background/40 p-3"
+            >
+                <p v-if="!activeEntry" class="text-sm text-muted-foreground">
+                    No verified entry.
+                </p>
+                <div v-else class="space-y-2 text-sm">
+                    <div class="font-medium">{{ activeEntry.claim }}</div>
+                    <Badge v-if="activeView === 'unresolved'" variant="outline">
                         {{
-                            {
-                                supporting: 'Supporting evidence',
-                                opposing: 'Counterarguments',
-                                prop_angles: 'Player prop context',
-                                unresolved:
-                                    'Assumptions and unresolved questions',
-                            }[group]
+                            activeEntry.blocking === false
+                                ? 'Nonblocking assumption'
+                                : 'Hold'
                         }}
-                        <span class="text-xs text-muted-foreground"
-                            >{{ revisions[0].brief[group].length }} ·
-                            {{
-                                openGroups.includes(group) ? 'Hide' : 'View'
-                            }}</span
-                        >
-                    </button>
+                        ·
+                        {{
+                            activeEntry.scope === 'game' || !activeEntry.scope
+                                ? 'Whole game'
+                                : activeEntry.scope
+                        }}
+                    </Badge>
                     <div
-                        v-if="openGroups.includes(group)"
-                        :id="`research-${gameId}-${group}`"
+                        tabindex="0"
+                        role="region"
+                        aria-label="Evidence interpretation"
+                        class="max-h-52 overflow-y-auto rounded-md bg-muted/40 p-3 text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                        <p
-                            v-if="!revisions[0].brief[group].length"
-                            class="text-sm text-muted-foreground"
+                        {{ activeEntry.interpretation }}
+                    </div>
+                    <a
+                        v-if="sourceUrl(activeEntry.source_url)"
+                        :href="sourceUrl(activeEntry.source_url)"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="inline-flex min-h-11 items-center underline"
+                        >Source</a
+                    >
+                    <div
+                        v-if="activeEntries.length > 1"
+                        class="flex items-center justify-between gap-2 border-t pt-2"
+                    >
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            :disabled="entryIndex === 0"
+                            @click="entryIndex--"
+                            >Previous</Button
                         >
-                            No verified entry.
-                        </p>
-                        <ul class="mt-2 space-y-3 text-sm">
-                            <li
-                                v-for="(item, index) in revisions[0].brief[
-                                    group
-                                ]"
-                                :key="index"
-                            >
-                                <p>{{ item.claim }}</p>
-                                <p
-                                    v-if="group === 'unresolved'"
-                                    class="font-medium"
-                                >
-                                    {{
-                                        item.blocking === false
-                                            ? 'Nonblocking assumption'
-                                            : 'Hold'
-                                    }}
-                                    ·
-                                    {{
-                                        item.scope === 'game' || !item.scope
-                                            ? 'Whole game'
-                                            : item.scope
-                                    }}
-                                </p>
-                                <p class="text-muted-foreground">
-                                    {{ item.interpretation }}
-                                </p>
-                                <a
-                                    v-if="sourceUrl(item.source_url)"
-                                    :href="sourceUrl(item.source_url)"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    class="inline-flex min-h-11 items-center underline"
-                                    >Source</a
-                                >
-                            </li>
-                        </ul>
+                        <span aria-live="polite"
+                            >{{ entryIndex + 1 }} of
+                            {{ activeEntries.length }}</span
+                        >
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            :disabled="entryIndex === activeEntries.length - 1"
+                            @click="entryIndex++"
+                            >Next</Button
+                        >
                     </div>
                 </div>
-            </div>
-            <div
-                class="mt-4 text-sm"
-                :class="mobileCompact ? 'hidden md:block' : ''"
+            </section>
+            <section
+                v-if="activeView === 'history'"
+                aria-label="Forecast history"
+                class="mt-4 overflow-x-auto rounded-xl border bg-background/40 p-3 text-sm"
             >
-                <button
-                    type="button"
-                    class="min-h-11 text-left font-medium"
-                    :aria-expanded="showHistory"
-                    :aria-controls="`research-${gameId}-history`"
-                    @click="showHistory = !showHistory"
-                >
-                    Forecast history (home minus away margin)
-                </button>
-                <div
-                    v-if="showHistory"
-                    :id="`research-${gameId}-history`"
-                    class="overflow-x-auto"
-                >
-                    <table class="mt-2 w-full text-left">
-                        <thead>
-                            <tr>
-                                <th>Observed</th>
-                                <th>Original margin / total</th>
-                                <th>Revised margin / total</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr
-                                v-for="revision in revisions"
-                                :key="revision.id"
-                            >
-                                <td>
-                                    {{
-                                        new Date(
-                                            revision.created_at,
-                                        ).toLocaleString()
-                                    }}
-                                </td>
-                                <td>
-                                    {{
-                                        revision.baseline.predicted_spread ??
-                                        '—'
-                                    }}
-                                    /
-                                    {{
-                                        revision.baseline.predicted_total ?? '—'
-                                    }}
-                                </td>
-                                <td>
-                                    {{ revision.revised.predicted_spread }} /
-                                    {{ revision.revised.predicted_total }}
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+                <p class="text-xs text-muted-foreground">
+                    Margins are home minus away.
+                </p>
+                <table class="mt-2 w-full text-left">
+                    <thead>
+                        <tr>
+                            <th>Observed</th>
+                            <th>Original margin / total</th>
+                            <th>Revised margin / total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="revision in revisions" :key="revision.id">
+                            <td>
+                                {{
+                                    new Date(
+                                        revision.created_at,
+                                    ).toLocaleString()
+                                }}
+                            </td>
+                            <td>
+                                {{ revision.baseline.predicted_spread ?? '—' }}
+                                /
+                                {{ revision.baseline.predicted_total ?? '—' }}
+                            </td>
+                            <td>
+                                {{ revision.revised.predicted_spread }} /
+                                {{ revision.revised.predicted_total }}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
         </template>
     </form>
 </template>

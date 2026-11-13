@@ -4,10 +4,12 @@ use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\User;
 use App\Services\NFL\NflModelMonitoringService;
 use App\Services\NFL\NflMonitorReportCache;
+use Illuminate\Cache\Events\CacheHit;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(function () {
@@ -113,7 +115,16 @@ it('skips fresh background reports and builds newly requested scopes without wai
     $service->shouldReceive('signalGradePayload')->once()->andReturn([]);
     app()->instance(NflModelMonitoringService::class, $service);
     $reports = app(NflMonitorReportCache::class);
-    expect($reports->refresh(3, false)['built'])->toBe(1)->and($reports->refresh(3, false)['built'])->toBe(0);
+    expect($reports->refresh(3, false)['built'])->toBe(1);
+
+    $hits = [];
+    Event::listen(CacheHit::class, function (CacheHit $event) use (&$hits): void {
+        $hits[] = $event->key;
+    });
+    expect($reports->refresh(3, false)['built'])->toBe(0);
+    expect($hits)->not->toContain('nfl:monitor:reports:v1:legacy')
+        ->not->toContain('nfl:monitor:reports:v1:'.hash('sha256', json_encode($reports->scope(null, []), JSON_THROW_ON_ERROR)));
+
     $reports->read(null, ['from_season' => 2024]);
     expect($reports->refresh(3, false)['built'])->toBe(1);
 });

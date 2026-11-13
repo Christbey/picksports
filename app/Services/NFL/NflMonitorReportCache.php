@@ -56,6 +56,7 @@ class NflMonitorReportCache
             foreach (array_slice($registry, 16, null, true) as $oldKey => $old) {
                 if ($oldKey !== $this->key($this->scope(null, []))) {
                     Cache::forget($oldKey);
+                    Cache::forget($oldKey.':generated-at');
                 }
             }
             Cache::forever(self::PREFIX.'scopes', array_slice($registry, 0, 16, true));
@@ -80,6 +81,13 @@ class NflMonitorReportCache
         return Cache::get(self::PREFIX.'legacy', ['grades' => [], 'generated_at' => null]);
     }
 
+    private function isFresh(string $key): bool
+    {
+        $generatedAt = Cache::get($key.':generated-at');
+
+        return is_string($generatedAt) && Carbon::parse($generatedAt)->gte(now()->subMinutes(15));
+    }
+
     public function refresh(int $limit = 3, bool $force = true): array
     {
         $result = Cache::lock(self::PREFIX.'build-lock', 900)->get(function () use ($limit, $force): array {
@@ -100,15 +108,17 @@ class NflMonitorReportCache
                 if (! $force && Cache::has($key.':retry-after')) {
                     continue;
                 }
-                $saved = Cache::get($key);
-                if (! $force && isset($saved['generated_at']) && Carbon::parse($saved['generated_at'])->gte(now()->subMinutes(15))) {
+                if (! $force && $this->isFresh($key)) {
                     continue;
                 }
                 $attempted++;
                 try {
                     $scope = $entry['scope'];
                     $payload = $service->dashboard($scope['artifact'], $scope['filters'], false);
-                    Cache::forever($key, ['generated_at' => now()->toIso8601String(), 'payload' => $payload]);
+                    $generatedAt = now()->toIso8601String();
+                    Cache::forever($key, ['generated_at' => $generatedAt, 'payload' => $payload]);
+                    Cache::put($key.':generated-at', $generatedAt, now()->addMinutes(15));
+                    unset($payload);
                     Cache::forget($key.':retry-after');
                     $built++;
                 } catch (\Throwable $e) {
@@ -117,16 +127,18 @@ class NflMonitorReportCache
                     $failures[] = 'dashboard';
                 }
             }
-            $legacy = $this->legacy();
+            $legacyKey = self::PREFIX.'legacy';
             try {
                 if (! $force && Cache::has(self::PREFIX.'legacy:retry-after')) {
                     return ['built' => $built, 'failures' => $failures, 'last_good_preserved_on_failure' => true];
                 }
-                if (! $force && $legacy['generated_at'] && Carbon::parse($legacy['generated_at'])->gte(now()->subMinutes(15))) {
+                if (! $force && $this->isFresh($legacyKey)) {
                     return ['built' => $built, 'failures' => $failures, 'last_good_preserved_on_failure' => true];
                 }
                 $grades = $service->signalGradePayload();
-                Cache::forever(self::PREFIX.'legacy', ['generated_at' => now()->toIso8601String(), 'grades' => $grades]);
+                $generatedAt = now()->toIso8601String();
+                Cache::forever($legacyKey, ['generated_at' => $generatedAt, 'grades' => $grades]);
+                Cache::put($legacyKey.':generated-at', $generatedAt, now()->addMinutes(15));
                 Cache::forget(self::PREFIX.'legacy:retry-after');
             } catch (\Throwable $e) {
                 report($e);

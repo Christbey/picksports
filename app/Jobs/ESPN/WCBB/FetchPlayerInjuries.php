@@ -3,21 +3,17 @@
 namespace App\Jobs\ESPN\WCBB;
 
 use App\Actions\ESPN\WCBB\SyncPlayerInjuries;
+use App\Jobs\ESPN\BulkEspnJob;
 use App\Services\ESPN\WCBB\EspnService;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-class FetchPlayerInjuries implements ShouldQueue
+class FetchPlayerInjuries extends BulkEspnJob
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-
     public function __construct(
         public ?string $teamEspnId = null
-    ) {}
+    ) {
+        parent::__construct();
+    }
 
     public function handle(): void
     {

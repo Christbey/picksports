@@ -65,7 +65,11 @@ test('non-admins cannot see or mount Research even if the section is selected', 
     };
     const html = await renderToString(createSSRApp(wrapper, { gameId: 1781 }));
     assert.doesNotMatch(html, /Research|Research panel fixture/);
-    assert.match(html, /grid-cols-3/);
+    const navigation = html.match(
+        /<nav aria-label="Game sections"[^>]*>(.*?)<\/nav>/s,
+    )?.[1];
+    assert.ok(navigation);
+    assert.equal((navigation.match(/aria-pressed=/g) ?? []).length, 3);
     assert.equal(globalThis.__researchMounts, 0);
 });
 
@@ -75,6 +79,10 @@ test('admins retain the Research tab and mounted panel', async () => {
     const html = await renderToString(createSSRApp(Game, { gameId: 1781 }));
     assert.match(html, /Research/);
     assert.match(html, /Research panel fixture/);
-    assert.match(html, /grid-cols-4/);
+    const navigation = html.match(
+        /<nav aria-label="Game sections"[^>]*>(.*?)<\/nav>/s,
+    )?.[1];
+    assert.ok(navigation);
+    assert.equal((navigation.match(/aria-pressed=/g) ?? []).length, 4);
     assert.equal(globalThis.__researchMounts, 1);
 });

@@ -1561,6 +1561,6 @@ $scheduleDailySeasonJob('cfb:sync-opponent-history --days=14', '03:05', $cfbInSe
 // Check pending admin report scopes; fresh reports are not rebuilt for fifteen minutes.
 $nflMonitorCommand = 'nfl:refresh-model-monitor --limit=3';
 $nflMonitorEvent = Schedule::command($nflMonitorCommand)->everyMinute()->timezone('America/Chicago')
-    ->when(fn (): bool => $nflInSeason() || app(NflMonitorReportCache::class)->hasRecentDemand())
+    ->when(fn (): bool => app(NflMonitorReportCache::class)->hasRecentDemand())
     ->onOneServer()->withoutOverlapping(20)->runInBackground()->name('NFL: Refresh Admin Monitor Reports');
 $attachCommandHeartbeat($nflMonitorEvent, $nflMonitorCommand, 'NFL: Refresh Admin Monitor Reports');

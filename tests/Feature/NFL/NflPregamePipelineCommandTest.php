@@ -25,26 +25,13 @@ it('uses one bounded horizon and never fetches odds during prediction generation
         ->withArgs(function (array $steps, callable $afterStep): bool {
             expect($steps)->toBe([
                 [
-                    'name' => 'canonical_generation_and_readiness',
+                    'name' => 'canonical_generation',
                     'command' => 'nfl:generate-canonical-predictions',
                     'arguments' => [
                         '--season' => 2026,
                         '--date' => '2026-09-15',
                         '--days-forward' => 8,
-                        '--verify-readiness' => true,
                     ],
-                    'continue_on_failure' => true,
-                ],
-                [
-                    'name' => 'research_assessments',
-                    'command' => 'nfl:research-pipeline',
-                    'arguments' => ['--date' => '2026-09-15', '--days-forward' => 8, '--no-ingest' => true, '--no-web' => true, '--limit' => 100],
-                    'continue_on_failure' => true,
-                ],
-                [
-                    'name' => 'research_readiness',
-                    'command' => 'nfl:research-readiness',
-                    'arguments' => ['--days-forward' => 2],
                 ],
             ]);
 
@@ -54,7 +41,7 @@ it('uses one bounded horizon and never fetches odds during prediction generation
     app()->instance(NflPregamePipelineRunner::class, $runner);
 
     $this->artisan('nfl:run-pregame-pipeline', ['--season' => 2026, '--days-forward' => 8])
-        ->expectsOutputToContain('completed with full 8-day readiness verification')
+        ->expectsOutputToContain('verified fresh published forecasts for 0 game(s) across 8 days')
         ->assertSuccessful();
 });
 
@@ -75,5 +62,18 @@ it('rejects a successful process without safe current canonical input evidence f
     app()->instance(NflPregamePipelineRunner::class, $runner);
     $this->artisan('nfl:run-pregame-pipeline', ['--season' => 2026])
         ->expectsOutputToContain('no current canonical input evidence for game IDs: '.$game->id)
+        ->assertFailed();
+});
+
+it('propagates an actual canonical generation failure', function () {
+    config()->set('prediction_lifecycle.canonical_pipeline.nfl', true);
+    $runner = Mockery::mock(NflPregamePipelineRunner::class);
+    $runner->shouldReceive('run')->once()->andReturn([
+        'successful' => false, 'failed_step' => 'canonical_generation', 'exit_code' => 1,
+    ]);
+    app()->instance(NflPregamePipelineRunner::class, $runner);
+
+    $this->artisan('nfl:run-pregame-pipeline', ['--season' => 2026])
+        ->expectsOutputToContain('failed at canonical_generation')
         ->assertFailed();
 });

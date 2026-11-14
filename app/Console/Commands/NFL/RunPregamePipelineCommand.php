@@ -16,7 +16,7 @@ class RunPregamePipelineCommand extends Command
         {--date= : Start the eight-day pregame horizon on this business date}
         {--days-forward=8 : Number of days covered by every pipeline step}';
 
-    protected $description = 'Run NFL canonical prediction, frozen recommendation evidence, and readiness steps using stored odds';
+    protected $description = 'Generate NFL canonical predictions using stored odds and verify fresh published forecasts';
 
     public function handle(NflPregamePipelineRunner $runner, NflPregameHorizon $horizons): int
     {
@@ -40,29 +40,17 @@ class RunPregamePipelineCommand extends Command
             '--days-forward' => $daysForward,
         ];
         $freshAfter = now()->subMinutes(max(1, (int) config('nfl.predictions.pregame_market.maximum_prediction_age_minutes', 360)));
-        $expectedGameIds = Game::query()
+        $expectedGames = Game::query()
             ->where('season', $season)
             ->whereIn('season_type', NflPregameHorizon::seasonTypes())
             ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_DELAYED'])
             ->whereHas('sportEvent', fn ($query) => $query->whereBetween('starts_at', [$horizon['start'], $horizon['end']]))
-            ->pluck('id');
+            ->pluck('sport_event_id', 'id');
         $steps = [
             [
-                'name' => 'canonical_generation_and_readiness',
+                'name' => 'canonical_generation',
                 'command' => 'nfl:generate-canonical-predictions',
-                'arguments' => [...$shared, '--verify-readiness' => true],
-                'continue_on_failure' => true,
-            ],
-            [
-                'name' => 'research_assessments',
-                'command' => 'nfl:research-pipeline',
-                'arguments' => ['--date' => $horizon['date'], '--days-forward' => $daysForward, '--no-ingest' => true, '--no-web' => true, '--limit' => 100],
-                'continue_on_failure' => true,
-            ],
-            [
-                'name' => 'research_readiness',
-                'command' => 'nfl:research-readiness',
-                'arguments' => ['--days-forward' => min(2, $daysForward)],
+                'arguments' => $shared,
             ],
         ];
 
@@ -73,27 +61,30 @@ class RunPregamePipelineCommand extends Command
             $this->line("NFL pregame step {$name} exited {$exitCode}.");
         });
 
+        if (! $result['successful']) {
+            $this->error("NFL pregame pipeline failed at {$result['failed_step']}; review the step output.");
+
+            return self::FAILURE;
+        }
+
         $generatedEventIds = app(CanonicalSportPredictionQuery::class)->queryForSport('nfl')
+            ->reorder()
+            ->whereIn('predictions.sport_event_id', $expectedGames->values())
+            ->where('predictions.published_at', '<=', now())
             ->where('predictions.generated_at', '>=', $freshAfter)
             ->whereHas('calculationRun.inputSnapshot', fn ($query) => $query
                 ->where('captured_at', '>=', $freshAfter)
                 ->where('inputs->recommendation_context->version', NflRecommendationInputBuilder::VERSION))
+            ->distinct()
             ->pluck('predictions.sport_event_id');
-        $generatedGameIds = Game::query()->whereIn('sport_event_id', $generatedEventIds)->pluck('id');
-        $missingGameIds = $expectedGameIds->diff($generatedGameIds);
+        $missingGameIds = $expectedGames->diff($generatedEventIds)->keys();
         if ($missingGameIds->isNotEmpty()) {
             $this->error('NFL pregame pipeline has no current canonical input evidence for game IDs: '.$missingGameIds->implode(', ').'.');
 
             return self::FAILURE;
         }
 
-        if (! $result['successful']) {
-            $this->error("NFL pregame pipeline failed at {$result['failed_step']}; review the step output and readiness report.");
-
-            return self::FAILURE;
-        }
-
-        $this->info("NFL pregame pipeline completed with full {$daysForward}-day readiness verification.");
+        $this->info("NFL pregame pipeline verified fresh published forecasts for {$expectedGames->count()} game(s) across {$daysForward} days.");
 
         return self::SUCCESS;
     }

@@ -20,8 +20,14 @@ class PredictionModelBetContext
             ->where('game_id', $game->getKey())->where('is_pregame', true)
             ->whereIn('market_key', ['spreads', 'totals'])->where('captured_at', '<', $kickoff)
             ->where('captured_at', '<=', now())->orderByDesc('captured_at')->orderByDesc('id')->limit(200)->get();
-        $names = fn ($team) => collect([$team?->display_name, $team?->name, $team?->school, $team?->short_display_name, trim(($team?->school ?? '').' '.($team?->mascot ?? ''))])
-            ->filter()->map(fn ($name) => strtolower(trim($name)))->all();
+        $names = fn ($team) => collect([
+            $team?->display_name,
+            $team?->name,
+            $team?->school,
+            $team?->short_display_name,
+            trim(($team?->school ?? '').' '.($team?->mascot ?? '')),
+            $team?->location && $team?->name ? $team->location.' '.$team->name : null,
+        ])->filter()->map(fn ($name) => strtolower(trim($name)))->all();
         $homeNames = $names($game->homeTeam);
         $awayNames = $names($game->awayTeam);
         foreach ($quotes->groupBy('game_odds_snapshot_id') as $snapshot) {

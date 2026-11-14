@@ -114,6 +114,10 @@ test('league sections preserve payload order, game counts, and spring-training c
     });
     assert.ok(html.indexOf('/mlb/games/201') < html.indexOf('/nfl/games/101'));
     assert.ok(html.indexOf('/nfl/games/101') < html.indexOf('/nfl/games/102'));
+    assert.match(html, /<table[^>]*aria-label="MLB predictions"/);
+    assert.match(html, /<table[^>]*aria-label="NFL predictions"/);
+    assert.equal((html.match(/<th scope="row"/g) ?? []).length, 3);
+    assert.equal((html.match(/Bet HOME to win/g) ?? []).length, 3);
     assert.match(html, /1 game/);
     assert.match(html, /2 games/);
     assert.equal((html.match(/Spring Training/g) ?? []).length, 1);

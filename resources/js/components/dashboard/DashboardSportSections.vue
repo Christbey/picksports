@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DashboardPredictionRow from '@/components/dashboard/DashboardPredictionRow.vue';
 import { Badge } from '@/components/ui/badge';
 import UnifiedPredictionCard from '@/components/predictions/UnifiedPredictionCard.vue';
 import { useDashboardPresentation } from '@/composables/useDashboardView';
@@ -55,7 +56,45 @@ const showSpringTrainingBadge = (sport: DashboardSport): boolean =>
                 <span class="ps-eyebrow">Today's predictions</span>
             </div>
 
-            <div class="space-y-3">
+            <div
+                class="hidden overflow-x-auto rounded-lg border border-border bg-card lg:block"
+            >
+                <table
+                    class="w-full text-left text-sm"
+                    :aria-label="`${sport.name} predictions`"
+                >
+                    <thead class="bg-muted/50 text-xs text-muted-foreground">
+                        <tr>
+                            <th
+                                v-for="column in [
+                                    'Matchup',
+                                    'Game status',
+                                    'Model winner',
+                                    'Spread pick',
+                                    'Total pick',
+                                    'Signal',
+                                ]"
+                                :key="column"
+                                scope="col"
+                                class="px-3 py-2 font-medium"
+                            >
+                                {{ column }}
+                            </th>
+                            <th scope="col" class="px-3 py-2">
+                                <span class="sr-only">Analysis</span>
+                            </th>
+                        </tr>
+                    </thead>
+                    <DashboardPredictionRow
+                        v-for="prediction in sport.predictions"
+                        :key="`${prediction.sport}-${prediction.game_id}`"
+                        :prediction="prediction"
+                        :href="getGameUrl(prediction.sport, prediction.game_id)"
+                        :sport="prediction.sport"
+                    />
+                </table>
+            </div>
+            <div class="space-y-3 lg:hidden">
                 <UnifiedPredictionCard
                     v-for="prediction in sport.predictions"
                     :key="`${prediction.sport}-${prediction.game_id}`"

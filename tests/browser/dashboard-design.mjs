@@ -111,7 +111,7 @@ try {
             (dark) => document.documentElement.classList.toggle('dark', dark),
             dark,
         );
-        for (const width of [320, 390, 768, 1440]) {
+        for (const width of [320, 390, 768, 1024, 1440]) {
             await page.setViewportSize({ width, height: 900 });
             await page.evaluate(
                 () =>
@@ -126,10 +126,30 @@ try {
                 await primary(page, '.ps-workspace'),
                 dark ? '#ff9b76' : '#bd4326',
             );
+            const predictionTables = page.getByRole('table', {
+                name: / predictions$/,
+            });
+            const cards = page.getByRole('link', { name: /View game/ });
+            assert.equal(await cards.count(), width >= 1024 ? 0 : 3);
             assert.equal(
-                await page.getByRole('link', { name: /View game/ }).count(),
-                3,
+                await predictionTables.getByRole('rowheader').count(),
+                width >= 1024 ? 3 : 0,
             );
+            assert.equal(
+                await page.getByRole('table', { name: 'Game Center' }).count(),
+                width >= 1024 ? 1 : 0,
+            );
+            if (width >= 1024) {
+                const analysis = predictionTables
+                    .getByRole('button', { name: /Show analysis/ })
+                    .first();
+                await analysis.click();
+                assert.equal(await cards.count(), 1);
+                await predictionTables
+                    .getByRole('button', { name: /Hide analysis/ })
+                    .click();
+                assert.equal(await cards.count(), 0);
+            }
             assert.match(
                 await page
                     .getByRole('region', { name: 'Live games' })

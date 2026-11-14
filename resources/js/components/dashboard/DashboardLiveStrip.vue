@@ -140,7 +140,78 @@ function liveTrendLabel(game: LiveTile): string | null {
             </p>
         </div>
 
-        <div class="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1">
+        <div class="hidden overflow-x-auto lg:block">
+            <table class="w-full text-left text-sm" aria-label="Game Center">
+                <thead class="bg-muted/50 text-xs text-muted-foreground">
+                    <tr>
+                        <th
+                            v-for="column in [
+                                'League',
+                                'Matchup',
+                                'Score (away–home)',
+                                'Status',
+                                'Live win probability',
+                            ]"
+                            :key="column"
+                            scope="col"
+                            class="px-3 py-2 font-medium"
+                        >
+                            {{ column }}
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr
+                        v-for="game in liveGames"
+                        :key="`${game.sport}-${game.game_id}`"
+                        class="border-t border-border hover:bg-muted/40"
+                    >
+                        <td class="px-3 py-2 text-muted-foreground">
+                            {{ game.sportName }}
+                        </td>
+                        <th
+                            scope="row"
+                            class="px-3 py-2 text-left font-semibold"
+                        >
+                            <Link
+                                :href="`/${game.sport.toLowerCase()}/games/${game.game_id}`"
+                                class="hover:underline"
+                            >
+                                {{ game.away_team }} @ {{ game.home_team }}
+                            </Link>
+                        </th>
+                        <td class="px-3 py-2 font-semibold tabular-nums">
+                            {{ game.away_score ?? '—' }} –
+                            {{ game.home_score ?? '—' }}
+                        </td>
+                        <td class="px-3 py-2">
+                            <p
+                                :class="
+                                    game.is_live
+                                        ? 'text-sky-600 dark:text-sky-400'
+                                        : 'text-muted-foreground'
+                                "
+                            >
+                                {{ statusLabel(game) }}
+                            </p>
+                            <p
+                                v-if="liveStateDetail(game)"
+                                class="text-xs text-muted-foreground"
+                            >
+                                {{ liveStateDetail(game) }}
+                            </p>
+                        </td>
+                        <td class="px-3 py-2 text-muted-foreground">
+                            {{ liveTrendLabel(game) ?? '—' }}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div
+            class="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 lg:hidden"
+        >
             <Link
                 v-for="game in liveGames"
                 :key="`${game.sport}-${game.game_id}`"

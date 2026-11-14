@@ -76,6 +76,47 @@ class NflMonitorReportCache
         return false;
     }
 
+    public function refreshRequestedBatch(): array
+    {
+        $result = ['built' => 0, 'failures' => [], 'last_good_preserved_on_failure' => true];
+
+        return Cache::lock(self::PREFIX.'build-lock', 1800)->get(function () use ($result): array {
+            $cutoff = now()->subMinutes(30)->timestamp;
+            $scopes = array_filter(Cache::get(self::PREFIX.'scopes', []),
+                fn (array $entry): bool => ($entry['requested_at'] ?? 0) >= $cutoff);
+            if ($scopes === []) {
+                return $result;
+            }
+            $scopes[self::PREFIX.'legacy'] = ['scope' => null];
+            $pending = collect($scopes)->reject(fn (array $entry, string $key): bool => Cache::has($key.':retry-after') || $this->isFresh($key))
+                ->sortBy(fn (array $entry, string $key): string => Cache::get($key.':last-success', ''));
+            $key = $pending->keys()->first();
+            if ($key === null) {
+                return $result;
+            }
+
+            $scope = $pending->get($key)['scope'];
+            try {
+                $service = app(NflModelMonitoringService::class);
+                $data = $scope === null
+                    ? ['grades' => $service->signalGradePayload()]
+                    : ['payload' => $service->dashboard($scope['artifact'], $scope['filters'], false)];
+                $generatedAt = now()->toIso8601String();
+                Cache::forever($key, ['generated_at' => $generatedAt, ...$data]);
+                Cache::put($key.':generated-at', $generatedAt, now()->addMinutes(15));
+                Cache::put($key.':last-success', $generatedAt, now()->addDay());
+                Cache::forget($key.':retry-after');
+                $result['built'] = 1;
+            } catch (\Throwable $e) {
+                report($e);
+                Cache::put($key.':retry-after', true, now()->addMinutes(5));
+                $result['failures'][] = $scope === null ? 'signal_grades' : 'dashboard';
+            }
+
+            return $result;
+        }) ?: $result;
+    }
+
     public function legacy(): array
     {
         return Cache::get(self::PREFIX.'legacy', ['grades' => [], 'generated_at' => null]);
@@ -90,7 +131,7 @@ class NflMonitorReportCache
 
     public function refresh(int $limit = 3, bool $force = true): array
     {
-        $result = Cache::lock(self::PREFIX.'build-lock', 900)->get(function () use ($limit, $force): array {
+        $result = Cache::lock(self::PREFIX.'build-lock', 1800)->get(function () use ($limit, $force): array {
             $service = app(NflModelMonitoringService::class);
             $default = $this->scope(null, []);
             $scopes = [$this->key($default) => ['scope' => $default]];

@@ -7,7 +7,7 @@ use Illuminate\Console\Command;
 
 class RefreshModelMonitorCommand extends Command
 {
-    protected $signature = 'nfl:refresh-model-monitor {--limit=3 : Maximum report scopes per run, including the default} {--force : Rebuild even when saved reports are fresh}';
+    protected $signature = 'nfl:refresh-model-monitor {--limit=3 : Maximum report scopes per run, including the default} {--batch : Build at most one requested dashboard or shared report} {--force : Rebuild even when saved reports are fresh}';
 
     protected $description = 'Build last-good NFL admin reports outside HTTP requests';
 
@@ -26,7 +26,9 @@ class RefreshModelMonitorCommand extends Command
             return self::SUCCESS;
         }
 
-        $result = $reports->refresh($limit, $force);
+        $result = ! $force && $this->option('batch')
+            ? $reports->refreshRequestedBatch()
+            : $reports->refresh($limit, $force);
         $this->line(json_encode($result, JSON_THROW_ON_ERROR));
 
         return empty($result['failures']) ? self::SUCCESS : self::FAILURE;

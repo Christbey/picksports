@@ -19,7 +19,14 @@ class RefreshModelMonitorCommand extends Command
 
             return self::FAILURE;
         }
-        $result = $reports->refresh($limit, (bool) $this->option('force'));
+        $force = (bool) $this->option('force');
+        if (! $force && ! $reports->hasRecentDemand()) {
+            $this->line('NFL admin monitor refresh skipped because report demand expired.');
+
+            return self::SUCCESS;
+        }
+
+        $result = $reports->refresh($limit, $force);
         $this->line(json_encode($result, JSON_THROW_ON_ERROR));
 
         return empty($result['failures']) ? self::SUCCESS : self::FAILURE;

@@ -144,3 +144,29 @@ it('only queues monitor refreshes after a recent admin report request', function
     app(NflMonitorReportCache::class)->read(null, []);
     expect($event->filtersPass(app()))->toBeTrue();
 });
+
+it('skips expired queued demand at execution and preserves the saved report', function () {
+    $service = Mockery::mock(NflModelMonitoringService::class);
+    $service->shouldReceive('dashboard')->once()->andReturn(['saved' => true]);
+    $service->shouldReceive('signalGradePayload')->once()->andReturn([]);
+    app()->instance(NflModelMonitoringService::class, $service);
+    $reports = app(NflMonitorReportCache::class);
+    $reports->read(null, []);
+    $this->artisan('nfl:refresh-model-monitor')->assertSuccessful();
+
+    $this->travel(31)->minutes();
+    $this->artisan('nfl:refresh-model-monitor')
+        ->expectsOutputToContain('report demand expired')
+        ->assertSuccessful();
+
+    expect($reports->read(null, [])['payload'])->toBe(['saved' => true]);
+});
+
+it('allows a forced operator rebuild while the monitor is idle', function () {
+    $service = Mockery::mock(NflModelMonitoringService::class);
+    $service->shouldReceive('dashboard')->once()->andReturn([]);
+    $service->shouldReceive('signalGradePayload')->once()->andReturn([]);
+    app()->instance(NflModelMonitoringService::class, $service);
+
+    $this->artisan('nfl:refresh-model-monitor', ['--force' => true])->assertSuccessful();
+});

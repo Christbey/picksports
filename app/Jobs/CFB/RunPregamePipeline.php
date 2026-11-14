@@ -17,11 +17,15 @@ class RunPregamePipeline implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
-    public int $timeout = 1700;
+    public int $timeout = self::TIMEOUT_SECONDS;
 
-    public int $tries = 1;
+    public const TIMEOUT_SECONDS = 1700;
 
-    public int $uniqueFor = 3600;
+    // Redis can redeliver a reservation after a worker is replaced.
+    // Completed command failures still fail explicitly.
+    public int $tries = 2;
+
+    public int $uniqueFor = 7200;
 
     public string $runId;
 
@@ -39,19 +43,23 @@ class RunPregamePipeline implements ShouldBeUnique, ShouldQueue
     public function handle(): void
     {
         $this->runId ??= (string) Str::uuid();
+        if (CommandHeartbeat::where('source', 'worker')->where('metadata->run_id', $this->runId)->exists()) {
+            return;
+        }
         $started = now()->toIso8601String();
+        $monotonicStart = hrtime(true);
         Cache::put('cfb:pregame:worker-status', ['run_id' => $this->runId, 'state' => 'running', 'arguments' => $this->arguments,
             'started_at' => $started], now()->addDay());
         try {
             $code = Artisan::call('cfb:run-pregame-pipeline', [...$this->arguments, '--run-id' => $this->runId]);
         } catch (Throwable $error) {
-            $this->recordOutcome('failed', 1, $started, null, $error->getMessage());
+            $this->recordOutcome('failed', 1, $started, null, $error->getMessage(), $monotonicStart);
             $this->fail($error);
 
             return;
         }
         $state = $code === 0 ? 'complete' : ($code === 2 ? 'partial' : 'failed');
-        $this->recordOutcome($state, $code, $started, Artisan::output());
+        $this->recordOutcome($state, $code, $started, Artisan::output(), monotonicStart: $monotonicStart);
         if ($state !== 'complete') {
             $this->fail(new \RuntimeException('CFB pregame worker failed: '.$this->runId));
         }
@@ -76,12 +84,16 @@ class RunPregamePipeline implements ShouldBeUnique, ShouldQueue
         }
     }
 
-    private function recordOutcome(string $state, int $code, ?string $started, ?string $output = null, ?string $error = null): void
+    private function recordOutcome(string $state, int $code, ?string $started, ?string $output = null, ?string $error = null, ?int $monotonicStart = null): void
     {
         $summary = Cache::get('cfb:pregame:run:'.$this->runId, ['publication_count' => 0, 'reused_count' => 0,
             'complete_count' => 0, 'held_count' => 0, 'failed_count' => 0, 'games' => []]);
         $status = [...$summary, 'run_id' => $this->runId, 'state' => $state, 'exit_code' => $code, 'arguments' => $this->arguments,
             'started_at' => $started, 'completed_at' => now()->toIso8601String(), 'error' => $error];
+        if ($monotonicStart !== null) {
+            $status['duration_ms'] = (int) ((hrtime(true) - $monotonicStart) / 1_000_000);
+            $status['peak_memory_bytes'] = memory_get_peak_usage(true);
+        }
         Cache::put('cfb:pregame:worker-status', [...$status, 'output' => mb_strcut($output ?? '', -32768, null, 'UTF-8')], now()->addDay());
         if (! CommandHeartbeat::where('source', 'worker')->where('metadata->run_id', $this->runId)->exists()) {
             $command = 'cfb:run-pregame-pipeline --season='.($this->arguments['--season'] ?? 'current');

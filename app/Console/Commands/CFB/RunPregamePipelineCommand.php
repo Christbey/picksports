@@ -76,7 +76,10 @@ class RunPregamePipelineCommand extends Command
         $this->selectedGames = 0;
         $this->metricFailedTeams = [];
         $this->recordProgress([]);
-        $lock = Cache::lock('cfb:pregame-pipeline', 3600);
+        // A killed queue worker cannot release its lock. Let it expire after
+        // the worker deadline and before Redis can redeliver the reservation.
+        $lockSeconds = $this->option('run-id') ? RunPregamePipeline::TIMEOUT_SECONDS + 30 : 3600;
+        $lock = Cache::lock('cfb:pregame-pipeline', $lockSeconds);
         if (! $lock->get()) {
             $this->warn('CFB pregame pipeline is already running.');
 

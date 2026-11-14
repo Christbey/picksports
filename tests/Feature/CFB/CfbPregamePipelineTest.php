@@ -22,6 +22,7 @@ use App\Services\CFB\Data\CfbPipelineStage;
 use App\Services\CFB\Data\CfbSharedInputRunner;
 use App\Services\Predictions\CalculationReleaseSelector;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
@@ -545,3 +546,28 @@ it('uses verified stored inputs during a quota outage and holds a game when its 
     expect($this->steps->getArrayCopy())->not->toContain('membership', 'ratings', 'season-personnel', 'current-personnel', 'metrics');
     Http::assertSentCount(1);
 })->with([false, true]);
+
+it('lets Redis redeliver an interrupted pregame job after its queued lock expires', function () {
+    $job = new RunPregamePipeline(['--season' => 2026, '--resume' => true]);
+    $retryAfter = (int) config('queue.connections.redis.retry_after');
+
+    expect($job->tries)->toBe(2)
+        ->and($job->timeout)->toBeLessThan($retryAfter)
+        ->and($job->uniqueFor)->toBeGreaterThan($retryAfter + $job->timeout);
+    Cache::shouldReceive('lock')->with('cfb:pregame-pipeline', Mockery::on(
+        fn (int $seconds): bool => $seconds > $job->timeout && $seconds < $retryAfter,
+    ))->once()->andReturn(Mockery::mock(Lock::class, ['get' => false]));
+    Cache::shouldReceive('put')->withAnyArgs()->andReturnTrue();
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026, '--run-id' => $job->runId])->assertFailed();
+});
+
+it('does not repeat a run with a terminal worker heartbeat on redelivery', function () {
+    $job = new RunPregamePipeline(['--season' => 2026]);
+    Artisan::command('cfb:run-pregame-pipeline {--season=} {--run-id=}', fn () => 0);
+    $job->handle();
+
+    Artisan::shouldReceive('call')->never();
+    $job->handle();
+
+    expect(CommandHeartbeat::where('source', 'worker')->count())->toBe(1);
+});

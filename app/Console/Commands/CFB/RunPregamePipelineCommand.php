@@ -28,6 +28,7 @@ use App\Services\CollegeFootballData\CollegeFootballDataService;
 use App\Services\Predictions\CalculationReleaseSelector;
 use App\Services\Validation\CfbValidationCoverage;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Validator;
@@ -35,7 +36,7 @@ use Illuminate\Support\Str;
 
 class RunPregamePipelineCommand extends Command
 {
-    protected $signature = 'cfb:run-pregame-pipeline {--heartbeat-name= : Scheduled completion heartbeat name} {--run-id= : Internal worker execution identifier} {--season=} {--week=} {--days-forward=2} {--game=} {--games= : Comma-separated game IDs for scoped recovery} {--resume} {--dry-run} {--queued : Run on the bulk sync worker} {--core-only : Skip optional play reconstruction; approved release quality checks still apply}';
+    protected $signature = 'cfb:run-pregame-pipeline {--heartbeat-name= : Scheduled completion heartbeat name} {--run-id= : Internal worker execution identifier} {--batch-forecasts : Internal queued forecast mode} {--batch-offset= : Internal forecast batch cursor} {--season=} {--week=} {--days-forward=2} {--game=} {--games= : Comma-separated game IDs for scoped recovery} {--resume} {--dry-run} {--queued : Run on the bulk sync worker} {--core-only : Skip optional play reconstruction; approved release quality checks still apply}';
 
     protected $description = 'Refresh upcoming CFB injuries and odds before generating immutable forecasts';
 
@@ -73,9 +74,14 @@ class RunPregamePipelineCommand extends Command
 
             return self::FAILURE;
         }
+        $offset = $this->option('batch-offset');
+        if ($offset !== null && (! $this->option('run-id') || ! ctype_digit((string) $offset))) {
+            $this->error('Invalid worker forecast batch cursor.');
+
+            return self::FAILURE;
+        }
         $this->selectedGames = 0;
         $this->metricFailedTeams = [];
-        $this->recordProgress([]);
         // A killed queue worker cannot release its lock. Let it expire after
         // the worker deadline and before Redis can redeliver the reservation.
         $lockSeconds = $this->option('run-id') ? RunPregamePipeline::TIMEOUT_SECONDS + 30 : 3600;
@@ -86,6 +92,16 @@ class RunPregamePipelineCommand extends Command
             return self::FAILURE;
         }
         try {
+            if ($offset !== null) {
+                return $this->runForecastBatch((int) $offset, (int) $season, (int) $days);
+            }
+            if ($this->option('batch-forecasts')) {
+                $active = Cache::get('cfb:pregame:active-batch');
+                if ($active !== null) {
+                    return $active === $this->runId ? RunPregamePipeline::BATCH_PENDING : RunPregamePipeline::BATCH_BUSY;
+                }
+            }
+            $this->recordProgress([]);
             $gameColumns = array_merge(CalculateElo::RESULT_COLUMNS, ['sport_event_id', 'updated_at', 'espn_event_id']);
             $games = Game::with(['homeTeam', 'awayTeam'])->select($gameColumns)->where('season', $season)
                 ->when($this->option('game'), fn ($q, $v) => $q->whereKey($v))
@@ -331,93 +347,146 @@ class RunPregamePipelineCommand extends Command
                 $this->warn('Partial odds coverage; valid forecasts continue and unpriced markets remain unavailable.');
             }
 
-            $results = [];
-            foreach ($games as $game) {
-                $quotaExhausted = $provider->monthlyQuotaExhausted();
-                $stored = $quotaExhausted || filled(config('services.collegefootballdata.api_key'))
-                    ? app(CfbStoredPregameInputs::class)->assess($game, now()->toImmutable())
-                    : null;
-                if ($stored !== null && ($quotaExhausted || $stored['holds'] !== [])) {
-                    $this->warn("Game {$game->id}: CFBD pregame input check ".json_encode($stored, JSON_THROW_ON_ERROR));
-                }
-                $requiredTeams = $coverage->requiredTeamIds($game);
-                $executed = false;
-                $generationAttempted = false;
-                $previousId = (int) CanonicalPrediction::where('sport_event_id', $game->sport_event_id)->max('id');
-                $inputs = ['stored_cfbd_inputs' => $stored, 'metric_failures' => array_values(array_intersect($requiredTeams, $metricFailures)),
-                    'team_failures' => array_values(array_intersect($requiredTeams, $teamFailures)),
-                    'history_failures' => array_values(array_intersect($requiredTeams, $historyFailures)),
-                    'play_failures' => array_values(array_intersect($requiredTeams, $playFailures)), 'metadata_reliable' => ! in_array($game->id, $metadataFailures, true), 'game_updated_at' => $game->updated_at?->toISOString(),
-                    'history' => GameDataCheck::whereIn('game_id', $history->modelKeys())->whereNotNull('accepted_at')->pluck('source_hash')->sort()->values()->all(),
-                    // A new hourly source refresh needs a new immutable forecast; --resume only skips completed work within that refresh window.
-                    'refresh_window' => now()->format('Y-m-d-H'),
-                    'team_revisions' => TeamMetric::whereIn('team_id', [$game->home_team_id, $game->away_team_id])->max('updated_at'),
-                    'quote_revision' => MarketQuote::where('sport', 'cfb')->where('game_id', $game->id)->max('id'),
-                    'injury_revision' => PlayerInjury::whereIn('team_id', [$game->home_team_id, $game->away_team_id])->max('updated_at')];
-                $results[$game->id] = app(CfbPipelineStage::class)->run('game:'.$game->id, 'forecast', $inputs, function () use ($game, $stored, $historyFailures, $playFailures, $teamFailures, $metadataFailures, $metricFailures, $requiredTeams, $previousId, &$executed, &$generationAttempted) {
-                    $executed = true;
-                    if ($stored !== null && $stored['holds'] !== []) {
-                        return ['state' => 'blocked', 'reason' => 'unverified_or_stale_stored_cfbd_inputs'];
-                    }
-                    if (array_intersect($requiredTeams, $metricFailures)) {
-                        return ['state' => 'blocked', 'reason' => 'unreliable_team_metrics'];
-                    }
-                    if (in_array($game->id, $metadataFailures, true)) {
-                        return ['state' => 'blocked', 'reason' => 'unreliable_kickoff_metadata'];
-                    }
-                    if (array_intersect([$game->home_team_id, $game->away_team_id], $teamFailures)) {
-                        return ['state' => 'blocked', 'reason' => 'unreliable_team_personnel'];
-                    }
-                    if (array_intersect([$game->home_team_id, $game->away_team_id], $historyFailures)) {
-                        return ['state' => 'blocked', 'reason' => 'incomplete_historical_sources'];
-                    }
-                    if (array_intersect([$game->home_team_id, $game->away_team_id], $playFailures)
-                        && ! data_get(app(CalculationReleaseSelector::class)->select($game->sportEvent, 'pregame')->configuration,
-                            'inputs.validated_historical_play_metrics', false)) {
-                        return ['state' => 'blocked', 'reason' => 'release_requires_complete_play_history'];
-                    }
-                    if (! $game->sportEvent?->starts_at?->isFuture()) {
-                        return ['state' => 'blocked', 'reason' => 'kickoff_passed'];
-                    }
-                    $started = now();
-                    $generationAttempted = true;
-                    $code = $this->call('cfb:generate-canonical-predictions', ['--game' => $game->id, '--isolate' => true]);
+            $historyFingerprint = hash('sha256', GameDataCheck::whereIn('game_id', $history->modelKeys())
+                ->whereNotNull('accepted_at')->pluck('source_hash')->sort()->values()->toJson());
+            $refreshWindow = now()->format('Y-m-d-H');
+            $context = compact('historyFingerprint', 'refreshWindow', 'metricFailures', 'teamFailures', 'historyFailures', 'playFailures', 'metadataFailures');
+            $games = $games->sortBy([
+                fn (Game $a, Game $b): int => [$a->sportEvent?->starts_at?->timestamp, $a->id] <=> [$b->sportEvent?->starts_at?->timestamp, $b->id],
+            ])->values();
+            if ($this->option('batch-forecasts')) {
+                Cache::put('cfb:pregame:inputs:'.$this->runId, [
+                    ...$context, 'gameIds' => $games->modelKeys(), 'season' => (int) $season, 'days' => (int) $days,
+                ], now()->addHours(2));
 
-                    $output = CanonicalPrediction::where('sport_event_id', $game->sport_event_id)->where('sport', 'cfb')->where('phase', 'pregame')
-                        ->where('publication_state', 'published')->where('generated_at', '>=', $started)
-                        ->where('published_at', '<', $game->sportEvent->starts_at)->whereHas('markets')->latest('revision')->first();
-                    $game->unsetRelations();
-                    gc_collect_cycles();
-                    gc_mem_caches();
+                Cache::put('cfb:pregame:active-batch', $this->runId, now()->addHours(2));
 
-                    return ['state' => $code === self::SUCCESS && $output ? 'complete' : 'failed', 'code' => $code,
-                        'prediction_id' => $output?->public_id, 'published_count' => $output && $output->id > $previousId ? 1 : 0, 'reused_count' => $output && $output->id <= $previousId ? 1 : 0, 'reason' => $output ? null : 'no_fresh_published_forecast'];
-                }, (bool) $this->option('resume'));
-                $results[$game->id]['published_count'] = $generationAttempted ? CanonicalPrediction::where('sport_event_id', $game->sport_event_id)
-                    ->where('sport', 'cfb')->where('phase', 'pregame')->where('id', '>', $previousId)->whereNotNull('published_at')->count() : 0;
-                $results[$game->id]['reused_count'] = $executed ? (int) ($results[$game->id]['reused_count'] ?? 0) : ($results[$game->id]['state'] === 'complete' ? 1 : 0);
-                $this->recordProgress($results);
-            }
-            // Publish first: optional weather requests must not delay otherwise valid forecasts.
-            foreach ($games->modelKeys() as $weatherGameId) {
-                try {
-                    if ($this->call('cfb:sync-game-weather', ['--season' => (int) $season,
-                        '--from-date' => now()->toDateString(), '--days-forward' => (int) $days, '--force' => true,
-                        '--game-id' => $weatherGameId]) !== self::SUCCESS) {
-                        $this->warn('Weather refresh unavailable; missing weather remains unknown.');
-                    }
-                } catch (\Throwable $error) {
-                    report($error);
-                    $this->warn('Weather refresh unavailable; missing weather remains unknown.');
-                }
+                return RunPregamePipeline::BATCH_PENDING;
             }
 
-            $this->line(json_encode($this->recordProgress($results), JSON_THROW_ON_ERROR));
-
-            return collect($results)->every(fn ($r) => $r['state'] === 'complete') ? self::SUCCESS : 2;
+            return $this->forecastGames($games, [], $context, (int) $season, (int) $days);
         } finally {
             $lock->release();
         }
+    }
+
+    private function runForecastBatch(int $offset, int $season, int $days): int
+    {
+        $context = Cache::get('cfb:pregame:inputs:'.$this->runId);
+        if (Cache::get('cfb:pregame:active-batch') !== $this->runId || ! is_array($context) || $context['season'] !== $season || $context['days'] !== $days
+            || $offset >= count($context['gameIds']) || $offset % RunPregamePipeline::BATCH_SIZE !== 0) {
+            $this->error('CFB forecast batch checkpoint missing, expired, or invalid.');
+
+            return self::FAILURE;
+        }
+
+        $this->selectedGames = count($context['gameIds']);
+        $this->metricFailedTeams = array_values(array_unique($context['metricFailures']));
+        $ids = array_slice($context['gameIds'], $offset, RunPregamePipeline::BATCH_SIZE);
+        $games = Game::with('sportEvent')->whereIn('id', $ids)->get()->keyBy('id');
+        $results = Cache::get('cfb:pregame:run:'.$this->runId, [])['games'] ?? [];
+        foreach (array_diff($ids, $games->keys()->all()) as $missingId) {
+            $results[$missingId] = ['state' => 'failed', 'reason' => 'missing_scheduled_game'];
+        }
+
+        $code = $this->forecastGames(collect($ids)->map(fn (int $id) => $games->get($id))->filter(), $results, $context, $season, $days);
+
+        return $offset + RunPregamePipeline::BATCH_SIZE < $this->selectedGames ? RunPregamePipeline::BATCH_PENDING : $code;
+    }
+
+    private function forecastGames(Collection $games, array $results, array $context, int $season, int $days): int
+    {
+        ['historyFingerprint' => $historyFingerprint, 'refreshWindow' => $refreshWindow, 'metricFailures' => $metricFailures,
+            'teamFailures' => $teamFailures, 'historyFailures' => $historyFailures, 'playFailures' => $playFailures,
+            'metadataFailures' => $metadataFailures] = $context;
+        $provider = app(CollegeFootballDataService::class);
+        $coverage = app(CfbValidationCoverage::class);
+        foreach ($games as $game) {
+            if (isset($results[$game->id])) {
+                continue;
+            }
+            $quotaExhausted = $provider->monthlyQuotaExhausted();
+            $stored = $quotaExhausted || filled(config('services.collegefootballdata.api_key'))
+                ? app(CfbStoredPregameInputs::class)->assess($game, now()->toImmutable())
+                : null;
+            if ($stored !== null && ($quotaExhausted || $stored['holds'] !== [])) {
+                $this->warn("Game {$game->id}: CFBD pregame input check ".json_encode($stored, JSON_THROW_ON_ERROR));
+            }
+            $requiredTeams = $coverage->requiredTeamIds($game);
+            $executed = false;
+            $generationAttempted = false;
+            $previousId = (int) CanonicalPrediction::where('sport_event_id', $game->sport_event_id)->max('id');
+            $inputs = ['stored_cfbd_inputs' => $stored, 'metric_failures' => array_values(array_intersect($requiredTeams, $metricFailures)),
+                'team_failures' => array_values(array_intersect($requiredTeams, $teamFailures)),
+                'history_failures' => array_values(array_intersect($requiredTeams, $historyFailures)),
+                'play_failures' => array_values(array_intersect($requiredTeams, $playFailures)), 'metadata_reliable' => ! in_array($game->id, $metadataFailures, true), 'game_updated_at' => $game->updated_at?->toISOString(),
+                'history' => $historyFingerprint,
+                // A new hourly source refresh needs a new immutable forecast; --resume only skips completed work within that refresh window.
+                'refresh_window' => $refreshWindow,
+                'team_revisions' => TeamMetric::whereIn('team_id', [$game->home_team_id, $game->away_team_id])->max('updated_at'),
+                'quote_revision' => MarketQuote::where('sport', 'cfb')->where('game_id', $game->id)->max('id'),
+                'injury_revision' => PlayerInjury::whereIn('team_id', [$game->home_team_id, $game->away_team_id])->max('updated_at')];
+            $results[$game->id] = app(CfbPipelineStage::class)->run('game:'.$game->id, 'forecast', $inputs, function () use ($game, $stored, $historyFailures, $playFailures, $teamFailures, $metadataFailures, $metricFailures, $requiredTeams, $previousId, &$executed, &$generationAttempted) {
+                $executed = true;
+                if ($stored !== null && $stored['holds'] !== []) {
+                    return ['state' => 'blocked', 'reason' => 'unverified_or_stale_stored_cfbd_inputs'];
+                }
+                if (array_intersect($requiredTeams, $metricFailures)) {
+                    return ['state' => 'blocked', 'reason' => 'unreliable_team_metrics'];
+                }
+                if (in_array($game->id, $metadataFailures, true)) {
+                    return ['state' => 'blocked', 'reason' => 'unreliable_kickoff_metadata'];
+                }
+                if (array_intersect([$game->home_team_id, $game->away_team_id], $teamFailures)) {
+                    return ['state' => 'blocked', 'reason' => 'unreliable_team_personnel'];
+                }
+                if (array_intersect([$game->home_team_id, $game->away_team_id], $historyFailures)) {
+                    return ['state' => 'blocked', 'reason' => 'incomplete_historical_sources'];
+                }
+                if (array_intersect([$game->home_team_id, $game->away_team_id], $playFailures)
+                    && ! data_get(app(CalculationReleaseSelector::class)->select($game->sportEvent, 'pregame')->configuration,
+                        'inputs.validated_historical_play_metrics', false)) {
+                    return ['state' => 'blocked', 'reason' => 'release_requires_complete_play_history'];
+                }
+                if (! $game->sportEvent?->starts_at?->isFuture()) {
+                    return ['state' => 'blocked', 'reason' => 'kickoff_passed'];
+                }
+                $started = now();
+                $generationAttempted = true;
+                $code = $this->call('cfb:generate-canonical-predictions', ['--game' => $game->id, '--isolate' => true]);
+
+                $output = CanonicalPrediction::where('sport_event_id', $game->sport_event_id)->where('sport', 'cfb')->where('phase', 'pregame')
+                    ->where('publication_state', 'published')->where('generated_at', '>=', $started)
+                    ->where('published_at', '<', $game->sportEvent->starts_at)->whereHas('markets')->latest('revision')->first();
+                $game->unsetRelations();
+                gc_collect_cycles();
+                gc_mem_caches();
+
+                return ['state' => $code === self::SUCCESS && $output ? 'complete' : 'failed', 'code' => $code,
+                    'prediction_id' => $output?->public_id, 'published_count' => $output && $output->id > $previousId ? 1 : 0, 'reused_count' => $output && $output->id <= $previousId ? 1 : 0, 'reason' => $output ? null : 'no_fresh_published_forecast'];
+            }, (bool) $this->option('resume'));
+            $results[$game->id]['published_count'] = $generationAttempted ? CanonicalPrediction::where('sport_event_id', $game->sport_event_id)
+                ->where('sport', 'cfb')->where('phase', 'pregame')->where('id', '>', $previousId)->whereNotNull('published_at')->count() : 0;
+            $results[$game->id]['reused_count'] = $executed ? (int) ($results[$game->id]['reused_count'] ?? 0) : ($results[$game->id]['state'] === 'complete' ? 1 : 0);
+            $this->recordProgress($results);
+        }
+        // Publish first: optional weather requests must not delay otherwise valid forecasts.
+        foreach ($games->pluck('id') as $weatherGameId) {
+            try {
+                if ($this->call('cfb:sync-game-weather', ['--season' => (int) $season,
+                    '--from-date' => now()->toDateString(), '--days-forward' => (int) $days, '--force' => true,
+                    '--game-id' => $weatherGameId]) !== self::SUCCESS) {
+                    $this->warn('Weather refresh unavailable; missing weather remains unknown.');
+                }
+            } catch (\Throwable $error) {
+                report($error);
+                $this->warn('Weather refresh unavailable; missing weather remains unknown.');
+            }
+        }
+
+        $this->line(json_encode($this->recordProgress($results), JSON_THROW_ON_ERROR));
+
+        return collect($results)->every(fn ($r) => $r['state'] === 'complete') ? self::SUCCESS : 2;
     }
 
     private function recordProgress(array $results): array

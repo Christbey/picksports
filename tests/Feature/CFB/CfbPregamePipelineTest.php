@@ -571,3 +571,30 @@ it('does not repeat a run with a terminal worker heartbeat on redelivery', funct
 
     expect(CommandHeartbeat::where('source', 'worker')->count())->toBe(1);
 });
+
+it('queues a forecast continuation and completes the same prepared run without repeating shared inputs', function () {
+    Bus::fake();
+    $arguments = ['--season' => 2026, '--resume' => true, '--heartbeat-name' => 'CFB: Generate Canonical Predictions'];
+    $first = Game::firstOrFail();
+    foreach (range(1, 5) as $hour) {
+        $event = SportEvent::factory()->create(['sport' => 'cfb', 'starts_at' => now()->addHours($hour)]);
+        Game::factory()->create(['season' => 2026, 'status' => 'STATUS_SCHEDULED', 'sport_event_id' => $event->id,
+            'home_team_id' => $first->home_team_id, 'away_team_id' => $first->away_team_id]);
+    }
+    $prepare = new RunPregamePipeline($arguments);
+    $prepare->handle();
+    expect($this->steps->getArrayCopy())->not->toContain('generation')
+        ->and(CommandHeartbeat::where('source', 'worker')->count())->toBe(0);
+
+    Bus::assertDispatched(RunPregamePipeline::class, fn ($job) => $job->batchOffset === 0 && $job->runId === $prepare->runId);
+    (new RunPregamePipeline($arguments, 0, $prepare->runId))->handle();
+
+    expect(array_count_values($this->steps->getArrayCopy()))->toMatchArray(['elo' => 1, 'generation' => 5])
+        ->and(CommandHeartbeat::where('source', 'worker')->count())->toBe(0);
+    Bus::assertDispatched(RunPregamePipeline::class, fn ($job) => $job->batchOffset === 5 && $job->runId === $prepare->runId);
+    (new RunPregamePipeline($arguments, 5, $prepare->runId))->handle();
+
+    expect(array_count_values($this->steps->getArrayCopy()))->toMatchArray(['elo' => 1, 'generation' => 6])
+        ->and(CommandHeartbeat::where('source', 'worker')->sole()->status)->toBe('success')
+        ->and(Cache::get('cfb:pregame:active-batch'))->toBeNull();
+});

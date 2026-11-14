@@ -190,6 +190,10 @@ it('audits NFL frozen spread validation daily after grading without fetching odd
 
 it('gates scheduled MLB backtests and scoreboard sync during the November offseason', function (?string $gameDate, string $status, bool $expected) {
     $this->travelTo(CarbonImmutable::parse('2026-11-10 16:00', 'America/Chicago'));
+    // Laravel evaluates between() when the event is registered.
+    Illuminate\Support\Facades\Schedule::swap(new Schedule(config('app.timezone')));
+    require base_path('routes/console.php');
+
     if ($gameDate !== null) {
         Game::factory()->postseason()->create([
             'season' => 2026,

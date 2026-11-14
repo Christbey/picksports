@@ -170,3 +170,20 @@ it('allows a forced operator rebuild while the monitor is idle', function () {
 
     $this->artisan('nfl:refresh-model-monitor', ['--force' => true])->assertSuccessful();
 });
+
+it('builds one requested report per worker run and skips expired scopes', function () {
+    $service = Mockery::mock(NflModelMonitoringService::class);
+    $service->shouldReceive('dashboard')->once()->with(null, ['from_season' => 2025], false)->andReturn(['saved' => true]);
+    $service->shouldReceive('signalGradePayload')->once()->andReturn([['saved' => true]]);
+    app()->instance(NflModelMonitoringService::class, $service);
+    $reports = app(NflMonitorReportCache::class);
+    $reports->read(null, ['from_season' => 2024]);
+    $this->travel(31)->minutes();
+    $reports->read(null, ['from_season' => 2025]);
+
+    $this->artisan('nfl:refresh-model-monitor', ['--batch' => true])->assertSuccessful();
+    expect($reports->legacy()['generated_at'])->toBeNull();
+    $this->artisan('nfl:refresh-model-monitor', ['--batch' => true])->assertSuccessful();
+    expect($reports->legacy()['grades'])->toBe([['saved' => true]])
+        ->and($reports->read(null, ['from_season' => 2025])['payload'])->toBe(['saved' => true]);
+});

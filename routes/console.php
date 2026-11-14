@@ -1471,7 +1471,7 @@ $adminEmailReportEvent = Schedule::command('alerts:send-admin-email-report')
 $attachCommandHeartbeat($adminEmailReportEvent, 'alerts:send-admin-email-report', 'Alerts: Send Admin Email Report');
 
 // College football prop refresh includes January playoff games; the command scores after import.
-$cfbPlayerPropsCommand = 'cfb:sync-player-props --prepare';
+$cfbPlayerPropsCommand = 'cfb:sync-player-props --prepare --queued';
 $cfbPlayerPropsEvent = Schedule::command($cfbPlayerPropsCommand)
     ->hourlyAt(15)
     ->timezone('America/Chicago')
@@ -1559,7 +1559,7 @@ $scheduleDailySeasonJob('cfb:sync-opponent-history --days=14', '03:05', $cfbInSe
     ->appendOutputTo(storage_path('logs/cfb-opponent-history.log'));
 
 // Check pending admin report scopes; fresh reports are not rebuilt for fifteen minutes.
-$nflMonitorCommand = 'nfl:refresh-model-monitor --limit=3';
+$nflMonitorCommand = 'nfl:refresh-model-monitor --batch';
 $nflMonitorEvent = Schedule::command($nflMonitorCommand)->everyMinute()->timezone('America/Chicago')
     ->when(fn (): bool => app(NflMonitorReportCache::class)->hasRecentDemand())
     ->onOneServer()->withoutOverlapping(20)->runInBackground()->name('NFL: Refresh Admin Monitor Reports');

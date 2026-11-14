@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\OddsApi\CFB\SyncPlayerPropsForGames;
+use App\Jobs\RunScheduledCommand;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game;
 use App\Models\CFB\Player;
@@ -10,6 +11,7 @@ use App\Models\PredictionMarket;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
@@ -60,4 +62,22 @@ test('prop preparation failure is surfaced after successful quote import', funct
     $this->artisan('cfb:sync-player-props', ['--date' => '2026-09-26', '--prepare' => true])->assertFailed();
     Process::assertRan(fn ($process) => in_array('cfb:prepare-player-props', $process->command, true)
         && in_array('--date=2026-09-26', $process->command, true));
+});
+
+it('queues CFB prop work separately by upcoming game', function () {
+    Queue::fake();
+    $sync = Mockery::mock(SyncPlayerPropsForGames::class);
+    $sync->shouldNotReceive('execute');
+    app()->instance(SyncPlayerPropsForGames::class, $sync);
+    $attributes = ['home_team_id' => Team::factory(), 'away_team_id' => Team::factory(),
+        'game_date' => '2026-09-26', 'status' => 'STATUS_SCHEDULED'];
+    $first = Game::factory()->create([...$attributes, 'game_time' => '18:00:00', 'odds_api_event_id' => 'one']);
+    $second = Game::factory()->create([...$attributes, 'game_time' => '23:00:00', 'odds_api_event_id' => 'two']);
+    Game::factory()->create([...$attributes, 'game_time' => '13:00:00', 'odds_api_event_id' => 'elapsed']);
+
+    $this->artisan('cfb:sync-player-props', ['--prepare' => true, '--queued' => true])->assertSuccessful();
+    Queue::assertPushed(RunScheduledCommand::class, 2);
+    foreach ([$first, $second] as $game) {
+        Queue::assertPushed(RunScheduledCommand::class, fn ($job) => $job->queue === 'sync' && $job->commandLine === "cfb:sync-player-props --date=2026-09-26 --game={$game->id} --prepare");
+    }
 });

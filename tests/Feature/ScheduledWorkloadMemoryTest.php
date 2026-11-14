@@ -4,8 +4,12 @@ use App\Jobs\RunScheduledCommand;
 use App\Models\CommandHeartbeat;
 use App\Services\CommandHeartbeatService;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Queue\Job;
+use Illuminate\Queue\Events\JobProcessed;
+use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Symfony\Component\Console\Output\ConsoleOutput;
 
@@ -79,4 +83,23 @@ it('leaves completion reporting to nested pipeline workers', function () {
         ->handle(app(CommandHeartbeatService::class));
     expect(CommandHeartbeat::count())->toBe(0);
     Http::assertNothingSent();
+});
+
+it('logs one timing sample for a worker attempt without including its payload', function () {
+    $job = Mockery::mock(Job::class);
+    $job->shouldReceive('payload')->andReturn(['createdAt' => time() - 5, 'data' => ['secret' => 'omit']]);
+    $job->shouldReceive('resolveName')->andReturn('test-job');
+    $job->shouldReceive('uuid')->andReturn('test-uuid');
+    $job->shouldReceive('getQueue')->andReturn('sync');
+    $job->shouldReceive('attempts')->andReturn(1);
+    $job->shouldReceive('hasFailed')->andReturnFalse();
+    $job->shouldReceive('isReleased')->andReturnFalse();
+    Log::shouldReceive('info')->once()->with('queue.job.timing',
+        Mockery::on(fn (array $timing): bool => $timing['outcome'] === 'completed'
+            && $timing['enqueue_to_start_ms'] >= 4500 && $timing['runtime_ms'] >= 0
+            && $timing['process_peak_bytes'] > 0 && ! array_key_exists('data', $timing)));
+
+    event(new JobProcessing('redis', $job));
+    event(new JobProcessed('redis', $job));
+    event(new JobProcessed('redis', $job));
 });

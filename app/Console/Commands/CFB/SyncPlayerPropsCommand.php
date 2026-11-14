@@ -3,13 +3,16 @@
 namespace App\Console\Commands\CFB;
 
 use App\Actions\OddsApi\CFB\SyncPlayerPropsForGames;
+use App\Jobs\RunScheduledCommand;
+use App\Models\CFB\Game;
+use App\Services\BettingRecommendations\CfbPropEligibility;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Validator;
 
 class SyncPlayerPropsCommand extends Command
 {
-    protected $signature = 'cfb:sync-player-props {--date= : Game date in America/Chicago; defaults to today} {--game= : Limit to an internal game ID} {--no-analyze : Import quotes without scoring} {--prepare : Refresh rosters and backfill recent stats before scoring}';
+    protected $signature = 'cfb:sync-player-props {--date= : Game date in America/Chicago; defaults to today} {--game= : Limit to an internal game ID} {--no-analyze : Import quotes without scoring} {--prepare : Refresh rosters and backfill recent stats before scoring} {--queued : Dispatch one preparation job per upcoming game}';
 
     protected $description = 'Fetch college football and playoff yardage props from FanDuel and DraftKings, then analyze eligible lines';
 
@@ -22,6 +25,26 @@ class SyncPlayerPropsCommand extends Command
 
             return self::FAILURE;
         }
+        if ($this->option('queued')) {
+            $date = $input['date'] ?? now('America/Chicago')->toDateString();
+            $games = CfbPropEligibility::onDate(
+                Game::where('status', 'STATUS_SCHEDULED')->whereNotNull('odds_api_event_id'), $date,
+            )->when($input['game'], fn ($query, $id) => $query->whereKey($id))
+                ->orderBy('game_date')->orderBy('game_time')->orderBy('id')
+                ->get(['id', 'game_date', 'game_time'])
+                ->filter(fn (Game $game): bool => CfbPropEligibility::kickoff($game)->isFuture());
+            $flags = ($this->option('prepare') ? ' --prepare' : '').($this->option('no-analyze') ? ' --no-analyze' : '');
+            foreach ($games as $game) {
+                RunScheduledCommand::dispatch(
+                    "cfb:sync-player-props --date={$date} --game={$game->id}{$flags}",
+                    'CFB: Sync and Analyze Player Props Game',
+                );
+            }
+            $this->info("Queued CFB player prop refreshes for {$games->count()} upcoming game(s).");
+
+            return self::SUCCESS;
+        }
+
         $counts = $sync->execute($input['date'], $input['game'] ? (int) $input['game'] : null, ! $this->option('no-analyze') && ! $this->option('prepare'));
         $this->info(json_encode($counts, JSON_THROW_ON_ERROR));
 

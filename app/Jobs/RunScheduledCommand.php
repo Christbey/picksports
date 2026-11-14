@@ -32,6 +32,11 @@ class RunScheduledCommand implements ShouldBeUnique, ShouldQueue
         $this->timeout = $this->queue === 'default' ? 110 : 1700;
     }
 
+    public function displayName(): string
+    {
+        return $this->scheduledName;
+    }
+
     public function uniqueId(): string
     {
         return 'scheduled-command:'.hash('sha256', $this->scheduledName.'|'.$this->commandLine);
@@ -42,6 +47,10 @@ class RunScheduledCommand implements ShouldBeUnique, ShouldQueue
         $started = hrtime(true);
         $sport = $heartbeats->inferSportFromCommand($this->commandLine);
         $metadata = ['scheduled_name' => $this->scheduledName, 'queue' => $this->queue];
+        $queuedAt = $this->job?->payload()['createdAt'] ?? null;
+        if (is_numeric($queuedAt)) {
+            $metadata['queue_wait_ms'] = max(0, (int) ((microtime(true) - $queuedAt) * 1000));
+        }
         try {
             $code = Artisan::call(str_replace('\\', '\\\\', $this->commandLine), [], new ConsoleOutput);
             $metadata += ['exit_code' => $code, 'duration_ms' => (int) ((hrtime(true) - $started) / 1_000_000),

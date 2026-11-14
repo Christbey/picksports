@@ -15,6 +15,7 @@ use App\Services\CommandHeartbeatService;
 use App\Services\DeveloperPlatform\DeveloperApiCredentialAuthenticator;
 use App\Services\ESPN\BaseEspnService;
 use App\Services\ESPN\NBA\EspnService;
+use App\Services\Infrastructure\QueueJobTiming;
 use App\Services\Predictions\ModelRunRecorder;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -64,6 +65,7 @@ class AppServiceProvider extends ServiceProvider
         $this->configureApiRateLimiters();
         $this->configureFactories();
         $this->registerEventListeners();
+        Event::subscribe(QueueJobTiming::class);
     }
 
     protected function configurePassport(): void

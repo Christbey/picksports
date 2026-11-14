@@ -16,6 +16,7 @@ use App\Support\SportsViewCache;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class PreparePlayerPropsCommand extends Command
@@ -38,6 +39,7 @@ class PreparePlayerPropsCommand extends Command
         CfbPropEligibility::onDate($query, $date);
         $games = $query->when($this->option('game'), fn ($q, $id) => $q->whereKey($id))->get()
             ->filter(fn ($game) => CfbPropEligibility::kickoff($game)->isFuture());
+        $started = hrtime(true);
         $teamIds = $games->flatMap(fn ($game) => [$game->home_team_id, $game->away_team_id])->unique();
         $counts = ['teams' => 0, 'roster_players' => 0, 'history_games' => 0, 'stat_rows' => 0, 'linked' => 0, 'recommendations' => 0, 'failed' => 0];
         $readyTeams = [];
@@ -107,6 +109,13 @@ class PreparePlayerPropsCommand extends Command
             $counts['recommendations'] += $analyzer->analyzeProps(sport: 'CFB', gameFilter: $game->id, attachNarratives: false)->count();
         }
         app(SportsViewCache::class)->bustSegment(SportsViewCache::SEGMENT_PLAYER_PROPS_PAGE);
+        Log::info('cfb.prop_preparation.timing', [
+            'game_id' => $this->option('game') === null ? null : (int) $this->option('game'),
+            'games' => $games->count(),
+            'failed' => $counts['failed'],
+            'runtime_ms' => (int) ((hrtime(true) - $started) / 1_000_000),
+            'process_peak_bytes' => memory_get_peak_usage(true),
+        ]);
         $this->info(json_encode($counts, JSON_THROW_ON_ERROR));
 
         return $counts['failed'] > 0 ? self::FAILURE : self::SUCCESS;

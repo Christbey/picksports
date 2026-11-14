@@ -21,6 +21,12 @@ class RunPregamePipeline implements ShouldBeUnique, ShouldQueue
 
     public const TIMEOUT_SECONDS = 1700;
 
+    public const BATCH_SIZE = 5;
+
+    public const BATCH_PENDING = 75;
+
+    public const BATCH_BUSY = 76;
+
     // Redis can redeliver a reservation after a worker is replaced.
     // Completed command failures still fail explicitly.
     public int $tries = 2;
@@ -29,14 +35,18 @@ class RunPregamePipeline implements ShouldBeUnique, ShouldQueue
 
     public string $runId;
 
-    public function __construct(public array $arguments)
+    public function __construct(public array $arguments, public ?int $batchOffset = null, ?string $runId = null)
     {
-        $this->runId = (string) Str::uuid();
+        $this->runId = $runId ?? (string) Str::uuid();
         $this->onQueue('sync');
     }
 
     public function uniqueId(): string
     {
+        if ($this->batchOffset !== null) {
+            return 'cfb-pregame-batch-'.$this->runId.'-'.$this->batchOffset;
+        }
+
         return 'cfb-pregame-'.($this->arguments['--season'] ?? 'current');
     }
 
@@ -51,15 +61,31 @@ class RunPregamePipeline implements ShouldBeUnique, ShouldQueue
         Cache::put('cfb:pregame:worker-status', ['run_id' => $this->runId, 'state' => 'running', 'arguments' => $this->arguments,
             'started_at' => $started], now()->addDay());
         try {
-            $code = Artisan::call('cfb:run-pregame-pipeline', [...$this->arguments, '--run-id' => $this->runId]);
+            $batch = match (true) {
+                $this->batchOffset !== null => ['--batch-offset' => $this->batchOffset],
+                isset($this->arguments['--heartbeat-name']) && ($this->arguments['--resume'] ?? false) => ['--batch-forecasts' => true],
+                default => [],
+            };
+            $code = Artisan::call('cfb:run-pregame-pipeline', [...$this->arguments, '--run-id' => $this->runId, ...$batch]);
+            if ($code === self::BATCH_BUSY) {
+                return;
+            }
+            if ($code === self::BATCH_PENDING) {
+                $nextOffset = $this->batchOffset === null ? 0 : $this->batchOffset + self::BATCH_SIZE;
+                self::dispatch($this->arguments, $nextOffset, $this->runId);
+
+                return;
+            }
         } catch (Throwable $error) {
             $this->recordOutcome('failed', 1, $started, null, $error->getMessage(), $monotonicStart);
+            $this->clearBatch();
             $this->fail($error);
 
             return;
         }
         $state = $code === 0 ? 'complete' : ($code === 2 ? 'partial' : 'failed');
         $this->recordOutcome($state, $code, $started, Artisan::output(), monotonicStart: $monotonicStart);
+        $this->clearBatch();
         if ($state !== 'complete') {
             $this->fail(new \RuntimeException('CFB pregame worker failed: '.$this->runId));
         }
@@ -75,9 +101,17 @@ class RunPregamePipeline implements ShouldBeUnique, ShouldQueue
         }
     }
 
+    private function clearBatch(): void
+    {
+        if (Cache::get('cfb:pregame:active-batch') === $this->runId) {
+            Cache::forget('cfb:pregame:active-batch');
+        }
+    }
+
     public function failed(?Throwable $error): void
     {
         $this->runId ??= (string) Str::uuid();
+        $this->clearBatch();
         if (! CommandHeartbeat::where('source', 'worker')->where('metadata->run_id', $this->runId)->exists()) {
             $status = Cache::get('cfb:pregame:worker-status', []);
             $this->recordOutcome('failed', 1, ($status['run_id'] ?? null) === $this->runId ? ($status['started_at'] ?? null) : null, null, $error?->getMessage());

@@ -339,6 +339,25 @@ const {
                         </li>
                     </ul>
                 </details>
+                <dl
+                    v-if="detailsOnly && !dashboard"
+                    aria-label="Pregame market calls"
+                    class="flex flex-wrap gap-x-8 gap-y-2 text-sm"
+                >
+                    <div>
+                        <dt class="text-xs text-muted-foreground">
+                            Spread call
+                        </dt>
+                        <dd>{{ pregameCalls.spread }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs text-muted-foreground">
+                            Total call
+                        </dt>
+                        <dd>{{ pregameCalls.total }}</dd>
+                    </div>
+                </dl>
+
                 <PredictionLiveInsights
                     v-if="detailsOnly && isLive()"
                     :game="live"

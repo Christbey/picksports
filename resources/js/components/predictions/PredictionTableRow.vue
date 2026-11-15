@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
 import { ChevronDown } from 'lucide-vue-next';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
+import { predictionHomeMargin } from '@/lib/predictionSpread';
 import UnifiedPredictionCard from '@/components/predictions/UnifiedPredictionCard.vue';
 import { usePredictionCardGame } from '@/composables/usePredictionCardGame';
 import { usePredictionCardRecommendation } from '@/composables/usePredictionCardRecommendation';
@@ -14,14 +15,42 @@ const { pregameCalls, dashboardWinnerGrade } = usePredictionCardRecommendation(
     props,
     game,
 );
+const projectedSpread = computed(() => {
+    const margin = predictionHomeMargin(props.prediction);
+    if (margin === null) return '—';
+    if (margin === 0) return 'Pick’em';
+
+    const team = margin > 0 ? game.homeTeamLabel() : game.awayTeamLabel();
+    return `${team} −${Math.abs(margin)}`;
+});
 </script>
 
 <template>
     <tbody class="border-t border-border">
         <tr :class="dashboardWinnerGrade?.rowClass || 'hover:bg-muted/40'">
             <th scope="row" class="px-3 py-3 text-left font-semibold">
-                <Link :href="href" class="hover:underline">
-                    {{ game.awayTeamLabel() }} @ {{ game.homeTeamLabel() }}
+                <Link
+                    :href="href"
+                    class="inline-flex flex-wrap items-center gap-1.5 underline-offset-4 hover:underline"
+                >
+                    <img
+                        v-if="!dashboard && game.showAwayLogo()"
+                        :src="game.awayLogo()!"
+                        alt=""
+                        class="size-5 object-contain"
+                        :loading="deferTeamLogos ? 'lazy' : undefined"
+                        @error="game.handleAwayLogoError"
+                    />
+                    {{ game.awayTeamLabel() }} @
+                    <img
+                        v-if="!dashboard && game.showHomeLogo()"
+                        :src="game.homeLogo()!"
+                        alt=""
+                        class="size-5 object-contain"
+                        :loading="deferTeamLogos ? 'lazy' : undefined"
+                        @error="game.handleHomeLogoError"
+                    />
+                    {{ game.homeTeamLabel() }}
                 </Link>
             </th>
             <td class="px-3 py-3 text-muted-foreground">
@@ -49,7 +78,7 @@ const { pregameCalls, dashboardWinnerGrade } = usePredictionCardRecommendation(
                 </p>
             </td>
             <td class="px-3 py-3">
-                {{ pregameCalls.spread }}
+                {{ dashboard ? pregameCalls.spread : projectedSpread }}
                 <p
                     v-if="pregameCalls.spreadGrade"
                     class="block text-xs text-muted-foreground"
@@ -58,7 +87,11 @@ const { pregameCalls, dashboardWinnerGrade } = usePredictionCardRecommendation(
                 </p>
             </td>
             <td class="px-3 py-3">
-                {{ pregameCalls.total }}
+                {{
+                    dashboard
+                        ? pregameCalls.total
+                        : (prediction.predicted_total ?? '—')
+                }}
                 <p
                     v-if="pregameCalls.totalGrade"
                     class="block text-xs text-muted-foreground"

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { CalendarX2, FilterX } from 'lucide-vue-next';
+import PredictionTableRow from '@/components/predictions/PredictionTableRow.vue';
 import UnifiedPredictionCard from '@/components/predictions/UnifiedPredictionCard.vue';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -39,26 +40,65 @@ const {
         </Card>
     </div>
 
-    <ul
-        v-else-if="!error && filteredPredictions.length > 0"
-        role="list"
-        aria-label="Prediction matchups"
-        class="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card"
-    >
-        <li
-            v-for="(prediction, index) in filteredPredictions"
-            :key="prediction.game.id"
-            class="min-w-0"
+    <template v-else-if="!error && filteredPredictions.length > 0">
+        <div
+            class="hidden overflow-x-auto rounded-lg border border-border bg-card lg:block"
         >
-            <UnifiedPredictionCard
-                :prediction="prediction"
-                :href="gameHref(prediction)"
-                :sport="config.sport"
-                :defer-team-logos="index >= 3"
-                compact
-            />
-        </li>
-    </ul>
+            <table
+                aria-label="Prediction matchups"
+                class="w-full text-left text-sm"
+            >
+                <thead class="bg-muted/50 text-xs text-muted-foreground">
+                    <tr>
+                        <th
+                            v-for="column in [
+                                'Matchup',
+                                'Status',
+                                'Model winner',
+                                'Projected spread',
+                                'Projected total',
+                            ]"
+                            :key="column"
+                            scope="col"
+                            class="px-3 py-2 font-medium"
+                        >
+                            {{ column }}
+                        </th>
+                        <th scope="col" class="px-3 py-2">
+                            <span class="sr-only">Analysis</span>
+                        </th>
+                    </tr>
+                </thead>
+                <PredictionTableRow
+                    v-for="(prediction, index) in filteredPredictions"
+                    :key="prediction.game.id"
+                    :prediction="prediction"
+                    :href="gameHref(prediction)"
+                    :sport="config.sport"
+                    :defer-team-logos="index >= 3"
+                />
+            </table>
+        </div>
+        <ul
+            role="list"
+            aria-label="Prediction matchups"
+            class="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card lg:hidden"
+        >
+            <li
+                v-for="(prediction, index) in filteredPredictions"
+                :key="prediction.game.id"
+                class="min-w-0"
+            >
+                <UnifiedPredictionCard
+                    :prediction="prediction"
+                    :href="gameHref(prediction)"
+                    :sport="config.sport"
+                    :defer-team-logos="index >= 3"
+                    compact
+                />
+            </li>
+        </ul>
+    </template>
 
     <Card v-else-if="!error" class="border-dashed">
         <CardContent class="flex flex-col items-center gap-3 py-12 text-center">

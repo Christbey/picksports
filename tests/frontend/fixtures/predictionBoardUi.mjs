@@ -97,6 +97,27 @@ export function predictionBoardUi(sport, filterMode, scenario = 'normal') {
                                   }))
                                 : [row(page * 2 - 1), row(page * 2)],
                     meta: {
+                        board:
+                            sport === 'cfb'
+                                ? {
+                                      version: 'a'.repeat(64),
+                                      mode:
+                                          options.query.view === 'live'
+                                              ? 'live'
+                                              : 'replace',
+                                  }
+                                : undefined,
+                        board_startup:
+                            options.query.view === 'startup'
+                                ? {
+                                      seasons: [2026, 2025],
+                                      period: {
+                                          season: 2026,
+                                          season_type: '2',
+                                          week: 0,
+                                      },
+                                  }
+                                : undefined,
                         pagination: {
                             current_page: page,
                             last_page: 2,

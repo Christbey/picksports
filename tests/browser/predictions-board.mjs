@@ -172,12 +172,15 @@ try {
         for (const [sport, mode, scenario] of process.env.READER_FOCUSED
             ? [['cfb', 'seasonWeek', 'dense']]
             : scenarios) {
+            await page.setViewportSize({ width: 1280, height: 900 });
             await page.goto(
                 `http://127.0.0.1:${server.httpServer.address().port}/__predictions-board/${sport}-${mode}-${scenario}-${before}?sport=${sport}&mode=${mode}&scenario=${scenario}&before=${before ? 1 : 0}`,
                 { waitUntil: 'domcontentloaded' },
             );
             if (scenario === 'normal' || scenario === 'dense')
-                await page.locator(`a[href="/${sport}/games/1"]`).waitFor();
+                await page
+                    .locator(`a[href="/${sport}/games/1"]:visible`)
+                    .waitFor();
             else if (scenario === 'error')
                 await page
                     .getByText('Failed to fetch predictions', { exact: true })
@@ -190,10 +193,13 @@ try {
                     .waitFor();
             if (scenario === 'dense') {
                 if (!before) {
-                    const list = page.getByRole('list', {
+                    const table = page.getByRole('table', {
                         name: 'Prediction matchups',
                     });
-                    assert.equal(await list.locator(':scope > li').count(), 69);
+                    assert.equal(
+                        await table.getByRole('rowheader').count(),
+                        69,
+                    );
                 }
                 if (process.env.SAFARI_READER_SHARED_SCRIPT)
                     await page.addScriptTag({
@@ -293,6 +299,34 @@ try {
                         true,
                         `Page overflow at ${width}px`,
                     );
+                    if (scenario === 'normal') {
+                        const table = page.getByRole('table', {
+                            name: 'Prediction matchups',
+                        });
+                        const list = page.getByRole('list', {
+                            name: 'Prediction matchups',
+                        });
+                        assert.equal(
+                            await table.count(),
+                            width >= 1024 ? 1 : 0,
+                        );
+                        assert.equal(await list.count(), width >= 1024 ? 0 : 1);
+                        if (width >= 1024) {
+                            await table
+                                .getByRole('button', { name: /^Show analysis/ })
+                                .first()
+                                .click();
+                            assert.equal(
+                                await table
+                                    .getByRole('link', { name: 'View game' })
+                                    .count(),
+                                1,
+                            );
+                            await table
+                                .getByRole('button', { name: /^Hide analysis/ })
+                                .click();
+                        }
+                    }
                     if (width < 640 && scenario === 'normal') {
                         for (const control of await page
                             .locator(
@@ -378,19 +412,25 @@ try {
                     .fill('Tigers');
                 await page.waitForFunction(
                     () =>
-                        document.querySelectorAll('a[href*="/games/"]')
+                        Array.from(
+                            document.querySelectorAll('a[href*="/games/"]'),
+                        ).filter((link) => link.getClientRects().length > 0)
                             .length === 1,
                 );
                 await page.getByLabel('Search matchups on this page').fill('');
                 await page.waitForFunction(
                     () =>
-                        document.querySelectorAll('a[href*="/games/"]')
+                        Array.from(
+                            document.querySelectorAll('a[href*="/games/"]'),
+                        ).filter((link) => link.getClientRects().length > 0)
                             .length === 2,
                 );
                 await page.getByRole('button', { name: /^Bets/ }).click();
                 await page.waitForFunction(
                     () =>
-                        document.querySelectorAll('a[href*="/games/"]')
+                        Array.from(
+                            document.querySelectorAll('a[href*="/games/"]'),
+                        ).filter((link) => link.getClientRects().length > 0)
                             .length === 1,
                 );
                 await page
@@ -419,7 +459,9 @@ try {
                 await page
                     .getByRole('button', { name: 'Next', exact: true })
                     .click();
-                await page.locator(`a[href="/${sport}/games/3"]`).waitFor();
+                await page
+                    .locator(`a[href="/${sport}/games/3"]:visible`)
+                    .waitFor();
                 if (sport === 'cfb') {
                     await page
                         .getByRole('button', {
@@ -477,7 +519,7 @@ try {
                         .waitFor();
                     assert.equal(
                         await page
-                            .locator(`a[href="/${sport}/games/3"]`)
+                            .locator(`a[href="/${sport}/games/3"]:visible`)
                             .count(),
                         2,
                     );

@@ -9,8 +9,10 @@ import type { PredictionCardProps } from '@/types/prediction-card';
 const props = defineProps<PredictionCardProps>();
 const expanded = ref(false);
 const game = usePredictionCardGame(props);
-const { pregameCalls, dashboardSignalLabel, dashboardWinnerGrade } =
-    usePredictionCardRecommendation(props, game);
+const { pregameCalls, dashboardWinnerGrade } = usePredictionCardRecommendation(
+    props,
+    game,
+);
 </script>
 
 <template>
@@ -63,9 +65,6 @@ const { pregameCalls, dashboardSignalLabel, dashboardWinnerGrade } =
                     {{ pregameCalls.totalGrade }}
                 </p>
             </td>
-            <td class="px-3 py-3 text-muted-foreground">
-                {{ dashboardSignalLabel() ?? '—' }}
-            </td>
             <td class="px-3 py-3 text-right">
                 <button
                     type="button"
@@ -79,7 +78,7 @@ const { pregameCalls, dashboardSignalLabel, dashboardWinnerGrade } =
             </td>
         </tr>
         <tr v-if="expanded" class="bg-muted/20">
-            <td colspan="7" class="px-3 pb-3">
+            <td colspan="6" class="px-3 pb-3">
                 <UnifiedPredictionCard v-bind="props" />
             </td>
         </tr>

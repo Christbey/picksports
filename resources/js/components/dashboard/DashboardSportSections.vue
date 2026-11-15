@@ -72,7 +72,6 @@ const showSpringTrainingBadge = (sport: DashboardSport): boolean =>
                                     'Model winner',
                                     'Spread / Margin',
                                     'Total',
-                                    'Signal',
                                 ]"
                                 :key="column"
                                 scope="col"

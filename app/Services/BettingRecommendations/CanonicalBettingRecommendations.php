@@ -48,7 +48,10 @@ class CanonicalBettingRecommendations
             return [];
         }
 
+        $games = $upcoming->map(fn (CanonicalPrediction $prediction) => $prediction->sportEvent->getRelation($sport.'Game'));
         $decisions = $this->decisionQuery($sport)
+            ->where('game_table', $games->first()->getTable())
+            ->whereIn('game_id', $games->map(fn (Model $game) => $game->getKey())->unique()->all())
             ->whereIn('prediction_id', $upcoming->map(fn (CanonicalPrediction $prediction) => $prediction->getKey())->all())
             ->get()->groupBy('prediction_id');
 

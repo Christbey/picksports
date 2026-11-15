@@ -221,6 +221,8 @@ const resolveTeamName = (team: GamePageTeam | null, fallback: string): string =>
                 :prediction="prediction"
                 :format-number="formatNumber"
                 :projected-label="projectedLabel"
+                :away-color="awayTeam?.color"
+                :home-color="homeTeam?.color"
                 :away-bar-class="awayBarClass"
                 :home-bar-class="homeBarClass"
             />

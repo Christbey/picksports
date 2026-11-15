@@ -2,6 +2,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { PredictionSummary } from '@/types';
 import { computed } from 'vue';
+import { normalizeTeamColor } from '@/lib/teamColor';
 
 const props = defineProps<{
     title?: string;
@@ -13,6 +14,8 @@ const props = defineProps<{
         decimals?: number,
     ) => string;
     projectedLabel?: string;
+    awayColor?: string | null;
+    homeColor?: string | null;
     awayBarClass: string;
     homeBarClass: string;
 }>();
@@ -113,12 +116,14 @@ const formatSignedHomeSpread = (
                         :class="`${awayBarClass} transition-all`"
                         :style="{
                             width: `${prediction.away_win_probability * 100}%`,
+                            backgroundColor: normalizeTeamColor(awayColor),
                         }"
                     ></div>
                     <div
                         :class="`${homeBarClass} transition-all`"
                         :style="{
                             width: `${prediction.home_win_probability * 100}%`,
+                            backgroundColor: normalizeTeamColor(homeColor),
                         }"
                     ></div>
                 </div>

@@ -55,6 +55,8 @@ const isPregame = computed(() =>
                     :prediction="pageProps.prediction"
                     :format-number="pageProps.formatNumber ?? formatNumber"
                     :projected-label="pageProps.projectedLabel"
+                    :away-color="pageProps.awayTeam?.color"
+                    :home-color="pageProps.homeTeam?.color"
                     :away-bar-class="pageProps.awayBarClass"
                     :home-bar-class="pageProps.homeBarClass"
                 />

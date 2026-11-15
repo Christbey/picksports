@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { normalizeTeamColor } from '@/lib/teamColor';
 import { Link } from '@/platform';
 import { Badge } from '@/components/ui/badge';
 import type {
@@ -55,15 +56,8 @@ const props = withDefaults(
     },
 );
 
-function teamColor(team: GamePageTeam | null): string | undefined {
-    const hex = team?.color?.trim().replace(/^#/, '');
-    return hex && /^(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(hex)
-        ? `#${hex}`
-        : undefined;
-}
-
-const awayColor = computed(() => teamColor(props.awayTeam));
-const homeColor = computed(() => teamColor(props.homeTeam));
+const awayColor = computed(() => normalizeTeamColor(props.awayTeam?.color));
+const homeColor = computed(() => normalizeTeamColor(props.homeTeam?.color));
 
 const teamName = (team: GamePageTeam, fallback: string): string =>
     team.display_name ||

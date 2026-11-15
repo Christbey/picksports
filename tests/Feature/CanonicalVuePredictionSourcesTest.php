@@ -484,7 +484,7 @@ it('passes matching provider quotes to compact dashboard rows', function (
     app(GameOddsSnapshotRecorder::class)->record($sport, $game, $event, [
         ...$event,
         'bookmakers' => [[
-            'key' => 'draftkings',
+            'key' => $sport === 'wcbb' ? 'fanduel' : 'draftkings',
             'markets' => [
                 ['key' => 'spreads', 'outcomes' => [
                     ['name' => $providerHome, 'price' => -110, 'point' => -15.5],

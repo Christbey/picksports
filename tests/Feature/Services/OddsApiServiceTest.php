@@ -84,3 +84,18 @@ it('does not apply an old account cooldown to a replacement API key', function (
     (new OddsApiService)->getOdds('americanfootball_nfl');
     Http::assertSentCount(1);
 });
+
+it('requests DraftKings and FanDuel together for WCBB game odds', function () {
+    config()->set('services.odds_api.key', 'test-key');
+    Http::fake(['https://api.the-odds-api.com/v4/sports/basketball_wncaab/odds/*' => Http::response([])]);
+
+    app(OddsApiService::class)->getOdds('basketball_wncaab');
+
+    Http::assertSentCount(1);
+    Http::assertSent(function ($request) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY), $query);
+
+        return $query['bookmakers'] === 'draftkings,fanduel'
+            && $query['markets'] === 'h2h,spreads,totals';
+    });
+});

@@ -80,9 +80,11 @@ class OddsApiService
         $params = $this->withApiKey([
             'regions' => 'us',
             'markets' => 'h2h,spreads,totals',
-            'bookmakers' => $sport === 'americanfootball_ncaaf'
-                ? implode(',', (array) config('cfb.odds.bookmakers', ['draftkings', 'fanduel', 'betmgm']))
-                : 'draftkings',
+            'bookmakers' => match ($sport) {
+                'americanfootball_ncaaf' => implode(',', (array) config('cfb.odds.bookmakers', ['draftkings', 'fanduel', 'betmgm'])),
+                'basketball_wncaab' => 'draftkings,fanduel',
+                default => 'draftkings',
+            },
             'oddsFormat' => 'american',
         ]);
 

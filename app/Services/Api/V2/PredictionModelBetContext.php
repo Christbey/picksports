@@ -62,7 +62,7 @@ class PredictionModelBetContext
                 }
             })
             ->groupLimit(200, 'game_id')
-            ->get(['id', 'game_id', 'game_odds_snapshot_id', 'market_key', 'side', 'line', 'participant', 'captured_at'])
+            ->get(['id', 'game_id', 'game_odds_snapshot_id', 'bookmaker_key', 'market_key', 'side', 'line', 'participant', 'captured_at'])
             ->groupBy('game_id');
 
         $aliases = $this->teamAliases($sport, $quotes->flatten(1));
@@ -139,7 +139,8 @@ class PredictionModelBetContext
         ])->filter()->map(fn ($name) => strtolower(trim($name)))->all();
         $homeNames = $names($game->homeTeam);
         $awayNames = $names($game->awayTeam);
-        foreach ($quotes->groupBy('game_odds_snapshot_id') as $snapshot) {
+        $bookmakerSnapshots = $quotes->groupBy(['game_odds_snapshot_id', 'bookmaker_key'])->flatten(1);
+        foreach ($bookmakerSnapshots as $snapshot) {
             $home = $snapshot->first(fn ($q) => $q->market_key === 'spreads' && $q->side === 'home');
             $away = $snapshot->first(fn ($q) => $q->market_key === 'spreads' && $q->side === 'away');
             if (! $home || ! $away || ! is_numeric($home->line) || ! is_numeric($away->line)

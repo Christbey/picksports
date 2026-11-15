@@ -135,16 +135,16 @@ export function useTrendsComparison(props: TrendsComparisonProps) {
     const contextualTrendCards = computed<TrendInsight[]>(() => {
         const selected: TrendInsight[] = [];
 
+        const candidates = trendInsights.value.filter(
+            (insight) =>
+                !isConditionalPattern(insight.category, insight.message),
+        );
+        const isNew = (insight: TrendInsight) =>
+            !selected.some((item) => item.message === insight.message);
+
         const pushBest = (tone: TrendTone) => {
-            const available = trendInsights.value.filter(
-                (insight) =>
-                    insight.tone === tone &&
-                    !isConditionalPattern(insight.category, insight.message) &&
-                    !selected.some(
-                        (item) =>
-                            item.key === insight.key ||
-                            item.message === insight.message,
-                    ),
+            const available = candidates.filter(
+                (insight) => insight.tone === tone && isNew(insight),
             );
             const found =
                 tone === 'team'
@@ -158,6 +158,11 @@ export function useTrendsComparison(props: TrendsComparisonProps) {
         pushBest('team');
         pushBest('total');
         pushBest('risk');
+
+        for (const insight of candidates) {
+            if (selected.length === 3) break;
+            if (isNew(insight)) selected.push(insight);
+        }
 
         return selected;
     });

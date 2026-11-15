@@ -63,7 +63,7 @@ const {
 <template>
     <div :class="compact ? 'bg-card' : ''">
         <div
-            v-if="compact"
+            v-if="compact && !detailsOnly"
             :class="dashboard ? dashboardWinnerGrade?.rowClass : undefined"
             class="grid grid-cols-[1fr_auto] items-center gap-x-5 gap-y-3 px-4 py-5 sm:grid-cols-[minmax(0,1fr)_minmax(15rem,1fr)_auto] sm:px-6"
         >
@@ -198,7 +198,12 @@ const {
         <section
             v-if="sport === 'cfb'"
             aria-label="Game weather forecast"
-            class="border-t border-border/50 px-4 py-3 text-xs sm:px-6"
+            class="text-xs"
+            :class="
+                detailsOnly
+                    ? 'pb-3'
+                    : 'border-t border-border/50 px-4 py-3 sm:px-6'
+            "
         >
             <p class="font-medium">{{ weatherForecast.summary }}</p>
             <details class="mt-1 text-muted-foreground">
@@ -209,22 +214,33 @@ const {
             </details>
         </section>
         <div
-            v-if="!compact || expanded"
-            class="group relative flex w-full overflow-hidden rounded-lg border border-border bg-card p-4 text-left"
+            v-if="detailsOnly || !compact || expanded"
+            class="group relative flex w-full text-left"
             :class="
-                compact
-                    ? 'rounded-none border-x-0 border-b-0 bg-muted/20'
-                    : dashboardCardClass()
+                detailsOnly
+                    ? ''
+                    : [
+                          'overflow-hidden rounded-lg border border-border bg-card p-4',
+                          compact
+                              ? 'rounded-none border-x-0 border-b-0 bg-muted/20'
+                              : dashboardCardClass(),
+                      ]
             "
         >
             <div
-                v-if="!compact"
+                v-if="!compact && !detailsOnly"
                 class="absolute inset-y-0 left-0 w-0.5"
                 :class="dashboardRailClass()"
             />
-            <div class="flex min-w-0 flex-1 flex-col gap-3 pl-1">
+            <div
+                class="flex min-w-0 flex-1 flex-col gap-3"
+                :class="{ 'pl-1': !detailsOnly }"
+            >
                 <p
-                    v-if="compact && valueSignal()?.spread_assessment"
+                    v-if="
+                        (compact || detailsOnly) &&
+                        valueSignal()?.spread_assessment
+                    "
                     class="text-xs text-muted-foreground"
                     :title="
                         valueSignal()?.spread_assessment?.risk_flags.join(', ')
@@ -323,7 +339,16 @@ const {
                         </li>
                     </ul>
                 </details>
-                <Link :href="href" class="flex min-w-0 flex-1 flex-col gap-3">
+                <PredictionLiveInsights
+                    v-if="detailsOnly && isLive()"
+                    :game="live"
+                />
+
+                <Link
+                    v-if="!detailsOnly"
+                    :href="href"
+                    class="flex min-w-0 flex-1 flex-col gap-3"
+                >
                     <div class="flex items-start justify-between gap-3">
                         <div class="min-w-0">
                             <div
@@ -495,6 +520,15 @@ const {
                     :tracking="tracking"
                     :final="isFinal()"
                 />
+
+                <Link
+                    v-if="detailsOnly"
+                    :href="href"
+                    class="inline-flex items-center gap-1 self-start rounded-sm text-sm font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+                >
+                    View game
+                    <ChevronRight class="size-4" aria-hidden="true" />
+                </Link>
             </div>
         </div>
     </div>

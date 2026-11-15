@@ -63,16 +63,16 @@ const formatSignedHomeSpread = (
 </script>
 
 <template>
-    <Card>
-        <CardHeader>
+    <Card class="gap-4 py-4">
+        <CardHeader class="px-4 sm:px-5">
             <CardTitle class="tracking-tight">{{
-                title || 'Prediction'
+                title || 'Model projections'
             }}</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent class="space-y-4 px-4 sm:px-5">
             <p
                 v-if="reconstructed || provisional"
-                class="ui-surface-subtle mb-4 p-3 text-sm text-muted-foreground"
+                class="border-l-2 border-border pl-3 text-sm text-muted-foreground"
             >
                 <template v-if="reconstructed">
                     Reconstructed after tipoff. Reported separately from pregame
@@ -82,9 +82,12 @@ const formatSignedHomeSpread = (
                     Provisional forecast based on limited current-season data.
                 </template>
             </p>
-            <div class="mb-6">
+            <div>
+                <p class="mb-2 text-xs font-medium text-muted-foreground">
+                    Model win probability
+                </p>
                 <div
-                    class="mb-2 flex items-center justify-between text-sm font-medium"
+                    class="mb-2 flex items-center justify-between text-sm font-semibold tabular-nums"
                 >
                     <span
                         >{{ awayLabel }}
@@ -105,7 +108,7 @@ const formatSignedHomeSpread = (
                         }}%</span
                     >
                 </div>
-                <div class="flex h-3 overflow-hidden rounded-full">
+                <div class="flex h-2 overflow-hidden rounded-full">
                     <div
                         :class="`${awayBarClass} transition-all`"
                         :style="{
@@ -121,13 +124,20 @@ const formatSignedHomeSpread = (
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div class="ui-surface-subtle p-4 text-center">
-                    <div class="text-sm text-muted-foreground">Home Spread</div>
-                    <div class="text-2xl font-semibold tracking-tight">
+            <dl
+                class="grid grid-cols-2 gap-x-3 gap-y-3 border-t border-border pt-3 sm:grid-cols-3"
+            >
+                <div class="min-w-0">
+                    <dt class="text-xs text-muted-foreground">
+                        Projected spread
+                    </dt>
+                    <dd
+                        class="text-xl font-semibold tracking-tight tabular-nums"
+                    >
+                        {{ homeLabel || 'Home' }}
                         {{ formatSignedHomeSpread(prediction, formatNumber) }}
-                    </div>
-                    <div class="mt-1 text-xs text-muted-foreground">
+                    </dd>
+                    <dd class="text-xs text-muted-foreground">
                         <template
                             v-if="
                                 Math.abs(Number(prediction.predicted_spread)) <
@@ -142,39 +152,43 @@ const formatSignedHomeSpread = (
                             }}
                             favored
                         </template>
-                    </div>
+                    </dd>
                 </div>
-                <div class="ui-surface-subtle p-4 text-center">
-                    <div class="text-sm text-muted-foreground">Total</div>
-                    <div class="text-2xl font-semibold tracking-tight">
+                <div class="min-w-0">
+                    <dt class="text-xs text-muted-foreground">
+                        Projected total
+                    </dt>
+                    <dd
+                        class="text-xl font-semibold tracking-tight tabular-nums"
+                    >
                         {{ formatNumber(prediction.predicted_total) }}
-                    </div>
-                    <div class="mt-1 text-xs text-muted-foreground">
+                    </dd>
+                    <dd class="text-xs text-muted-foreground">
                         {{ projectedLabel || 'Projected points' }}
-                    </div>
+                    </dd>
                 </div>
-                <div class="ui-surface-subtle p-4 text-center">
-                    <div class="text-sm text-muted-foreground">
+                <div
+                    class="col-span-2 min-w-0 border-t border-border pt-3 sm:col-span-1 sm:border-t-0 sm:pt-0"
+                >
+                    <dt class="text-xs text-muted-foreground">
                         {{
                             prediction.sport === 'cfb'
                                 ? 'Win estimate'
                                 : prediction.sport === 'nfl'
                                   ? 'Win-model confidence'
-                                  : 'Confidence'
+                                  : 'Model confidence'
                         }}
-                    </div>
-                    <div
-                        class="text-2xl font-semibold tracking-tight capitalize"
-                    >
+                    </dt>
+                    <dd class="text-sm leading-7 font-semibold capitalize">
                         {{ confidenceDisplayLabel(prediction) }}
-                    </div>
-                    <div
+                    </dd>
+                    <dd
                         v-if="prediction.confidence_score"
                         class="mt-1 text-xs text-muted-foreground"
                     >
                         Score: {{ formatNumber(prediction.confidence_score) }}
-                    </div>
-                    <div
+                    </dd>
+                    <dd
                         v-if="prediction.sport === 'cfb'"
                         class="mt-1 text-xs text-muted-foreground"
                     >
@@ -187,9 +201,9 @@ const formatSignedHomeSpread = (
                             >Uncalibrated estimate.
                         </span>
                         Not a probability of covering the spread.
-                    </div>
+                    </dd>
                 </div>
-            </div>
+            </dl>
         </CardContent>
     </Card>
 </template>

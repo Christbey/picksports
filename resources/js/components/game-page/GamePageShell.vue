@@ -148,7 +148,9 @@ const sportsEventSchema = computed(() =>
     </Head>
 
     <AppLayout :breadcrumbs="breadcrumbs">
-        <div class="flex h-full flex-1 flex-col p-3 md:p-4">
+        <div
+            class="flex min-w-0 flex-1 flex-col px-3 py-4 sm:px-5 lg:px-8 lg:py-6"
+        >
             <Alert v-if="error" variant="destructive">
                 <AlertDescription>{{ error }}</AlertDescription>
             </Alert>
@@ -163,7 +165,10 @@ const sportsEventSchema = computed(() =>
                 </slot>
             </template>
 
-            <div v-else class="mx-auto flex w-full max-w-7xl flex-col gap-4">
+            <div
+                v-else
+                class="mx-auto flex w-full max-w-7xl flex-col gap-4 lg:gap-6"
+            >
                 <slot />
             </div>
         </div>

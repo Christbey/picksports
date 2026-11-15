@@ -2,6 +2,8 @@
 import { Badge } from '@/components/ui/badge';
 import { isConditionalPattern } from '@/lib/trendContext';
 import { useTrendsComparisonContext } from '@/composables/useTrendsComparison';
+defineProps<{ supportingPatterns?: string[] }>();
+
 const {
     homeView,
     awayView,
@@ -17,22 +19,30 @@ const {
 } = useTrendsComparisonContext();
 </script>
 <template>
-    <details v-if="allTrendCategories.length" class="rounded-lg border p-3">
+    <details
+        v-if="allTrendCategories.length || supportingPatterns?.length"
+        class="rounded-lg border px-3"
+    >
         <summary
             class="min-h-11 cursor-pointer content-center text-sm font-semibold"
         >
-            All patterns · both teams ({{ allTrendCategories.length }}
-            categories)
+            All patterns · both teams
         </summary>
-        <p class="my-2 text-xs text-muted-foreground">
-            Selected highlights exclude explicitly conditional in-game
-            observations. All recorded patterns remain available here; ranks are
-            not betting probabilities.
-        </p>
+        <div
+            v-if="supportingPatterns?.length"
+            class="mb-3 border-t border-border pt-2"
+        >
+            <h4 class="mb-1 text-sm font-semibold">Supporting patterns</h4>
+            <ul class="list-disc space-y-1 pl-4 text-sm text-muted-foreground">
+                <li v-for="(pattern, index) in supportingPatterns" :key="index">
+                    {{ pattern }}
+                </li>
+            </ul>
+        </div>
         <details
             v-for="category in allTrendCategories"
             :key="category"
-            class="group mt-2 rounded-lg border border-border/70 bg-card"
+            class="group mb-2 rounded-lg border border-border/70 bg-card"
         >
             <summary
                 class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 [&::-webkit-details-marker]:hidden"

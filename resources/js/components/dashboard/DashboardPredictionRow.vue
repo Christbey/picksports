@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
+import { ChevronDown } from 'lucide-vue-next';
 import { ref } from 'vue';
 import UnifiedPredictionCard from '@/components/predictions/UnifiedPredictionCard.vue';
 import { usePredictionCardGame } from '@/composables/usePredictionCardGame';
@@ -70,16 +71,21 @@ const { pregameCalls, dashboardWinnerGrade } = usePredictionCardRecommendation(
                     type="button"
                     :aria-expanded="expanded"
                     :aria-label="`${expanded ? 'Hide' : 'Show'} analysis for ${game.awayTeamLabel()} at ${game.homeTeamLabel()}`"
-                    class="rounded px-2 py-1 font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                    class="inline-flex items-center gap-1 rounded px-2 py-1 font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
                     @click="expanded = !expanded"
                 >
-                    {{ expanded ? 'Hide' : 'Analysis' }}
+                    Analysis
+                    <ChevronDown
+                        aria-hidden="true"
+                        class="size-4 transition-transform"
+                        :class="{ 'rotate-180': expanded }"
+                    />
                 </button>
             </td>
         </tr>
-        <tr v-if="expanded" class="bg-muted/20">
-            <td colspan="6" class="px-3 pb-3">
-                <UnifiedPredictionCard v-bind="props" />
+        <tr v-if="expanded" class="border-t border-border bg-muted/25">
+            <td colspan="6" class="px-4 py-4">
+                <UnifiedPredictionCard v-bind="props" details-only />
             </td>
         </tr>
     </tbody>

@@ -151,6 +151,12 @@ try {
                     .first();
                 await analysis.click();
                 assert.equal(await cards.count(), 1);
+                assert.equal(
+                    await predictionTables
+                        .getByRole('link', { name: 'AWY @ HOME', exact: true })
+                        .count(),
+                    3,
+                );
                 await predictionTables
                     .getByRole('button', { name: /Hide analysis/ })
                     .click();

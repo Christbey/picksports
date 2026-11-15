@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { computed } from 'vue';
 import type { GamePageTeam, LineScoreEntry } from '@/types';
 
-defineProps<{
+const props = defineProps<{
     title: string;
     awayTeam: GamePageTeam | null;
     homeTeam: GamePageTeam | null;
@@ -13,6 +14,10 @@ defineProps<{
     usePeriodNumbers?: boolean;
     periodPrefix?: string;
 }>();
+
+const periodCount = computed(() =>
+    Math.max(props.awayLinescores.length, props.homeLinescores.length),
+);
 
 const getPeriodLabel = (
     period: unknown,
@@ -30,70 +35,72 @@ const getPeriodLabel = (
 </script>
 
 <template>
-    <Card>
-        <CardHeader>
+    <Card class="gap-3 overflow-hidden pt-4 pb-0">
+        <CardHeader class="px-4 sm:px-5">
             <CardTitle class="tracking-tight">{{ title }}</CardTitle>
         </CardHeader>
-        <CardContent>
-            <div class="overflow-x-auto rounded-xl border border-border/70">
-                <table class="w-full">
+        <CardContent class="px-0">
+            <div class="overflow-x-auto border-t border-border">
+                <table class="w-full text-sm tabular-nums" :aria-label="title">
                     <thead>
-                        <tr class="border-b bg-muted/35">
+                        <tr class="border-b border-border bg-muted/50 text-xs">
                             <th
-                                class="p-2 text-left font-medium text-muted-foreground"
+                                scope="col"
+                                class="px-4 py-2 text-left font-medium text-muted-foreground sm:px-5"
                             >
                                 Team
                             </th>
                             <th
-                                v-for="(period, index) in usePeriodNumbers
-                                    ? homeLinescores
-                                    : Array.from({
-                                          length: Math.max(
-                                              homeLinescores.length,
-                                              awayLinescores.length,
-                                          ),
-                                      })"
+                                v-for="(_, index) in periodCount"
                                 :key="index"
-                                class="p-2 text-center font-medium text-muted-foreground"
+                                scope="col"
+                                class="px-2 py-2 text-center font-medium text-muted-foreground"
                             >
                                 {{
                                     getPeriodLabel(
-                                        period,
+                                        homeLinescores[index] ??
+                                            awayLinescores[index],
                                         index,
                                         usePeriodNumbers,
                                         periodPrefix,
                                     )
                                 }}
                             </th>
-                            <th class="p-2 text-center font-bold">
+                            <th
+                                scope="col"
+                                class="bg-muted/60 px-3 py-2 text-center font-semibold"
+                            >
                                 {{ usePeriodNumbers ? 'Final' : 'Total' }}
                             </th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr
-                            class="border-b transition-colors hover:bg-muted/40"
+                            class="border-b border-border transition-colors hover:bg-muted/40"
                         >
-                            <td class="p-2 font-medium">
+                            <th
+                                scope="row"
+                                class="px-4 py-2.5 text-left font-semibold sm:px-5"
+                            >
                                 <span class="flex items-center gap-2">
                                     <img
                                         v-if="awayTeam?.logo"
                                         :src="awayTeam.logo"
-                                        :alt="awayTeam.abbreviation || 'Away'"
+                                        alt=""
                                         class="h-5 w-5 object-contain"
                                     />
                                     {{ awayTeam?.abbreviation || 'Away' }}
                                 </span>
-                            </td>
+                            </th>
                             <td
                                 class="p-2 text-center"
-                                v-for="(score, index) in awayLinescores"
-                                :key="`a-${index}`"
+                                v-for="(_, index) in periodCount"
+                                :key="index"
                             >
-                                {{ score.value }}
+                                {{ awayLinescores[index]?.value ?? '—' }}
                             </td>
                             <td
-                                class="p-2 text-center font-bold"
+                                class="bg-muted/35 px-3 py-2.5 text-center font-bold"
                                 :class="
                                     (awayScore ?? -1) > (homeScore ?? -1)
                                         ? 'text-green-600 dark:text-green-400'
@@ -104,26 +111,29 @@ const getPeriodLabel = (
                             </td>
                         </tr>
                         <tr class="transition-colors hover:bg-muted/40">
-                            <td class="p-2 font-medium">
+                            <th
+                                scope="row"
+                                class="px-4 py-2.5 text-left font-semibold sm:px-5"
+                            >
                                 <span class="flex items-center gap-2">
                                     <img
                                         v-if="homeTeam?.logo"
                                         :src="homeTeam.logo"
-                                        :alt="homeTeam.abbreviation || 'Home'"
+                                        alt=""
                                         class="h-5 w-5 object-contain"
                                     />
                                     {{ homeTeam?.abbreviation || 'Home' }}
                                 </span>
-                            </td>
+                            </th>
                             <td
                                 class="p-2 text-center"
-                                v-for="(score, index) in homeLinescores"
-                                :key="`h-${index}`"
+                                v-for="(_, index) in periodCount"
+                                :key="index"
                             >
-                                {{ score.value }}
+                                {{ homeLinescores[index]?.value ?? '—' }}
                             </td>
                             <td
-                                class="p-2 text-center font-bold"
+                                class="bg-muted/35 px-3 py-2.5 text-center font-bold"
                                 :class="
                                     (homeScore ?? -1) > (awayScore ?? -1)
                                         ? 'text-green-600 dark:text-green-400'

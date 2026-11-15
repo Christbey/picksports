@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import NflTeamEvidencePanel from '@/components/game-page/NflTeamEvidencePanel.vue';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { provide, ref } from 'vue';
+import { computed, provide, ref } from 'vue';
+import type { TeamTrendData } from '@/types';
 import { Button } from '@/components/ui/button';
 import {
     useTrendsComparison,
@@ -22,10 +22,44 @@ const {
     homeView,
     awayView,
     allTrendCategories: visibleCategories,
-    signalCountForSide,
     matchupRows,
     displayTitle,
 } = state;
+function comparisonValues(team: TeamTrendData | null | undefined) {
+    const evidence = team?.evidence;
+    const games = evidence?.sample_size ?? team?.sample_size;
+    const record = evidence?.record;
+    const margin = evidence?.metrics.margin;
+
+    return {
+        window: games && games > 0 ? evidence?.label : undefined,
+        games: games && games > 0 ? String(games) : undefined,
+        record:
+            record && record.wins + record.losses + record.ties > 0
+                ? `${record.wins}–${record.losses}–${record.ties}`
+                : undefined,
+        margin:
+            margin?.value != null && margin.sample_size > 0
+                ? `${margin.value > 0 ? '+' : ''}${margin.value.toFixed(1)}${margin.sample_size !== games ? ` (${margin.sample_size} games)` : ''}`
+                : undefined,
+    };
+}
+
+const comparisonRows = computed(() => {
+    const away = comparisonValues(awayView.value);
+    const home = comparisonValues(homeView.value);
+    const metrics = [
+        { key: 'window', label: 'Sample window' },
+        { key: 'games', label: 'Games in sample' },
+        { key: 'record', label: 'Record (W–L–T)' },
+        { key: 'margin', label: 'Avg. scoring margin' },
+    ] as const;
+
+    return metrics
+        .map(({ key, label }) => ({ label, away: away[key], home: home[key] }))
+        .filter((row) => row.away || row.home);
+});
+
 const mobileView = ref('evidence');
 const views = {
     evidence: 'Team Evidence',
@@ -50,26 +84,6 @@ const viewClass = (view: string) =>
                     <CardTitle class="mt-1 text-lg tracking-tight">
                         {{ displayTitle }}
                     </CardTitle>
-                </div>
-                <div
-                    v-if="visibleCategories.length > 0"
-                    class="flex gap-2 text-xs"
-                >
-                    <Badge variant="secondary">
-                        {{ visibleCategories.length }}
-                        {{
-                            visibleCategories.length === 1
-                                ? 'category'
-                                : 'categories'
-                        }}
-                    </Badge>
-                    <Badge variant="outline">
-                        {{
-                            signalCountForSide(awayView) +
-                            signalCountForSide(homeView)
-                        }}
-                        signals
-                    </Badge>
                 </div>
             </div>
             <p v-if="subtitle" class="text-sm text-muted-foreground">
@@ -119,51 +133,13 @@ const viewClass = (view: string) =>
 
             <div
                 v-else-if="
-                    visibleCategories.length > 0 || matchupRows.length > 0
+                    comparisonRows.length > 0 ||
+                    visibleCategories.length > 0 ||
+                    matchupRows.length > 0 ||
+                    (!hasEvidence && topMatchupEdges?.length)
                 "
                 class="space-y-4"
             >
-                <div :class="viewClass('patterns')">
-                    <div class="grid grid-cols-3 gap-2">
-                        <div
-                            class="rounded-lg border border-border/70 bg-muted/30 px-3 py-2"
-                        >
-                            <p
-                                class="text-xs tracking-wide text-muted-foreground uppercase"
-                            >
-                                Categories
-                            </p>
-                            <p class="mt-1 text-xl font-semibold">
-                                {{ visibleCategories.length }}
-                            </p>
-                        </div>
-                        <div
-                            class="rounded-lg border border-border/70 bg-muted/30 px-3 py-2"
-                        >
-                            <p
-                                class="text-xs tracking-wide text-muted-foreground uppercase"
-                            >
-                                {{ awayLabel || 'Away' }} Signals
-                            </p>
-                            <p class="mt-1 text-xl font-semibold">
-                                {{ signalCountForSide(awayView) }}
-                            </p>
-                        </div>
-                        <div
-                            class="rounded-lg border border-border/70 bg-muted/30 px-3 py-2"
-                        >
-                            <p
-                                class="text-xs tracking-wide text-muted-foreground uppercase"
-                            >
-                                {{ homeLabel || 'Home' }} Signals
-                            </p>
-                            <p class="mt-1 text-xl font-semibold">
-                                {{ signalCountForSide(homeView) }}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
                 <div :class="viewClass('history')">
                     <TrendMatchupContext />
                     <p
@@ -176,34 +152,67 @@ const viewClass = (view: string) =>
                 </div>
 
                 <div class="space-y-4" :class="viewClass('patterns')">
+                    <div
+                        v-if="comparisonRows.length"
+                        class="overflow-hidden rounded-lg border border-border"
+                    >
+                        <table
+                            class="w-full text-sm tabular-nums"
+                            aria-label="Team trends comparison"
+                        >
+                            <thead
+                                class="bg-muted/50 text-xs text-muted-foreground"
+                            >
+                                <tr>
+                                    <th
+                                        scope="col"
+                                        class="px-3 py-2 text-left font-medium"
+                                    >
+                                        Team comparison
+                                    </th>
+                                    <th
+                                        scope="col"
+                                        class="px-3 py-2 text-right font-semibold"
+                                    >
+                                        {{ awayLabel || 'Away' }}
+                                    </th>
+                                    <th
+                                        scope="col"
+                                        class="px-3 py-2 text-right font-semibold"
+                                    >
+                                        {{ homeLabel || 'Home' }}
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="row in comparisonRows"
+                                    :key="row.label"
+                                    class="border-t border-border"
+                                >
+                                    <th
+                                        scope="row"
+                                        class="px-3 py-2 text-left font-medium"
+                                    >
+                                        {{ row.label }}
+                                    </th>
+                                    <td class="px-3 py-2 text-right">
+                                        {{ row.away ?? '—' }}
+                                    </td>
+                                    <td class="px-3 py-2 text-right">
+                                        {{ row.home ?? '—' }}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                     <TrendContextualInsights />
 
-                    <div
-                        v-if="
-                            !hasEvidence &&
-                            topMatchupEdges &&
-                            topMatchupEdges.length > 0
+                    <TrendCategoryDetails
+                        :supporting-patterns="
+                            hasEvidence ? undefined : topMatchupEdges
                         "
-                        class="rounded-lg border border-border/70 bg-muted/25 p-3"
-                    >
-                        <h4 class="mb-2 text-sm font-semibold">
-                            Supporting Patterns
-                        </h4>
-                        <ul class="space-y-1 text-sm">
-                            <li
-                                v-for="(edge, idx) in topMatchupEdges"
-                                :key="idx"
-                                class="flex items-start gap-2"
-                            >
-                                <span
-                                    class="mt-1 h-1.5 w-1.5 rounded-full bg-emerald-500"
-                                />
-                                <span>{{ edge }}</span>
-                            </li>
-                        </ul>
-                    </div>
-
-                    <TrendCategoryDetails />
+                    />
                 </div>
             </div>
 

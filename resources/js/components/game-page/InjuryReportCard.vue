@@ -270,7 +270,9 @@ const modelImpactLines = computed(() => {
     <div class="ui-surface p-4 md:p-5">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-                <h3 class="ui-kicker">Injuries & Availability</h3>
+                <h3 class="font-semibold tracking-tight">
+                    Injuries & Availability
+                </h3>
                 <p
                     v-if="teams.every((team) => team.available)"
                     class="mt-1 text-xs text-muted-foreground"
@@ -282,76 +284,32 @@ const modelImpactLines = computed(() => {
                     Injury data unavailable for one or both teams.
                 </p>
             </div>
-            <div class="flex items-center gap-2 text-[11px] font-medium">
-                <span
-                    class="rounded-full bg-muted px-2 py-1 text-foreground/80"
-                >
-                    {{ awayTeamAbbr || 'Away' }}
-                    {{
-                        awayInjuriesAvailable === false
-                            ? '—'
-                            : awayInjuries.length
-                    }}
-                </span>
-                <span
-                    class="rounded-full bg-muted px-2 py-1 text-foreground/80"
-                >
-                    {{ homeTeamAbbr || 'Home' }}
-                    {{
-                        homeInjuriesAvailable === false
-                            ? '—'
-                            : homeInjuries.length
-                    }}
-                </span>
-            </div>
         </div>
 
-        <div class="mt-3 space-y-1 text-xs text-muted-foreground">
-            <p v-for="team in teams" :key="team.key">
-                {{ team.label }}:
-                {{
-                    team.available
-                        ? availabilityFreshness(team.injuries)
-                        : 'Availability data unavailable.'
-                }}
-            </p>
-        </div>
-        <div
+        <details
             v-if="modelImpactLines.length > 0"
-            class="mt-4 rounded-lg border border-border/60 bg-background/55 p-3"
+            class="mt-3 border-t border-border pt-3"
         >
-            <div
-                class="flex flex-wrap items-center justify-between gap-2 text-xs"
+            <summary class="cursor-pointer text-sm font-medium">
+                Model availability impact
+            </summary>
+            <ul
+                class="mt-2 list-disc space-y-1 pl-4 text-sm text-muted-foreground"
             >
-                <span
-                    class="font-semibold tracking-[0.14em] text-muted-foreground uppercase"
-                >
-                    Model availability impact
-                </span>
-                <span
-                    class="rounded-full bg-muted px-2 py-1 font-medium text-foreground/80"
-                >
-                    {{ modelImpactLines.length }}
-                    {{ modelImpactLines.length === 1 ? 'note' : 'notes' }}
-                </span>
-            </div>
-            <div class="mt-2 space-y-1.5 text-sm text-foreground/90">
-                <p v-for="line in modelImpactLines" :key="line">
-                    {{ line }}
-                </p>
-            </div>
-        </div>
+                <li v-for="line in modelImpactLines" :key="line">{{ line }}</li>
+            </ul>
+        </details>
 
-        <div class="mt-4 grid gap-3 md:grid-cols-2">
+        <div class="mt-4 grid gap-4 md:grid-cols-2">
             <section
                 v-for="team in teams"
                 :key="team.key"
-                class="rounded-lg border border-border/60 bg-background/55 p-3"
+                class="min-w-0 border-t border-border pt-3"
             >
                 <div class="flex items-center justify-between gap-3">
-                    <p class="text-sm font-semibold text-foreground/90">
+                    <h4 class="text-sm font-semibold text-foreground/90">
                         {{ team.label }}
-                    </p>
+                    </h4>
                     <span class="text-xs text-muted-foreground">
                         {{
                             team.available
@@ -361,17 +319,26 @@ const modelImpactLines = computed(() => {
                     </span>
                 </div>
 
-                <ul v-if="team.injuries.length > 0" class="mt-3 space-y-2">
+                <p
+                    v-if="team.available"
+                    class="mt-1 text-xs text-muted-foreground"
+                >
+                    {{ availabilityFreshness(team.injuries) }}
+                </p>
+                <ul
+                    v-if="team.injuries.length > 0"
+                    class="mt-2 divide-y divide-border"
+                >
                     <li
                         v-for="injury in visibleInjuries(team)"
                         :key="`${team.key}-${injury.id}`"
-                        class="rounded-md border border-border/50 bg-card/70 p-2.5"
+                        class="py-2.5"
                     >
                         <div class="flex items-start gap-2.5">
                             <img
                                 v-if="injury.player_headshot"
                                 :src="injury.player_headshot"
-                                :alt="injury.player_name || 'Player'"
+                                alt=""
                                 class="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-border/70"
                             />
                             <div
@@ -387,12 +354,12 @@ const modelImpactLines = computed(() => {
                                 >
                                     <div class="min-w-0">
                                         <p
-                                            class="truncate text-sm font-medium text-foreground"
+                                            class="text-sm font-medium break-words text-foreground"
                                         >
                                             {{ injury.player_name || 'Player' }}
                                         </p>
                                         <p
-                                            class="mt-0.5 truncate text-xs text-muted-foreground"
+                                            class="mt-0.5 text-xs break-words text-muted-foreground"
                                         >
                                             {{ injuryNote(injury) }}
                                         </p>
@@ -465,7 +432,8 @@ const modelImpactLines = computed(() => {
                 <button
                     v-if="hiddenCount(team) > 0"
                     type="button"
-                    class="mt-3 w-full rounded-md border border-border/70 px-3 py-2 text-xs font-semibold text-foreground/80 transition hover:bg-muted"
+                    :aria-expanded="expandedTeams[team.key]"
+                    class="mt-2 min-h-11 rounded-md border border-border/70 px-3 py-2 text-xs font-semibold text-foreground/80 transition hover:bg-muted"
                     @click="expandedTeams[team.key] = !expandedTeams[team.key]"
                 >
                     {{

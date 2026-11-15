@@ -4,6 +4,7 @@ export interface PredictionCardProps {
     href: string;
     sport?: string;
     compact?: boolean;
+    detailsOnly?: boolean;
     dashboard?: boolean;
     deferTeamLogos?: boolean;
 }

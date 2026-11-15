@@ -132,12 +132,7 @@ const uniqueCodes = computed(() =>
 <template>
     <section class="ui-surface p-4 md:p-5">
         <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-                <h3 class="ui-kicker">Betting Plan</h3>
-                <p class="mt-1 text-xs text-muted-foreground">
-                    Market-aware recommendation from the model and filter.
-                </p>
-            </div>
+            <h3 class="font-semibold tracking-tight">Betting plan</h3>
             <span
                 v-if="resolvedPlan?.bet_pick"
                 :class="[
@@ -150,15 +145,8 @@ const uniqueCodes = computed(() =>
         </div>
 
         <template v-if="resolvedPlan?.bet_pick">
-            <div
-                class="mt-4 rounded-lg border border-border/60 bg-background/55 p-3"
-            >
-                <div
-                    class="text-[11px] font-semibold text-muted-foreground uppercase"
-                >
-                    Recommendation
-                </div>
-                <p class="mt-1 text-base font-semibold text-foreground">
+            <div class="mt-3">
+                <p class="text-base font-semibold text-foreground">
                     {{ resolvedPlan.bet_pick }}
                 </p>
                 <p
@@ -174,34 +162,32 @@ const uniqueCodes = computed(() =>
                     resolvedPlan.for_bet?.length ||
                     resolvedPlan.against_bet?.length
                 "
-                class="mt-3 grid gap-3 text-sm md:grid-cols-2"
+                class="mt-4 grid gap-4 border-t border-border pt-3 text-sm sm:grid-cols-2"
             >
-                <div
-                    v-if="resolvedPlan.for_bet?.length"
-                    class="rounded-lg border border-border/60 bg-card/70 p-3"
-                >
+                <div v-if="resolvedPlan.for_bet?.length">
                     <p
                         class="text-xs font-semibold text-muted-foreground uppercase"
                     >
                         Supports
                     </p>
-                    <ul class="mt-2 space-y-1.5 text-muted-foreground">
+                    <ul
+                        class="mt-1 list-disc space-y-1 pl-4 text-muted-foreground"
+                    >
                         <li v-for="item in resolvedPlan.for_bet" :key="item">
                             {{ item }}
                         </li>
                     </ul>
                 </div>
 
-                <div
-                    v-if="resolvedPlan.against_bet?.length"
-                    class="rounded-lg border border-border/60 bg-card/70 p-3"
-                >
+                <div v-if="resolvedPlan.against_bet?.length">
                     <p
                         class="text-xs font-semibold text-muted-foreground uppercase"
                     >
-                        Risk / Pushback
+                        Risks
                     </p>
-                    <ul class="mt-2 space-y-1.5 text-muted-foreground">
+                    <ul
+                        class="mt-1 list-disc space-y-1 pl-4 text-muted-foreground"
+                    >
                         <li
                             v-for="item in resolvedPlan.against_bet"
                             :key="item"
@@ -234,9 +220,6 @@ const uniqueCodes = computed(() =>
             </p>
             <p v-if="lockedMessage" class="mt-1 text-xs text-muted-foreground">
                 Additional access may be required for this betting plan.
-            </p>
-            <p v-else class="mt-1 text-xs text-muted-foreground">
-                A betting plan requires an available recommendation or analysis.
             </p>
         </template>
     </section>

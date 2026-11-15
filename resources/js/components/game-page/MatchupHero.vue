@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { Link } from '@/platform';
 import { Badge } from '@/components/ui/badge';
 import type {
@@ -53,6 +54,16 @@ const props = withDefaults(
         homeStarterRating: null,
     },
 );
+
+function teamColor(team: GamePageTeam | null): string | undefined {
+    const hex = team?.color?.trim().replace(/^#/, '');
+    return hex && /^(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(hex)
+        ? `#${hex}`
+        : undefined;
+}
+
+const awayColor = computed(() => teamColor(props.awayTeam));
+const homeColor = computed(() => teamColor(props.homeTeam));
 
 const teamName = (team: GamePageTeam, fallback: string): string =>
     team.display_name ||
@@ -144,8 +155,15 @@ function formatStarterLine(
 
 <template>
     <div class="ui-surface overflow-hidden">
-        <div class="h-1 w-full" :class="props.gradientClass" />
-        <div class="px-4 py-4 md:px-5">
+        <div
+            class="flex h-1 w-full"
+            :class="props.gradientClass"
+            aria-hidden="true"
+        >
+            <span class="flex-1" :style="{ backgroundColor: awayColor }" />
+            <span class="flex-1" :style="{ backgroundColor: homeColor }" />
+        </div>
+        <div class="px-3 py-4 sm:px-4 md:px-6 md:py-6">
             <div
                 data-matchup-row
                 class="grid items-center md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
@@ -160,7 +178,7 @@ function formatStarterLine(
                     v-if="awayTeam"
                     :href="props.linkTeams ? teamLink(awayTeam.id) : undefined"
                     :aria-label="`${teamName(awayTeam, 'Away Team')} (Away)`"
-                    class="flex min-w-0 items-center transition-opacity hover:opacity-85 md:justify-end"
+                    class="flex min-w-0 items-center rounded-md transition-opacity hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring md:justify-end"
                     :class="
                         compact
                             ? 'min-h-11 flex-col gap-1 md:flex-row md:gap-3'
@@ -169,9 +187,9 @@ function formatStarterLine(
                 >
                     <div class="relative shrink-0">
                         <div
-                            v-if="props.useTeamColorGlow && awayTeam.color"
+                            v-if="props.useTeamColorGlow && awayColor"
                             class="absolute inset-0 rounded-full opacity-15 blur-lg"
-                            :style="{ backgroundColor: `#${awayTeam.color}` }"
+                            :style="{ backgroundColor: awayColor }"
                         />
                         <img
                             v-if="awayTeam.logo"
@@ -228,11 +246,9 @@ function formatStarterLine(
                 </component>
 
                 <div
-                    class="min-w-0 rounded-xl border border-border/70 bg-muted/35 text-center"
+                    class="min-w-0 text-center"
                     :class="
-                        compact
-                            ? 'max-w-32 px-2 py-2 md:max-w-none md:px-4 md:py-3'
-                            : 'px-4 py-3'
+                        compact ? 'max-w-32 px-1 md:max-w-none md:px-4' : 'px-4'
                     "
                 >
                     <div
@@ -241,14 +257,14 @@ function formatStarterLine(
                             game.away_score !== undefined &&
                             game.home_score !== undefined
                         "
-                        class="font-semibold tracking-tight whitespace-nowrap md:text-4xl"
+                        class="font-bold tracking-tight whitespace-nowrap tabular-nums md:text-5xl"
                         :class="compact ? 'text-xl sm:text-3xl' : 'text-3xl'"
                     >
                         {{ game.away_score }} - {{ game.home_score }}
                     </div>
                     <div
                         v-else
-                        class="text-2xl font-semibold text-muted-foreground md:text-3xl"
+                        class="text-lg font-medium text-muted-foreground md:text-xl"
                     >
                         vs
                     </div>
@@ -290,7 +306,7 @@ function formatStarterLine(
                     v-if="homeTeam"
                     :href="props.linkTeams ? teamLink(homeTeam.id) : undefined"
                     :aria-label="`${teamName(homeTeam, 'Home Team')} (Home)`"
-                    class="flex min-w-0 items-center transition-opacity hover:opacity-85"
+                    class="flex min-w-0 items-center rounded-md transition-opacity hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
                     :class="
                         compact
                             ? 'min-h-11 flex-col gap-1 md:flex-row md:gap-3'
@@ -299,9 +315,9 @@ function formatStarterLine(
                 >
                     <div class="relative shrink-0 md:order-2">
                         <div
-                            v-if="props.useTeamColorGlow && homeTeam.color"
+                            v-if="props.useTeamColorGlow && homeColor"
                             class="absolute inset-0 rounded-full opacity-15 blur-lg"
-                            :style="{ backgroundColor: `#${homeTeam.color}` }"
+                            :style="{ backgroundColor: homeColor }"
                         />
                         <img
                             v-if="homeTeam.logo"
@@ -360,10 +376,10 @@ function formatStarterLine(
         </div>
 
         <div
-            class="border-t border-border/70 bg-muted/25 px-4 py-2.5 text-sm text-muted-foreground md:px-5"
+            class="border-t border-border/70 bg-muted/25 px-4 py-2.5 text-xs text-muted-foreground sm:text-sm md:px-6"
         >
             <div
-                class="flex flex-wrap items-center justify-center gap-x-5 gap-y-1"
+                class="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 md:gap-x-6"
             >
                 <span>{{ formatDate(game.game_date) }}</span>
                 <span v-for="(item, idx) in props.extraInfoItems" :key="idx">{{

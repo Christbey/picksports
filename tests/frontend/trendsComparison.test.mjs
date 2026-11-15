@@ -155,7 +155,7 @@ test('renders the actual last meeting date, season and score, without a betting 
     );
     assert.match(html, /2024 season/);
     assert.match(html, /BUF 48–42 DET/);
-    assert.match(html, /Pattern rank 85\/100/);
+    assert.match(html, /1 game/);
     assert.match(html, /not win probabilities/);
     assert.match(html, /DET context/);
     assert.doesNotMatch(html, /DET edge|BUF edge|1 games/);

@@ -32,7 +32,7 @@ function ordinal(value: number): string {
 const liveGames = computed<LiveTile[]>(() =>
     props.sports.flatMap((sport) =>
         sport.predictions
-            .filter((prediction) => prediction.is_live || prediction.is_final)
+            .filter((prediction) => prediction.is_live && !prediction.is_final)
             .map((prediction) => ({
                 ...prediction,
                 sportName: sport.name,
@@ -40,44 +40,34 @@ const liveGames = computed<LiveTile[]>(() =>
     ),
 );
 
-const hasLiveGames = computed(() =>
-    liveGames.value.some((game) => game.is_live),
-);
-
 function statusLabel(game: LiveTile): string {
-    if (game.is_live) {
-        if (
-            ['nfl', 'cfb'].includes(game.sport.toLowerCase()) ||
-            (game.game_clock && game.period)
-        ) {
-            return livePeriodLabel(
-                game.sport,
-                game.period ?? null,
-                game.game_clock ?? null,
-                game.status ?? null,
-            );
-        }
-        if (game.inning_state && /\d/.test(game.inning_state)) {
-            return game.inning_state;
-        }
-        if (game.inning) {
-            const half = game.inning_state
-                ? game.inning_state.charAt(0).toUpperCase() +
-                  game.inning_state.slice(1)
-                : 'Inning';
-
-            return `${half} ${ordinal(game.inning)}`;
-        }
-        if (game.inning_state) return game.inning_state;
-        return 'Live';
+    if (
+        ['nfl', 'cfb'].includes(game.sport.toLowerCase()) ||
+        (game.game_clock && game.period)
+    ) {
+        return livePeriodLabel(
+            game.sport,
+            game.period ?? null,
+            game.game_clock ?? null,
+            game.status ?? null,
+        );
     }
+    if (game.inning_state && /\d/.test(game.inning_state)) {
+        return game.inning_state;
+    }
+    if (game.inning) {
+        const half = game.inning_state
+            ? game.inning_state.charAt(0).toUpperCase() +
+              game.inning_state.slice(1)
+            : 'Inning';
 
-    return 'Final';
+        return `${half} ${ordinal(game.inning)}`;
+    }
+    if (game.inning_state) return game.inning_state;
+    return 'Live';
 }
 
 function liveStateDetail(game: LiveTile): string | null {
-    if (!game.is_live) return null;
-
     const parts = [];
     if (typeof game.outs === 'number') {
         parts.push(`${game.outs} ${game.outs === 1 ? 'out' : 'outs'}`);
@@ -90,7 +80,7 @@ function liveStateDetail(game: LiveTile): string | null {
 }
 
 function liveTrendLabel(game: LiveTile): string | null {
-    if (!game.is_live || typeof game.live_win_probability !== 'number') {
+    if (typeof game.live_win_probability !== 'number') {
         return null;
     }
 
@@ -127,7 +117,7 @@ function liveTrendLabel(game: LiveTile): string | null {
                     class="inline-flex items-center gap-1.5 rounded-full border border-sky-300/60 bg-sky-500/12 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-sky-700 uppercase dark:border-sky-500/30 dark:bg-sky-500/20 dark:text-sky-300"
                 >
                     <Radio class="size-3.5" />
-                    {{ hasLiveGames ? 'Live' : 'Finals' }}
+                    Live
                 </span>
                 <p
                     class="text-sm font-semibold tracking-tight text-foreground/90"
@@ -135,9 +125,7 @@ function liveTrendLabel(game: LiveTile): string | null {
                     Game Center
                 </p>
             </div>
-            <p class="text-xs text-muted-foreground">
-                {{ hasLiveGames ? 'Auto-updating every 30s' : 'Recent finals' }}
-            </p>
+            <p class="text-xs text-muted-foreground">Auto-updating every 30s</p>
         </div>
 
         <div class="hidden overflow-x-auto lg:block">
@@ -185,13 +173,7 @@ function liveTrendLabel(game: LiveTile): string | null {
                             {{ game.home_score ?? '—' }}
                         </td>
                         <td class="px-3 py-2">
-                            <p
-                                :class="
-                                    game.is_live
-                                        ? 'text-sky-600 dark:text-sky-400'
-                                        : 'text-muted-foreground'
-                                "
-                            >
+                            <p class="text-sky-600 dark:text-sky-400">
                                 {{ statusLabel(game) }}
                             </p>
                             <p
@@ -223,12 +205,7 @@ function liveTrendLabel(game: LiveTile): string | null {
                         game.sportName
                     }}</span>
                     <span
-                        class="text-xs font-semibold"
-                        :class="
-                            game.is_live
-                                ? 'text-sky-600 dark:text-sky-400'
-                                : 'text-muted-foreground'
-                        "
+                        class="text-xs font-semibold text-sky-600 dark:text-sky-400"
                     >
                         {{ statusLabel(game) }}
                     </span>

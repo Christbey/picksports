@@ -130,7 +130,13 @@ try {
                 name: / predictions$/,
             });
             const cards = page.getByRole('link', { name: /View game/ });
-            assert.equal(await cards.count(), width >= 1024 ? 0 : 3);
+            assert.equal(await cards.count(), 0);
+            assert.equal(
+                await page
+                    .getByRole('button', { name: /Show analysis/ })
+                    .count(),
+                3,
+            );
             assert.equal(
                 await predictionTables.getByRole('rowheader').count(),
                 width >= 1024 ? 3 : 0,
@@ -150,11 +156,15 @@ try {
                     .click();
                 assert.equal(await cards.count(), 0);
             }
+            const gameCenter = page.getByRole('region', { name: 'Live games' });
             assert.match(
-                await page
-                    .getByRole('region', { name: 'Live games' })
-                    .innerText(),
+                await gameCenter.innerText(),
                 /HOME 70.0%.*HOME \+5.0 pts/,
+            );
+            assert.equal(await gameCenter.getByRole('link').count(), 1);
+            assert.equal(
+                await gameCenter.getByRole('link').getAttribute('href'),
+                '/nfl/games/102',
             );
             if (width === 390 || width === 1440)
                 await page.screenshot({
@@ -256,14 +266,9 @@ try {
             }),
         );
     });
-    assert.match(
-        await page.getByRole('region', { name: 'Live games' }).innerText(),
-        /FINALS/,
-    );
-    assert.match(
-        await page.getByRole('region', { name: 'Live games' }).innerText(),
-        /Recent finals/,
-    );
+    await page
+        .getByRole('region', { name: 'Live games' })
+        .waitFor({ state: 'hidden' });
     await page.evaluate(() => {
         __dashboardProps.sports = [];
         __dashboardProps.stats = {

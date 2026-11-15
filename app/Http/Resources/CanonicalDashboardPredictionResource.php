@@ -6,6 +6,7 @@ use App\Http\Resources\Api\V2\CanonicalSportPredictionResource;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game as CfbGame;
 use App\Services\Api\V2\CanonicalPredictionPresentationService;
+use App\Services\Api\V2\PredictionModelBetContext;
 use App\Services\Api\V2\PredictionWeatherContext;
 use App\Services\Api\V2\SportContext;
 use App\Services\CFB\Live\LiveBoardPresentation;
@@ -18,7 +19,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class CanonicalDashboardPredictionResource extends JsonResource
 {
-    public function __construct(CanonicalPrediction $resource, private readonly SportContext $context, private readonly array $config, private readonly bool $compact = false)
+    public function __construct(CanonicalPrediction $resource, private readonly SportContext $context, private readonly array $config, private readonly bool $compact = false, private readonly array $marketContext = [])
     {
         parent::__construct($resource);
     }
@@ -94,6 +95,7 @@ class CanonicalDashboardPredictionResource extends JsonResource
             'win_probability' => $this->number($prediction->marketFor('moneyline', 'home')?->probability),
             'predicted_spread' => $spread,
             'predicted_total' => $this->number($prediction->marketFor('total', 'combined')?->projected_line),
+            'model_bet_context' => ['model_home_spread' => $spread, ...PredictionModelBetContext::EMPTY_CONTEXT, ...$this->marketContext],
             'actual_total' => $this->number(data_get($evaluation?->actuals, 'total_points')),
             'winner_correct' => data_get($evaluation?->errors, 'winner_correct'),
             'updated_at' => $prediction->updated_at?->toIso8601String(),

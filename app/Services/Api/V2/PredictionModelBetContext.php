@@ -4,22 +4,73 @@ namespace App\Services\Api\V2;
 
 use App\Models\CanonicalPrediction;
 use App\Models\MarketQuote;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 
 /** Market references for model directions, independent of bet approval. */
 class PredictionModelBetContext
 {
+    public const EMPTY_CONTEXT = ['home_spread' => null, 'total' => null, 'captured_at' => null];
+
     public function forPrediction(CanonicalPrediction $prediction, ?Model $game): array
     {
-        $context = ['home_spread' => null, 'total' => null, 'captured_at' => null];
         $kickoff = $prediction->sportEvent?->starts_at?->copy()->setTimezone(config('app.timezone'));
         if (! $game || ! $kickoff) {
-            return $context;
+            return self::EMPTY_CONTEXT;
         }
-        $quotes = MarketQuote::where('sport', $prediction->sport)->where('game_table', $game->getTable())
-            ->where('game_id', $game->getKey())->where('is_pregame', true)
-            ->whereIn('market_key', ['spreads', 'totals'])->where('captured_at', '<', $kickoff)
-            ->where('captured_at', '<=', now())->orderByDesc('captured_at')->orderByDesc('id')->limit(200)->get();
+        $quotes = $this->quoteQuery($prediction->sport, $game->getTable())
+            ->where('game_id', $game->getKey())->where('captured_at', '<', $kickoff)->limit(200)->get();
+
+        return $this->marketContext($game, $quotes);
+    }
+
+    /** @param Collection<int, CanonicalPrediction> $predictions */
+    public function forDashboardBatch(string $sport, Collection $predictions): array
+    {
+        $games = [];
+        $kickoffs = [];
+        foreach ($predictions as $prediction) {
+            $event = $prediction->sportEvent;
+            $game = $event?->getRelation($sport.'Game');
+            if ($game && $event->starts_at) {
+                $games[$game->getKey()] = $game;
+                $kickoffs[$game->getKey()] = $event->starts_at->setTimezone(config('app.timezone'));
+            }
+        }
+
+        if ($games === []) {
+            return [];
+        }
+
+        $quotes = $this->quoteQuery($sport, reset($games)->getTable())
+            ->where(function ($query) use ($kickoffs): void {
+                foreach ($kickoffs as $gameId => $kickoff) {
+                    $query->orWhere(fn ($gameQuery) => $gameQuery->where('game_id', $gameId)->where('captured_at', '<', $kickoff));
+                }
+            })
+            ->groupLimit(200, 'game_id')
+            ->get(['id', 'game_id', 'game_odds_snapshot_id', 'market_key', 'side', 'line', 'participant', 'captured_at'])
+            ->groupBy('game_id');
+
+        $contexts = [];
+        foreach ($quotes as $gameId => $gameQuotes) {
+            $contexts[$gameId] = $this->marketContext($games[$gameId], $gameQuotes);
+        }
+
+        return $contexts;
+    }
+
+    private function quoteQuery(string $sport, string $table): Builder
+    {
+        return MarketQuote::where('sport', $sport)->where('game_table', $table)->where('is_pregame', true)
+            ->whereIn('market_key', ['spreads', 'totals'])->where('captured_at', '<=', now())
+            ->orderByDesc('captured_at')->orderByDesc('id');
+    }
+
+    private function marketContext(Model $game, Collection $quotes): array
+    {
+        $context = self::EMPTY_CONTEXT;
         $names = fn ($team) => collect([
             $team?->display_name,
             $team?->name,

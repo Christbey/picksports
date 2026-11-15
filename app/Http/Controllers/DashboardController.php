@@ -8,6 +8,7 @@ use App\Models\Healthcheck;
 use App\Models\MLB\Prediction as MLBPrediction;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Api\V2\DashboardSportConfig;
+use App\Services\Api\V2\PredictionModelBetContext;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\BettingRecommendations\GameBettingRecommendationService;
 use App\Services\MLB\MlbPredictionRecommendationService;
@@ -145,11 +146,15 @@ class DashboardController extends Controller
                 ->chunkById($batchSize, function ($ids) use ($query, $context, $config, $rows): void {
                     $predictions = (clone $query)->whereKey($ids->modelKeys())->get();
                     app(LivePredictionStore::class)->preload($predictions->map(fn ($prediction) => $prediction->sportEvent?->getRelation($context->slug.'Game'))->filter());
+                    $marketContexts = app(PredictionModelBetContext::class)->forDashboardBatch($context->slug, $predictions);
                     foreach ($predictions as $prediction) {
+                        $gameId = $prediction->sportEvent?->getRelation($context->slug.'Game')?->getKey();
                         $rows->push([
                             'published_at' => $prediction->published_at,
                             'id' => $prediction->id,
-                            'payload' => (new CanonicalDashboardPredictionResource($prediction, $context, $config, compact: true))->resolve(),
+                            'payload' => (new CanonicalDashboardPredictionResource(
+                                $prediction, $context, $config, compact: true, marketContext: $marketContexts[$gameId] ?? [],
+                            ))->resolve(),
                         ]);
                     }
                 }, 'predictions.id', 'id');

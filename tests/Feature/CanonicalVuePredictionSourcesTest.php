@@ -15,6 +15,7 @@ use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportGameQuery;
 use App\Services\Api\V2\SportPredictionReader;
+use App\Services\OddsApi\GameOddsSnapshotRecorder;
 use App\Services\PerformanceStatistics;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -456,3 +457,43 @@ it('keeps CFB live and weather fields identical between compact dashboard and fu
         ->and($dashboard['live_status'])->toBe($snapshotAge === 0 ? 'live' : 'stale')
         ->and($dashboard['live_predicted_total'])->toBe($snapshotAge === 0 ? 0 : null);
 })->with([0, 4]);
+
+it('passes stored NBA spreads and totals to compact dashboard rows', function () {
+    config()->set('prediction_lifecycle.canonical_reads.nba', true);
+    $prediction = vueCanonicalFixture('nba', -10);
+    $game = $prediction->sportEvent->nbaGame;
+    $game->homeTeam->update(['location' => 'Minnesota', 'name' => 'Timberwolves']);
+    $game->awayTeam->update(['location' => 'Chicago', 'name' => 'Bulls']);
+
+    $event = [
+        'id' => 'dashboard-nba-odds',
+        'home_team' => 'Minnesota Timberwolves',
+        'away_team' => 'Chicago Bulls',
+        'commence_time' => now()->addHour()->toIso8601String(),
+    ];
+    app(GameOddsSnapshotRecorder::class)->record('nba', $game, $event, [
+        ...$event,
+        'bookmakers' => [[
+            'key' => 'draftkings',
+            'markets' => [
+                ['key' => 'spreads', 'outcomes' => [
+                    ['name' => 'Minnesota Timberwolves', 'price' => -110, 'point' => -15.5],
+                    ['name' => 'Chicago Bulls', 'price' => -110, 'point' => 15.5],
+                ]],
+                ['key' => 'totals', 'outcomes' => [
+                    ['name' => 'Over', 'price' => -110, 'point' => 235.5],
+                    ['name' => 'Under', 'price' => -110, 'point' => 235.5],
+                ]],
+            ],
+        ]],
+    ]);
+
+    $row = $this->actingAs(User::factory()->create())->get(route('dashboard'))
+        ->assertSuccessful()->inertiaProps('sports.0.predictions.0');
+
+    expect($row['model_bet_context'])->toMatchArray([
+        'model_home_spread' => -10,
+        'home_spread' => -15.5,
+        'total' => 235.5,
+    ]);
+});

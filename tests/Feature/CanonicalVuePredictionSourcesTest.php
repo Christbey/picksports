@@ -5,6 +5,7 @@ use App\Models\CanonicalPrediction;
 use App\Models\CFB\LivePredictionSnapshot;
 use App\Models\EventInputSnapshot;
 use App\Models\NBA\Prediction;
+use App\Models\OddsApiTeamMapping;
 use App\Models\PredictionEvaluation;
 use App\Models\PredictionMarket;
 use App\Models\SportEvent;
@@ -458,27 +459,36 @@ it('keeps CFB live and weather fields identical between compact dashboard and fu
         ->and($dashboard['live_predicted_total'])->toBe($snapshotAge === 0 ? 0 : null);
 })->with([0, 4]);
 
-it('passes stored NBA spreads and totals to compact dashboard rows', function () {
-    config()->set('prediction_lifecycle.canonical_reads.nba', true);
-    $prediction = vueCanonicalFixture('nba', -10);
-    $game = $prediction->sportEvent->nbaGame;
-    $game->homeTeam->update(['location' => 'Minnesota', 'name' => 'Timberwolves']);
-    $game->awayTeam->update(['location' => 'Chicago', 'name' => 'Bulls']);
+it('passes matching provider quotes to compact dashboard rows', function (
+    string $sport, array $home, array $away, string $providerHome, string $providerAway, ?string $alias = null,
+) {
+    config()->set("prediction_lifecycle.canonical_reads.{$sport}", true);
+    $prediction = vueCanonicalFixture($sport, -10);
+    $game = $prediction->sportEvent->{$sport.'Game'};
+    $game->homeTeam->update($home);
+    $game->awayTeam->update($away);
+    if ($alias !== null) {
+        OddsApiTeamMapping::create([
+            'sport' => 'basketball_wncaab',
+            'odds_api_team_name' => $providerHome,
+            'espn_team_name' => $alias,
+        ]);
+    }
 
     $event = [
         'id' => 'dashboard-nba-odds',
-        'home_team' => 'Minnesota Timberwolves',
-        'away_team' => 'Chicago Bulls',
+        'home_team' => $providerHome,
+        'away_team' => $providerAway,
         'commence_time' => now()->addHour()->toIso8601String(),
     ];
-    app(GameOddsSnapshotRecorder::class)->record('nba', $game, $event, [
+    app(GameOddsSnapshotRecorder::class)->record($sport, $game, $event, [
         ...$event,
         'bookmakers' => [[
             'key' => 'draftkings',
             'markets' => [
                 ['key' => 'spreads', 'outcomes' => [
-                    ['name' => 'Minnesota Timberwolves', 'price' => -110, 'point' => -15.5],
-                    ['name' => 'Chicago Bulls', 'price' => -110, 'point' => 15.5],
+                    ['name' => $providerHome, 'price' => -110, 'point' => -15.5],
+                    ['name' => $providerAway, 'price' => -110, 'point' => 15.5],
                 ]],
                 ['key' => 'totals', 'outcomes' => [
                     ['name' => 'Over', 'price' => -110, 'point' => 235.5],
@@ -496,4 +506,17 @@ it('passes stored NBA spreads and totals to compact dashboard rows', function ()
         'home_spread' => -15.5,
         'total' => 235.5,
     ]);
-});
+})->with([
+    'NBA location and nickname' => [
+        'nba', ['location' => 'Minnesota', 'name' => 'Timberwolves'], ['location' => 'Chicago', 'name' => 'Bulls'],
+        'Minnesota Timberwolves', 'Chicago Bulls',
+    ],
+    'WCBB State abbreviation' => [
+        'wcbb', ['school' => 'Kansas State', 'mascot' => 'Wildcats'], ['school' => 'Minnesota', 'mascot' => 'Golden Gophers'],
+        'Kansas St Wildcats', 'Minnesota Golden Gophers',
+    ],
+    'WCBB approved alias' => [
+        'wcbb', ['school' => 'Kansas State', 'mascot' => 'Wildcats'], ['school' => 'Minnesota', 'mascot' => 'Golden Gophers'],
+        'K-State Wildcats', 'Minnesota Golden Gophers', 'Kansas State',
+    ],
+]);

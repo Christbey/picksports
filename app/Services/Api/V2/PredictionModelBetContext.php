@@ -4,13 +4,25 @@ namespace App\Services\Api\V2;
 
 use App\Models\CanonicalPrediction;
 use App\Models\MarketQuote;
+use App\Models\OddsApiTeamMapping;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 /** Market references for model directions, independent of bet approval. */
 class PredictionModelBetContext
 {
+    private const ODDS_SPORT_KEYS = [
+        'cbb' => 'basketball_ncaab',
+        'wcbb' => 'basketball_wncaab',
+        'nba' => 'basketball_nba',
+        'wnba' => 'basketball_wnba',
+        'cfb' => 'americanfootball_ncaaf',
+        'nfl' => 'americanfootball_nfl',
+        'mlb' => 'baseball_mlb',
+    ];
+
     public const EMPTY_CONTEXT = ['home_spread' => null, 'total' => null, 'captured_at' => null];
 
     public function forPrediction(CanonicalPrediction $prediction, ?Model $game): array
@@ -22,7 +34,7 @@ class PredictionModelBetContext
         $quotes = $this->quoteQuery($prediction->sport, $game->getTable())
             ->where('game_id', $game->getKey())->where('captured_at', '<', $kickoff)->limit(200)->get();
 
-        return $this->marketContext($game, $quotes);
+        return $this->marketContext($prediction->sport, $game, $quotes, $this->teamAliases($prediction->sport, $quotes));
     }
 
     /** @param Collection<int, CanonicalPrediction> $predictions */
@@ -53,9 +65,10 @@ class PredictionModelBetContext
             ->get(['id', 'game_id', 'game_odds_snapshot_id', 'market_key', 'side', 'line', 'participant', 'captured_at'])
             ->groupBy('game_id');
 
+        $aliases = $this->teamAliases($sport, $quotes->flatten(1));
         $contexts = [];
         foreach ($quotes as $gameId => $gameQuotes) {
-            $contexts[$gameId] = $this->marketContext($games[$gameId], $gameQuotes);
+            $contexts[$gameId] = $this->marketContext($sport, $games[$gameId], $gameQuotes, $aliases);
         }
 
         return $contexts;
@@ -68,7 +81,52 @@ class PredictionModelBetContext
             ->orderByDesc('captured_at')->orderByDesc('id');
     }
 
-    private function marketContext(Model $game, Collection $quotes): array
+    private function teamAliases(string $sport, Collection $quotes): array
+    {
+        $sportKey = self::ODDS_SPORT_KEYS[$sport] ?? null;
+        $participants = $quotes->where('market_key', 'spreads')->pluck('participant')
+            ->filter()->map(fn (string $name): string => strtolower(trim($name)))->unique()->values();
+
+        if ($sportKey === null || $participants->isEmpty()) {
+            return [];
+        }
+
+        return OddsApiTeamMapping::query()->where('sport', $sportKey)
+            ->whereNotNull('espn_team_name')->whereIn(DB::raw('LOWER(odds_api_team_name)'), $participants)
+            ->get(['odds_api_team_name', 'espn_team_name'])
+            ->groupBy(fn (OddsApiTeamMapping $mapping): string => strtolower(trim($mapping->odds_api_team_name)))
+            ->map(fn (Collection $mappings): array => $mappings->pluck('espn_team_name')
+                ->map(fn (string $name): string => strtolower(trim($name)))->unique()->values()->all())
+            ->all();
+    }
+
+    private function matchesTeam(string $sport, ?string $participant, array $expected, array $opponent, array $aliases): bool
+    {
+        $name = strtolower(trim((string) $participant));
+        $mappedNames = $aliases[$name] ?? null;
+        if ($mappedNames !== null) {
+            return count($mappedNames) === 1
+                && in_array($mappedNames[0], $expected, true)
+                && ! in_array($mappedNames[0], $opponent, true);
+        }
+
+        if (in_array($name, $expected, true) && ! in_array($name, $opponent, true)) {
+            return true;
+        }
+
+        if ($sport !== 'wcbb') {
+            return false;
+        }
+
+        // A school's "State" suffix can appear as "St" before the mascot.
+        $normalizeState = fn (string $value): string => preg_replace('/(?<= )st\.?(?= |$)/', 'state', $value);
+        $normalized = $normalizeState($name);
+
+        return in_array($normalized, array_map($normalizeState, $expected), true)
+            && ! in_array($normalized, array_map($normalizeState, $opponent), true);
+    }
+
+    private function marketContext(string $sport, Model $game, Collection $quotes, array $aliases): array
     {
         $context = self::EMPTY_CONTEXT;
         $names = fn ($team) => collect([
@@ -86,8 +144,8 @@ class PredictionModelBetContext
             $away = $snapshot->first(fn ($q) => $q->market_key === 'spreads' && $q->side === 'away');
             if (! $home || ! $away || ! is_numeric($home->line) || ! is_numeric($away->line)
                 || abs((float) $home->line + (float) $away->line) > 0.001
-                || ! in_array(strtolower(trim((string) $home->participant)), $homeNames, true)
-                || ! in_array(strtolower(trim((string) $away->participant)), $awayNames, true)) {
+                || ! $this->matchesTeam($sport, $home->participant, $homeNames, $awayNames, $aliases)
+                || ! $this->matchesTeam($sport, $away->participant, $awayNames, $homeNames, $aliases)) {
                 continue;
             }
             $context['home_spread'] ??= (float) $home->line;

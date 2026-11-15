@@ -159,7 +159,7 @@ try {
             const gameCenter = page.getByRole('region', { name: 'Live games' });
             assert.match(
                 await gameCenter.innerText(),
-                /HOME 70.0%.*HOME \+5.0 pts/,
+                /HOME 70\.0%[\s\S]*HOME \+5\.0 pts/,
             );
             assert.equal(await gameCenter.getByRole('link').count(), 1);
             assert.equal(

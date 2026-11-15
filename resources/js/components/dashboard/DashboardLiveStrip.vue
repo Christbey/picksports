@@ -9,10 +9,6 @@ const props = defineProps<{
     sports: DashboardSport[];
 }>();
 
-type LiveTile = DashboardPrediction & {
-    sportName: string;
-};
-
 function ordinal(value: number): string {
     const mod100 = value % 100;
     if (mod100 >= 11 && mod100 <= 13) return `${value}th`;
@@ -29,18 +25,19 @@ function ordinal(value: number): string {
     return `${value}${suffix}`;
 }
 
-const liveGames = computed<LiveTile[]>(() =>
+const liveGames = computed(() =>
     props.sports.flatMap((sport) =>
         sport.predictions
             .filter((prediction) => prediction.is_live && !prediction.is_final)
             .map((prediction) => ({
                 ...prediction,
                 sportName: sport.name,
+                trend: liveTrend(prediction),
             })),
     ),
 );
 
-function statusLabel(game: LiveTile): string {
+function statusLabel(game: DashboardPrediction): string {
     if (
         ['nfl', 'cfb'].includes(game.sport.toLowerCase()) ||
         (game.game_clock && game.period)
@@ -67,7 +64,7 @@ function statusLabel(game: LiveTile): string {
     return 'Live';
 }
 
-function liveStateDetail(game: LiveTile): string | null {
+function liveStateDetail(game: DashboardPrediction): string | null {
     const parts = [];
     if (typeof game.outs === 'number') {
         parts.push(`${game.outs} ${game.outs === 1 ? 'out' : 'outs'}`);
@@ -79,7 +76,7 @@ function liveStateDetail(game: LiveTile): string | null {
     return parts.length ? parts.join(' · ') : null;
 }
 
-function liveTrendLabel(game: LiveTile): string | null {
+function liveTrend(game: DashboardPrediction) {
     if (typeof game.live_win_probability !== 'number') {
         return null;
     }
@@ -101,17 +98,22 @@ function liveTrendLabel(game: LiveTile): string | null {
             ? 'near pregame'
             : `${beneficiary} +${Math.abs(movement).toFixed(1)} pts`;
 
-    return `${leader} ${probability.toFixed(1)}% · ${movementLabel}`;
+    return {
+        probability: `${leader} ${probability.toFixed(1)}%`,
+        movement: movementLabel,
+    };
 }
 </script>
 
 <template>
     <section
         v-if="liveGames.length > 0"
-        class="ui-surface overflow-hidden p-4 shadow-none sm:p-5"
+        class="ui-surface overflow-hidden p-4 shadow-none sm:p-5 lg:p-0"
         aria-label="Live games"
     >
-        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div
+            class="mb-4 flex flex-wrap items-center justify-between gap-3 lg:mb-0 lg:px-4 lg:py-3"
+        >
             <div class="flex items-center gap-2">
                 <span
                     class="inline-flex items-center gap-1.5 rounded-full border border-sky-300/60 bg-sky-500/12 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-sky-700 uppercase dark:border-sky-500/30 dark:bg-sky-500/20 dark:text-sky-300"
@@ -128,12 +130,12 @@ function liveTrendLabel(game: LiveTile): string | null {
             <p class="text-xs text-muted-foreground">Auto-updating every 30s</p>
         </div>
 
-        <div class="hidden overflow-x-auto lg:block">
+        <div class="hidden overflow-x-auto border-t border-border lg:block">
             <table class="w-full text-left text-sm" aria-label="Game Center">
-                <thead class="bg-muted/50 text-xs text-muted-foreground">
+                <thead class="bg-muted/60 text-xs text-muted-foreground">
                     <tr>
                         <th
-                            v-for="column in [
+                            v-for="(column, index) in [
                                 'League',
                                 'Matchup',
                                 'Score (away–home)',
@@ -142,7 +144,8 @@ function liveTrendLabel(game: LiveTile): string | null {
                             ]"
                             :key="column"
                             scope="col"
-                            class="px-3 py-2 font-medium"
+                            class="px-4 py-2.5 font-medium whitespace-nowrap"
+                            :class="{ 'text-center': index === 2 }"
                         >
                             {{ column }}
                         </th>
@@ -152,39 +155,55 @@ function liveTrendLabel(game: LiveTile): string | null {
                     <tr
                         v-for="game in liveGames"
                         :key="`${game.sport}-${game.game_id}`"
-                        class="border-t border-border hover:bg-muted/40"
+                        class="border-t border-border transition-colors focus-within:bg-muted/35 hover:bg-muted/35"
                     >
-                        <td class="px-3 py-2 text-muted-foreground">
-                            {{ game.sportName }}
+                        <td class="w-px px-4 py-3">
+                            <span
+                                class="rounded-md bg-muted px-2 py-1 text-xs font-semibold text-muted-foreground"
+                            >
+                                {{ game.sportName }}
+                            </span>
                         </td>
                         <th
                             scope="row"
-                            class="px-3 py-2 text-left font-semibold"
+                            class="px-4 py-3 text-left font-semibold"
                         >
                             <Link
                                 :href="`/${game.sport.toLowerCase()}/games/${game.game_id}`"
-                                class="hover:underline"
+                                class="rounded-sm underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
                             >
                                 {{ game.away_team }} @ {{ game.home_team }}
                             </Link>
                         </th>
-                        <td class="px-3 py-2 font-semibold tabular-nums">
+                        <td
+                            class="px-4 py-3 text-center text-base font-semibold whitespace-nowrap tabular-nums"
+                        >
                             {{ game.away_score ?? '—' }} –
                             {{ game.home_score ?? '—' }}
                         </td>
-                        <td class="px-3 py-2">
-                            <p class="text-sky-600 dark:text-sky-400">
+                        <td class="px-4 py-3">
+                            <p
+                                class="inline-flex rounded-md bg-sky-500/10 px-2 py-1 text-xs font-semibold whitespace-nowrap text-sky-700 tabular-nums dark:text-sky-300"
+                            >
                                 {{ statusLabel(game) }}
                             </p>
                             <p
                                 v-if="liveStateDetail(game)"
-                                class="text-xs text-muted-foreground"
+                                class="mt-1 text-xs text-muted-foreground"
                             >
                                 {{ liveStateDetail(game) }}
                             </p>
                         </td>
-                        <td class="px-3 py-2 text-muted-foreground">
-                            {{ liveTrendLabel(game) ?? '—' }}
+                        <td class="px-4 py-3 tabular-nums">
+                            <template v-if="game.trend">
+                                <p class="font-semibold">
+                                    {{ game.trend.probability }}
+                                </p>
+                                <p class="text-xs text-muted-foreground">
+                                    {{ game.trend.movement }}
+                                </p>
+                            </template>
+                            <span v-else class="text-muted-foreground">—</span>
                         </td>
                     </tr>
                 </tbody>
@@ -238,14 +257,14 @@ function liveTrendLabel(game: LiveTile): string | null {
                 </div>
 
                 <div
-                    v-if="liveTrendLabel(game)"
+                    v-if="game.trend"
                     class="mt-2 flex items-center gap-2 border-t border-border/60 pt-2 text-xs"
                 >
                     <Activity
                         class="h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-400"
                     />
                     <span class="truncate font-medium text-foreground/80">
-                        {{ liveTrendLabel(game) }}
+                        {{ game.trend.probability }} · {{ game.trend.movement }}
                     </span>
                 </div>
             </Link>

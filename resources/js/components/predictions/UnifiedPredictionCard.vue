@@ -151,7 +151,15 @@ const {
                         <dt class="text-muted-foreground">
                             {{ dashboard ? 'Spread' : 'Cover' }}
                         </dt>
-                        <dd class="font-medium">{{ pregameCalls.spread }}</dd>
+                        <dd class="font-medium">
+                            {{ pregameCalls.spread }}
+                            <span
+                                v-if="pregameCalls.spreadGrade"
+                                class="block text-xs text-muted-foreground"
+                            >
+                                {{ pregameCalls.spreadGrade }}
+                            </span>
+                        </dd>
                     </div>
                     <div class="grid grid-cols-[3.5rem_1fr] gap-3">
                         <dt class="text-muted-foreground">Total</dt>

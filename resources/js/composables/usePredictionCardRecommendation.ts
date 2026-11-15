@@ -39,14 +39,25 @@ export function usePredictionCardRecommendation(
                 : null,
         ),
     );
-    const pregameCalls = computed(() =>
-        pregameBetCalls(
+    const pregameCalls = computed(() => {
+        const homeScore = game.homeScore();
+        const awayScore = game.awayScore();
+        const finalHomeMargin =
+            props.dashboard &&
+            isFinal() &&
+            homeScore !== null &&
+            awayScore !== null
+                ? homeScore - awayScore
+                : null;
+
+        return pregameBetCalls(
             props.prediction,
             homeTeamLabel(),
             awayTeamLabel(),
             props.dashboard,
-        ),
-    );
+            finalHomeMargin,
+        );
+    });
 
     function preGameTeamLabel(): string {
         return preGameWinProbability() >= 0.5

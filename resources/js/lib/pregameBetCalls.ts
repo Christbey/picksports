@@ -15,6 +15,7 @@ export function pregameBetCalls(
     home: string,
     away: string,
     dashboard = false,
+    finalHomeMargin: number | null = null,
 ) {
     const data = record(prediction);
     const context = record(data.model_bet_context);
@@ -36,7 +37,12 @@ export function pregameBetCalls(
     );
     const projectedTotal = number(data.predicted_total);
     const marketTotal = number(context.total);
-    const calls = {
+    const calls: {
+        winner: string;
+        spread: string;
+        total: string;
+        spreadGrade?: string;
+    } = {
         winner: 'Model unavailable',
         spread: dashboard ? '—' : 'Line unavailable',
         total: dashboard ? '—' : 'Line unavailable',
@@ -61,6 +67,15 @@ export function pregameBetCalls(
             Math.abs(edge) < 0.0001
                 ? 'Model projects a push'
                 : `${bet}${team} ${line > 0 ? '+' : ''}${line} to cover`;
+        if (finalHomeMargin !== null) {
+            const result = finalHomeMargin + marketLine;
+            calls.spreadGrade =
+                Math.abs(edge) < 0.0001
+                    ? Math.abs(result) < 0.0001
+                        ? 'Push'
+                        : 'No push'
+                    : coverGrade(result * Math.sign(edge));
+        }
     } else if (
         !isOffSchedule &&
         best.type === 'spread' &&
@@ -69,11 +84,24 @@ export function pregameBetCalls(
     ) {
         const line = number(best.market_line)!;
         calls.spread = `${bet}${best.side === 'home' ? home : away} ${line > 0 ? '+' : ''}${line} to cover`;
+        if (finalHomeMargin !== null) {
+            const selectedMargin =
+                best.side === 'home' ? finalHomeMargin : -finalHomeMargin;
+            calls.spreadGrade = coverGrade(selectedMargin + line);
+        }
     } else if (dashboard && margin !== null) {
         calls.spread =
             margin === 0
                 ? 'Projected tie'
                 : `Projected ${margin > 0 ? home : away} by ${Math.abs(margin)}`;
+        if (!isOffSchedule && finalHomeMargin !== null) {
+            const error =
+                Math.round(Math.abs(finalHomeMargin - margin) * 10) / 10;
+            calls.spreadGrade =
+                error === 0
+                    ? 'Exact margin'
+                    : `${error} ${error === 1 ? 'pt' : 'pts'} off`;
+        }
     }
     if (!isOffSchedule && projectedTotal !== null && marketTotal !== null)
         calls.total =
@@ -90,4 +118,9 @@ export function pregameBetCalls(
     else if (dashboard && projectedTotal !== null)
         calls.total = `Projected ${projectedTotal}`;
     return calls;
+}
+
+function coverGrade(adjustedMargin: number): string {
+    if (Math.abs(adjustedMargin) < 0.0001) return 'Push';
+    return adjustedMargin > 0 ? 'Covered' : 'Missed';
 }

@@ -117,3 +117,36 @@ test('dashboard labels model projections when offers are missing or a game is po
         total: 'Over 140.5',
     });
 });
+
+test('dashboard grades the displayed spread and reports projection error without a market', () => {
+    const forecast = {
+        model_bet_context: { model_home_spread: -8, home_spread: -10 },
+    };
+    // The pick is Away +10 even though the model projects Home to win.
+    assert.equal(
+        pregameBetCalls(forecast, 'Home', 'Away', true, 9).spreadGrade,
+        'Covered',
+    );
+    assert.equal(
+        pregameBetCalls(forecast, 'Home', 'Away', true, 10).spreadGrade,
+        'Push',
+    );
+    assert.equal(
+        pregameBetCalls(forecast, 'Home', 'Away', true, 11).spreadGrade,
+        'Missed',
+    );
+    const modelOnly = { model_bet_context: { model_home_spread: -8.2 } };
+    assert.equal(
+        pregameBetCalls(modelOnly, 'Home', 'Away', true, -3).spreadGrade,
+        '11.2 pts off',
+    );
+    assert.equal(
+        pregameBetCalls({ predicted_spread: 8 }, 'Home', 'Away', true, 8)
+            .spreadGrade,
+        'Exact margin',
+    );
+    assert.equal(
+        pregameBetCalls(forecast, 'Home', 'Away', true).spreadGrade,
+        undefined,
+    );
+});

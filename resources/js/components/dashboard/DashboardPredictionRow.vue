@@ -54,7 +54,15 @@ const { pregameCalls, dashboardSignalLabel, dashboardWinnerGrade } =
                     {{ pregameCalls.spreadGrade }}
                 </p>
             </td>
-            <td class="px-3 py-3">{{ pregameCalls.total }}</td>
+            <td class="px-3 py-3">
+                {{ pregameCalls.total }}
+                <p
+                    v-if="pregameCalls.totalGrade"
+                    class="block text-xs text-muted-foreground"
+                >
+                    {{ pregameCalls.totalGrade }}
+                </p>
+            </td>
             <td class="px-3 py-3 text-muted-foreground">
                 {{ dashboardSignalLabel() ?? '—' }}
             </td>

@@ -163,10 +163,24 @@ const {
                     </div>
                     <div class="grid grid-cols-[3.5rem_1fr] gap-3">
                         <dt class="text-muted-foreground">Total</dt>
-                        <dd class="font-medium">{{ pregameCalls.total }}</dd>
+                        <dd class="font-medium">
+                            {{ pregameCalls.total }}
+                            <span
+                                v-if="pregameCalls.totalGrade"
+                                class="block text-xs text-muted-foreground"
+                            >
+                                {{ pregameCalls.totalGrade }}
+                            </span>
+                        </dd>
                     </div>
                 </dl>
             </section>
+            <p
+                v-if="dashboard && dashboardSignalLabel()"
+                class="col-span-full text-xs text-muted-foreground"
+            >
+                {{ dashboardSignalLabel() }}
+            </p>
             <button
                 type="button"
                 :aria-expanded="expanded"

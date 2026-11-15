@@ -16,6 +16,7 @@ export function pregameBetCalls(
     away: string,
     dashboard = false,
     finalHomeMargin: number | null = null,
+    finalTotal: number | null = null,
 ) {
     const data = record(prediction);
     const context = record(data.model_bet_context);
@@ -42,6 +43,7 @@ export function pregameBetCalls(
         spread: string;
         total: string;
         spreadGrade?: string;
+        totalGrade?: string;
     } = {
         winner: 'Model unavailable',
         spread: dashboard ? '—' : 'Line unavailable',
@@ -103,20 +105,49 @@ export function pregameBetCalls(
                     : `${error} ${error === 1 ? 'pt' : 'pts'} off`;
         }
     }
-    if (!isOffSchedule && projectedTotal !== null && marketTotal !== null)
+    const signalTotal =
+        best.type === 'total' && ['over', 'under'].includes(String(best.side))
+            ? number(best.market_line)
+            : null;
+    const totalLine =
+        projectedTotal !== null && marketTotal !== null
+            ? marketTotal
+            : signalTotal;
+    if (!isOffSchedule && totalLine !== null) {
+        const direction =
+            projectedTotal !== null && marketTotal !== null
+                ? Math.abs(projectedTotal - marketTotal) < 0.0001
+                    ? 0
+                    : Math.sign(projectedTotal - marketTotal)
+                : best.side === 'over'
+                  ? 1
+                  : -1;
         calls.total =
-            Math.abs(projectedTotal - marketTotal) < 0.0001
+            direction === 0
                 ? 'Model projects a push'
-                : `${bet}${projectedTotal > marketTotal ? 'Over' : 'Under'} ${marketTotal}`;
-    else if (
-        !isOffSchedule &&
-        best.type === 'total' &&
-        ['over', 'under'].includes(String(best.side)) &&
-        number(best.market_line) !== null
-    )
-        calls.total = `${bet}${best.side === 'over' ? 'Over' : 'Under'} ${number(best.market_line)}`;
-    else if (dashboard && projectedTotal !== null)
+                : `${bet}${direction > 0 ? 'Over' : 'Under'} ${totalLine}`;
+        if (finalTotal !== null) {
+            const result = finalTotal - totalLine;
+            calls.totalGrade =
+                Math.abs(result) < 0.0001
+                    ? 'Push'
+                    : result * direction > 0
+                      ? 'Hit'
+                      : direction === 0
+                        ? 'No push'
+                        : 'Missed';
+        }
+    } else if (dashboard && projectedTotal !== null) {
         calls.total = `Projected ${projectedTotal}`;
+        if (!isOffSchedule && finalTotal !== null) {
+            const error =
+                Math.round(Math.abs(finalTotal - projectedTotal) * 10) / 10;
+            calls.totalGrade =
+                error === 0
+                    ? 'Exact total'
+                    : `${error} ${error === 1 ? 'pt' : 'pts'} off`;
+        }
+    }
     return calls;
 }
 

@@ -6,6 +6,9 @@ use App\Application\Sports\ReadModels\PredictionDeliveryContext;
 use App\Models\BetDecision;
 use App\Models\CanonicalPrediction;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 
 class CanonicalBettingRecommendations
 {
@@ -20,27 +23,77 @@ class CanonicalBettingRecommendations
             return [];
         }
 
-        return BetDecision::query()
-            ->where('sport', $context->sport)
-            ->where('prediction_table', $prediction->getTable())
+        return $this->decisionQuery($context->sport)
             ->where('prediction_id', $prediction->getKey())
             ->where('game_table', $game->getTable())
             ->where('game_id', $game->getKey())
-            ->whereIn('market_type', ['spread', 'total', 'moneyline'])
-            ->where('decided_at', '<=', now())
-            ->orderByDesc('decided_at')->orderByDesc('id')
-            ->with('oddsSnapshot')->get()->unique('market_type')
-            ->filter(fn (BetDecision $decision): bool => $decision->is_public
-                && ! $decision->is_tracking_only && $decision->is_bet && $decision->pregame_safe
-                && ! in_array($decision->status, ['held_candidate', 'provisional_candidate', 'shadow_no_bet', 'tracking_only', 'withdrawn', 'superseded'], true)
-                && ! in_array($decision->recommendation_label, ['no_bet', 'tracking_only', 'model_lean'], true)
-                && $decision->price !== null && abs((float) $decision->price) >= 100
-                && $decision->game_start_at?->isFuture()
-                && $decision->decided_at?->gte($prediction->published_at)
-                && $decision->decided_at?->lt($decision->game_start_at)
-                && $this->hasFreshQuote($decision))
+            ->get()->unique('market_type')
+            ->filter(fn (BetDecision $decision): bool => $this->isApproved($decision, $prediction))
             ->map(fn (BetDecision $decision): ?array => $this->recommendation($decision, $context))
             ->filter()->values()->all();
+    }
+
+    /** @param Collection<int, CanonicalPrediction> $predictions */
+    public function dashboardSignals(string $sport, Collection $predictions): array
+    {
+        $upcoming = $predictions->filter(function (CanonicalPrediction $prediction) use ($sport): bool {
+            $game = $prediction->sportEvent?->getRelation($sport.'Game');
+
+            return $game instanceof Model
+                && in_array($game->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true)
+                && $prediction->sportEvent->starts_at?->isFuture();
+        });
+
+        if ($upcoming->isEmpty()) {
+            return [];
+        }
+
+        $decisions = $this->decisionQuery($sport)
+            ->whereIn('prediction_id', $upcoming->map(fn (CanonicalPrediction $prediction) => $prediction->getKey())->all())
+            ->get()->groupBy('prediction_id');
+
+        $signals = [];
+        foreach ($upcoming as $prediction) {
+            $game = $prediction->sportEvent->getRelation($sport.'Game');
+            $latest = $decisions->get($prediction->getKey(), collect())
+                ->where('game_table', $game->getTable())->where('game_id', $game->getKey())
+                ->unique('market_type');
+            if ($latest->contains(fn (BetDecision $decision): bool => $this->isApproved($decision, $prediction) && $this->validSelection($decision))) {
+                $signals[$prediction->getKey()] = 'Model Bet';
+            }
+        }
+
+        return $signals;
+    }
+
+    private function decisionQuery(string $sport): Builder
+    {
+        return BetDecision::query()->where('sport', $sport)
+            ->where('prediction_table', (new CanonicalPrediction)->getTable())
+            ->whereIn('market_type', ['spread', 'total', 'moneyline'])
+            ->where('decided_at', '<=', now())
+            ->orderByDesc('decided_at')->orderByDesc('id')->with('oddsSnapshot');
+    }
+
+    private function isApproved(BetDecision $decision, CanonicalPrediction $prediction): bool
+    {
+        return $decision->is_public
+            && ! $decision->is_tracking_only && $decision->is_bet && $decision->pregame_safe
+            && ! in_array($decision->status, ['held_candidate', 'provisional_candidate', 'shadow_no_bet', 'tracking_only', 'withdrawn', 'superseded'], true)
+            && ! in_array($decision->recommendation_label, ['no_bet', 'tracking_only', 'model_lean'], true)
+            && $decision->price !== null && abs((float) $decision->price) >= 100
+            && $decision->game_start_at?->isFuture()
+            && $decision->decided_at?->gte($prediction->published_at)
+            && $decision->decided_at?->lt($decision->game_start_at)
+            && $this->hasFreshQuote($decision);
+    }
+
+    private function validSelection(BetDecision $decision): bool
+    {
+        $type = $decision->market_type;
+
+        return in_array($decision->side, $type === 'total' ? ['over', 'under'] : ['home', 'away'], true)
+            && ($type === 'moneyline' || is_numeric($decision->line));
     }
 
     private function hasFreshQuote(BetDecision $decision): bool
@@ -66,8 +119,7 @@ class CanonicalBettingRecommendations
     {
         $side = (string) $decision->side;
         $type = (string) $decision->market_type;
-        if (! in_array($side, $type === 'total' ? ['over', 'under'] : ['home', 'away'], true)
-            || ($type !== 'moneyline' && ! is_numeric($decision->line))) {
+        if (! $this->validSelection($decision)) {
             return null;
         }
         $team = $side === 'home' ? $context->game->homeTeam : $context->game->awayTeam;

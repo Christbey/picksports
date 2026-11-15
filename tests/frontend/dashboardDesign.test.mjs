@@ -83,6 +83,8 @@ test('league sections preserve payload order, game counts, and spring-training c
         predicted_total: 45.5,
         season_type: 1,
         is_final: true,
+        home_score: 24,
+        away_score: 20,
         winner_correct: true,
     };
     const html = await render(Sections, {
@@ -109,6 +111,8 @@ test('league sections preserve payload order, game counts, and spring-training c
                         ...prediction,
                         sport: 'nfl',
                         game_id: 102,
+                        is_final: false,
+                        dashboard_signal: 'Model Bet',
                         season_type: 2,
                         winner_correct: null,
                     },
@@ -126,12 +130,14 @@ test('league sections preserve payload order, game counts, and spring-training c
     assert.doesNotMatch(html, /Line unavailable/);
     assert.equal((html.match(/bg-emerald-500\/10/g) ?? []).length, 2);
     assert.equal((html.match(/bg-red-500\/10/g) ?? []).length, 2);
-    for (const grade of ['Correct', 'Incorrect', 'Ungraded']) {
+    for (const grade of ['Correct', 'Incorrect']) {
         assert.equal(
             (html.match(new RegExp(`>${grade}<`, 'g')) ?? []).length,
             2,
         );
     }
+    assert.equal((html.match(/>1.5 pts off</g) ?? []).length, 4);
+    assert.equal((html.match(/>Model Bet</g) ?? []).length, 2);
     assert.match(html, /1 game/);
     assert.match(html, /2 games/);
     assert.equal((html.match(/Spring Training/g) ?? []).length, 1);

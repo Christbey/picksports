@@ -19,7 +19,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class CanonicalDashboardPredictionResource extends JsonResource
 {
-    public function __construct(CanonicalPrediction $resource, private readonly SportContext $context, private readonly array $config, private readonly bool $compact = false, private readonly array $marketContext = [])
+    public function __construct(CanonicalPrediction $resource, private readonly SportContext $context, private readonly array $config, private readonly bool $compact = false, private readonly array $marketContext = [], private readonly ?string $dashboardSignal = null)
     {
         parent::__construct($resource);
     }
@@ -98,6 +98,7 @@ class CanonicalDashboardPredictionResource extends JsonResource
             'model_bet_context' => ['model_home_spread' => $spread, ...PredictionModelBetContext::EMPTY_CONTEXT, ...$this->marketContext],
             'actual_total' => $this->number(data_get($evaluation?->actuals, 'total_points')),
             'winner_correct' => data_get($evaluation?->errors, 'winner_correct'),
+            ...($this->dashboardSignal !== null ? ['dashboard_signal' => $this->dashboardSignal] : []),
             'updated_at' => $prediction->updated_at?->toIso8601String(),
             'recommendation' => $recommendation ?? null,
             'public_recommendation' => app(MlbRecommendationPresentation::class)->summary($recommendation ?? null),

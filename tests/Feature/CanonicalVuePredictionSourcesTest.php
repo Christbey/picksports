@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\BetDecision;
 use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\LivePredictionSnapshot;
@@ -20,6 +21,7 @@ use App\Services\OddsApi\GameOddsSnapshotRecorder;
 use App\Services\PerformanceStatistics;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
 function vueCanonicalFixture(string $sport, float $homeLine = 4.5, float $homeProbability = 0.65, array $metadata = []): CanonicalPrediction
@@ -520,3 +522,25 @@ it('passes matching provider quotes to compact dashboard rows', function (
         'K-State Wildcats', 'Minnesota Golden Gophers', 'Kansas State',
     ],
 ]);
+
+it('passes an approved dashboard signal and suppresses held decisions', function (bool $approved) {
+    config()->set('prediction_lifecycle.canonical_reads.nba', true);
+    $prediction = vueCanonicalFixture('nba');
+    $game = $prediction->sportEvent->nbaGame;
+
+    BetDecision::query()->create([
+        'decision_run_id' => (string) Str::uuid(),
+        'decision_hash' => hash('sha256', 'dashboard-signal'),
+        'source_table' => 'predictions', 'source_id' => $prediction->id,
+        'prediction_table' => 'predictions', 'prediction_id' => $prediction->id,
+        'sport' => 'nba', 'game_table' => $game->getTable(), 'game_id' => $game->id,
+        'market_type' => 'moneyline', 'market_key' => 'h2h', 'side' => 'home',
+        'price' => 120, 'status' => $approved ? 'released' : 'held_candidate',
+        'recommendation_label' => 'model_bet', 'is_public' => true, 'is_tracking_only' => false,
+        'is_bet' => true, 'pregame_safe' => true, 'decided_at' => now(), 'game_start_at' => now()->addHour(),
+    ]);
+
+    $row = $this->actingAs(User::factory()->create())->get(route('dashboard'))
+        ->assertSuccessful()->inertiaProps('sports.0.predictions.0');
+    expect($row['dashboard_signal'] ?? null)->toBe($approved ? 'Model Bet' : null);
+})->with([true, false]);

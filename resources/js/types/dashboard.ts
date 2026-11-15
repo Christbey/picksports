@@ -22,6 +22,7 @@ export interface DashboardPrediction {
     predicted_total: number;
     actual_total?: number | null;
     winner_correct?: boolean | null;
+    dashboard_signal?: 'Model Bet' | null;
     home_logo: string;
     away_logo: string;
     home_color?: string | null;

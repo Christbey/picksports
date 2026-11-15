@@ -10,6 +10,7 @@ use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Api\V2\DashboardSportConfig;
 use App\Services\Api\V2\PredictionModelBetContext;
 use App\Services\Api\V2\SportContextResolver;
+use App\Services\BettingRecommendations\CanonicalBettingRecommendations;
 use App\Services\BettingRecommendations\GameBettingRecommendationService;
 use App\Services\MLB\MlbPredictionRecommendationService;
 use App\Services\Predictions\LivePredictionStore;
@@ -147,6 +148,7 @@ class DashboardController extends Controller
                     $predictions = (clone $query)->whereKey($ids->modelKeys())->get();
                     app(LivePredictionStore::class)->preload($predictions->map(fn ($prediction) => $prediction->sportEvent?->getRelation($context->slug.'Game'))->filter());
                     $marketContexts = app(PredictionModelBetContext::class)->forDashboardBatch($context->slug, $predictions);
+                    $signals = app(CanonicalBettingRecommendations::class)->dashboardSignals($context->slug, $predictions);
                     foreach ($predictions as $prediction) {
                         $gameId = $prediction->sportEvent?->getRelation($context->slug.'Game')?->getKey();
                         $rows->push([
@@ -154,6 +156,7 @@ class DashboardController extends Controller
                             'id' => $prediction->id,
                             'payload' => (new CanonicalDashboardPredictionResource(
                                 $prediction, $context, $config, compact: true, marketContext: $marketContexts[$gameId] ?? [],
+                                dashboardSignal: $signals[$prediction->getKey()] ?? null,
                             ))->resolve(),
                         ]);
                     }

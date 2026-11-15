@@ -42,20 +42,19 @@ export function usePredictionCardRecommendation(
     const pregameCalls = computed(() => {
         const homeScore = game.homeScore();
         const awayScore = game.awayScore();
-        const finalHomeMargin =
+        const hasFinalScore =
             props.dashboard &&
             isFinal() &&
             homeScore !== null &&
-            awayScore !== null
-                ? homeScore - awayScore
-                : null;
+            awayScore !== null;
 
         return pregameBetCalls(
             props.prediction,
             homeTeamLabel(),
             awayTeamLabel(),
             props.dashboard,
-            finalHomeMargin,
+            hasFinalScore ? homeScore - awayScore : null,
+            hasFinalScore ? homeScore + awayScore : null,
         );
     });
 
@@ -477,6 +476,14 @@ export function usePredictionCardRecommendation(
             if (isPregame && candidate?.recommendation_type === 'no_play') {
                 return null;
             }
+        }
+
+        if (
+            props.dashboard &&
+            'dashboard_signal' in props.prediction &&
+            props.prediction.dashboard_signal
+        ) {
+            return props.prediction.dashboard_signal;
         }
 
         const label =

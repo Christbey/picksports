@@ -150,3 +150,37 @@ test('dashboard grades the displayed spread and reports projection error without
         undefined,
     );
 });
+
+test('dashboard grades the displayed total and distinguishes a model-only projection', () => {
+    const forecast = {
+        predicted_total: 150,
+        model_bet_context: { total: 145 },
+    };
+    assert.equal(
+        pregameBetCalls(forecast, 'Home', 'Away', true, 2, 146).totalGrade,
+        'Hit',
+    );
+    assert.equal(
+        pregameBetCalls(forecast, 'Home', 'Away', true, 2, 145).totalGrade,
+        'Push',
+    );
+    assert.equal(
+        pregameBetCalls(forecast, 'Home', 'Away', true, 2, 144).totalGrade,
+        'Missed',
+    );
+    assert.equal(
+        pregameBetCalls(
+            { predicted_total: 150.2 },
+            'Home',
+            'Away',
+            true,
+            2,
+            149,
+        ).totalGrade,
+        '1.2 pts off',
+    );
+    assert.equal(
+        pregameBetCalls(forecast, 'Home', 'Away', true).totalGrade,
+        undefined,
+    );
+});

@@ -46,6 +46,7 @@ const {
     valueSignal,
     finalResultBadgeClass,
     finalResultLabel,
+    dashboardWinnerGrade,
     dashboardCardClass,
     dashboardRailClass,
     dashboardChipClass,
@@ -63,6 +64,7 @@ const {
     <div :class="compact ? 'bg-card' : ''">
         <div
             v-if="compact"
+            :class="dashboard ? dashboardWinnerGrade?.rowClass : undefined"
             class="grid grid-cols-[1fr_auto] items-center gap-x-5 gap-y-3 px-4 py-5 sm:grid-cols-[minmax(0,1fr)_minmax(15rem,1fr)_auto] sm:px-6"
         >
             <Link
@@ -135,7 +137,15 @@ const {
                 <dl class="space-y-1.5 text-sm">
                     <div class="grid grid-cols-[3.5rem_1fr] gap-3">
                         <dt class="text-muted-foreground">Win</dt>
-                        <dd class="font-medium">{{ pregameCalls.winner }}</dd>
+                        <dd class="font-medium">
+                            {{ pregameCalls.winner }}
+                            <span
+                                v-if="dashboard && dashboardWinnerGrade"
+                                class="block text-xs text-muted-foreground"
+                            >
+                                {{ dashboardWinnerGrade.label }}
+                            </span>
+                        </dd>
                     </div>
                     <div class="grid grid-cols-[3.5rem_1fr] gap-3">
                         <dt class="text-muted-foreground">

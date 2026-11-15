@@ -336,6 +336,19 @@ export function usePredictionCardRecommendation(
         return null;
     }
 
+    const dashboardWinnerGrade = computed(() => {
+        if (!isFinal()) return null;
+
+        switch (winnerCorrect()) {
+            case true:
+                return { label: 'Correct', rowClass: 'bg-emerald-500/10' };
+            case false:
+                return { label: 'Incorrect', rowClass: 'bg-red-500/10' };
+            default:
+                return { label: 'Ungraded', rowClass: '' };
+        }
+    });
+
     function dashboardCardTone():
         | 'quiet'
         | 'positive'
@@ -596,6 +609,7 @@ export function usePredictionCardRecommendation(
         valueSignal,
         finalResultBadgeClass,
         finalResultLabel,
+        dashboardWinnerGrade,
         dashboardCardClass,
         dashboardRailClass,
         dashboardChipClass,

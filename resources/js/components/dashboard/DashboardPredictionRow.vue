@@ -9,15 +9,13 @@ import type { PredictionCardProps } from '@/types/prediction-card';
 const props = defineProps<PredictionCardProps>();
 const expanded = ref(false);
 const game = usePredictionCardGame(props);
-const { pregameCalls, dashboardSignalLabel } = usePredictionCardRecommendation(
-    props,
-    game,
-);
+const { pregameCalls, dashboardSignalLabel, dashboardWinnerGrade } =
+    usePredictionCardRecommendation(props, game);
 </script>
 
 <template>
     <tbody class="border-t border-border">
-        <tr class="hover:bg-muted/40">
+        <tr :class="dashboardWinnerGrade?.rowClass || 'hover:bg-muted/40'">
             <th scope="row" class="px-3 py-3 text-left font-semibold">
                 <Link :href="href" class="hover:underline">
                     {{ game.awayTeamLabel() }} @ {{ game.homeTeamLabel() }}
@@ -38,7 +36,15 @@ const { pregameCalls, dashboardSignalLabel } = usePredictionCardRecommendation(
                     {{ game.gameDateTimeLabel() }}
                 </p>
             </td>
-            <td class="px-3 py-3">{{ pregameCalls.winner }}</td>
+            <td class="px-3 py-3">
+                {{ pregameCalls.winner }}
+                <p
+                    v-if="dashboardWinnerGrade"
+                    class="text-xs text-muted-foreground"
+                >
+                    {{ dashboardWinnerGrade.label }}
+                </p>
+            </td>
             <td class="px-3 py-3">{{ pregameCalls.spread }}</td>
             <td class="px-3 py-3">{{ pregameCalls.total }}</td>
             <td class="px-3 py-3 text-muted-foreground">

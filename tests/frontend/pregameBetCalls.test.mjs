@@ -76,3 +76,44 @@ test('missing lines and exact ties are reported honestly rather than replaced wi
         'Line unavailable',
     );
 });
+
+test('dashboard labels model projections when offers are missing or a game is postponed', () => {
+    const forecast = {
+        win_probability: 0.3,
+        predicted_total: 141.2,
+        model_bet_context: { model_home_spread: 4.5 },
+    };
+    const projection = {
+        winner: 'Away',
+        spread: 'Projected Away by 4.5',
+        total: 'Projected 141.2',
+    };
+
+    assert.deepEqual(
+        pregameBetCalls(forecast, 'Home', 'Away', true),
+        projection,
+    );
+
+    const withLines = {
+        ...forecast,
+        model_bet_context: {
+            ...forecast.model_bet_context,
+            home_spread: 3.5,
+            total: 140.5,
+        },
+    };
+    assert.deepEqual(
+        pregameBetCalls(
+            { ...withLines, status: 'STATUS_POSTPONED' },
+            'Home',
+            'Away',
+            true,
+        ),
+        projection,
+    );
+    assert.deepEqual(pregameBetCalls(withLines, 'Home', 'Away', true), {
+        winner: 'Away',
+        spread: 'Away -3.5 to cover',
+        total: 'Over 140.5',
+    });
+});

@@ -40,7 +40,12 @@ export function usePredictionCardRecommendation(
         ),
     );
     const pregameCalls = computed(() =>
-        pregameBetCalls(props.prediction, homeTeamLabel(), awayTeamLabel()),
+        pregameBetCalls(
+            props.prediction,
+            homeTeamLabel(),
+            awayTeamLabel(),
+            props.dashboard,
+        ),
     );
 
     function preGameTeamLabel(): string {

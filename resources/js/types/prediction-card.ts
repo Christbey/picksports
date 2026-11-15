@@ -4,6 +4,7 @@ export interface PredictionCardProps {
     href: string;
     sport?: string;
     compact?: boolean;
+    dashboard?: boolean;
     deferTeamLogos?: boolean;
 }
 export interface SavePickOption {

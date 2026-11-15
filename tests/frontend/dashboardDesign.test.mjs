@@ -117,11 +117,16 @@ test('league sections preserve payload order, game counts, and spring-training c
     assert.match(html, /<table[^>]*aria-label="MLB predictions"/);
     assert.match(html, /<table[^>]*aria-label="NFL predictions"/);
     assert.equal((html.match(/<th scope="row"/g) ?? []).length, 3);
-    assert.equal((html.match(/Bet HOME to win/g) ?? []).length, 3);
+    assert.equal((html.match(/Projected AWY by 3.5/g) ?? []).length, 6);
+    assert.equal((html.match(/Projected 45.5/g) ?? []).length, 6);
+    assert.doesNotMatch(html, /Line unavailable/);
     assert.match(html, /1 game/);
     assert.match(html, /2 games/);
     assert.equal((html.match(/Spring Training/g) ?? []).length, 1);
-    assert.equal((html.match(/Moneyline pick: HOME/g) ?? []).length, 3);
+    assert.equal(
+        (html.match(/aria-label="Pregame model projections"/g) ?? []).length,
+        3,
+    );
 });
 test('empty state retains recovery and performance navigation', async () => {
     const html = await render(Empty);

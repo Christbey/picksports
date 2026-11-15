@@ -70,8 +70,8 @@ const showSpringTrainingBadge = (sport: DashboardSport): boolean =>
                                     'Matchup',
                                     'Game status',
                                     'Model winner',
-                                    'Spread pick',
-                                    'Total pick',
+                                    'Spread / Margin',
+                                    'Total',
                                     'Signal',
                                 ]"
                                 :key="column"
@@ -91,6 +91,7 @@ const showSpringTrainingBadge = (sport: DashboardSport): boolean =>
                         :prediction="prediction"
                         :href="getGameUrl(prediction.sport, prediction.game_id)"
                         :sport="prediction.sport"
+                        dashboard
                     />
                 </table>
             </div>
@@ -101,6 +102,8 @@ const showSpringTrainingBadge = (sport: DashboardSport): boolean =>
                     :prediction="prediction"
                     :href="getGameUrl(prediction.sport, prediction.game_id)"
                     :sport="prediction.sport"
+                    dashboard
+                    compact
                 />
             </div>
         </section>

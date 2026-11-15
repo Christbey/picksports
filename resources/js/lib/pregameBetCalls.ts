@@ -14,6 +14,7 @@ export function pregameBetCalls(
     prediction: unknown,
     home: string,
     away: string,
+    dashboard = false,
 ) {
     const data = record(prediction);
     const context = record(data.model_bet_context);
@@ -24,7 +25,10 @@ export function pregameBetCalls(
     );
     const modelLine = number(context.model_home_spread);
     const margin =
-        modelLine !== null ? -modelLine : number(assessment.model_home_margin);
+        modelLine === null
+            ? (number(assessment.model_home_margin) ??
+              (dashboard ? number(data.predicted_spread) : null))
+            : -modelLine;
     const marketLine = number(
         context.home_spread ??
             best.market_home_line ??
@@ -34,41 +38,56 @@ export function pregameBetCalls(
     const marketTotal = number(context.total);
     const calls = {
         winner: 'Model unavailable',
-        spread: 'Line unavailable',
-        total: 'Line unavailable',
+        spread: dashboard ? '—' : 'Line unavailable',
+        total: dashboard ? '—' : 'Line unavailable',
     };
+    const bet = dashboard ? '' : 'Bet ';
     const direction = probability !== null ? probability - 0.5 : margin;
     if (direction !== null)
         calls.winner =
             direction === 0
                 ? 'Even matchup'
-                : `Bet ${direction > 0 ? home : away} to win`;
-    if (margin !== null && marketLine !== null) {
+                : `${bet}${direction > 0 ? home : away}${dashboard ? '' : ' to win'}`;
+    const isOffSchedule =
+        dashboard &&
+        ['STATUS_POSTPONED', 'STATUS_CANCELED', 'STATUS_CANCELLED'].includes(
+            String(data.status),
+        );
+    if (!isOffSchedule && margin !== null && marketLine !== null) {
         const edge = margin + marketLine;
         const team = edge > 0 ? home : away;
         const line = edge > 0 ? marketLine : -marketLine;
         calls.spread =
             Math.abs(edge) < 0.0001
                 ? 'Model projects a push'
-                : `Bet ${team} ${line > 0 ? '+' : ''}${line} to cover`;
+                : `${bet}${team} ${line > 0 ? '+' : ''}${line} to cover`;
     } else if (
+        !isOffSchedule &&
         best.type === 'spread' &&
         ['home', 'away'].includes(String(best.side)) &&
         number(best.market_line) !== null
     ) {
         const line = number(best.market_line)!;
-        calls.spread = `Bet ${best.side === 'home' ? home : away} ${line > 0 ? '+' : ''}${line} to cover`;
+        calls.spread = `${bet}${best.side === 'home' ? home : away} ${line > 0 ? '+' : ''}${line} to cover`;
+    } else if (dashboard && margin !== null) {
+        calls.spread =
+            margin === 0
+                ? 'Projected tie'
+                : `Projected ${margin > 0 ? home : away} by ${Math.abs(margin)}`;
     }
-    if (projectedTotal !== null && marketTotal !== null)
+    if (!isOffSchedule && projectedTotal !== null && marketTotal !== null)
         calls.total =
             Math.abs(projectedTotal - marketTotal) < 0.0001
                 ? 'Model projects a push'
-                : `Bet ${projectedTotal > marketTotal ? 'Over' : 'Under'} ${marketTotal}`;
+                : `${bet}${projectedTotal > marketTotal ? 'Over' : 'Under'} ${marketTotal}`;
     else if (
+        !isOffSchedule &&
         best.type === 'total' &&
         ['over', 'under'].includes(String(best.side)) &&
         number(best.market_line) !== null
     )
-        calls.total = `Bet ${best.side === 'over' ? 'Over' : 'Under'} ${number(best.market_line)}`;
+        calls.total = `${bet}${best.side === 'over' ? 'Over' : 'Under'} ${number(best.market_line)}`;
+    else if (dashboard && projectedTotal !== null)
+        calls.total = `Projected ${projectedTotal}`;
     return calls;
 }

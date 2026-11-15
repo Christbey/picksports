@@ -125,7 +125,11 @@ const {
             </Link>
             <section
                 class="col-span-full row-start-2 sm:col-span-1 sm:row-auto"
-                aria-label="Pregame model bets"
+                :aria-label="
+                    dashboard
+                        ? 'Pregame model projections'
+                        : 'Pregame model bets'
+                "
             >
                 <p class="mb-2 text-xs text-muted-foreground">Pregame model</p>
                 <dl class="space-y-1.5 text-sm">
@@ -134,7 +138,9 @@ const {
                         <dd class="font-medium">{{ pregameCalls.winner }}</dd>
                     </div>
                     <div class="grid grid-cols-[3.5rem_1fr] gap-3">
-                        <dt class="text-muted-foreground">Cover</dt>
+                        <dt class="text-muted-foreground">
+                            {{ dashboard ? 'Spread' : 'Cover' }}
+                        </dt>
                         <dd class="font-medium">{{ pregameCalls.spread }}</dd>
                     </div>
                     <div class="grid grid-cols-[3.5rem_1fr] gap-3">

@@ -33,6 +33,9 @@ it('supplies only completed current regular season results before the target and
         ->and($team['scoring_margin'])->toBe(10.0)->and($team['total_yards']['per_game'])->toBe(400.0)
         ->and($team['rushing_yards']['per_game'])->toBeNull()->and($team['rushing_yards']['sample_size'])->toBe(0)
         ->and($context['season_evidence']['teams']['away']['stat_coverage_games'])->toBe(0);
+    expect($team['last_five']['game_ids'])->toBe([$prior->id])
+        ->and($team['last_five']['first_game_date'])->toBe('2026-10-20')
+        ->and($team['same_venue_role']['wins'])->toBe(1);
     // A historical target must also exclude completed results after its kickoff.
     $target->game_date = '2026-10-19';
     expect(app(ResearchAnalysisContext::class)->forGame($target, [])['season_evidence']['teams']['home']['games'])->toBe(0);
@@ -76,8 +79,8 @@ it('separates a model projection from independent completed-game evidence', func
         ->and($result['analysis_quality']['rejected_claims'])->toBe(1);
 });
 
-it('distinguishes confirming the same starter from injury or a different starter', function (string $concern, ?string $reported, bool $blocking) {
-    $row = [...groundedResearchClaim(), 'reason_code' => 'model_input_conflict', 'scope' => 'game', 'blocking' => true,
+it('distinguishes confirming the same starter from injury or a different starter', function (string $concern, ?string $reported, bool $blocking, string $reason = 'model_input_conflict') {
+    $row = [...groundedResearchClaim(), 'reason_code' => $reason, 'scope' => 'game', 'blocking' => true,
         'concern_type' => $concern, 'projected_player' => 'Jordan Love', 'reported_player' => $reported];
     $result = app(ResearchClaimGrounding::class)->apply(['decision_research' => ['unresolved' => [$row]]], groundedResearchInput());
     $item = app(ResearchUncertaintyPolicy::class)->normalize($result['decision_research']['unresolved'][0]);
@@ -85,6 +88,7 @@ it('distinguishes confirming the same starter from injury or a different starter
 })->with([
     'same starter confirmed' => ['routine_confirmation', 'Jordan Love', false],
     'routine announcement absent' => ['routine_confirmation', null, false],
+    'routine announcement misclassified as source gap' => ['routine_confirmation', null, false, 'source_gap'],
     'different starter' => ['starter_change', 'Other Quarterback', true],
     'specific injury' => ['injury', 'Jordan Love', true],
     'conflicting report despite routine label' => ['routine_confirmation', 'Other Quarterback', true],

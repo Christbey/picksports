@@ -70,20 +70,18 @@ class ResearchClaimGrounding
     private function quarterbackQuestion(array $row, array $input): array
     {
         if (! in_array((string) ($input['season_type'] ?? ''), ['2', '3'], true)
-            || ! in_array($row['reason_code'] ?? null, ['model_input_conflict', 'material_availability'], true)) {
+            || ! in_array($row['reason_code'] ?? null, ['model_input_conflict', 'material_availability', 'source_gap'], true)) {
             return $row;
         }
         $projected = $row['projected_player'] ?? null;
         $reported = $row['reported_player'] ?? null;
-        $matchesInput = collect(data_get($input, 'analysis_context.quarterbacks', []))
-            ->contains(fn ($qb) => $projected && $this->text($qb['projected_player'] ?? '') === $this->text($projected));
-        $quarterbacks = collect(data_get($input, 'analysis_context.quarterbacks', []));
-        $qb = $quarterbacks->first(fn ($qb) => $projected && $this->text($qb['projected_player'] ?? '') === $this->text($projected));
+        $qb = collect(data_get($input, 'analysis_context.quarterbacks', []))
+            ->first(fn ($qb) => $projected && $this->text($qb['projected_player'] ?? '') === $this->text($projected));
         $injured = collect($input['synced_injuries'] ?? [])->contains(fn ($injury) => ! empty($qb['player_id'])
             && (string) ($injury['player_id'] ?? '') === (string) $qb['player_id']);
         $unavailable = collect($input['verified_availability'] ?? [])->contains(fn ($fact) => ! empty($qb['player_id'])
             && (string) ($fact['player_id'] ?? '') === (string) $qb['player_id'] && ($fact['status'] ?? null) === 'Out');
-        if (! $injured && ! $unavailable && $matchesInput && ($row['concern_type'] ?? null) === 'routine_confirmation'
+        if (! $injured && ! $unavailable && $qb !== null && ($row['concern_type'] ?? null) === 'routine_confirmation'
             && (! $reported || $this->text($projected) === $this->text($reported))) {
             $row['reason_code'] = 'routine_starter_confirmation';
         }

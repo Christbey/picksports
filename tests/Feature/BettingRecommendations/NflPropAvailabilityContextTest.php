@@ -48,6 +48,17 @@ test('does not reallocate questionable doubtful or inactive injuries', function 
     expect(($this->resolve)()['factor'])->toBe(1.0);
 })->with([['Questionable', true], ['Doubtful', true], ['Out', false]]);
 
+test('distinguishes the prop player game designation from a practice entry', function (string $status, string $reason) {
+    $this->injury->update(['player_id' => $this->starter->id, 'status' => $status]);
+
+    expect(($this->resolve)()['reason'])->toBe($reason);
+})->with([
+    ['Full Participation', 'no_new_confirmed_absence'],
+    ['Available', 'no_new_confirmed_absence'],
+    ['Questionable', 'player_availability_uncertain'],
+    ['Inactive', 'player_unavailable'],
+]);
+
 test('does not use stale injury or depth observations', function ($table, $age) {
     DB::table($table)->update(['updated_at' => now()->subHours($age)]);
     expect(($this->resolve)()['factor'])->toBe(1.0);

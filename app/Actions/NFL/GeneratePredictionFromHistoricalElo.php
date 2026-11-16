@@ -356,6 +356,8 @@ class GeneratePredictionFromHistoricalElo
         foreach ($this->projectedQuarterbacks as $teamId => $quarterback) {
             $side = $teamId === (int) $game->home_team_id ? 'home' : 'away';
             $this->lastModelMetadata['game_depth_charts'][$side] = [
+                'qb_id' => $quarterback['qb_id'] ?? null,
+                'qb_name' => $quarterback['qb_name'] ?? null,
                 'depth_chart_game_link' => $quarterback['depth_chart_game_link'] ?? null,
                 'identity_status' => 'projected_not_confirmed_starter',
             ];

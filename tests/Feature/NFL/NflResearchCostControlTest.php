@@ -9,7 +9,10 @@ use App\Models\SportsGameContextReport;
 use App\Services\AI\AiGenerationRecorder;
 use App\Services\AI\AiProviderRateLimitCircuitBreaker;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
+use App\Services\NFL\NflTrueEpaReadinessService;
 use App\Services\NFL\NflWebContextResearchService;
+use App\Services\NFL\Predictions\NflRecommendationInputBuilder;
+use App\Services\NFL\Research\RecommendationEligibility;
 use App\Services\NFL\Research\ResearchDeferred;
 use App\Services\NFL\Research\ResearchPipeline;
 use App\Services\NFL\Research\ResearchRefreshPolicy;
@@ -19,6 +22,7 @@ use App\Services\Predictions\SportsExternalGameContextBuilder;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
@@ -280,7 +284,7 @@ it('withholds changed evidence from the prediction payload even before its old e
         ->and($context['reason'])->toBe('research_evidence_changed_or_stale');
 });
 
-it('keeps a budget-deferred research revision on hold and exposes why', function () {
+it('records a research deferral without holding a pick or player prop', function () {
     config(['nfl_research.cost_control.daily_budget_usd' => 0]);
     $game = costControlGame();
     Prediction::factory()->create(['game_id' => $game->id]);
@@ -292,13 +296,13 @@ it('keeps a budget-deferred research revision on hold and exposes why', function
     $revision = app(ResearchPipeline::class)->review($game);
     expect($revision->brief['eligibility']['status'])->toBe('hold')
         ->and($revision->brief['research_refresh']['deferred_reason'])->toBe('research_daily_budget_reached')
-        ->and($revision->brief['eligibility']['data_reasons'])->toContain('research_incomplete_or_stale')
-        ->and($revision->brief['player_props'][0]['status'])->toBe('hold')
-        ->and($revision->brief['market_holds']['props'])->toContain('research_daily_budget_reached')
+        ->and($revision->brief['eligibility']['data_reasons'])->toBe(['spread_quote_missing'])
+        ->and($revision->brief['player_props'][0]['status'])->toBe('candidate')
+        ->and($revision->brief['market_holds']['props'])->toBe([])
         ->and(AiGeneration::count())->toBe(0);
 });
 
-it('keeps a changed candidate on hold during an explicit no-web review', function () {
+it('marks the research write-up as outdated without holding a changed forecast', function () {
     Http::fake(['*' => Http::response(costControlResponse())]);
     $game = costControlGame();
     Prediction::factory()->create(['game_id' => $game->id, 'predicted_spread' => 2]);
@@ -311,7 +315,8 @@ it('keeps a changed candidate on hold during an explicit no-web review', functio
     $revision = app(ResearchPipeline::class)->review($game, research: false);
     expect($revision->revised['predicted_spread'])->toBe(8)
         ->and($revision->brief['research_refresh']['evidence_current'])->toBeTrue()
-        ->and($revision->brief['eligibility']['data_reasons'])->toContain('research_candidate_changed');
+        ->and($revision->brief['research_refresh']['candidate_current'])->toBeFalse()
+        ->and($revision->brief['eligibility']['data_reasons'])->toBe(['spread_quote_missing']);
     Http::assertSentCount(1);
 });
 
@@ -348,7 +353,7 @@ it('revalidates a material forecast change after the minimum interval without by
     Http::assertSentCount(2);
 });
 
-it('persists a specific hold instead of losing the revision on provider failure', function (string $message, string $reason) {
+it('records a provider failure separately from pick eligibility', function (string $message, string $reason) {
     $game = costControlGame();
     Prediction::factory()->create(['game_id' => $game->id]);
     $this->mock(GeneratePredictionFromHistoricalElo::class, fn ($m) => $m->shouldReceive('preview')->andReturn([
@@ -360,36 +365,75 @@ it('persists a specific hold instead of losing the revision on provider failure'
     $revision = app(ResearchPipeline::class)->review($game);
     expect($revision->exists)->toBeTrue()
         ->and($revision->brief['eligibility']['status'])->toBe('hold')
-        ->and($revision->brief['eligibility']['data_reasons'])->toContain($reason);
+        ->and($revision->brief['research_refresh']['deferred_reason'])->toBe($reason)
+        ->and($revision->brief['eligibility']['data_reasons'])->toBe(['spread_quote_missing']);
 })->with([
     ['Timed out', 'research_refresh_failed'],
     ['OpenAI status 429 [insufficient_quota]', 'research_provider_quota_exhausted'],
     ['OpenAI status 429: too many requests', 'research_provider_rate_limited'],
 ]);
 
-it('persists all scoped uncertainty records without array-to-string exceptions or dropping distinct blockers', function () {
+it('bases pick holds on a game designation and paired quote rather than research prose', function (?string $designation, int $quoteAgeHours, array $expected) {
     $game = costControlGame();
+    $game->update(['season' => 2026, 'week' => 3]);
+    $game->homeTeam->update(['abbreviation' => 'DET']);
+    $observedAt = now()->subHours($quoteAgeHours)->toIso8601String();
+    $game->update(['odds_data' => [
+        'home_team' => 'Home Team', 'away_team' => 'Away Team',
+        'bookmakers' => [['key' => 'book', 'markets' => [[
+            'key' => 'spreads', 'last_update' => $observedAt, 'outcomes' => [
+                ['name' => 'Home Team', 'point' => -2.5, 'price' => -110],
+                ['name' => 'Away Team', 'point' => 2.5, 'price' => -110],
+            ],
+        ]]]],
+    ]]);
     Prediction::factory()->create(['game_id' => $game->id]);
+    DB::table('nflverse_injuries')->insert([
+        'nflverse_injury_key' => hash('sha256', 'qb-designation'),
+        'season' => $game->season, 'week' => $game->week, 'season_type' => 'REG',
+        'team' => $game->homeTeam->abbreviation, 'position' => 'QB', 'full_name' => 'Home Quarterback',
+        'report_status' => $designation, 'practice_status' => 'Full Participation',
+        'source_updated_at' => now(), 'updated_at' => now(),
+    ]);
     $preview = ['outputs' => ['predicted_spread' => 5, 'predicted_total' => 42, 'win_probability' => .6],
-        'model_metadata' => [], 'model_version' => 'scoped-test'];
-    $this->mock(GeneratePredictionFromHistoricalElo::class, fn ($m) => $m->shouldReceive('preview')->andReturn($preview));
-    $this->mock(PlayerPropAnalyzer::class, fn ($m) => $m->shouldReceive('previewNflGame')->andReturn([['prop_id' => 1]]));
-    $gameBlocker = ['claim' => 'Starting quarterback status unresolved', 'scope' => 'game', 'blocking' => true];
-    $propBlocker = ['claim' => 'Receiver availability unresolved', 'scope' => 'props', 'blocking' => true];
+        'model_metadata' => [
+            'game_depth_charts' => ['home' => ['qb_name' => 'Home Quarterback']],
+            'analysis_layer' => ['bet_classification' => 'bet', 'pro_signal_layer' => [
+                'tier' => 'lean', 'market_scores' => ['spread' => ['tier' => 'lean']],
+            ]],
+        ], 'model_version' => 'scoped-test'];
+    $preview['model_metadata']['analysis_layer']['eligibility'] = app(RecommendationEligibility::class)
+        ->evaluate($preview['model_metadata']['analysis_layer'], $preview['model_metadata']);
+    $this->mock(GeneratePredictionFromHistoricalElo::class, function ($mock) use ($preview) {
+        $mock->shouldReceive('preview')->andReturn($preview);
+        $mock->shouldReceive('previewPregame')->andReturn($preview);
+    });
+    $this->mock(NflTrueEpaReadinessService::class, fn ($mock) => $mock->shouldReceive('prepare'));
+    $this->mock(PlayerPropAnalyzer::class, fn ($m) => $m->shouldReceive('previewNflGame')->andReturn([['prop_id' => 1, 'status' => 'model_candidate']]));
+    $narrative = ['claim' => 'Starter not announced', 'scope' => 'game', 'blocking' => true];
     SportsGameContextReport::create([
         'sport' => 'nfl', 'game_id' => $game->id, 'prompt_version' => 'test', 'input_hash' => hash('sha256', 'scope-test'),
         'status' => 'partial', 'researched_at' => now(), 'expires_at' => now()->addHour(),
-        'raw_payload' => ['decision_research' => ['unresolved' => [$gameBlocker, $propBlocker, $propBlocker]]],
+        'raw_payload' => ['decision_research' => ['unresolved' => [$narrative]]],
     ]);
+
     $revision = app(ResearchPipeline::class)->review($game, false);
-    expect($revision->exists)->toBeTrue()
-        ->and($revision->brief['market_holds']['props'])->toContain($gameBlocker, $propBlocker)
-        ->and(collect($revision->brief['market_holds']['props'])->filter(fn ($hold) => is_array($hold)))->toHaveCount(2)
-        ->and($revision->brief['market_holds']['spread'])->toContain($gameBlocker)
-        ->and($revision->brief['market_holds']['spread'])->not->toContain($propBlocker)
-        ->and($revision->brief['player_props'][0]['research_holds'])->toContain($propBlocker)
-        ->and($revision->brief['eligibility']['status'])->toBe('hold');
-});
+
+    expect($revision->brief['unresolved'])->toBe([$narrative])
+        ->and($revision->brief['eligibility']['status'])->toBe($expected === [] ? 'candidate' : 'hold')
+        ->and($revision->brief['eligibility']['data_reasons'])->toBe($expected)
+        ->and($revision->brief['market_holds']['spread'])->toBe($expected)
+        ->and($revision->brief['market_holds']['total'])->toContain('total_quote_missing')
+        ->and($revision->brief['player_props'][0]['status'])->toBe('model_candidate');
+    $capture = app(NflRecommendationInputBuilder::class)->capture($game);
+    expect(data_get($capture, 'model_metadata.analysis_layer.eligibility.data_reasons'))
+        ->toBe(array_values(array_filter($expected, fn ($reason) => str_contains($reason, 'starting_qb'))));
+})->with([
+    'full practice without a game designation' => [null, 1, []],
+    'full practice with an official questionable designation' => ['Questionable', 1, ['home_starting_qb_availability_uncertain']],
+    'modeled starter ruled out' => ['Out', 1, ['home_starting_qb_unavailable_in_forecast']],
+    'explicitly available with stale odds' => ['Available', 37, ['spread_quote_stale']],
+]);
 
 it('keeps timeout spend unknown and prevents immediately purchasing the same request again', function () {
     Http::fake(fn () => throw new ConnectionException('Timed out'));

@@ -244,13 +244,20 @@ try {
         await assertVisible(
             page.getByText('Matchup research', { exact: true }),
         );
-        await page
-            .getByRole('button', { name: /^Supporting evidence/ })
-            .click();
         await assertVisible(
             page.getByText('Verified supporting claim.', { exact: true }),
         );
-        await probeReader('Research evidence');
+        await assertVisible(page.getByRole('heading', { name: 'References' }));
+        assert.equal(
+            await page
+                .getByRole('link', { name: '[1] example.com', exact: true })
+                .getAttribute('href'),
+            'https://example.com/evidence',
+        );
+        assert.equal(
+            await page.getByText('Forecast history', { exact: true }).count(),
+            0,
+        );
         await checkWidth();
         await select('Roster');
         await page

@@ -47,8 +47,7 @@ after(async () => {
     await server?.close();
 });
 
-test('research retains plain-language explanations and reserves technical codes for admins', async () => {
-    globalThis.__reviewAdmin = true;
+test('archived research shows the recorded pick status without model diagnostics', async () => {
     const { default: component } = await server.ssrLoadModule(
         '/resources/js/components/game-page/NflResearchBrief.vue',
     );
@@ -85,28 +84,14 @@ test('research retains plain-language explanations and reserves technical codes 
         createSSRApp(wrapper, {
             gameId: 1722,
             gameStatus: 'STATUS_FINAL',
-            mobileCompact: true,
         }),
     );
-    assert.match(html, /Archived spread assessment/);
-    assert.match(html, /No approved spread bet/);
-    assert.equal(
-        html.split('The spread did not meet the required approval threshold.')
-            .length - 1,
-        1,
-    );
-    assert.match(html, /Admin · technical reason codes/);
-    assert.match(html, /specialist_market_scores_spread_tier_does_not_approve/);
-    globalThis.__reviewAdmin = false;
-    const publicHtml = await renderToString(
-        createSSRApp(wrapper, { gameId: 1722, gameStatus: 'STATUS_FINAL' }),
-    );
+    assert.match(html, /Archived pregame research/);
+    assert.match(html, /No approved spread pick in this assessment/);
     assert.doesNotMatch(
-        publicHtml,
-        /technical reason codes|specialist_market_scores_spread_tier_does_not_approve/,
+        html,
+        /Forecast history|technical reason codes|specialist_.*does_not_approve/,
     );
-    assert.match(publicHtml, /No approved spread bet/);
-    delete globalThis.__reviewAdmin;
 });
 
 test('record outcomes preserve ties, shutouts and unavailable scores', () => {
@@ -210,11 +195,11 @@ test('final summary compares home-minus-away margin and total without grading mu
     assert.match(invalidTotal, /Unavailable/);
 });
 
-test('research renders evidence and history only when their views are selected', async () => {
+test('research shows the write-up and citations without internal review flags', async () => {
     const { default: component } = await server.ssrLoadModule(
         '/resources/js/components/game-page/NflResearchBrief.vue',
     );
-    const renderResearch = async (view = null) => {
+    const renderResearch = async () => {
         const wrapper = {
             ...component,
             setup(props, context) {
@@ -232,7 +217,7 @@ test('research renders evidence and history only when their views are selected',
                         brief: {
                             eligibility: {
                                 status: 'hold',
-                                reasons: ['specialist_tier_does_not_approve'],
+                                reasons: ['research_candidate_changed'],
                             },
                             supporting: [
                                 {
@@ -242,41 +227,44 @@ test('research renders evidence and history only when their views are selected',
                                     source_url: 'https://example.com/evidence',
                                 },
                             ],
-                            opposing: [],
+                            opposing: [
+                                {
+                                    claim: 'Counterargument marker',
+                                    interpretation:
+                                        'Context from the same source',
+                                    source_url: 'https://example.com/evidence',
+                                },
+                                {
+                                    claim: 'Open risk',
+                                    source_url: 'javascript:alert(1)',
+                                },
+                            ],
                             prop_angles: [],
                             unresolved: [],
                         },
                     },
                 ];
-                if (view) bindings.selectView(view);
                 return bindings;
             },
         };
         return renderToString(createSSRApp(wrapper, { gameId: 1781 }));
     };
     const closed = await renderResearch();
-    assert.match(closed, /<form aria-label="Matchup research controls"/);
-    assert.match(closed, /aria-label="Assessment checks"/);
-    assert.match(
-        closed,
-        /The spread did not meet the required approval threshold/,
+    assert.match(closed, /No approved spread pick in this assessment/);
+    assert.match(closed, /Detailed evidence marker/);
+    assert.match(closed, /Detailed interpretation marker/);
+    assert.match(closed, /Counterargument marker/);
+    assert.match(closed, /\[1\] example.com/);
+    assert.equal(
+        closed.match(/href="https:\/\/example.com\/evidence"/g)?.length,
+        3,
     );
-    assert.match(closed, /aria-pressed="false"/);
-    assert.doesNotMatch(closed, /aria-pressed="true"/);
+    assert.match(closed, /References/);
+    assert.doesNotMatch(closed, /javascript:|Player prop context/);
     assert.doesNotMatch(
         closed,
-        /Detailed evidence marker|Detailed interpretation marker|example.com\/evidence|Original margin \/ total/,
+        /forecast changed|research_candidate_changed|Assessment details|Forecast history/,
     );
-    const opened = await renderResearch('supporting');
-    assert.match(opened, /aria-pressed="true"/);
-    assert.match(opened, /Detailed evidence marker/);
-    assert.match(opened, /Detailed interpretation marker/);
-    assert.match(opened, /https:\/\/example.com\/evidence/);
-    assert.doesNotMatch(opened, /Original margin \/ total/);
-    const history = await renderResearch('history');
-    assert.match(history, /<section aria-label="Forecast history"/);
-    assert.match(history, /Original margin \/ total/);
-    assert.doesNotMatch(history, /Detailed evidence marker/);
     if (process.env.RESEARCH_PREVIEW_PATH) {
         const { writeFile } = await import('node:fs/promises');
         await writeFile(

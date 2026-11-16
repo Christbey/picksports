@@ -84,7 +84,10 @@ const sectionClass = (section: string) =>
                     {{ section.label }}
                 </Button>
             </nav>
-            <p class="text-xs text-muted-foreground">
+            <p
+                v-if="mobileSection !== 'research'"
+                class="text-xs text-muted-foreground"
+            >
                 <span
                     v-if="
                         analysisSectionProps.livePredictionData?.sourceUpdatedAt

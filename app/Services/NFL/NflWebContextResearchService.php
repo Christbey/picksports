@@ -8,7 +8,6 @@ use App\Models\NFL\Game;
 use App\Models\SportsGameContextReport;
 use App\Services\AI\AiGenerationRecorder;
 use App\Services\AI\AiProviderRateLimitCircuitBreaker;
-use App\Services\NFL\QuarterbackAvailability;
 use App\Services\NFL\Research\EvidencePacket;
 use App\Services\NFL\Research\ResearchAnalysisContext;
 use App\Services\NFL\Research\ResearchClaimGrounding;

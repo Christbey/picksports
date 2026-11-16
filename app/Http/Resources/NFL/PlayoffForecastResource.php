@@ -25,6 +25,7 @@ class PlayoffForecastResource extends JsonResource
             'wild_card_probability' => data_get($this->resource, 'wild_card_probability') !== null
                 ? (float) data_get($this->resource, 'wild_card_probability')
                 : null,
+            'is_eliminated' => data_get($this->resource, 'is_eliminated'),
             'make_playoffs_probability' => (float) data_get($this->resource, 'make_playoffs_probability', 0.0),
             'conference_champion_probability' => (float) data_get($this->resource, 'conference_champion_probability', 0.0),
             'super_bowl_champion_probability' => (float) data_get($this->resource, 'super_bowl_champion_probability', 0.0),

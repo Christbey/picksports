@@ -10,7 +10,7 @@ class NflPlayoffForecastReport
 
     private int $accepted = 0;
 
-    public function __construct(array $teams, private readonly string $modelVersion)
+    public function __construct(array $teams, private readonly string $modelVersion, array $eliminated = [])
     {
         foreach ($teams as $team) {
             $this->tallies[$team['team_id']] = [
@@ -18,6 +18,7 @@ class NflPlayoffForecastReport
                 'team_name' => $team['team_name'],
                 'conference' => $team['conference'],
                 'division' => $team['division'],
+                'is_eliminated' => in_array($team['team_id'], $eliminated, true),
                 'wins' => 0,
                 'ties' => 0,
                 'seed_sum' => 0,
@@ -176,6 +177,7 @@ class NflPlayoffForecastReport
             'team_name' => $tally['team_name'],
             'conference' => $tally['conference'],
             'division' => $tally['division'],
+            'is_eliminated' => $tally['is_eliminated'],
             'projected_wins' => round($tally['wins'] / $this->accepted, 3),
             'projected_ties' => round($tally['ties'] / $this->accepted, 3),
             'projected_seed' => $tally['playoff_berths'] > 0 ? round($tally['seed_sum'] / $tally['playoff_berths'], 2) : null,

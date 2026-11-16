@@ -16,6 +16,7 @@ const row = {
     projected_seed: null,
     division_winner_probability: 0,
     make_playoffs_probability: 0,
+    is_eliminated: false,
     conference_champion_probability: 0,
     super_bowl_champion_probability: 0,
     market_odds: {
@@ -50,6 +51,13 @@ const response = {
             super_bowl_champion_probability: 0.1,
             market_odds: { ...row.market_odds, stale: false },
             market_edge: { edge_probability: 0.02 },
+        },
+        {
+            ...row,
+            team_id: 3,
+            team_name: 'Eliminated Team',
+            is_eliminated: true,
+            market_odds: null,
         },
         ...bracketTeams,
     ],
@@ -171,6 +179,14 @@ try {
                 /Wild cards[\s\S]*55\.0%/,
             );
         }
+        const hunt = page
+            .getByRole('heading', { name: 'In the hunt' })
+            .locator('..');
+        assert.match(await hunt.innerText(), /Stored Team[\s\S]*0%\*/);
+        const eliminated = page
+            .getByRole('heading', { name: 'Eliminated', exact: true })
+            .locator('..');
+        assert.match(await eliminated.innerText(), /Eliminated Team/);
         await page
             .getByText(
                 'Known postseason games include 3 completed and 2 scheduled.',

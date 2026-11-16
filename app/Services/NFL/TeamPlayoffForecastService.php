@@ -56,7 +56,8 @@ class TeamPlayoffForecastService
         $randomSeed = $seed ?? (int) config('nfl.team_playoff_forecast.random_seed', 20260402);
         $random = new NflPlayoffRandom($randomSeed);
 
-        $report = new NflPlayoffForecastReport($teams, self::MODEL_VERSION);
+        $eliminated = (new NflPlayoffElimination)->eliminatedTeams($teams, $games);
+        $report = new NflPlayoffForecastReport($teams, self::MODEL_VERSION, $eliminated);
         $simulateGame = function (array $first, array $second, bool $useHomeField, bool $firstIsHome) use ($random): array {
             $probability = $this->gameProbability($first, $second, $useHomeField, $firstIsHome);
 

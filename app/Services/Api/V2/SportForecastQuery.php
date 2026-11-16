@@ -403,7 +403,7 @@ class SportForecastQuery
     private function remember(SportContext $context, array $filters, callable $resolver): array
     {
         $cacheKey = $this->sportsViewCache->contextHash([
-            'contract' => $context->slug === 'nfl' ? 'sports.forecasts.index.bracket.'.TeamPlayoffForecastService::MODEL_VERSION : 'sports.forecasts.index',
+            'contract' => $context->slug === 'nfl' ? 'sports.forecasts.index.bracket-status.'.TeamPlayoffForecastService::MODEL_VERSION : 'sports.forecasts.index',
             'sport' => $context->slug,
             'filters' => $filters,
         ]);

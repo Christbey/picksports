@@ -30,6 +30,7 @@ type PlayoffForecast = {
     division_winner_probability: number;
     wild_card_probability?: number | null;
     make_playoffs_probability: number;
+    is_eliminated?: boolean | null;
     conference_champion_probability: number;
     super_bowl_champion_probability: number;
     market_odds?: MarketOdds | null;
@@ -86,8 +87,28 @@ export function useNflForecast() {
                     return team ? [{ seed, team }] : [];
                 });
 
+                const seededIds = new Set(seeds.map(({ team_id }) => team_id));
+                const outsideField = forecasts.value
+                    .filter(
+                        (team) =>
+                            team.conference === conference &&
+                            !seededIds.has(team.team_id),
+                    )
+                    .sort(
+                        (left, right) =>
+                            right.make_playoffs_probability -
+                                left.make_playoffs_probability ||
+                            left.team_name.localeCompare(right.team_name),
+                    );
+
                 return {
                     conference,
+                    inTheHunt: outsideField.filter(
+                        (team) => team.is_eliminated === false,
+                    ),
+                    eliminated: outsideField.filter(
+                        (team) => team.is_eliminated === true,
+                    ),
                     divisionWinners: field.filter(({ seed }) => seed <= 4),
                     wildCards: field.filter(({ seed }) => seed >= 5),
                 };

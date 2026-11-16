@@ -67,6 +67,7 @@ it('returns nfl playoff forecasts through the api route', function () {
             'projected_wins',
             'projected_ties',
             'projected_seed',
+            'is_eliminated',
             'division_winner_probability',
             'wild_card_probability',
             'make_playoffs_probability',

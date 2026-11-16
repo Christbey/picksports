@@ -54,7 +54,9 @@ class NflPropAvailabilityContext
         if ($ownInjuries->contains(fn ($injury) => $this->isOut($injury->status))) {
             return $this->finish([...$context, 'unavailable' => true, 'reason' => 'player_unavailable']);
         }
-        if ($ownInjuries->isNotEmpty()) {
+        if ($ownInjuries->contains(fn ($injury) => in_array(
+            strtolower(trim((string) $injury->status)), ['questionable', 'doubtful'], true,
+        ))) {
             return $this->finish([...$context, 'reason' => 'player_availability_uncertain']);
         }
 
@@ -126,7 +128,7 @@ class NflPropAvailabilityContext
 
     private function isOut(?string $status): bool
     {
-        return in_array(strtolower(trim($status ?? '')), ['out', 'injured reserve', 'ir', 'suspended', 'reserve/pup', 'pup'], true);
+        return in_array(strtolower(trim($status ?? '')), ['out', 'inactive', 'injured reserve', 'ir', 'suspended', 'reserve/pup', 'pup'], true);
     }
 
     private function usage(Model $game, int $playerId, int $teamId, string $field): array

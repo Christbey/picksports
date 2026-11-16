@@ -7,6 +7,8 @@ use App\Exceptions\Predictions\PredictionLifecycleException;
 use App\Models\NFL\Game;
 use App\Services\NFL\NflEvidenceForecastSource;
 use App\Services\NFL\NflTrueEpaReadinessService;
+use App\Services\NFL\QuarterbackAvailability;
+use App\Services\NFL\Research\RecommendationEligibility;
 use App\Services\Predictions\CanonicalPayloadHasher;
 use App\Services\Predictions\ModelRunRecorder;
 
@@ -28,6 +30,19 @@ class NflRecommendationInputBuilder
         if ($preview === null) {
             throw new PredictionLifecycleException('NFL recommendation evidence is unavailable.');
         }
+        $metadata = (array) $preview['model_metadata'];
+        if (isset($metadata['analysis_layer']['eligibility'])) {
+            $availability = app(QuarterbackAvailability::class);
+            $quarterbacks = $availability->forecastDesignations($game, $metadata);
+            $holds = $availability->forecastHolds($quarterbacks);
+            if ($holds !== []) {
+                $analysis = $metadata['analysis_layer'];
+                $metadata['analysis_layer']['eligibility'] = app(RecommendationEligibility::class)->evaluate(
+                    $analysis, $metadata, [...($analysis['eligibility']['data_reasons'] ?? []), ...$holds],
+                );
+            }
+        }
+
         $configuration = [
             'minimum_spread_edge' => (float) config('nfl.predictions.analysis_layer.min_spread_edge', 2.0),
             'moneyline_play_enabled' => (bool) config('nfl.betting.moneyline.play_enabled', false),
@@ -49,7 +64,7 @@ class NflRecommendationInputBuilder
                 ),
             ],
             'model_metadata' => [
-                ...array_intersect_key((array) $preview['model_metadata'], array_flip(['true_epa', 'analysis_layer'])),
+                ...array_intersect_key($metadata, array_flip(['true_epa', 'analysis_layer'])),
                 'qb_form' => collect(['home', 'away'])->mapWithKeys(fn (string $side): array => [
                     $side => array_intersect_key((array) data_get($preview['model_metadata'], 'qb_form.'.$side, []),
                         array_flip(['qb_id', 'identity_status'])),

@@ -8,6 +8,18 @@ type Argument = {
     source_url: string | null;
     scope?: string;
     blocking?: boolean;
+    reason_code?: string;
+    concern_type?: string;
+    evidence_kind?: string;
+    evidence_status?: string;
+};
+type RecentForm = {
+    games: number;
+    wins: number;
+    losses: number;
+    ties: number;
+    points_per_game: number;
+    points_allowed_per_game: number;
 };
 type Revision = {
     created_at: string;
@@ -17,6 +29,12 @@ type Revision = {
         opposing: Argument[];
         prop_angles: Argument[];
         unresolved: Argument[];
+        season_evidence?: {
+            teams: Record<
+                string,
+                { team: string | null; last_five: RecentForm }
+            >;
+        } | null;
     };
 };
 const props = defineProps<{
@@ -28,12 +46,35 @@ const revisions = ref<Revision[]>([]);
 const error = ref('');
 const loading = ref(true);
 const latest = computed(() => revisions.value[0]);
+const recentForm = computed(() =>
+    Object.entries(latest.value?.brief.season_evidence?.teams ?? {}).filter(
+        ([, { team, last_five }]) => team && last_five?.games,
+    ),
+);
 const sections = computed(() => {
     const brief = latest.value?.brief;
     return [
         { title: 'What supports the spread', entries: brief?.supporting ?? [] },
         { title: 'What could go against it', entries: brief?.opposing ?? [] },
-        { title: 'Open questions', entries: brief?.unresolved ?? [] },
+        {
+            title: 'Lineup risks',
+            entries: (brief?.unresolved ?? []).filter(
+                (entry) =>
+                    entry.blocking === true &&
+                    (entry.scope === 'game' || entry.scope === 'spread') &&
+                    (entry.reason_code === 'material_availability' ||
+                        entry.reason_code === 'model_input_conflict') &&
+                    [
+                        'injury',
+                        'starter_change',
+                        'competition',
+                        'rotation',
+                    ].includes(entry.concern_type ?? '') &&
+                    entry.evidence_kind === 'document' &&
+                    entry.evidence_status === 'reference_verified' &&
+                    Boolean(sourceUrl(entry.source_url)),
+            ),
+        },
         { title: 'Player prop context', entries: brief?.prop_angles ?? [] },
     ].filter(({ entries }) => entries.length);
 });
@@ -149,20 +190,6 @@ onMounted(async () => {
                     >
                         {{ ' ' + entry.interpretation }}
                     </span>
-                    <span
-                        v-if="title === 'Open questions'"
-                        class="text-muted-foreground"
-                    >
-                        {{
-                            entry.blocking === false
-                                ? ' (Assumption'
-                                : ' (Unconfirmed'
-                        }}{{
-                            entry.scope && entry.scope !== 'game'
-                                ? ' · ' + entry.scope
-                                : ''
-                        }}{{ ')' }}
-                    </span>
                     <template v-if="citation(entry)">
                         {{ ' '
                         }}<a
@@ -186,6 +213,37 @@ onMounted(async () => {
                 No supporting or opposing evidence was saved with this
                 assessment.
             </p>
+
+            <div v-if="recentForm.length" class="space-y-2 border-t pt-4">
+                <h3 class="font-semibold">Recent form</h3>
+                <p class="text-sm text-muted-foreground">
+                    PickSports results from up to five completed regular-season
+                    games before this matchup.
+                </p>
+                <ul class="space-y-2 text-sm">
+                    <li
+                        v-for="[
+                            side,
+                            { team, last_five: sample },
+                        ] in recentForm"
+                        :key="side"
+                    >
+                        <strong class="font-medium">{{ team }}</strong>
+                        ·
+                        {{
+                            [
+                                sample.wins,
+                                sample.losses,
+                                ...(sample.ties ? [sample.ties] : []),
+                            ].join('–')
+                        }}
+                        in {{ sample.games }}
+                        {{ sample.games === 1 ? 'game' : 'games' }} ·
+                        {{ sample.points_per_game }} scored and
+                        {{ sample.points_allowed_per_game }} allowed per game
+                    </li>
+                </ul>
+            </div>
 
             <div v-if="references.size" class="space-y-2 border-t pt-4">
                 <h3 class="font-semibold">References</h3>

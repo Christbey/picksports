@@ -240,7 +240,66 @@ test('research shows the write-up and citations without internal review flags', 
                                 },
                             ],
                             prop_angles: [],
-                            unresolved: [],
+                            season_evidence: {
+                                teams: {
+                                    home: {
+                                        team: 'DET',
+                                        last_five: {
+                                            games: 5,
+                                            wins: 3,
+                                            losses: 2,
+                                            ties: 0,
+                                            points_per_game: 24,
+                                            points_allowed_per_game: 20,
+                                        },
+                                    },
+                                },
+                            },
+                            unresolved: [
+                                {
+                                    claim: 'Routine QB announcement marker',
+                                    reason_code: 'source_gap',
+                                    concern_type: 'routine_confirmation',
+                                    scope: 'game',
+                                    blocking: true,
+                                },
+                                {
+                                    claim: 'Prop-only workload marker',
+                                    reason_code: 'material_availability',
+                                    concern_type: 'injury',
+                                    scope: 'props',
+                                    blocking: true,
+                                    evidence_kind: 'document',
+                                    evidence_status: 'reference_verified',
+                                    source_url: 'https://example.com/evidence',
+                                },
+                                {
+                                    claim: 'Fresh market quote marker',
+                                    reason_code: 'market_data_gap',
+                                    scope: 'spread',
+                                    blocking: false,
+                                },
+                                {
+                                    claim: 'Unverified injury marker',
+                                    reason_code: 'material_availability',
+                                    concern_type: 'injury',
+                                    scope: 'spread',
+                                    blocking: true,
+                                    evidence_kind: 'document',
+                                    evidence_status: 'unverified_question',
+                                    source_url: 'https://example.com/evidence',
+                                },
+                                {
+                                    claim: 'Starting quarterback injury marker',
+                                    reason_code: 'material_availability',
+                                    concern_type: 'injury',
+                                    scope: 'spread',
+                                    blocking: true,
+                                    evidence_kind: 'document',
+                                    evidence_status: 'reference_verified',
+                                    source_url: 'https://example.com/evidence',
+                                },
+                            ],
                         },
                     },
                 ];
@@ -254,11 +313,20 @@ test('research shows the write-up and citations without internal review flags', 
     assert.match(closed, /Detailed evidence marker/);
     assert.match(closed, /Detailed interpretation marker/);
     assert.match(closed, /Counterargument marker/);
+    assert.match(closed, /Starting quarterback injury marker/);
+    assert.match(closed, /Lineup risks/);
+    assert.doesNotMatch(
+        closed,
+        /Routine QB announcement marker|Prop-only workload marker|Fresh market quote marker|Unverified injury marker/,
+    );
     assert.match(closed, /\[1\] example.com/);
     assert.equal(
         closed.match(/href="https:\/\/example.com\/evidence"/g)?.length,
-        3,
+        4,
     );
+    assert.match(closed, /Recent form/);
+    assert.match(closed, /3–2 in 5 games/);
+    assert.match(closed, /24 scored and 20 allowed per game/);
     assert.match(closed, /References/);
     assert.doesNotMatch(closed, /javascript:|Player prop context/);
     assert.doesNotMatch(

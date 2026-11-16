@@ -77,13 +77,15 @@ class TeamMetricSnapshotService
     /**
      * @param  array<int, string>  $dates
      */
-    public function backfill(int $season, array $dates): int
+    public function backfill(int $season, array $dates, bool $reconstructScorePriors = false): int
     {
         $rows = [];
 
         foreach ($dates as $date) {
-            $timestamp = Carbon::parse($date);
-            $historicalRows = $this->historicalTeamMetricCalculator->calculateForDate($season, $timestamp);
+            $timestamp = Carbon::parse($date)->setTimezone(config('app.timezone'));
+            $historicalRows = $this->historicalTeamMetricCalculator->calculateForDate(
+                $season, $timestamp, pointInTime: true, reconstructScorePriors: $reconstructScorePriors
+            );
 
             foreach ($historicalRows as $teamId => $row) {
                 $rows[] = [

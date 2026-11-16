@@ -1,19 +1,22 @@
 <?php
 
 use App\Models\NFL\Game;
+use App\Models\NFL\Play;
 use App\Models\NFL\Team;
 use App\Models\NFL\TeamMetricSnapshot;
 use App\Models\Sports\FuturesOdd;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportForecastQuery;
+use App\Services\NFL\NflPlayoffScoringHistory;
+use App\Services\NFL\NflPlayoffTeamInputs;
 use App\Services\NFL\TeamFuturesProjectionService;
 use App\Services\NFL\TeamPlayoffForecastService;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 
 require_once __DIR__.'/../../Support/NflFutures.php';
 
 it('conserves league wins, locks completed results and ties, and conditions seeds on qualification', function () {
+    $this->travelTo('2026-10-02');
     completeNflFuturesSchedule(2026, '2026-01-01T00:00:00Z');
     $games = Game::query()->orderBy('id')->get();
     $wins = [];
@@ -28,11 +31,20 @@ it('conserves league wins, locks completed results and ties, and conditions seed
         }
     }
     $service = app(TeamPlayoffForecastService::class);
+    mt_srand(837);
+    $expectedRandomDraw = mt_rand();
+    mt_srand(837);
     $report = $service->forecast(2026, '2026-12-31', true, 500, 42);
-    expect($report['teams'])->toBe($service->forecast(2026, '2026-12-31', true, 500, 42)['teams']);
+    expect(mt_rand())->toBe($expectedRandomDraw)
+        ->and($report['teams'])->toBe($service->forecast(2026, '2026-12-31', true, 500, 42)['teams'])
+        ->and($report['tie_model']['sample_games'])->toBe(48)
+        ->and($report['tie_model']['sample_ties'])->toBe(1)
+        ->and($report['tie_model']['tie_probability'])->toBe(1 / 48);
     $teams = collect($report['teams']);
+    $expectedTiedGames = 1 + (272 - 48) / 48;
     expect($teams)->toHaveCount(32)
-        ->and(abs($teams->sum('projected_wins') - 271))->toBeLessThan(0.02)
+        ->and($teams->sum('projected_ties') / 2)->toEqualWithDelta($expectedTiedGames, 0.3)
+        ->and($teams->sum('projected_wins') + $teams->sum('projected_ties') / 2)->toEqualWithDelta(272, 0.03)
         ->and(abs($teams->sum('make_playoffs_probability') - 14))->toBeLessThan(0.002)
         ->and(abs($teams->sum('division_winner_probability') - 8))->toBeLessThan(0.002)
         ->and(abs($teams->sum('conference_champion_probability') - 2))->toBeLessThan(0.002)
@@ -51,6 +63,7 @@ it('conserves league wins, locks completed results and ties, and conditions seed
     // Once every game is complete, forecast wins must match the actual record exactly.
     Game::query()->where('status', 'STATUS_SCHEDULED')->update(['status' => 'STATUS_FINAL', 'home_score' => 14, 'away_score' => 7, 'game_date' => '2026-10-01']);
     $final = $service->forecast(2026, '2026-12-31', true, 100, 7);
+    expect(array_sum(array_column($final['teams'], 'projected_ties')))->toEqual(2);
     foreach ($final['teams'] as $team) {
         $actual = Game::query()->where('home_team_id', $team['team_id'])->whereColumn('home_score', '>', 'away_score')->count();
         expect($team['projected_wins'])->toEqual($actual);
@@ -61,8 +74,75 @@ it('does not leak later completed results into historical simulations', function
     completeNflFuturesSchedule(2026, '2026-01-01T00:00:00Z');
     $service = app(TeamPlayoffForecastService::class);
     $before = $service->forecast(2026, '2026-08-01', true, 100, 7);
+    expect($before['tie_model']['tie_probability'])->toBeNull()
+        ->and(array_sum(array_column($before['teams'], 'projected_ties')))->toEqual(0);
     Game::query()->update(['status' => 'STATUS_FINAL', 'home_score' => 99, 'away_score' => 0, 'game_date' => '2026-10-01']);
     expect($service->forecast(2026, '2026-08-01', true, 100, 7)['teams'])->toBe($before['teams']);
+});
+
+it('uses available historical final scores and reconciles touchdowns before sampling', function () {
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+    $this->travelTo('2025-10-01 18:30:00');
+    $history = Game::factory()->create([
+        'season' => 2025,
+        'season_type' => config('nfl.season.types.regular'),
+        'game_date' => '2025-10-01 15:00:00',
+        'status' => config('nfl.statuses.final'),
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'home_score' => 7,
+        'away_score' => 17,
+    ]);
+
+    foreach ([[0, 7], [7, 7], [7, 10]] as $index => [$homeScore, $awayScore]) {
+        Play::factory()->create([
+            'game_id' => $history->id,
+            'sequence_number' => $index + 1,
+            'is_scoring_play' => true,
+            'home_score' => $homeScore,
+            'away_score' => $awayScore,
+        ]);
+    }
+
+    $this->travelTo('2025-10-01 20:00:00');
+    Play::factory()->create([
+        'game_id' => $history->id,
+        'sequence_number' => 4,
+        'is_scoring_play' => true,
+        'home_score' => 7,
+        'away_score' => 17,
+    ]);
+
+    $scoring = app(NflPlayoffScoringHistory::class);
+    $schedule = [['completed' => false]];
+    expect($scoring->load(2026, now()->parse('2025-10-01 18:00:00'), $schedule)['samples'])->toBe([])
+        ->and($scoring->load(2026, now()->parse('2025-10-01 19:00:00'), $schedule)['samples'])->toBe([
+            ['points' => [17, 7], 'touchdowns' => null, 'tied' => false],
+        ])
+        ->and($scoring->load(2026, now(), $schedule)['samples'])->toBe([
+            ['points' => [17, 7], 'touchdowns' => [2, 1], 'tied' => false],
+        ]);
+
+    $this->travelTo('2025-10-08 18:30:00');
+    foreach ([config('nfl.season.types.regular'), config('nfl.season.types.postseason')] as $seasonType) {
+        Game::factory()->create([
+            'season' => 2025,
+            'season_type' => $seasonType,
+            'game_date' => '2025-10-08 15:00:00',
+            'status' => config('nfl.statuses.final'),
+            'home_team_id' => $home->id,
+            'away_team_id' => $away->id,
+            'home_score' => 14,
+            'away_score' => 14,
+        ]);
+    }
+
+    $beforeTie = $scoring->load(2026, now()->parse('2025-10-08 18:29:59'), $schedule);
+    $afterTie = $scoring->load(2026, now(), $schedule);
+    expect($beforeTie['tie_model']['tie_probability'])->toEqual(0.0)
+        ->and($afterTie['tie_model'])->toBe(['sample_games' => 2, 'sample_ties' => 1, 'tie_probability' => 0.5])
+        ->and($afterTie['samples'][1])->toBe(['points' => [14, 14], 'touchdowns' => null, 'tied' => true]);
 });
 
 it('withholds probabilities when the schedule is incomplete', function () {
@@ -70,6 +150,87 @@ it('withholds probabilities when the schedule is incomplete', function () {
     Game::query()->first()->delete();
     $report = app(TeamPlayoffForecastService::class)->forecast(2026, '2026-08-01', true, 100);
     expect($report['teams'])->toBeEmpty()->and($report['warnings'])->not->toBeEmpty();
+});
+
+it('loads playoff team ratings with the shared alignment fallback', function () {
+    config()->set('nfl.team_futures.prior_games', 4);
+    $team = Team::factory()->create(['abbreviation' => 'WAS', 'conference' => null, 'division' => null]);
+    TeamMetricSnapshot::query()->create([
+        'snapshot_key' => sha1('playoff-team-inputs'),
+        'team_id' => $team->id,
+        'season' => 2026,
+        'wins' => 3,
+        'losses' => 1,
+        'predictive_rating' => 1550,
+        'calculation_date' => '2026-10-01',
+        'captured_at' => '2026-10-01 12:00:00',
+    ]);
+
+    $inputs = app(NflPlayoffTeamInputs::class);
+    expect($inputs->load(2026, now()->parse('2026-10-01 11:59:59'), false))->toBe([]);
+
+    [$row] = $inputs->load(2026, now()->parse('2026-10-01 12:00:00'), false);
+    expect($row['team_id'])->toBe($team->id)
+        ->and($row['conference'])->toBe('NFC')
+        ->and($row['division'])->toBe('East')
+        ->and($row['strength_rating'])->toBe(0.125);
+});
+
+it('conditions playoff brackets on postseason matchups and results only when available at the cutoff', function () {
+    $this->travelTo('2027-01-10 12:00:00');
+    completeNflFuturesSchedule(2026, '2026-01-01');
+    Game::query()->update([
+        'status' => config('nfl.statuses.final'),
+        'game_date' => '2027-01-09 18:00:00',
+        'home_score' => 21,
+        'away_score' => 7,
+        'result_updated_at' => now(),
+    ]);
+
+    $service = app(TeamPlayoffForecastService::class);
+    $before = $service->forecast(2026, '2027-02-14 22:00:00', true, 500, 89);
+    $champions = array_column($before['conference_leaders'], 'team_id', 'conference');
+    $afc = $champions['AFC'];
+    $nfc = $champions['NFC'];
+    $this->travelTo('2027-02-14 17:00:00');
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => config('nfl.season.types.postseason'),
+        'status' => config('nfl.statuses.scheduled'),
+        'game_date' => '2027-02-14 18:00:00',
+        'home_team_id' => $afc,
+        'away_team_id' => $nfc,
+        'neutral_site' => true,
+        'home_score' => null,
+        'away_score' => null,
+    ]);
+
+    expect($service->forecast(2026, '2027-02-14 16:59:59', true, 500, 89)['teams'])->toBe($before['teams']);
+    $scheduled = $service->forecast(2026, '2027-02-14 17:00:00', true, 500, 89);
+    $scheduledTeams = array_column($scheduled['teams'], null, 'team_id');
+    expect($scheduled['summary']['scheduled_postseason_games'])->toBe(1)
+        ->and($scheduled['summary']['completed_postseason_games'])->toBe(0)
+        ->and($scheduledTeams[$afc]['conference_champion_probability'])->toEqual(1)
+        ->and($scheduledTeams[$nfc]['conference_champion_probability'])->toEqual(1)
+        ->and($scheduledTeams[$afc]['super_bowl_champion_probability'])->toBeGreaterThan(0)->toBeLessThan(1);
+
+    $this->travelTo('2027-02-14 22:30:00');
+    $game->update([
+        'status' => config('nfl.statuses.final'),
+        'home_score' => 17,
+        'away_score' => 21,
+    ]);
+
+    expect($service->forecast(2026, '2027-02-14 22:00:00', true, 500, 89)['teams'])->toBe($before['teams']);
+
+    $after = $service->forecast(2026, '2027-02-14 22:30:00', true, 500, 89);
+    $teams = array_column($after['teams'], null, 'team_id');
+    expect($after['summary']['completed_postseason_games'])->toBe(1)
+        ->and($after['summary']['simulations'])->toBeGreaterThan(0)->toBeLessThan(500)
+        ->and($teams[$afc]['conference_champion_probability'])->toEqual(1)
+        ->and($teams[$afc]['super_bowl_champion_probability'])->toEqual(0)
+        ->and($teams[$nfc]['conference_champion_probability'])->toEqual(1)
+        ->and($teams[$nfc]['super_bowl_champion_probability'])->toEqual(1);
 });
 
 it('does not convert a scoring-total injury penalty into a win-strength penalty', function () {
@@ -83,7 +244,7 @@ it('does not convert a scoring-total injury penalty into a win-strength penalty'
 
 it('retains stored futures prices but suppresses stale and future-dated comparisons', function (int $age, bool $stale) {
     Cache::flush();
-    $this->travelTo(Carbon::parse('2026-10-24 12:00:00', 'America/Chicago'));
+    $this->travelTo(now()->startOfSecond());
     $this->mock(TeamPlayoffForecastService::class)->shouldReceive('forecast')->once()->andReturn([
         'summary' => ['simulations' => 5000],
         'teams' => [['team_id' => 1, 'team_name' => 'Test', 'super_bowl_champion_probability' => 0.25]],

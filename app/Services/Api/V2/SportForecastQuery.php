@@ -192,9 +192,14 @@ class SportForecastQuery
                     'sort_by' => $sortBy,
                     'sort_direction' => $direction,
                     'simulations' => data_get($report, 'summary.simulations'),
+                    'attempted_simulations' => data_get($report, 'summary.attempted_simulations'),
+                    'completed_postseason_games' => data_get($report, 'summary.completed_postseason_games'),
+                    'scheduled_postseason_games' => data_get($report, 'summary.scheduled_postseason_games'),
                     'warnings' => $report['warnings'] ?? [],
                     'generated_at' => $report['generated_at'] ?? null,
                     'model_version' => $report['model_version'] ?? null,
+                    'tie_model' => $report['tie_model'] ?? null,
+                    'projected_bracket' => $report['projected_bracket'] ?? [],
                     'probability_status' => 'uncalibrated_model_estimate',
                     'seed_definition' => 'Average seed when making the playoffs',
                     'odds_stale_after_hours' => 36,
@@ -398,7 +403,7 @@ class SportForecastQuery
     private function remember(SportContext $context, array $filters, callable $resolver): array
     {
         $cacheKey = $this->sportsViewCache->contextHash([
-            'contract' => $context->slug === 'nfl' ? 'sports.forecasts.index.schedule_v2' : 'sports.forecasts.index',
+            'contract' => $context->slug === 'nfl' ? 'sports.forecasts.index.bracket.'.TeamPlayoffForecastService::MODEL_VERSION : 'sports.forecasts.index',
             'sport' => $context->slug,
             'filters' => $filters,
         ]);

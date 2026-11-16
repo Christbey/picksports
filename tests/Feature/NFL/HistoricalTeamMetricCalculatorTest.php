@@ -187,6 +187,90 @@ it('uses prior-season metrics as preseason priors for future seasons', function 
         ->and($rows[$chiefs->id]['injury_total_adjustment'])->toBe(0.0);
 });
 
+it('excludes results recorded after the cutoff and excludes same-day Elo from reconstructed snapshots', function () {
+    $team = Team::factory()->create();
+    $opponent = Team::factory()->create();
+    $this->travelTo('2025-09-10 16:00:00');
+    Game::factory()->create([
+        'season' => 2025,
+        'season_type' => config('nfl.season.types.regular'),
+        'game_date' => '2025-09-10 12:00:00',
+        'status' => config('nfl.statuses.final'),
+        'home_team_id' => $team->id,
+        'away_team_id' => $opponent->id,
+        'home_score' => 24,
+        'away_score' => 17,
+    ]);
+    Game::factory()->create([
+        'season' => 2025,
+        'season_type' => config('nfl.season.types.regular'),
+        'game_date' => '2025-09-17 12:00:00',
+        'status' => config('nfl.statuses.scheduled'),
+        'home_team_id' => $team->id,
+        'away_team_id' => $opponent->id,
+    ]);
+
+    $this->travelTo('2025-09-10 10:00:00');
+    foreach (['2025-09-09' => 1490, '2025-09-10' => 1600] as $date => $elo) {
+        EloRating::query()->create([
+            'team_id' => $opponent->id,
+            'date' => $date,
+            'season' => 2025,
+            'week' => 1,
+            'elo_rating' => $elo,
+            'elo_change' => 0,
+        ]);
+    }
+
+    $calculator = app(HistoricalTeamMetricCalculator::class);
+    $before = $calculator->calculateForDate(2025, '2025-09-10 15:59:59', pointInTime: true);
+    $after = $calculator->calculateForDate(2025, '2025-09-10 16:00:00', pointInTime: true);
+    expect($before[$team->id]['wins'])->toBe(0)
+        ->and($after[$team->id]['wins'])->toBe(1)
+        ->and($after[$team->id]['future_strength_of_schedule'])->toBe(1490.0);
+});
+
+it('reconstructs missing priors only from complete earlier regular seasons when requested', function () {
+    config()->set('nfl.team_futures.default_regular_season_games', 2);
+    $team = Team::factory()->create();
+    $opponent = Team::factory()->create();
+    $incomplete = Team::factory()->create();
+    $other = Team::factory()->create();
+
+    $this->travelTo('2026-05-16 12:00:00');
+    $base = [
+        'season' => 2024,
+        'season_type' => config('nfl.season.types.regular'),
+        'status' => config('nfl.statuses.final'),
+        'home_team_id' => $team->id,
+        'away_team_id' => $opponent->id,
+        'home_score' => 24,
+        'away_score' => 14,
+    ];
+    foreach (['2024-09-08', '2024-09-15'] as $date) {
+        Game::factory()->create([...$base, 'game_date' => $date]);
+    }
+    Game::factory()->create([
+        ...$base, 'game_date' => '2025-01-12', 'season_type' => config('nfl.season.types.postseason'), 'home_score' => 99,
+    ]);
+    Game::factory()->create([
+        ...$base, 'game_date' => '2024-09-15', 'home_team_id' => $incomplete->id, 'away_team_id' => $other->id,
+    ]);
+    Game::factory()->create([
+        ...$base, 'game_date' => '2025-09-04', 'home_team_id' => $incomplete->id, 'away_team_id' => $other->id,
+    ]);
+
+    $calculator = app(HistoricalTeamMetricCalculator::class);
+    $withoutPriors = $calculator->calculateForDate(2025, '2025-09-04', pointInTime: true);
+    $withPriors = $calculator->calculateForDate(2025, '2025-09-04', pointInTime: true, reconstructScorePriors: true);
+
+    expect($withoutPriors[$team->id]['predictive_rating'])->toBeNull()
+        ->and($withPriors[$team->id]['predictive_rating'])->toBe(9.0)
+        ->and($withPriors[$opponent->id]['predictive_rating'])->toBe(-9.0)
+        ->and($withPriors[$incomplete->id]['predictive_rating'])->toBeNull()
+        ->and($withPriors[$team->id]['wins'])->toBe(0);
+});
+
 it('blends multiple prior seasons into preseason priors with decay', function () {
     config()->set('nfl.team_futures.preseason_prior_lookback_seasons', 2);
     config()->set('nfl.team_futures.preseason_prior_season_decay', 0.50);

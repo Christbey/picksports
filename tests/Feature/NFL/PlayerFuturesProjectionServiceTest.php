@@ -120,6 +120,7 @@ it('returns projected nfl player futures with market odds and probabilities', fu
         ]);
     }
 
+    $fetchedAt = now()->subHours(2)->startOfSecond();
     FuturesOdd::create([
         'row_key' => sha1('over'),
         'sport' => 'nfl',
@@ -134,7 +135,7 @@ it('returns projected nfl player futures with market odds and probabilities', fu
         'outcome_point' => 4099.5,
         'price' => -110,
         'implied_probability' => 0.5238,
-        'fetched_at' => now(),
+        'fetched_at' => $fetchedAt,
         'nfl_player_id' => $player->id,
     ]);
 
@@ -152,9 +153,33 @@ it('returns projected nfl player futures with market odds and probabilities', fu
         'outcome_point' => 4099.5,
         'price' => -110,
         'implied_probability' => 0.5238,
-        'fetched_at' => now(),
+        'fetched_at' => $fetchedAt,
         'nfl_player_id' => $player->id,
     ]);
+
+    foreach ([
+        ['draftkings', 'Over', 4099.5, $fetchedAt->copy()->addHour(), -130],
+        ['fanduel', 'Under', 4099.5, $fetchedAt->copy()->addHour(), -140],
+        ['draftkings', 'Under', 4199.5, $fetchedAt->copy()->addHour(), -150],
+        ['draftkings', 'Under', 4099.5, $fetchedAt->copy()->addMinutes(30), -160],
+        ['draftkings', 'Over', 4099.5, $fetchedAt->copy()->subHour(), -170],
+        ['draftkings', 'Under', 4099.5, $fetchedAt->copy()->subHour(), -180],
+    ] as [$bookmaker, $side, $line, $timestamp, $price]) {
+        FuturesOdd::create([
+            'row_key' => sha1("unmatched-{$price}"),
+            'sport' => 'nfl',
+            'season' => 2025,
+            'odds_api_sport_key' => 'americanfootball_nfl',
+            'event_id' => 'season-2025',
+            'bookmaker' => $bookmaker,
+            'market_key' => 'player_pass_yds',
+            'outcome_name' => $side,
+            'outcome_point' => $line,
+            'price' => $price,
+            'fetched_at' => $timestamp,
+            'nfl_player_id' => $player->id,
+        ]);
+    }
 
     $rows = app(PlayerFuturesProjectionService::class)->projections(
         season: 2025, market: 'passing_yards', onlyWithOdds: true,
@@ -169,6 +194,8 @@ it('returns projected nfl player futures with market odds and probabilities', fu
     expect($row['team_games_scheduled'])->toBe(5);
     expect($row['remaining_games'])->toBe(3);
     expect($row['market_odds']['line'])->toBe(4099.5);
+    expect($row['market_odds']['bookmaker'])->toBe('draftkings');
+    expect($row['market_odds']['fetched_at'])->toBe($fetchedAt->toIso8601String());
     expect($row['market_odds']['over_price'])->toBe(-110);
     expect($row['market_odds']['under_price'])->toBe(-110);
     expect($row['archetype'])->toBe('qb_starter');

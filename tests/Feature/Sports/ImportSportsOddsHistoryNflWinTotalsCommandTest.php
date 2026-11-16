@@ -1,15 +1,23 @@
 <?php
 
+use App\Models\NFL\Game;
 use App\Models\NFL\Team;
 use App\Models\Sports\FuturesOddsSnapshot;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 
 it('imports nfl team win total snapshots from sports odds history', function () {
-    Team::factory()->create([
+    $team = Team::factory()->create([
         'name' => 'Chiefs',
         'location' => 'Kansas City',
         'abbreviation' => 'KC',
+    ]);
+    Game::factory()->create([
+        'season' => 2025,
+        'season_type' => config('nfl.season.types.regular'),
+        'game_date' => '2025-09-04 19:20:00',
+        'home_team_id' => $team->id,
+        'away_team_id' => Team::factory()->create()->id,
     ]);
 
     Http::fake([
@@ -60,5 +68,8 @@ it('imports nfl team win total snapshots from sports odds history', function () 
         ->and($rows->pluck('bookmaker')->unique()->all())->toBe(['sportsoddshistory'])
         ->and($rows->pluck('nfl_team_id')->unique()->filter()->count())->toBe(1)
         ->and($rows->first()?->season)->toBe(2025)
+        ->and($rows->first()?->captured_at?->toDateTimeString())->toBe('2025-09-04 00:00:00')
+        ->and($rows->first()?->market_last_update)->toBeNull()
+        ->and($rows->first()?->raw_data['timestamp_precision'])->toBe('preseason_window')
         ->and($rows->first()?->raw_data['source'] ?? null)->toBe('SportsOddsHistory');
 });

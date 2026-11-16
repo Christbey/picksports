@@ -28,6 +28,7 @@ type PlayoffForecast = {
     projected_wins: number;
     projected_seed: number | null;
     division_winner_probability: number;
+    wild_card_probability?: number | null;
     make_playoffs_probability: number;
     conference_champion_probability: number;
     super_bowl_champion_probability: number;
@@ -38,6 +39,13 @@ type PlayoffForecast = {
 type ForecastMeta = {
     season?: number;
     simulations?: number | null;
+    attempted_simulations?: number | null;
+    completed_postseason_games?: number | null;
+    scheduled_postseason_games?: number | null;
+    projected_bracket?: {
+        conference: string;
+        seeds: { seed: number; team_id: number }[];
+    }[];
     warnings?: string[];
 };
 
@@ -49,8 +57,46 @@ export function useNflForecast() {
     const sortMode = ref<'title' | 'playoffs' | 'wins' | 'edge'>('title');
     const onlyPlusEv = ref(false);
     const forecasts = ref<PlayoffForecast[]>([]);
-    const simulations = ref<number | null>(null);
-    const warnings = ref<string[]>([]);
+    const meta = ref<ForecastMeta>({});
+    const simulations = computed(() => meta.value.simulations ?? null);
+    const attemptedSimulations = computed(
+        () => meta.value.attempted_simulations ?? null,
+    );
+    const postseasonGames = computed(() => {
+        const completed = meta.value.completed_postseason_games;
+        const scheduled = meta.value.scheduled_postseason_games;
+
+        return completed != null &&
+            scheduled != null &&
+            completed + scheduled > 0
+            ? { completed, scheduled }
+            : null;
+    });
+    const warnings = computed(() => meta.value.warnings ?? []);
+    const projectedBracket = computed(() => {
+        const teams = new Map(
+            forecasts.value.map((team) => [team.team_id, team]),
+        );
+
+        return (meta.value.projected_bracket ?? [])
+            .map(({ conference, seeds }) => {
+                const field = seeds.flatMap(({ seed, team_id }) => {
+                    const team = teams.get(team_id);
+
+                    return team ? [{ seed, team }] : [];
+                });
+
+                return {
+                    conference,
+                    divisionWinners: field.filter(({ seed }) => seed <= 4),
+                    wildCards: field.filter(({ seed }) => seed >= 5),
+                };
+            })
+            .filter(
+                ({ divisionWinners, wildCards }) =>
+                    divisionWinners.length === 4 && wildCards.length === 3,
+            );
+    });
 
     const seasonOptions = computed(() =>
         Array.from({ length: 5 }, (_, index) => currentYear - index),
@@ -161,9 +207,7 @@ export function useNflForecast() {
     watch(forecastRequest.data, (payload) => {
         if (!payload) return;
         forecasts.value = payload.data ?? [];
-        const meta = (payload.meta ?? {}) as ForecastMeta;
-        simulations.value = meta.simulations ?? null;
-        warnings.value = meta.warnings ?? [];
+        meta.value = (payload.meta ?? {}) as ForecastMeta;
     });
     watch(selectedSeason, () => void fetchForecasts(), { immediate: true });
 
@@ -173,6 +217,9 @@ export function useNflForecast() {
         onlyPlusEv,
         forecasts,
         simulations,
+        attemptedSimulations,
+        postseasonGames,
+        projectedBracket,
         warnings,
         seasonOptions,
         visibleForecasts,

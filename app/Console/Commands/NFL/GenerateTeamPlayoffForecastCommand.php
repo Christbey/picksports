@@ -35,6 +35,23 @@ class GenerateTeamPlayoffForecastCommand extends Command
         );
 
         $this->info("NFL team playoff forecast for season {$season}");
+        $summary = $report['summary'] ?? [];
+        if (isset($summary['attempted_simulations'])) {
+            $this->line(sprintf('Simulations accepted %d of %d', $summary['simulations'], $summary['attempted_simulations']));
+            $this->line(sprintf('Known postseason games %d completed, %d scheduled',
+                $summary['completed_postseason_games'], $summary['scheduled_postseason_games']));
+        }
+
+        $tieModel = $report['tie_model'] ?? null;
+        if (isset($tieModel['tie_probability'])) {
+            $this->line(sprintf('Historical tie rate %.2f%% (%d ties in %d games)',
+                $tieModel['tie_probability'] * 100, $tieModel['sample_ties'], $tieModel['sample_games']));
+        }
+
+        foreach ($report['warnings'] ?? [] as $warning) {
+            $this->warn($warning);
+        }
+
         $this->line('Division leaders');
         $this->table(
             ['Division', 'Team', 'Proj Wins', 'Div %', 'Playoffs %'],

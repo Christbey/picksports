@@ -3,6 +3,7 @@
 use App\Models\NFL\Team;
 use App\Models\NFL\TeamMetricSnapshot;
 use App\Models\Sports\FuturesOddsSnapshot;
+use App\Services\NFL\TeamFuturesBettingReportService;
 use Illuminate\Support\Facades\Artisan;
 
 it('writes an nfl team futures bets report with ranked edges', function () {
@@ -39,7 +40,7 @@ it('writes an nfl team futures bets report with ranked edges', function () {
         'market_key' => 'season_wins',
         'outcome_name' => 'Over',
         'outcome_description' => 'Lions',
-        'outcome_point' => 8.5,
+        'outcome_point' => 7.5,
         'price' => -110,
         'implied_probability' => 0.5238,
         'captured_at' => '2025-08-01T12:00:00Z',
@@ -56,7 +57,7 @@ it('writes an nfl team futures bets report with ranked edges', function () {
         'market_key' => 'season_wins',
         'outcome_name' => 'Under',
         'outcome_description' => 'Lions',
-        'outcome_point' => 8.5,
+        'outcome_point' => 7.5,
         'price' => -110,
         'implied_probability' => 0.5238,
         'captured_at' => '2025-08-01T12:00:00Z',
@@ -69,7 +70,7 @@ it('writes an nfl team futures bets report with ranked edges', function () {
     Artisan::call('nfl:report-team-futures-bets', [
         '--season' => 2025,
         '--market' => 'season_wins',
-        '--as-of-date' => '2025-08-01T12:00:00Z',
+        '--as-of-date' => '2025-08-01 12:00:00',
         '--require-historical-metrics' => true,
         '--min-edge' => 0.01,
         '--output' => $output,
@@ -88,5 +89,34 @@ it('writes an nfl team futures bets report with ranked edges', function () {
         ->and($report['bets'][0]['market_probability'])->toEqualWithDelta(0.5, 0.0001)
         ->and($report['bets'][0]['raw_market_probability'])->toEqualWithDelta(0.5238, 0.0001)
         ->and($report['bets'][0]['market_overround'])->toBeGreaterThan(1.0)
+        ->and($report['bets'][0]['expected_value'])->toBeGreaterThan(0.0)
         ->and($report['bets'][0]['fair_price'])->toBeInt();
+
+    $service = app(TeamFuturesBettingReportService::class);
+    $this->travelTo(now()->parse('2025-08-03 00:00:00'));
+    expect($service->generate(2025)['summary']['count'])->toBe(1)
+        ->and($service->generate(2025, asOfDate: '2025-08-03 00:00:01')['bets'])->toBe([])
+        ->and($service->generate(2025, asOfDate: '2025-08-01 11:59:59')['bets'])->toBe([]);
+
+    FuturesOddsSnapshot::query()->update(['outcome_point' => 8.0]);
+    [$wholeLineBet] = $service->generate(2025, asOfDate: '2025-08-01 12:00:00')['bets'];
+    $win = $wholeLineBet['model_probability'];
+    $push = $wholeLineBet['push_probability'];
+    expect($push)->toBeGreaterThan(0.0)
+        ->and($wholeLineBet['expected_value'])->toEqualWithDelta($win * (100 / 110) - (1 - $win - $push), 0.0002);
+    FuturesOddsSnapshot::query()->update(['outcome_point' => 7.5]);
+
+    FuturesOddsSnapshot::query()->update(['market_last_update' => '2025-07-30 12:00:00']);
+    expect($service->generate(2025, asOfDate: '2025-08-01 12:00:00')['bets'])->toBe([]);
+
+    FuturesOddsSnapshot::query()->update([
+        'market_last_update' => null,
+        'price' => -10000,
+        'implied_probability' => 0.990099,
+    ]);
+    expect($service->generate(2025, asOfDate: '2025-08-01 12:00:00')['bets'])->toBe([]);
+
+    config()->set('nfl.team_futures.betting_probability_calibration.default_shrink', 0.0);
+    FuturesOddsSnapshot::query()->where('outcome_name', 'Over')->update(['price' => 100, 'implied_probability' => 0.5]);
+    expect($service->generate(2025, asOfDate: '2025-08-01 12:00:00')['bets'])->toBe([]);
 });

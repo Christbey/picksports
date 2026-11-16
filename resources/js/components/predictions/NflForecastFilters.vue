@@ -2,7 +2,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 
 import { useNflForecastContext } from '@/composables/useNflForecast';
-const { selectedSeason, sortMode, onlyPlusEv, simulations, seasonOptions } =
+const { selectedSeason, sortMode, onlyPlusEv, seasonOptions } =
     useNflForecastContext();
 </script>
 <template>
@@ -48,12 +48,6 @@ const { selectedSeason, sortMode, onlyPlusEv, simulations, seasonOptions } =
                     />
                     Positive model differences
                 </label>
-                <p
-                    v-if="simulations"
-                    class="ml-auto pb-2 text-xs text-muted-foreground"
-                >
-                    {{ simulations.toLocaleString() }} simulations
-                </p>
             </div>
         </CardContent>
     </Card>

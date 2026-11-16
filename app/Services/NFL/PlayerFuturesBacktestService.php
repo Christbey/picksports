@@ -5,7 +5,8 @@ namespace App\Services\NFL;
 class PlayerFuturesBacktestService
 {
     public function __construct(
-        protected PlayerFuturesProjectionService $projectionService
+        protected PlayerFuturesProjectionService $projectionService,
+        protected RegularSeasonFuturesResults $results
     ) {}
 
     /**
@@ -18,7 +19,8 @@ class PlayerFuturesBacktestService
         ?int $toWeek = null,
         int $minSample = 5
     ): array {
-        $actualTotals = $this->projectionService->actualSeasonTotals($season);
+        $seasonSettled = $this->results->hasSettledSeasonWithBoxScores($season, now());
+        $actualTotals = $seasonSettled ? $this->projectionService->actualSeasonTotals($season) : [];
         $supportedMarkets = array_keys($this->projectionService->supportedMarkets());
         $selectedMarkets = $market !== null ? [$market] : $supportedMarkets;
         $maxWeek = (int) config('nfl.season.weeks.regular', 18);
@@ -51,7 +53,7 @@ class PlayerFuturesBacktestService
                 }
 
                 $actualTotal = $actualTotals[$playerId][$this->statFieldForMarket($marketKey)] ?? null;
-                if ($actualTotal === null) {
+                if ($seasonSettled && $actualTotal === null) {
                     continue;
                 }
 
@@ -61,14 +63,16 @@ class PlayerFuturesBacktestService
                 $overProbability = isset($projection['over_probability']) && is_numeric($projection['over_probability'])
                     ? (float) $projection['over_probability']
                     : null;
-                $actualOver = $line !== null ? ((float) $actualTotal > $line ? 1.0 : 0.0) : null;
+                $actualOver = $actualTotal !== null && $line !== null && $line !== (float) $actualTotal
+                    ? (float) ($actualTotal > $line)
+                    : null;
 
                 $row = [
                     'week' => $week,
                     'player_id' => $playerId,
                     'market' => $marketKey,
                     'projected_total' => (float) ($projection['projected_total'] ?? 0.0),
-                    'actual_total' => (float) $actualTotal,
+                    'actual_total' => $actualTotal,
                     'line' => $line,
                     'over_probability' => $overProbability,
                     'actual_over' => $actualOver,
@@ -104,6 +108,7 @@ class PlayerFuturesBacktestService
         return [
             'report_type' => 'nfl_player_futures_backtest',
             'season' => $season,
+            'season_settled' => $seasonSettled,
             'from_week' => $fromWeek,
             'to_week' => $toWeek,
             'summary' => $this->summarize($evaluationRows),
@@ -123,10 +128,13 @@ class PlayerFuturesBacktestService
      */
     protected function summarize(array $rows): array
     {
-        $count = count($rows);
+        $settledRows = array_filter($rows, fn (array $row): bool => $row['actual_total'] !== null);
+        $count = count($settledRows);
+        $pendingCount = count($rows) - $count;
         if ($count === 0) {
             return [
                 'count' => 0,
+                'pending_count' => $pendingCount,
                 'mae' => null,
                 'rmse' => null,
                 'bias' => null,
@@ -143,7 +151,7 @@ class PlayerFuturesBacktestService
         $overCorrect = 0.0;
         $overBrier = 0.0;
 
-        foreach ($rows as $row) {
+        foreach ($settledRows as $row) {
             $error = (float) $row['projected_total'] - (float) $row['actual_total'];
             $absError += abs($error);
             $sqError += $error ** 2;
@@ -164,6 +172,7 @@ class PlayerFuturesBacktestService
 
         return [
             'count' => $count,
+            'pending_count' => $pendingCount,
             'mae' => round($absError / $count, 3),
             'rmse' => round(sqrt($sqError / $count), 3),
             'bias' => round($bias / $count, 3),

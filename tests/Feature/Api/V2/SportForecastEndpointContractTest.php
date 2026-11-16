@@ -262,7 +262,12 @@ it('lists nfl playoff forecasts from the canonical forecast service', function (
         ->once()
         ->with(2026, '2026-09-01', true)
         ->andReturn([
-            'summary' => ['simulations' => 5000],
+            'summary' => [
+                'simulations' => 1200,
+                'attempted_simulations' => 5000,
+                'completed_postseason_games' => 3,
+                'scheduled_postseason_games' => 2,
+            ],
             'teams' => [
                 [
                     'team_id' => 1,
@@ -283,7 +288,10 @@ it('lists nfl playoff forecasts from the canonical forecast service', function (
         ->assertOk()
         ->assertJsonPath('meta.version', 'v2')
         ->assertJsonPath('meta.sport', 'nfl')
-        ->assertJsonPath('meta.simulations', 5000)
+        ->assertJsonPath('meta.simulations', 1200)
+        ->assertJsonPath('meta.attempted_simulations', 5000)
+        ->assertJsonPath('meta.completed_postseason_games', 3)
+        ->assertJsonPath('meta.scheduled_postseason_games', 2)
         ->assertJsonPath('data.0.team_name', 'Kansas City Chiefs')
         ->assertJsonPath('data.0.super_bowl_champion_probability', 0.14)
         ->assertJsonStructure([

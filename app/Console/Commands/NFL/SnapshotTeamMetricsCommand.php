@@ -15,7 +15,8 @@ class SnapshotTeamMetricsCommand extends Command
         {--to-date= : End date in Y-m-d format}
         {--daily : Expand from/to into one snapshot per day}
         {--hour=12 : UTC hour to use for daily snapshots}
-        {--backfill-records : Backfill wins/losses from completed games for each date}';
+        {--backfill-records : Reconstruct historical snapshots using inputs available at each cutoff}
+        {--reconstruct-score-priors : Fill missing prior-season strengths from complete archived regular-season scores}';
 
     protected $description = 'Capture a point-in-time snapshot of NFL team metrics for futures backtesting';
 
@@ -23,6 +24,14 @@ class SnapshotTeamMetricsCommand extends Command
     {
         $season = (int) ($this->option('season') ?: date('Y'));
         $dates = $this->resolvedDates();
+        $backfill = (bool) $this->option('backfill-records');
+        $scorePriors = (bool) $this->option('reconstruct-score-priors');
+
+        if ($scorePriors && (! $backfill || $dates === [])) {
+            $this->error('Score-based reconstruction requires --backfill-records and a historical cutoff.');
+
+            return self::FAILURE;
+        }
 
         if ($dates === []) {
             $count = $snapshotService->capture($season);
@@ -32,9 +41,12 @@ class SnapshotTeamMetricsCommand extends Command
             return self::SUCCESS;
         }
 
-        if ((bool) $this->option('backfill-records')) {
-            $count = $snapshotService->backfill($season, $dates);
-            $this->info("Backfilled {$count} NFL team metric snapshots for season {$season}.");
+        if ($backfill) {
+            $count = $snapshotService->backfill($season, $dates, reconstructScorePriors: $scorePriors);
+            $this->info("Reconstructed {$count} NFL team metric snapshots for season {$season}.");
+            if ($scorePriors) {
+                $this->line('Missing priors were eligible for reconstruction from archived final scores.');
+            }
 
             return self::SUCCESS;
         }

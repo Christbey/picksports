@@ -18,7 +18,7 @@ const { visibleForecasts, formatPct, formatAmericanOdds, formatEdge, isAdmin } =
                 aria-label="NFL forecast Outlook"
                 class="ui-table-wrap max-w-full min-w-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
-                <table class="w-full min-w-[920px] text-sm">
+                <table class="w-full min-w-[980px] text-sm">
                     <thead>
                         <tr class="border-b text-left">
                             <th class="px-3 py-3 font-medium">
@@ -32,6 +32,9 @@ const { visibleForecasts, formatPct, formatAmericanOdds, formatEdge, isAdmin } =
                             </th>
                             <th class="px-3 py-3 text-right font-medium">
                                 {{ ' Division ' }}
+                            </th>
+                            <th class="px-3 py-3 text-right font-medium">
+                                Wild card
                             </th>
                             <th class="px-3 py-3 text-right font-medium">
                                 {{ ' Playoffs ' }}
@@ -77,6 +80,9 @@ const { visibleForecasts, formatPct, formatAmericanOdds, formatEdge, isAdmin } =
                                         forecast.division_winner_probability,
                                     )
                                 }}
+                            </td>
+                            <td class="px-3 py-3 text-right tabular-nums">
+                                {{ formatPct(forecast.wild_card_probability) }}
                             </td>
                             <td class="px-3 py-3 text-right tabular-nums">
                                 {{
@@ -148,7 +154,7 @@ const { visibleForecasts, formatPct, formatAmericanOdds, formatEdge, isAdmin } =
                         </tr>
                         <tr v-if="visibleForecasts.length === 0">
                             <td
-                                colspan="9"
+                                colspan="10"
                                 class="px-3 py-10 text-center text-muted-foreground"
                             >
                                 No forecasts match these filters.

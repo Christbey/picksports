@@ -3,6 +3,7 @@
 namespace App\Services\NFL;
 
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 
 class TeamFuturesBettingReportService
 {
@@ -22,7 +23,7 @@ class TeamFuturesBettingReportService
         float $minEdge = 0.0,
         int $limit = 10
     ): array {
-        $targetDate = $asOfDate !== null ? Carbon::parse($asOfDate) : null;
+        $targetDate = ($asOfDate !== null ? Carbon::parse($asOfDate) : now())->setTimezone(config('app.timezone'));
 
         $rows = $this->projectionService->projections(
             season: $season,
@@ -33,11 +34,12 @@ class TeamFuturesBettingReportService
             sortBy: 'projected_total',
             direction: 'desc',
             limit: 200,
+            pointInTime: true,
         );
         $calibration = $this->calibrationProfile(
-            season: $season,
+            season: $season - 1,
             market: $market,
-            asOfDate: $targetDate?->toIso8601String(),
+            asOfDate: $targetDate,
             requireHistoricalMetrics: $requireHistoricalMetrics,
         );
 
@@ -45,7 +47,7 @@ class TeamFuturesBettingReportService
 
         foreach ($rows as $row) {
             $marketOdds = $row['market_odds'] ?? null;
-            if (! is_array($marketOdds)) {
+            if (! is_array($marketOdds) || (int) $row['remaining_games'] === 0) {
                 continue;
             }
 
@@ -53,36 +55,44 @@ class TeamFuturesBettingReportService
             $underPrice = $this->numericOrNull($marketOdds['under_price'] ?? null);
             $overProbability = $this->numericOrNull($row['over_probability'] ?? null);
             $underProbability = $this->numericOrNull($row['under_probability'] ?? null);
+            $nonPushProbability = $overProbability + $underProbability;
+            if ($nonPushProbability <= 0.0) {
+                continue;
+            }
+
             $marketOverProbability = $this->numericOrNull($marketOdds['over_implied_probability'] ?? null);
             $marketUnderProbability = $this->numericOrNull($marketOdds['under_implied_probability'] ?? null);
             $marketOverNoVigProbability = $this->numericOrNull($marketOdds['over_no_vig_probability'] ?? null);
             $marketUnderNoVigProbability = $this->numericOrNull($marketOdds['under_no_vig_probability'] ?? null);
 
             $candidates = [];
-            if ($overPrice !== null && $overProbability !== null && $marketOverProbability !== null) {
+            if ($overPrice !== null && abs($overPrice) >= 100 && $overProbability !== null && $marketOverProbability !== null) {
                 $candidates[] = $this->candidate(
                     row: $row,
                     side: 'over',
                     modelProbability: $overProbability,
-                    calibratedProbability: $this->calibrateProbability($overProbability, $calibration),
+                    calibratedProbability: $this->calibrateProbability($overProbability / $nonPushProbability, $calibration),
+                    nonPushProbability: $nonPushProbability,
                     marketProbability: $marketOverNoVigProbability ?? $marketOverProbability,
                     rawMarketProbability: $marketOverProbability,
                     price: $overPrice
                 );
             }
 
-            if ($underPrice !== null && $underProbability !== null && $marketUnderProbability !== null) {
+            if ($underPrice !== null && abs($underPrice) >= 100 && $underProbability !== null && $marketUnderProbability !== null) {
                 $candidates[] = $this->candidate(
                     row: $row,
                     side: 'under',
                     modelProbability: $underProbability,
-                    calibratedProbability: $this->calibrateProbability($underProbability, $calibration),
+                    calibratedProbability: $this->calibrateProbability($underProbability / $nonPushProbability, $calibration),
+                    nonPushProbability: $nonPushProbability,
                     marketProbability: $marketUnderNoVigProbability ?? $marketUnderProbability,
                     rawMarketProbability: $marketUnderProbability,
                     price: $underPrice
                 );
             }
 
+            $candidates = array_values(array_filter($candidates));
             if ($candidates === []) {
                 continue;
             }
@@ -104,7 +114,7 @@ class TeamFuturesBettingReportService
             'report_type' => 'nfl_team_futures_bets',
             'season' => $season,
             'market' => $market,
-            'as_of_date' => $targetDate?->toIso8601String(),
+            'as_of_date' => $targetDate->toIso8601String(),
             'require_historical_metrics' => $requireHistoricalMetrics,
             'min_edge' => round($minEdge, 4),
             'calibration' => $calibration,
@@ -119,20 +129,26 @@ class TeamFuturesBettingReportService
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array<string, mixed>|null
      */
     protected function candidate(
         array $row,
         string $side,
         float $modelProbability,
         float $calibratedProbability,
+        float $nonPushProbability,
         float $marketProbability,
         float $rawMarketProbability,
         float $price
-    ): array {
+    ): ?array {
         $edge = $calibratedProbability - $marketProbability;
         $profitMultiple = $this->profitMultiple($price);
-        $expectedValue = ($calibratedProbability * $profitMultiple) - (1.0 - $calibratedProbability);
+        $breakEvenProbability = 1.0 / (1.0 + $profitMultiple);
+        if ($calibratedProbability <= $breakEvenProbability) {
+            return null;
+        }
+
+        $expectedValue = ($calibratedProbability - $breakEvenProbability) * (1.0 + $profitMultiple) * $nonPushProbability;
         $kellyFraction = $this->kellyFraction($calibratedProbability, $profitMultiple);
 
         return [
@@ -144,12 +160,14 @@ class TeamFuturesBettingReportService
             'price' => (int) round($price),
             'projected_total' => round((float) ($row['projected_total'] ?? 0.0), 3),
             'raw_model_probability' => round($modelProbability, 4),
-            'model_probability' => round($calibratedProbability, 4),
+            'model_probability' => round($calibratedProbability * $nonPushProbability, 4),
+            'model_probability_given_no_push' => round($calibratedProbability, 4),
+            'push_probability' => round((float) $row['push_probability'], 4),
             'market_probability' => round($marketProbability, 4),
             'raw_market_probability' => round($rawMarketProbability, 4),
             'market_overround' => $this->numericOrNull(data_get($row, 'market_odds.overround')),
             'edge' => round($edge, 4),
-            'expected_value' => round($expectedValue, 4),
+            'expected_value' => $expectedValue,
             'fair_price' => $this->fairAmericanOdds($calibratedProbability),
             'kelly_fraction' => round($kellyFraction, 4),
             'captured_at' => data_get($row, 'market_odds.captured_at'),
@@ -163,7 +181,7 @@ class TeamFuturesBettingReportService
     protected function calibrationProfile(
         int $season,
         string $market,
-        ?string $asOfDate,
+        CarbonInterface $asOfDate,
         bool $requireHistoricalMetrics
     ): array {
         $defaultShrink = max(0.0, min(1.0, (float) config('nfl.team_futures.betting_probability_calibration.default_shrink', 0.7)));
@@ -176,8 +194,8 @@ class TeamFuturesBettingReportService
             season: $season,
             market: $market,
             fromDate: null,
-            toDate: $asOfDate,
             requireHistoricalMetrics: $requireHistoricalMetrics,
+            settledAsOf: $asOfDate,
         );
 
         $samples = array_values(array_filter($rows, fn (array $row): bool => $row['over_probability'] !== null && $row['actual_over'] !== null));
@@ -185,6 +203,7 @@ class TeamFuturesBettingReportService
             return [
                 'enabled' => true,
                 'method' => 'default_shrink',
+                'season' => $season,
                 'sample_size' => count($samples),
                 'shrink_factor' => round($defaultShrink, 4),
             ];
@@ -212,6 +231,7 @@ class TeamFuturesBettingReportService
         return [
             'enabled' => true,
             'method' => 'fit_shrink',
+            'season' => $season,
             'sample_size' => count($samples),
             'shrink_factor' => round($bestShrink, 4),
             'fitted_brier' => round($bestBrier, 4),

@@ -12,6 +12,7 @@ class ReportTeamFuturesBacktestCommand extends Command
         {--market=season_wins : Team futures market to evaluate}
         {--from-date= : First snapshot date/time to include}
         {--to-date= : Last snapshot date/time to include}
+        {--as-of-date= : Outcome availability cutoff, defaults to the current time}
         {--min-sample=5 : Minimum sample for market section}
         {--require-historical-metrics : Only evaluate dates with captured team metric snapshots}
         {--output= : Optional JSON output path}';
@@ -24,6 +25,7 @@ class ReportTeamFuturesBacktestCommand extends Command
         $market = (string) $this->option('market');
         $fromDate = $this->option('from-date');
         $toDate = $this->option('to-date');
+        $asOfDate = $this->option('as-of-date');
         $minSample = max(1, (int) $this->option('min-sample'));
         $requireHistoricalMetrics = (bool) $this->option('require-historical-metrics');
         $output = $this->option('output');
@@ -35,6 +37,7 @@ class ReportTeamFuturesBacktestCommand extends Command
             toDate: $toDate ? (string) $toDate : null,
             minSample: $minSample,
             requireHistoricalMetrics: $requireHistoricalMetrics,
+            asOfDate: $asOfDate ? (string) $asOfDate : null,
         );
 
         $summary = $report['summary'] ?? [];

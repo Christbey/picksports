@@ -39,9 +39,10 @@ class ReportPlayerFuturesBacktestCommand extends Command
 
         $this->info("NFL player futures backtest for season {$season}");
         $this->table(
-            ['Rows', 'MAE', 'RMSE', 'Bias', 'Line Rows', 'Over Acc', 'Over Brier'],
+            ['Settled', 'Pending', 'MAE', 'RMSE', 'Bias', 'Line Rows', 'Over Acc', 'Over Brier'],
             [[
                 (string) ($summary['count'] ?? 0),
+                (string) ($summary['pending_count'] ?? 0),
                 $this->fmt($summary['mae'] ?? null),
                 $this->fmt($summary['rmse'] ?? null),
                 $this->fmt($summary['bias'] ?? null),
@@ -57,8 +58,10 @@ class ReportPlayerFuturesBacktestCommand extends Command
             return [
                 (string) ($week['week'] ?? ''),
                 (string) ($summary['count'] ?? 0),
+                (string) ($summary['pending_count'] ?? 0),
                 $this->fmt($summary['mae'] ?? null),
                 $this->fmt($summary['rmse'] ?? null),
+                (string) ($summary['line_count'] ?? 0),
                 $this->fmt($summary['over_accuracy'] ?? null),
                 $this->fmt($summary['over_brier'] ?? null),
             ];
@@ -67,7 +70,7 @@ class ReportPlayerFuturesBacktestCommand extends Command
         if ($weekRows !== []) {
             $this->newLine();
             $this->line('By cutoff week');
-            $this->table(['Week', 'Rows', 'MAE', 'RMSE', 'Over Acc', 'Over Brier'], $weekRows);
+            $this->table(['Week', 'Settled', 'Pending', 'MAE', 'RMSE', 'Line Rows', 'Over Acc', 'Over Brier'], $weekRows);
         }
 
         if ($output) {

@@ -15,10 +15,16 @@ class PlayoffForecastResource extends JsonResource
             'conference' => data_get($this->resource, 'conference'),
             'division' => data_get($this->resource, 'division'),
             'projected_wins' => (float) data_get($this->resource, 'projected_wins', 0.0),
+            'projected_ties' => data_get($this->resource, 'projected_ties') !== null
+                ? (float) data_get($this->resource, 'projected_ties')
+                : null,
             'projected_seed' => data_get($this->resource, 'projected_seed') !== null
                 ? (float) data_get($this->resource, 'projected_seed')
                 : null,
             'division_winner_probability' => (float) data_get($this->resource, 'division_winner_probability', 0.0),
+            'wild_card_probability' => data_get($this->resource, 'wild_card_probability') !== null
+                ? (float) data_get($this->resource, 'wild_card_probability')
+                : null,
             'make_playoffs_probability' => (float) data_get($this->resource, 'make_playoffs_probability', 0.0),
             'conference_champion_probability' => (float) data_get($this->resource, 'conference_champion_probability', 0.0),
             'super_bowl_champion_probability' => (float) data_get($this->resource, 'super_bowl_champion_probability', 0.0),

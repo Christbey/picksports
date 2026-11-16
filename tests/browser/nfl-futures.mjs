@@ -26,6 +26,19 @@ const row = {
     },
     market_edge: { edge_probability: null },
 };
+const bracketTeams = ['AFC', 'NFC'].flatMap((conference, index) =>
+    Array.from({ length: 7 }, (_, position) => ({
+        ...row,
+        team_id: 10 + index * 7 + position,
+        team_name: `${conference} Seed ${position + 1}`,
+        conference,
+        division: ['East', 'North', 'South', 'West'][position % 4],
+        division_winner_probability: position < 4 ? 0.7 : 0.2,
+        wild_card_probability: position < 4 ? 0.1 : 0.55,
+        make_playoffs_probability: position < 4 ? 0.8 : 0.75,
+        market_odds: null,
+    })),
+);
 const response = {
     data: [
         row,
@@ -38,10 +51,36 @@ const response = {
             market_odds: { ...row.market_odds, stale: false },
             market_edge: { edge_probability: 0.02 },
         },
+        ...bracketTeams,
     ],
     meta: {
-        simulations: 5000,
-        warnings: ['Equal-record tiebreakers are randomized.'],
+        simulations: 1200,
+        attempted_simulations: 5000,
+        completed_postseason_games: 3,
+        scheduled_postseason_games: 2,
+        projected_bracket: ['AFC', 'NFC'].map((conference) => ({
+            conference,
+            seeds: bracketTeams
+                .filter((team) => team.conference === conference)
+                .map((team, index) => ({
+                    team_id: team.team_id,
+                    seed: index + 1,
+                })),
+        })),
+        warnings: [
+            'Only simulated brackets compatible with every known postseason matchup and result were counted.',
+        ],
+    },
+};
+const olderResponse = { data: response.data, meta: { simulations: 500 } };
+const withheldResponse = {
+    data: [],
+    meta: {
+        ...response.meta,
+        simulations: 0,
+        warnings: [
+            'No simulated bracket could reproduce every known postseason matchup and result.',
+        ],
     },
 };
 const server = await createServer({
@@ -53,7 +92,13 @@ const server = await createServer({
             enforce: 'pre',
             load(id) {
                 if (id.endsWith('/useApiV2Client.ts'))
-                    return `export const useApiV2Client = () => ({ forecasts: { index: async () => (${JSON.stringify(response)}) } });`;
+                    return `const responses = ${JSON.stringify([response, olderResponse, withheldResponse])};
+                        export const useApiV2Client = () => ({
+                            forecasts: { index: async (_sport, { query }) =>
+                                responses[new Date().getFullYear() - query.season] },
+                        });`;
+                if (id.endsWith('/useViewerAccess.ts'))
+                    return 'import { ref } from "vue"; export const useViewerAccess = () => ({ isAdmin: ref(true) });';
                 if (id.endsWith('/PredictionsPageShell.vue'))
                     return '<template><main class="p-4"><slot /></main></template>';
             },
@@ -81,7 +126,7 @@ try {
     browser = await chromium.launch({
         channel: process.env.PLAYWRIGHT_CHANNEL,
     });
-    const page = await browser.newPage();
+    const page = await browser.newPage({ locale: 'en-US' });
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
     for (const width of [390, 1280]) {
@@ -89,6 +134,49 @@ try {
         await page.goto(`${server.resolvedUrls.local[0]}__futures`);
         const stale = page.getByRole('row').filter({ hasText: 'Stored Team' });
         await stale.waitFor();
+        await page
+            .getByText('1,200 of 5,000 simulations accepted.', { exact: false })
+            .waitFor();
+        for (const conference of ['AFC', 'NFC']) {
+            const field = page.getByRole('table', {
+                name: conference,
+                exact: true,
+            });
+            await field
+                .getByRole('rowheader', { name: `${conference} Seed 7` })
+                .waitFor();
+            assert.deepEqual(await field.locator('tbody').count(), 2);
+            assert.deepEqual(
+                await field
+                    .locator('tbody')
+                    .nth(0)
+                    .locator('tr td:first-child')
+                    .allTextContents(),
+                ['1', '2', '3', '4'],
+            );
+            assert.deepEqual(
+                await field
+                    .locator('tbody')
+                    .nth(1)
+                    .locator('tr td:first-child')
+                    .allTextContents(),
+                ['5', '6', '7'],
+            );
+            assert.match(
+                await field.locator('tbody').nth(0).innerText(),
+                /Division winners[\s\S]*70\.0%/,
+            );
+            assert.match(
+                await field.locator('tbody').nth(1).innerText(),
+                /Wild cards[\s\S]*55\.0%/,
+            );
+        }
+        await page
+            .getByText(
+                'Known postseason games include 3 completed and 2 scheduled.',
+                { exact: false },
+            )
+            .waitFor();
         assert.match(await stale.innerText(), /Stale/);
         assert.match(await stale.innerText(), /\+2600/);
         assert.match(await stale.innerText(), /0%\*/);
@@ -103,6 +191,10 @@ try {
         await page
             .getByRole('checkbox', { name: 'Positive model differences' })
             .check();
+        assert.equal(
+            await page.getByRole('table', { name: 'AFC', exact: true }).count(),
+            1,
+        );
         assert.equal(await stale.count(), 0);
         assert.equal(
             await page
@@ -117,9 +209,27 @@ try {
             ),
         );
     }
+    const season = page.getByLabel('Season', { exact: true });
+    await season.selectOption({ index: 1 });
+    await page.getByText('500 simulations.', { exact: true }).waitFor();
+    assert.equal(
+        await page
+            .getByRole('heading', { name: 'Projected Playoff Field' })
+            .count(),
+        0,
+    );
+    assert.equal(await page.getByText(/simulations accepted/).count(), 0);
+    assert.equal(await page.getByText(/Known postseason games/).count(), 0);
+
+    await season.selectOption({ index: 2 });
+    await page.getByText(/0 of 5,000 simulations accepted/).waitFor();
+    await page.getByText(/No simulated bracket could reproduce/).waitFor();
+    await page.getByText('No NFL futures available for this season.').waitFor();
+    assert.equal(await page.getByRole('row').count(), 0);
+
     assert.deepEqual(errors, []);
     console.log(
-        'PASS: futures freshness labels, conditional seeds, model filter, zero-sample explanation, mobile and desktop',
+        'PASS: NFL futures mobile and desktop, forecast counts, season changes, older responses, and withheld forecasts',
     );
 } finally {
     await browser?.close();

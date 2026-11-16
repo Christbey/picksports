@@ -45,6 +45,7 @@ return [
 
     'season' => [
         'default' => env('NFL_DEFAULT_SEASON', 2026),
+        'team_count' => 32,
         'types' => [
             'preseason' => 1,
             'regular' => 2,
@@ -1349,8 +1350,6 @@ return [
         'recent_form_signal_scale' => 20.0,
         'sos_signal_scale' => 25.0,
         'injury_signal_scale' => 1.5,
-        'win_total_probability_scale' => 0.90,
-        'win_total_variance_floor' => 0.85,
         'preseason_prior_games' => 6,
         'preseason_prior_lookback_seasons' => 3,
         'preseason_prior_season_decay' => 0.55,

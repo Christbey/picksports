@@ -3,8 +3,8 @@
 namespace App\Services\BettingRecommendations;
 
 use App\Models\NFL\PlayerProp;
-use App\Services\NFL\TeamPlayoffForecastService;
 use App\Services\Sports\SportsDateWindowService;
+use App\Support\NflTeamAlignment;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -138,7 +138,9 @@ class NflPropSeasonSummary
 
     private function teamConference(?object $team): ?string
     {
+        $abbreviation = strtoupper(trim($team?->abbreviation ?? ''));
+
         return $this->conference($team?->conference)
-            ?? TeamPlayoffForecastService::conferenceForAbbreviation($team?->abbreviation ?? '');
+            ?? $this->conference(NflTeamAlignment::TEAMS[$abbreviation]['conference'] ?? null);
     }
 }

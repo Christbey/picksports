@@ -10,7 +10,7 @@ class ReportTeamFuturesBetsCommand extends Command
     protected $signature = 'nfl:report-team-futures-bets
         {--season=2025 : Season to evaluate}
         {--market=season_wins : Team futures market to evaluate}
-        {--as-of-date= : Snapshot date/time to evaluate}
+        {--as-of-date= : Report cutoff date/time, defaults to the current time}
         {--min-edge=0.02 : Minimum model edge required}
         {--limit=10 : Max number of bets to show}
         {--require-historical-metrics : Only use captured team metric snapshots}
@@ -68,6 +68,7 @@ class ReportTeamFuturesBetsCommand extends Command
                 $this->fmt($bet['projected_total'] ?? null),
                 $this->fmt($bet['raw_model_probability'] ?? null),
                 $this->fmt($bet['model_probability'] ?? null),
+                $this->fmt($bet['push_probability'] ?? null),
                 $this->fmt($bet['edge'] ?? null),
                 $this->fmt($bet['expected_value'] ?? null),
                 (string) ($bet['fair_price'] ?? ''),
@@ -79,12 +80,12 @@ class ReportTeamFuturesBetsCommand extends Command
             $this->newLine();
             $this->line('Top bets');
             $this->table(
-                ['Team', 'Side', 'Line', 'Price', 'Proj', 'Raw P', 'Cal P', 'Edge', 'EV', 'Fair', 'Kelly'],
+                ['Team', 'Side', 'Line', 'Price', 'Proj', 'Raw P', 'Cal P', 'Push P', 'Edge', 'EV', 'Fair', 'Kelly'],
                 $bets
             );
         } else {
             $this->newLine();
-            $this->warn('No bets met the requested edge threshold.');
+            $this->warn('No fresh quotes met the edge and positive expected value requirements.');
         }
 
         if ($output) {

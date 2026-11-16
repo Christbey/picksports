@@ -2,6 +2,7 @@
 
 namespace App\Services\Sports;
 
+use App\Models\NFL\Game;
 use App\Models\NFL\Team;
 use App\Models\Sports\FuturesOddsSnapshot;
 use Illuminate\Support\Carbon;
@@ -25,13 +26,20 @@ class SportsOddsHistoryNflWinTotalsImportService
         $rows = [];
         $seasonFilter = array_values(array_unique(array_map('intval', $seasons)));
 
+        $openingDates = Game::query()
+            ->where('season_type', config('nfl.season.types.regular', 2))
+            ->when($seasonFilter !== [], fn ($query) => $query->whereIn('season', $seasonFilter))
+            ->groupBy('season')
+            ->selectRaw('season, MIN(game_date) AS opening_date')
+            ->pluck('opening_date', 'season');
+
         foreach ($teams as $team) {
             $html = $this->fetchTeamPage($team);
             if ($html === null || trim($html) === '') {
                 continue;
             }
 
-            foreach ($this->parseWinTotalRows($html, $team, $seasonFilter) as $row) {
+            foreach ($this->parseWinTotalRows($html, $team, $openingDates) as $row) {
                 $rows[] = $row;
             }
         }
@@ -94,10 +102,10 @@ class SportsOddsHistoryNflWinTotalsImportService
     }
 
     /**
-     * @param  array<int, int>  $seasonFilter
+     * @param  Collection<int, string>  $openingDates
      * @return array<int, array<string, mixed>>
      */
-    protected function parseWinTotalRows(string $html, Team $team, array $seasonFilter = []): array
+    protected function parseWinTotalRows(string $html, Team $team, Collection $openingDates): array
     {
         $dom = new \DOMDocument;
         @$dom->loadHTML($html);
@@ -128,7 +136,7 @@ class SportsOddsHistoryNflWinTotalsImportService
                 continue;
             }
 
-            if ($seasonFilter !== [] && ! in_array($season, $seasonFilter, true)) {
+            if (! isset($openingDates[$season])) {
                 continue;
             }
 
@@ -137,7 +145,7 @@ class SportsOddsHistoryNflWinTotalsImportService
                 continue;
             }
 
-            $capturedAt = $this->capturedAtForSeason($season);
+            $capturedAt = Carbon::parse($openingDates[$season])->startOfDay();
             $common = [
                 'row_key_base' => sha1(implode('|', [
                     'nfl',
@@ -155,7 +163,7 @@ class SportsOddsHistoryNflWinTotalsImportService
                 'nfl_team_id' => $team->id,
                 'bookmaker' => self::BOOKMAKER,
                 'market_key' => 'season_wins',
-                'market_last_update' => $capturedAt,
+                'market_last_update' => null,
                 'outcome_description' => $this->teamPageName($team),
                 'outcome_point' => $line,
                 'captured_at' => $capturedAt,
@@ -163,6 +171,9 @@ class SportsOddsHistoryNflWinTotalsImportService
                 'updated_at' => $capturedAt,
                 'raw_data' => [
                     'source' => 'SportsOddsHistory',
+                    'timestamp_precision' => 'preseason_window',
+                    'cutoff_basis' => 'start_of_opening_game_day',
+                    'observed_at' => null,
                     'source_url' => self::BASE_URL.'?Team='.urlencode($this->teamPageName($team)).'&sa=nfl',
                     'week_bet_settled' => $cells[4] ?? null,
                     'actual_wins' => $this->parseInt($cells[5] ?? null),
@@ -170,13 +181,15 @@ class SportsOddsHistoryNflWinTotalsImportService
                 ],
             ];
 
+            // Preserve pre-existing row identities when replacing the old synthetic anchor.
+            $legacyAnchor = Carbon::create($season, 8, 1, 12, 0, 0, 'UTC')->toIso8601String();
             foreach ([
                 'Over' => $this->parseAmericanPrice($cells[2] ?? null),
                 'Under' => $this->parseAmericanPrice($cells[3] ?? null),
             ] as $side => $price) {
                 $rowKey = sha1($common['row_key_base'].'|'.$side);
                 $rows[] = [
-                    'snapshot_key' => sha1($rowKey.'|'.$capturedAt->toIso8601String()),
+                    'snapshot_key' => sha1($rowKey.'|'.$legacyAnchor),
                     'row_key' => $rowKey,
                     'sport' => $common['sport'],
                     'season' => $common['season'],
@@ -207,11 +220,6 @@ class SportsOddsHistoryNflWinTotalsImportService
         }
 
         return $rows;
-    }
-
-    protected function capturedAtForSeason(int $season): Carbon
-    {
-        return Carbon::create($season, 8, 1, 12, 0, 0, 'UTC');
     }
 
     protected function cleanCellText(?string $value): string

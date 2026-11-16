@@ -65,8 +65,10 @@ it('returns nfl playoff forecasts through the api route', function () {
             'conference',
             'division',
             'projected_wins',
+            'projected_ties',
             'projected_seed',
             'division_winner_probability',
+            'wild_card_probability',
             'make_playoffs_probability',
             'conference_champion_probability',
             'super_bowl_champion_probability',
@@ -79,6 +81,17 @@ it('returns nfl playoff forecasts through the api route', function () {
             'sort_by',
             'sort_direction',
             'simulations',
+            'tie_model' => ['sample_games', 'sample_ties', 'tie_probability'],
+            'projected_bracket' => [['conference', 'seeds' => [['seed', 'team_id']]]],
         ],
     ]);
+
+    $response->assertJsonCount(2, 'meta.projected_bracket');
+    $teams = array_column($response->json('data'), null, 'team_id');
+    foreach ($response->json('meta.projected_bracket') as $field) {
+        expect(array_column($field['seeds'], 'seed'))->toBe(range(1, 7))
+            ->and(array_unique(array_column($field['seeds'], 'team_id')))->toHaveCount(7);
+        $winners = array_map(fn (array $seed): string => $teams[$seed['team_id']]['division'], array_slice($field['seeds'], 0, 4));
+        expect(array_unique($winners))->toHaveCount(4);
+    }
 });

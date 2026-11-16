@@ -13,7 +13,8 @@ class TeamFuturesProjectionService
 {
     public function __construct(
         protected FuturesOddsLookupService $futuresOddsLookup,
-        protected TeamOffseasonSignalService $teamOffseasonSignalService
+        protected TeamOffseasonSignalService $teamOffseasonSignalService,
+        protected RegularSeasonFuturesResults $results
     ) {}
 
     /**
@@ -35,7 +36,8 @@ class TeamFuturesProjectionService
         bool $onlyWithOdds = false,
         string $sortBy = 'projected_total',
         string $direction = 'desc',
-        int $limit = 32
+        int $limit = 32,
+        bool $pointInTime = false
     ): array {
         $marketConfig = $this->supportedMarkets()[$market] ?? null;
         if ($marketConfig === null) {
@@ -43,18 +45,21 @@ class TeamFuturesProjectionService
         }
 
         $targetDate = $asOfDate !== null ? Carbon::parse($asOfDate) : null;
-        $metrics = $this->metricsByTeam($season, $targetDate, $requireHistoricalMetrics);
+        $metrics = $this->metricsByTeam($season, $targetDate, $requireHistoricalMetrics, $pointInTime);
         if ($metrics === []) {
             return [];
         }
 
         $oddsByTeam = $targetDate !== null
-            ? $this->oddsForMarketAt($season, $market, $targetDate)
+            ? $this->oddsForMarketAt($season, $market, $targetDate, $pointInTime ? 36 : null)
             : [];
-        $offseasonSignals = $targetDate !== null
+        // The offseason service reads mutable injury and usage data.
+        $offseasonSignals = $targetDate !== null && ! $pointInTime
             ? $this->teamOffseasonSignalService->signalsForSeason($season, $targetDate)
             : [];
 
+        $records = $this->results->records($season, $targetDate ?? now());
+        $seasonGames = RegularSeasonFuturesResults::gamesPerTeam($season);
         $rows = [];
         foreach ($metrics as $teamId => $metric) {
             $offseasonSignal = $offseasonSignals[$teamId] ?? [];
@@ -66,22 +71,31 @@ class TeamFuturesProjectionService
                     + (float) ($offseasonSignal['injury_adjustment'] ?? 0.0);
             }
 
-            $wins = max(0, (int) ($metric['wins'] ?? 0));
-            $losses = max(0, (int) ($metric['losses'] ?? 0));
-            $gamesPlayed = max(0, $wins + $losses);
-            $seasonGames = max($gamesPlayed, (int) config('nfl.team_futures.default_regular_season_games', 17));
+            $record = $records[$teamId] ?? null;
+            $wins = max(0, (int) $metric['wins']);
+            $losses = max(0, (int) $metric['losses']);
+            $ties = max(0, (int) ($metric['ties'] ?? 0));
+            $metricGames = $wins + $losses + $ties;
+            if ($record !== null && $record['games'] >= $metricGames) {
+                $wins = $record['wins'];
+                $losses = $record['losses'];
+                $ties = $record['ties'];
+            }
+
+            $gamesPlayed = $wins + $losses + $ties;
             $remainingGames = max(0, $seasonGames - $gamesPlayed);
 
+            $projectionMetric['wins'] = $wins;
             $projectedRemainingWinPct = $this->projectedRemainingWinPct($projectionMetric, $gamesPlayed);
             $projectedTotal = round($wins + ($remainingGames * $projectedRemainingWinPct), 3);
             $marketOdds = $oddsByTeam[$teamId] ?? null;
             $line = isset($marketOdds['line']) && is_numeric($marketOdds['line'])
                 ? (float) $marketOdds['line']
                 : null;
-            $stddev = $this->winsStddev($remainingGames, $projectedRemainingWinPct);
-            $overProbability = $line !== null
-                ? round($this->probabilityOver($projectedTotal, $line, $stddev), 4)
-                : null;
+            $stddev = sqrt($remainingGames * $projectedRemainingWinPct * (1 - $projectedRemainingWinPct));
+            [$overProbability, $underProbability, $pushProbability] = $line !== null
+                ? $this->winTotalProbabilities($wins, $remainingGames, $projectedRemainingWinPct, $line)
+                : [null, null, null];
 
             $rows[] = [
                 'team_id' => $teamId,
@@ -90,13 +104,15 @@ class TeamFuturesProjectionService
                 'as_of_date' => $targetDate?->toIso8601String(),
                 'wins' => $wins,
                 'losses' => $losses,
+                'ties' => $ties,
                 'games_played' => $gamesPlayed,
                 'remaining_games' => $remainingGames,
                 'projected_remaining_win_pct' => round($projectedRemainingWinPct, 4),
                 'projected_total' => $projectedTotal,
                 'market_odds' => $marketOdds,
                 'over_probability' => $overProbability,
-                'under_probability' => $overProbability !== null ? round(1 - $overProbability, 4) : null,
+                'under_probability' => $underProbability,
+                'push_probability' => $pushProbability,
                 'projection_factors' => [
                     'predictive_rating' => round((float) ($projectionMetric['predictive_rating'] ?? 0.0), 3),
                     'future_strength_of_schedule' => round((float) ($projectionMetric['future_strength_of_schedule'] ?? 0.0), 3),
@@ -132,32 +148,19 @@ class TeamFuturesProjectionService
     }
 
     /**
-     * @return array<int, float>
-     */
-    public function actualSeasonTotals(int $season, string $market = 'season_wins'): array
-    {
-        if ($market !== 'season_wins') {
-            return [];
-        }
-
-        return array_map(
-            static fn (array $metric): float => (float) ($metric['wins'] ?? 0.0),
-            $this->metricsByTeam($season)
-        );
-    }
-
-    /**
      * @return array<int, array<string, mixed>>
      */
     protected function metricsByTeam(
         int $season,
         CarbonInterface|string|null $asOfDate = null,
-        bool $requireHistoricalMetrics = false
+        bool $requireHistoricalMetrics = false,
+        bool $pointInTime = false
     ): array {
         if ($asOfDate !== null) {
             $snapshotRows = TeamMetricSnapshot::query()
                 ->where('season', $season)
                 ->where('captured_at', '<=', Carbon::parse($asOfDate))
+                ->when($pointInTime, fn ($query) => $query->whereDate('calculation_date', '<=', Carbon::parse($asOfDate)))
                 ->orderByDesc('captured_at')
                 ->orderByDesc('id')
                 ->get([
@@ -205,10 +208,16 @@ class TeamFuturesProjectionService
             ->orderByDesc('calculation_date')
             ->orderByDesc('id');
 
+        if ($pointInTime && $asOfDate !== null) {
+            $query->where('updated_at', '<=', $asOfDate)
+                ->whereDate('calculation_date', '<=', $asOfDate);
+        }
+
         $rows = $query->get([
             'team_id',
             'wins',
             'losses',
+            'ties',
             'predictive_rating',
             'future_strength_of_schedule',
             'recent_form_rating',
@@ -231,11 +240,12 @@ class TeamFuturesProjectionService
                 'recent_form_rating' => (float) ($row->recent_form_rating ?? 0.0),
                 'injury_total_adjustment' => (float) ($row->injury_total_adjustment ?? 0.0),
                 'calculation_date' => $row->calculation_date?->toDateString(),
+                'ties' => (int) ($row->ties ?? 0),
                 '_source' => 'season_metric',
             ];
         }
 
-        if ($asOfDate !== null && $byTeam !== []) {
+        if ($asOfDate !== null && $byTeam !== [] && ! $pointInTime) {
             $records = $this->teamRecordsByDate($season, Carbon::parse($asOfDate));
 
             foreach ($records as $teamId => $record) {
@@ -245,6 +255,7 @@ class TeamFuturesProjectionService
 
                 $byTeam[$teamId]['wins'] = $record['wins'];
                 $byTeam[$teamId]['losses'] = $record['losses'];
+                $byTeam[$teamId]['ties'] = $record['ties'];
             }
         }
 
@@ -252,7 +263,7 @@ class TeamFuturesProjectionService
     }
 
     /**
-     * @return array<int, array{wins:int,losses:int}>
+     * @return array<int, array{wins:int,losses:int,ties:int}>
      */
     protected function teamRecordsByDate(int $season, CarbonInterface $asOfDate): array
     {
@@ -260,6 +271,8 @@ class TeamFuturesProjectionService
             ->where('season', $season)
             ->where('status', config('nfl.statuses.final', 'STATUS_FINAL'))
             ->where('game_date', '<=', $asOfDate)
+            ->whereNotNull('home_score')
+            ->whereNotNull('away_score')
             ->where(function ($query): void {
                 $query->whereNull('season_type')
                     ->orWhere('season_type', config('nfl.season.types.regular', 2));
@@ -279,14 +292,17 @@ class TeamFuturesProjectionService
             $homeScore = (int) ($game->home_score ?? 0);
             $awayScore = (int) ($game->away_score ?? 0);
 
-            if ($homeTeamId <= 0 || $awayTeamId <= 0 || $homeScore === $awayScore) {
+            if ($homeTeamId <= 0 || $awayTeamId <= 0) {
                 continue;
             }
 
-            $records[$homeTeamId] ??= ['wins' => 0, 'losses' => 0];
-            $records[$awayTeamId] ??= ['wins' => 0, 'losses' => 0];
+            $records[$homeTeamId] ??= ['wins' => 0, 'losses' => 0, 'ties' => 0];
+            $records[$awayTeamId] ??= ['wins' => 0, 'losses' => 0, 'ties' => 0];
 
-            if ($homeScore > $awayScore) {
+            if ($homeScore === $awayScore) {
+                $records[$homeTeamId]['ties']++;
+                $records[$awayTeamId]['ties']++;
+            } elseif ($homeScore > $awayScore) {
                 $records[$homeTeamId]['wins']++;
                 $records[$awayTeamId]['losses']++;
             } else {
@@ -301,13 +317,13 @@ class TeamFuturesProjectionService
     /**
      * @return array<int, array<string, mixed>>
      */
-    protected function oddsForMarketAt(int $season, string $market, CarbonInterface $asOfDate): array
+    protected function oddsForMarketAt(int $season, string $market, CarbonInterface $asOfDate, ?int $maxAgeHours = null): array
     {
         $marketConfig = $this->supportedMarkets()[$market] ?? [];
         $marketKeys = (array) ($marketConfig['odds_market_keys'] ?? []);
 
         if ($market === 'season_wins') {
-            return $this->futuresOddsLookup->nflTeamWinTotalsBySeasonAt($season, $asOfDate, $marketKeys);
+            return $this->futuresOddsLookup->nflTeamWinTotalsBySeasonAt($season, $asOfDate, $marketKeys, $maxAgeHours);
         }
 
         return [];
@@ -355,28 +371,30 @@ class TeamFuturesProjectionService
         return max(0.01, min(0.99, $blended));
     }
 
-    protected function winsStddev(int $remainingGames, float $winPct): float
+    /**
+     * @return array{float, float, float}
+     */
+    protected function winTotalProbabilities(int $wins, int $remainingGames, float $winPct, float $line): array
     {
-        if ($remainingGames <= 0) {
-            return (float) config('nfl.team_futures.win_total_variance_floor', 0.85);
+        $over = $under = $push = 0.0;
+        $probability = (1 - $winPct) ** $remainingGames;
+
+        for ($additionalWins = 0; $additionalWins <= $remainingGames; $additionalWins++) {
+            $total = $wins + $additionalWins;
+            if ($total > $line) {
+                $over += $probability;
+            } elseif ($total < $line) {
+                $under += $probability;
+            } else {
+                $push += $probability;
+            }
+
+            $probability *= (($remainingGames - $additionalWins) / ($additionalWins + 1)) * ($winPct / (1 - $winPct));
         }
 
-        $variance = $remainingGames * $winPct * (1 - $winPct);
+        $mass = $over + $under + $push;
 
-        return max(
-            (float) config('nfl.team_futures.win_total_variance_floor', 0.85),
-            sqrt(max(0.0, $variance))
-        );
-    }
-
-    protected function probabilityOver(float $projectedTotal, float $line, float $stddev): float
-    {
-        $scale = max(
-            0.1,
-            $stddev * (float) config('nfl.team_futures.win_total_probability_scale', 0.90)
-        );
-
-        return $this->sigmoid(($projectedTotal - $line) / $scale);
+        return [$over / $mass, $under / $mass, $push / $mass];
     }
 
     protected function sigmoid(float $value): float

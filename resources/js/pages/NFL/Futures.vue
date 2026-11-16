@@ -8,12 +8,15 @@ import { useNflForecast, nflForecastKey } from '@/composables/useNflForecast';
 import NflForecastFilters from '@/components/predictions/NflForecastFilters.vue';
 import NflForecastSummary from '@/components/predictions/NflForecastSummary.vue';
 import NflForecastConferenceLeaders from '@/components/predictions/NflForecastConferenceLeaders.vue';
+import NflForecastBracket from '@/components/predictions/NflForecastBracket.vue';
 import NflForecastOutlook from '@/components/predictions/NflForecastOutlook.vue';
 const state = useNflForecast();
 provide(nflForecastKey, state);
 const {
     forecasts,
     simulations,
+    attemptedSimulations,
+    postseasonGames,
     warnings,
     conferenceLeaders,
     loading,
@@ -44,6 +47,30 @@ const {
                 Schedule-based estimates, not calibrated betting probabilities.
                 Completed results are preserved. Prices older than 36 hours are
                 excluded from comparisons.
+            </p>
+            <p
+                v-if="
+                    !loading &&
+                    !error &&
+                    simulations !== null &&
+                    attemptedSimulations !== null
+                "
+                class="text-sm text-muted-foreground"
+            >
+                {{ simulations.toLocaleString() }} of
+                {{ attemptedSimulations.toLocaleString() }} simulations
+                accepted.
+                <template v-if="postseasonGames">
+                    Known postseason games include
+                    {{ postseasonGames.completed }} completed and
+                    {{ postseasonGames.scheduled }} scheduled.
+                </template>
+            </p>
+            <p
+                v-else-if="!loading && !error && simulations"
+                class="text-sm text-muted-foreground"
+            >
+                {{ simulations.toLocaleString() }} simulations.
             </p>
             <p v-if="simulations" class="text-xs text-muted-foreground">
                 * 0% means no occurrences in
@@ -76,6 +103,8 @@ const {
             </p>
             <template v-else-if="!error">
                 <NflForecastSummary />
+
+                <NflForecastBracket />
 
                 <NflForecastConferenceLeaders v-if="conferenceLeaders.length" />
 

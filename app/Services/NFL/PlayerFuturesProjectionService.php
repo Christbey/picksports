@@ -8,6 +8,7 @@ use App\Models\NFL\PlayerInjury;
 use App\Models\NFL\PlayerStat;
 use App\Models\NFL\TeamMetric;
 use App\Services\Sports\FuturesOddsLookupService;
+use Illuminate\Support\Carbon;
 
 class PlayerFuturesProjectionService
 {
@@ -33,12 +34,13 @@ class PlayerFuturesProjectionService
             ? [$market => $markets[$market]]
             : $markets;
 
-        $cutoffDate = $this->cutoffDate($season, $asOfWeek);
+        $cutoff = $this->weekCutoff($season, $asOfWeek);
+        $cutoffDate = $cutoff?->toDateString();
         $aggregates = $this->seasonAggregates($season, $playerId, $asOfWeek);
         $teamSchedule = $this->teamScheduleSummary($season, $asOfWeek);
         $injuryStatuses = $this->activeInjuryStatuses($cutoffDate);
-        $oddsByPlayer = $asOfWeek === null
-            ? $this->futuresOddsLookup->nflPlayerSeasonTotalsBySeason($season)
+        $oddsByPlayer = $asOfWeek === null || $cutoff !== null
+            ? $this->futuresOddsLookup->nflPlayerSeasonTotalsBySeason($season, $cutoff)
             : [];
         $depthChart = $this->depthChartContext($season, $asOfWeek);
         $teamTotals = $this->teamTotalsByTeam($aggregates);
@@ -858,7 +860,7 @@ class PlayerFuturesProjectionService
         };
     }
 
-    protected function cutoffDate(int $season, ?int $asOfWeek): ?string
+    protected function weekCutoff(int $season, ?int $asOfWeek): ?Carbon
     {
         if ($asOfWeek === null) {
             return null;
@@ -870,14 +872,6 @@ class PlayerFuturesProjectionService
             ->where('week', '<=', $asOfWeek)
             ->max('game_date');
 
-        if ($value instanceof \DateTimeInterface) {
-            return $value->format('Y-m-d');
-        }
-
-        if (is_string($value) && $value !== '') {
-            return substr($value, 0, 10);
-        }
-
-        return null;
+        return $value !== null ? Carbon::parse($value)->endOfDay() : null;
     }
 }

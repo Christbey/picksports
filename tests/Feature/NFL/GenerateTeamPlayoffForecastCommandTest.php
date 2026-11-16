@@ -68,11 +68,18 @@ it('generates nfl playoff forecast probabilities from preseason team snapshots',
 
     $report = json_decode(file_get_contents($output), true);
 
-    expect($report)->toBeArray()
+    expect(Artisan::output())->toContain('Simulations accepted 500 of 500', 'Known postseason games 0 completed, 0 scheduled')
+        ->and($report)->toBeArray()
         ->and($report['report_type'])->toBe('nfl_team_playoff_forecast')
         ->and($report['summary']['teams'])->toBe(32)
         ->and(count($report['division_leaders']))->toBe(8)
         ->and(count($report['conference_leaders']))->toBe(2)
         ->and($report['super_bowl_leaders'][0]['super_bowl_champion_probability'])->toBeGreaterThan(0.0)
         ->and(collect($report['teams'])->firstWhere('team_name', 'BUF Bills')['make_playoffs_probability'])->toBeGreaterThan(0.5);
+});
+
+it('prints the warning when no playoff forecast is available', function () {
+    $this->artisan('nfl:generate-team-playoff-forecast', ['--season' => 2025])
+        ->expectsOutput('A complete 32-team, 272-game regular-season schedule and team ratings are required.')
+        ->assertSuccessful();
 });

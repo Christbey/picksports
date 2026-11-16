@@ -25,17 +25,21 @@ class HistoricalTeamMetricCalculator
     /**
      * @return array<int, array<string, int|float|string|null>>
      */
-    public function calculateForDate(int $season, CarbonInterface|string $asOfDate): array
-    {
+    public function calculateForDate(
+        int $season,
+        CarbonInterface|string $asOfDate,
+        bool $pointInTime = false,
+        bool $reconstructScorePriors = false
+    ): array {
         $timestamp = Carbon::parse($asOfDate);
         $teams = Team::query()->orderBy('id')->get();
         if ($teams->isEmpty()) {
             return [];
         }
 
-        $asOfEloByTeam = $this->asOfEloMap($teams, $timestamp);
-        $priorSeasonMetrics = $this->priorSeasonMetricMap($season);
-        $offseasonSignals = $this->teamOffseasonSignalService->signalsForSeason($season, $timestamp);
+        $asOfEloByTeam = $this->asOfEloMap($teams, $timestamp, $pointInTime);
+        $priorSeasonMetrics = $this->priorSeasonMetricMap($season, $pointInTime ? $timestamp : null, $reconstructScorePriors);
+        $offseasonSignals = $pointInTime ? [] : $this->teamOffseasonSignalService->signalsForSeason($season, $timestamp);
         $leagueAverageElo = $asOfEloByTeam !== []
             ? array_sum($asOfEloByTeam) / count($asOfEloByTeam)
             : 1500.0;
@@ -43,16 +47,16 @@ class HistoricalTeamMetricCalculator
         $rows = [];
 
         foreach ($teams as $team) {
-            $games = $this->completedGamesForTeamAt($team, $season, $timestamp);
+            $games = $this->completedGamesForTeamAt($team, $season, $timestamp, $pointInTime);
             $record = $this->calculateWinLossRecord($games, $team);
             $gamesPlayed = $record['wins'] + $record['losses'];
             $currentRecentFormRating = $this->calculateRecentFormRating($games, $team);
-            $futureSos = $this->calculateFutureStrengthOfScheduleAt($team, $season, $timestamp, $asOfEloByTeam);
+            $futureSos = $this->calculateFutureStrengthOfScheduleAt($team, $season, $timestamp, $asOfEloByTeam, $pointInTime);
 
             $currentPredictiveRating = null;
 
             if ($games->isNotEmpty()) {
-                extract($this->gatherHistoricalTeamStatsFromGames($games, $team, $asOfEloByTeam));
+                extract($this->gatherHistoricalTeamStatsFromGames($games, $team, $asOfEloByTeam, $pointInTime));
 
                 $pointsScored = [];
                 $pointsAllowed = [];
@@ -118,7 +122,7 @@ class HistoricalTeamMetricCalculator
     /**
      * @return array<int, array{predictive_rating:?float,recent_form_rating:?float}>
      */
-    protected function priorSeasonMetricMap(int $season): array
+    protected function priorSeasonMetricMap(int $season, ?CarbonInterface $cutoff, bool $reconstructScorePriors): array
     {
         $lookbackSeasons = max(1, (int) config('nfl.team_futures.preseason_prior_lookback_seasons', 2));
         $decay = max(0.0, (float) config('nfl.team_futures.preseason_prior_season_decay', 0.55));
@@ -134,6 +138,9 @@ class HistoricalTeamMetricCalculator
 
         $rows = TeamMetric::query()
             ->whereIn('season', $priorSeasons->all())
+            ->when($cutoff !== null, fn ($query) => $query
+                ->whereDate('calculation_date', '<=', $cutoff)
+                ->where('updated_at', '<=', $cutoff))
             ->where('season_type', (string) config('nfl.season.types.regular', 2))
             ->orderByDesc('calculation_date')
             ->orderByDesc('id')
@@ -156,6 +163,16 @@ class HistoricalTeamMetricCalculator
                 'predictive_rating' => $row->predictive_rating !== null ? (float) $row->predictive_rating : null,
                 'recent_form_rating' => $row->recent_form_rating !== null ? (float) $row->recent_form_rating : null,
             ];
+        }
+
+        if ($cutoff !== null && $reconstructScorePriors) {
+            foreach ($this->scorePriors($priorSeasons->all(), $cutoff) as $teamId => $seasonMetrics) {
+                foreach ($seasonMetrics as $priorSeason => $metrics) {
+                    foreach ($metrics as $field => $value) {
+                        $latestByTeamSeason[$teamId][$priorSeason][$field] ??= $value;
+                    }
+                }
+            }
         }
 
         $byTeam = [];
@@ -198,14 +215,69 @@ class HistoricalTeamMetricCalculator
         return $byTeam;
     }
 
-    protected function completedGamesForTeamAt(Team $team, int $season, CarbonInterface $asOfDate): EloquentCollection
+    /**
+     * Reconstruct scoring features from complete prior regular seasons. These are
+     * derived from archived final scores with historical game dates.
+     *
+     * @param  list<int>  $seasons
+     * @return array<int, array<int, array{predictive_rating:float,recent_form_rating:?float}>>
+     */
+    private function scorePriors(array $seasons, CarbonInterface $cutoff): array
     {
-        $seasonTypeCandidates = $this->resolveAnalyticsSeasonTypeCandidates('nfl');
+        $games = Game::query()
+            ->whereIn('season', $seasons)
+            ->where('season_type', config('nfl.season.types.regular', 2))
+            ->where('status', config('nfl.statuses.final', 'STATUS_FINAL'))
+            ->where('game_date', '<', $cutoff->toDateString())
+            ->whereNotNull('home_score')
+            ->whereNotNull('away_score')
+            ->orderBy('game_date')
+            ->orderBy('id')
+            ->get(['id', 'season', 'game_date', 'home_team_id', 'away_team_id', 'home_score', 'away_score']);
+
+        $byTeamSeason = [];
+        foreach ($games as $game) {
+            foreach ([$game->home_team_id, $game->away_team_id] as $teamId) {
+                $byTeamSeason[$teamId][$game->season][] = $game;
+            }
+        }
+
+        $priors = [];
+        foreach ($byTeamSeason as $teamId => $seasonGames) {
+            $team = new Team;
+            $team->id = $teamId;
+            foreach ($seasonGames as $priorSeason => $games) {
+                if (count($games) !== RegularSeasonFuturesResults::gamesPerTeam($priorSeason)) {
+                    continue;
+                }
+
+                $games = new EloquentCollection($games);
+                $margin = $games->avg(fn (Game $game): float => (int) $game->home_team_id === $teamId
+                    ? $game->home_score - $game->away_score
+                    : $game->away_score - $game->home_score);
+                $recentForm = $this->calculateRecentFormRating($games, $team);
+                $priors[$teamId][$priorSeason] = [
+                    'predictive_rating' => $this->calculatePredictiveRating($margin, $recentForm, 0.0, null, 1500.0),
+                    'recent_form_rating' => $recentForm,
+                ];
+            }
+        }
+
+        return $priors;
+    }
+
+    protected function completedGamesForTeamAt(Team $team, int $season, CarbonInterface $asOfDate, bool $pointInTime): EloquentCollection
+    {
+        $seasonTypeCandidates = $pointInTime ? [config('nfl.season.types.regular', 2)] : $this->resolveAnalyticsSeasonTypeCandidates('nfl');
 
         return Game::query()
             ->where('season', $season)
             ->where('status', config('nfl.statuses.final'))
             ->where('game_date', '<=', $asOfDate)
+            ->when($pointInTime, fn ($query) => $query
+                ->where('result_updated_at', '<=', $asOfDate)
+                ->whereNotNull('home_score')
+                ->whereNotNull('away_score'))
             ->when(
                 $seasonTypeCandidates !== [],
                 fn ($query) => $query->whereIn('season_type', $seasonTypeCandidates)
@@ -214,7 +286,11 @@ class HistoricalTeamMetricCalculator
                 $query->where('home_team_id', $team->id)
                     ->orWhere('away_team_id', $team->id);
             })
-            ->with(['teamStats', 'homeTeam', 'awayTeam'])
+            ->with([
+                'teamStats' => fn ($query) => $query->when($pointInTime, fn ($query) => $query->where('updated_at', '<=', $asOfDate)),
+                'homeTeam',
+                'awayTeam',
+            ])
             ->orderBy('game_date')
             ->get();
     }
@@ -223,12 +299,12 @@ class HistoricalTeamMetricCalculator
      * @param  array<int, float>  $asOfEloByTeam
      * @return array{teamStats:array<int, mixed>,opponentStats:array<int, mixed>,opponentElos:array<int, float>}
      */
-    protected function gatherHistoricalTeamStatsFromGames(Collection $games, Team $team, array $asOfEloByTeam): array
+    protected function gatherHistoricalTeamStatsFromGames(Collection $games, Team $team, array $asOfEloByTeam, bool $pointInTime): array
     {
         $teamStats = [];
         $opponentStats = [];
         $opponentElos = [];
-        $perGameElos = $this->loadPerGameEloRatings($games, $team);
+        $perGameElos = $pointInTime ? [] : $this->loadPerGameEloRatings($games, $team);
 
         foreach ($games as $game) {
             $isHome = (int) $game->home_team_id === (int) $team->id;
@@ -265,13 +341,22 @@ class HistoricalTeamMetricCalculator
         Team $team,
         int $season,
         CarbonInterface $asOfDate,
-        array $asOfEloByTeam
+        array $asOfEloByTeam,
+        bool $pointInTime
     ): ?float {
-        $seasonTypeCandidates = $this->resolveAnalyticsSeasonTypeCandidates('nfl');
+        $seasonTypeCandidates = $pointInTime ? [config('nfl.season.types.regular', 2)] : $this->resolveAnalyticsSeasonTypeCandidates('nfl');
 
         $upcoming = Game::query()
             ->where('season', $season)
-            ->where('game_date', '>', $asOfDate)
+            ->when(
+                $pointInTime,
+                fn ($query) => $query->whereNotIn('status', ['STATUS_CANCELED', 'STATUS_CANCELLED'])
+                    ->where(fn ($query) => $query->where('game_date', '>', $asOfDate)
+                        ->orWhere('status', '!=', config('nfl.statuses.final'))
+                        ->orWhereNull('result_updated_at')
+                        ->orWhere('result_updated_at', '>', $asOfDate)),
+                fn ($query) => $query->where('game_date', '>', $asOfDate)
+            )
             ->when(
                 $seasonTypeCandidates !== [],
                 fn ($query) => $query->whereIn('season_type', $seasonTypeCandidates)
@@ -308,13 +393,14 @@ class HistoricalTeamMetricCalculator
      * @param  EloquentCollection<int, Team>  $teams
      * @return array<int, float>
      */
-    protected function asOfEloMap(EloquentCollection $teams, CarbonInterface $asOfDate): array
+    protected function asOfEloMap(EloquentCollection $teams, CarbonInterface $asOfDate, bool $pointInTime): array
     {
         $teamIds = $teams->pluck('id')->map(fn ($id) => (int) $id)->all();
 
         $eloRows = EloRating::query()
             ->whereIn('team_id', $teamIds)
-            ->whereDate('date', '<=', $asOfDate->toDateString())
+            ->whereDate('date', $pointInTime ? '<' : '<=', $asOfDate->toDateString())
+            ->when($pointInTime, fn ($query) => $query->where('updated_at', '<=', $asOfDate))
             ->orderByDesc('date')
             ->orderByDesc('id')
             ->get(['team_id', 'elo_rating']);

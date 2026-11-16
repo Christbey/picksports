@@ -4,11 +4,13 @@ namespace App\Services\NFL;
 
 use App\Services\Sports\FuturesOddsLookupService;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 
 class TeamFuturesBacktestService
 {
     public function __construct(
-        protected TeamFuturesProjectionService $projectionService
+        protected TeamFuturesProjectionService $projectionService,
+        protected RegularSeasonFuturesResults $results
     ) {}
 
     /**
@@ -20,14 +22,17 @@ class TeamFuturesBacktestService
         ?string $fromDate = null,
         ?string $toDate = null,
         int $minSample = 5,
-        bool $requireHistoricalMetrics = false
+        bool $requireHistoricalMetrics = false,
+        ?string $asOfDate = null
     ): array {
+        $cutoff = $asOfDate !== null ? Carbon::parse($asOfDate) : now();
         [$evaluationRows, $byDate, $selectedDates] = $this->evaluationDataset(
             season: $season,
             market: $market,
             fromDate: $fromDate,
             toDate: $toDate,
             requireHistoricalMetrics: $requireHistoricalMetrics,
+            settledAsOf: $cutoff,
         );
 
         $markets = [];
@@ -42,6 +47,7 @@ class TeamFuturesBacktestService
             'report_type' => 'nfl_team_futures_backtest',
             'season' => $season,
             'market' => $market,
+            'as_of_date' => $cutoff->toIso8601String(),
             'require_historical_metrics' => $requireHistoricalMetrics,
             'from_date' => $selectedDates[0] ?? $fromDate,
             'to_date' => $selectedDates !== [] ? $selectedDates[array_key_last($selectedDates)] : $toDate,
@@ -59,65 +65,70 @@ class TeamFuturesBacktestService
         string $market = 'season_wins',
         ?string $fromDate = null,
         ?string $toDate = null,
-        bool $requireHistoricalMetrics = false
+        bool $requireHistoricalMetrics = false,
+        ?CarbonInterface $settledAsOf = null
     ): array {
-        $actualTotals = $this->projectionService->actualSeasonTotals($season, $market);
         $marketConfig = $this->projectionService->supportedMarkets()[$market] ?? null;
         if ($marketConfig === null) {
             return [[], [], []];
         }
 
+        $cutoff = ($settledAsOf ?? now())->copy()->setTimezone(config('app.timezone'));
+        $seasonGames = RegularSeasonFuturesResults::gamesPerTeam($season);
+        $settlements = array_filter(
+            $this->results->records($season, $cutoff),
+            fn (array $record): bool => $record['games'] === $seasonGames
+        );
+        $firstSnapshot = $fromDate !== null && $fromDate !== '' ? Carbon::parse($fromDate) : null;
+        $lastSnapshot = $toDate !== null && $toDate !== '' ? $cutoff->min(Carbon::parse($toDate)) : $cutoff;
         $dates = app(FuturesOddsLookupService::class)->snapshotDatesForSeasonMarket(
             'nfl',
             $season,
             (array) ($marketConfig['odds_market_keys'] ?? [])
         );
 
-        $selectedDates = array_values(array_filter($dates, function (string $date) use ($fromDate, $toDate): bool {
+        $selectedDates = array_values(array_filter($dates, function (string $date) use ($firstSnapshot, $lastSnapshot): bool {
             $timestamp = Carbon::parse($date);
 
-            if ($fromDate !== null && $fromDate !== '' && $timestamp->lt(Carbon::parse($fromDate))) {
-                return false;
-            }
-
-            if ($toDate !== null && $toDate !== '' && $timestamp->gt(Carbon::parse($toDate))) {
-                return false;
-            }
-
-            return true;
+            return ($firstSnapshot === null || $timestamp->gte($firstSnapshot)) && $timestamp->lte($lastSnapshot);
         }));
 
         $evaluationRows = [];
         $byDate = [];
 
         foreach ($selectedDates as $date) {
-            $projections = $this->projectionService->projections(
+            $timestamp = Carbon::parse($date);
+            $projections = $settlements === [] ? [] : $this->projectionService->projections(
                 season: $season,
                 market: $market,
-                asOfDate: $date,
+                asOfDate: $timestamp,
                 requireHistoricalMetrics: $requireHistoricalMetrics,
                 onlyWithOdds: true,
                 sortBy: 'projected_total',
                 direction: 'desc',
                 limit: 100,
+                pointInTime: true,
             );
 
             $dateRows = [];
 
             foreach ($projections as $projection) {
                 $teamId = (int) ($projection['team_id'] ?? 0);
-                if ($teamId <= 0 || ! array_key_exists($teamId, $actualTotals)) {
+                $settlement = $settlements[$teamId] ?? null;
+                if ($settlement === null || $timestamp->gte($settlement['settled_at'])) {
                     continue;
                 }
 
                 $line = isset($projection['market_odds']['line']) && is_numeric($projection['market_odds']['line'])
                     ? (float) $projection['market_odds']['line']
                     : null;
-                $overProbability = isset($projection['over_probability']) && is_numeric($projection['over_probability'])
-                    ? (float) $projection['over_probability']
-                    : null;
-                $actualTotal = (float) $actualTotals[$teamId];
-                $actualOver = $line !== null ? ($actualTotal > $line ? 1.0 : 0.0) : null;
+                $over = $projection['over_probability'];
+                $under = $projection['under_probability'];
+                $nonPush = $over + $under;
+                // Binary scores and calibration use only bets that did not push.
+                $overProbability = $nonPush > 0 ? $over / $nonPush : null;
+                $actualTotal = (float) $settlement['wins'];
+                $actualOver = $line !== null && $line !== $actualTotal ? (float) ($actualTotal > $line) : null;
 
                 $row = [
                     'date' => $date,

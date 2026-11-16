@@ -47,6 +47,7 @@ const response = {
             ...row,
             team_id: 2,
             team_name: 'Fresh Team',
+            make_playoffs_probability: 0.01,
             projected_seed: 3.4,
             super_bowl_champion_probability: 0.1,
             market_odds: { ...row.market_odds, stale: false },
@@ -57,6 +58,13 @@ const response = {
             team_id: 3,
             team_name: 'Eliminated Team',
             is_eliminated: true,
+            market_odds: null,
+        },
+        {
+            ...row,
+            team_id: 4,
+            team_name: 'Long Shot Team',
+            make_playoffs_probability: 0.0099,
             market_odds: null,
         },
         ...bracketTeams,
@@ -137,10 +145,15 @@ try {
     const page = await browser.newPage({ locale: 'en-US' });
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    for (const width of [390, 1280]) {
+    for (const width of [320, 390, 1280]) {
         await page.setViewportSize({ width, height: 900 });
         await page.goto(`${server.resolvedUrls.local[0]}__futures`);
-        const stale = page.getByRole('row').filter({ hasText: 'Stored Team' });
+        const outlook = page.getByRole('table', {
+            name: 'Playoff and Super Bowl Outlook',
+        });
+        const stale = outlook
+            .getByRole('row')
+            .filter({ hasText: 'Stored Team' });
         await stale.waitFor();
         await page
             .getByText('1,200 of 5,000 simulations accepted.', { exact: false })
@@ -182,7 +195,20 @@ try {
         const hunt = page
             .getByRole('heading', { name: 'In the hunt' })
             .locator('..');
-        assert.match(await hunt.innerText(), /Stored Team[\s\S]*0%\*/);
+        assert.match(await hunt.innerText(), /Fresh Team[\s\S]*1\.0%/);
+        assert.doesNotMatch(
+            await hunt.innerText(),
+            /Stored Team|Long Shot Team/,
+        );
+        const virtual = page
+            .getByRole('heading', { name: 'Virtually eliminated', exact: true })
+            .locator('..');
+        assert.match(await virtual.innerText(), /Stored Team[\s\S]*0%\*/);
+        assert.match(await virtual.innerText(), /Long Shot Team[\s\S]*0\.99%/);
+        assert.doesNotMatch(
+            await virtual.innerText(),
+            /Eliminated Team|Fresh Team/,
+        );
         const eliminated = page
             .getByRole('heading', { name: 'Eliminated', exact: true })
             .locator('..');
@@ -196,14 +222,23 @@ try {
         assert.match(await stale.innerText(), /Stale/);
         assert.match(await stale.innerText(), /\+2600/);
         assert.match(await stale.innerText(), /0%\*/);
-        assert.equal(
-            (await stale.locator('td').nth(2).innerText()).trim(),
-            '-',
+        assert.deepEqual(
+            await outlook.getByRole('columnheader').allTextContents(),
+            ['Team', 'Playoffs', 'Super Bowl', 'Super Bowl odds'],
+        );
+        assert.doesNotMatch(
+            await stale.innerText(),
+            /Avg\. seed|model difference/,
         );
         assert.equal(
-            (await stale.locator('td').last().innerText()).trim(),
-            '-',
+            await stale.locator('time').getAttribute('datetime'),
+            row.market_odds.fetched_at,
         );
+        const fresh = outlook
+            .getByRole('row')
+            .filter({ hasText: 'Fresh Team' });
+        assert.match(await fresh.innerText(), /Avg\. seed 3\.4/);
+        assert.match(await fresh.innerText(), /\+2\.0pp model difference/);
         await page
             .getByRole('checkbox', { name: 'Positive model differences' })
             .check();

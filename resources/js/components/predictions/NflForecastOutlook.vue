@@ -1,168 +1,180 @@
 <script setup lang="ts">
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-
 import { useNflForecastContext } from '@/composables/useNflForecast';
+
 const { visibleForecasts, formatPct, formatAmericanOdds, formatEdge, isAdmin } =
     useNflForecastContext();
 </script>
+
 <template>
     <Card>
         <CardHeader>
-            <div class="ui-kicker">Team Forecasts</div>
-            <CardTitle>Playoff and Super Bowl Outlook</CardTitle>
+            <CardTitle id="nfl-forecast-outlook">
+                Playoff and Super Bowl Outlook
+            </CardTitle>
         </CardHeader>
-        <CardContent>
-            <div
-                role="region"
-                tabindex="0"
-                aria-label="NFL forecast Outlook"
-                class="ui-table-wrap max-w-full min-w-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        <CardContent class="px-3 sm:px-6">
+            <table
+                aria-labelledby="nfl-forecast-outlook"
+                class="w-full text-xs sm:text-sm"
             >
-                <table class="w-full min-w-[980px] text-sm">
-                    <thead>
-                        <tr class="border-b text-left">
-                            <th class="px-3 py-3 font-medium">
-                                {{ ' Team ' }}
-                            </th>
-                            <th class="px-3 py-3 text-right font-medium">
-                                {{ ' Wins ' }}
-                            </th>
-                            <th class="px-3 py-3 text-right font-medium">
-                                {{ ' Seed if qualified ' }}
-                            </th>
-                            <th class="px-3 py-3 text-right font-medium">
-                                {{ ' Division ' }}
-                            </th>
-                            <th class="px-3 py-3 text-right font-medium">
-                                Wild card
-                            </th>
-                            <th class="px-3 py-3 text-right font-medium">
-                                {{ ' Playoffs ' }}
-                            </th>
-                            <th class="px-3 py-3 text-right font-medium">
-                                {{ ' Conference ' }}
-                            </th>
-                            <th class="px-3 py-3 text-right font-medium">
-                                {{ ' Super Bowl ' }}
-                            </th>
-                            <th class="px-3 py-3 text-right font-medium">
-                                {{ ' Market ' }}
-                            </th>
-                            <th class="px-3 py-3 text-right font-medium">
-                                {{ ' Difference ' }}
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr
-                            v-for="forecast in visibleForecasts"
-                            :key="forecast.team_id"
-                            class="border-b border-border/60 last:border-0"
-                        >
-                            <td class="px-3 py-3">
-                                <p class="font-semibold">
-                                    {{ forecast.team_name }}
-                                </p>
-                                <p class="text-xs text-muted-foreground">
-                                    {{ forecast.conference }}
-                                    {{ forecast.division }}
-                                </p>
-                            </td>
-                            <td class="px-3 py-3 text-right tabular-nums">
-                                {{ forecast.projected_wins.toFixed(1) }}
-                            </td>
-                            <td class="px-3 py-3 text-right tabular-nums">
-                                {{ forecast.projected_seed?.toFixed(1) ?? '-' }}
-                            </td>
-                            <td class="px-3 py-3 text-right tabular-nums">
-                                {{
-                                    formatPct(
-                                        forecast.division_winner_probability,
-                                    )
-                                }}
-                            </td>
-                            <td class="px-3 py-3 text-right tabular-nums">
-                                {{ formatPct(forecast.wild_card_probability) }}
-                            </td>
-                            <td class="px-3 py-3 text-right tabular-nums">
+                <thead class="border-b bg-muted/40 text-muted-foreground">
+                    <tr class="*:px-1.5 *:py-2 *:font-medium sm:*:px-3">
+                        <th scope="col" class="text-left">Team</th>
+                        <th scope="col" class="text-right">Playoffs</th>
+                        <th scope="col" class="text-right">Super Bowl</th>
+                        <th scope="col" class="text-right">Super Bowl odds</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-border/60">
+                    <tr
+                        v-for="forecast in visibleForecasts"
+                        :key="forecast.team_id"
+                        class="align-top *:px-1.5 *:py-3 hover:bg-muted/30 sm:*:px-3"
+                    >
+                        <th scope="row" class="text-left font-normal">
+                            <div class="font-semibold">
+                                {{ forecast.team_name }}
+                            </div>
+                            <div class="text-xs text-muted-foreground">
+                                {{ forecast.conference }}
+                                {{ forecast.division }}
+                            </div>
+                            <div
+                                class="mt-1 text-xs text-muted-foreground tabular-nums"
+                            >
+                                <span
+                                    >{{
+                                        forecast.projected_wins.toFixed(1)
+                                    }}
+                                    wins</span
+                                >
+                                <span
+                                    v-if="forecast.projected_seed != null"
+                                    class="block"
+                                >
+                                    Avg. seed
+                                    {{ forecast.projected_seed.toFixed(1) }}
+                                </span>
+                            </div>
+                        </th>
+                        <td class="text-right tabular-nums">
+                            <div class="font-semibold">
                                 {{
                                     formatPct(
                                         forecast.make_playoffs_probability,
                                     )
                                 }}
-                            </td>
-                            <td class="px-3 py-3 text-right tabular-nums">
-                                {{
-                                    formatPct(
-                                        forecast.conference_champion_probability,
-                                    )
-                                }}
-                            </td>
-                            <td
-                                class="px-3 py-3 text-right font-semibold tabular-nums"
-                            >
+                            </div>
+                            <div class="mt-1 text-xs text-muted-foreground">
+                                <div>
+                                    Division
+                                    {{
+                                        formatPct(
+                                            forecast.division_winner_probability,
+                                        )
+                                    }}
+                                </div>
+                                <div>
+                                    Wild card
+                                    {{
+                                        formatPct(
+                                            forecast.wild_card_probability,
+                                        )
+                                    }}
+                                </div>
+                            </div>
+                        </td>
+                        <td class="text-right tabular-nums">
+                            <div class="font-semibold">
                                 {{
                                     formatPct(
                                         forecast.super_bowl_champion_probability,
                                     )
                                 }}
-                            </td>
-                            <td class="px-3 py-3 text-right tabular-nums">
+                            </div>
+                            <div class="mt-1 text-xs text-muted-foreground">
+                                Conference
+                                {{
+                                    formatPct(
+                                        forecast.conference_champion_probability,
+                                    )
+                                }}
+                            </div>
+                        </td>
+                        <td class="text-right tabular-nums">
+                            <div class="font-semibold">
                                 {{
                                     formatAmericanOdds(
                                         forecast.market_odds?.price,
                                     )
                                 }}
-                                <p
-                                    v-if="forecast.market_odds"
-                                    class="mt-1 text-xs text-muted-foreground"
+                                <span
+                                    v-if="
+                                        isAdmin && forecast.market_odds?.stale
+                                    "
+                                    class="block text-xs font-medium text-amber-700 sm:ml-1 sm:inline dark:text-amber-400"
                                 >
+                                    Stale
+                                </span>
+                            </div>
+                            <div
+                                v-if="forecast.market_odds"
+                                class="mt-1 text-xs text-muted-foreground"
+                            >
+                                <div class="wrap-anywhere">
                                     {{ forecast.market_odds.bookmaker }}
-                                    ·
-                                    {{
-                                        isAdmin && forecast.market_odds.stale
-                                            ? 'Stale'
-                                            : 'Last recorded'
-                                    }}
-                                </p>
-                                <p
-                                    v-if="forecast.market_odds?.fetched_at"
-                                    class="text-xs text-muted-foreground"
+                                </div>
+                                <time
+                                    v-if="forecast.market_odds.fetched_at"
+                                    :datetime="forecast.market_odds.fetched_at"
+                                    :title="
+                                        new Date(
+                                            forecast.market_odds.fetched_at,
+                                        ).toLocaleString()
+                                    "
                                 >
                                     {{
                                         new Date(
                                             forecast.market_odds.fetched_at,
-                                        ).toLocaleString()
+                                        ).toLocaleDateString(undefined, {
+                                            month: 'short',
+                                            day: 'numeric',
+                                        })
                                     }}
-                                </p>
-                            </td>
-                            <td
-                                class="px-3 py-3 text-right font-medium tabular-nums"
+                                </time>
+                            </div>
+                            <div
+                                v-if="
+                                    forecast.market_edge?.edge_probability !=
+                                    null
+                                "
+                                class="mt-1 text-xs font-medium"
                                 :class="
-                                    (forecast.market_edge?.edge_probability ??
-                                        0) > 0
-                                        ? 'text-emerald-600 dark:text-emerald-400'
+                                    forecast.market_edge.edge_probability > 0
+                                        ? 'text-emerald-700 dark:text-emerald-400'
                                         : 'text-muted-foreground'
                                 "
                             >
                                 {{
                                     formatEdge(
-                                        forecast.market_edge?.edge_probability,
+                                        forecast.market_edge.edge_probability,
                                     )
                                 }}
-                            </td>
-                        </tr>
-                        <tr v-if="visibleForecasts.length === 0">
-                            <td
-                                colspan="10"
-                                class="px-3 py-10 text-center text-muted-foreground"
-                            >
-                                No forecasts match these filters.
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+                                model difference
+                            </div>
+                        </td>
+                    </tr>
+                    <tr v-if="visibleForecasts.length === 0">
+                        <td
+                            colspan="4"
+                            class="px-3 py-10 text-center text-muted-foreground"
+                        >
+                            No forecasts match these filters.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
         </CardContent>
     </Card>
 </template>

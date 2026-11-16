@@ -74,6 +74,7 @@ export function useNflForecast() {
             : null;
     });
     const warnings = computed(() => meta.value.warnings ?? []);
+    const virtualEliminationThreshold = 0.01;
     const projectedBracket = computed(() => {
         const teams = new Map(
             forecasts.value.map((team) => [team.team_id, team]),
@@ -104,7 +105,16 @@ export function useNflForecast() {
                 return {
                     conference,
                     inTheHunt: outsideField.filter(
-                        (team) => team.is_eliminated === false,
+                        (team) =>
+                            team.is_eliminated === false &&
+                            team.make_playoffs_probability >=
+                                virtualEliminationThreshold,
+                    ),
+                    virtuallyEliminated: outsideField.filter(
+                        (team) =>
+                            team.is_eliminated === false &&
+                            team.make_playoffs_probability <
+                                virtualEliminationThreshold,
                     ),
                     eliminated: outsideField.filter(
                         (team) => team.is_eliminated === true,

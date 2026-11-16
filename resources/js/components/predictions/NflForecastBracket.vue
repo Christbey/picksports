@@ -19,6 +19,7 @@ const berthGroups = [
 
 const outsideGroups = [
     { label: 'In the hunt', rows: 'inTheHunt' },
+    { label: 'Virtually eliminated', rows: 'virtuallyEliminated' },
     { label: 'Eliminated', rows: 'eliminated' },
 ] as const;
 </script>
@@ -33,16 +34,15 @@ const outsideGroups = [
             </p>
             <p
                 v-if="
-                    projectedBracket.some(
-                        ({ inTheHunt, eliminated }) =>
-                            inTheHunt.length || eliminated.length,
+                    projectedBracket.some((field) =>
+                        outsideGroups.some(({ rows }) => field[rows].length),
                     )
                 "
                 class="text-xs text-muted-foreground"
             >
-                Elimination uses the remaining schedule and standings. Teams
-                that can still reach a qualifying record through a tiebreaker
-                stay in the hunt.
+                Virtually eliminated teams have a simulated playoff chance below
+                1%. Mathematical elimination uses the remaining schedule and
+                standings, allowing for favorable tiebreakers.
             </p>
         </CardHeader>
         <CardContent>
@@ -131,12 +131,15 @@ const outsideGroups = [
                             >
                                 <span>{{ team.team_name }}</span>
                                 <span
-                                    v-if="group.rows === 'inTheHunt'"
+                                    v-if="group.rows !== 'eliminated'"
                                     class="tabular-nums"
                                 >
                                     {{
                                         formatPct(
                                             team.make_playoffs_probability,
+                                            group.rows === 'virtuallyEliminated'
+                                                ? 2
+                                                : 1,
                                         )
                                     }}
                                     <span class="sr-only"

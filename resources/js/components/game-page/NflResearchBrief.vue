@@ -24,7 +24,6 @@ type RecentForm = {
 type Revision = {
     created_at: string;
     brief: {
-        eligibility: { status: string };
         supporting: Argument[];
         opposing: Argument[];
         prop_angles: Argument[];
@@ -146,29 +145,17 @@ onMounted(async () => {
             No saved research is available yet.
         </p>
         <template v-else>
-            <div class="space-y-1 border-b pb-4">
-                <p class="text-sm text-muted-foreground">
-                    {{
-                        gameStatus === 'STATUS_FINAL'
-                            ? 'Archived pregame research'
-                            : 'Pregame research'
-                    }}
-                    · Saved
-                    <time :datetime="latest.created_at">{{
-                        savedAt(latest.created_at)
-                    }}</time>
-                </p>
-                <p
-                    v-if="
-                        ['hold', 'pass'].includes(
-                            latest.brief.eligibility.status,
-                        )
-                    "
-                    class="text-sm font-medium"
-                >
-                    No approved spread pick in this assessment.
-                </p>
-            </div>
+            <p class="border-b pb-4 text-sm text-muted-foreground">
+                {{
+                    gameStatus === 'STATUS_FINAL'
+                        ? 'Archived pregame research'
+                        : 'Pregame research'
+                }}
+                · Saved
+                <time :datetime="latest.created_at">{{
+                    savedAt(latest.created_at)
+                }}</time>
+            </p>
 
             <div
                 v-for="{ title, entries } in sections"

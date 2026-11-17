@@ -47,7 +47,7 @@ after(async () => {
     await server?.close();
 });
 
-test('archived research shows the recorded pick status without model diagnostics', async () => {
+test('archived research shows its save time without a pick verdict or model diagnostics', async () => {
     const { default: component } = await server.ssrLoadModule(
         '/resources/js/components/game-page/NflResearchBrief.vue',
     );
@@ -87,10 +87,10 @@ test('archived research shows the recorded pick status without model diagnostics
         }),
     );
     assert.match(html, /Archived pregame research/);
-    assert.match(html, /No approved spread pick in this assessment/);
+    assert.match(html, /<time datetime="2026-09-17T23:00:00Z">/);
     assert.doesNotMatch(
         html,
-        /Forecast history|technical reason codes|specialist_.*does_not_approve/,
+        /No approved spread pick|Forecast history|technical reason codes|specialist_.*does_not_approve/,
     );
 });
 
@@ -309,7 +309,7 @@ test('research shows the write-up and citations without internal review flags', 
         return renderToString(createSSRApp(wrapper, { gameId: 1781 }));
     };
     const closed = await renderResearch();
-    assert.match(closed, /No approved spread pick in this assessment/);
+    assert.doesNotMatch(closed, /No approved spread pick/);
     assert.match(closed, /Detailed evidence marker/);
     assert.match(closed, /Detailed interpretation marker/);
     assert.match(closed, /Counterargument marker/);

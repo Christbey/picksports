@@ -511,7 +511,7 @@ export function trendsProps(empty = false) {
         title: 'Team Trends',
         subtitle: 'Stored context',
         trendsLoading: false,
-        topMatchupEdges: ['Home scoring context'],
+        topMatchupEdges: empty ? [] : ['Home scoring context'],
         allTrendCategories: empty ? [] : ['scoring', 'home_away'],
         formatCategoryName: (s) => s.replaceAll('_', ' '),
         isLockedCategory: (s) => s === 'home_away',

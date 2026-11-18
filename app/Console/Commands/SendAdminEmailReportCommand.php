@@ -4,12 +4,19 @@ namespace App\Console\Commands;
 
 use App\Mail\AdminDailyEmailReportMail;
 use App\Models\DailyDigestSend;
+use App\Models\NotificationDelivery;
 use App\Models\SportsAiPredictionAnalysis;
 use App\Models\User;
 use App\Models\UserAlertSent;
-use App\Models\ValidationRun;
+use App\Services\AdminQueueSnapshot;
+use App\Services\NotificationDeliveryService;
+use App\Services\Validation\AdminOperationalAssessment;
+use App\Services\Validation\ValidationReviewSummaryService;
+use App\Services\Validation\ValidationRunRecorder;
+use App\Support\SportCatalog;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
@@ -17,7 +24,7 @@ use Illuminate\Support\Facades\Schema;
 class SendAdminEmailReportCommand extends Command
 {
     protected $signature = 'alerts:send-admin-email-report
-        {--date= : Report date in YYYY-MM-DD format}
+        {--date= : Activity date in YYYY-MM-DD format; defaults to yesterday in America/Chicago}
         {--to=* : Email recipient override. Defaults to admin users plus configured recipients}
         {--dry-run : Print the report without sending email}';
 
@@ -25,7 +32,13 @@ class SendAdminEmailReportCommand extends Command
 
     public function handle(): int
     {
-        $date = $this->reportDate();
+        try {
+            $date = $this->reportDate();
+        } catch (\InvalidArgumentException $error) {
+            $this->error($error->getMessage());
+
+            return self::FAILURE;
+        }
         $report = $this->buildReport($date);
         $recipients = $this->recipients();
 
@@ -44,13 +57,36 @@ class SendAdminEmailReportCommand extends Command
             return self::SUCCESS;
         }
 
+        $deliveries = app(NotificationDeliveryService::class);
+        $sent = 0;
+        $failed = 0;
         foreach ($recipients as $recipient) {
-            Mail::to($recipient)->send(new AdminDailyEmailReportMail($report));
+            $recipientKey = hash('sha256', strtolower(trim($recipient)));
+            $key = 'admin_report:'.$date->toDateString().':'.$recipientKey;
+            $delivery = $deliveries->record('admin_report', $recipientKey, 'mail', $key);
+            $claimed = NotificationDelivery::query()->whereKey($delivery->id)
+                ->whereIn('status', ['planned', 'failed'])
+                ->update(['status' => 'dispatched', 'dispatched_at' => now(), 'reason_code' => null]);
+            if ($claimed === 0) {
+                continue;
+            }
+            try {
+                $mail = (new AdminDailyEmailReportMail($report))->withSymfonyMessage(function ($message) use ($key): void {
+                    $message->getHeaders()->addTextHeader('X-PickSports-Delivery-Key', $key);
+                });
+                Mail::to($recipient)->send($mail);
+                $deliveries->markAccepted($delivery);
+                $sent++;
+            } catch (\Throwable $error) {
+                $deliveries->markFailed($delivery, $error::class);
+                report($error);
+                $failed++;
+            }
         }
 
-        $this->info('Sent admin email report to '.count($recipients).' recipient(s).');
+        $this->info('Sent admin email report to '.$sent.' recipient(s).');
 
-        return self::SUCCESS;
+        return $failed > 0 ? self::FAILURE : self::SUCCESS;
     }
 
     protected function reportDate(): CarbonImmutable
@@ -58,10 +94,18 @@ class SendAdminEmailReportCommand extends Command
         $date = $this->option('date');
 
         if (is_string($date) && $date !== '') {
-            return CarbonImmutable::parse($date)->startOfDay();
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+                throw new \InvalidArgumentException('--date must be a valid YYYY-MM-DD activity date.');
+            }
+            $parsed = CarbonImmutable::createFromFormat('!Y-m-d', $date, 'America/Chicago');
+            if ($parsed === false || $parsed->format('Y-m-d') !== $date || $parsed->isAfter(CarbonImmutable::today('America/Chicago'))) {
+                throw new \InvalidArgumentException('--date must be a valid activity date no later than today.');
+            }
+
+            return $parsed;
         }
 
-        return CarbonImmutable::today();
+        return CarbonImmutable::yesterday('America/Chicago');
     }
 
     /**
@@ -70,19 +114,59 @@ class SendAdminEmailReportCommand extends Command
     protected function buildReport(CarbonImmutable $date): array
     {
         $start = $date->startOfDay();
-        $end = $date->endOfDay();
+        $observedAt = CarbonImmutable::now('America/Chicago');
+        $end = $date->addDay()->startOfDay()->min($observedAt);
+        $validations = $this->validationBySport();
         $digests = $this->digestStats($date);
         $alerts = $this->alertStats($start, $end);
 
         return [
             'date' => $date->toDateString(),
             'date_label' => $date->toFormattedDateString(),
+            'observed_at' => $observedAt->toIso8601String(),
+            'window' => ['start' => $start->toIso8601String(), 'end' => $end->toIso8601String(), 'end_exclusive' => true, 'timezone' => 'America/Chicago'],
+            'features' => [
+                'daily_digest_enabled' => (bool) config('alerts.daily_digest.enabled', true),
+                'digest_email_feature_enabled' => (bool) config('subscriptions.features.email_alerts_enabled', true),
+                'admin_report_enabled' => (bool) config('alerts.admin_report.enabled', true),
+                'regression_alerts_enabled' => (bool) config('validation.regression_alerts.enabled', true),
+                'admin_report_time' => (string) config('alerts.admin_report.daily_time', '07:30'),
+                'betting_alert_check_registered' => collect(app(Schedule::class)->events())
+                    ->contains(fn ($event): bool => is_string($event->command ?? null) && str_contains($event->command, 'alerts:check')),
+            ],
+            'delivery_activity' => $this->deliveryActivity($start, $end),
+            'delivery_backlog' => NotificationDelivery::query()->whereIn('status', ['planned', 'dispatched', 'sending'])
+                ->where('created_at', '<=', $observedAt)
+                ->selectRaw('type, channel, status, COUNT(*) as aggregate')->groupBy('type', 'channel', 'status')
+                ->orderBy('type')->orderBy('channel')->orderBy('status')->get()
+                ->map(fn ($row): array => ['type' => $row->type, 'channel' => $row->channel, 'status' => $row->status, 'count' => (int) $row->aggregate])->all(),
             'digests' => $digests,
             'alerts' => $alerts,
             'queue' => $this->queueStats($start, $end),
-            'validation' => $this->latestValidationRun(),
+            'queue_snapshot' => app(AdminQueueSnapshot::class)->snapshot($start, $end, $observedAt),
+            'operations' => app(AdminOperationalAssessment::class)->build($observedAt),
+            'deployment' => [
+                'status' => 'unavailable',
+                'note' => 'Verified deployment metadata is not recorded in this report; findings cannot be correlated with a release here.',
+            ],
+            'validations' => $validations,
             'ai_publishing' => $this->aiPublishingReview($date),
         ];
+    }
+
+    /** @return list<array{type:string,channel:string,status:string,count:int}> */
+    protected function deliveryActivity(CarbonImmutable $start, CarbonImmutable $end): array
+    {
+        $activity = [];
+        foreach (['accepted' => 'accepted_at', 'dispatched' => 'dispatched_at', 'failed' => 'failed_at', 'suppressed' => 'suppressed_at'] as $status => $column) {
+            $rows = NotificationDelivery::query()->where($column, '>=', $start)->where($column, '<', $end)
+                ->selectRaw('type, channel, COUNT(*) as aggregate')->groupBy('type', 'channel')->get();
+            foreach ($rows as $row) {
+                $activity[] = ['type' => $row->type, 'channel' => $row->channel, 'status' => $status, 'count' => (int) $row->aggregate];
+            }
+        }
+
+        return collect($activity)->sortBy(fn (array $row): string => $row['type'].'|'.$row['channel'].'|'.$row['status'])->values()->all();
     }
 
     /**
@@ -91,7 +175,9 @@ class SendAdminEmailReportCommand extends Command
     protected function digestStats(CarbonImmutable $date): array
     {
         $rows = DailyDigestSend::query()
-            ->whereDate('digest_date', $date->toDateString());
+            ->whereDate('digest_date', $date->toDateString())
+            ->where('sent_at', '>=', $date->startOfDay())
+            ->where('sent_at', '<', $date->addDay()->startOfDay()->min(CarbonImmutable::now('America/Chicago')));
 
         return [
             'sent' => (int) $rows->count(),
@@ -102,12 +188,12 @@ class SendAdminEmailReportCommand extends Command
     }
 
     /**
-     * @return array{sent:int,users:int,average_edge:string,by_sport:array<string, int>}
+     * @return array{sent:int,users:int,average_edge:null,by_sport:array<string, int>}
      */
     protected function alertStats(CarbonImmutable $start, CarbonImmutable $end): array
     {
         $rows = UserAlertSent::query()
-            ->whereBetween('sent_at', [$start, $end]);
+            ->where('sent_at', '>=', $start)->where('sent_at', '<', $end);
 
         $bySport = (clone $rows)
             ->select('sport', DB::raw('COUNT(*) as count'))
@@ -117,12 +203,10 @@ class SendAdminEmailReportCommand extends Command
             ->map(fn ($count) => (int) $count)
             ->all();
 
-        $averageEdge = (clone $rows)->avg('expected_value');
-
         return [
             'sent' => (int) $rows->count(),
             'users' => (int) (clone $rows)->distinct('user_id')->count('user_id'),
-            'average_edge' => $averageEdge === null ? 'N/A' : number_format((float) $averageEdge, 1).'%',
+            'average_edge' => null,
             'by_sport' => $bySport,
         ];
     }
@@ -155,7 +239,7 @@ class SendAdminEmailReportCommand extends Command
         if (Schema::hasTable('failed_jobs')) {
             $failedJobsTotal = (int) DB::table('failed_jobs')->count();
             $failedMailJobsToday = (int) DB::table('failed_jobs')
-                ->whereBetween('failed_at', [$start, $end])
+                ->where('failed_at', '>=', $start)->where('failed_at', '<', $end)
                 ->where(function ($query) use ($mailPayloads) {
                     foreach ($mailPayloads as $payload) {
                         $query->orWhere('payload', 'like', $payload)
@@ -169,29 +253,33 @@ class SendAdminEmailReportCommand extends Command
             'pending_mail_jobs' => $pendingMailJobs,
             'failed_mail_jobs_today' => $failedMailJobsToday,
             'failed_jobs_total' => $failedJobsTotal,
+            'scope_note' => 'Pending and period failures match the four report notification classes across all their channels. They omit other email types and synchronous delivery failures. Total failures cover all retained job types.',
         ];
     }
 
-    /**
-     * @return array{scope:string,status:string,completed_at:string,summary:array<string, mixed>,ai_summary:array<string, mixed>|null}|null
-     */
-    protected function latestValidationRun(): ?array
+    /** @return array<string, array<string, array<string, mixed>|null>> */
+    protected function validationBySport(): array
     {
-        $run = ValidationRun::query()
-            ->latest('completed_at')
-            ->first();
+        $recorder = app(ValidationRunRecorder::class);
+        $summaries = app(ValidationReviewSummaryService::class);
+        $results = [];
 
-        if (! $run) {
-            return null;
+        foreach (SportCatalog::ALL as $sport) {
+            foreach (['full', 'data'] as $scope) {
+                $run = $recorder->completedChecksQuery('sport:'.$sport, $scope)
+                    ->latest('completed_at')->latest('id')->first();
+                $results[$sport][$scope] = $run === null ? null : [
+                    'id' => $run->id,
+                    'status' => $run->status,
+                    'completed_at' => $run->completed_at->copy()->timezone('America/Chicago')->toIso8601String(),
+                    'age_minutes' => (int) $run->completed_at->diffInMinutes(now()),
+                    'summary' => $run->summary,
+                    'assessment' => $summaries->buildFallbackSummary($run->findings()->get(), $run),
+                ];
+            }
         }
 
-        return [
-            'scope' => (string) $run->scope,
-            'status' => (string) $run->status,
-            'completed_at' => $run->completed_at?->toDayDateTimeString() ?? 'N/A',
-            'summary' => is_array($run->summary) ? $run->summary : [],
-            'ai_summary' => is_array($run->ai_summary) ? $run->ai_summary : null,
-        ];
+        return $results;
     }
 
     /**

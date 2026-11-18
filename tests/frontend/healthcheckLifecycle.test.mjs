@@ -97,3 +97,34 @@ test('renders failing findings alongside completed execution without calling the
     const failed = await renderToString(createSSRApp(History));
     assert.match(failed, /Execution failed; review saved findings/);
 });
+
+test('renders validation impacts as advisory and omits legacy trust scores', async () => {
+    globalThis.__healthcheckLifecycleContext = {
+        selectedView: 'validation',
+        formatDate: (value) => value,
+        labelize: (value) => value,
+        latest_validation_run: {
+            status: 'failing',
+            summary: { execution_status: 'completed' },
+            ai_summary: {
+                headline: 'Validation summary',
+                intro: 'One failing check',
+                highlights: [],
+                operational_status: 'degraded',
+                trust_score: 40,
+                blocked_outputs: ['Stored picks may need review'],
+                safe_adjustments: ['Review the finding'],
+                recommended_actions: ['Inspect stored evidence'],
+            },
+        },
+    };
+    const { default: Summary } = await server.ssrLoadModule(
+        '/resources/js/components/admin/HealthcheckValidationSummary.vue',
+    );
+    const html = await renderToString(createSSRApp(Summary));
+    assert.match(html, /Potentially Affected Outputs/);
+    assert.match(html, /does not establish enforcement/);
+    assert.match(html, /Suggested Investigation/);
+    assert.match(html, /Suggested Remediation/);
+    assert.doesNotMatch(html, /40\/100|Safe Adjustments|Blocked Outputs/);
+});

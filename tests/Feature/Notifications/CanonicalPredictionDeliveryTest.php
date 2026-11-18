@@ -8,6 +8,7 @@ use App\Models\CanonicalPrediction;
 use App\Models\DailyDigestSend;
 use App\Models\EventInputSnapshot;
 use App\Models\NBA\Prediction;
+use App\Models\NotificationTemplate;
 use App\Models\PredictionMarket;
 use App\Models\SportEvent;
 use App\Models\SubscriptionTier;
@@ -20,6 +21,8 @@ use App\Services\BettingRecommendations\GameBettingRecommendationService;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use App\Services\DailyDigestService;
 use App\Services\Predictions\PredictionDeliverySource;
+use Database\Seeders\NotificationTemplateSeeder;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
@@ -27,9 +30,9 @@ use Illuminate\Support\Str;
 
 beforeEach(function () {
     $this->travelTo(now()->setDate(2026, 10, 28)->setTime(10, 0));
-    config(['ai.features.daily_digest_summary.enabled' => false, 'alerts.daily_digest.sports' => ['nba'], 'alerts.daily_digest.enabled' => true, 'subscriptions.features.email_alerts_enabled' => true]);
+    config(['ai.features.daily_digest_summary.enabled' => false, 'alerts.daily_digest.sports' => ['nba']]);
     $props = Mockery::mock(PlayerPropAnalyzer::class);
-    $props->shouldReceive('analyzeProps')->andReturn(collect());
+    $props->shouldReceive('precomputedRecommendations')->andReturn(collect());
     app()->instance(PlayerPropAnalyzer::class, $props);
     Notification::fake();
 });
@@ -46,7 +49,7 @@ function predictionDeliveryFixture(string $sport = 'nba', ?float $probability = 
     $game = $gameClass::factory()->create([
         'sport_event_id' => $event->id, 'season' => 2026,
         'home_team_id' => $teamClass::factory(), 'away_team_id' => $teamClass::factory(),
-        'game_date' => now()->toDateString(), 'game_time' => now()->addHours(4)->toTimeString(),
+        'game_date' => now()->toDateString(), 'game_time' => now()->addHours(4)->utc()->toTimeString(),
         'status' => 'STATUS_SCHEDULED', 'odds_data' => ['bookmakers' => []],
     ]);
     $release = CalculationRelease::factory()->approved()->create(['sport' => $sport, 'phase' => 'pregame']);
@@ -85,6 +88,25 @@ function predictionDeliveryDecision($game, CanonicalPrediction $prediction, arra
     ]);
 }
 
+function eligiblePredictionDeliveryUser(): User
+{
+    Artisan::call('tiers:sync');
+    $tier = SubscriptionTier::query()->where('slug', 'basic')->firstOrFail();
+    $price = $tier->stripe_price_id_monthly ?: 'test_basic_delivery';
+    $tier->update(['stripe_price_id_monthly' => $price]);
+    $user = User::factory()->create();
+    $user->subscriptions()->create([
+        'type' => 'default', 'stripe_id' => 'sub_delivery', 'stripe_status' => 'active', 'stripe_price' => $price, 'quantity' => 1,
+    ]);
+    UserAlertPreference::factory()->create([
+        'user_id' => $user->id, 'enabled' => true, 'sports' => ['nba'],
+        'notification_types' => ['email'], 'minimum_edge' => 5,
+        'time_window_start' => '00:00', 'time_window_end' => '23:59', 'digest_mode' => 'realtime',
+    ]);
+
+    return $user;
+}
+
 it('reads canonical delivery forecasts across sports without querying legacy predictions', function (string $sport) {
     [$game, $prediction] = predictionDeliveryFixture($sport);
     DB::enableQueryLog();
@@ -120,6 +142,68 @@ it('uses exact canonical decisions and stored prices in betting recommendations 
         ->and($digest['predictions'][0]['pick_type'])->toBe('moneyline')
         ->and($digest['predictions'][0]['predicted_spread'])->toBe(8.5)
         ->and($digest['predictions'][0]['confidence'])->toBe(74.0);
+});
+
+it('renders structured canonical selection units prices and kickoff without parsing prose', function () {
+    [$game, $prediction] = predictionDeliveryFixture();
+    $decision = predictionDeliveryDecision($game, $prediction, ['market_type' => 'spread', 'side' => 'home', 'line' => -3.5, 'price' => -115]);
+    $selection = app(GameBettingRecommendationService::class)->forGame($game, 'nba')[0];
+    $user = User::factory()->create();
+    $notification = new BettingValueAlert($prediction, 'nba', 5, $selection['recommendation'], null, $decision->id, $selection);
+    $mail = $notification->toMail($user);
+
+    expect($mail->greeting)->toBe('Value Alert: 5.0 points')
+        ->and(implode(' ', $mail->introLines))->toContain('Stored price: -115', 'Line: -3.5', 'Bookmaker: stored-book', '2:00 PM CDT')
+        ->and(implode(' ', $mail->introLines))->not->toContain('Expected Value')
+        ->and($mail->actionUrl)->toBe(url('/nba/games/'.$game->id));
+    $payload = app(DailyDigestService::class)->buildDigestForUser($user, now());
+    $digest = new DailyPredictionsDigestMail($user, $payload['summary'], $payload['predictions'], []);
+    $digest->assertSeeInHtml('5.0 points');
+    $digest->assertSeeInText('Stored price: **-115**');
+    expect($payload['predictions'][0]['bet_decision_id'])->toBe($decision->id)
+        ->and($payload['predictions'][0]['edge_unit'])->toBe('points');
+});
+
+it('does not send started canonical forecasts as watchlist leans', function () {
+    [$game, $prediction] = predictionDeliveryFixture();
+    $prediction->sportEvent->update(['starts_at' => now()->subMinute()]);
+    $game->update(['status' => 'STATUS_IN_PROGRESS']);
+
+    expect(app(PredictionDeliverySource::class)->forDigest('nba', now()))->toBeEmpty()
+        ->and(app(DailyDigestService::class)->buildDigestForUser(User::factory()->create(), now()))->toBeNull();
+});
+
+it('renders the seeded template from structured fields and bypasses incompatible legacy prose', function () {
+    [$game, $prediction] = predictionDeliveryFixture();
+    $decision = predictionDeliveryDecision($game, $prediction, ['market_type' => 'spread', 'side' => 'home', 'line' => -3.5, 'price' => -115]);
+    $selection = app(GameBettingRecommendationService::class)->forGame($game, 'nba')[0];
+    $this->seed(NotificationTemplateSeeder::class);
+    $template = NotificationTemplate::query()->where('name', 'Betting Value Alert')->firstOrFail();
+    $user = User::factory()->create();
+    $mail = (new BettingValueAlert($prediction, 'nba', 5, $selection['recommendation'], $template, $decision->id, $selection))->toMail($user);
+
+    expect($mail->subject)->toContain('5.0 points')
+        ->and(implode(' ', $mail->introLines))->toContain('Stored price:', '-115', 'Line:', '-3.5', 'Model/market difference')
+        ->and(implode(' ', $mail->introLines))->not->toContain('Expected Value', '{prediction.');
+
+    $template->update(['email_body' => 'Expected Value: {prediction.edge_percentage}%']);
+    $mail = (new BettingValueAlert($prediction, 'nba', 5, $selection['recommendation'], $template->fresh(), $decision->id, $selection))->toMail($user);
+    expect($mail->greeting)->toBe('Value Alert: 5.0 points')
+        ->and(implode(' ', $mail->introLines))->not->toContain('Expected Value', 'points%');
+});
+
+it('preserves canonical decision confidence and the actual watchlist explanation', function () {
+    [$game, $prediction] = predictionDeliveryFixture();
+    predictionDeliveryDecision($game, $prediction, ['confidence' => 0.98]);
+    $user = User::factory()->create();
+    $payload = app(DailyDigestService::class)->buildDigestForUser($user, now());
+    expect($payload['predictions'][0]['confidence'])->toBe(98.0);
+    BetDecision::query()->update(['is_bet' => false]);
+    app()->forgetInstance(DailyDigestService::class);
+    $payload = app(DailyDigestService::class)->buildDigestForUser($user, now());
+    $mail = new DailyPredictionsDigestMail($user, $payload['summary'], $payload['predictions'], []);
+    $mail->assertSeeInHtml('No approved public betting decision for this forecast.');
+    $mail->assertDontSeeInHtml('Waiting on fresh market odds');
 });
 
 it('keeps held private unsafe and tracking decisions out of public recommendations', function (array $overrides) {
@@ -203,7 +287,7 @@ it('delivers canonical alerts through existing tier limits and preserves canonic
 it('rechecks approval when a canonical alert leaves the queue', function () {
     [$game, $prediction] = predictionDeliveryFixture();
     $decision = predictionDeliveryDecision($game, $prediction);
-    $user = User::factory()->create();
+    $user = eligiblePredictionDeliveryUser();
     $queued = unserialize(serialize(new BettingValueAlert($prediction, 'nba', 8, 'Bet home ML', null, $decision->id)));
 
     expect($queued->shouldSend($user, 'mail'))->toBeTrue();
@@ -275,12 +359,14 @@ it('preserves sport priority when allocating the existing daily alert limits', f
 
 it('does not deliver a previously queued legacy alert after the sport switches to canonical reads', function () {
     [$game] = predictionDeliveryFixture();
+    $game->update(['odds_updated_at' => now()]);
     $legacy = Prediction::factory()->create(['game_id' => $game->id]);
-    $queued = new BettingValueAlert($legacy, 'nba', 8, 'Bet home ML');
+    $user = eligiblePredictionDeliveryUser();
+    $queued = new BettingValueAlert($legacy, 'nba', 8, 'Bet home ML', selection: ['type' => 'moneyline', 'edge_unit' => 'percentage_points']);
 
-    expect($queued->shouldSend(User::factory()->create(), 'mail'))->toBeFalse();
+    expect($queued->shouldSend($user, 'mail'))->toBeFalse();
     config(['prediction_lifecycle.canonical_reads.nba' => false]);
-    expect($queued->shouldSend(User::factory()->create(), 'mail'))->toBeTrue();
+    expect($queued->shouldSend($user, 'mail'))->toBeTrue();
 });
 
 it('preserves spread and total line conventions and edge units for stored canonical decisions', function (array $market, float $edge, float $modelLine, float $marketLine) {

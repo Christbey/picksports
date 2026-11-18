@@ -229,7 +229,7 @@ test('alert defaults, channel normalization and digest/phone dependencies retain
     const s = mount(useAlertPreferences, alertProps('defaults'), t);
     assert.equal(s.alertsEnabled.value, false);
     assert.deepEqual(s.selectedNotificationTypes.value, ['email']);
-    assert.equal(s.autoDigestMode.value, 'daily_summary');
+    assert.equal(s.autoDigestMode.value, 'realtime');
     s.toggleNotificationType('push', true);
     s.toggleNotificationType('push', true);
     assert.deepEqual(s.selectedNotificationTypes.value, ['email', 'push']);
@@ -241,6 +241,8 @@ test('alert defaults, channel normalization and digest/phone dependencies retain
     s.onDailyDigestSubscribedChange(false);
     assert.equal(s.dailyDigestSubscribed.value, false);
     s.toggleNotificationType('push', false);
+    assert.equal(s.autoDigestMode.value, 'realtime');
+    s.deliveryMode.value = 'daily_summary';
     assert.equal(s.digestModeLabel.value, 'Daily Summary');
 });
 test('web push enable, test and disable preserve browser sequence, routes and CSRF headers', async (t) => {

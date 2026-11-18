@@ -49,16 +49,6 @@ const { selectedView, formatDate, labelize, latest_validation_run } =
                             latest_validation_run.ai_summary.operational_status,
                         )
                     }}
-                    <span
-                        v-if="
-                            latest_validation_run.ai_summary.trust_score !==
-                            undefined
-                        "
-                    >
-                        ·
-                        {{ latest_validation_run.ai_summary.trust_score }}/100
-                        trust
-                    </span>
                 </p>
             </div>
             <div
@@ -107,7 +97,7 @@ const { selectedView, formatDate, labelize, latest_validation_run } =
                         ?.length ?? 0) > 0
                 "
             >
-                <p class="text-sm font-medium">Recommended Actions</p>
+                <p class="text-sm font-medium">Suggested Investigation</p>
                 <ul class="mt-2 space-y-2 text-sm text-muted-foreground">
                     <li
                         v-for="action in latest_validation_run.ai_summary
@@ -126,7 +116,11 @@ const { selectedView, formatDate, labelize, latest_validation_run } =
                         0) > 0
                 "
             >
-                <p class="text-sm font-medium">Blocked Outputs</p>
+                <p class="text-sm font-medium">Potentially Affected Outputs</p>
+                <p class="text-sm text-muted-foreground">
+                    Advisory impacts; this summary does not establish
+                    enforcement.
+                </p>
                 <ul class="mt-2 space-y-2 text-sm text-muted-foreground">
                     <li
                         v-for="output in latest_validation_run.ai_summary
@@ -145,7 +139,7 @@ const { selectedView, formatDate, labelize, latest_validation_run } =
                         ?.length ?? 0) > 0
                 "
             >
-                <p class="text-sm font-medium">Safe Adjustments</p>
+                <p class="text-sm font-medium">Suggested Remediation</p>
                 <ul class="mt-2 space-y-2 text-sm text-muted-foreground">
                     <li
                         v-for="adjustment in latest_validation_run.ai_summary

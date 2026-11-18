@@ -6,6 +6,7 @@ use App\Application\Sports\ReadModels\PredictionDeliveryContext;
 use App\Models\CanonicalPrediction;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Api\V2\SportContextResolver;
+use App\Services\BettingRecommendations\RecommendationDisplay;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -68,8 +69,14 @@ class PredictionDeliverySource
                 ->whereDate('game_date', $now->toDateString())
                 ->whereNotIn('status', ['STATUS_FINAL', 'final']));
 
-        return $query->limit(30)->get()
-            ->map(fn (Model $prediction): PredictionDeliveryContext => $this->context($prediction, $sport));
+        return $query->get()
+            ->map(fn (Model $prediction): PredictionDeliveryContext => $this->context($prediction, $sport))
+            ->filter(function (PredictionDeliveryContext $prediction) use ($now): bool {
+                $kickoff = RecommendationDisplay::kickoff($prediction->game, $prediction->isCanonical() ? $prediction->source->sportEvent?->starts_at : null);
+
+                return in_array($prediction->game->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED', 'scheduled'], true)
+                    && $kickoff !== null && $kickoff->greaterThan($now);
+            })->take(30)->values();
     }
 
     public function forGame(Model $game, string $sport): ?PredictionDeliveryContext

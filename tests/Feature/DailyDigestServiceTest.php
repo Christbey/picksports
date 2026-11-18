@@ -4,21 +4,26 @@ use App\AI\Agents\DailyDigestSummaryAgent;
 use App\Mail\DailyPredictionsDigestMail;
 use App\Models\DailyDigestSend;
 use App\Models\NBA\Game;
+use App\Models\NBA\PlayerProp;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
+use App\Models\NotificationDelivery;
 use App\Models\User;
 use App\Models\UserAlertPreference;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use App\Services\DailyDigestService;
+use App\Services\NotificationDeliveryService;
+use App\Services\Sports\SportsDateWindowService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 
 beforeEach(function () {
     Carbon::setTestNow(Carbon::parse('2026-03-22 10:00:00'));
 
     $mock = Mockery::mock(PlayerPropAnalyzer::class);
-    $mock->shouldReceive('analyzeProps')->andReturn(new Collection);
+    $mock->shouldReceive('precomputedRecommendations')->andReturn(new Collection);
     app()->instance(PlayerPropAnalyzer::class, $mock);
 });
 
@@ -102,7 +107,8 @@ function makeDailyDigestPrediction(): Prediction
     $game = Game::factory()->create([
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,
-        'game_date' => now()->copy()->addHours(4),
+        'game_date' => now()->copy()->startOfDay(),
+        'game_time' => '23:00:00',
         'status' => 'STATUS_SCHEDULED',
         'odds_data' => makeDailyDigestOddsData(
             homeTeam: 'Los Angeles Lakers',
@@ -226,6 +232,40 @@ test('daily digest mail renders summary headline and highlights', function () {
     expect($rendered)->toContain('NBA board at a glance')
         ->and($rendered)->toContain('The model sees one clear lean tonight.');
     expect($rendered)->toContain('Today’s board');
+    $mail->assertSeeInHtml('BOS @ LAL leans BOS moneyline at 63.0% confidence.');
+});
+
+test('digest reads frozen prop selections without scoring or modifying their snapshots', function () {
+    config(['alerts.daily_digest.sports' => ['nba'], 'ai.features.daily_digest_summary.enabled' => false]);
+    $game = Game::factory()->create(['home_team_id' => Team::factory(), 'away_team_id' => Team::factory(), 'game_date' => now()->startOfDay(), 'game_time' => '23:30:00', 'status' => 'STATUS_SCHEDULED']);
+    $prop = PlayerProp::query()->create([
+        'game_id' => $game->id, 'player_name' => 'Stored Player', 'market' => 'player_points',
+        'line' => 24.5, 'over_price' => 110, 'under_price' => -130, 'bookmaker' => 'stored-book',
+        'fetched_at' => now()->subHour(), 'recommended_side' => 'Under', 'confidence_score' => 76,
+        'predicted_over_probability' => 40, 'market_over_probability' => 50, 'edge_probability' => 10,
+        'confidence_decomposition' => ['schema_version' => 'player-prop-signal-v2',
+            'stat_summary' => ['season_avg' => 22, 'recent_avg' => 21, 'last5_avg' => 20],
+            'cover_record' => []],
+    ]);
+    $snapshot = $prop->fresh()->getRawOriginal();
+    $user = User::factory()->create();
+    app()->forgetInstance(PlayerPropAnalyzer::class);
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    $payload = app(DailyDigestService::class)->buildDigestForUser($user, now());
+    $queries = DB::getQueryLog();
+    DB::disableQueryLog();
+
+    expect(collect($queries)->contains(fn (array $query): bool => preg_match('/^(insert|update|delete)/i', $query['query']) === 1))->toBeFalse();
+    expect($prop->fresh()->getRawOriginal())->toBe($snapshot)
+        ->and($payload['player_props'])->toHaveCount(1)
+        ->and($payload['player_props'][0]['edge'])->toBe(10.0)
+        ->and($payload['player_props'][0]['edge_unit'])->toBe('percentage_points');
+    $mail = new DailyPredictionsDigestMail(User::factory()->create(), $payload['summary'], [], $payload['player_props']);
+    foreach (['Stored Player', 'Under', '24.5', 'Points', '-130', '10.0 percentage points'] as $text) {
+        $mail->assertSeeInHtml($text);
+    }
+    $mail->assertSeeInText('Stored price: **-130**');
 });
 
 test('daily digest is due for users without alert preferences by default', function () {
@@ -249,6 +289,30 @@ test('daily digest is not due when user has unsubscribed', function () {
     ]);
 
     expect(app(DailyDigestService::class)->isDueForDigest($user->fresh('alertPreference'), now()))->toBeFalse();
+});
+
+test('digest claim prevents a repeat send even if legacy history is missing', function () {
+    config(['alerts.daily_digest.enabled' => true, 'alerts.daily_digest.sports' => ['nba'], 'ai.features.daily_digest_summary.enabled' => false]);
+    $user = makeDailyDigestUser();
+    makeDailyDigestPrediction();
+    Mail::fake();
+    expect(app(DailyDigestService::class)->sendDueDigests(now()))->toBe(1);
+    DailyDigestSend::query()->delete();
+
+    expect(app(DailyDigestService::class)->sendDueDigests(now()))->toBe(0);
+    Mail::assertSentCount(1);
+    expect(NotificationDelivery::query()->where('deduplication_key', 'digest:'.$user->id.':'.now()->toDateString())->sole()->status)->toBe('accepted');
+});
+
+test('digest does not retry a pending claim with an uncertain transport outcome', function () {
+    config(['alerts.daily_digest.enabled' => true, 'alerts.daily_digest.sports' => ['nba'], 'ai.features.daily_digest_summary.enabled' => false]);
+    $user = makeDailyDigestUser();
+    makeDailyDigestPrediction();
+    app(NotificationDeliveryService::class)->record('daily_digest', (string) $user->id, 'mail', 'digest:'.$user->id.':'.now()->toDateString());
+    Mail::fake();
+
+    expect(app(DailyDigestService::class)->sendDueDigests(now()))->toBe(0);
+    Mail::assertNothingOutgoing();
 });
 
 test('daily digest uses game time and excludes next day games', function () {
@@ -329,7 +393,7 @@ test('daily digest uses game time and excludes next day games', function () {
     expect($payload)->not->toBeNull();
     expect($payload['predictions'])->toHaveCount(1);
     expect($payload['predictions'][0]['matchup'])->toBe('MEM @ HOU');
-    expect($payload['predictions'][0]['game_time'])->toBe(now()->copy()->setTime(19, 30)->format('M j, g:i A'));
+    expect($payload['predictions'][0]['game_time'])->toBe(app(SportsDateWindowService::class)->gameDateTimeUtc(now()->copy()->startOfDay(), '19:30:00')->setTimezone(config('sports.business_timezone'))->format('M j, g:i A T'));
 });
 
 test('daily digest uses recommendation confidence instead of raw lock-level probability', function () {

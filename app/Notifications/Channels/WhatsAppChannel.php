@@ -4,6 +4,7 @@ namespace App\Notifications\Channels;
 
 use App\Services\TwilioWhatsAppService;
 use Illuminate\Notifications\Notification;
+use RuntimeException;
 
 class WhatsAppChannel
 {
@@ -22,10 +23,12 @@ class WhatsAppChannel
         }
 
         $phoneNumber = (string) ($notifiable->alertPreference?->phone_number ?? '');
-        if ($phoneNumber === '') {
-            return;
+        if (trim($phoneNumber) === '') {
+            throw new RuntimeException('WhatsApp recipient is unavailable.');
         }
 
-        $this->twilioWhatsAppService->sendMessage($phoneNumber, $message);
+        if (! $this->twilioWhatsAppService->sendMessage($phoneNumber, $message)) {
+            throw new RuntimeException('WhatsApp transport did not accept the notification.');
+        }
     }
 }

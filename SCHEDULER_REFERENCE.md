@@ -251,7 +251,7 @@ The shared MLB scheduler guard runs March through October. In November it requir
 - Prune failed jobs daily at `03:20`
 - Prune command heartbeats daily at `03:25` using the model's configured retention window
 - Send daily digests every minute via `alerts:send-daily-digests`
-- Send the admin email report daily at its configured time (default `07:30`)
+- Send the admin email report daily at its configured time (`alerts.admin_report.daily_time`; code default `11:30`). It summarizes the previous completed America/Chicago calendar day's delivery activity and the latest operational health at generation time. `--date=YYYY-MM-DD` overrides the activity date without changing the health observation time.
 
 ## Operational Notes
 

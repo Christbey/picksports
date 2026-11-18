@@ -21,7 +21,7 @@ import AlertPreferenceActions from '@/components/settings/AlertPreferenceActions
 const props = defineProps<AlertPreferencesProps>();
 const state = useAlertPreferences(props);
 provide(alertPreferencesKey, state);
-const { breadcrumbs, currentPreference, autoDigestMode } = state;
+const { breadcrumbs, currentPreference } = state;
 </script>
 <template>
     <AppLayout :breadcrumbs="breadcrumbs">
@@ -73,11 +73,6 @@ const { breadcrumbs, currentPreference, autoDigestMode } = state;
                             type="hidden"
                             name="time_window_end"
                             :value="currentPreference.time_window_end"
-                        />
-                        <input
-                            type="hidden"
-                            name="digest_mode"
-                            :value="autoDigestMode"
                         />
                         <input
                             type="hidden"

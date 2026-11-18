@@ -125,6 +125,8 @@ class BettingRecommendationResource extends JsonResource
             str_contains($modelClass, '\\MLB\\') => 'mlb',
             str_contains($modelClass, '\\NFL\\') => 'nfl',
             str_contains($modelClass, '\\CBB\\') => 'cbb',
+            str_contains($modelClass, '\\CFB\\') => 'cfb',
+            str_contains($modelClass, '\\WNBA\\') => 'wnba',
             default => 'nba',
         };
     }

@@ -14,7 +14,7 @@ class BettingValueAlertChannelResolver
     {
         $channels = [];
 
-        if ($notifiable->alertPreference?->shouldReceiveEmailNotifications()) {
+        if (config('subscriptions.features.email_alerts_enabled', true) && $notifiable->alertPreference?->shouldReceiveEmailNotifications()) {
             $channels[] = 'mail';
         }
 

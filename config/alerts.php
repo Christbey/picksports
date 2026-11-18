@@ -21,9 +21,16 @@ return [
         'sport_priority' => ['mlb', 'nfl', 'nba', 'cbb', 'cfb', 'wcbb', 'wnba'],
     ],
 
+    'opportunity' => [
+        'unit_thresholds' => [
+            'points' => env('BETTING_ALERT_MINIMUM_POINTS_EDGE'),
+        ],
+    ],
+
     'admin_report' => [
         'enabled' => env('ADMIN_EMAIL_REPORT_ENABLED', true),
         'recipients' => env('ADMIN_EMAIL_REPORT_RECIPIENTS', ''),
         'daily_time' => env('ADMIN_EMAIL_REPORT_DAILY_TIME', '11:30'),
+        'validation_max_age_minutes' => 1440,
     ],
 ];

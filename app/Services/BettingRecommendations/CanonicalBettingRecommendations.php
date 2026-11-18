@@ -149,6 +149,8 @@ class CanonicalBettingRecommendations
             'market_implied_probability' => is_numeric($decision->market_probability) ? (float) $decision->market_probability : null,
             'no_vig_implied_probability' => is_numeric($decision->no_vig_probability) ? (float) $decision->no_vig_probability : null,
             'edge' => $edge !== null ? round($edge, 2) : null,
+            'edge_unit' => $type === 'moneyline' ? 'percentage_points' : 'points',
+            'edge_label' => $type === 'moneyline' ? 'Probability edge' : 'Model/market difference',
             'confidence' => is_numeric($decision->confidence) ? (float) $decision->confidence * ((float) $decision->confidence <= 1 ? 100 : 1) : null,
             'odds' => (float) $decision->price, 'line' => $line,
             'market_line' => $type === 'spread' ? $marketHomeLine : $line,

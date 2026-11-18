@@ -14,24 +14,29 @@ class ValidationReviewSummaryService
     ) {}
 
     /**
-     * @return array{headline:string,intro:string,highlights:array<int,string>,recommended_actions:array<int,string>,latest_data_fresh_at:string,data_schedule_today:array<int,string>,tweak_recommendations:array<int,string>,operational_status:string,trust_score:int,blocked_outputs:array<int,string>,safe_adjustments:array<int,string>,data_quality_notes:array<int,string>,generated_by:string}
+     * @return array{headline:string,intro:string,highlights:array<int,string>,recommended_actions:array<int,string>,latest_data_fresh_at:string,data_schedule_today:array<int,string>,tweak_recommendations:array<int,string>,operational_status:string,blocked_outputs:array<int,string>,safe_adjustments:array<int,string>,data_quality_notes:array<int,string>,generated_by:string}
      */
     public function summarizeRun(ValidationRun $run): array
     {
         $findings = $run->findings()->orderByDesc('status')->orderBy('sport')->get();
 
+        $assessment = $this->buildFallbackSummary($findings, $run);
         $aiSummary = $this->sportsAiContentService->generateValidationReviewSummary($findings);
 
         if ($aiSummary !== null) {
-            return $aiSummary;
+            foreach (['headline', 'intro', 'generated_by'] as $key) {
+                if (is_string($aiSummary[$key] ?? null) && trim($aiSummary[$key]) !== '') {
+                    $assessment[$key] = $aiSummary[$key];
+                }
+            }
         }
 
-        return $this->buildFallbackSummary($findings, $run);
+        return $assessment;
     }
 
     /**
      * @param  Collection<int, ValidationFinding>  $findings
-     * @return array{headline:string,intro:string,highlights:array<int,string>,recommended_actions:array<int,string>,latest_data_fresh_at:string,data_schedule_today:array<int,string>,tweak_recommendations:array<int,string>,operational_status:string,trust_score:int,blocked_outputs:array<int,string>,safe_adjustments:array<int,string>,data_quality_notes:array<int,string>,generated_by:string}
+     * @return array{headline:string,intro:string,highlights:array<int,string>,recommended_actions:array<int,string>,latest_data_fresh_at:string,data_schedule_today:array<int,string>,tweak_recommendations:array<int,string>,operational_status:string,blocked_outputs:array<int,string>,safe_adjustments:array<int,string>,data_quality_notes:array<int,string>,generated_by:string}
      */
     public function buildFallbackSummary(Collection $findings, ValidationRun $run): array
     {
@@ -40,7 +45,8 @@ class ValidationReviewSummaryService
         $sports = $findings->pluck('sport')->filter()->unique()->values()->all();
         $sportLabel = $sports === [] ? 'validation run' : strtoupper(implode(', ', $sports));
 
-        $grouped = $findings
+        $active = $findings->whereIn('status', ['failing', 'warning']);
+        $grouped = $active
             ->groupBy('check_type')
             ->map(fn (Collection $items, string $checkType) => [
                 'check_type' => $checkType,
@@ -63,7 +69,7 @@ class ValidationReviewSummaryService
             })
             ->all();
 
-        $recommendedActions = $findings
+        $recommendedActions = $active
             ->pluck('recommended_action')
             ->filter(fn ($action) => is_string($action) && trim($action) !== '')
             ->unique()
@@ -71,17 +77,11 @@ class ValidationReviewSummaryService
             ->take(4)
             ->all();
 
-        if ($recommendedActions === []) {
-            $recommendedActions = ['Re-run healthcheck:validate-data after correcting the underlying data pipeline issues.'];
-        }
-
         $completedAt = $run->completed_at?->toDayDateTimeString() ?? 'N/A';
-        $latestDataFreshAt = $run->status === 'passing'
-            ? 'Fresh as of '.$completedAt
-            : 'Not fully fresh in the latest run completed '.$completedAt;
+        $latestDataFreshAt = 'Validation completed '.$completedAt.'. Source observation times are recorded per finding; completion does not establish data freshness.';
 
-        $tweakRecommendations = $this->buildTweakRecommendations($findings);
-        $blockedOutputs = $this->blockedOutputs($findings);
+        $tweakRecommendations = $this->buildTweakRecommendations($active);
+        $blockedOutputs = $this->blockedOutputs($active);
         $safeAdjustments = array_values(array_slice(array_filter(
             array_map(fn ($action) => trim((string) $action), $recommendedActions),
             fn ($action) => $action !== ''
@@ -92,7 +92,6 @@ class ValidationReviewSummaryService
             $warning->isNotEmpty() => 'watch',
             default => 'healthy',
         };
-        $trustScore = max(0, min(100, 100 - ($failing->count() * 15) - ($warning->count() * 5)));
 
         return [
             'headline' => sprintf('%s validation summary', $sportLabel),
@@ -105,20 +104,13 @@ class ValidationReviewSummaryService
             'highlights' => $highlights,
             'recommended_actions' => array_map(fn ($action) => (string) $action, $recommendedActions),
             'latest_data_fresh_at' => $latestDataFreshAt,
-            'data_schedule_today' => [
-                'Live scoreboards refresh every 5 minutes during active windows.',
-                'Game details, player stats, and plays refresh every 30 minutes.',
-                'Odds and futures refresh every 4 hours for active sports.',
-                'Daily validation runs from 06:40 to 07:25 by sport.',
-                'Admin report sends after validation at 07:30.',
-            ],
+            'data_schedule_today' => [],
             'tweak_recommendations' => $tweakRecommendations,
             'operational_status' => $operationalStatus,
-            'trust_score' => $trustScore,
             'blocked_outputs' => $blockedOutputs,
             'safe_adjustments' => $safeAdjustments,
             'data_quality_notes' => $this->dataQualityNotes($findings),
-            'generated_by' => 'template-validation-summary-v1',
+            'generated_by' => 'template-validation-summary-v2',
         ];
     }
 
@@ -197,7 +189,7 @@ class ValidationReviewSummaryService
             $blocked[] = 'Predictions or AI analysis generated before newer upstream syncs.';
         }
 
-        return $blocked === [] ? ['No user-facing outputs need to be blocked from this run.'] : array_slice($blocked, 0, 6);
+        return array_slice($blocked, 0, 6);
     }
 
     /**

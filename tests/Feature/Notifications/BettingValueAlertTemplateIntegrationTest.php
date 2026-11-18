@@ -1,5 +1,12 @@
 <?php
 
+beforeEach(function () {
+    $this->travelTo(now()->setDate(2026, 10, 28)->setTime(10, 0));
+    config(['alerts.opportunity.unit_thresholds.points' => 0]);
+});
+
+afterEach(fn () => $this->travelBack());
+
 use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
@@ -23,6 +30,7 @@ test('notification uses template content when template is provided', function ()
 
     $game = Game::factory()->create([
         'game_date' => now()->addDay(),
+        'odds_updated_at' => now(),
         'status' => 'scheduled',
         'odds_data' => ['home_team' => 'Lakers', 'away_team' => 'Celtics', 'bookmakers' => []],
         'home_team_id' => Team::factory()->create(['name' => 'Lakers'])->id,
@@ -57,6 +65,7 @@ test('notification falls back to hardcoded content when no template provided', f
 
     $game = Game::factory()->create([
         'game_date' => now()->addDay(),
+        'odds_updated_at' => now(),
         'status' => 'scheduled',
         'odds_data' => ['home_team' => 'Lakers', 'away_team' => 'Celtics', 'bookmakers' => []],
         'home_team_id' => Team::factory()->create(['name' => 'Lakers'])->id,
@@ -81,7 +90,7 @@ test('notification falls back to hardcoded content when no template provided', f
 
     expect($mailMessage->subject)->toContain('High-Value Betting Opportunity')
         ->and($mailMessage->subject)->toContain('Celtics @ Lakers')
-        ->and($mailMessage->greeting)->toContain('Value Alert: 7.5% Expected Value');
+        ->and($mailMessage->greeting)->toContain('Value Alert: +7.5%');
 });
 
 test('notification includes push notification data with template', function () {
@@ -96,6 +105,7 @@ test('notification includes push notification data with template', function () {
 
     $game = Game::factory()->create([
         'game_date' => now()->addDay(),
+        'odds_updated_at' => now(),
         'status' => 'scheduled',
         'odds_data' => ['home_team' => 'Lakers', 'away_team' => 'Celtics', 'bookmakers' => []],
         'home_team_id' => Team::factory()->create(['name' => 'Lakers'])->id,
@@ -178,6 +188,7 @@ test('alert service respects user template preferences', function () {
 
     $game = Game::factory()->create([
         'game_date' => now()->addDay(),
+        'odds_updated_at' => now(),
         'status' => 'scheduled',
         'odds_data' => [
             'home_team' => 'Lakers',
@@ -273,6 +284,7 @@ test('alert service filters users based on template preferences', function () {
 
     $game = Game::factory()->create([
         'game_date' => now()->addDay(),
+        'odds_updated_at' => now(),
         'status' => 'scheduled',
         'odds_data' => [
             'home_team' => 'Lakers',

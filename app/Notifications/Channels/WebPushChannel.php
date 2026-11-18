@@ -4,6 +4,7 @@ namespace App\Notifications\Channels;
 
 use App\Services\WebPushService;
 use Illuminate\Notifications\Notification;
+use RuntimeException;
 
 class WebPushChannel
 {
@@ -25,6 +26,9 @@ class WebPushChannel
             return;
         }
 
-        $this->webPushService->sendToUser($notifiable, $payload);
+        $result = $this->webPushService->sendToUser($notifiable, $payload);
+        if (($result['sent'] ?? 0) === 0) {
+            throw new RuntimeException('No web push subscription accepted the notification.');
+        }
     }
 }

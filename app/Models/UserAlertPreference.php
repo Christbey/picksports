@@ -58,12 +58,12 @@ class UserAlertPreference extends Model
 
     public function shouldReceiveSmsNotifications(): bool
     {
-        return $this->enabled && in_array('sms', $this->notification_types) && $this->phone_number !== null;
+        return $this->enabled && in_array('sms', $this->notification_types) && is_string($this->phone_number) && trim($this->phone_number) !== '';
     }
 
     public function shouldReceiveWhatsAppNotifications(): bool
     {
-        return $this->enabled && in_array('whatsapp', $this->notification_types) && $this->phone_number !== null;
+        return $this->enabled && in_array('whatsapp', $this->notification_types) && is_string($this->phone_number) && trim($this->phone_number) !== '';
     }
 
     public function shouldReceivePushNotifications(): bool
@@ -75,8 +75,13 @@ class UserAlertPreference extends Model
     {
         $now = now()->format('H:i:s');
 
-        return $now >= $this->time_window_start->format('H:i:s')
-            && $now <= $this->time_window_end->format('H:i:s');
+        $start = $this->time_window_start?->format('H:i:s');
+        $end = $this->time_window_end?->format('H:i:s');
+        if ($start === null || $end === null) {
+            return false;
+        }
+
+        return $start <= $end ? $now >= $start && $now <= $end : $now >= $start || $now <= $end;
     }
 
     public function isInterestedInSport(string $sport): bool

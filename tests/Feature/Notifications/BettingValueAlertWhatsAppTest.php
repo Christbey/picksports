@@ -132,7 +132,7 @@ test('betting value alert renders whatsapp message body with prediction url', fu
 
     expect($message)->toContain('Value Alert')
         ->and($message)->toContain('Celtics @ Lakers')
-        ->and($message)->toContain('/nba/predictions/'.$game->id);
+        ->and($message)->toContain('/nba/games/'.$game->id);
 });
 
 test('betting value alert renders vonage message content', function () {

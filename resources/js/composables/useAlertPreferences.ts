@@ -66,11 +66,8 @@ export function useAlertPreferences(props: Readonly<AlertPreferencesProps>) {
             (type) => notificationLabelMap.value[type] ?? type.toUpperCase(),
         ),
     );
-    const autoDigestMode = computed(() =>
-        selectedNotificationTypes.value.includes('push')
-            ? 'realtime'
-            : 'daily_summary',
-    );
+    const deliveryMode = ref(currentPreference.value.digest_mode || 'realtime');
+    const autoDigestMode = computed(() => deliveryMode.value);
     const digestModeLabel = computed(() =>
         autoDigestMode.value === 'daily_summary'
             ? 'Daily Summary'
@@ -118,6 +115,7 @@ export function useAlertPreferences(props: Readonly<AlertPreferencesProps>) {
         dailyDigestSubscribed,
         selectedNotificationLabels,
         autoDigestMode,
+        deliveryMode,
         digestModeLabel,
         needsPhoneNumber,
         onEnabledChange,

@@ -20,7 +20,7 @@ it('supplies only completed current regular season results before the target and
     $home = Team::factory()->create();
     $away = Team::factory()->create();
     $base = ['home_team_id' => $home->id, 'away_team_id' => $away->id, 'season' => 2026, 'season_type' => 2,
-        'status' => 'STATUS_FINAL', 'game_date' => '2026-10-20', 'game_time' => '17:00:00', 'home_score' => 30, 'away_score' => 20];
+        'status' => 'STATUS_FINAL', 'game_date' => '2026-10-20', 'game_time' => '17:00:00', 'home_score' => 30, 'away_score' => 20, 'neutral_site' => false];
     $prior = Game::factory()->create($base);
     TeamStat::factory()->create(['game_id' => $prior->id, 'team_id' => $home->id, 'total_yards' => 400, 'rushing_yards' => null]);
     foreach ([['season' => 2025], ['season_type' => 1], ['status' => 'STATUS_SCHEDULED'], ['game_date' => '2026-10-25'], ['home_score' => null]] as $excluded) {

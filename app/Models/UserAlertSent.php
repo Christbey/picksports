@@ -17,6 +17,7 @@ class UserAlertSent extends Model
         'prediction_type',
         'expected_value',
         'sent_at',
+        'deduplication_key',
     ];
 
     protected function casts(): array

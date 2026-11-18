@@ -33,6 +33,7 @@ function subscribeUserToTier(User $user, SubscriptionTier $tier): void
 }
 
 beforeEach(function () {
+    config(['alerts.opportunity.unit_thresholds.points' => 0]);
     // Sync tiers from config to database
     $this->artisan('tiers:sync');
 });
@@ -59,6 +60,7 @@ test('free tier users do not receive email alerts', function () {
 
     $game = Game::factory()->create([
         'game_date' => now()->addDay(),
+        'odds_updated_at' => now(),
         'status' => 'scheduled',
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
@@ -118,6 +120,7 @@ test('basic tier users receive email alerts for allowed sports', function () {
 
     $game = Game::factory()->create([
         'game_date' => now()->addDay(),
+        'odds_updated_at' => now(),
         'status' => 'scheduled',
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
@@ -278,6 +281,7 @@ test('alert sent records include all required data', function () {
 
     $game = Game::factory()->create([
         'game_date' => now()->addDay(),
+        'odds_updated_at' => now(),
         'status' => 'scheduled',
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
@@ -345,6 +349,7 @@ test('moneyline alerts use win probability edge instead of confidence score', fu
 
     $game = Game::factory()->create([
         'game_date' => now()->addDay(),
+        'odds_updated_at' => now(),
         'status' => 'scheduled',
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
@@ -409,6 +414,7 @@ test('moneyline alerts are not sent on high confidence alone without enough mode
 
     $game = Game::factory()->create([
         'game_date' => now()->addDay(),
+        'odds_updated_at' => now(),
         'status' => 'scheduled',
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
@@ -468,6 +474,7 @@ test('spread alerts use calculator edge instead of confidence score gating', fun
 
     $game = Game::factory()->create([
         'game_date' => now()->addDay(),
+        'odds_updated_at' => now(),
         'status' => 'scheduled',
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,

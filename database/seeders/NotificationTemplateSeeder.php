@@ -14,7 +14,7 @@ class NotificationTemplateSeeder extends Seeder
             [
                 'description' => 'Default template for betting value opportunity alerts',
                 'active' => true,
-                'subject' => 'Value Alert: {prediction.edge_percentage} Edge on {prediction.game_description}',
+                'subject' => 'Value Alert: {prediction.edge_display} on {prediction.game_description}',
                 'email_body' => 'Hi {user.name},
 
 We\'ve identified a high-value betting opportunity for {prediction.sport}:
@@ -23,9 +23,12 @@ We\'ve identified a high-value betting opportunity for {prediction.sport}:
 Game Time: {prediction.game_date} at {prediction.game_time}
 
 **Recommendation:** {prediction.recommended_pick}
-**Expected Value:** {prediction.edge_percentage}
-**Confidence:** {prediction.confidence}
-**Odds:** {prediction.odds}
+**{prediction.edge_label}:** {prediction.edge_display}
+**Confidence score:** {prediction.confidence}
+**Stored price:** {prediction.odds}
+**Line:** {prediction.line}
+**Bookmaker:** {prediction.bookmaker}
+**Quote observed:** {prediction.quote_observed}
 
 This alert meets your minimum edge requirement and was sent during your preferred notification window.
 
@@ -33,9 +36,9 @@ Manage your alert settings at {system.app_url}/settings/alert-preferences
 
 Best of luck,
 The {system.app_name} Team',
-                'sms_body' => '{system.app_name}: {prediction.edge_percentage} edge on {prediction.game_description}. {prediction.recommended_pick}. Confidence: {prediction.confidence}',
-                'push_title' => 'Value Alert: {prediction.edge_percentage}',
-                'push_body' => '{prediction.game_description} - {prediction.recommended_pick}. Confidence: {prediction.confidence}',
+                'sms_body' => '{system.app_name}: {prediction.edge_display} on {prediction.game_description}. {prediction.recommended_pick}. Stored price: {prediction.odds}',
+                'push_title' => 'Value Alert: {prediction.edge_display}',
+                'push_body' => '{prediction.game_description} - {prediction.recommended_pick}. Stored price: {prediction.odds}',
             ]
         );
     }

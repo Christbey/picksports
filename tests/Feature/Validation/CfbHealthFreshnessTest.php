@@ -185,3 +185,11 @@ it('uses the Central game date across the UTC midnight boundary', function () {
     expect($result['metadata']['games_today'])->toBe(1)->and($result['status'])->toBe('passing')
         ->and($result['metadata']['final_games_missing_team_stats'])->toBe(0);
 });
+
+it('does not let future-dated CFB publication satisfy current health coverage', function () {
+    $game = cfbHealthGame();
+    cfbHealthForecast($game, 'published', -1);
+    $profile = config('validation.sports.cfb');
+    expect(app(PredictionCompletenessCheck::class)->run('cfb', $profile)['metadata']['games_missing_predictions'])->toBe(1)
+        ->and(app(UpcomingGameReadinessCheck::class)->run('cfb', $profile)['metadata']['games_missing_predictions'])->toBe(1);
+});

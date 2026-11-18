@@ -9,6 +9,7 @@ use App\Services\CFB\Signals\CfbFootballSignalHistoricalTrainer;
 use App\Services\Predictions\CanonicalPayloadHasher;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -94,3 +95,36 @@ test('partial training dispatches the next batch without publishing a success he
     Queue::assertPushed(TrainFootballSignalBatch::class);
     expect(CommandHeartbeat::count())->toBe(0);
 });
+
+test('offline training restores the caller memory limit and releases its lock after success or an exception', function (bool $throws) {
+    CalculationRelease::factory()->create(['sport' => 'cfb', 'phase' => 'pregame', 'status' => 'approved',
+        'effective_at' => now()->subDay(), 'retired_at' => null, 'configuration' => $this->config]);
+    $artifact = $this->artifact;
+    $trainer = Mockery::mock(CfbFootballSignalHistoricalTrainer::class);
+    $trainer->shouldReceive('train')->once()->andReturnUsing(function () use ($throws, $artifact) {
+        expect(ini_get('memory_limit'))->toBe('512M');
+        if ($throws) {
+            throw new RuntimeException('Training interrupted');
+        }
+
+        return $artifact;
+    });
+    app()->instance(CfbFootballSignalHistoricalTrainer::class, $trainer);
+    $memoryLimit = ini_get('memory_limit');
+    try {
+        ini_set('memory_limit', '768M');
+        if ($throws) {
+            expect(fn () => Artisan::call('cfb:train-football-signals'))->toThrow(RuntimeException::class, 'Training interrupted');
+        } else {
+            $this->artisan('cfb:train-football-signals')->assertSuccessful();
+        }
+        expect(ini_get('memory_limit'))->toBe('768M');
+        $lock = Cache::lock('cfb:signal-training', 1800);
+        expect($lock->get())->toBeTrue();
+        $lock->release();
+    } finally {
+        if ($memoryLimit !== false) {
+            ini_set('memory_limit', $memoryLimit);
+        }
+    }
+})->with([false, true]);

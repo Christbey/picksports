@@ -2,6 +2,7 @@ import type {
     Healthcheck,
     TeamScheduleOutlier,
     HealthcheckMetadata,
+    ValidationRunSummary,
 } from '@/types/healthchecks';
 export function canSync(sport: string, checkType: string): boolean {
     return [
@@ -281,4 +282,23 @@ export function metadataEntries(
             raw: metadata[key],
         }))
         .filter((entry) => entry.value !== '');
+}
+
+export function validationExecutionLabel(
+    summary: ValidationRunSummary | null,
+    status: string,
+): string {
+    const scope =
+        summary?.validation_scope === 'data'
+            ? 'Data-only checks'
+            : 'Full checks';
+    if (status === 'interrupted')
+        return `${scope} · Interrupted; findings may be incomplete`;
+    if (summary?.execution_status === 'failed')
+        return `${scope} · Execution failed; review saved findings`;
+    if (status === 'running' || summary?.execution_status === 'running')
+        return `${scope} · Running`;
+    if (summary?.execution_status === 'completed')
+        return `${scope} · Checks completed`;
+    return `${scope} · Execution status unavailable`;
 }

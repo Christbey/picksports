@@ -19,8 +19,9 @@ class GradePropShadowCommand extends Command
 
             return self::FAILURE;
         }
-        $this->line(json_encode($grader->grade($season), JSON_THROW_ON_ERROR));
+        $result = $grader->grade($season);
+        $this->line(json_encode($result, JSON_THROW_ON_ERROR));
 
-        return self::SUCCESS;
+        return ($result['invalid_snapshot_count'] ?? 0) === 0 ? self::SUCCESS : self::FAILURE;
     }
 }

@@ -6,7 +6,9 @@ use App\Actions\Validation\Contracts\ValidationCheck;
 use App\Services\Sports\SeasonStage\SeasonStageService;
 use App\Services\Sports\SportsDateWindowService;
 use App\Services\Validation\CfbValidationCoverage;
+use App\Services\Validation\PredictionValidationCoverage;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -28,6 +30,7 @@ class UpcomingGameReadinessCheck implements ValidationCheck
         $tables = $profile['tables'] ?? [];
         $gamesTable = $tables['games'] ?? null;
         $teamsTable = $tables['teams'] ?? null;
+        $predictionCoverage = app(PredictionValidationCoverage::class);
         $predictionsTable = "{$sport}_predictions";
         $teamMetricsTable = "{$sport}_team_metrics";
 
@@ -35,7 +38,7 @@ class UpcomingGameReadinessCheck implements ValidationCheck
             ! $gamesTable || ! $teamsTable
             || ! Schema::hasTable($gamesTable)
             || ! Schema::hasTable($teamsTable)
-            || ! Schema::hasTable($predictionsTable)
+            || (! $predictionCoverage->usesCanonical($sport) && ! Schema::hasTable($predictionsTable))
             || ! Schema::hasTable($teamMetricsTable)
         ) {
             return null;
@@ -69,8 +72,12 @@ class UpcomingGameReadinessCheck implements ValidationCheck
         if ($sport === 'cfb') {
             $upcomingGames = $upcomingGames->filter(fn ($game) => $cfbCoverage->requiredTeamIds($game) !== [])->values();
         }
-        $canonical = $sport === 'cfb' && $cfbCoverage->usesCanonical()
-            ? $cfbCoverage->publishedForGames($upcomingGames) : null;
+        $published = $predictionCoverage->forGames($sport, $upcomingGames);
+        $seasonTypeAware = Schema::hasColumn($teamMetricsTable, 'season_type');
+        $metricColumns = ['team_id', 'season', ...($seasonTypeAware ? ['season_type'] : [])];
+        $metrics = DB::table($teamMetricsTable)->whereIn('season', $upcomingGames->pluck('season')->unique())
+            ->whereIn('team_id', $upcomingGames->flatMap(fn ($game) => [$game->home_team_id, $game->away_team_id])->filter()->unique())
+            ->get($metricColumns);
 
         $missingTeams = 0;
         $missingEspnEventIds = 0;
@@ -101,9 +108,7 @@ class UpcomingGameReadinessCheck implements ValidationCheck
                 $reasons[] = 'missing_espn_event_id';
             }
 
-            $hasPrediction = $canonical !== null
-                ? $canonical->has($game->sport_event_id)
-                : DB::table($predictionsTable)->where('game_id', $gameId)->exists();
+            $hasPrediction = $published->has($predictionCoverage->key($sport, $game));
             if (! $hasPrediction) {
                 $missingPredictions++;
                 $reasons[] = 'missing_prediction';
@@ -129,7 +134,7 @@ class UpcomingGameReadinessCheck implements ValidationCheck
                 }
             }
 
-            if (! $this->hasMetricsForBothTeams($teamMetricsTable, $game, $sport === 'cfb' ? $cfbCoverage->requiredTeamIds($game) : null)) {
+            if (! $this->hasMetricsForBothTeams($metrics, $seasonTypeAware, $game, $sport === 'cfb' ? $cfbCoverage->requiredTeamIds($game) : null)) {
                 $missingTeamMetrics++;
                 $reasons[] = 'missing_team_metrics';
             }
@@ -181,6 +186,7 @@ class UpcomingGameReadinessCheck implements ValidationCheck
                 'games_missing_teams' => $missingTeams,
                 'games_missing_espn_event_ids' => $missingEspnEventIds,
                 'games_missing_predictions' => $missingPredictions,
+                'prediction_source' => $predictionCoverage->usesCanonical($sport) ? 'canonical' : 'legacy',
                 'games_missing_odds' => $missingOdds,
                 'provider_unavailable_far_odds' => $providerUnavailableFarOdds,
                 'provider_unavailable_soft_window_odds' => $providerUnavailableSoftOdds,
@@ -194,22 +200,18 @@ class UpcomingGameReadinessCheck implements ValidationCheck
         ];
     }
 
-    private function hasMetricsForBothTeams(string $teamMetricsTable, object $game, ?array $requiredTeamIds = null): bool
+    private function hasMetricsForBothTeams(Collection $metrics, bool $seasonTypeAware, object $game, ?array $requiredTeamIds = null): bool
     {
         if (! $game->home_team_id || ! $game->away_team_id || ! $game->season) {
             return false;
         }
-
         $requiredTeamIds ??= [(int) $game->home_team_id, (int) $game->away_team_id];
-        $query = DB::table($teamMetricsTable)
-            ->where('season', $game->season)
-            ->whereIn('team_id', $requiredTeamIds);
-
-        if (Schema::hasColumn($teamMetricsTable, 'season_type') && $game->season_type !== null) {
-            $query->where('season_type', $game->season_type);
+        $matching = $metrics->where('season', $game->season)->whereIn('team_id', $requiredTeamIds);
+        if ($seasonTypeAware && $game->season_type !== null) {
+            $matching = $matching->where('season_type', $game->season_type);
         }
 
-        return $query->distinct('team_id')->count('team_id') >= count($requiredTeamIds);
+        return $matching->pluck('team_id')->unique()->count() >= count($requiredTeamIds);
     }
 
     /**

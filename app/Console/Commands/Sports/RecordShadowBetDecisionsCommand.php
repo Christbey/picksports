@@ -30,6 +30,7 @@ class RecordShadowBetDecisionsCommand extends Command
         $query = ShadowModelOutput::query()
             ->with('artifact')
             ->where('sport', $sport)
+            ->whereDoesntHave('betDecisions')
             ->when($this->option('artifact'), fn ($builder) => $builder->where('model_artifact_id', $this->option('artifact')))
             ->orderBy('id');
 

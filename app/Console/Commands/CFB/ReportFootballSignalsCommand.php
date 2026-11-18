@@ -29,7 +29,7 @@ class ReportFootballSignalsCommand extends Command
         $games = [];
         $predictions = CanonicalPrediction::query()->where('sport', 'cfb')->where('phase', 'pregame')->where('publication_state', 'published')
             ->whereHas('sportEvent', fn ($q) => $q->where('season', $season))
-            ->with(['calculationRun', 'sportEvent.cfbGame'])->get();
+            ->with(['calculationRun', 'sportEvent.cfbGame'])->lazyById(100);
         foreach ($predictions as $prediction) {
             $signals = data_get($prediction->calculationRun?->diagnostics, 'football_signals');
             if (! is_array($signals)) {

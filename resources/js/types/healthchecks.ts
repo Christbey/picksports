@@ -1,3 +1,16 @@
+export interface ValidationRunSummary {
+    total_findings?: number;
+    passing?: number;
+    warning?: number;
+    failing?: number;
+    validation_scope?: 'full' | 'data';
+    execution_status?: 'running' | 'completed' | 'failed';
+    checks_execution_status?: 'completed' | 'failed';
+    alerts_skipped?: boolean;
+    error_class?: string;
+    post_processing_errors?: Record<string, string>;
+}
+
 export interface Healthcheck {
     id: number;
     sport: string;
@@ -22,7 +35,7 @@ export interface Props {
         id: number;
         scope: string | null;
         status: string;
-        summary: Record<string, number> | null;
+        summary: ValidationRunSummary | null;
         ai_summary: {
             headline: string;
             intro: string;
@@ -45,14 +58,14 @@ export interface Props {
         id: number;
         scope: string | null;
         status: string;
-        summary: Record<string, number> | null;
+        summary: ValidationRunSummary | null;
         completed_at: string | null;
     }>;
     selected_validation_run: {
         id: number;
         scope: string | null;
         status: string;
-        summary: Record<string, number> | null;
+        summary: ValidationRunSummary | null;
         ai_summary: {
             headline: string;
             intro: string;

@@ -9,6 +9,7 @@ use App\Models\NFL\PlayerInjury;
 use App\Models\NFL\PlayerInjurySnapshot;
 use App\Models\NFL\PlayerStat;
 use App\Models\NFL\Team;
+use App\Services\NFL\QuarterbackAvailability;
 use App\Services\NFL\Research\RecommendationEligibility;
 use App\Services\NFL\Research\ResearchPipeline;
 use Illuminate\Support\Facades\DB;
@@ -54,9 +55,9 @@ function projectedQb(Game $game): ?array
         ->invoke(app(GeneratePredictionFromHistoricalElo::class), $game, $game->home_team_id);
 }
 
-it('selects the ranked backup and his own prior statistics for a ruled-out starter', function () {
+it('selects the ranked backup and his own prior statistics for an excluded starter', function (string $status) {
     [$game, $starter, $backup] = qbAvailabilityFixture();
-    $snapshot = qbInjurySnapshot($game, [$starter->id => 'Out']);
+    $snapshot = qbInjurySnapshot($game, [$starter->id => $status]);
     $prior = Game::factory()->create(['home_team_id' => $game->home_team_id, 'away_team_id' => $game->away_team_id,
         'season' => 2026, 'season_type' => '2', 'status' => 'STATUS_FINAL', 'game_date' => '2026-09-10']);
     PlayerStat::create(['game_id' => $prior->id, 'team_id' => $game->home_team_id, 'player_id' => $backup->id,
@@ -66,19 +67,19 @@ it('selects the ranked backup and his own prior statistics for a ruled-out start
         ->and($qb['prior_yards_per_attempt'])->toBe(7.0)
         ->and($qb['replaced_unavailable_qb_ids'])->toBe([$starter->id])
         ->and($qb['availability_exclusions'][0]['snapshot_uuid'])->toBe($snapshot->snapshot_uuid);
-});
+})->with(['Doubtful', 'Out']);
 
 it('does not treat practice uncertainty as confirmed unavailability', function (string $status) {
     [$game, $starter] = qbAvailabilityFixture();
     qbInjurySnapshot($game, [$starter->id => $status]);
     expect(projectedQb($game)['qb_id'])->toBe($starter->id);
-})->with(['Questionable', 'Doubtful', 'Probable', 'Day-To-Day', 'Limited', 'Did Not Participate', 'Active']);
+})->with(['Questionable', 'Probable', 'Day-To-Day', 'Limited', 'Did Not Participate', 'Active']);
 
 it('excludes reserve and inactive quarterbacks', function (string $status) {
     [$game, $starter, $backup] = qbAvailabilityFixture();
     qbInjurySnapshot($game, [$starter->id => $status]);
     expect(projectedQb($game)['qb_id'])->toBe($backup->id);
-})->with(['Injured Reserve', 'IR', 'Inactive', 'Reserve/PUP', 'Suspended']);
+})->with(['Doubtful', 'Out', 'Injured Reserve', 'IR', 'Inactive', 'Reserve/PUP', 'Suspended']);
 
 it('skips an unavailable backup but never revives an injured starter when everyone is out', function () {
     [$game, $starter, $backup, $third] = qbAvailabilityFixture();
@@ -157,7 +158,7 @@ it('invalidates research when QB identity changes even if rounded predictions do
     expect(app(ResearchPipeline::class)->candidateContextHash($candidate))->not->toBe($before);
 });
 
-it('selects the available nflverse backup and never falls back to the excluded starter', function () {
+it('selects the available nflverse backup and never falls back to the excluded starter', function (string $status) {
     [$game, $starter, $backup] = qbAvailabilityFixture();
     DepthChartEntry::where('team_id', $game->home_team_id)->delete();
     foreach ([[$starter, 1], [$backup, 2]] as [$player, $rank]) {
@@ -166,11 +167,11 @@ it('selects the available nflverse backup and never falls back to the excluded s
             'gsis_id' => '00-'.$player->id, 'full_name' => $player->full_name, 'depth_rank' => $rank,
             'source_updated_at' => now()->subHour(), 'created_at' => now(), 'updated_at' => now()]);
     }
-    qbInjurySnapshot($game, [$starter->id => 'Out']);
+    qbInjurySnapshot($game, [$starter->id => $status]);
     expect(projectedQb($game)['qb_id'])->toBe('00-'.$backup->id);
-    qbInjurySnapshot($game, [$starter->id => 'Out', $backup->id => 'Out'], now()->toDateTimeString());
+    qbInjurySnapshot($game, [$starter->id => $status, $backup->id => 'Out'], now()->toDateTimeString());
     expect(projectedQb($game)['qb_id'])->toBeNull();
-});
+})->with(['Doubtful', 'Out']);
 
 it('cannot resurrect a ruled-out quarterback through the prior-game fallback', function () {
     [$game, $starter] = qbAvailabilityFixture();
@@ -259,4 +260,23 @@ it('uses UTC kickoff storage when rejecting a post kickoff depth snapshot', func
     $this->travelTo('2026-09-21 10:00:00');
     $game->update(['status' => 'STATUS_FINAL']);
     expect(projectedQb($game))->toBeNull();
+});
+
+it('uses the next available quarterback when both QB1 and QB2 are excluded', function () {
+    [$game, $starter, $backup, $third] = qbAvailabilityFixture();
+    qbInjurySnapshot($game, [$starter->id => 'Doubtful', $backup->id => 'Out']);
+    expect(projectedQb($game)['qb_id'])->toBe($third->id);
+});
+
+it('does not hold a questionable projected starter and rejects a doubtful starter left in a forecast', function () {
+    [$game, $starter] = qbAvailabilityFixture();
+    $service = app(QuarterbackAvailability::class);
+    $metadata = ['game_depth_charts' => ['home' => ['qb_id' => $starter->id, 'qb_name' => $starter->full_name]]];
+    qbInjurySnapshot($game, [$starter->id => 'Questionable']);
+    expect($service->forecastHolds($service->forecastDesignations($game, $metadata)))->toBeEmpty();
+    qbInjurySnapshot($game, [$starter->id => 'Doubtful'], now()->toDateTimeString());
+    expect($service->forecastHolds($service->forecastDesignations($game, $metadata)))
+        ->toBe(['home_starting_qb_unavailable_in_forecast']);
+    $metadata['game_depth_charts']['home'] = projectedQb($game);
+    expect($service->forecastHolds($service->forecastDesignations($game, $metadata)))->toBeEmpty();
 });

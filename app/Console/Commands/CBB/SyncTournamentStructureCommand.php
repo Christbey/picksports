@@ -6,6 +6,7 @@ use App\Actions\CBB\RepairTournamentStructure;
 use App\Actions\ESPN\CBB\SyncTeamSchedule;
 use App\Models\CBB\Team;
 use App\Support\BasketballSeason;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 
 class SyncTournamentStructureCommand extends Command
@@ -58,6 +59,12 @@ class SyncTournamentStructureCommand extends Command
         }
 
         if ($this->option('skip-audit')) {
+            return self::SUCCESS;
+        }
+
+        if (now('America/Chicago')->lt(CarbonImmutable::create($season, 3, 1, 0, 0, 0, 'America/Chicago'))) {
+            $this->info("Tournament completeness audit deferred until March {$season}; bracket participants are not yet required.");
+
             return self::SUCCESS;
         }
 

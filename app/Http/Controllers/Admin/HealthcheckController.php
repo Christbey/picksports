@@ -9,6 +9,7 @@ use App\Models\SportsAiPredictionAnalysis;
 use App\Models\ValidationRun;
 use App\Services\CommandHeartbeatService;
 use App\Services\Sports\SportsPipelineRegistry;
+use App\Services\Validation\ValidationRunRecorder;
 use App\Support\SportCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -291,16 +292,12 @@ class HealthcheckController extends Controller
      */
     protected function validationTrend(?ValidationRun $selectedValidationRun): ?array
     {
-        if (! $selectedValidationRun) {
+        if (! $selectedValidationRun || ! app(ValidationRunRecorder::class)->checksCompleted($selectedValidationRun)) {
             return null;
         }
 
-        $previousRun = ValidationRun::query()
-            ->where('command_name', 'healthcheck:validate-data')
-            ->where('scope', $selectedValidationRun->scope)
-            ->where('id', '<', $selectedValidationRun->id)
-            ->latest('id')
-            ->first();
+        $recorder = app(ValidationRunRecorder::class);
+        $previousRun = $recorder->previousCompleted($selectedValidationRun);
 
         $currentSummary = is_array($selectedValidationRun->summary) ? $selectedValidationRun->summary : [];
         $previousSummary = is_array($previousRun?->summary) ? $previousRun->summary : [];
@@ -331,13 +328,12 @@ class HealthcheckController extends Controller
                 'passing' => $currentPassing - $previousPassing,
             ],
             'direction' => match (true) {
+                $previousRun === null => 'stable',
                 $currentFailing < $previousFailing => 'improving',
                 $currentFailing > $previousFailing => 'regressing',
                 default => 'stable',
             },
-            'points' => ValidationRun::query()
-                ->where('command_name', 'healthcheck:validate-data')
-                ->where('scope', $selectedValidationRun->scope)
+            'points' => $recorder->completedChecksQuery((string) $selectedValidationRun->scope, data_get($selectedValidationRun->summary, 'validation_scope', 'full'))
                 ->latest('id')
                 ->limit(6)
                 ->get()

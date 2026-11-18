@@ -41,7 +41,31 @@ it('rejects malformed charting without overwriting existing evidence', function 
     Http::fake(['*' => Http::response(chartingCsv($values))]);
     $this->artisan('nfl:sync-matchup-charting --season=2026')->assertFailed();
     expect(DB::table('nflverse_pbp_plays')->find($id)->ftn_observed_at)->toBeNull();
-})->with(['MAYBE,FALSE,TRUE,,6,1,5', 'TRUE,FALSE,TRUE,,16,1,5']);
+})->with(['MAYBE,FALSE,TRUE,,6,1,5', 'TRUE,FALSE,TRUE,,16,1,5', 'TRUE,FALSE,TRUE,,6.5,1,5', 'TRUE,FALSE,TRUE,,-1,1,5']);
+
+it('accepts whole decimal player counts and nullable source values without truncating fractional counts', function () {
+    $this->travelTo(now()->setDate(2026, 9, 30));
+    Storage::fake('provider-local');
+    config(['provider-data.storage.disk' => 'provider-local']);
+    $id = chartingPlay();
+    Http::fake(['*' => Http::response(chartingCsv('TRUE,FALSE,TRUE,,6.0,0.00,na'))]);
+
+    $this->artisan('nfl:sync-matchup-charting --season=2026')->assertSuccessful();
+    $row = DB::table('nflverse_pbp_plays')->find($id);
+    expect((int) $row->ftn_n_defense_box)->toBe(6)
+        ->and((int) $row->ftn_n_blitzers)->toBe(0)->and($row->ftn_n_pass_rushers)->toBeNull();
+});
+
+it('identifies the invalid provider count while preserving previously saved charting', function () {
+    $this->travelTo(now()->setDate(2026, 9, 30));
+    $id = chartingPlay();
+    DB::table('nflverse_pbp_plays')->where('id', $id)->update(['ftn_n_defense_box' => 5]);
+    Http::fake(['*' => Http::response(chartingCsv('TRUE,FALSE,TRUE,,6.5,1,5'))]);
+
+    $this->artisan('nfl:sync-matchup-charting --season=2026')
+        ->expectsOutputToContain('2026_01_DEN_KC|1, n_defense_box: 6.5; no rows updated')->assertFailed();
+    expect((int) DB::table('nflverse_pbp_plays')->find($id)->ftn_n_defense_box)->toBe(5);
+});
 
 it('preserves each provider read code and leaves uncoded reads unknown', function (string $code, ?string $expected) {
     $this->travelTo(now()->setDate(2026, 10, 1));

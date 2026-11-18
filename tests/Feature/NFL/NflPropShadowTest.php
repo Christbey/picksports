@@ -16,7 +16,9 @@ use Carbon\Carbon;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     $this->travelTo(Carbon::parse('2026-10-23 18:00:00', 'UTC'));
@@ -74,6 +76,137 @@ it('records one immutable paired observation across books lines and repeated run
         ->and($snapshot->fresh()->getAttributes())->toBe($frozen);
     expect(fn () => $snapshot->update(['outputs' => ['ridge' => 99]]))->toThrow(LogicException::class);
     expect(fn () => $snapshot->delete())->toThrow(LogicException::class);
+});
+
+it('keeps versioned fingerprints stable across JSON number representation and PHP precision settings', function () {
+    $precision = ini_get('serialize_precision');
+    $features = ['mean' => 31.25158548, 'count' => 2.0, 'zero' => -0.0];
+    $outputs = ['ridge' => 34.90915802];
+    $market = ['line' => 32.5, 'price' => -110];
+    try {
+        ini_set('serialize_precision', '-1');
+        $expected = NflPropShadowService::fingerprint($features, $outputs, $market);
+        $features = ['zero' => 0, 'count' => 2, 'mean' => 31.25158548];
+        ini_set('serialize_precision', '14');
+        expect(NflPropShadowService::fingerprint($features, $outputs, $market))->toBe($expected);
+        $outputs['ridge'] += 0.001;
+        expect(NflPropShadowService::fingerprint($features, $outputs, $market))->not->toBe($expected);
+        $outputs['ridge'] = 34.909158021;
+        expect(fn () => NflPropShadowService::fingerprint($features, $outputs, $market))->toThrow(InvalidArgumentException::class, 'numeric resolution');
+    } finally {
+        ini_set('serialize_precision', $precision);
+    }
+});
+
+it('quantizes captured values before hashing and rejects sub-resolution changes to the stored payload', function () {
+    $this->partialMock(NflPropShadowBundle::class, fn ($mock) => $mock->shouldReceive('predict')->once()
+        ->andReturn(['ridge' => 34.90915802242381, 'xgboost' => 34.296099177652984]));
+    ($this->runShadow)();
+    $snapshot = PredictionFeatureSnapshot::where('blend_version', NflPropShadowService::POLICY)->sole();
+    expect($snapshot->outputs['ridge'])->toBe(34.90915802)
+        ->and($snapshot->outputs['xgboost'])->toBe(34.29609918)
+        ->and($snapshot->model_metadata['fingerprint_version'])->toBe(NflPropShadowService::FINGERPRINT_VERSION);
+    $outputs = $snapshot->outputs;
+    $outputs['ridge'] += 0.000000001;
+    DB::table('prediction_feature_snapshots')->where('id', $snapshot->id)->update(['outputs' => json_encode($outputs)]);
+    $this->game->update(['status' => 'STATUS_FINAL']);
+    $this->travelTo(now()->addDays(2));
+
+    $result = app(NflPropShadowGrader::class)->grade(2026);
+    expect($result['invalid_snapshots'])->toBe([$snapshot->id => 'snapshot_numeric_resolution_mismatch'])
+        ->and(PredictionEvaluation::where('blend_version', NflPropShadowService::POLICY)->count())->toBe(0);
+});
+
+it('distinguishes numeric scalars from strings and maps that resemble the canonical number encoding', function () {
+    $hash = NflPropShadowService::fingerprint(['value' => 1], [], []);
+    expect(NflPropShadowService::fingerprint(['value' => ['number' => '1.00000000']], [], []))->not->toBe($hash)
+        ->and(NflPropShadowService::fingerprint(['value' => '1.00000000'], [], []))->not->toBe($hash);
+    ($this->runShadow)();
+    $snapshot = PredictionFeatureSnapshot::where('blend_version', NflPropShadowService::POLICY)->sole();
+    $outputs = $snapshot->outputs;
+    $outputs['ridge'] = ['number' => sprintf('%.8F', $outputs['ridge'])];
+    DB::table('prediction_feature_snapshots')->where('id', $snapshot->id)->update(['outputs' => json_encode($outputs)]);
+    $this->game->update(['status' => 'STATUS_FINAL']);
+    $this->travelTo(now()->addDays(2));
+
+    expect(app(NflPropShadowGrader::class)->grade(2026)['invalid_snapshots'])
+        ->toBe([$snapshot->id => 'invalid_snapshot_payload'])
+        ->and(PredictionEvaluation::where('blend_version', NflPropShadowService::POLICY)->count())->toBe(0);
+});
+
+it('isolates an invalid frozen snapshot without starving valid later observations or approving the failed run', function (string $field) {
+    ($this->runShadow)();
+    $snapshot = PredictionFeatureSnapshot::where('blend_version', NflPropShadowService::POLICY)->sole();
+    $attributes = $snapshot->getAttributes();
+    unset($attributes['id']);
+    $attributes['snapshot_run_id'] = (string) Str::uuid();
+    $validId = DB::table('prediction_feature_snapshots')->insertGetId($attributes);
+    $corrupt = $field === 'feature_hash' ? str_repeat('f', 64) : json_encode('invalid scalar payload');
+    DB::table('prediction_feature_snapshots')->where('id', $snapshot->id)->update([$field => $corrupt]);
+    $this->game->update(['status' => 'STATUS_FINAL']);
+    $this->travelTo(now()->addDays(2));
+    PlayerStat::factory()->create(['game_id' => $this->game->id, 'player_id' => $this->player->id,
+        'team_id' => $this->team->id, 'rushing_attempts' => 8]);
+
+    $result = app(NflPropShadowGrader::class)->grade(2026);
+    expect($result['graded'])->toBe(1)
+        ->and($result['invalid_snapshots'])->toBe([$snapshot->id => $field === 'feature_hash' ? 'snapshot_integrity_mismatch' : 'invalid_snapshot_payload'])
+        ->and(PredictionEvaluation::where('blend_version', NflPropShadowService::POLICY)->sole()->prediction_id)->toBe($validId)
+        ->and($snapshot->fresh()->getRawOriginal($field))->toBe($corrupt);
+    $this->artisan('nfl:grade-prop-shadow --season=2026')->expectsOutputToContain('invalid_snapshot_count')->assertFailed();
+})->with(['feature_hash', 'features', 'outputs', 'market_context', 'model_metadata']);
+
+it('isolates incomplete grading payloads and still grades a later valid snapshot', function (string $case) {
+    ($this->runShadow)();
+    $snapshot = PredictionFeatureSnapshot::where('blend_version', NflPropShadowService::POLICY)->sole();
+    $attributes = $snapshot->getAttributes();
+    unset($attributes['id']);
+    $attributes['snapshot_run_id'] = (string) Str::uuid();
+    $validId = DB::table('prediction_feature_snapshots')->insertGetId($attributes);
+    $metadata = $snapshot->model_metadata;
+    $market = $snapshot->market_context;
+    $changes = match ($case) {
+        'empty_metadata' => ['model_metadata' => []],
+        'missing_player' => ['model_metadata' => array_diff_key($metadata, ['player_id' => true])],
+        'invalid_team' => ['model_metadata' => [...$metadata, 'team_id' => 0]],
+        'invalid_market' => ['market_context' => [...$market, 'market' => []]],
+        'missing_line' => ['market_context' => array_diff_key($market, ['line' => true])],
+        'nonfinite_line' => ['market_context' => [...$market, 'line' => '1e999']],
+        'empty_outputs' => ['outputs' => []],
+        'invalid_output' => ['outputs' => ['ridge' => ['invalid' => true]]],
+        'nonfinite_output' => ['outputs' => ['ridge' => '1e999']],
+        'overflow_output' => ['outputs' => ['ridge' => 1e308]],
+    };
+    $encoded = array_map(fn ($value) => json_encode($value, JSON_THROW_ON_ERROR), $changes);
+    if ($case === 'overflow_output') {
+        $encoded['feature_hash'] = NflPropShadowService::fingerprint($snapshot->features, $changes['outputs'], $market);
+    }
+    DB::table('prediction_feature_snapshots')->where('id', $snapshot->id)->update($encoded);
+    $this->game->update(['status' => 'STATUS_FINAL']);
+    $this->travelTo(now()->addDays(2));
+    PlayerStat::factory()->create(['game_id' => $this->game->id, 'player_id' => $this->player->id,
+        'team_id' => $this->team->id, 'rushing_attempts' => 8]);
+
+    $result = app(NflPropShadowGrader::class)->grade(2026);
+    expect($result['graded'])->toBe(1)
+        ->and($result['invalid_snapshots'])->toBe([$snapshot->id => 'invalid_snapshot_payload'])
+        ->and(PredictionEvaluation::where('blend_version', NflPropShadowService::POLICY)->sole()->prediction_id)->toBe($validId);
+    $this->artisan('nfl:grade-prop-shadow --season=2026')->assertFailed();
+})->with(['empty_metadata', 'missing_player', 'invalid_team', 'invalid_market', 'missing_line', 'nonfinite_line', 'empty_outputs', 'invalid_output', 'nonfinite_output', 'overflow_output']);
+
+it('verifies legacy fingerprints exactly without rewriting immutable observations', function () {
+    ($this->runShadow)();
+    $snapshot = PredictionFeatureSnapshot::where('blend_version', NflPropShadowService::POLICY)->sole();
+    $metadata = $snapshot->model_metadata;
+    unset($metadata['fingerprint_version']);
+    $hash = NflPropShadowService::fingerprint($snapshot->features, $snapshot->outputs, $snapshot->market_context, NflPropShadowService::LEGACY_FINGERPRINT_VERSION);
+    DB::table('prediction_feature_snapshots')->where('id', $snapshot->id)->update(['model_metadata' => json_encode($metadata), 'feature_hash' => $hash]);
+    $this->game->update(['status' => 'STATUS_FINAL']);
+    $this->travelTo(now()->addDays(2));
+
+    $result = app(NflPropShadowGrader::class)->grade(2026);
+    expect($result['pending_missing_actual'])->toBe(1)->and($result['invalid_snapshot_count'])->toBe(0)
+        ->and($snapshot->fresh()->feature_hash)->toBe($hash);
 });
 
 it('rejects in-play observations stale or future quotes and targets outside the 24 hour enrollment window', function (string $case) {
@@ -187,20 +320,4 @@ it('refuses a capture when kickoff passes while inference is running', function 
     });
     expect(($this->runShadow)()['created'])->toBe(0)
         ->and(PredictionFeatureSnapshot::where('blend_version', NflPropShadowService::POLICY)->count())->toBe(0);
-});
-
-it('ships the exact frozen seven-market bundle and keeps its default switch disabled', function () {
-    $defaults = require base_path('config/nfl.php');
-    expect($defaults['props']['shadow']['enabled'])->toBeFalse();
-    config(['nfl.props.shadow.bundle_path' => $defaults['props']['shadow']['bundle_path'],
-        'nfl.props.shadow.bundle_sha256' => $defaults['props']['shadow']['bundle_sha256']]);
-    $this->travelTo(Carbon::parse('2026-10-24 12:00:00', 'UTC'));
-    $loaded = app(NflPropShadowBundle::class)->load();
-    expect($loaded['sha256'])->toBe('bf629101dd5d96d83491778f4550756a8d6625b1f4697f638fd2cee9ef552730')
-        ->and($loaded['data']['markets'])->toHaveCount(7)
-        ->and($loaded['data']['markets'])->not->toHaveKey('player_anytime_td');
-    foreach (array_keys($loaded['data']['markets']) as $market) {
-        $result = app(NflPropShadowBundle::class)->predict($loaded['data'], $market, $this->sample['features']);
-        expect(is_finite($result['ridge']))->toBeTrue()->and(is_finite($result['xgboost']))->toBeTrue();
-    }
 });

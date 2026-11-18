@@ -12,7 +12,7 @@ use Illuminate\Support\Str;
 
 class QuarterbackAvailability
 {
-    /** Unavailability evidence known at prediction time, scoped to this game. */
+    /** Game-scoped evidence excluding a QB from the projected starting lineup. */
     public function forGame(Game $game, int $teamId): array
     {
         return array_values(array_filter(
@@ -129,7 +129,6 @@ class QuarterbackAvailability
     public function forecastHolds(array $quarterbacks): array
     {
         return collect($quarterbacks)->map(fn ($qb, $side) => match (true) {
-            in_array($qb['designation'], ['questionable', 'doubtful'], true) => $side.'_starting_qb_availability_uncertain',
             $qb['unavailable'] => $side.'_starting_qb_unavailable_in_forecast',
             default => null,
         })->filter()->values()->all();
@@ -154,7 +153,7 @@ class QuarterbackAvailability
 
     private function isUnavailable(string $status): bool
     {
-        return in_array(strtolower(trim($status)), ['out', 'inactive', 'suspended'], true) || $this->reserveStatus($status);
+        return in_array(strtolower(trim($status)), ['doubtful', 'out', 'inactive', 'suspended'], true) || $this->reserveStatus($status);
     }
 
     private function reserveStatus(string $status): bool

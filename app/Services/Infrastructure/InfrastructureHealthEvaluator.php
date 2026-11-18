@@ -6,7 +6,7 @@ class InfrastructureHealthEvaluator
 {
     /**
      * @param  array<string, mixed>  $metrics
-     * @return array{healthy: bool, status: string, checks: array<int, array<string, mixed>>}
+     * @return array{execution_failed: bool, healthy: bool, status: string, checks: array<int, array<string, mixed>>}
      */
     public function evaluate(array $metrics): array
     {
@@ -77,6 +77,8 @@ class InfrastructureHealthEvaluator
                 : 'healthy');
 
         return [
+            'execution_failed' => (bool) config('infrastructure.health.fail_on_unavailable', true)
+                && collect($checks)->contains(fn (array $check): bool => $check['status'] !== 'disabled' && $check['value'] === null),
             'healthy' => $status !== 'critical',
             'status' => $status,
             'checks' => $checks,
@@ -96,6 +98,10 @@ class InfrastructureHealthEvaluator
         $numericValue = is_numeric($value) ? (float) $value : null;
         $warning = $this->threshold($thresholdKey, 'warning');
         $critical = $this->threshold($thresholdKey, 'critical');
+
+        if ($warning === null && $critical === null) {
+            return $this->result($name, 'disabled', $numericValue, $unit, null, null, "{$label} is disabled by configuration.");
+        }
 
         if ($numericValue === null) {
             $status = (bool) config('infrastructure.health.fail_on_unavailable', true)

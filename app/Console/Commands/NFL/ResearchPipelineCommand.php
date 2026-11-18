@@ -181,21 +181,35 @@ class ResearchPipelineCommand extends Command
             $selected->count(),
             max(0, $games->count() - $selected->count()),
         ));
+        $completed = $held = $reviewFailures = 0;
         foreach ($selected as $game) {
             try {
                 $revision = $pipeline->review($game, ! $this->option('no-web'));
-                if ($revision) {
+                if ($revision && $revision->exists && $revision->getKey() !== null) {
                     $this->line(json_encode(['game_id' => $game->id, 'revision_id' => $revision->id, 'new_revision' => $revision->wasRecentlyCreated, 'eligibility' => $revision->brief['eligibility'], 'change' => $revision->brief['change']]));
+                    $completed++;
                     if (data_get($revision->brief, 'eligibility.status') === 'hold') {
-                        $failed = true;
+                        $held++;
                         $this->warn('Game '.$game->id.' assessment held: '.implode(', ', data_get($revision->brief, 'eligibility.data_reasons', [])));
+                    }
+                    $refreshFailure = data_get($revision->brief, 'research_refresh.deferred_reason');
+                    if (in_array($refreshFailure, ['research_refresh_failed', 'research_provider_quota_exhausted', 'research_provider_rate_limited'], true)) {
+                        $failed = true;
+                        $reviewFailures++;
+                        $this->error('Game '.$game->id.' research refresh failed: '.$refreshFailure);
                     }
                 } else {
                     $failed = true;
+                    $reviewFailures++;
                     $this->warn('Game '.$game->id.' assessment unavailable or already running.');
+                    $reasons = data_get($revision?->brief, 'eligibility.data_reasons', []);
+                    if ($reasons !== []) {
+                        $this->warn('Game '.$game->id.' unsaved assessment: '.implode(', ', $reasons));
+                    }
                 }
             } catch (Throwable $e) {
                 $failed = true;
+                $reviewFailures++;
                 report($e);
                 $this->error('Game '.$game->id.' research failed: '.class_basename($e));
                 if (app(AiProviderRateLimitCircuitBreaker::class)->isRateLimitFailure($e->getMessage())
@@ -217,6 +231,8 @@ class ResearchPipelineCommand extends Command
                 gc_collect_cycles();
             }
         }
+
+        $this->info(sprintf('Research review: %d completed; %d held; %d failed.', $completed, $held, $reviewFailures));
 
         return $failed ? self::FAILURE : self::SUCCESS;
     }

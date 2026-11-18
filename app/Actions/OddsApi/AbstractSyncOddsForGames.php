@@ -26,6 +26,9 @@ abstract class AbstractSyncOddsForGames
 
     protected const INCLUDE_DISPLAY_NAME_IN_TEAM_NAMES = true;
 
+    /** @var array<string, array|null> Last execution response, including a failed/empty fetch. */
+    private array $executionOddsData = [];
+
     public function __construct(
         protected OddsApiService $oddsApiService,
         protected SportsViewCache $sportsViewCache,
@@ -37,6 +40,7 @@ abstract class AbstractSyncOddsForGames
     {
         $effectiveSportKey = $this->effectiveSportKey($oddsSportKey);
         $oddsData = $this->fetchOddsData($effectiveSportKey);
+        $this->executionOddsData = [$effectiveSportKey => $oddsData];
         $daysAhead = $daysAhead !== null ? max(1, $daysAhead) : null;
 
         if (! $oddsData) {
@@ -114,7 +118,9 @@ abstract class AbstractSyncOddsForGames
     {
         $effectiveSportKey = $this->effectiveSportKey($oddsSportKey);
         $daysAhead = $daysAhead !== null ? max(1, $daysAhead) : null;
-        $oddsData = $this->fetchOddsData($effectiveSportKey) ?? [];
+        $oddsData = (array_key_exists($effectiveSportKey, $this->executionOddsData)
+            ? $this->executionOddsData[$effectiveSportKey]
+            : $this->fetchOddsData($effectiveSportKey)) ?? [];
         $events = collect(is_array($oddsData) ? $oddsData : []);
 
         $inWindowEvents = $events

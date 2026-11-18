@@ -4,6 +4,7 @@ use App\Models\NFL\Game;
 use App\Models\NFL\GameWeather;
 use App\Models\NFL\Player;
 use App\Models\NFL\ResearchDocument;
+use App\Models\NFL\ResearchRevision;
 use App\Models\NFL\ResearchSource;
 use App\Models\NFL\Team;
 use App\Models\SportsGameContextReport;
@@ -34,6 +35,16 @@ function reliabilityResearchGame(array $attributes = []): Game
         'game_date' => '2026-09-20', 'game_time' => '17:00:00',
         'season' => 2026, 'season_type' => '2', 'status' => 'STATUS_SCHEDULED',
         ...$attributes,
+    ]);
+}
+
+function reliabilitySavedRevision(Game $game, array $brief): ResearchRevision
+{
+    return ResearchRevision::query()->create([
+        'game_id' => $game->id,
+        'input_hash' => hash('sha256', json_encode($brief, JSON_THROW_ON_ERROR)),
+        'baseline' => [], 'revised' => [], 'evidence' => [], 'market' => [],
+        'brief' => $brief, 'created_at' => now(),
     ]);
 }
 
@@ -259,4 +270,61 @@ it('fetches the complete roster once when an older document lacks canonical prof
     expect($requests[0][0]->hasHeader('If-None-Match'))->toBeFalse()
         ->and($requests[1][0]->header('If-None-Match'))->toBe(['current-etag'])
         ->and($source->fresh()->current_document_id)->not->toBe($document->id);
+});
+
+it('completes saved held assessments without changing eligibility or stopping the batch', function (string $reason) {
+    $heldGame = reliabilityResearchGame();
+    $nextGame = reliabilityResearchGame();
+    $eligibility = ['status' => 'hold', 'eligible' => false, 'data_complete' => false, 'data_reasons' => [$reason]];
+    $held = reliabilitySavedRevision($heldGame, ['change' => [], 'eligibility' => $eligibility]);
+    $pass = reliabilitySavedRevision($nextGame, ['change' => [], 'eligibility' => ['status' => 'pass', 'eligible' => false]]);
+    $this->mock(ResearchPipeline::class, function ($mock) use ($heldGame, $nextGame, $held, $pass) {
+        $mock->shouldReceive('review')->once()->with(Mockery::on(fn (Game $g) => $g->is($heldGame)), false)->andReturn($held);
+        $mock->shouldReceive('review')->once()->with(Mockery::on(fn (Game $g) => $g->is($nextGame)), false)->andReturn($pass);
+    });
+
+    $this->artisan('nfl:research-pipeline', ['--no-ingest' => true, '--no-web' => true])
+        ->expectsOutputToContain('assessment held: '.$reason)
+        ->expectsOutputToContain('Research review: 2 completed; 1 held; 0 failed.')
+        ->assertSuccessful();
+
+    expect($held->brief['eligibility'])->toBe($eligibility)
+        ->and($pass->brief['eligibility']['eligible'])->toBeFalse();
+})->with(['missing_quarterback_history', 'missing_quarterback_identity', 'spread_quote_missing', 'home_starting_qb_unavailable_in_forecast']);
+
+it('fails a saved assessment when the provider refresh actually failed', function (string $reason) {
+    $game = reliabilityResearchGame();
+    $revision = reliabilitySavedRevision($game, ['change' => [],
+        'eligibility' => ['status' => 'hold', 'data_reasons' => ['missing_quarterback_history']],
+        'research_refresh' => ['deferred_reason' => $reason],
+    ]);
+    $this->mock(ResearchPipeline::class, fn ($mock) => $mock->shouldReceive('review')->once()->andReturn($revision));
+
+    $this->artisan('nfl:research-pipeline', ['--no-ingest' => true])
+        ->expectsOutputToContain('research refresh failed: '.$reason)
+        ->assertFailed();
+})->with(['research_refresh_failed', 'research_provider_quota_exhausted', 'research_provider_rate_limited']);
+
+it('retains a failed exit after an exception while still reviewing the next game', function () {
+    $broken = reliabilityResearchGame();
+    $next = reliabilityResearchGame();
+    $this->mock(ResearchPipeline::class, function ($mock) use ($broken, $next) {
+        $mock->shouldReceive('review')->once()->with(Mockery::on(fn (Game $g) => $g->is($broken)), false)
+            ->andThrow(new RuntimeException('Failed assessment storage'));
+        $mock->shouldReceive('review')->once()->with(Mockery::on(fn (Game $g) => $g->is($next)), false)
+            ->andReturn(reliabilitySavedRevision($next, ['change' => [], 'eligibility' => ['status' => 'hold', 'data_reasons' => ['spread_quote_missing']]]));
+    });
+
+    $this->artisan('nfl:research-pipeline', ['--no-ingest' => true, '--no-web' => true])
+        ->expectsOutputToContain('Research review: 1 completed; 1 held; 1 failed.')
+        ->assertFailed();
+});
+
+it('does not mask ingestion errors with a completed held assessment', function () {
+    $game = reliabilityResearchGame();
+    $this->mock(OfficialSourceIngestor::class, fn ($mock) => $mock->shouldReceive('sync')->once()->andReturn(['team:injury' => ['error' => 'RuntimeException']]));
+    $this->mock(ResearchPipeline::class, fn ($mock) => $mock->shouldReceive('review')->once()
+        ->andReturn(reliabilitySavedRevision($game, ['change' => [], 'eligibility' => ['status' => 'hold', 'data_reasons' => ['missing_quarterback_history']]])));
+
+    $this->artisan('nfl:research-pipeline', ['--no-web' => true])->assertFailed();
 });

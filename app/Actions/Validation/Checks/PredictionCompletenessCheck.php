@@ -3,9 +3,9 @@
 namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
-use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Sports\SeasonStage\SeasonStageService;
 use App\Services\Validation\CfbValidationCoverage;
+use App\Services\Validation\PredictionValidationCoverage;
 use Illuminate\Database\Eloquent\Model;
 
 class PredictionCompletenessCheck implements ValidationCheck
@@ -27,10 +27,9 @@ class PredictionCompletenessCheck implements ValidationCheck
         $stageContext = app(SeasonStageService::class)->context($sport, null, null, $windowDays);
 
         $coverage = app(CfbValidationCoverage::class);
-        $canonicalMode = (bool) config("prediction_lifecycle.canonical_pipeline.{$sport}", false)
-            || (bool) config("prediction_lifecycle.canonical_reads.{$sport}", false);
+        $predictionCoverage = app(PredictionValidationCoverage::class);
+        $canonicalMode = $predictionCoverage->usesCanonical($sport);
         $query = $gameModel::query()
-            ->when(! $canonicalMode, fn ($query) => $query->with('prediction'))
             ->whereIn('id', $stageContext->activeGameIds)
             ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_PRE_GAME', 'STATUS_DELAYED', 'scheduled']);
 
@@ -39,15 +38,11 @@ class PredictionCompletenessCheck implements ValidationCheck
         if ($sport === 'cfb') {
             $games = $games->filter(fn ($game) => $coverage->requiredTeamIds($game) !== [])->values();
         }
-        $canonical = $canonicalMode
-            ? ($sport === 'cfb' ? $coverage->publishedForGames($games)
-                : app(CanonicalSportPredictionQuery::class)->queryForSport($sport)
-                    ->whereIn("{$sport}_games.id", $games->pluck('id'))->withOnly([])->get()->keyBy('sport_event_id'))
-            : null;
+        $published = $predictionCoverage->forGames($sport, $games);
         $totalGames = $games->count();
-        $missingGames = $games->filter(fn (Model $game) => $canonical !== null ? ! $canonical->has($game->sport_event_id) : $game->prediction === null)->values();
-        $staleGames = $canonical !== null ? $games->filter(function ($game) use ($canonical) {
-            $prediction = $canonical->get($game->sport_event_id);
+        $missingGames = $games->filter(fn (Model $game) => ! $published->has($predictionCoverage->key($sport, $game)))->values();
+        $staleGames = $canonicalMode ? $games->filter(function ($game) use ($published, $predictionCoverage, $sport) {
+            $prediction = $published->get($predictionCoverage->key($sport, $game));
 
             return $prediction && (! $prediction->generated_at || $prediction->generated_at->lt(now()->subHours(24)));
         }) : collect();
@@ -75,7 +70,7 @@ class PredictionCompletenessCheck implements ValidationCheck
             'status' => $status,
             'severity' => $status,
             'message' => $message,
-            'recommended_action' => $canonical !== null
+            'recommended_action' => $canonicalMode
                 ? ($sport === 'cfb' ? 'cfb:run-pregame-pipeline --days-forward=8 --resume' : "{$sport}:generate-canonical-predictions")
                 : "{$sport}:generate-predictions",
             'metadata' => [
@@ -83,7 +78,7 @@ class PredictionCompletenessCheck implements ValidationCheck
                 'season_stage' => $stageContext->toArray(),
                 'active_games' => $totalGames,
                 'games_missing_predictions' => $missingCount,
-                'prediction_source' => $canonical !== null ? 'canonical' : 'legacy',
+                'prediction_source' => $canonicalMode ? 'canonical' : 'legacy',
                 'games_with_stale_predictions' => $staleGames->count(),
                 'sample_stale_game_ids' => $staleGames->take(5)->pluck('id')->all(),
                 'sample_game_ids' => $missingGames->take(5)->pluck('id')->map(fn ($id) => (int) $id)->all(),

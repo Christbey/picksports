@@ -64,3 +64,11 @@ it('honors an explicit basketball season override in manual pipelines', function
     $steps = $registry->pipelineSteps('nba', 'predict', $registry->context('2026-10-20', 2025));
     expect(collect($steps)->firstWhere('command', 'nba:generate-predictions')['arguments']['--season'])->toBe(2025);
 });
+
+it('uses the supported synchronous option for CBB stale game recovery', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-11-17 03:00:00', 'America/Chicago'));
+    $event = collect(app(Schedule::class)->events())->firstWhere('description', 'CBB: Backfill Stale Games');
+    expect($event->command)->toContain('--sync')->not->toContain('--dispatch');
+    expect($event->filtersPass(app()))->toBeTrue();
+    $this->artisan('espn:backfill-cbb-stale-games --sync --limit=100')->assertSuccessful();
+});

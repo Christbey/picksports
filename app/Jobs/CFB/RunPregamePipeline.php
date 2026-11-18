@@ -58,8 +58,7 @@ class RunPregamePipeline implements ShouldBeUnique, ShouldQueue
         }
         $started = now()->toIso8601String();
         $monotonicStart = hrtime(true);
-        Cache::put('cfb:pregame:worker-status', ['run_id' => $this->runId, 'state' => 'running', 'arguments' => $this->arguments,
-            'started_at' => $started], now()->addDay());
+        $this->storeStatus(['state' => 'running', 'arguments' => $this->arguments, 'started_at' => $started], true);
         try {
             $batch = match (true) {
                 $this->batchOffset !== null => ['--batch-offset' => $this->batchOffset],
@@ -128,7 +127,7 @@ class RunPregamePipeline implements ShouldBeUnique, ShouldQueue
             $status['duration_ms'] = (int) ((hrtime(true) - $monotonicStart) / 1_000_000);
             $status['peak_memory_bytes'] = memory_get_peak_usage(true);
         }
-        Cache::put('cfb:pregame:worker-status', [...$status, 'output' => mb_strcut($output ?? '', -32768, null, 'UTF-8')], now()->addDay());
+        $this->storeStatus([...$status, 'output' => mb_strcut($output ?? '', -32768, null, 'UTF-8')]);
         if (! CommandHeartbeat::where('source', 'worker')->where('metadata->run_id', $this->runId)->exists()) {
             $command = 'cfb:run-pregame-pipeline --season='.($this->arguments['--season'] ?? 'current');
             $service = app(CommandHeartbeatService::class);
@@ -138,5 +137,16 @@ class RunPregamePipeline implements ShouldBeUnique, ShouldQueue
                 $service->recordFailure($command, 'cfb', 'worker', $error ?? 'CFB worker outcome: '.$state, $status);
             }
         }
+    }
+    private function storeStatus(array $values, bool $starting = false): void
+    {
+        Cache::lock('cfb:pregame:worker-status-lock', 10)->block(5, function () use ($values, $starting): void {
+            $status = Cache::get('cfb:pregame:worker-status', []);
+            if (! $starting && ($status['run_id'] ?? null) !== $this->runId) {
+                return;
+            }
+            Cache::put('cfb:pregame:worker-status', [...($starting ? [] : $status), ...$values,
+                'run_id' => $this->runId], now()->addDay());
+        });
     }
 }

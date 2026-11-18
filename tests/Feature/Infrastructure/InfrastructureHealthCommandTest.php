@@ -193,3 +193,32 @@ it('does not let its own previous heartbeat failure latch scheduler health criti
 
     expect($metrics['scheduler']['failure_count'])->toBe(0);
 });
+
+it('reports critical findings without a job failure only in explicit reporting mode', function () {
+    $collector = Mockery::mock(InfrastructureMetricsCollector::class);
+    $collector->shouldReceive('collect')->twice()->andReturn(infrastructureMetrics(['failed_jobs' => ['recent_count' => 4]]));
+    $this->app->instance(InfrastructureMetricsCollector::class, $collector);
+    expect(Artisan::call('infrastructure:health', ['--json' => true]))->toBe(1);
+    expect(Artisan::call('infrastructure:health', ['--json' => true, '--report-only' => true]))->toBe(0);
+    $report = json_decode(Artisan::output(), true);
+    expect($report['status'])->toBe('critical')->and($report['healthy'])->toBeFalse()
+        ->and($report['execution_status'])->toBe('completed');
+});
+
+it('does not hide collection failures in reporting mode', function () {
+    $collector = Mockery::mock(InfrastructureMetricsCollector::class);
+    $collector->shouldReceive('collect')->once()->andReturn(infrastructureMetrics(['queue' => ['ready' => null]]));
+    $this->app->instance(InfrastructureMetricsCollector::class, $collector);
+    expect(Artisan::call('infrastructure:health', ['--json' => true, '--report-only' => true]))->toBe(1);
+    expect(json_decode(Artisan::output(), true)['execution_status'])->toBe('failed');
+});
+
+it('honors explicitly disabled metrics even when their values are unavailable', function () {
+    config(['infrastructure.health.thresholds.redis_memory_percent' => ['warning' => null, 'critical' => null]]);
+    $collector = Mockery::mock(InfrastructureMetricsCollector::class);
+    $collector->shouldReceive('collect')->once()->andReturn(infrastructureMetrics(['redis' => ['memory_utilization_percent' => null]]));
+    $this->app->instance(InfrastructureMetricsCollector::class, $collector);
+    expect(Artisan::call('infrastructure:health', ['--json' => true]))->toBe(0);
+    $report = json_decode(Artisan::output(), true);
+    expect(collect($report['checks'])->firstWhere('name', 'redis_memory')['status'])->toBe('disabled');
+});

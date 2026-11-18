@@ -272,7 +272,7 @@ test('admin healthchecks page exposes validation run history and selected run fi
             ->where('selected_validation_run.findings.0.message', 'Older run missing predictions.')
             ->where('recent_validation_runs.0.id', $latestRun->id)
             ->where('recent_validation_runs.1.id', $olderRun->id)
-            ->where('validation_trend.direction', 'regressing')
+            ->where('validation_trend.direction', 'stable')
             ->where('validation_trend.points.0.id', $olderRun->id)
             ->where('validation_trend.points.1.id', $latestRun->id)
         );

@@ -30,7 +30,7 @@ class CfbValidationCoverage
         return CanonicalPrediction::query()->where('sport', 'cfb')->where('phase', 'pregame')
             ->where('publication_state', 'published')
             ->whereIn('sport_event_id', $games->pluck('sport_event_id')->filter())
-            ->whereNotNull('published_at')->whereHas('markets')
+            ->whereNotNull('published_at')->where('published_at', '<=', now())->where('generated_at', '<=', now())->whereHas('markets')
             ->orderByDesc('revision')->get(['sport_event_id', 'generated_at', 'published_at', 'revision'])
             ->unique('sport_event_id')->keyBy('sport_event_id');
     }

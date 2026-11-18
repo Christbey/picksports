@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Services\Infrastructure\InfrastructureHealthEvaluator;
 use App\Services\Infrastructure\InfrastructureMetricsCollector;
+use App\Support\HealthcheckOutcome;
 use Illuminate\Console\Command;
 use JsonException;
 use Throwable;
@@ -11,7 +12,8 @@ use Throwable;
 class InfrastructureHealthCommand extends Command
 {
     protected $signature = 'infrastructure:health
-        {--json : Output machine-readable JSON}';
+        {--json : Output machine-readable JSON}
+        {--report-only : Report unhealthy findings without failing successful collection}';
 
     protected $description = 'Report bounded Redis, queue, scheduler, and database infrastructure health metrics';
 
@@ -22,9 +24,11 @@ class InfrastructureHealthCommand extends Command
         try {
             $metrics = $collector->collect();
             $result = $evaluator->evaluate($metrics);
+            $outcome = new HealthcheckOutcome($result['status'], $result['execution_failed']);
             $report = [
                 ...$result,
                 'metrics' => $metrics,
+                'execution_status' => $outcome->executionStatus(),
             ];
 
             if ((bool) $this->option('json')) {
@@ -36,7 +40,7 @@ class InfrastructureHealthCommand extends Command
                 $this->renderReport($report);
             }
 
-            return $result['healthy'] ? self::SUCCESS : self::FAILURE;
+            return $outcome->exitCode((bool) $this->option('report-only'));
         } catch (JsonException) {
             $this->error('Unable to encode the infrastructure health report.');
 
@@ -80,6 +84,12 @@ class InfrastructureHealthCommand extends Command
             $this->table(['Queue', 'Ready', 'Delayed', 'Reserved', 'Oldest ready'], $queueRows);
         }
 
+        $this->line(sprintf(
+            'Failed queue jobs: %s actionable; %s monitor failures excluded; %s total in window.',
+            data_get($report, 'metrics.failed_jobs.recent_count') ?? 'unavailable',
+            data_get($report, 'metrics.failed_jobs.excluded_monitor_count') ?? 'unavailable',
+            data_get($report, 'metrics.failed_jobs.total_count') ?? 'unavailable',
+        ));
         $this->line(sprintf(
             'Redis memory: %s / %s; evicted keys: %s.',
             $this->formatBytes(data_get($report, 'metrics.redis.used_memory_bytes')),

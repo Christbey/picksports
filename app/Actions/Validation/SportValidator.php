@@ -115,9 +115,12 @@ class SportValidator
         return iterator_to_array($this->results($sport, $scope), false);
     }
 
-    /** @return \Generator<int, array<string, mixed>> */
-    public function results(string $sport, string $scope = 'full'): \Generator
+    /** @return iterable<int, array<string, mixed>> */
+    public function results(string $sport, string $scope = 'full'): iterable
     {
+        if (! in_array($scope, self::supportedScopes(), true)) {
+            throw new \InvalidArgumentException('Unsupported validation scope.');
+        }
         $profile = config("validation.sports.{$sport}");
 
         if (! is_array($profile)) {
@@ -131,7 +134,7 @@ class SportValidator
                 report($error);
                 $result = ['check_type' => 'validation_check_error_'.substr(explode('@', class_basename($check))[0], 0, 90),
                     'status' => 'failing', 'message' => 'Validation check could not complete.',
-                    'metadata' => ['check' => get_class($check), 'error' => $error->getMessage()],
+                    'metadata' => ['check' => get_class($check), 'execution_failed' => true, 'error_class' => $error::class],
                     'recommended_action' => 'Review validation errors and rerun healthcheck:validate-data'];
             }
             if ($result !== null) {

@@ -174,14 +174,14 @@ class RunPregamePipelineCommand extends Command
                         $quality = $readiness->forGame($past);
 
                         return ['state' => $quality['ready'] ? 'complete' : 'partial', 'quality' => $quality];
-                    }, false);
+                    }, false, 21600);
                 }
                 $quality = $readiness->forGame($past);
                 foreach (['boxscore' => CfbOfficialBoxscoreRepair::class, 'plays' => CfbOfficialPlayTailRepair::class] as $component => $repairClass) {
                     $repair = app($repairClass);
                     if (! data_get($quality, 'components.'.$component.'.accepted') && $repair->hasReference($past)) {
                         $fixed = app(CfbPipelineStage::class)->run('game:'.$past->id, 'official-'.$component,
-                            ['quality' => $quality, 'policy' => $repairClass::VERSION], fn () => $repair->execute($past), false);
+                            ['quality' => $quality, 'policy' => $repairClass::VERSION], fn () => $repair->execute($past), false, 21600);
                         if ($fixed['state'] !== 'complete') {
                             $this->warn("Game {$past->id}: official {$component} proof remains held.");
                         }
@@ -193,7 +193,7 @@ class RunPregamePipelineCommand extends Command
                         ->contains(fn ($reason) => str_ends_with($reason, 'team_yards_do_not_reconcile'))) {
                     app(CfbPipelineStage::class)->run('game:'.$past->id, 'core-box-repair',
                         ['primary_boxscore' => data_get($quality, 'components.boxscore.source_hash')],
-                        fn () => app(CfbCfbdTeamBoxscoreSync::class)->execute($past), false);
+                        fn () => app(CfbCfbdTeamBoxscoreSync::class)->execute($past), false, 21600);
                 }
                 if (! $quality['ready']) {
                     $playFailures[] = $past->home_team_id;
@@ -225,7 +225,7 @@ class RunPregamePipelineCommand extends Command
 
                         return is_array($result) && isset($result['state']) && ($result['state'] !== 'complete' || $worker->successful()) ? $result
                             : ['state' => 'failed', 'error' => substr(trim($worker->errorOutput().' '.$worker->output()), 0, 2000), 'exit_code' => $worker->exitCode()];
-                    });
+                    }, true, 21600);
                     if ($processed['state'] !== 'complete') {
                         $playFailures[] = $past->home_team_id;
                         $playFailures[] = $past->away_team_id;
@@ -243,11 +243,15 @@ class RunPregamePipelineCommand extends Command
             }
             // Recompute after Elo and injury updates, including games finalized since the daily refresh.
             $metricTeamIds = $games->flatMap(fn ($game) => $coverage->requiredTeamIds($game))->unique()->values();
+            $metricFailures = [];
             foreach ($metricTeamIds->chunk(10) as $batch) {
                 if ($this->refreshShared('cfb:calculate-team-metrics', ['--season' => (int) $season, '--team-ids' => $batch->implode(',')]) !== self::SUCCESS) {
-                    $this->error('Team metric refresh failed; generation stopped.');
-
-                    return self::FAILURE;
+                    foreach ($batch as $teamId) {
+                        if ($this->refreshShared('cfb:calculate-team-metrics', ['--season' => (int) $season, '--team-ids' => (string) $teamId]) !== self::SUCCESS) {
+                            $metricFailures[] = $teamId;
+                            $this->warn("Team {$teamId}: metric refresh failed; affected games remain held.");
+                        }
+                    }
                 }
             }
             if ($this->refreshShared('cfb:sync-odds', ['--days' => (int) $days]) !== self::SUCCESS) {
@@ -256,29 +260,51 @@ class RunPregamePipelineCommand extends Command
 
             $results = [];
             foreach ($games as $game) {
-                $inputs = ['metadata_reliable' => ! in_array($game->id, $metadataFailures, true), 'game_updated_at' => $game->updated_at?->toISOString(),
-                    'history' => GameDataCheck::whereIn('game_id', $history->modelKeys())->whereNotNull('accepted_at')->pluck('source_hash')->sort()->values()->all(),
+                $teamIds = [$game->home_team_id, $game->away_team_id];
+                $gameHistory = $history->filter(fn ($past) => in_array($past->home_team_id, $teamIds, true) || in_array($past->away_team_id, $teamIds, true));
+                $release = null;
+                try {
+                    $release = app(CalculationReleaseSelector::class)->select($game->sportEvent, 'pregame');
+                } catch (\Throwable $error) {
+                    report($error);
+                }
+                $gates = [
+                    'personnel_reliable' => ! array_intersect($teamIds, $teamFailures),
+                    'metrics_reliable' => ! array_intersect($teamIds, $metricFailures),
+                    'history_reliable' => ! array_intersect($teamIds, $historyFailures),
+                    'plays_reliable' => ! array_intersect($teamIds, $playFailures),
+                    'kickoff_future' => (bool) $game->sportEvent?->starts_at?->isFuture(),
+                ];
+                $inputs = ['gates' => $gates, 'release' => $release?->only(['id', 'configuration_hash', 'configuration', 'code_revision', 'input_schema_version']),
+                    'metadata_reliable' => ! in_array($game->id, $metadataFailures, true), 'game_updated_at' => $game->updated_at?->toISOString(),
+                    'history' => GameDataCheck::whereIn('game_id', $gameHistory->modelKeys())->whereNotNull('accepted_at')->pluck('source_hash')->sort()->values()->all(),
                     // A new hourly source refresh needs a new immutable forecast; --resume only skips completed work within that refresh window.
                     'refresh_window' => now()->format('Y-m-d-H'),
                     'team_revisions' => TeamMetric::whereIn('team_id', [$game->home_team_id, $game->away_team_id])->max('updated_at'),
                     'quote_revision' => MarketQuote::where('sport', 'cfb')->where('game_id', $game->id)->max('id'),
                     'injury_revision' => PlayerInjury::whereIn('team_id', [$game->home_team_id, $game->away_team_id])->max('updated_at')];
-                $results[$game->id] = app(CfbPipelineStage::class)->run('game:'.$game->id, 'forecast', $inputs, function () use ($game, $historyFailures, $playFailures, $teamFailures, $metadataFailures) {
+                $results[$game->id] = app(CfbPipelineStage::class)->run('game:'.$game->id, 'forecast', $inputs, function () use ($game, $gates, $release, $metadataFailures) {
                     if (in_array($game->id, $metadataFailures, true)) {
                         return ['state' => 'blocked', 'reason' => 'unreliable_kickoff_metadata'];
                     }
-                    if (array_intersect([$game->home_team_id, $game->away_team_id], $teamFailures)) {
+                    if (! $release) {
+                        return ['state' => 'blocked', 'reason' => 'unavailable_calculation_release'];
+                    }
+                    if (! $gates['personnel_reliable']) {
                         return ['state' => 'blocked', 'reason' => 'unreliable_team_personnel'];
                     }
-                    if (array_intersect([$game->home_team_id, $game->away_team_id], $historyFailures)) {
+                    if (! $gates['metrics_reliable']) {
+                        return ['state' => 'blocked', 'reason' => 'unreliable_team_metrics'];
+                    }
+                    if (! $gates['history_reliable']) {
                         return ['state' => 'blocked', 'reason' => 'incomplete_historical_sources'];
                     }
-                    if (array_intersect([$game->home_team_id, $game->away_team_id], $playFailures)
-                        && ! data_get(app(CalculationReleaseSelector::class)->select($game->sportEvent, 'pregame')->configuration,
+                    if (! $gates['plays_reliable']
+                        && ! data_get($release->configuration,
                             'inputs.validated_historical_play_metrics', false)) {
                         return ['state' => 'blocked', 'reason' => 'release_requires_complete_play_history'];
                     }
-                    if (! $game->sportEvent?->starts_at?->isFuture()) {
+                    if (! $gates['kickoff_future']) {
                         return ['state' => 'blocked', 'reason' => 'kickoff_passed'];
                     }
                     $started = now();
@@ -317,7 +343,14 @@ class RunPregamePipelineCommand extends Command
 
     private function refreshShared(string $command, array $arguments): int
     {
-        $result = app(CfbSharedInputRunner::class)->run($command, $arguments);
+        try {
+            $result = app(CfbSharedInputRunner::class)->run($command, $arguments);
+        } catch (\Throwable $error) {
+            report($error);
+            $this->warn("Shared refresh {$command} failed: {$error->getMessage()}");
+
+            return self::FAILURE;
+        }
         if ($result['output'] !== '') {
             $this->line($result['output']);
         }

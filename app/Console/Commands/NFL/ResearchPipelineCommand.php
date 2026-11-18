@@ -185,7 +185,7 @@ class ResearchPipelineCommand extends Command
         foreach ($selected as $game) {
             try {
                 $revision = $pipeline->review($game, ! $this->option('no-web'));
-                if ($revision) {
+                if ($revision && $revision->exists && $revision->getKey() !== null) {
                     $this->line(json_encode(['game_id' => $game->id, 'revision_id' => $revision->id, 'new_revision' => $revision->wasRecentlyCreated, 'eligibility' => $revision->brief['eligibility'], 'change' => $revision->brief['change']]));
                     $completed++;
                     if (data_get($revision->brief, 'eligibility.status') === 'hold') {
@@ -202,6 +202,10 @@ class ResearchPipelineCommand extends Command
                     $failed = true;
                     $reviewFailures++;
                     $this->warn('Game '.$game->id.' assessment unavailable or already running.');
+                    $reasons = data_get($revision?->brief, 'eligibility.data_reasons', []);
+                    if ($reasons !== []) {
+                        $this->warn('Game '.$game->id.' unsaved assessment: '.implode(', ', $reasons));
+                    }
                 }
             } catch (Throwable $e) {
                 $failed = true;

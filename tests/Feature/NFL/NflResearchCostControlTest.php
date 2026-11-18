@@ -430,7 +430,8 @@ it('bases pick holds on a game designation and paired quote rather than research
         ->toBe(array_values(array_filter($expected, fn ($reason) => str_contains($reason, 'starting_qb'))));
 })->with([
     'full practice without a game designation' => [null, 1, []],
-    'full practice with an official questionable designation' => ['Questionable', 1, ['home_starting_qb_availability_uncertain']],
+    'questionable starter remains projected without a forced data hold' => ['Questionable', 1, []],
+    'modeled doubtful starter must be replaced' => ['Doubtful', 1, ['home_starting_qb_unavailable_in_forecast']],
     'modeled starter ruled out' => ['Out', 1, ['home_starting_qb_unavailable_in_forecast']],
     'explicitly available with stale odds' => ['Available', 37, ['spread_quote_stale']],
 ]);

@@ -28,10 +28,14 @@ class TrainFootballSignalsCommand extends Command
 
             return self::FAILURE;
         }
+        $memoryLimit = ini_get('memory_limit');
         try {
             return $this->train($trainer);
         } finally {
             $lock->release();
+            if ($memoryLimit !== false) {
+                ini_set('memory_limit', $memoryLimit);
+            }
         }
     }
 

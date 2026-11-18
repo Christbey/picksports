@@ -6,6 +6,7 @@ use App\Models\NFL\Team;
 use App\Models\NFL\TeamMetric;
 use App\Models\NFL\TeamMetricSnapshot;
 use App\Models\NFL\TeamStat;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 
 it('captures nfl team metric snapshots for a season', function () {
@@ -39,6 +40,8 @@ it('captures nfl team metric snapshots for a season', function () {
 });
 
 it('can backfill nfl team metric snapshots from game records across dates', function () {
+    config(['app.timezone' => 'UTC']);
+    $this->travelTo(Carbon::parse('2025-08-02 12:00:00', 'UTC'));
     $team = Team::factory()->create([
         'abbreviation' => 'KC',
     ]);
@@ -84,6 +87,7 @@ it('can backfill nfl team metric snapshots from game records across dates', func
         ]);
     }
 
+    $this->travelTo(Carbon::parse('2025-09-10 16:00:00', 'UTC'));
     $firstGame = Game::factory()->create([
         'season' => 2025,
         'season_type' => config('nfl.season.types.regular'),
@@ -145,6 +149,7 @@ it('can backfill nfl team metric snapshots from game records across dates', func
         'elo_change' => -10.0,
     ]);
 
+    $this->travelTo(Carbon::parse('2025-09-20 16:00:00', 'UTC'));
     Game::factory()->create([
         'season' => 2025,
         'season_type' => config('nfl.season.types.regular'),

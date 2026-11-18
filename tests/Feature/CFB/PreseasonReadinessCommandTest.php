@@ -216,7 +216,7 @@ it('pins the backend and frontend home-spread convention', function () {
     $bettingAnalysis = File::get(resource_path('js/components/BettingAnalysisCard.vue'));
 
     expect($predictionSummary)->toContain('-Number(prediction.predicted_spread)')
-        ->and(File::get(resource_path('js/lib/pregameBetCalls.ts')))->toContain('modelLine !== null ? -modelLine : number(assessment.model_home_margin)')
+        ->and(preg_replace('/\s+/', ' ', File::get(resource_path('js/lib/pregameBetCalls.ts'))))->toContain('const margin = modelLine === null ? (number(assessment.model_home_margin) ?? (dashboard ? number(data.predicted_spread) : null)) : -modelLine;')
         ->and(preg_replace('/\s+/', ' ', $predictionTracking))->toContain('defaultLine: spread !== null ? Number((-spread).toFixed(1)) : null,')
         ->and($publicSportPresentation)->toContain('const homeLine = -numeric;')
         ->and($bettingAnalysis)->toContain('return formatHomeSpreadLine(bet.model_home_line ?? bet.model_line);');

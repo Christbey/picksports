@@ -1,8 +1,11 @@
 <?php
 
 beforeEach(function () {
+    $this->travelTo(now()->setDate(2026, 10, 28)->setTime(10, 0));
     config(['alerts.opportunity.unit_thresholds.points' => 0]);
 });
+
+afterEach(fn () => $this->travelBack());
 
 use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;

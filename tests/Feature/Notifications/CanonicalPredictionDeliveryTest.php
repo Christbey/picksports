@@ -30,7 +30,7 @@ use Illuminate\Support\Str;
 
 beforeEach(function () {
     $this->travelTo(now()->setDate(2026, 10, 28)->setTime(10, 0));
-    config(['ai.features.daily_digest_summary.enabled' => false, 'alerts.daily_digest.sports' => ['nba']]);
+    config(['ai.features.daily_digest_summary.enabled' => false, 'alerts.daily_digest.sports' => ['nba'], 'alerts.daily_digest.enabled' => true]);
     $props = Mockery::mock(PlayerPropAnalyzer::class);
     $props->shouldReceive('precomputedRecommendations')->andReturn(collect());
     app()->instance(PlayerPropAnalyzer::class, $props);

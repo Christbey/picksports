@@ -145,6 +145,9 @@ abstract class PregameMarketSnapshot
             ->filter(fn (MarketQuote $quote): bool => $marketKey === 'h2h'
                 ? is_numeric($quote->no_vig_probability)
                 : is_numeric($quote->line))
+            ->filter(fn (MarketQuote $quote): bool => $marketKey === 'h2h'
+                || (is_numeric($quote->price)
+                    && is_numeric($this->oppositeQuote($quotes, $quote, $marketKey, $side)?->price)))
             ->sortBy(fn (MarketQuote $quote): float => $marketKey === 'h2h'
                 ? (float) $quote->no_vig_probability
                 : (float) $quote->line)
@@ -160,18 +163,7 @@ abstract class PregameMarketSnapshot
         }
 
         $payload = $this->quotePayload($selected);
-        $oppositeSide = match ($side) {
-            'home' => 'away',
-            'over' => 'under',
-            default => null,
-        };
-        $opposite = $oppositeSide === null ? null : $quotes
-            ->where('market_key', $marketKey)
-            ->where('side', $oppositeSide)
-            ->first(fn (MarketQuote $quote): bool => $quote->game_odds_snapshot_id === $selected->game_odds_snapshot_id
-                && $quote->bookmaker_key === $selected->bookmaker_key
-                && $quote->bookmaker_title === $selected->bookmaker_title
-                && $this->pairedLinesMatch($marketKey, $selected, $quote));
+        $opposite = $this->oppositeQuote($quotes, $selected, $marketKey, $side);
 
         return [
             ...$payload,
@@ -185,6 +177,24 @@ abstract class PregameMarketSnapshot
                 ? $this->quotePayload($opposite)
                 : null,
         ];
+    }
+
+    /** @param Collection<int, MarketQuote> $quotes */
+    private function oppositeQuote(Collection $quotes, MarketQuote $selected, string $marketKey, string $side): ?MarketQuote
+    {
+        $oppositeSide = match ($side) {
+            'home' => 'away',
+            'over' => 'under',
+            default => null,
+        };
+
+        return $oppositeSide === null ? null : $quotes
+            ->where('market_key', $marketKey)
+            ->where('side', $oppositeSide)
+            ->first(fn (MarketQuote $quote): bool => $quote->game_odds_snapshot_id === $selected->game_odds_snapshot_id
+                && $quote->bookmaker_key === $selected->bookmaker_key
+                && $quote->bookmaker_title === $selected->bookmaker_title
+                && $this->pairedLinesMatch($marketKey, $selected, $quote));
     }
 
     /** @return array<string, mixed> */

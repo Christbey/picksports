@@ -9,6 +9,7 @@ use App\Models\CalculationRelease;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\FpiRating;
 use App\Models\CFB\Game;
+use App\Models\CFB\GameDataCheck;
 use App\Models\CFB\Team;
 use App\Models\CFB\TeamMetric;
 use App\Models\CFB\TeamSeasonAffiliation;
@@ -40,6 +41,9 @@ beforeEach(function () {
     Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026,
         'home_team_id' => $home->id, 'away_team_id' => $away->id, 'status' => 'STATUS_SCHEDULED']);
     $this->mock(SyncGameMetadata::class)->shouldReceive('execute')->andReturn(true)->byDefault();
+    $this->mock(CalculationReleaseSelector::class)->shouldReceive('select')->andReturn(new CalculationRelease([
+        'configuration' => ['inputs' => ['validated_historical_play_metrics' => true]],
+    ]))->byDefault();
     Artisan::command('cfb:sync-official-availability {--season=} {--days-forward=} {--game=}', fn () => 0);
     $this->steps = new ArrayObject;
     $this->mock(CfbSharedInputRunner::class)->shouldReceive('run')->andReturnUsing(function ($command, $arguments) {
@@ -83,7 +87,7 @@ beforeEach(function () {
         $steps[] = 'generation';
         $game = Game::findOrFail($this->option('game'));
         $prediction = CanonicalPrediction::factory()->create(['sport' => 'cfb', 'sport_event_id' => $game->sport_event_id,
-            'phase' => 'pregame', 'publication_state' => 'published', 'published_at' => now(), 'generated_at' => now(), 'revision' => 1]);
+            'phase' => 'pregame', 'publication_state' => 'published', 'published_at' => now(), 'generated_at' => now(), 'revision' => (int) CanonicalPrediction::where('sport_event_id', $game->sport_event_id)->max('revision') + 1]);
         $prediction->markets()->create(['market_type' => 'spread', 'selection' => 'home', 'projected_line' => -7]);
 
         return 0;
@@ -697,7 +701,6 @@ it('reuses an unaffected forecast when another matchup receives corrected histor
         ->and(DB::table('cfb_pipeline_steps')->where('scope', 'game:'.$unaffected->id)
             ->where('stage', 'forecast')->count())->toBe(1);
 });
-
 
 it('does not let an older worker failure overwrite a newer run with identical arguments', function () {
     Artisan::command('cfb:run-pregame-pipeline {--season=} {--run-id=}', fn () => 0);

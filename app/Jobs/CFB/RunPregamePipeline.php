@@ -138,6 +138,7 @@ class RunPregamePipeline implements ShouldBeUnique, ShouldQueue
             }
         }
     }
+
     private function storeStatus(array $values, bool $starting = false): void
     {
         Cache::lock('cfb:pregame:worker-status-lock', 10)->block(5, function () use ($values, $starting): void {

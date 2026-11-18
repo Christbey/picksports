@@ -2,7 +2,6 @@
 
 use App\Models\ApiIdempotencyKey;
 use App\Models\CommandHeartbeat;
-use App\Models\MLB\Game as MlbGame;
 use App\Models\NFL\Game;
 use App\Services\CFB\Predictions\CfbCalculationReleaseDefinition;
 use App\Services\CommandHeartbeatService;
@@ -11,6 +10,7 @@ use App\Services\NFL\Predictions\NflPregameHorizon;
 use App\Services\Predictions\PredictionDeliverySource;
 use App\Support\BasketballSeason;
 use App\Support\CFB\CfbWeek;
+use App\Support\MlbSeasonActivity;
 use Illuminate\Console\Application;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -37,19 +37,7 @@ $inSeasonMonths = fn (array $months) => fn () => in_array(now()->month, $months,
 $nbaInSeason = $inSeasonMonths((array) config('healthchecks.season_months.nba')); // Oct-Jun
 $cbbInSeason = $inSeasonMonths((array) config('healthchecks.season_months.cbb')); // Oct-Apr
 $wcbbInSeason = $inSeasonMonths((array) config('healthchecks.season_months.wcbb')); // Oct-Apr
-$mlbInSeason = function (): bool {
-    $today = now(config('sports.business_timezone', config('app.timezone')));
-    if ($today->month !== 11) {
-        return $today->month >= 3 && $today->month <= 10;
-    }
-
-    return MlbGame::query()
-        ->where('season', $today->year)
-        ->whereIn('season_type', [config('mlb.season.types.postseason'), 'postseason', 'Post Season'])
-        ->whereBetween('game_date', [$today->copy()->subDays(2)->toDateString(), $today->copy()->addDays(3)->toDateString()])
-        ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_IN_PROGRESS', 'STATUS_DELAYED', 'STATUS_FINAL'])
-        ->exists();
-};
+$mlbInSeason = fn (): bool => MlbSeasonActivity::isActive();
 $wnbaInSeason = $inSeasonMonths((array) config('healthchecks.season_months.wnba')); // Apr-Oct
 $nflInSeason = $inSeasonMonths((array) config('healthchecks.season_months.nfl')); // Jul-Feb
 $nflDepthChartSeason = $inSeasonMonths([5, 6, 7, 8, 9, 10, 11, 12, 1, 2]); // May-Feb
@@ -564,7 +552,7 @@ $scheduleDailySeasonJob(
     'CBB: Sync Players'
 );
 $scheduleDailySeasonJob(
-    'espn:backfill-cbb-stale-games --dispatch=0 --limit=100',
+    'espn:backfill-cbb-stale-games --sync --limit=100',
     '03:00',
     $cbbInSeason,
     'CBB: Backfill Stale Games'

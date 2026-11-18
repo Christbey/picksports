@@ -15,6 +15,7 @@ use App\Services\CFB\Signals\CfbFootballSignalCatalog;
 use App\Services\CFB\Signals\CfbFootballSignalEvidence;
 use App\Services\CFB\Signals\CfbFootballSignalModel;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 
 function footballSignalInputs(): array
@@ -186,4 +187,20 @@ it('streams the same frozen prediction order across timestamp ties without sorti
         }
     }
     expect($visited)->toBe(array_slice($expected, 0, 2));
+});
+
+it('reports every frozen signal observation across bounded query batches', function () {
+    $event = SportEvent::factory()->create(['sport' => 'cfb', 'season' => 2026]);
+    foreach (range(1, 101) as $revision) {
+        $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'diagnostics' => [
+            'football_signals' => ['signals' => [['id' => 'scoring_pressure', 'matched' => true, 'contribution_points' => 0.0]]],
+        ]]);
+        CanonicalPrediction::factory()->create(['sport_event_id' => $event->id, 'sport' => 'cfb',
+            'revision' => $revision, 'phase' => 'pregame', 'publication_state' => 'draft', 'calculation_run_id' => $run->id]);
+    }
+    DB::table('predictions')->where('sport_event_id', $event->id)->update(['publication_state' => 'published']);
+    Artisan::call('cfb:report-football-signals', ['--season' => 2026]);
+    $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    expect($report['signals']['scoring_pressure']['evaluated'])->toBe(101)
+        ->and($report['games'])->toHaveCount(101);
 });

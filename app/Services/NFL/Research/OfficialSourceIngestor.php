@@ -13,6 +13,7 @@ use DOMXPath;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
 
@@ -49,6 +50,16 @@ class OfficialSourceIngestor
                 } catch (Throwable $e) {
                     $source->update(['checked_at' => now(), 'error' => class_basename($e)]);
                     $results[$source->key] = ['error' => class_basename($e)];
+                    Log::warning('NFL research source ingestion failed.', [
+                        'source_id' => $source->id,
+                        'source_key' => $source->key,
+                        'source_kind' => $source->kind,
+                        'exception_class' => $e::class,
+                        'exception_file' => str_starts_with($e->getFile(), base_path().DIRECTORY_SEPARATOR)
+                            ? substr($e->getFile(), strlen(base_path()) + 1) : basename($e->getFile()),
+                        'exception_line' => $e->getLine(),
+                        'error_fingerprint' => hash('sha256', $e->getMessage()),
+                    ]);
                 } finally {
                     // Release HTTP/DOM cycles between sources on full-slate command runs.
                     gc_collect_cycles();

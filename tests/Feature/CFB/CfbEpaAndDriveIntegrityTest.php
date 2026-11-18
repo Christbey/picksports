@@ -362,3 +362,12 @@ it('holds normalization if the accepted play revision changes during EPA calcula
     });
     $this->artisan('cfb:calculate-play-epa', ['--game_id' => $game->id, '--rebuild' => true])->assertExitCode(2);
 });
+
+it('defers live games in automatic EPA batches until their final event exists', function () {
+    [$game, $plays] = cfbLedgerFixture();
+    $game->update(['status' => 'STATUS_IN_PROGRESS']);
+    $this->artisan('cfb:calculate-play-epa', ['--season' => $game->season, '--limit' => 4])
+        ->expectsOutput('No matching games found.')->assertSuccessful();
+    expect($plays[0]->fresh()->epa_calculated_at)->toBeNull();
+    $this->artisan('cfb:calculate-play-epa', ['--game_id' => $game->id])->assertFailed();
+});

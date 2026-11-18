@@ -881,8 +881,6 @@ it('respects the shadow decision limit across bounded batches and retains idempo
         ->and($queries->filter(fn (string $query): bool => str_starts_with($query, 'select * from "shadow_model_outputs"') && str_contains($query, 'order by "id" asc')))->toHaveCount(2)
         ->and(BetDecision::query()->orderBy('shadow_model_output_id')->pluck('shadow_model_output_id')->all())
         ->toBe(ShadowModelOutput::query()->orderBy('id')->limit(101)->pluck('id')->all());
-    $this->artisan('sports:record-shadow-bet-decisions', ['--sport' => 'mlb', '--artifact' => $artifact->id, '--limit' => 101])
-        ->expectsOutput('Recorded 0 new immutable shadow decision(s).')->assertSuccessful();
     $source = app(RecordedShadowInputSource::class);
     $late = null;
     $this->mock(RecordedShadowInputSource::class, function ($mock) use ($source, $snapshot, $first, &$late) {
@@ -905,6 +903,8 @@ it('respects the shadow decision limit across bounded batches and retains idempo
     $this->instance(RecordedShadowInputSource::class, $source);
     $this->artisan('sports:record-shadow-bet-decisions', ['--sport' => 'mlb', '--artifact' => $artifact->id])
         ->expectsOutput('Recorded 1 new immutable shadow decision(s).')->assertSuccessful();
+    $this->artisan('sports:record-shadow-bet-decisions', ['--sport' => 'mlb', '--artifact' => $artifact->id])
+        ->expectsOutput('Recorded 0 new immutable shadow decision(s).')->assertSuccessful();
 });
 
 function createNativeShadowFeedbackFixture(string $variant = 'valid'): array
@@ -966,4 +966,17 @@ it('retains fresh promotion checks when saving native shadow bets without legacy
         ->and($decision->is_public)->toBeFalse()->and($decision->is_tracking_only)->toBeTrue()
         ->and($decision->eligibility_reasons)->toContain('market_model_not_promoted')
         ->and($queries)->not->toContain('prediction_feature_snapshots')->not->toContain('snapshot_metadata_payloads');
+});
+
+it('applies shadow decision limits to pending outputs rather than reprocessing immutable history', function () {
+    Carbon::setTestNow('2026-07-29 12:00:00');
+    [$artifact, $game, $snapshot] = createStructuredMlbShadowFeedbackFixture();
+    app(ShadowModelOutputRecorder::class)->record($snapshot);
+    foreach ([1, 2, 3] as $expected) {
+        $this->artisan('sports:record-shadow-bet-decisions', ['--sport' => 'mlb', '--artifact' => $artifact->id, '--limit' => 1])
+            ->expectsOutput('Recorded 1 new immutable shadow decision(s).')->assertSuccessful();
+        expect(BetDecision::where('model_artifact_id', $artifact->id)->count())->toBe($expected);
+    }
+    $this->artisan('sports:record-shadow-bet-decisions', ['--sport' => 'mlb', '--artifact' => $artifact->id, '--limit' => 1])
+        ->expectsOutput('Recorded 0 new immutable shadow decision(s).')->assertSuccessful();
 });

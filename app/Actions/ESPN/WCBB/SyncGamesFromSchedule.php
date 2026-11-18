@@ -6,6 +6,7 @@ use App\Actions\ESPN\AbstractSyncGamesFromSchedule;
 use App\DataTransferObjects\ESPN\GameData;
 use App\Models\WCBB\Game;
 use App\Models\WCBB\Team;
+use App\Services\ESPN\WCBB\EspnService;
 use App\Services\SportsAssetStorage;
 use Illuminate\Database\Eloquent\Model;
 
@@ -13,44 +14,56 @@ class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
 {
     protected const GAME_MODEL_CLASS = Game::class;
 
-    public function __construct(protected ?SportsAssetStorage $sportsAssetStorage = null)
+    public function __construct(EspnService $espnService, protected ?SportsAssetStorage $sportsAssetStorage = null)
     {
+        parent::__construct($espnService);
         $this->sportsAssetStorage ??= app(SportsAssetStorage::class);
     }
 
     protected function resolveTeams(GameData $dto, array $rawGame): array
     {
-        $homeTeam = Team::query()->where('espn_id', $dto->homeTeamEspnId)->first();
-        if (! $homeTeam) {
-            $homeTeam = Team::create([
-                'espn_id' => $dto->homeTeamEspnId,
-                'school' => $rawGame['competitions'][0]['competitors'][0]['team']['location'] ?? 'Unknown',
-                'mascot' => $rawGame['competitions'][0]['competitors'][0]['team']['name'] ?? 'Unknown',
-                'abbreviation' => $rawGame['competitions'][0]['competitors'][0]['team']['abbreviation'] ?? 'UNK',
-                'logo_url' => $this->sportsAssetStorage->mirrorTeamLogo(
-                    $rawGame['competitions'][0]['competitors'][0]['team']['logo'] ?? null,
-                    'wcbb',
-                    (($rawGame['competitions'][0]['competitors'][0]['team']['location'] ?? 'Unknown').' '.($rawGame['competitions'][0]['competitors'][0]['team']['name'] ?? 'Unknown')).'-'.$dto->homeTeamEspnId
-                ),
-            ]);
+        [$homeCompetitor, $awayCompetitor] = $this->resolveCompetitors($rawGame);
+
+        return [
+            $this->resolveTeam($dto->homeTeamEspnId, $homeCompetitor),
+            $this->resolveTeam($dto->awayTeamEspnId, $awayCompetitor),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $competitor
+     */
+    private function resolveTeam(string $espnId, array $competitor): ?Team
+    {
+        if (! ctype_digit($espnId) || (int) $espnId <= 0) {
+            return null;
         }
 
-        $awayTeam = Team::query()->where('espn_id', $dto->awayTeamEspnId)->first();
-        if (! $awayTeam) {
-            $awayTeam = Team::create([
-                'espn_id' => $dto->awayTeamEspnId,
-                'school' => $rawGame['competitions'][0]['competitors'][1]['team']['location'] ?? 'Unknown',
-                'mascot' => $rawGame['competitions'][0]['competitors'][1]['team']['name'] ?? 'Unknown',
-                'abbreviation' => $rawGame['competitions'][0]['competitors'][1]['team']['abbreviation'] ?? 'UNK',
-                'logo_url' => $this->sportsAssetStorage->mirrorTeamLogo(
-                    $rawGame['competitions'][0]['competitors'][1]['team']['logo'] ?? null,
-                    'wcbb',
-                    (($rawGame['competitions'][0]['competitors'][1]['team']['location'] ?? 'Unknown').' '.($rawGame['competitions'][0]['competitors'][1]['team']['name'] ?? 'Unknown')).'-'.$dto->awayTeamEspnId
-                ),
-            ]);
+        $team = Team::query()->where('espn_id', $espnId)->first();
+        if ($team) {
+            return $team;
         }
 
-        return [$homeTeam, $awayTeam];
+        $school = (string) data_get($competitor, 'team.location', 'Unknown');
+        $mascot = (string) data_get($competitor, 'team.name', 'Unknown');
+        $abbreviation = trim((string) data_get($competitor, 'team.abbreviation', ''));
+        if ($abbreviation === '' || strlen($abbreviation) > 10 || Team::query()->where('abbreviation', $abbreviation)->exists()) {
+            $attempt = 0;
+            do {
+                $abbreviation = 'E'.substr(hash('sha256', $espnId.'|'.$attempt++), 0, 9);
+            } while (Team::query()->where('abbreviation', $abbreviation)->exists());
+        }
+
+        return Team::query()->firstOrCreate(['espn_id' => $espnId], [
+            'school' => $school,
+            'mascot' => $mascot,
+            'abbreviation' => $abbreviation,
+            'logo_url' => $this->sportsAssetStorage->mirrorTeamLogo(
+                data_get($competitor, 'team.logo'),
+                'wcbb',
+                $school.' '.$mascot.'-'.$espnId,
+            ),
+        ]);
     }
 
     protected function gameAttributes(GameData $dto, array $rawGame, Model $homeTeam, Model $awayTeam): array

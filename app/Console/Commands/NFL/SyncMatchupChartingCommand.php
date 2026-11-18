@@ -63,11 +63,16 @@ class SyncMatchupChartingCommand extends Command
                     };
                 }
                 foreach ($counts as $field) {
-                    $value = trim($row[$field]);
-                    if ($value !== '' && $value !== 'NA' && (! ctype_digit($value) || (int) $value > 11)) {
-                        throw new RuntimeException('Invalid charted player count; no rows updated.');
+                    $value = strtoupper(trim($row[$field]));
+                    if ($value === '' || $value === 'NA') {
+                        $mapped['ftn_'.$field] = null;
+
+                        continue;
                     }
-                    $mapped['ftn_'.$field] = ctype_digit($value) ? (int) $value : null;
+                    if (! preg_match('/^\d+(?:\.0+)?$/D', $value) || (float) $value > 11) {
+                        throw new RuntimeException("Invalid charted player count for {$key}, {$field}: {$value}; no rows updated.");
+                    }
+                    $mapped['ftn_'.$field] = (int) $value;
                 }
                 $matches = $plays->get($key);
                 if ($matches === null || $matches->count() !== 1) {

@@ -30,6 +30,7 @@ class CalculatePlayEpaCommand extends Command
         $dryRun = (bool) $this->option('dry-run');
 
         $query = Game::query()
+            ->when($gameId === null || $gameId === '', fn ($query) => $query->where('status', 'STATUS_FINAL'))
             ->whereHas('plays', fn ($query) => $query->when(
                 ! $rebuild,
                 fn ($query) => $query->whereNull('epa_calculated_at')

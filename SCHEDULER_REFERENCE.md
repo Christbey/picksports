@@ -137,6 +137,8 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 
 ### MLB
 
+- Scheduler and heartbeat health share the MLB season guard. November requires a current-season postseason game between two days ago and three days ahead with scheduled, live, delayed, or final status; otherwise MLB uses off-season health thresholds. Other active months remain configurable.
+
 The shared MLB scheduler guard runs March through October. In November it requires a stored postseason game within the next three days or the previous two days, including today, so postseason sync and final grading can finish. Manual commands remain available throughout the year.
 
 - Daily schedule sync at `01:30`
@@ -325,3 +327,12 @@ For projected NFL quarterbacks, Questionable retains the listed starter. Doubtfu
 - Data validation streams findings for every sport and saves the admin healthcheck row and corresponding audit finding in one transaction. Each sport/scope execution has an overlap lock. Exceptions preserve prior findings and finalize the run with failed execution; checks that throw are recorded distinctly and do not stop subsequent checks. Abandoned runs older than two hours are marked interrupted when retried.
 - Freshness reuse and regression comparisons match both sport coverage and validation scope (`full` or `data`). An interrupted or execution-failed audit cannot suppress a retry. Regression baselines require completed checks; optional summary or alert failures do not invalidate successfully collected findings or suppress regression notifications. Legacy completed audits without scope metadata are treated as full audits. Freshness reuse inspects the newest matching attempt, so an older passing audit cannot hide a newer failed execution. A strict caller reusing a failing completed audit still receives a failed exit. Skipped or failed regression notifications do not consume the notification baseline.
 - Prediction completeness and upcoming-game readiness use the same configured lifecycle coverage reader. Enabled canonical pipeline/reads require safely published canonical forecasts; legacy mode checks legacy rows. The newest published revision wins; future-dated generation/publication records do not count as current coverage. CFB keeps its explicit non-FBS membership rules. Upcoming readiness batches prediction and team-metric reads rather than querying each game separately.
+
+
+## Failed-job recovery safeguards
+
+CBB stale-game recovery uses the supported `--sync` option. CBB injury refreshes dispatch one bounded, unique job per real team. WCBB schedule imports skip unresolved placeholder identities, preserve opponent orientation and neutral-site data, and keep generated team abbreviations within the database limit. Tournament completeness audits defer until March of the ending season year; direct audits remain strict.
+
+New NFL prop shadow captures freeze numeric values to eight decimals with versioned, typed fingerprints. Grading reports invalid snapshot IDs and continues with valid records, but invalid records keep the command failing. Existing snapshots and hashes are never rewritten. Charting accepts whole-number decimal counts and rejects invalid counts before writes. Pregame market selection requires complete same-book quote pairs.
+
+Automatic CFB incremental EPA waits for final games; explicit single-game requests still reject unsafe inputs. Odds sync measures matches against offered events in the requested window, reports local coverage separately, and reuses its execution response for diagnostics. An empty response with actionable local games still fails, and readiness continues to report missing local markets. Football signal audits read batches of 100; shadow decisions skip already-decided outputs and apply limits to pending work.

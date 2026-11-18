@@ -3,6 +3,7 @@
 namespace App\Services\Validation;
 
 use App\Models\CommandHeartbeat;
+use App\Support\MlbSeasonActivity;
 use App\Support\SportCatalog;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -297,6 +298,10 @@ class HeartbeatHealthService
 
     protected function isActiveSeason(string $sport): bool
     {
+        if ($sport === 'mlb') {
+            return MlbSeasonActivity::isActive();
+        }
+
         return in_array(now()->month, (array) config("healthchecks.season_months.{$sport}", []), true);
     }
 

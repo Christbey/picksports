@@ -14,6 +14,10 @@ class NflPropShadowService
 {
     public const POLICY = 'nfl-prop-shadow-v1';
 
+    public const FINGERPRINT_VERSION = 'numeric8-v2';
+
+    public const LEGACY_FINGERPRINT_VERSION = 'json-v1';
+
     public function __construct(private NflPropShadowFeatures $features, private NflPropShadowBundle $bundles) {}
 
     public function run(int $season, ?int $gameId = null): array
@@ -64,22 +68,26 @@ class NflPropShadowService
                 return false;
             }
             $kickoff = app(SportsDateWindowService::class)->gameDateTimeUtc($current->game->game_date, $current->game->game_time);
-            $outputs = [...$sample['comparators'], ...$predictions];
+            $features = self::captureNumbers($sample['features']);
+            $outputs = self::captureNumbers([...$sample['comparators'], ...$predictions]);
             $market = ['market' => $prop->market, 'bookmaker' => $prop->bookmaker, 'line' => (float) $prop->line,
                 'over_price' => $prop->over_price, 'under_price' => $prop->under_price,
                 'quote_observed_at' => $prop->fetched_at->toIso8601String()];
+            $market = self::captureNumbers($market);
             $snapshot = PredictionFeatureSnapshot::query()->firstOrCreate([
                 'snapshot_run_id' => $this->identity($prop, $bundle['sha256']),
             ], [
                 'sport' => 'nfl', 'prediction_table' => 'nfl_player_props', 'prediction_id' => $prop->id,
                 'game_id' => $prop->game_id, 'model_version' => 'nfl-prop-shadow-'.substr($bundle['sha256'], 0, 32),
                 'feature_version' => NflPropShadowFeatures::VERSION, 'blend_version' => self::POLICY,
-                'features' => $sample['features'], 'outputs' => $outputs, 'market_context' => $market,
+                'features' => $features, 'outputs' => $outputs, 'market_context' => $market,
                 'model_metadata' => ['bundle_sha256' => $bundle['sha256'], 'dataset_sha256' => $bundle['data']['dataset_sha256'],
                     'frozen_at' => $bundle['data']['frozen_at'], 'player_id' => $sample['player_id'], 'team_id' => $sample['team_id'],
                     'history_stat_ids' => $sample['history_stat_ids'], 'policy' => 'first_eligible_capture_within_24h',
+                    'fingerprint_version' => self::FINGERPRINT_VERSION,
+                    'numeric_decimal_places' => 8,
                     'probabilities' => 'not_produced', 'recommendations_approved' => false],
-                'feature_hash' => self::fingerprint($sample['features'], $outputs, $market),
+                'feature_hash' => self::fingerprint($features, $outputs, $market),
                 'generated_at' => now(), 'game_start_at' => $kickoff->setTimezone(config('app.timezone')),
                 'features_available_at' => $sample['features_observed_at'], 'pregame_safe' => true,
                 'availability_status' => 'observed_pregame',
@@ -89,6 +97,18 @@ class NflPropShadowService
 
             return $snapshot->wasRecentlyCreated;
         });
+    }
+
+    /** Freeze numeric inputs and outputs at the declared eight-decimal resolution before storage. */
+    private static function captureNumbers(array $values): array
+    {
+        return array_map(function (mixed $value): mixed {
+            return match (true) {
+                is_array($value) => self::captureNumbers($value),
+                is_float($value) => round($value, 8),
+                default => $value,
+            };
+        }, $values);
     }
 
     private function identity(PlayerProp $prop, string $bundleHash): string
@@ -107,8 +127,49 @@ class NflPropShadowService
             && (is_numeric($prop->over_price) || is_numeric($prop->under_price));
     }
 
-    public static function fingerprint(array $features, array $outputs, array $market): string
+    public static function fingerprint(array $features, array $outputs, array $market, string $version = self::FINGERPRINT_VERSION): string
     {
-        return hash('sha256', json_encode(Arr::sortRecursive(['features' => $features, 'outputs' => $outputs, 'market' => $market]), JSON_THROW_ON_ERROR));
+        $payload = compact('features', 'outputs', 'market');
+        if ($version === self::LEGACY_FINGERPRINT_VERSION) {
+            return hash('sha256', json_encode(Arr::sortRecursive($payload), JSON_THROW_ON_ERROR));
+        }
+        if ($version !== self::FINGERPRINT_VERSION) {
+            throw new \InvalidArgumentException('Unknown NFL prop shadow fingerprint version.');
+        }
+
+        return hash('sha256', json_encode([
+            'version' => $version,
+            'payload' => self::canonicalFingerprintValue($payload),
+        ], JSON_THROW_ON_ERROR));
+    }
+
+    /** Numeric strings avoid PHP precision and database JSON double formatting differences. */
+    private static function canonicalFingerprintValue(mixed $value): mixed
+    {
+        if (is_int($value) || is_float($value)) {
+            if (! is_finite((float) $value)) {
+                throw new \InvalidArgumentException('Non-finite NFL prop shadow fingerprint value.');
+            }
+            if (round((float) $value, 8) != $value) {
+                throw new \InvalidArgumentException('NFL prop shadow value exceeds its frozen numeric resolution.');
+            }
+
+            return ['number' => sprintf('%.8F', $value == 0 ? 0 : $value)];
+        }
+        if (is_array($value)) {
+            $list = array_is_list($value);
+            if (! $list) {
+                ksort($value);
+            }
+
+            return [$list ? 'list' : 'map' => array_map(self::canonicalFingerprintValue(...), $value)];
+        }
+
+        return match (true) {
+            is_string($value) => ['string' => $value],
+            is_bool($value) => ['boolean' => $value],
+            $value === null => ['null' => true],
+            default => throw new \InvalidArgumentException('Unsupported NFL prop shadow fingerprint value.'),
+        };
     }
 }

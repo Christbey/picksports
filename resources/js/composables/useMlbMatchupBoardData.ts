@@ -1,3 +1,5 @@
+import { fetchPredictionSlate } from '@/lib/fetchPredictionSlate';
+import { boardDateOptions } from '@/lib/matchupBoardPresentation';
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { numberValue } from '@/lib/mlbMatchupPresentation';
@@ -140,16 +142,20 @@ export function useMlbMatchupBoardData() {
         boardStale.value = false;
         try {
             const [predictionResult, picksResult] = await Promise.allSettled([
-                api.predictions.index('mlb', {
-                    query: {
-                        from_date: date,
-                        to_date: date,
-                        page: 1,
-                        per_page: 100,
-                        ...(season ? { season } : {}),
-                    },
-                    init: { signal: controller.signal },
-                }),
+                fetchPredictionSlate(
+                    (page) =>
+                        api.predictions.index('mlb', {
+                            query: {
+                                from_date: date,
+                                to_date: date,
+                                page,
+                                per_page: 100,
+                                ...(season ? { season } : {}),
+                            },
+                            init: { signal: controller.signal },
+                        }),
+                    active,
+                ),
                 api.dailyPicks.index<MlbDailyPicksPayload>('mlb', {
                     query: { date, compact: 1, ...(season ? { season } : {}) },
                     init: { signal: controller.signal },
@@ -165,7 +171,7 @@ export function useMlbMatchupBoardData() {
                 picksResult.status === 'fulfilled' ? picksResult.value : null;
             const periodModelsByGame =
                 picksPayload?.data?.period_models_by_game ?? {};
-            predictions.value = (predictionPayload.data ?? [])
+            predictions.value = predictionPayload
                 .map((prediction) => {
                     const gameId = numberValue(
                         prediction.game_id ?? prediction.game?.id,
@@ -233,7 +239,7 @@ export function useMlbMatchupBoardData() {
                     ? payload.data.map(Number).filter(Number.isFinite)
                     : [];
                 if (!selectedSeason.value && availableSeasons.value.length) {
-                    const currentYear = new Date().getFullYear();
+                    const currentYear = Number(todayKey().slice(0, 4));
                     settingDefaultSeason = true;
                     selectedSeason.value = String(
                         availableSeasons.value.includes(currentYear)
@@ -252,21 +258,10 @@ export function useMlbMatchupBoardData() {
             if (!active()) return;
             if (!payload)
                 throw new Error('Unable to load MLB dates. Please try again.');
-            availableDates.value = Array.isArray(payload.data)
-                ? payload.data
-                : [];
-            if (availableDates.value.length) {
-                const today = todayKey(),
-                    future = availableDates.value.filter(
-                        (date) => date > today,
-                    ),
-                    past = availableDates.value.filter((date) => date < today);
-                selectedDate.value = availableDates.value.includes(today)
-                    ? today
-                    : (future[0] ??
-                      past[past.length - 1] ??
-                      availableDates.value[0]);
-            }
+            availableDates.value = boardDateOptions(
+                Array.isArray(payload.data) ? payload.data : [],
+            );
+            selectedDate.value = todayKey();
             filtersReady = true;
         } catch (cause) {
             if (active()) {

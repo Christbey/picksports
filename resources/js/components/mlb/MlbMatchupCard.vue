@@ -387,6 +387,7 @@ function resultBadgeClass(
 
 <template>
     <button
+        :data-game-id="prediction.game_id ?? prediction.game?.id"
         type="button"
         class="group relative flex min-h-[124px] w-full overflow-hidden rounded-2xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:ring-2 focus:ring-sky-500/35 focus:outline-none"
         :class="

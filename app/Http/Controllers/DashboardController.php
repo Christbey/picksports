@@ -10,15 +10,13 @@ use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Api\V2\DashboardSportConfig;
 use App\Services\Api\V2\PredictionModelBetContext;
 use App\Services\Api\V2\SportContextResolver;
+use App\Services\Api\V2\SportPredictionReader;
 use App\Services\BettingRecommendations\CanonicalBettingRecommendations;
 use App\Services\BettingRecommendations\GameBettingRecommendationService;
 use App\Services\MLB\MlbPredictionRecommendationService;
 use App\Services\Predictions\LivePredictionStore;
+use App\Services\Sports\SportsDateWindowService;
 use App\Support\SportsViewCache;
-use App\Support\TierAccessBypass;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -34,14 +32,14 @@ class DashboardController extends Controller
     public function __invoke(): Response
     {
         $user = auth()->user();
-        $predictionsPerDay = app(TierAccessBypass::class)->shouldBypassTierChecks($user)
-            ? null
-            : ($user->subscriptionTier()?->features['predictions_per_day'] ?? null);
+        $dates = app(SportsDateWindowService::class);
+        $date = $dates->parseLocalDate()->toDateString();
         $sportConfigs = app(DashboardSportConfig::class)->viewable($user);
         $cacheKey = $this->sportsViewCache->contextHash([
             'projection' => 'compact-v1',
-            'date' => now()->toDateString(),
-            'predictions_per_day' => $predictionsPerDay,
+            'date' => $date,
+            'timezone' => $dates->timezone(),
+            'selection_version' => 2,
             'viewable_sports' => array_keys($sportConfigs),
             'canonical_reads' => config('prediction_lifecycle.canonical_reads'),
         ]);
@@ -50,24 +48,11 @@ class DashboardController extends Controller
             segment: 'dashboard',
             key: $cacheKey,
             ttlSeconds: (int) config('sports_view_cache.ttl.dashboard_seconds', 20),
-            resolver: function () use ($predictionsPerDay, $sportConfigs): array {
-                $todayStartUtc = now()->startOfDay()->utc()->format('Y-m-d H:i:s');
-                $todayEndUtc = now()->endOfDay()->utc()->format('Y-m-d H:i:s');
-
-                $todayGameScope = fn (Builder $q) => $this->applyTodayGameWindow($q, $todayStartUtc, $todayEndUtc);
-
+            resolver: function () use ($date, $dates, $sportConfigs): array {
                 $todaysPredictions = collect($sportConfigs)
-                    ->flatMap(fn (array $config, string $sport) => $this->getPredictionsForSport($sport, $config, $todayGameScope, $predictionsPerDay));
-
-                $predictionsBySport = $todaysPredictions
-                    ->groupBy('sport')
-                    ->map(function (Collection $predictions) use ($predictionsPerDay) {
-                        $sorted = $predictions->sortBy('game_time');
-
-                        return $predictionsPerDay !== null
-                            ? $sorted->take($predictionsPerDay)->values()
-                            : $sorted->values();
-                    });
+                    ->flatMap(fn (array $config, string $sport) => $this->getPredictionsForSport($sport, $config, $date));
+                $predictionsBySport = $todaysPredictions->groupBy('sport')
+                    ->map(fn (Collection $predictions) => $predictions->sortBy('game_time')->values());
 
                 $sports = collect($sportConfigs)
                     ->map(function (array $config, string $sport) use ($predictionsBySport) {
@@ -81,7 +66,7 @@ class DashboardController extends Controller
                     ->filter(fn (array $sport) => $sport['predictions']->isNotEmpty())
                     ->values();
 
-                $todayGameCount = fn (string $model) => $this->applyTodayGameWindow($model::query(), $todayStartUtc, $todayEndUtc)->count();
+                $todayGameCount = fn (string $model) => $dates->applyGameDateWindow($model::query(), $dates->forDate($date))->count();
 
                 $stats = [
                     'total_predictions_today' => $predictionsBySport->sum(fn (Collection $predictions) => $predictions->count()),
@@ -105,16 +90,16 @@ class DashboardController extends Controller
         ]);
     }
 
-    private function getPredictionsForSport(string $sport, array $config, \Closure $todayGameScope, ?int $predictionsPerDay): Collection
+    private function getPredictionsForSport(string $sport, array $config, string $date): Collection
     {
         $context = app(SportContextResolver::class)->resolve(strtolower($sport));
+        $selected = app(SportPredictionReader::class)->query($context, ['from_date' => $date, 'to_date' => $date], auth()->user());
         $canonical = app(CanonicalSportPredictionQuery::class);
         if ($canonical->supports($context)) {
             // The dashboard sorts by kickoff below. Sorting full JSON rows in MySQL
             // is expensive, so retain publication tie-breaking in the bounded slate.
             $rows = collect();
-            $query = $canonical->queryForSport($context->slug)
-                ->whereBetween('sport_events.starts_at', [now()->startOfDay()->utc(), now()->endOfDay()->utc()])
+            $query = $selected
                 ->reorder()
                 ->withOnly([
                     'markets',
@@ -127,16 +112,6 @@ class DashboardController extends Controller
                         default => [],
                     },
                 ]);
-
-            if ($predictionsPerDay !== null && $predictionsPerDay >= 0) {
-                $ids = (clone $query)->setEagerLoads([])
-                    ->select(['predictions.id', 'sport_events.starts_at as dashboard_starts_at'])
-                    ->withCasts(['dashboard_starts_at' => 'immutable_datetime'])
-                    ->orderByDesc('predictions.published_at')->orderByDesc('predictions.id')->get()
-                    ->sortBy(fn (Model $prediction) => $prediction->dashboard_starts_at?->toIso8601String())
-                    ->take($predictionsPerDay)->modelKeys();
-                $query->whereKey($ids);
-            }
 
             $batchSize = match ($context->slug) {
                 'nba', 'cbb', 'wcbb' => 20,
@@ -165,17 +140,7 @@ class DashboardController extends Controller
             return $rows->sortBy([['published_at', 'desc'], ['id', 'desc']])->pluck('payload')->values();
         }
 
-        $predictions = $config['prediction_model']::with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', $todayGameScope)
-            ->get();
-
-        if (strtolower($sport) === 'cbb') {
-            $predictions = $predictions->filter(function ($prediction) {
-                $game = $prediction->game;
-
-                return $game && ! $this->isPlaceholderCbbGame($game);
-            })->values();
-        }
+        $predictions = $selected->get();
 
         app(LivePredictionStore::class)->preload($predictions->pluck('game')->filter());
 
@@ -197,27 +162,6 @@ class DashboardController extends Controller
 
             return $resource->resolve();
         });
-    }
-
-    /**
-     * @param  Builder<Model>|QueryBuilder  $query
-     * @return Builder<Model>|QueryBuilder
-     */
-    private function applyTodayGameWindow(Builder|QueryBuilder $query, string $startUtc, string $endUtc): Builder|QueryBuilder
-    {
-        $driver = $query->getConnection()->getDriverName();
-
-        if ($driver === 'sqlite') {
-            return $query->whereRaw(
-                "datetime(game_date || ' ' || COALESCE(game_time, '00:00:00')) BETWEEN ? AND ?",
-                [$startUtc, $endUtc]
-            );
-        }
-
-        return $query->whereRaw(
-            'TIMESTAMP(game_date, game_time) BETWEEN ? AND ?',
-            [$startUtc, $endUtc]
-        );
     }
 
     /**
@@ -260,27 +204,5 @@ class DashboardController extends Controller
             'recommendations' => null,
             'debug' => 'Below threshold',
         ];
-    }
-
-    private function isPlaceholderCbbGame(object $game): bool
-    {
-        return $this->isPlaceholderCbbTeam($game->homeTeam ?? null)
-            || $this->isPlaceholderCbbTeam($game->awayTeam ?? null)
-            || str_starts_with((string) ($game->espn_event_id ?? ''), 'placeholder:');
-    }
-
-    private function isPlaceholderCbbTeam(?Model $team): bool
-    {
-        if (! $team) {
-            return true;
-        }
-
-        $school = strtoupper(trim((string) ($team->school ?? '')));
-        $abbreviation = strtoupper(trim((string) ($team->abbreviation ?? '')));
-        $espnId = (int) ($team->espn_id ?? 0);
-
-        return in_array($school, ['TBD', 'TBD2'], true)
-            || in_array($abbreviation, ['TBD', 'TBD2', 'WFF', 'FF'], true)
-            || $espnId < 0;
     }
 }

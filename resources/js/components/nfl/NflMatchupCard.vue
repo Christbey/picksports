@@ -23,6 +23,7 @@ const live = computed(() =>
 
 <template>
     <button
+        :data-game-id="prediction.game_id ?? prediction.game?.id"
         type="button"
         class="group w-full min-w-0 rounded-xl border bg-card p-3 text-left transition hover:border-sky-500/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 sm:p-4"
         @click="emit('select', prediction)"

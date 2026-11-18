@@ -7,6 +7,8 @@ use App\Http\Resources\Api\V2\SportPredictionResource;
 use App\Models\CanonicalPrediction;
 use App\Services\NFL\NflPredictionBoardContext;
 use App\Services\Predictions\LivePredictionStore;
+use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -24,6 +26,14 @@ class SportPredictionReader
     public function queryFor(SportContext $context): SportPredictionQuery|CanonicalSportPredictionQuery
     {
         return $this->canonical->supports($context) ? $this->canonical : $this->legacy;
+    }
+
+    /** @param array<string, mixed> $filters */
+    public function query(SportContext $context, array $filters = [], ?Authenticatable $user = null): Builder
+    {
+        return $this->canonical->supports($context)
+            ? $this->canonical->queryForSport($context->slug, $filters)
+            : $this->legacy->query($context, $filters, $user);
     }
 
     /** @return array{prediction_source?: string} */

@@ -1,5 +1,8 @@
+import { fetchPredictionSlate } from '@/lib/fetchPredictionSlate';
+import { boardDateOptions } from '@/lib/matchupBoardPresentation';
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useApiV2Client } from '@/composables/useApiV2Client';
+import { footballSeason } from '@/lib/predictionPeriod';
 import { todayKey, gameSortKey } from '@/lib/matchupBoardPresentation';
 import type { ApiV2Prediction } from '@/types';
 export function useNflMatchupBoardData() {
@@ -53,22 +56,26 @@ export function useNflMatchupBoardData() {
         error.value = null;
         boardStale.value = false;
         try {
-            const payload = await api.predictions.index('nfl', {
-                query: {
-                    from_date: date,
-                    to_date: date,
-                    page: 1,
-                    per_page: 100,
-                    ...(season ? { season } : {}),
-                },
-                init: { signal: controller.signal },
-            });
+            const payload = await fetchPredictionSlate(
+                (page) =>
+                    api.predictions.index('nfl', {
+                        query: {
+                            from_date: date,
+                            to_date: date,
+                            page,
+                            per_page: 100,
+                            ...(season ? { season } : {}),
+                        },
+                        init: { signal: controller.signal },
+                    }),
+                active,
+            );
             if (!active()) return;
             if (!payload)
                 throw new Error(
                     'Unable to load NFL predictions. Please try again.',
                 );
-            predictions.value = (payload.data ?? []).sort((a, b) =>
+            predictions.value = payload.sort((a, b) =>
                 gameSortKey(a).localeCompare(gameSortKey(b)),
             );
             loadedQuery = key;
@@ -128,7 +135,7 @@ export function useNflMatchupBoardData() {
                     ? payload.data.map(Number).filter(Number.isFinite)
                     : [];
                 if (!selectedSeason.value && availableSeasons.value.length) {
-                    const currentYear = new Date().getFullYear();
+                    const currentYear = footballSeason(todayKey());
                     settingDefaultSeason = true;
                     selectedSeason.value = String(
                         availableSeasons.value.includes(currentYear)
@@ -147,21 +154,10 @@ export function useNflMatchupBoardData() {
             if (!active()) return;
             if (!payload)
                 throw new Error('Unable to load NFL dates. Please try again.');
-            availableDates.value = Array.isArray(payload.data)
-                ? payload.data
-                : [];
-            if (availableDates.value.length) {
-                const today = todayKey(),
-                    future = availableDates.value.filter(
-                        (date) => date > today,
-                    ),
-                    past = availableDates.value.filter((date) => date < today);
-                selectedDate.value = availableDates.value.includes(today)
-                    ? today
-                    : (future[0] ??
-                      past[past.length - 1] ??
-                      availableDates.value[0]);
-            }
+            availableDates.value = boardDateOptions(
+                Array.isArray(payload.data) ? payload.data : [],
+            );
+            selectedDate.value = todayKey();
             filtersReady = true;
         } catch (cause) {
             if (active()) {

@@ -51,6 +51,16 @@ export function usePredictionList<T>(
         }
     };
 
+    const reset = () => {
+        latestRequest++;
+        items.value = [];
+        meta.value = null;
+        error.value = null;
+        refreshError.value = null;
+        refreshing.value = false;
+        loading.value = true;
+    };
+
     const retryPage = () => {
         if (loading.value || refreshing.value) return Promise.resolve();
         return fetchPage(requestedPage, Boolean(refreshError.value));
@@ -65,5 +75,6 @@ export function usePredictionList<T>(
         refreshing,
         fetchPage,
         retryPage,
+        reset,
     };
 }

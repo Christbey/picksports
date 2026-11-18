@@ -27,9 +27,12 @@ export function formatDateLabel(date: string): string {
 }
 
 export function todayKey(): string {
-    const now = new Date();
-
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Chicago',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).format(new Date());
 }
 
 export function gameSortKey(prediction: ApiV2Prediction): string {
@@ -41,4 +44,8 @@ export function gameSortKey(prediction: ApiV2Prediction): string {
     const timePart = String(game?.game_time ?? '23:59:59');
 
     return `${datePart} ${timePart} ${game?.short_name ?? ''}`;
+}
+
+export function boardDateOptions(dates: string[]): string[] {
+    return [...new Set([...dates, todayKey()])].sort();
 }

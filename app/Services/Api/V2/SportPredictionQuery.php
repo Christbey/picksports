@@ -4,7 +4,6 @@ namespace App\Services\Api\V2;
 
 use App\Services\Api\V2\Concerns\BuildsSportQueries;
 use App\Services\Sports\SportsDateWindowService;
-use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -100,6 +99,7 @@ class SportPredictionQuery
 
         $query = $predictionModel::query()
             ->join($gameTable, "{$gameTable}.id", '=', "{$predictionTable}.game_id")
+            ->tap(fn (Builder $query): Builder => $this->excludePlaceholderGames($query, $context))
             ->when($filters['season'] ?? null, function (Builder $query, int $season) use ($predictionTable, $gameTable): Builder {
                 if ($this->hasColumn($predictionTable, 'season')) {
                     return $query->where("{$predictionTable}.season", $season);
@@ -120,17 +120,10 @@ class SportPredictionQuery
             ->orderBy("{$gameTable}.game_time");
 
         return $query->get()
-            ->map(function (mixed $game) use ($context): ?string {
-                $date = GameDateTimePresenter::forSport(
-                    $context->slug,
-                    $game->game_date ?? null,
-                    $game->game_time ?? null,
-                )['game_date'];
-
-                return $date === null ? null : substr($date, 0, 10);
-            })
+            ->map(fn (mixed $game): ?string => app(SportsDateWindowService::class)->gameDateForDisplay($game->game_date, $game->game_time))
             ->filter()
             ->unique()
+            ->sort()
             ->values();
     }
 
@@ -150,6 +143,7 @@ class SportPredictionQuery
 
         return $predictionModel::query()
             ->with($this->relationsFor($predictionModel, $context))
+            ->tap(fn (Builder $query): Builder => $this->excludePlaceholderGames($query, $context))
             ->when($filters['season'] ?? null, function (Builder $query, int $season) use ($table, $gameTable): Builder {
                 if ($this->hasColumn($table, 'season')) {
                     return $query->where("{$table}.season", $season);
@@ -216,6 +210,24 @@ class SportPredictionQuery
         return $gameRelations === []
             ? ['game']
             : array_map(fn (string $relation): string => "game.{$relation}", $gameRelations);
+    }
+
+    private function excludePlaceholderGames(Builder $query, SportContext $context): Builder
+    {
+        if ($context->slug !== 'cbb') {
+            return $query;
+        }
+
+        return $query->whereHas('game', function (Builder $game): void {
+            $game->where(fn (Builder $event): Builder => $event
+                ->whereNull('espn_event_id')->orWhere('espn_event_id', 'not like', 'placeholder:%'));
+            foreach (['homeTeam', 'awayTeam'] as $relation) {
+                $game->whereHas($relation, fn (Builder $team): Builder => $team
+                    ->whereRaw("UPPER(TRIM(COALESCE(school, ''))) NOT IN (?, ?)", ['TBD', 'TBD2'])
+                    ->whereRaw("UPPER(TRIM(COALESCE(abbreviation, ''))) NOT IN (?, ?, ?, ?)", ['TBD', 'TBD2', 'WFF', 'FF'])
+                    ->where(fn (Builder $ids): Builder => $ids->whereNull('espn_id')->orWhere('espn_id', '>=', 0)));
+            }
+        });
     }
 
     private function whereTeam(Builder $query, int $teamId): Builder

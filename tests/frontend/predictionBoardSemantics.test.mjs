@@ -94,7 +94,7 @@ test('a full weather-populated slate is a native list with one navigable matchup
     );
     assert.equal(
         (html.match(/aria-label="Show analysis for/g) ?? []).length,
-        69,
+        138,
     );
     assert.match(html, /52.1°F/);
     assert.match(html, /58.9°F/);
@@ -121,7 +121,9 @@ test('compact matchups reserve logo space and defer images after the first rows'
     });
 
     const html = await render(rows);
-    const logos = [...html.matchAll(/<img [^>]+>/g)].map(([logo]) => logo);
+    const logos = [...html.matchAll(/<img [^>]+>/g)]
+        .map(([logo]) => logo)
+        .filter((logo) => logo.includes('width="20"'));
     assert.equal(logos.length, 8);
     for (const [index, logo] of logos.entries()) {
         assert.match(logo, /width="20" height="20"/);

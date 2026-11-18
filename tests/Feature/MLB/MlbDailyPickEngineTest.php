@@ -671,3 +671,36 @@ it('uses the same local date window for MLB v2 prediction queries', function ():
     expect($response->json('data.0.game.id'))->toBe($game->id)
         ->and($response->json('data.0.game.game_time'))->toBe('16:10:00');
 });
+
+it('loads compact candidate details after upgrading a legacy candidate table', function (): void {
+    [$game, $prediction] = mlbPricedSlate();
+    $migration = require database_path('migrations/2026_10_28_181346_add_canonical_prediction_id_to_mlb_pick_candidates_table.php');
+    $migration->down();
+
+    $candidate = PickCandidate::query()->create([
+        'season' => 2026,
+        'game_id' => $game->id,
+        'prediction_id' => $prediction->id,
+        'market_type' => 'moneyline',
+        'market_key' => 'h2h',
+        'side' => 'home',
+        'score' => 70,
+        'generated_at' => now(),
+    ]);
+
+    $migration->up();
+    Sanctum::actingAs(User::factory()->create());
+
+    $this->getJson('/api/v2/sports/mlb/daily-picks?date=2026-06-20&season=2026&compact=1')
+        ->assertOk()
+        ->assertJsonCount(1, 'data.candidates')
+        ->assertJsonPath('data.candidates.0.id', $candidate->id)
+        ->assertJsonPath('data.candidates.0.prediction_id', $prediction->id)
+        ->assertJsonPath('data.candidates.0.canonical_prediction_id', null)
+        ->assertJsonPath('data.candidates.0.prediction_source', 'legacy');
+
+    $this->getJson('/api/v2/sports/mlb/daily-picks?date=2026-11-17&season=2026&compact=1')
+        ->assertOk()
+        ->assertJsonPath('data.candidates', [])
+        ->assertJsonPath('data.board_health.status', 'no_slate');
+});

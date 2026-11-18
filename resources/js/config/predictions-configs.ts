@@ -58,17 +58,7 @@ export const cfbPredictionsConfig: SportPredictionsConfig = {
     showGameTime: true,
     confidenceIsDecimal: false,
     confidenceDecimals: 1,
-    filterMode: 'seasonWeek',
-    seasonWeekConfig: {
-        regularSeasonWeeks: 15,
-        postseasonOptions: [
-            { value: '1', label: 'Bowl Games' },
-            { value: '2', label: 'First Round' },
-            { value: '3', label: 'Quarterfinals' },
-            { value: '4', label: 'Semifinals' },
-            { value: '5', label: 'National Championship' },
-        ],
-    },
+    filterMode: 'date',
 };
 
 export const nflPredictionsConfig: SportPredictionsConfig = {

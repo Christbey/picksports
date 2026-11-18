@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
-import { before, after, test } from 'node:test';
+import { before, after, beforeEach, test } from 'node:test';
 import { harness, queue, flush } from './fixtures/boardCleanupHarness.mjs';
+beforeEach((t) =>
+    t.mock.timers.enable({
+        apis: ['Date'],
+        now: new Date('2026-11-06T18:00:00Z').getTime(),
+    }),
+);
 let env;
 before(async () => (env = await harness()));
 after(() => env.server.close());
@@ -126,7 +132,7 @@ test('MLB season changes cancel metadata and reject out-of-order dates without d
     x.predictions.calls[0].resolve({ data: [] });
     x.picks.calls[0].resolve(payload());
     await flush();
-    assert.equal(x.state.selectedDate.value, '2025-10-01');
+    assert.equal(x.state.selectedDate.value, '2026-11-06');
     assert.equal(x.state.loading.value, false);
 });
 test('MLB date changes abort old boards; stale failures cannot clear newer loading or populate the new date', async (t) => {
@@ -175,11 +181,17 @@ test('MLB failed metadata can retry, while successful empty dates do not loop me
     x.seasons.calls[1].resolve({ data: [2026] });
     await flush();
     x.dates.calls[0].resolve({ data: [] });
+    await flush();
+    x.predictions.calls[0].resolve({ data: [] });
+    x.picks.calls[0].resolve(payload());
     await retry;
     assert.equal(x.state.loading.value, false);
-    await x.state.refreshBoard();
+    const refresh = x.state.refreshBoard();
+    x.predictions.calls[1].resolve({ data: [] });
+    x.picks.calls[1].resolve(payload());
+    await refresh;
     assert.equal(x.dates.calls.length, 1);
-    assert.equal(x.predictions.calls.length, 0);
+    assert.equal(x.predictions.calls.length, 2);
 });
 test('MLB detail identity handles same-game reopen, closed drawers, and late errors', async (t) => {
     const x = await mount(t);
@@ -307,3 +319,61 @@ test('Daily MLB preserves tie ordering, input candidates and the twelve-game dis
     assert.equal(x.state.hiddenCandidateCount.value, 2);
     assert.equal(x.state.payload.value.candidates[0].id, 14);
 });
+
+test('MLB board selects the Central daily slate after UTC midnight', async (t) => {
+    t.mock.timers.reset();
+    t.mock.timers.enable({
+        apis: ['Date'],
+        now: new Date('2026-10-11T01:00:00Z').getTime(),
+    });
+    const x = await mount(t);
+    x.seasons.calls[0].resolve({ data: [2026] });
+    await flush();
+    x.dates.calls[0].resolve({ data: ['2026-10-10', '2026-10-11'] });
+    await flush();
+    assert.equal(x.state.selectedDate.value, '2026-10-10');
+    assert.equal(x.predictions.calls[0].args[1].query.from_date, '2026-10-10');
+    assert.equal(x.predictions.calls[0].args[1].query.to_date, '2026-10-10');
+    x.predictions.calls[0].resolve({ data: [] });
+    x.picks.calls[0].resolve(payload());
+    await flush();
+});
+
+for (const dates of [[], ['2026-11-05'], ['2026-11-07']]) {
+    test(`MLB keeps today available and selected without a stored slate: ${JSON.stringify(dates)}`, async (t) => {
+        const x = await mount(t);
+        x.seasons.calls[0].resolve({ data: [2026] });
+        await flush();
+        x.dates.calls[0].resolve({ data: dates });
+        await flush();
+        assert.equal(x.state.selectedDate.value, '2026-11-06');
+        assert.deepEqual(
+            x.state.availableDates.value,
+            [...new Set([...dates, '2026-11-06'])].sort(),
+        );
+        assert.equal(
+            x.predictions.calls[0].args[1].query.from_date,
+            '2026-11-06',
+        );
+        assert.equal(
+            x.predictions.calls[0].args[1].query.to_date,
+            '2026-11-06',
+        );
+        x.predictions.calls[0].resolve({ data: [] });
+        x.picks.calls[0].resolve(payload());
+        await flush();
+        assert.equal(x.state.predictions.value.length, 0);
+        assert.equal(x.state.loading.value, false);
+        assert.equal(x.state.error.value, null);
+        if (dates.length) {
+            x.state.selectedDate.value = dates[0];
+            assert.equal(
+                x.predictions.calls[1].args[1].query.from_date,
+                dates[0],
+            );
+            x.predictions.calls[1].resolve({ data: [] });
+            x.picks.calls[1].resolve(payload());
+            await flush();
+        }
+    });
+}

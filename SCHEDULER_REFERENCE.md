@@ -228,3 +228,9 @@ routes/console.php
 ```
 
 The CFB pregame pipeline now requires a successful daily FPI import and metric recalculation before injuries, odds, and canonical generation. Empty required imports stop generation and retry on the next run. New snapshots record individual rating provenance; missing opponent ratings remain an explicit spread hold.
+
+### NFL research processing and quarterback selection
+
+`NFL: Build Research Revisions` records a completed assessment as successful processing even when its pick eligibility is `hold` or `pass`. Holds remain stored and visible to `nfl:research-readiness`; they never approve a pick. Missing assessments, thrown exceptions, source-ingestion errors, and recorded provider refresh failures retain a failed exit. The command reports completed, held, and failed review counts separately. Schedule cadence, rotation, provider budgets, and readiness checks are unchanged.
+
+For projected NFL quarterbacks, Questionable retains the listed starter. Doubtful and Out exclude that player from the projected lineup and select the next available depth-chart rank, using that replacement's own pregame history. An unavailable QB2 is skipped; ambiguous ranks or no available quarterback remain explicit missing-identity cases. Doubtful remains a projection policy, not a claim of confirmed game absence. Insufficient quarterback history continues to hold pick eligibility while a saved assessment still counts as processed.

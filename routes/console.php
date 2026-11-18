@@ -27,14 +27,14 @@ Artisan::command('inspire', function () {
 */
 
 $inSeasonMonths = fn (array $months) => fn () => in_array(now()->month, $months, true);
-$nbaInSeason = $inSeasonMonths([10, 11, 12, 1, 2, 3, 4, 5, 6]); // Oct-Jun
-$cbbInSeason = $inSeasonMonths([11, 12, 1, 2, 3, 4]); // Nov-Apr
-$wcbbInSeason = $inSeasonMonths([11, 12, 1, 2, 3, 4]); // Nov-Apr
-$mlbInSeason = $inSeasonMonths([3, 4, 5, 6, 7, 8, 9, 10, 11]); // Mar-Nov
-$wnbaInSeason = $inSeasonMonths([4, 5, 6, 7, 8, 9, 10]); // Apr-Oct
-$nflInSeason = $inSeasonMonths([7, 8, 9, 10, 11, 12, 1, 2]); // Jul-Feb
+$nbaInSeason = $inSeasonMonths((array) config('healthchecks.season_months.nba')); // Oct-Jun
+$cbbInSeason = $inSeasonMonths((array) config('healthchecks.season_months.cbb')); // Oct-Apr
+$wcbbInSeason = $inSeasonMonths((array) config('healthchecks.season_months.wcbb')); // Oct-Apr
+$mlbInSeason = $inSeasonMonths((array) config('healthchecks.season_months.mlb')); // Mar-Nov
+$wnbaInSeason = $inSeasonMonths((array) config('healthchecks.season_months.wnba')); // Apr-Oct
+$nflInSeason = $inSeasonMonths((array) config('healthchecks.season_months.nfl')); // Jul-Feb
 $nflDepthChartSeason = $inSeasonMonths([5, 6, 7, 8, 9, 10, 11, 12, 1, 2]); // May-Feb
-$cfbInSeason = $inSeasonMonths([8, 9, 10, 11, 12, 1]); // Aug-Jan
+$cfbInSeason = $inSeasonMonths((array) config('healthchecks.season_months.cfb')); // Aug-Jan
 
 // Season year helpers
 $currentYear = (int) now()->year;
@@ -927,7 +927,7 @@ foreach ($operationsSentinelSchedules as $sentinelSchedule) {
     );
 }
 // Recover an interrupted daily audit and keep the CFB dashboard current during the day.
-$cfbHealthRecoveryCommand = 'healthcheck:validate-data --sport=cfb --if-stale=120 --skip-ai-summary --skip-alerts';
+$cfbHealthRecoveryCommand = 'healthcheck:validate-data --sport=cfb --if-stale=120 --skip-ai-summary --skip-alerts --report-only';
 $cfbHealthRecoveryEvent = Schedule::command($cfbHealthRecoveryCommand)
     ->hourlyAt(55)->timezone('America/Chicago')->when($cfbInSeason)
     ->withoutOverlapping(30)->onOneServer()->runInBackground()

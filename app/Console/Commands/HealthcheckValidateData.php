@@ -3,18 +3,20 @@
 namespace App\Console\Commands;
 
 use App\Actions\Validation\SportValidator;
-use App\Models\Healthcheck;
-use App\Models\ValidationFinding;
 use App\Models\ValidationRun;
 use App\Services\Validation\ValidationRegressionAlertService;
 use App\Services\Validation\ValidationReviewSummaryService;
+use App\Services\Validation\ValidationRunRecorder;
+use App\Support\HealthcheckOutcome;
 use App\Support\SportCatalog;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
+use Throwable;
 
 class HealthcheckValidateData extends Command
 {
     protected $signature = 'healthcheck:validate-data
+        {--report-only : Record unhealthy findings without failing successful execution}
         {--sport= : Specific sport to validate (mlb, nba, nfl, cbb, cfb, wcbb, wnba)}
         {--if-stale= : Skip when the latest completed validation is younger than this many minutes}
         {--skip-ai-summary : Use the local summary without calling an AI provider}
@@ -28,95 +30,97 @@ class HealthcheckValidateData extends Command
         private readonly SportValidator $sportValidator,
         private readonly ValidationReviewSummaryService $validationReviewSummaryService,
         private readonly ValidationRegressionAlertService $validationRegressionAlertService,
+        private readonly ValidationRunRecorder $recorder,
     ) {
         parent::__construct();
     }
 
     public function handle(): int
     {
-        $this->info('Running data validation checks...');
+        $sport = $this->option('sport');
+        if ($sport !== null && ! in_array($sport, SportCatalog::ALL, true)) {
+            $this->error('Invalid --sport value. Supported sports: '.implode(', ', SportCatalog::ALL).'.');
 
-        $sports = $this->option('sport') ? [$this->option('sport')] : SportCatalog::ALL;
-        $scope = $this->validationScope();
-
-        if ($scope === null) {
-            return Command::FAILURE;
+            return self::FAILURE;
         }
+        $scope = $this->validationScope();
+        if ($scope === null) {
+            return self::FAILURE;
+        }
+        $minutes = $this->option('if-stale') === null ? null : filter_var($this->option('if-stale'), FILTER_VALIDATE_INT);
+        if ($minutes !== null && ($minutes === false || $minutes < 1)) {
+            $this->error('--if-stale must be a positive number of minutes.');
 
-        $runScope = $this->option('sport') ? 'sport:'.$this->option('sport') : 'all_sports';
-        if ($this->option('if-stale') !== null) {
-            $minutes = filter_var($this->option('if-stale'), FILTER_VALIDATE_INT);
-            if ($minutes === false || $minutes < 1) {
-                $this->error('--if-stale must be a positive number of minutes.');
+            return self::FAILURE;
+        }
+        $runScope = $sport ? 'sport:'.$sport : 'all_sports';
+        $sports = $sport ? [$sport] : SportCatalog::ALL;
+        $locks = [];
+        try {
+            foreach ($sports as $target) {
+                $lock = Cache::lock('healthcheck:validation:sport:'.$target.':'.$scope, 7200);
+                if (! $lock->get()) {
+                    $this->warn('Validation is already running for this sport and scope.');
 
-                return Command::FAILURE;
+                    return self::FAILURE;
+                }
+                $locks[] = $lock;
             }
-            if (ValidationRun::query()->where('scope', $runScope)->whereIn('status', ['passing', 'warning', 'failing'])->whereNotNull('completed_at')
-                ->where('completed_at', '>=', now()->subMinutes($minutes))->exists()) {
+            if ($minutes !== null && ($recent = $this->recorder->recent($runScope, $scope, $minutes))) {
                 $this->info('Recent completed validation is available.');
 
-                return Command::SUCCESS;
+                return (new HealthcheckOutcome($recent->status))->exitCode((bool) $this->option('report-only'));
+            }
+            $this->info('Running data validation checks...');
+
+            return $this->runValidation($sports, $runScope, $scope);
+        } finally {
+            foreach (array_reverse($locks) as $lock) {
+                $lock->release();
             }
         }
-        // A process killed by a restart cannot mark itself failed. Keep that interruption visible.
-        ValidationRun::query()->where('scope', $runScope)->where('status', 'running')
-            ->where('started_at', '<', now()->subHours(2))->update([
-                'status' => 'interrupted', 'completed_at' => now(),
-                'summary' => json_encode(['error' => 'Validation process did not complete; superseded by a retry.']),
-            ]);
+    }
 
-        $run = ValidationRun::query()->create([
-            'command_name' => 'healthcheck:validate-data',
-            'scope' => $runScope,
-            'status' => 'running',
-            'started_at' => now(),
-        ]);
-
-        foreach ($sports as $sport) {
-            $this->line("Validating {$sport} ({$scope})...");
-
-            // Persist CFB findings as each check finishes, even if a later check is interrupted.
-            $results = $sport === 'cfb'
-                ? $this->sportValidator->results($sport, $scope)
-                : $this->sportValidator->validate($sport, $scope);
-
-            $resultCount = 0;
-            foreach ($results as $result) {
-                $resultCount++;
-                $this->recordCheck(
-                    $run,
-                    $sport,
-                    (string) $result['check_type'],
-                    (string) $result['status'],
-                    (string) $result['message'],
-                    (array) ($result['metadata'] ?? []),
-                    isset($result['severity']) ? (string) $result['severity'] : (string) $result['status'],
-                    isset($result['recommended_action']) ? (string) $result['recommended_action'] : null
-                );
+    /** @param list<string> $sports */
+    private function runValidation(array $sports, string $runScope, string $scope): int
+    {
+        $run = $this->recorder->begin($runScope, $scope, (bool) $this->option('skip-alerts'));
+        try {
+            foreach ($sports as $sport) {
+                $this->line("Validating {$sport} ({$scope})...");
+                $resultCount = 0;
+                foreach ($this->sportValidator->results($sport, $scope) as $result) {
+                    $resultCount++;
+                    $this->recordCheck($run, $sport, $result);
+                }
+                if ($resultCount === 0) {
+                    $this->recordCheck($run, $sport, ['check_type' => 'validation_configuration', 'status' => 'failing',
+                        'message' => 'No validation profile or checks configured for this sport.', 'metadata' => ['execution_failed' => true]]);
+                }
             }
-            if ($resultCount === 0) {
-                $this->recordCheck(
-                    $run,
-                    $sport,
-                    'validation_configuration',
-                    'warning',
-                    'No validation profile or checks configured for this sport.',
-                    [],
-                    'warning',
-                    null
-                );
-            }
+            $this->recorder->complete($run);
+        } catch (Throwable $error) {
+            report($error);
+            $this->recorder->complete($run, $error);
+            $this->error('Validation could not complete; partial findings have been preserved.');
+
+            return self::FAILURE;
         }
-
-        $run->forceFill([
-            'status' => $this->resolveRunStatus($run),
-            'summary' => $this->buildRunSummary($run),
-            'completed_at' => now(),
-        ])->save();
-
-        $this->persistAiSummary($run);
+        try {
+            $this->persistAiSummary($run);
+        } catch (Throwable $error) {
+            report($error);
+            $this->recorder->recordPostProcessingError($run, 'summary', $error);
+            $this->warn('Validation findings were saved, but the summary could not complete.');
+        }
         if (! $this->option('skip-alerts')) {
-            $this->validationRegressionAlertService->maybeNotify($run);
+            try {
+                $this->validationRegressionAlertService->maybeNotify($run);
+            } catch (Throwable $error) {
+                report($error);
+                $this->recorder->recordPostProcessingError($run, 'alerts', $error);
+                $this->warn('Validation findings were saved, but alerts could not complete.');
+            }
         }
 
         return $this->displayResults($run);
@@ -136,51 +140,12 @@ class HealthcheckValidateData extends Command
         return $scope;
     }
 
-    protected function recordCheck(
-        ValidationRun $run,
-        string $sport,
-        string $checkType,
-        string $status,
-        string $message,
-        array $metadata = [],
-        ?string $severity = null,
-        ?string $recommendedAction = null
-    ): void {
-        Healthcheck::create([
-            'sport' => $sport,
-            'check_type' => $checkType,
-            'status' => $status,
-            'message' => $message,
-            'metadata' => array_merge($metadata, [
-                'validation_run_id' => $run->id,
-                'recommended_action' => $recommendedAction,
-            ]),
-            'checked_at' => now(),
-        ]);
-
-        ValidationFinding::query()->create([
-            'validation_run_id' => $run->id,
-            'sport' => $sport,
-            'check_type' => $checkType,
-            'status' => $status,
-            'severity' => $severity ?? $status,
-            'message' => $message,
-            'facts' => $metadata,
-            'recommended_action' => $recommendedAction,
-            'detected_at' => now(),
-        ]);
-
-        $color = match ($status) {
-            'passing' => 'green',
-            'warning' => 'yellow',
-            'failing' => 'red',
-            default => 'white',
-        };
-
-        $this->line("  [{$checkType}] <fg={$color}>{$status}</>: {$message}");
-
-        if ($status !== 'passing') {
-            $this->displayFindingDetails($metadata, $recommendedAction);
+    protected function recordCheck(ValidationRun $run, string $sport, array $result): void
+    {
+        $this->recorder->record($run, $sport, $result);
+        $this->line("  [{$result['check_type']}] {$result['status']}: {$result['message']}");
+        if ($result['status'] !== 'passing') {
+            $this->displayFindingDetails((array) ($result['metadata'] ?? []), $result['recommended_action'] ?? null);
         }
     }
 
@@ -233,57 +198,16 @@ class HealthcheckValidateData extends Command
     {
         $this->newLine();
         $this->info('Validation Summary:');
-
-        $results = $run->findings()
-            ->select('status', DB::raw('count(*) as count'))
-            ->groupBy('status')
-            ->get();
-
-        foreach ($results as $result) {
-            $color = match ($result->status) {
-                'passing' => 'green',
-                'warning' => 'yellow',
-                'failing' => 'red',
-                default => 'white',
-            };
-
-            $this->line("<fg={$color}>{$result->status}: {$result->count} checks</>");
+        foreach (['passing', 'warning', 'failing'] as $status) {
+            $count = (int) ($run->summary[$status] ?? 0);
+            if ($count > 0) {
+                $this->line("{$status}: {$count} checks");
+            }
         }
+        $executionFailed = data_get($run->summary, 'execution_status') === 'failed';
+        $this->line('Validation execution: '.($executionFailed ? 'failed' : 'completed').'; findings: '.$run->status.'.');
 
-        $failing = $run->findings()->where('status', 'failing')->count();
-
-        return $failing > 0 ? Command::FAILURE : Command::SUCCESS;
-    }
-
-    protected function resolveRunStatus(ValidationRun $run): string
-    {
-        if ($run->findings()->where('status', 'failing')->exists()) {
-            return 'failing';
-        }
-
-        if ($run->findings()->where('status', 'warning')->exists()) {
-            return 'warning';
-        }
-
-        return 'passing';
-    }
-
-    /**
-     * @return array<string, int>
-     */
-    protected function buildRunSummary(ValidationRun $run): array
-    {
-        $counts = $run->findings()
-            ->select('status', DB::raw('count(*) as aggregate'))
-            ->groupBy('status')
-            ->pluck('aggregate', 'status');
-
-        return [
-            'total_findings' => (int) $run->findings()->count(),
-            'passing' => (int) ($counts['passing'] ?? 0),
-            'warning' => (int) ($counts['warning'] ?? 0),
-            'failing' => (int) ($counts['failing'] ?? 0),
-        ];
+        return (new HealthcheckOutcome($run->status, $executionFailed))->exitCode((bool) $this->option('report-only'));
     }
 
     protected function persistAiSummary(ValidationRun $run): void

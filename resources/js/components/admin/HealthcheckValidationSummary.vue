@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useHealthchecksContext } from '@/composables/useHealthchecks';
+import { validationExecutionLabel } from '@/lib/healthcheckPresentation';
 const { selectedView, formatDate, labelize, latest_validation_run } =
     useHealthchecksContext();
 </script>
@@ -18,6 +19,14 @@ const { selectedView, formatDate, labelize, latest_validation_run } =
                     class="text-xs font-semibold tracking-[0.18em] text-muted-foreground uppercase"
                 >
                     Validation Summary
+                </p>
+                <p>
+                    {{
+                        validationExecutionLabel(
+                            latest_validation_run.summary,
+                            latest_validation_run.status,
+                        )
+                    }}
                 </p>
                 <h2 class="mt-2 text-xl font-semibold">
                     {{ latest_validation_run.ai_summary.headline }}

@@ -2,6 +2,7 @@
 
 use App\Models\CommandHeartbeat;
 use App\Models\Healthcheck;
+use App\Services\Validation\HeartbeatHealthService;
 use Illuminate\Support\Carbon;
 
 use function Pest\Laravel\artisan;
@@ -135,3 +136,28 @@ it('treats july nfl heartbeats as in-season and reports positive stale ages', fu
 
     Carbon::setTestNow();
 });
+
+it('records unhealthy heartbeat findings successfully only in explicit reporting mode', function () {
+    artisan('healthcheck:run', ['--sport' => 'nba', '--report-only' => true])->assertSuccessful();
+    expect(Healthcheck::where('status', 'failing')->count())->toBeGreaterThan(0);
+});
+
+it('does not reuse prior invocation findings or accept future-dated successes', function () {
+    $this->travelTo('2026-11-17 18:00:00');
+    CommandHeartbeat::create(['sport' => 'nba', 'command' => 'espn:sync-nba-current',
+        'status' => 'success', 'source' => 'schedule', 'ran_at' => now()->addHour()]);
+    artisan('healthcheck:run', ['--sport' => 'nba', '--report-only' => true])->assertSuccessful();
+    expect(Healthcheck::where('check_type', 'heartbeat_sync')->latest('id')->first()->status)->toBe('failing');
+    artisan('healthcheck:run', ['--sport' => 'nfl', '--report-only' => true])->assertSuccessful();
+    expect(Healthcheck::where('sport', 'nba')->count())->toBe(6)->and(Healthcheck::where('sport', 'nfl')->count())->toBe(6);
+    $this->travelBack();
+});
+
+it('checks canonical heartbeat commands only after both lifecycle switches retire the legacy writer', function (bool $pipeline, bool $reads) {
+    config(['prediction_lifecycle.canonical_pipeline.nfl' => $pipeline, 'prediction_lifecycle.canonical_reads.nfl' => $reads]);
+    $check = collect(app(HeartbeatHealthService::class)->evaluate(['nfl']))
+        ->firstWhere('check_type', 'heartbeat_prediction_pipeline');
+    expect($check['metadata']['command_patterns'])->toBe($pipeline && $reads
+        ? ['nfl:generate-canonical-predictions%', 'nfl:evaluate-canonical-predictions%', 'nfl:run-pregame-pipeline%']
+        : ['nfl:generate-predictions%', 'nfl:grade-predictions%']);
+})->with([[true, true], [true, false], [false, true], [false, false]]);

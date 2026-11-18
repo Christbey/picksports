@@ -16,6 +16,7 @@ class InfrastructureMetricsCollector
         private readonly DatabaseManager $database,
         private readonly QueueManager $queues,
         private readonly RedisManager $redis,
+        private readonly InfrastructureFailureMetrics $failures,
     ) {}
 
     /**
@@ -32,8 +33,8 @@ class InfrastructureMetricsCollector
             'captured_at' => now('UTC')->toIso8601String(),
             'redis' => $this->redisMetrics($errors),
             'queue' => $this->queueMetrics($errors),
-            'failed_jobs' => $this->failedJobMetrics($errors),
-            'scheduler' => $this->schedulerMetrics($errors),
+            'failed_jobs' => $this->failures->failedJobs($errors),
+            'scheduler' => $this->failures->scheduler($errors),
             'database' => $this->databaseMetrics($errors),
             'errors' => $errors,
         ];
@@ -191,75 +192,6 @@ class InfrastructureMetricsCollector
                     : max(0, $now - (int) $oldestCreatedAt),
             ]];
         })->all();
-    }
-
-    /**
-     * @param  array<int, array{component: string, message: string}>  $errors
-     * @return array{window_minutes: int, recent_count: int|null}
-     */
-    private function failedJobMetrics(array &$errors): array
-    {
-        $window = max(1, (int) config('infrastructure.health.failed_jobs_window_minutes', 60));
-        $connectionName = config('queue.failed.database') ?: null;
-        $table = (string) config('queue.failed.table', 'failed_jobs');
-
-        try {
-            $connection = $this->database->connection($connectionName);
-
-            if (! $connection->getSchemaBuilder()->hasTable($table)) {
-                throw new \RuntimeException('Failed job table is missing.');
-            }
-
-            return [
-                'window_minutes' => $window,
-                'recent_count' => $connection->table($table)
-                    ->where('failed_at', '>=', now()->subMinutes($window))
-                    ->count(),
-            ];
-        } catch (Throwable) {
-            $errors[] = [
-                'component' => 'failed_jobs',
-                'message' => 'Recent failed-job metrics are unavailable.',
-            ];
-
-            return ['window_minutes' => $window, 'recent_count' => null];
-        }
-    }
-
-    /**
-     * @param  array<int, array{component: string, message: string}>  $errors
-     * @return array{window_minutes: int, failure_count: int|null}
-     */
-    private function schedulerMetrics(array &$errors): array
-    {
-        $window = max(1, (int) config('infrastructure.health.scheduler_window_minutes', 60));
-
-        try {
-            $connection = $this->database->connection();
-
-            if (! $connection->getSchemaBuilder()->hasTable('command_heartbeats')) {
-                throw new \RuntimeException('Command heartbeat table is missing.');
-            }
-
-            return [
-                'window_minutes' => $window,
-                'failure_count' => $connection->table('command_heartbeats')
-                    ->whereIn('status', ['failure', 'failed', 'error'])
-                    // Do not let this health check count its own prior failure
-                    // and remain latched critical after the underlying issue
-                    // has recovered.
-                    ->where('command', '!=', 'infrastructure:health')
-                    ->where('ran_at', '>=', now()->subMinutes($window))
-                    ->count(),
-            ];
-        } catch (Throwable) {
-            $errors[] = [
-                'component' => 'scheduler',
-                'message' => 'Recent scheduler-failure metrics are unavailable.',
-            ];
-
-            return ['window_minutes' => $window, 'failure_count' => null];
-        }
     }
 
     /**

@@ -77,10 +77,10 @@ it('can run a fast validation-only sentinel pass', function () {
     $this->travelTo('2026-06-01 08:00:00');
 
     $validator = m::mock(SportValidator::class);
-    $validator->shouldReceive('validate')
+    $validator->shouldReceive('results')
         ->once()
         ->with('nba', 'full')
-        ->andReturn([]);
+        ->andReturn([['check_type' => 'validation_fixture', 'status' => 'passing', 'message' => 'Validation completed.']]);
     $this->app->instance(SportValidator::class, $validator);
 
     $this->artisan('sports:operations-sentinel', [
@@ -99,10 +99,10 @@ it('can run validation-only sentinel pass for source data checks only', function
     $this->travelTo('2026-06-01 08:00:00');
 
     $validator = m::mock(SportValidator::class);
-    $validator->shouldReceive('validate')
+    $validator->shouldReceive('results')
         ->once()
         ->with('nba', 'data')
-        ->andReturn([]);
+        ->andReturn([['check_type' => 'validation_fixture', 'status' => 'passing', 'message' => 'Data validation completed.']]);
     $this->app->instance(SportValidator::class, $validator);
 
     $this->artisan('sports:operations-sentinel', [
@@ -204,7 +204,7 @@ it('repairs wnba team stat coverage validation with an inline game-detail sweep'
     $this->app->instance($syncClass, $sync);
 
     $validator = m::mock(SportValidator::class);
-    $validator->shouldReceive('validate')
+    $validator->shouldReceive('results')
         ->once()
         ->with('wnba', 'full')
         ->andReturn([[
@@ -221,7 +221,7 @@ it('repairs wnba team stat coverage validation with an inline game-detail sweep'
             ],
             'recommended_action' => 'espn:sync-wnba-game-details',
         ]]);
-    $validator->shouldReceive('validate')
+    $validator->shouldReceive('results')
         ->once()
         ->with('wnba', 'full')
         ->andReturn([[
@@ -353,7 +353,7 @@ it('prints the operations ai review even when final validation fails', function 
     $this->app->instance(SyncGamesFromScoreboard::class, $sync);
 
     $validator = m::mock(SportValidator::class);
-    $validator->shouldReceive('validate')
+    $validator->shouldReceive('results')
         ->once()
         ->with('nba', 'full')
         ->andReturn([[

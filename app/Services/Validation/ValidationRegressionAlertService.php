@@ -15,12 +15,14 @@ class ValidationRegressionAlertService
             return;
         }
 
-        $previousRun = ValidationRun::query()
-            ->where('command_name', 'healthcheck:validate-data')
-            ->where('scope', $run->scope)
+        if (! app(ValidationRunRecorder::class)->checksCompleted($run)) {
+            return;
+        }
+        $previousRun = app(ValidationRunRecorder::class)->completedChecksQuery((string) $run->scope, data_get($run->summary, 'validation_scope', 'full'))
             ->where('id', '<', $run->id)
-            ->latest('id')
-            ->first();
+            ->whereNull('summary->post_processing_errors->alerts')
+            ->where(fn ($query) => $query->whereNull('summary->alerts_skipped')->orWhere('summary->alerts_skipped', false))
+            ->latest('id')->first();
 
         if (! $previousRun) {
             return;

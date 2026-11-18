@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useHealthchecksContext } from '@/composables/useHealthchecks';
+import { validationExecutionLabel } from '@/lib/healthcheckPresentation';
 const {
     selectedView,
     syncingCheck,
@@ -67,6 +68,9 @@ const {
                                       ?.toUpperCase()
                         }}
                     </p>
+                    <p class="mt-1 text-xs text-muted-foreground">
+                        {{ validationExecutionLabel(run.summary, run.status) }}
+                    </p>
                     <p
                         class="mt-1 text-xs text-muted-foreground"
                         v-if="run.summary"
@@ -90,6 +94,14 @@ const {
                     <h2 class="text-lg font-semibold">
                         Validation Run Details
                     </h2>
+                    <p>
+                        {{
+                            validationExecutionLabel(
+                                selected_validation_run.summary,
+                                selected_validation_run.status,
+                            )
+                        }}
+                    </p>
                     <p class="mt-1 text-sm text-muted-foreground">
                         {{
                             selected_validation_run.scope === 'all_sports'

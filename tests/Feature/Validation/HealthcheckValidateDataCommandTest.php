@@ -887,7 +887,7 @@ test('healthcheck validate data summary is scoped to the current validation run'
     ]);
 
     $validator = Mockery::mock(SportValidator::class);
-    $validator->shouldReceive('validate')
+    $validator->shouldReceive('results')
         ->once()
         ->with('nba', 'full')
         ->andReturn([[

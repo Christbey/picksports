@@ -178,7 +178,7 @@ it('keeps kickoff and publication tie order without SQL sorting full dashboard p
             'is_active' => true, 'is_default' => true, 'sort_order' => 0,
         ]);
     }
-    $expected = array_slice([3, 2, 1, 0], 0, $limit);
+    $expected = [3, 2, 1, 0];
     $hydrated = [];
     CanonicalPrediction::retrieved(function (CanonicalPrediction $prediction) use (&$hydrated): void {
         if (array_key_exists('output_metadata', $prediction->getAttributes())) {

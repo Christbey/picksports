@@ -140,8 +140,8 @@ test('MLB page keeps the established winner and home run line for native and leg
         assert.ok(
             text.includes(
                 expected > 0
-                    ? 'Home Spread -1.5 Home Club favored'
-                    : 'Home Spread +1.5 Away Club favored',
+                    ? 'Projected spread Home Club -1.5 Home Club favored'
+                    : 'Projected spread Home Club +1.5 Away Club favored',
             ),
         );
         assert.equal(state.prediction.value.predicted_total, 8.5);

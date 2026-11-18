@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
+import { after, before, beforeEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import { createRenderer, h, nextTick, reactive } from 'vue';
+beforeEach((t) =>
+    t.mock.timers.enable({
+        apis: ['Date'],
+        now: new Date('2026-09-26T18:00:00Z').getTime(),
+    }),
+);
 let server, usePredictionBoard, presentation;
 before(async () => {
     server = await createServer({
@@ -434,6 +440,230 @@ test('retry restarts failed metadata bootstrap before requesting predictions', a
         await board.state.retryPredictions();
         assert.equal(board.state.error.value, null);
         assert.equal(board.state.predictions.value.length, 1);
+        assert.equal(board.calls.at(-1).options.query.from_date, '2026-09-26');
+    } finally {
+        board.close();
+    }
+});
+
+for (const sport of ['nba', 'wnba', 'cbb', 'wcbb']) {
+    test(`${sport} season lookups ignore late dates and invalidate old prediction reads`, async () => {
+        const board = mount({ sport });
+        try {
+            await flush();
+            const dates = [];
+            globalThis.__predictionBoardApi.predictions.availableDates = async (
+                _,
+                options,
+            ) => {
+                const request = deferred();
+                dates.push({ ...request, season: options.query.season });
+                return request.promise;
+            };
+            const oldBoard = deferred();
+            globalThis.__predictionBoardApi.predictions.index = () =>
+                oldBoard.promise;
+            const oldRead = board.state.fetchPredictions(2);
+            board.state.selectedSeason.value = '2025';
+            board.state.selectedSeason.value = '2026';
+            assert.equal(dates.length, 2);
+            oldBoard.resolve(response([row(99)]));
+            await oldRead;
+            assert.equal(board.state.predictions.value.length, 0);
+            dates[0].resolve({ data: ['2025-10-01'] });
+            await flush();
+            assert.equal(board.state.selectedDate.value, '');
+            assert.equal(board.state.loading.value, true);
+            globalThis.__predictionBoardApi.predictions.index = async (
+                _,
+                options,
+            ) => {
+                assert.equal(options.query.season, '2026');
+                assert.equal(options.query.from_date, '2026-09-26');
+                return response([row(3)]);
+            };
+            dates[1].resolve({ data: ['2026-10-01'] });
+            await flush();
+            assert.equal(board.state.selectedDate.value, '2026-09-26');
+            assert.equal(board.state.predictions.value[0].game.id, 3);
+            assert.equal(board.state.loading.value, false);
+        } finally {
+            board.close();
+        }
+    });
+}
+
+for (const failure of ['reject', 'null']) {
+    test(`season date ${failure} clears prior slate and retries metadata for the selected season`, async () => {
+        const board = mount({ sport: 'nba' });
+        try {
+            await flush();
+            globalThis.__predictionBoardApi.predictions.availableDates =
+                async () => {
+                    if (failure === 'reject') throw Error('Dates offline');
+                    return null;
+                };
+            board.state.selectedSeason.value = '2025';
+            await flush();
+            assert.match(
+                board.state.error.value,
+                /Dates offline|Failed to fetch available dates/,
+            );
+            assert.equal(board.state.loading.value, false);
+            assert.equal(board.state.predictions.value.length, 0);
+            assert.equal(board.state.meta.value, null);
+            globalThis.__predictionBoardApi.predictions.availableDates = async (
+                _,
+                options,
+            ) => {
+                assert.equal(options.query.season, '2025');
+                return { data: ['2025-10-01'] };
+            };
+            await board.state.retryPredictions();
+            assert.equal(board.state.error.value, null);
+            assert.equal(board.state.selectedDate.value, '2026-09-26');
+            assert.equal(board.calls.at(-1).options.query.season, '2025');
+            assert.equal(board.state.predictions.value.length, 1);
+            globalThis.__predictionBoardApi.predictions.availableDates =
+                async () => ({ data: [] });
+            board.state.selectedSeason.value = '2026';
+            await flush();
+            assert.equal(board.state.selectedDate.value, '2026-09-26');
+            assert.equal(board.state.predictions.value.length, 1);
+            assert.equal(board.state.error.value, null);
+        } finally {
+            board.close();
+        }
+    });
+}
+
+test('CFB superseded week lookup cannot overwrite newer season filters', async () => {
+    const board = mount({
+        sport: 'cfb',
+        filterMode: 'seasonWeek',
+        seasonWeekConfig: { regularSeasonWeeks: 15, postseasonOptions: [] },
+    });
+    try {
+        await flush();
+        const oldWeek = deferred();
+        globalThis.__predictionBoardApi.predictions.availableDates = async (
+            _,
+            options,
+        ) => ({ data: [`${options.query.season}-10-01`] });
+        globalThis.__predictionBoardApi.predictions.index = async (
+            _,
+            options,
+        ) => {
+            if (options.query.per_page === 1) {
+                if (options.query.season === '2025') return oldWeek.promise;
+                return response([
+                    row(2, {
+                        game: { ...row().game, season_type: 3, week: 4 },
+                    }),
+                ]);
+            }
+            return response([row(3)]);
+        };
+        board.state.selectedSeason.value = '2025';
+        await flush();
+        board.state.selectedSeason.value = '2026';
+        await flush();
+        assert.equal(board.state.seasonType.value, 'Postseason');
+        assert.equal(board.state.week.value, '4');
+        const count = board.calls.length;
+        oldWeek.resolve(response([row(1)]));
+        await flush();
+        assert.equal(board.state.seasonType.value, 'Postseason');
+        assert.equal(board.state.week.value, '4');
+        assert.equal(board.calls.length, count);
+    } finally {
+        board.close();
+    }
+});
+
+for (const sport of ['nba', 'cbb', 'wcbb', 'wnba', 'cfb']) {
+    test(`${sport} production board selects the Central daily slate after UTC midnight`, async (t) => {
+        t.mock.timers.reset();
+        t.mock.timers.reset();
+        t.mock.timers.enable({
+            apis: ['Date'],
+            now: new Date('2026-10-11T01:00:00Z').getTime(),
+        });
+        const configs = await server.ssrLoadModule(
+            '/resources/js/config/predictions-configs.ts',
+        );
+        const board = mount(configs[`${sport}PredictionsConfig`]);
+        try {
+            globalThis.__predictionBoardApi.predictions.availableDates =
+                async () => ({ data: ['2026-10-10', '2026-10-11'] });
+            await flush();
+            assert.equal(board.state.filterMode.value, 'date');
+            assert.equal(board.state.selectedDate.value, '2026-10-10');
+            assert.equal(
+                board.calls.at(-1).options.query.from_date,
+                '2026-10-10',
+            );
+            assert.equal(
+                board.calls.at(-1).options.query.to_date,
+                '2026-10-10',
+            );
+            assert.equal('week' in board.calls.at(-1).options.query, false);
+        } finally {
+            board.close();
+        }
+    });
+}
+
+for (const sport of ['nba', 'cbb', 'wcbb', 'wnba', 'cfb']) {
+    for (const dates of [[], ['2026-09-25'], ['2026-09-27']]) {
+        test(`${sport} opens on today when stored dates are ${JSON.stringify(dates)}`, async () => {
+            const configs = await server.ssrLoadModule(
+                '/resources/js/config/predictions-configs.ts',
+            );
+            const board = mount(
+                configs[`${sport}PredictionsConfig`],
+                async (_, options) => {
+                    assert.equal(options.query.from_date, '2026-09-26');
+                    assert.equal(options.query.to_date, '2026-09-26');
+                    return response([]);
+                },
+            );
+            try {
+                globalThis.__predictionBoardApi.predictions.availableDates =
+                    async () => ({ data: dates });
+                await flush();
+                assert.equal(board.state.selectedDate.value, '2026-09-26');
+                assert.deepEqual(
+                    board.state.availableDates.value,
+                    [...new Set([...dates, '2026-09-26'])].sort(),
+                );
+                assert.equal(board.state.predictions.value.length, 0);
+                assert.equal(board.state.error.value, null);
+                assert.equal(board.state.loading.value, false);
+                assert.match(board.state.emptyStateDescription.value, /Today/);
+                assert.equal(
+                    board.calls.filter((call) => call.kind === 'index').length,
+                    1,
+                );
+            } finally {
+                board.close();
+            }
+        });
+    }
+}
+
+test('reset returns to today after explicitly browsing a historical date', async () => {
+    const board = mount({ sport: 'nba' }, async () => response([]));
+    try {
+        globalThis.__predictionBoardApi.predictions.availableDates =
+            async () => ({ data: ['2026-09-25'] });
+        await flush();
+        board.state.selectedDate.value = '2026-09-25';
+        await flush();
+        assert.equal(board.calls.at(-1).options.query.from_date, '2026-09-25');
+        await board.state.clearFilters();
+        await flush();
+        assert.equal(board.state.selectedDate.value, '2026-09-26');
         assert.equal(board.calls.at(-1).options.query.from_date, '2026-09-26');
     } finally {
         board.close();

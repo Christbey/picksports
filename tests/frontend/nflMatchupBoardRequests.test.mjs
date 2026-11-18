@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
-import { before, after, test } from 'node:test';
+import { before, after, beforeEach, test } from 'node:test';
 import { harness, queue, flush } from './fixtures/boardCleanupHarness.mjs';
+beforeEach((t) =>
+    t.mock.timers.enable({
+        apis: ['Date'],
+        now: new Date('2026-11-06T18:00:00Z').getTime(),
+    }),
+);
 let env, presentation;
 before(async () => {
     env = await harness();
@@ -90,12 +96,16 @@ test('NFL metadata failures retry metadata rather than silently becoming empty b
     x.seasons.calls[2].resolve({ data: [2026] });
     await flush();
     x.dates.calls[1].resolve({ data: [] });
+    await flush();
+    x.boards.calls[0].resolve({ data: [] });
     await again;
     assert.equal(x.state.error.value, null);
     assert.equal(x.state.loading.value, false);
-    await x.state.refreshBoard();
+    const refresh = x.state.refreshBoard();
+    x.boards.calls[1].resolve({ data: [] });
+    await refresh;
     assert.equal(x.dates.calls.length, 2);
-    assert.equal(x.boards.calls.length, 0);
+    assert.equal(x.boards.calls.length, 2);
 });
 test('NFL rapid A-B-A season changes reject late metadata even when the old season matches again', async (t) => {
     const x = await mount(t);
@@ -182,8 +192,8 @@ test('NFL season changes close the old drawer and metadata loading cannot start 
     x.dates.calls[1].resolve({ data: ['2025-10-01'] });
     await flush();
     assert.deepEqual(x.boards.calls[1].args[1].query, {
-        from_date: '2025-10-01',
-        to_date: '2025-10-01',
+        from_date: '2026-11-06',
+        to_date: '2026-11-06',
         page: 1,
         per_page: 100,
         season: '2025',
@@ -250,3 +260,71 @@ test('NFL filter semantics preserve reviewed candidates, thresholds, finals and 
     );
     assert.match(searchHaystack(p), /stored_reason/);
 });
+
+for (const date of [
+    '2027-01-15T18:00:00Z',
+    '2027-02-07T18:00:00Z',
+    '2027-01-01T00:30:00Z',
+]) {
+    test(`NFL defaults to the ongoing football season at ${date}`, async (t) => {
+        t.mock.timers.reset();
+        t.mock.timers.reset();
+        t.mock.timers.enable({ apis: ['Date'], now: new Date(date).getTime() });
+        const x = await mount(t);
+        x.seasons.calls[0].resolve({ data: [2027, 2026, 2025] });
+        await flush();
+        assert.equal(x.state.selectedSeason.value, '2026');
+        assert.equal(x.dates.calls[0].args[1].query.season, '2026');
+        x.dates.calls[0].resolve({ data: ['2027-01-17'] });
+        await flush();
+        assert.equal(x.boards.calls[0].args[1].query.season, '2026');
+        x.boards.calls[0].resolve({ data: [] });
+        await flush();
+    });
+}
+
+test('NFL board selects the Central daily slate after UTC midnight', async (t) => {
+    t.mock.timers.reset();
+    t.mock.timers.enable({
+        apis: ['Date'],
+        now: new Date('2026-10-11T01:00:00Z').getTime(),
+    });
+    const x = await mount(t);
+    x.seasons.calls[0].resolve({ data: [2026] });
+    await flush();
+    x.dates.calls[0].resolve({ data: ['2026-10-10', '2026-10-11'] });
+    await flush();
+    assert.equal(x.state.selectedDate.value, '2026-10-10');
+    assert.equal(x.boards.calls[0].args[1].query.from_date, '2026-10-10');
+    assert.equal(x.boards.calls[0].args[1].query.to_date, '2026-10-10');
+    x.boards.calls[0].resolve({ data: [] });
+    await flush();
+});
+
+for (const dates of [[], ['2026-11-05'], ['2026-11-07']]) {
+    test(`NFL keeps today available and selected without a stored slate: ${JSON.stringify(dates)}`, async (t) => {
+        const x = await mount(t);
+        x.seasons.calls[0].resolve({ data: [2026] });
+        await flush();
+        x.dates.calls[0].resolve({ data: dates });
+        await flush();
+        assert.equal(x.state.selectedDate.value, '2026-11-06');
+        assert.deepEqual(
+            x.state.availableDates.value,
+            [...new Set([...dates, '2026-11-06'])].sort(),
+        );
+        assert.equal(x.boards.calls[0].args[1].query.from_date, '2026-11-06');
+        assert.equal(x.boards.calls[0].args[1].query.to_date, '2026-11-06');
+        x.boards.calls[0].resolve({ data: [] });
+        await flush();
+        assert.equal(x.state.predictions.value.length, 0);
+        assert.equal(x.state.loading.value, false);
+        assert.equal(x.state.error.value, null);
+        if (dates.length) {
+            x.state.selectedDate.value = dates[0];
+            assert.equal(x.boards.calls[1].args[1].query.from_date, dates[0]);
+            x.boards.calls[1].resolve({ data: [] });
+            await flush();
+        }
+    });
+}

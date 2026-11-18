@@ -9,6 +9,7 @@ import {
     inject,
     type InjectionKey,
 } from 'vue';
+import { todayKey, boardDateOptions } from '@/lib/matchupBoardPresentation';
 import { currentSlateDate, footballSeason } from '@/lib/predictionPeriod';
 import { createBoardDelivery } from '@/lib/predictionBoardDelivery';
 import { mapV2Prediction } from '@/lib/predictionBoardPresentation';
@@ -36,19 +37,17 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
     const week = ref('');
     const searchQuery = ref('');
     const showFilters = ref(false);
-    const centralToday = () =>
-        new Intl.DateTimeFormat('en-CA', {
-            timeZone: 'America/Chicago',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-        }).format(new Date());
+    const centralToday = todayKey;
     const betViewMode = ref<'recommended' | 'all'>('all');
     const isBootstrapping = ref(true);
     const api = useApiV2Client();
     const availableSeasons = ref<number[]>([]);
     const selectedSeason = ref('');
     let initialized = false;
+    let periodRequest = 0;
+    let periodLoading = false;
+    let periodReady = false;
+    let disposed = false;
 
     const weekOptions = computed(() => {
         if (!props.config.seasonWeekConfig || !seasonType.value) return [];
@@ -82,11 +81,13 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         week.value = game?.week == null ? '' : String(game.week);
     };
 
-    const setDefaultSeasonWeekFilters = async () => {
+    const setDefaultSeasonWeekFilters = async (active: () => boolean) => {
+        const season = selectedSeason.value;
         if (filterMode.value !== 'seasonWeek') return;
         const dates = await api.predictions.availableDates(props.config.sport, {
-            query: selectedSeason.value ? { season: selectedSeason.value } : {},
+            query: season ? { season } : {},
         });
+        if (!active()) return;
         if (!dates)
             throw new Error('Unable to load the current week. Please retry.');
         const date = currentSlateDate(dates.data, centralToday());
@@ -94,12 +95,13 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         if (!date) return;
         const slate = await api.predictions.index(props.config.sport, {
             query: {
-                season: selectedSeason.value,
+                season,
                 from_date: date,
                 to_date: date,
                 per_page: 1,
             },
         });
+        if (!active()) return;
         if (!slate)
             throw new Error('Unable to load the current week. Please retry.');
         setSeasonWeek(slate.data[0]?.game);
@@ -175,6 +177,7 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         refreshError,
         refreshing,
         retryPage,
+        reset: resetPredictions,
         fetchPage: fetchPredictions,
     } = usePredictionList<PredictionListItem>(
         async (page, background = false) => {
@@ -225,10 +228,9 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
             : [];
 
         if (!selectedSeason.value && availableSeasons.value.length > 0) {
-            const currentYear =
-                filterMode.value === 'seasonWeek'
-                    ? footballSeason(centralToday())
-                    : new Date().getFullYear();
+            const currentYear = ['cfb', 'nfl'].includes(props.config.sport)
+                ? footballSeason(centralToday())
+                : Number(centralToday().slice(0, 4));
             const preferredSeason = availableSeasons.value.includes(currentYear)
                 ? currentYear
                 : Math.max(...availableSeasons.value);
@@ -237,45 +239,35 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         }
     };
 
-    const fetchAvailableDates = async () => {
+    const fetchAvailableDates = async (active: () => boolean) => {
+        const season = selectedSeason.value;
         const data = await api.predictions.availableDates(props.config.sport, {
-            query: selectedSeason.value ? { season: selectedSeason.value } : {},
+            query: season ? { season } : {},
         });
 
+        if (!active()) return;
         if (!data) throw new Error('Failed to fetch available dates');
-        availableDates.value = Array.isArray(data.data) ? data.data : [];
-
-        const now = new Date();
-        if (props.config.useEasternTime) {
-            const etDate = new Date(
-                now.toLocaleString('en-US', { timeZone: 'America/New_York' }),
-            );
-            today.value = `${etDate.getFullYear()}-${String(etDate.getMonth() + 1).padStart(2, '0')}-${String(etDate.getDate()).padStart(2, '0')}`;
-        } else {
-            today.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        }
-
-        if (availableDates.value.includes(today.value)) {
-            selectedDate.value = today.value;
-        } else if (availableDates.value.length > 0) {
-            const futureDates = availableDates.value.filter(
-                (d) => d > today.value,
-            );
-            const pastDates = availableDates.value.filter(
-                (d) => d < today.value,
-            );
-            selectedDate.value =
-                futureDates.length > 0
-                    ? futureDates[0]
-                    : pastDates[pastDates.length - 1];
-        }
+        availableDates.value = boardDateOptions(
+            Array.isArray(data.data) ? data.data : [],
+        );
+        today.value = centralToday();
+        selectedDate.value = today.value;
     };
 
-    watch(selectedDate, () => {
-        if (!isBootstrapping.value && filterMode.value === 'date') {
-            fetchPredictions(1);
-        }
-    });
+    watch(
+        selectedDate,
+        () => {
+            if (
+                !isBootstrapping.value &&
+                !periodLoading &&
+                periodReady &&
+                filterMode.value === 'date'
+            ) {
+                fetchPredictions(1);
+            }
+        },
+        { flush: 'sync' },
+    );
 
     watch(
         seasonType,
@@ -285,40 +277,47 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         { flush: 'sync' },
     );
 
-    watch(selectedSeason, async () => {
-        if (isBootstrapping.value) {
-            return;
-        }
-
-        if (filterMode.value === 'date') {
-            await fetchAvailableDates();
-            if (selectedDate.value) {
-                fetchPredictions(1);
+    const loadPeriod = async () => {
+        const request = ++periodRequest;
+        const active = () => !disposed && request === periodRequest;
+        periodLoading = true;
+        periodReady = false;
+        resetPredictions();
+        availableDates.value = [];
+        selectedDate.value = '';
+        try {
+            if (filterMode.value === 'date') {
+                await fetchAvailableDates(active);
+            } else if (filterMode.value === 'seasonWeek') {
+                await setDefaultSeasonWeekFilters(active);
             }
-            return;
-        }
-
-        if (filterMode.value === 'none') {
-            fetchPredictions(1);
-            return;
-        }
-
-        if (filterMode.value === 'seasonWeek') {
-            try {
-                loading.value = true;
-                await setDefaultSeasonWeekFilters();
-                await fetchPredictions(1);
-            } catch (e) {
+            if (!active()) return;
+            periodReady = true;
+            periodLoading = false;
+            await fetchPredictions(1);
+        } catch (e) {
+            if (active()) {
                 error.value =
-                    e instanceof Error ? e.message : 'Unable to load week';
-            } finally {
-                loading.value = false;
+                    e instanceof Error ? e.message : 'Unable to load season';
+            }
+        } finally {
+            if (active()) {
+                periodLoading = false;
+                if (!periodReady) loading.value = false;
             }
         }
-    });
+    };
+
+    watch(
+        selectedSeason,
+        () => {
+            if (!isBootstrapping.value) void loadPeriod();
+        },
+        { flush: 'sync' },
+    );
 
     const applyFilters = () => {
-        fetchPredictions(1);
+        if (periodReady && !periodLoading) void fetchPredictions(1);
     };
 
     const clearFilters = async () => {
@@ -326,11 +325,9 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         betViewMode.value = 'all';
 
         if (filterMode.value === 'date') {
-            if (availableDates.value.includes(today.value)) {
-                selectedDate.value = today.value;
-            } else if (availableDates.value.length > 0) {
-                selectedDate.value = availableDates.value[0];
-            }
+            today.value = centralToday();
+            availableDates.value = boardDateOptions(availableDates.value);
+            selectedDate.value = today.value;
             return;
         }
 
@@ -346,16 +343,7 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
                 selectedSeason.value = String(preferred);
                 return;
             }
-            try {
-                loading.value = true;
-                await setDefaultSeasonWeekFilters();
-                await fetchPredictions(1);
-            } catch (e) {
-                error.value =
-                    e instanceof Error ? e.message : 'Unable to load week';
-            } finally {
-                loading.value = false;
-            }
+            await loadPeriod();
             return;
         }
         seasonType.value = '';
@@ -392,7 +380,9 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         if (
             props.config.sport !== 'cfb' ||
             document.hidden ||
-            isBootstrapping.value
+            isBootstrapping.value ||
+            periodLoading ||
+            !periodReady
         )
             return;
         // Include scheduled games so the board transitions into live without a reload.
@@ -407,30 +397,27 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         try {
             if (usesSingleRequestStartup.value) {
                 await fetchPredictions(1);
+                periodReady = initialized;
                 return;
             }
 
             await fetchAvailableSeasons();
 
-            if (filterMode.value === 'date') {
-                await fetchAvailableDates();
-            } else if (filterMode.value === 'seasonWeek') {
-                await setDefaultSeasonWeekFilters();
-            }
-
+            if (disposed) return;
             initialized = true;
             isBootstrapping.value = false;
-            await fetchPredictions(1);
+            await loadPeriod();
         } catch (e) {
             error.value = e instanceof Error ? e.message : 'An error occurred';
+            loading.value = false;
         } finally {
             isBootstrapping.value = false;
-            loading.value = false;
         }
     };
     const retryPredictions = async () => {
         if (loading.value || refreshing.value) return;
         if (!initialized) await initializeBoard();
+        else if (!periodReady) await loadPeriod();
         else await retryPage();
     };
     onMounted(() => {
@@ -439,6 +426,9 @@ export function usePredictionBoard(props: PredictionsBoardProps) {
         void initializeBoard();
     });
     onBeforeUnmount(() => {
+        disposed = true;
+        periodRequest++;
+        resetPredictions();
         if (refreshTimer) clearInterval(refreshTimer);
         document.removeEventListener('visibilitychange', refreshBoard);
     });

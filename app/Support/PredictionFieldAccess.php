@@ -8,9 +8,11 @@ use Spatie\Permission\Exceptions\PermissionDoesNotExist;
 
 class PredictionFieldAccess
 {
+    public function __construct(private readonly TierAccessBypass $tierBypass) {}
+
     public function canViewField(User $user, string $fieldOrPermission): bool
     {
-        if (app(TierAccessBypass::class)->shouldBypassTierChecks($user)) {
+        if ($this->tierBypass->shouldBypassTierChecks($user)) {
             return true;
         }
 

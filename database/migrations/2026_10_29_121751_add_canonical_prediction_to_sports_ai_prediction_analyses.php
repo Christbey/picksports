@@ -12,6 +12,7 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // @expand-nullability Native lineage permits a missing legacy ID; retain unsigned bigint capacity.
         Schema::table('sports_ai_prediction_analyses', function (Blueprint $table) {
             $table->unsignedBigInteger('prediction_id')->nullable()->change();
             $table->foreignId('canonical_prediction_id')->nullable()->constrained('predictions')->restrictOnDelete();

@@ -2,10 +2,13 @@
 
 namespace App\Actions\ESPN;
 
+use App\Actions\ESPN\Concerns\ValidatesBoxscoreReplacement;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractBasketballSyncPlayerStats
 {
+    use ValidatesBoxscoreReplacement;
+
     protected const TEAM_MODEL_CLASS = Model::class;
 
     protected const PLAYER_MODEL_CLASS = Model::class;
@@ -16,89 +19,91 @@ abstract class AbstractBasketballSyncPlayerStats
 
     public function execute(array $gameData, Model $game): int
     {
-        if (! isset($gameData['boxscore']['players'])) {
+        return $game->getConnection()->transaction(function () use ($gameData, $game): int {
+            $game->newQuery()->whereKey($game->getKey())->lockForUpdate()->firstOrFail();
+
+            return $this->replacePlayerStats($gameData, $game);
+        });
+    }
+
+    protected function replacePlayerStats(array $gameData, Model $game): int
+    {
+        $sections = $gameData['boxscore']['players'] ?? null;
+        if (! is_array($sections)) {
             return 0;
         }
-
         $playerStatModel = $this->playerStatModelClass();
-        $playerStatModel::query()->where('game_id', $game->id)->delete();
-
-        $synced = 0;
-        $teamModel = $this->teamModelClass();
         $playerModel = $this->playerModelClass();
-
-        foreach ($gameData['boxscore']['players'] as $teamData) {
-            $teamEspnId = $teamData['team']['id'] ?? null;
-
-            if (! $teamEspnId) {
-                continue;
+        $teams = $this->replacementTeams($sections, $game, $this->teamModelClass(), $playerStatModel);
+        if ($teams === null) {
+            return 0;
+        }
+        $athletes = [];
+        foreach ($sections as $section) {
+            $rows = data_get($section, 'statistics.0.athletes');
+            if (! is_array($rows) || $rows === []) {
+                return 0;
             }
-
-            $team = $teamModel::query()->where('espn_id', $teamEspnId)->first();
-
-            if (! $team) {
-                continue;
-            }
-
-            if (! isset($teamData['statistics'][0]['athletes'])) {
-                continue;
-            }
-
-            $athletes = $teamData['statistics'][0]['athletes'];
-
-            foreach ($athletes as $athleteData) {
-                $playerEspnId = $athleteData['athlete']['id'] ?? null;
-
-                if (! $playerEspnId) {
-                    continue;
-                }
-
+            foreach ($rows as $athleteData) {
                 if ($this->shouldSkipAthlete($athleteData)) {
                     continue;
                 }
-
-                $player = $this->resolvePlayer($playerModel, (string) $playerEspnId, $athleteData, $team);
-
-                $stats = $athleteData['stats'] ?? [];
-
-                [$fgMade, $fgAttempted] = $this->parseMadeAttempt($stats[2] ?? null);
-                [$threeMade, $threeAttempted] = $this->parseMadeAttempt($stats[3] ?? null);
-                [$ftMade, $ftAttempted] = $this->parseMadeAttempt($stats[4] ?? null);
-
-                $playerStatModel::query()->updateOrCreate([
-                    'player_id' => $player->id,
-                    'game_id' => $game->id,
-                ], [
-                    'team_id' => $team->id,
-                    'minutes_played' => $stats[0] ?? null,
-                    'points' => isset($stats[1]) ? (int) $stats[1] : 0,
-                    'field_goals_made' => $fgMade,
-                    'field_goals_attempted' => $fgAttempted,
-                    'three_point_made' => $threeMade,
-                    'three_point_attempted' => $threeAttempted,
-                    'free_throws_made' => $ftMade,
-                    'free_throws_attempted' => $ftAttempted,
-                    'rebounds_total' => isset($stats[5]) ? (int) $stats[5] : 0,
-                    'assists' => isset($stats[6]) ? (int) $stats[6] : 0,
-                    'turnovers' => isset($stats[7]) ? (int) $stats[7] : 0,
-                    'steals' => isset($stats[8]) ? (int) $stats[8] : 0,
-                    'blocks' => isset($stats[9]) ? (int) $stats[9] : 0,
-                    'rebounds_offensive' => isset($stats[10]) ? (int) $stats[10] : 0,
-                    'rebounds_defensive' => isset($stats[11]) ? (int) $stats[11] : 0,
-                    'fouls' => isset($stats[12]) ? (int) $stats[12] : 0,
-                ]);
-
-                $synced++;
+                if (! filled(data_get($athleteData, 'athlete.id')) || ! is_array($athleteData['stats'] ?? null) || $athleteData['stats'] === []) {
+                    return 0;
+                }
+                $athletes[] = [$athleteData, $teams->get($section['team']['id'])];
             }
         }
+        if ($athletes === []) {
+            return 0;
+        }
+        $players = $playerModel::query()->whereIn('espn_id', collect($athletes)->map(fn ($row) => $row[0]['athlete']['id']))->get()->keyBy('espn_id');
 
-        return $synced;
+        $rows = [];
+        foreach ($athletes as [$athleteData, $team]) {
+            $playerEspnId = (string) $athleteData['athlete']['id'];
+            $player = $this->resolvePlayer($playerModel, $playerEspnId, $athleteData, $team, $players->get($playerEspnId));
+            $players->put($playerEspnId, $player);
+            $stats = $athleteData['stats'] ?? [];
+
+            [$fgMade, $fgAttempted] = $this->parseMadeAttempt($stats[2] ?? null);
+            [$threeMade, $threeAttempted] = $this->parseMadeAttempt($stats[3] ?? null);
+            [$ftMade, $ftAttempted] = $this->parseMadeAttempt($stats[4] ?? null);
+
+            $rows[$player->id] = [
+                'player_id' => $player->id,
+                'game_id' => $game->id,
+                'team_id' => $team->id,
+                'minutes_played' => $stats[0] ?? null,
+                'points' => isset($stats[1]) ? (int) $stats[1] : 0,
+                'field_goals_made' => $fgMade,
+                'field_goals_attempted' => $fgAttempted,
+                'three_point_made' => $threeMade,
+                'three_point_attempted' => $threeAttempted,
+                'free_throws_made' => $ftMade,
+                'free_throws_attempted' => $ftAttempted,
+                'rebounds_total' => isset($stats[5]) ? (int) $stats[5] : 0,
+                'assists' => isset($stats[6]) ? (int) $stats[6] : 0,
+                'turnovers' => isset($stats[7]) ? (int) $stats[7] : 0,
+                'steals' => isset($stats[8]) ? (int) $stats[8] : 0,
+                'blocks' => isset($stats[9]) ? (int) $stats[9] : 0,
+                'rebounds_offensive' => isset($stats[10]) ? (int) $stats[10] : 0,
+                'rebounds_defensive' => isset($stats[11]) ? (int) $stats[11] : 0,
+                'fouls' => isset($stats[12]) ? (int) $stats[12] : 0,
+            ];
+        }
+        $playerStatModel::query()->where('game_id', $game->id)->delete();
+        foreach ($rows as $row) {
+            $playerStatModel::query()->create($row);
+        }
+
+        return count($athletes);
     }
 
     /**
      * @param  class-string<Model>  $playerModel
      */
-    protected function resolvePlayer(string $playerModel, string $playerEspnId, array $athleteData, Model $team): Model
+    protected function resolvePlayer(string $playerModel, string $playerEspnId, array $athleteData, Model $team, ?Model $existing = null): Model
     {
         $athlete = $athleteData['athlete'] ?? [];
         $attributes = [
@@ -118,10 +123,10 @@ abstract class AbstractBasketballSyncPlayerStats
             ARRAY_FILTER_USE_BOTH
         );
 
-        return $playerModel::query()->updateOrCreate(
-            ['espn_id' => $playerEspnId],
-            $attributes
-        );
+        $player = $existing ?? new $playerModel(['espn_id' => $playerEspnId]);
+        $player->fill($attributes)->save();
+
+        return $player;
     }
 
     protected function shouldSkipAthlete(array $athleteData): bool

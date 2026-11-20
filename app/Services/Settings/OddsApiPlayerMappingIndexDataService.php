@@ -20,11 +20,11 @@ class OddsApiPlayerMappingIndexDataService
     {
         $baseQuery = OddsApiPlayerMapping::query()->where('sport', $sport);
 
-        return [
-            'total' => (clone $baseQuery)->count(),
-            'mapped' => (clone $baseQuery)->whereNotNull('espn_player_name')->count(),
-            'unmapped' => (clone $baseQuery)->whereNull('espn_player_name')->count(),
-        ];
+        $counts = $baseQuery->selectRaw('COUNT(*) as total, COUNT(espn_player_name) as mapped')->first();
+        $total = (int) $counts->getAttribute('total');
+        $mapped = (int) $counts->getAttribute('mapped');
+
+        return ['total' => $total, 'mapped' => $mapped, 'unmapped' => $total - $mapped];
     }
 
     public function mappings(string $sport, string $filter, int $perPage = 50): LengthAwarePaginator

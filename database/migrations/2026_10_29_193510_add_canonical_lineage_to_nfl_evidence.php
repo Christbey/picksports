@@ -9,6 +9,7 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // @expand-nullability Native lineage permits a missing legacy ID; retain unsigned bigint capacity.
         Schema::table('prediction_feature_snapshots', function (Blueprint $table): void {
             $table->foreignId('canonical_prediction_id')->nullable()->constrained('predictions')->restrictOnDelete();
         });

@@ -83,11 +83,9 @@ class ModelRunRecorder
 
     public function codeVersion(): ?string
     {
-        foreach (['SOURCE_VERSION', 'APP_COMMIT_SHA', 'GIT_COMMIT'] as $key) {
-            $value = env($key);
-            if (is_string($value) && trim($value) !== '') {
-                return Str::limit(trim($value), 64, '');
-            }
+        $version = config('app.code_version');
+        if (is_string($version) && trim($version) !== '') {
+            return Str::limit(trim($version), 64, '');
         }
 
         $gitDirectory = base_path('.git');

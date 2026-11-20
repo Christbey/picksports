@@ -10,20 +10,30 @@ use App\Support\MLB\MlbGameStart;
 
 class MlbPlayerPropCandidateBuilder
 {
+    public function __construct(private readonly BettingForecastSource $forecasts) {}
+
     /**
      * @return list<MlbPickCandidateData>
      */
     public function build(Game $game, ?BettingForecast $prediction = null): array
     {
-        $prediction ??= app(BettingForecastSource::class)->forGames('mlb', [(int) $game->id])->first();
+        $prediction ??= $this->forecasts->forGames('mlb', [(int) $game->id])->first();
 
-        return PlayerProp::query()
-            ->where('game_id', $game->id)
-            ->whereNotNull('line')
-            ->whereNotNull('over_price')
-            ->whereNotNull('under_price')
-            ->get()
-            ->map(fn (PlayerProp $prop): ?MlbPickCandidateData => $this->candidate($game, $prop, $prediction))
+        return $this->buildForForecast($game, $prediction);
+    }
+
+    /**
+     * A null batch-selected forecast is intentional and must not trigger another lookup.
+     *
+     * @return list<MlbPickCandidateData>
+     */
+    public function buildForForecast(Game $game, ?BettingForecast $prediction): array
+    {
+        $props = $game->relationLoaded('playerProps')
+            ? $game->getRelation('playerProps')->filter(fn (PlayerProp $prop): bool => $prop->line !== null && $prop->over_price !== null && $prop->under_price !== null)
+            : PlayerProp::query()->where('game_id', $game->id)->whereNotNull('line')->whereNotNull('over_price')->whereNotNull('under_price')->get();
+
+        return $props->map(fn (PlayerProp $prop): ?MlbPickCandidateData => $this->candidate($game, $prop, $prediction))
             ->filter()
             ->values()
             ->all();

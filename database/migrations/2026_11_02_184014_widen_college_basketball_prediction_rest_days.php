@@ -9,6 +9,7 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // @expand-capacity tinyInteger -> smallInteger; retain the existing signedness and nullability.
         foreach (['cbb_predictions', 'wcbb_predictions'] as $tableName) {
             Schema::table($tableName, function (Blueprint $table): void {
                 $table->smallInteger('rest_days_home')->nullable()->change();

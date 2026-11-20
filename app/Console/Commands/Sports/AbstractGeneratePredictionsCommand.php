@@ -80,7 +80,7 @@ abstract class AbstractGeneratePredictionsCommand extends Command
 
         $query = $gameModel::query()
             ->whereIn('status', $this->predictionEligibleStatuses())
-            ->with(['homeTeam', 'awayTeam'])
+            ->with(['homeTeam', 'awayTeam', 'sportEvent'])
             ->orderBy('game_date')
             ->orderBy('id');
 

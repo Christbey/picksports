@@ -8,6 +8,8 @@ use App\Notifications\BettingValueAlertChannelResolver;
 
 class BettingAlertEligibility
 {
+    public function __construct(private readonly BettingValueAlertChannelResolver $channels) {}
+
     public function reason(User $user, string $sport, float $edge, array $selection = [], ?NotificationTemplate $template = null, ?string $channel = null): ?string
     {
         $preference = $user->alertPreference;
@@ -43,7 +45,7 @@ class BettingAlertEligibility
         if ($edge <= 0 || $edge < (float) $threshold) {
             return 'below_edge_threshold';
         }
-        $channels = app(BettingValueAlertChannelResolver::class)->resolve($user);
+        $channels = $this->channels->resolve($user);
         if ($channel !== null ? ! in_array($channel, $channels, true) : $channels === []) {
             return 'channel_disabled';
         }

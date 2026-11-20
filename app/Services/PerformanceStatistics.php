@@ -95,21 +95,26 @@ class PerformanceStatistics
         }
 
         if (config("prediction_lifecycle.canonical_reads.{$sport}", false)) {
-            $evaluations = app(CanonicalSportPredictionQuery::class)->queryForSport($sport, array_filter([
+            $predictions = app(CanonicalSportPredictionQuery::class)->queryForSport($sport, array_filter([
                 'from_date' => $fromDate, 'to_date' => $toDate, 'season' => $season,
-            ]))->withOnly(['latestEvaluation'])->whereHas('latestEvaluation')->get()->pluck('latestEvaluation');
-            $winnerSamples = $evaluations->filter(fn ($evaluation) => data_get($evaluation->errors, 'winner_correct') !== null);
-            $spreadErrors = $evaluations->map(fn ($evaluation) => data_get($evaluation->errors, 'spread_absolute_error'))->filter(fn ($error) => is_numeric($error));
-            $totalErrors = $evaluations->map(fn ($evaluation) => data_get($evaluation->errors, 'total_absolute_error'))->filter(fn ($error) => is_numeric($error));
+            ]))->withOnly(['latestEvaluation'])->whereHas('latestEvaluation')->lazy(200);
+            $stats = ['total_graded' => 0, 'winner_correct' => 0, 'spread_error_samples' => 0,
+                'spread_error_sum' => 0.0, 'total_error_samples' => 0, 'total_error_sum' => 0.0];
+            foreach ($predictions as $prediction) {
+                $errors = $prediction->latestEvaluation->errors;
+                $winner = data_get($errors, 'winner_correct');
+                $stats['total_graded'] += (int) ($winner !== null);
+                $stats['winner_correct'] += (int) ($winner === true);
+                foreach (['spread', 'total'] as $market) {
+                    $error = data_get($errors, $market.'_absolute_error');
+                    if (is_numeric($error)) {
+                        $stats[$market.'_error_samples']++;
+                        $stats[$market.'_error_sum'] += (float) $error;
+                    }
+                }
+            }
 
-            return $this->sportStatsMemo[$memoKey] = [
-                'total_graded' => $winnerSamples->count(),
-                'winner_correct' => $winnerSamples->filter(fn ($evaluation) => data_get($evaluation->errors, 'winner_correct') === true)->count(),
-                'spread_error_samples' => $spreadErrors->count(),
-                'spread_error_sum' => (float) $spreadErrors->sum(),
-                'total_error_samples' => $totalErrors->count(),
-                'total_error_sum' => (float) $totalErrors->sum(),
-            ];
+            return $this->sportStatsMemo[$memoKey] = $stats;
         }
 
         $table = "{$sport}_predictions";

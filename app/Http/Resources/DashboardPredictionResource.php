@@ -9,6 +9,15 @@ use Illuminate\Support\Carbon;
 
 class DashboardPredictionResource extends JsonResource
 {
+    private array $preparedLiveFields = LivePredictionStore::EMPTY_FIELDS;
+
+    public function liveFields(array $fields): self
+    {
+        $this->preparedLiveFields = $fields;
+
+        return $this;
+    }
+
     protected string $sport = '';
 
     protected array $liveStatuses = [];
@@ -85,7 +94,7 @@ class DashboardPredictionResource extends JsonResource
     {
         $prediction = $this->resource;
         $game = $prediction->game;
-        $live = app(LivePredictionStore::class)->fields($game);
+        $live = $this->preparedLiveFields;
 
         $isLive = in_array($game->status, $this->liveStatuses, true);
         $isFinal = in_array($game->status, $this->finalStatuses, true);

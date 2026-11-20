@@ -9,6 +9,7 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // @expand-nullability Unknown returns remain unknown; decimal precision and scale are unchanged.
         Schema::table('bet_settlements', fn (Blueprint $table) => $table->decimal('profit_units', 10, 4)->nullable()->change());
     }
 

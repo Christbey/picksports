@@ -4,6 +4,7 @@ namespace App\Models\NFL;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class GameContextFact extends Model
 {
@@ -23,5 +24,15 @@ class GameContextFact extends Model
     {
         return $query->where('recorded_at', '<=', $cutoff)
             ->whereNotNull('published_at')->where('published_at', '<=', $cutoff);
+    }
+
+    public function game(): BelongsTo
+    {
+        return $this->belongsTo(Game::class, 'game_id');
+    }
+
+    public function team(): BelongsTo
+    {
+        return $this->belongsTo(Team::class, 'team_id');
     }
 }

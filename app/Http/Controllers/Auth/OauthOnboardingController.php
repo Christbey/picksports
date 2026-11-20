@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Auth;
 
+use App\Http\Requests\Auth\OauthOnboardingStoreRequest;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -21,11 +22,9 @@ class OauthOnboardingController
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(OauthOnboardingStoreRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'age_verified' => ['required', 'accepted'],
-        ]);
+        $validated = $request->validated();
 
         $request->user()->forceFill([
             'age_verified_at' => now(),

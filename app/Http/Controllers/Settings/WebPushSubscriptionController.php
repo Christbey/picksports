@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Settings\WebPushSubscriptionDestroyRequest;
+use App\Http\Requests\Settings\WebPushSubscriptionStoreRequest;
 use App\Services\WebPushService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -23,15 +25,9 @@ class WebPushSubscriptionController extends Controller
         ]);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(WebPushSubscriptionStoreRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'endpoint' => ['required', 'url', 'max:2000'],
-            'contentEncoding' => ['nullable', 'string', 'max:32'],
-            'keys' => ['required', 'array'],
-            'keys.p256dh' => ['required', 'string', 'max:1024'],
-            'keys.auth' => ['required', 'string', 'max:256'],
-        ]);
+        $validated = $request->validated();
 
         $subscription = $this->webPushService->registerSubscription(
             $request->user(),
@@ -45,11 +41,9 @@ class WebPushSubscriptionController extends Controller
         ]);
     }
 
-    public function destroy(Request $request): JsonResponse
+    public function destroy(WebPushSubscriptionDestroyRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'endpoint' => ['nullable', 'url', 'max:2000'],
-        ]);
+        $validated = $request->validated();
 
         $deleted = $this->webPushService->removeSubscription(
             $request->user(),

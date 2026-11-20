@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\Model;
 
 final class GameSummaryMapper
 {
+    public function __construct(private readonly CanonicalPredictionSummaryMapper $canonicalSummaries) {}
+
     public function fromModel(SportContext $context, Model $game, ?Model $prediction = null): GameSummary
     {
         $dateTime = GameDateTimePresenter::forSport(
@@ -95,6 +97,7 @@ final class GameSummaryMapper
             prediction: $prediction === null ? null : $this->prediction($prediction),
             completedAt: GameDateTimePresenter::serializeDateValue($game->getAttribute('completed_at')),
             updatedAt: GameDateTimePresenter::serializeDateValue($game->getAttribute('updated_at')),
+            startsAt: $context->slug === 'nfl' ? GameDateTimePresenter::nflStartsAt($game->game_date, $game->game_time) : null,
         );
     }
 
@@ -133,17 +136,7 @@ final class GameSummaryMapper
     private function prediction(Model $prediction): PredictionSummary
     {
         if ($prediction instanceof CanonicalPrediction) {
-            $markets = $prediction->markets->map(fn ($market): MarketSummary => new MarketSummary(
-                type: $market->market_type, selection: $market->selection,
-                projectedLine: $this->float($market->projected_line), probability: $this->float($market->probability),
-                confidenceScore: $this->float($market->confidence_score),
-            ));
-            $home = $markets->first(fn ($market) => $market->type === 'moneyline' && $market->selection === 'home');
-            $spread = $markets->first(fn ($market) => $market->type === 'spread' && $market->selection === 'home');
-            $total = $markets->first(fn ($market) => $market->type === 'total' && $market->selection === 'combined');
-
-            return new PredictionSummary($prediction->public_id, $spread?->projectedLine, $total?->projectedLine,
-                $home?->confidenceScore, $home?->probability, $markets->all());
+            return $this->canonicalSummaries->fromModel($prediction);
         }
 
         $probability = $this->float($prediction->getAttribute('win_probability')) ?? 0.5;

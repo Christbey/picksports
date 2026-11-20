@@ -35,7 +35,7 @@ class NflWebContextResearchService
     /**
      * @return array<string, mixed>
      */
-    public function research(Game $game, ?string $provider = null, ?string $model = null, bool $force = false): array
+    public function research(Game $game, ?string $provider = null, ?string $model = null, bool $force = false, ?array $candidate = null): array
     {
         // Every caller shares this lock; scheduler locks alone do not protect manual runs.
         $lock = Cache::lock('nfl-paid-research-game:'.$game->id,
@@ -44,13 +44,13 @@ class NflWebContextResearchService
             throw new ResearchDeferred('research_game_already_running');
         }
         try {
-            return $this->researchLocked($game, $provider, $model, $force);
+            return $this->researchLocked($game, $provider, $model, $force, $candidate);
         } finally {
             $lock->release();
         }
     }
 
-    private function researchLocked(Game $game, ?string $provider, ?string $model, bool $force): array
+    private function researchLocked(Game $game, ?string $provider, ?string $model, bool $force, ?array $candidate): array
     {
         if (! config('ai.features.nfl_game_context_research.enabled', true)) {
             throw new RuntimeException('NFL game-context web research is disabled.');
@@ -58,13 +58,12 @@ class NflWebContextResearchService
         $provider ??= (string) config('ai.features.nfl_game_context_research.provider', 'openai');
         $circuitBreaker = app(AiProviderRateLimitCircuitBreaker::class);
         $retryAfter = $circuitBreaker->retryAfterSeconds($provider);
-        $game->loadMissing(['homeTeam', 'awayTeam']);
+        $game->loadMissing(['homeTeam', 'awayTeam', 'weather']);
         $packet = app(EvidencePacket::class)->forGame($game);
         $policy = app(ResearchRefreshPolicy::class);
         $fingerprint = $policy->fingerprint($game, $packet);
-        $stored = $game->getAttribute('research_candidate') === null ? app(ResearchPipeline::class)->storedForecast($game) : null;
-        $candidate = $game->getAttribute('research_candidate')
-            ?? (is_array($stored) ? Arr::only($stored, ['predicted_spread', 'predicted_total', 'win_probability', 'model_metadata']) : []);
+        $stored = $candidate === null ? app(ResearchPipeline::class)->storedForecast($game) : null;
+        $candidate ??= (is_array($stored) ? Arr::only($stored, ['predicted_spread', 'predicted_total', 'win_probability', 'model_metadata']) : []);
         // Hash the same full candidate the reviewer checks, before prompt compaction.
         $quarterbacks = app(QuarterbackAvailability::class)->forecastDesignations($game, $candidate['model_metadata'] ?? [], $packet['availability']);
         $candidateHash = app(ResearchPipeline::class)->candidateContextHash($candidate, $quarterbacks);

@@ -8,6 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // @expand-nullability Unknown transfer ratings become nullable without changing decimal precision or scale.
         Schema::table('cfb_preseason_team_signals', function (Blueprint $table): void {
             $table->json('qb_season_usage_payload')->nullable();
             foreach (['incoming_transfer_value', 'outgoing_transfer_value', 'transfer_net_value',

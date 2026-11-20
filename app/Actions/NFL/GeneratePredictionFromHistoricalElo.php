@@ -60,6 +60,12 @@ class GeneratePredictionFromHistoricalElo
 
     protected array $injuryStateCache = [];
 
+    /** @var list<array<string, mixed>> */
+    private array $researchAvailability = [];
+
+    /** @var array<int, Player> */
+    private array $researchPlayers = [];
+
     protected array $projectedQuarterbacks = [];
 
     /**
@@ -106,11 +112,20 @@ class GeneratePredictionFromHistoricalElo
     /**
      * @return array<string, mixed>|null
      */
-    public function preview(Game $game): ?array
+    public function preview(Game $game, array $researchAvailability = []): ?array
     {
-        $result = $this->generate($game, false);
+        $this->researchAvailability = $researchAvailability;
+        try {
+            $this->researchPlayers = $researchAvailability === [] ? [] : Player::query()
+                ->whereIn('id', collect($researchAvailability)->pluck('player_id')->filter()->unique())
+                ->get()->keyBy('id')->all();
+            $result = $this->generate($game, false);
 
-        return is_array($result) ? $result : null;
+            return is_array($result) ? $result : null;
+        } finally {
+            $this->researchAvailability = [];
+            $this->researchPlayers = [];
+        }
     }
 
     /** Calculate current pregame recommendation evidence without publishing a legacy row. */
@@ -2763,7 +2778,7 @@ class GeneratePredictionFromHistoricalElo
         $state = $this->pointInTimeInjuryStateForTeam($teamId, $game);
         $asOf = $state['as_of'];
         $injuries = $state['entries'];
-        foreach ((array) $game->getAttribute('research_availability') as $fact) {
+        foreach ($this->researchAvailability as $fact) {
             if (($fact['team_id'] ?? null) !== $teamId || Carbon::parse($fact['observed_at'])->gt($asOf) || Carbon::parse($fact['published_at'])->gt($asOf)) {
                 continue;
             }
@@ -2773,14 +2788,14 @@ class GeneratePredictionFromHistoricalElo
             }
             $injuries = $injuries->reject(fn ($row) => (int) $row->player_id === (int) $fact['player_id']);
             $entry = new PlayerInjury(['player_id' => $fact['player_id'], 'team_id' => $teamId, 'status' => $fact['status'], 'injury_date' => $fact['published_at'], 'source_updated_at' => $fact['published_at'], 'is_active' => true]);
-            $entry->setRelation('player', Player::find($fact['player_id']));
+            $entry->setRelation('player', $this->researchPlayers[(int) $fact['player_id']] ?? null);
             $injuries->push($entry);
             $state['source'] .= '+verified_research';
         }
         $counts['snapshot_uuid'] = $state['snapshot_uuid'];
         $counts['snapshot_observed_at'] = $state['snapshot_observed_at'];
         $counts['source'] = $state['source'];
-        $coveredPlayerNames = collect((array) $game->getAttribute('research_availability'))->where('team_id', $teamId)->where('status', 'Available')->pluck('player_name')->map(fn ($name) => $this->normalizedPlayerName($name))->filter()->all();
+        $coveredPlayerNames = collect($this->researchAvailability)->where('team_id', $teamId)->where('status', 'Available')->pluck('player_name')->map(fn ($name) => $this->normalizedPlayerName($name))->filter()->all();
 
         foreach ($injuries as $injury) {
             $bucket = $this->injuryStatusBucket((string) ($injury->status ?? ''));
@@ -3683,7 +3698,7 @@ class GeneratePredictionFromHistoricalElo
     /**
      * @return array<string,mixed>|null
      */
-    protected function projectedQbContextFromDepthChart(Game $game, int $teamId): ?array
+    protected function projectedQbContextFromDepthChart(Game $game, int $teamId, ?array $verifiedAvailability = null): ?array
     {
         $asOf = $this->gameKickoffAt($game) ?? Carbon::parse($game->game_date)->startOfDay();
         $observedNow = now();
@@ -3691,7 +3706,7 @@ class GeneratePredictionFromHistoricalElo
             || $asOf->lt($observedNow);
         $asOf = $asOf->gt($observedNow) ? $observedNow : $asOf;
         $availability = app(QuarterbackAvailability::class);
-        $unavailable = $availability->forGame($game, $teamId);
+        $unavailable = $availability->forGame($game, $teamId, $verifiedAvailability ?? $this->researchAvailability);
         $snapshot = DepthChartSnapshot::query()
             ->with('entries.player')
             ->where('team_id', $teamId)
@@ -3807,7 +3822,7 @@ class GeneratePredictionFromHistoricalElo
         }
 
         $availability = app(QuarterbackAvailability::class);
-        $unavailable = $availability->forGame($game, $teamId);
+        $unavailable = $availability->forGame($game, $teamId, $this->researchAvailability);
         if ($availability->excludes($unavailable, $qbStat->player_id, $qbStat->player?->full_name)) {
             return ['qb_id' => null, 'reason' => 'prior_game_qb_unavailable', 'availability_exclusions' => $unavailable];
         }
@@ -3910,7 +3925,7 @@ class GeneratePredictionFromHistoricalElo
         $entries = $entries->sortBy('depth_rank');
 
         $availability = app(QuarterbackAvailability::class);
-        $unavailable = $availability->forGame($game, $teamId);
+        $unavailable = $availability->forGame($game, $teamId, $this->researchAvailability);
         $excluded = $entries->filter(fn ($row) => $availability->excludes($unavailable, null, $row->full_name));
         $entry = $entries->first(fn ($row) => ! $availability->excludes($unavailable, null, $row->full_name));
         if (! $entry && $entries->isNotEmpty()) {
@@ -3975,7 +3990,7 @@ class GeneratePredictionFromHistoricalElo
         }
 
         $availability = app(QuarterbackAvailability::class);
-        $unavailable = $availability->forGame($game, $teamId);
+        $unavailable = $availability->forGame($game, $teamId, $this->researchAvailability);
         if ($availability->excludes($unavailable, null, $row->player_display_name ?? $row->player_name ?? null)) {
             return ['qb_id' => null, 'reason' => 'prior_game_qb_unavailable', 'availability_exclusions' => $unavailable];
         }

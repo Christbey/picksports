@@ -6,6 +6,7 @@ use App\Models\CFB\Game;
 use App\Models\CFB\Player;
 use App\Models\CFB\PlayerProp;
 use App\Services\CFB\CfbPlayerEvidenceService;
+use App\Services\CFB\CfbPlayerMatcher;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -39,14 +40,15 @@ class CfbPropEligibility
 
     public static function matchPlayer(Game $game, string $name): ?Player
     {
-        $matches = Player::whereIn('team_id', [$game->home_team_id, $game->away_team_id])->get()
-            ->filter(fn ($player) => self::normalize((string) $player->full_name) === self::normalize($name));
-
-        return $matches->count() === 1 ? $matches->first() : null;
+        return app(CfbPlayerMatcher::class)->match($game, $name);
     }
 
     public static function eligible(PlayerProp $prop): bool
     {
+        if (! $prop->player_id) {
+            return false;
+        }
+        $prop->loadMissing(['game', 'player.activeInjuries']);
         $game = $prop->game;
         $player = $prop->player;
         if (! $game || ! $player || ! $prop->is_current || $prop->graded_at
@@ -70,7 +72,11 @@ class CfbPropEligibility
         }
 
         // An unresolved availability report blocks a pick; absence of a report is not proof of health.
-        return ! $player->activeInjuries()->whereRaw("LOWER(status) NOT IN ('active', 'available', 'probable')")->exists()
+        $unavailable = $player->relationLoaded('activeInjuries')
+            ? $player->activeInjuries->contains(fn ($injury) => $injury->status !== null && ! in_array(strtolower($injury->status), ['active', 'available', 'probable'], true))
+            : $player->activeInjuries()->whereRaw("LOWER(status) NOT IN ('active', 'available', 'probable')")->exists();
+
+        return ! $unavailable
             && app(CfbPlayerEvidenceService::class)->forProp($prop)['hold_reasons'] === [];
     }
 }

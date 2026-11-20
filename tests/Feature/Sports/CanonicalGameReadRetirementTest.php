@@ -7,6 +7,7 @@ use App\Models\EventInputSnapshot;
 use App\Models\PredictionMarket;
 use App\Models\SportEvent;
 use App\Models\User;
+use App\Services\Api\V2\SelectedGameForecasts;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportGameQuery;
 use Illuminate\Support\Facades\DB;
@@ -77,8 +78,9 @@ it('loads canonical game forecasts without querying legacy predictions across re
         $found = $games->find($context, $game->id, relationProfile: $profile);
         $listed = $games->paginate($context, ['season' => 2026, 'season_type' => '2'], relationProfile: $profile)->getCollection()->sole();
         foreach ([$found, $listed] as $loaded) {
-            expect($loaded->getRelation('prediction'))->toBeInstanceOf(CanonicalPrediction::class)
-                ->and($loaded->getRelation('prediction')->public_id)->toBe($native->public_id)
+            expect($loaded->relationLoaded('prediction'))->toBeFalse()
+                ->and(app(SelectedGameForecasts::class)->get($loaded))->toBeInstanceOf(CanonicalPrediction::class)
+                ->and(app(SelectedGameForecasts::class)->get($loaded)->public_id)->toBe($native->public_id)
                 ->and($loaded->homeTeam->id)->toBe($game->home_team_id);
         }
     });
@@ -89,7 +91,10 @@ it('does not use legacy coverage when canonical forecasts are ineligible', funct
     [$context, $game] = gameReadRetirementFixture($sport, $variant);
     $queries = gameReadRetirementQueries(function () use ($context, $game) {
         $games = app(SportGameQuery::class);
-        expect($games->find($context, $game->id)->getRelation('prediction'))->toBeNull()
+        $loaded = $games->find($context, $game->id);
+        expect($loaded->relationLoaded('prediction'))->toBeFalse()
+            ->and(app(SelectedGameForecasts::class)->contains($loaded))->toBeTrue()
+            ->and(app(SelectedGameForecasts::class)->get($loaded))->toBeNull()
             ->and($games->paginateSummaries($context)->getCollection()->sole()->prediction)->toBeNull();
     });
     expect($queries)->not->toContain($sport.'_predictions');

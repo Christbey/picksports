@@ -161,6 +161,7 @@ it('can backfill nfl team metric snapshots from game records across dates', func
         'away_score' => 14,
     ]);
 
+    $this->travelTo(Carbon::parse('2025-09-26T21:00:00Z'));
     Artisan::call('nfl:snapshot-team-metrics', [
         '--season' => 2025,
         '--from-date' => '2025-09-15',
@@ -172,12 +173,12 @@ it('can backfill nfl team metric snapshots from game records across dates', func
 
     $firstDateSnapshot = TeamMetricSnapshot::query()
         ->where('team_id', $team->id)
-        ->where('captured_at', '2025-09-15 12:00:00')
+        ->where('captured_at', Carbon::parse('2025-09-15T12:00:00Z')->setTimezone(config('app.timezone'))->toDateTimeString())
         ->first();
 
     $secondDateSnapshot = TeamMetricSnapshot::query()
         ->where('team_id', $team->id)
-        ->where('captured_at', '2025-09-25 12:00:00')
+        ->where('captured_at', Carbon::parse('2025-09-25T12:00:00Z')->setTimezone(config('app.timezone'))->toDateTimeString())
         ->first();
 
     expect($firstDateSnapshot)->not->toBeNull()

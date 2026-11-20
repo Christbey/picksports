@@ -136,7 +136,7 @@ class CanonicalSportPredictionQuery
                 'calculationRun.inputSnapshot',
             ])
             ->when($sport === 'cfb', fn (Builder $query) => $query->with(
-                'sportEvent.cfbGame.latestLiveSnapshot:cfb_live_prediction_snapshots.id,cfb_live_prediction_snapshots.game_id,status,projection,observed_at'
+                ['sportEvent.cfbGame.latestLiveSnapshot:cfb_live_prediction_snapshots.id,cfb_live_prediction_snapshots.game_id,status,projection,observed_at', 'sportEvent.cfbGame.weather']
             ))
             ->where('predictions.sport', $sport)
             ->where('predictions.phase', 'pregame')

@@ -16,6 +16,7 @@ class MlbDailyPickService
 {
     public function __construct(
         private readonly SportsDateWindowService $dateWindows,
+        private readonly BettingForecastSource $forecasts,
         private readonly MlbMoneylineCandidateBuilder $moneyline,
         private readonly MlbRunLineCandidateBuilder $runLine,
         private readonly MlbTotalCandidateBuilder $total,
@@ -48,7 +49,7 @@ class MlbDailyPickService
             ->orderBy('game_date')
             ->get();
 
-        $forecasts = app(BettingForecastSource::class)->forGames('mlb', $games->pluck('id')->all(), $season)->keyBy('game.id');
+        $forecasts = $this->forecasts->forGames('mlb', $games->pluck('id')->all(), $season)->keyBy('game.id');
 
         $payloads = collect();
         foreach ($games as $game) {
@@ -77,7 +78,7 @@ class MlbDailyPickService
             }
 
             if ($marketSet['props']) {
-                $candidateData = $candidateData->merge($this->props->build($game, $prediction));
+                $candidateData = $candidateData->merge($this->props->buildForForecast($game, $prediction));
             }
 
             foreach ($candidateData as $candidate) {

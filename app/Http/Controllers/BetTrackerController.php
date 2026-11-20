@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Enums\PredictionSport;
+use App\Http\Requests\BetTrackerIndexRequest;
+use App\Http\Requests\BetTrackerStoreRequest;
 use App\Http\Resources\UserBetResource;
 use App\Models\UserBet;
 use App\Services\Betting\UserBetPredictionReferenceResolver;
@@ -12,19 +14,14 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class BetTrackerController extends Controller
 {
-    public function index(Request $request): JsonResponse
+    public function index(BetTrackerIndexRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'prediction_id' => ['nullable', 'regex:/^(?:[1-9]\d*|[0-9A-HJKMNP-TV-Z]{26})$/i', 'required_with:prediction_sport'],
-            'prediction_sport' => ['nullable', Rule::enum(PredictionSport::class), 'required_with:prediction_id'],
-            'prediction_type' => ['prohibited'],
-        ]);
+        $validated = $request->validated();
         $userId = $request->user()->id;
         $predictionId = $validated['prediction_id'] ?? null;
         $predictionSport = isset($validated['prediction_sport'])
@@ -57,21 +54,9 @@ class BetTrackerController extends Controller
         ]);
     }
 
-    public function store(Request $request, UserBetPredictionReferenceResolver $referenceResolver): UserBetResource
+    public function store(BetTrackerStoreRequest $request, UserBetPredictionReferenceResolver $referenceResolver): UserBetResource
     {
-        $validated = $request->validate([
-            'prediction_id' => ['nullable', 'regex:/^(?:[1-9]\d*|[0-9A-HJKMNP-TV-Z]{26})$/i', 'required_with:prediction_sport'],
-            'prediction_sport' => ['nullable', Rule::enum(PredictionSport::class), 'required_with:prediction_id'],
-            'prediction_type' => ['prohibited'],
-            'bet_amount' => 'required|numeric|min:0',
-            'odds' => 'required|string',
-            'bet_type' => 'required|in:spread,moneyline,total_over,total_under',
-            'selection_side' => 'nullable|string|max:20',
-            'selection_label' => 'nullable|string|max:255',
-            'line' => 'nullable|numeric',
-            'notes' => 'nullable|string|max:1000',
-            'placed_at' => 'nullable|date',
-        ]);
+        $validated = $request->validated();
 
         $this->validateSelectionSide($validated['bet_type'], $validated['selection_side'] ?? null);
 

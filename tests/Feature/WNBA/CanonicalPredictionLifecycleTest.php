@@ -207,8 +207,8 @@ it('appends corrected results and evaluation revisions instead of overwriting hi
         '--game' => $fixture['game']->getKey(),
     ])->assertSuccessful();
 
-    $results = SportEventResult::query()->orderBy('revision')->get();
-    $evaluations = PredictionEvaluation::query()->orderBy('evaluation_revision')->get();
+    $results = SportEventResult::query()->with('supersedes')->orderBy('revision')->get();
+    $evaluations = PredictionEvaluation::query()->with('supersedes')->orderBy('evaluation_revision')->get();
 
     expect($results)->toHaveCount(2)
         ->and($results[1]->supersedes->is($results[0]))->toBeTrue()

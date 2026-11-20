@@ -45,6 +45,9 @@ class PlayerPropAnalyzer
 
     protected array $nflHistoryEvidence = [];
 
+    /** Verified research inputs for this non-persisting NFL preview only. */
+    private array $nflResearchAvailability = [];
+
     public static function nflPregame(Model $game): bool
     {
         $kickoff = app(NflPropGameTime::class)->forGame($game)['starts_at'];
@@ -54,10 +57,12 @@ class PlayerPropAnalyzer
 
     public function __construct(
         protected ?OddsApiService $oddsApiService = null,
-        protected ?PlayerPropNarrativeService $playerPropNarrativeService = null
+        protected ?PlayerPropNarrativeService $playerPropNarrativeService = null,
+        protected ?CfbPlayerEvidenceService $cfbEvidence = null
     ) {
         $this->oddsApiService ??= app(OddsApiService::class);
         $this->playerPropNarrativeService ??= app(PlayerPropNarrativeService::class);
+        $this->cfbEvidence ??= app(CfbPlayerEvidenceService::class);
     }
 
     /**
@@ -308,11 +313,12 @@ class PlayerPropAnalyzer
 
     protected bool $persistSnapshots = true;
 
-    public function previewNflGame(\App\Models\NFL\Game $game): array
+    public function previewNflGame(\App\Models\NFL\Game $game, array $verifiedAvailability = []): array
     {
         if (! self::nflPregame($game)) {
             return [];
         }
+        $this->nflResearchAvailability = $verifiedAvailability;
         $this->persistSnapshots = false;
         try {
             $rows = [];
@@ -335,6 +341,7 @@ class PlayerPropAnalyzer
 
             return $rows;
         } finally {
+            $this->nflResearchAvailability = [];
             $this->persistSnapshots = true;
             $this->nflAnalysisProp = null;
             $this->nflQuarterbackName = null;
@@ -348,6 +355,19 @@ class PlayerPropAnalyzer
         ?int $gameFilter = null,
         ?string $marketFilter = null,
         bool $attachNarratives = true
+    ): Collection {
+        $analyze = fn () => $this->analyzePropsBatch($sport, $minGames, $dateFilter, $gameFilter, $marketFilter, $attachNarratives);
+
+        return strtoupper($sport) === 'CFB' ? $this->cfbEvidence->withinBatch($analyze) : $analyze();
+    }
+
+    protected function analyzePropsBatch(
+        string $sport,
+        ?int $minGames,
+        ?string $dateFilter,
+        ?int $gameFilter,
+        ?string $marketFilter,
+        bool $attachNarratives
     ): Collection {
         $sportConfig = $this->getSportConfig($sport);
 
@@ -367,6 +387,7 @@ class PlayerPropAnalyzer
             })
             ->when($marketFilter !== null && $marketFilter !== '', fn ($query) => $query->where('market', $marketFilter))
             ->with(['game.homeTeam', 'game.awayTeam'])
+            ->when($sport === 'CFB', fn ($query) => $query->with('player.activeInjuries'))
             ->get();
 
         $recommendations = collect();
@@ -394,7 +415,7 @@ class PlayerPropAnalyzer
                 }
                 $this->clearPredictionSnapshot($prop);
                 if ($prop instanceof PlayerProp && $this->persistSnapshots) {
-                    $evidence = app(CfbPlayerEvidenceService::class)->forProp($prop);
+                    $evidence = $this->cfbEvidence->forProp($prop);
                     $prop->forceFill(['confidence_decomposition' => [
                         'analysis_disposition' => ['status' => 'hold',
                             'reason_codes' => $evidence['hold_reasons'] ?: ['ineligible_quote_or_insufficient_evidence']],
@@ -729,7 +750,7 @@ class PlayerPropAnalyzer
                 'score_is_probability' => false,
                 'availability' => 'own_player_and_teammate_workload_holds',
                 'teammate_workload_adjusted' => false,
-                'evidence' => app(CfbPlayerEvidenceService::class)->forProp($this->cfbAnalysisProp),
+                'evidence' => $this->cfbEvidence->forProp($this->cfbAnalysisProp),
             ];
             $analysis['reasoning'][] = 'College football: prior current-team stats; unresolved teammate or workload changes are withheld, not assigned a yardage adjustment.';
         }
@@ -982,7 +1003,7 @@ class PlayerPropAnalyzer
         $relativePenalty = $prop instanceof PlayerProp
             ? app(CfbRelativeVariabilityPenalty::class)->assess(
                 $seasonAvg, $consistency,
-                (int) data_get(app(CfbPlayerEvidenceService::class)->forProp($prop), 'windows.this_season.games', 0),
+                (int) data_get($this->cfbEvidence->forProp($prop), 'windows.this_season.games', 0),
             ) : null;
         if (! ($relativePenalty['applied'] ?? false) && $consistency && isset($consistency['std_dev'])) {
             $stdDev = (float) $consistency['std_dev'];
@@ -1388,7 +1409,7 @@ class PlayerPropAnalyzer
         $usageContext = $this->usageContextFactor($playerId, $market, $sportConfig);
         $minutesFactor = $usageContext['factor'];
         $availability = ($sportConfig['odds_sport_key'] ?? '') === 'americanfootball_nfl'
-            ? app(NflPropAvailabilityContext::class)->resolve($game, $playerId, $market)
+            ? app(NflPropAvailabilityContext::class)->resolve($game, $playerId, $market, $this->nflResearchAvailability)
             : null;
         $minutesFactor *= $availability['factor'] ?? 1.0;
 
@@ -1714,7 +1735,7 @@ class PlayerPropAnalyzer
                 return null;
             }
             if (self::nflPregame($game)) {
-                $availability = app(NflPropAvailabilityContext::class)->resolve($game, (int) $player->id, (string) $prop->market);
+                $availability = app(NflPropAvailabilityContext::class)->resolve($game, (int) $player->id, (string) $prop->market, $this->nflResearchAvailability);
                 if ($availability['unavailable'] || data_get($prop->confidence_decomposition, 'availability.fingerprint') !== $availability['fingerprint']) {
                     return null;
                 }

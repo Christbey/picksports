@@ -3,6 +3,7 @@
 namespace App\Models\CFB;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class GameDataCheck extends Model
 {
@@ -19,5 +20,10 @@ class GameDataCheck extends Model
     protected function casts(): array
     {
         return ['discrepancies' => 'array', 'evidence' => 'array', 'accepted_at' => 'immutable_datetime'];
+    }
+
+    public function game(): BelongsTo
+    {
+        return $this->belongsTo(Game::class, 'game_id');
     }
 }

@@ -52,7 +52,7 @@ it('records immutable game side associations for each saved forecast revision', 
     $payload['snapshot_id'] = $newSnapshot->id;
     $payload['snapshot_uuid'] = $newSnapshot->snapshot_uuid;
     $second = recordDepthLinkRevision($game, $prediction, $payload);
-    $links = $game->depthChartLinks()->orderBy('id')->get();
+    $links = $game->depthChartLinks()->with(['snapshot', 'predictionFeatureSnapshot'])->orderBy('id')->get();
     expect($links)->toHaveCount(2)
         ->and($game->awayDepthChartLinks()->count())->toBe(0)
         ->and($links[0]->snapshot->id)->toBe($snapshot->id)

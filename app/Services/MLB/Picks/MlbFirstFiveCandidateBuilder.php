@@ -12,6 +12,7 @@ class MlbFirstFiveCandidateBuilder
 {
     public function __construct(
         private readonly MlbPickMarketService $markets,
+        private readonly BettingForecastSource $forecasts,
         private readonly MlbPeriodModelContextService $periodModels,
     ) {}
 
@@ -20,7 +21,7 @@ class MlbFirstFiveCandidateBuilder
      */
     public function build(Model|BettingForecast $prediction): array
     {
-        $prediction = $prediction instanceof Model ? app(BettingForecastSource::class)->fromModel($prediction, 'mlb') : $prediction;
+        $prediction = $prediction instanceof Model ? $this->forecasts->fromModel($prediction, 'mlb') : $prediction;
 
         return [
             ...$this->sideCandidates($prediction, 'first_5_moneyline', 'h2h_1st_5_innings', ['h2h_1st_5_innings', 'h2h_1st_5']),

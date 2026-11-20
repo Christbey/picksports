@@ -24,6 +24,7 @@ class RepairTournamentStructure
     public function execute(int $season): int
     {
         $games = Game::query()
+            ->with(['homeTeam', 'awayTeam'])
             ->where('season', $season)
             ->where('season_type', (int) config('cbb.season.types.postseason'))
             ->where('is_ncaa_tournament', true)

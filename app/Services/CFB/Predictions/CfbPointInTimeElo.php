@@ -4,6 +4,7 @@ namespace App\Services\CFB\Predictions;
 
 use App\Actions\CFB\CalculateElo;
 use App\Models\CFB\EloRating;
+use App\Models\CFB\Game;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
@@ -68,6 +69,7 @@ class CfbPointInTimeElo
             ->where('updated_at', '<=', $capturedAt)->where('updated_at', '<', $cutoffAt)
             ->where(fn ($q) => $q->whereNull('rebuilt_at')->orWhere(fn ($q) => $q->where('rebuilt_at', '<=', $capturedAt)->where('rebuilt_at', '<', $cutoffAt)))
             ->whereHas('game', fn ($q) => $q->where('status', 'STATUS_FINAL')->where('game_date', '<', $asOf))
-            ->with('game')->get()->sortByDesc(fn ($rating) => $rating->game->game_date->format('Y-m-d H:i:s').sprintf('%012d', $rating->game_id))->first();
+            ->orderByDesc(Game::query()->select('game_date')->whereColumn('cfb_games.id', 'cfb_elo_ratings.game_id')->limit(1))
+            ->orderByDesc('game_id')->with('game')->first();
     }
 }

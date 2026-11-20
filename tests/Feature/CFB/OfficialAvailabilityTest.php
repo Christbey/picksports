@@ -14,6 +14,7 @@ use App\Services\CFB\CfbPlayerEvidenceService;
 use App\Services\CFB\Predictions\CfbPredictionInputQuality;
 use App\Services\ESPN\BaseEspnService;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
@@ -204,4 +205,31 @@ it('reports complete ingestion only when both game reports are actually covered'
     Http::fake(fn () => Http::response(['report' => $this->report]));
     $this->artisan('cfb:sync-official-availability', ['--season' => 2026, '--game' => $this->game->id])->assertSuccessful();
     expect(AvailabilityReport::count())->toBe(2);
+});
+
+it('reuses official coverage and absences throughout one player evidence context', function () {
+    app(OfficialAvailabilityIngestor::class)->ingest('cached-coverage', $this->report, $this->source, collect([$this->game]));
+    $service = app(CfbPlayerEvidenceService::class);
+    $this->game->loadMissing('sportEvent');
+    $service->withinBatch(function () use ($service): void {
+        $context = $service->context($this->game, $this->home->id);
+        expect($context->availability['coverage']['complete'])->toBeTrue()
+            ->and($context->injuries->sole()->player_id)->toBe($this->qb->id);
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        try {
+            $quarterback = $service->quarterback($this->game, $this->home->id, context: $context);
+            expect($service->context($this->game, $this->home->id))->toBe($context)
+                ->and($quarterback['injury_coverage_complete'])->toBeTrue()
+                ->and($quarterback['injury_coverage_evidence'])->toBe($context->availability['coverage'])
+                ->and(DB::getQueryLog())->toBe([]);
+        } finally {
+            DB::disableQueryLog();
+        }
+        $earlier = $service->context($this->game, $this->home->id, now()->subHours(2));
+        expect($earlier)->not->toBe($context)
+            ->and($earlier->availability['coverage']['state'])->toBe('unknown')
+            ->and($earlier->availability['coverage']['complete'])->toBeFalse();
+    });
+    expect($service->context($this->game, $this->home->id))->not->toBe($service->context($this->game, $this->home->id));
 });

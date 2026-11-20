@@ -11,9 +11,11 @@ use Spatie\Permission\PermissionRegistrar;
 
 class TierPermissionSyncService
 {
+    public function __construct(private readonly PermissionRegistrar $permissions, private readonly SportPredictionAccess $sportAccess) {}
+
     public function syncTierRolePermissions(SubscriptionTier $tier): Role
     {
-        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->permissions->forgetCachedPermissions();
 
         $guardName = (string) config('auth.defaults.guard', 'web');
         $role = Role::query()->firstOrCreate([
@@ -41,7 +43,7 @@ class TierPermissionSyncService
 
         $sourcePermissions = $storedPermissions->intersect($availablePermissions)->values();
 
-        $mappedSportPermissions = collect(app(SportPredictionAccess::class)->permissionNamesForSports(
+        $mappedSportPermissions = collect($this->sportAccess->permissionNamesForSports(
             (array) data_get($tier->features ?? [], 'sports_access', [])
         ))
             ->intersect($availablePermissions)

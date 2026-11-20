@@ -2,7 +2,9 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\PredictionSport;
 use App\Models\CanonicalPrediction;
+use App\Models\UserBet;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -17,15 +19,22 @@ class UserBetResource extends JsonResource
     {
         $predictionSport = $this->resource->normalizedPredictionSport();
 
-        $predictionId = $this->prediction_type === CanonicalPrediction::class
-            ? $this->prediction?->public_id : $this->prediction_id;
+        $predictionClass = UserBet::supportedPredictionModel($this->prediction_type);
+        $prediction = $this->resource->relationLoaded('prediction') ? $this->resource->getRelation('prediction') : null;
+        $isCanonical = $predictionClass === CanonicalPrediction::class;
+        $hasValidType = $predictionSport !== null && $predictionClass !== null
+            && ($isCanonical || PredictionSport::fromLegacyModelClass($predictionClass) === $predictionSport);
+        $hasResolvedIdentity = $prediction !== null
+            || (! $isCanonical && $this->sport_event_id === null);
+        $hasReference = $hasValidType && $this->prediction_id !== null && $hasResolvedIdentity;
+        $predictionId = $isCanonical ? $prediction?->public_id : $this->prediction_id;
 
         return [
             'id' => $this->id,
             'user_id' => $this->user_id,
             'prediction_id' => $predictionId,
             'prediction_sport' => $predictionSport?->value,
-            'prediction_reference' => $predictionSport !== null && $this->prediction_id !== null
+            'prediction_reference' => $hasReference
                 ? [
                     'sport' => $predictionSport->value,
                     'id' => $predictionId,

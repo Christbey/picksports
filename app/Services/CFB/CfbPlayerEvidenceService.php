@@ -6,12 +6,52 @@ use App\Models\CFB\Game;
 use App\Models\CFB\PlayerProp;
 use App\Models\CFB\PlayerStat;
 use App\Services\CFB\Availability\AvailabilityEvidence;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Illuminate\Container\Attributes\Scoped;
 use Illuminate\Support\Collection;
 
+#[Scoped]
 class CfbPlayerEvidenceService
 {
-    public function history(Game $game, int $teamId): Collection
+    private ?CarbonImmutable $batchCutoff = null;
+
+    /** @var array<string, CfbPlayerEvidenceContext> */
+    private array $contexts = [];
+
+    /** @var array<string, array> */
+    private array $propEvidence = [];
+
+    public function withinBatch(callable $operation): mixed
+    {
+        if ($this->batchCutoff !== null) {
+            return $operation();
+        }
+        $this->batchCutoff = $this->cutoff(null);
+        try {
+            return $operation();
+        } finally {
+            $this->batchCutoff = null;
+            $this->contexts = [];
+            $this->propEvidence = [];
+        }
+    }
+
+    public function context(Game $game, int $teamId, ?CarbonInterface $asOf = null): CfbPlayerEvidenceContext
+    {
+        $cutoff = $this->cutoff($asOf ?? $this->batchCutoff);
+        $key = $game->id.':'.$teamId.':'.$game->season.':'.$game->game_date->toDateString().':'.$cutoff->format('Y-m-d H:i:s.uP');
+        $load = function () use ($game, $teamId, $cutoff): CfbPlayerEvidenceContext {
+            $game->loadMissing('sportEvent');
+            $availability = app(AvailabilityEvidence::class)->forGame($game, $teamId, $cutoff);
+
+            return new CfbPlayerEvidenceContext($this->history($game, $teamId), $availability['injuries'], $cutoff, $availability);
+        };
+
+        return $this->batchCutoff === null ? $load() : ($this->contexts[$key] ??= $load());
+    }
+
+    public function history(Game $game, int $teamId, ?CarbonInterface $asOf = null): Collection
     {
         return PlayerStat::with(['game', 'player'])->where('team_id', $teamId)
             ->whereHas('player', fn ($q) => $q->where('team_id', $teamId))
@@ -28,29 +68,47 @@ class CfbPlayerEvidenceService
     }
 
     /** The last observed passer is evidence, never a confirmed starter. */
-    public function quarterback(Game $game, int $teamId, ?CarbonInterface $asOf = null): array
+    public function quarterback(Game $game, int $teamId, ?CarbonInterface $asOf = null, ?CfbPlayerEvidenceContext $context = null): array
     {
-        $history = $this->history($game, $teamId);
+        $context ??= $this->context($game, $teamId, $asOf);
+        $asOf = $context->asOf;
+        $history = $context->history;
         $lastGameId = $history->first()?->game_id;
         $passers = $history->where('game_id', $lastGameId)->filter(fn ($s) => (int) $s->passing_attempts > 0)
             ->sortByDesc('passing_attempts')->values();
         $leader = $passers->first();
         $ambiguous = $leader && $passers->count() > 1 && $leader->passing_attempts === $passers[1]->passing_attempts;
-        $evidence = app(AvailabilityEvidence::class)->forGame($game, $teamId, $asOf);
-        $injuries = $evidence['injuries'];
+        $injuries = $context->injuries;
+        $coverage = $context->availability['coverage'] ?? ['state' => 'unknown', 'complete' => false];
         $conflict = $leader && $injuries->contains('player_id', $leader->player_id);
 
         return ['status' => ! $leader ? 'unknown' : ($conflict || $ambiguous ? 'unresolved' : 'last_observed'),
             'last_observed_player_id' => $leader?->player_id, 'source_game_id' => $lastGameId,
             'confirmed_starter' => false, 'quarterback_hold' => (bool) ($conflict || $ambiguous),
-            'injury_coverage' => $evidence['coverage']['state'],
-            'injury_coverage_complete' => $evidence['coverage']['complete'],
-            'injury_coverage_evidence' => $evidence['coverage'],
+            'injury_coverage' => $coverage['state'],
+            'injury_coverage_complete' => $coverage['complete'],
+            'injury_coverage_evidence' => $coverage,
             'replacement_player_id' => null];
+    }
+
+    private function cutoff(?CarbonInterface $asOf): CarbonImmutable
+    {
+        return CarbonImmutable::instance($asOf ?? now())->setTimezone(config('app.timezone'));
     }
 
     public function forProp(PlayerProp $prop): array
     {
+        if ($this->batchCutoff === null) {
+            return $this->propAssessment($prop);
+        }
+        $key = implode(':', [$prop->id ?? spl_object_id($prop), $prop->game_id, $prop->player_id, $prop->market]);
+
+        return $this->propEvidence[$key] ??= $this->propAssessment($prop);
+    }
+
+    private function propAssessment(PlayerProp $prop): array
+    {
+        $prop->loadMissing(['game', 'player']);
         $field = match ($prop->market) {
             'player_pass_yds' => 'passing_yards', 'player_rush_yds' => 'rushing_yards',
             'player_reception_yds' => 'receiving_yards', default => null,
@@ -58,7 +116,8 @@ class CfbPlayerEvidenceService
         if (! $field || ! $prop->game || ! $prop->player) {
             return ['hold_reasons' => ['missing_player_context'], 'windows' => []];
         }
-        $history = $this->history($prop->game, $prop->player->team_id);
+        $context = $this->context($prop->game, $prop->player->team_id);
+        $history = $context->history;
         $rows = $history->where('player_id', $prop->player_id)->filter(fn ($s) => is_numeric($s->$field))->values();
         $windows = [
             'last_5' => $rows->take(5), 'last_10' => $rows->take(10),
@@ -77,13 +136,13 @@ class CfbPlayerEvidenceService
         };
         $recentParticipants = $history->whereIn('game_id', $history->pluck('game_id')->unique()->take(2))
             ->pluck('player_id')->unique();
-        foreach ($this->injuries($prop->game, $prop->player->team_id) as $injury) {
+        foreach ($context->injuries as $injury) {
             if ($injury->player_id !== $prop->player_id && $recentParticipants->contains($injury->player_id)
                 && in_array(strtoupper((string) $injury->player?->position), $positions, true)) {
                 $holds[] = 'teammate_workload_unresolved';
             }
         }
-        if ($this->quarterback($prop->game, $prop->player->team_id)['quarterback_hold']) {
+        if ($this->quarterback($prop->game, $prop->player->team_id, context: $context)['quarterback_hold']) {
             $holds[] = 'quarterback_unresolved';
         }
         $opportunity = match ($prop->market) {

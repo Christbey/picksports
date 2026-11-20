@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Settings\OddsApiPlayerMappingUpdateRequest;
 use App\Models\OddsApiPlayerMapping;
 use App\Services\Settings\OddsApiPlayerMappingIndexDataService;
 use Illuminate\Http\Request;
@@ -48,12 +49,9 @@ class OddsApiPlayerMappingController extends Controller
         ]);
     }
 
-    public function update(Request $request, OddsApiPlayerMapping $mapping)
+    public function update(OddsApiPlayerMappingUpdateRequest $request, OddsApiPlayerMapping $mapping)
     {
-        $validated = $request->validate([
-            'espn_player_name' => 'nullable|string|max:255',
-            'espn_player_id' => 'nullable|integer|min:1',
-        ]);
+        $validated = $request->validated();
 
         $mapping->update([
             'espn_player_name' => $validated['espn_player_name'] ?? null,

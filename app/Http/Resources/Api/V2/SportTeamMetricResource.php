@@ -3,6 +3,8 @@
 namespace App\Http\Resources\Api\V2;
 
 use App\Services\Api\V2\SportContext;
+use App\Services\Api\V2\SportPublicFields;
+use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -54,17 +56,8 @@ class SportTeamMetricResource extends JsonResource
             return [];
         }
 
-        $metrics = collect($this->resource->getAttributes())
-            ->except([
-                'id',
-                'team_id',
-                'season',
-                'season_type',
-                'calculation_date',
-                'created_at',
-                'updated_at',
-            ])
-            ->mapWithKeys(fn (mixed $value, string $key): array => [$key => $this->metricAttribute($key)])
+        $metrics = collect(SportPublicFields::METRIC_FIELDS[$this->context->slug] ?? [])
+            ->mapWithKeys(fn (string $key): array => [$key => $this->metricAttribute($key)])
             ->filter(fn (mixed $value): bool => $value !== null)
             ->all();
 
@@ -188,21 +181,13 @@ class SportTeamMetricResource extends JsonResource
             return null;
         }
 
-        return array_key_exists($key, $this->resource->getAttributes())
+        return $this->resource->hasAttribute($key)
             ? $this->resource->getAttribute($key)
             : null;
     }
 
     private function serializeDateValue(mixed $value): ?string
     {
-        if ($value === null) {
-            return null;
-        }
-
-        if (is_object($value) && method_exists($value, 'toIso8601String')) {
-            return $value->toIso8601String();
-        }
-
-        return (string) $value;
+        return GameDateTimePresenter::serializeDateValue($value);
     }
 }

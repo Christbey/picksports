@@ -11,6 +11,7 @@ use App\Services\CFB\Predictions\CfbFrozenDecisionPerformance;
 use App\Services\CFB\Predictions\CfbStoredPregameQuote;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 function frozenDecisionFixture(array $attributes = []): array
@@ -167,4 +168,31 @@ it('respects settlement limits across batches and grades unpriced outcomes witho
         ->and($first->fresh('settlement')->settlement->profit_units)->toBeNull();
     $this->artisan('sports:settle-bet-decisions', ['--sport' => 'cfb'])->assertSuccessful();
     expect(BetSettlement::count())->toBe(53);
+});
+
+it('batches stored closing quotes with the same strict per-game cutoff and selection order', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-19 10:00:00'));
+    [$first] = frozenDecisionFixture();
+    [$second] = frozenDecisionFixture();
+    frozenCfbQuote($first);
+    frozenCfbQuote($second);
+    $this->travelTo(CarbonImmutable::parse('2026-09-19 17:59:00'));
+    $expectedFirst = frozenCfbQuote($first);
+    $expectedSecond = frozenCfbQuote($second);
+    $this->travelTo(CarbonImmutable::parse('2026-09-19 18:00:00'));
+    frozenCfbQuote($first);
+    $service = app(CfbStoredPregameQuote::class);
+    $kickoff = CarbonImmutable::parse('2026-09-19 18:00:00');
+    DB::enableQueryLog();
+    $quotes = $service->latestForGames([
+        ['game_id' => $first->id, 'kickoff' => $kickoff->toIso8601String()],
+        ['game_id' => $second->id, 'kickoff' => $kickoff->toIso8601String()],
+    ], 'spreads', 'home');
+    $queries = DB::getQueryLog();
+    DB::disableQueryLog();
+    expect($quotes[$first->id]->id)->toBe($expectedFirst->id)
+        ->and($quotes[$second->id]->id)->toBe($expectedSecond->id)
+        ->and($queries)->toHaveCount(1)
+        ->and($service->latest($first->id, 'spreads', 'home', $kickoff)->id)->toBe($quotes[$first->id]->id)
+        ->and($service->latest($second->id, 'spreads', 'home', $kickoff)->id)->toBe($quotes[$second->id]->id);
 });

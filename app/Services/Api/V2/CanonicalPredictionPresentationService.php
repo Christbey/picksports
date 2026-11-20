@@ -6,12 +6,14 @@ use App\Application\Sports\ReadModels\BettingForecast;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game as CfbGame;
 use App\Services\BettingRecommendations\GameBettingRecommendationService;
+use App\Services\CFB\Live\LiveBoardPresentation;
 use App\Services\CFB\Predictions\CfbCanonicalSpreadValueSignalService;
 use App\Services\CFB\Predictions\CfbPredictionInputQuality;
 use App\Services\MLB\MlbMarketAwareProjectionService;
 use App\Services\MLB\MlbPredictionRecommendationService;
 use App\Services\MLB\MlbRecommendationPresentation;
 use App\Services\Predictions\BettingForecastSource;
+use App\Services\Predictions\LivePredictionStore;
 use App\Services\Predictions\PredictionDeliverySource;
 
 class CanonicalPredictionPresentationService
@@ -19,6 +21,18 @@ class CanonicalPredictionPresentationService
     public function __construct(private readonly CfbCanonicalSpreadValueSignalService $cfbValueSignals) {}
 
     public function forPrediction(CanonicalPrediction $prediction, ?array $nflBoard = null): CanonicalPredictionPresentationData
+    {
+        $run = $prediction->calculationRun;
+        $snapshot = $run?->inputSnapshot;
+        $prepare = fn (): CanonicalPredictionPresentationData => $this->preparePrediction($prediction, $nflBoard);
+        $readSnapshot = fn (): CanonicalPredictionPresentationData => $snapshot ? $snapshot->withCachedJsonArrays($prepare) : $prepare();
+
+        return $prediction->withCachedJsonArrays(
+            fn (): CanonicalPredictionPresentationData => $run ? $run->withCachedJsonArrays($readSnapshot) : $readSnapshot(),
+        );
+    }
+
+    private function preparePrediction(CanonicalPrediction $prediction, ?array $nflBoard): CanonicalPredictionPresentationData
     {
         $market = $prediction->marketFor('moneyline', 'home');
         $confidence = is_numeric($market?->confidence_score) ? (float) $market->confidence_score : null;
@@ -37,6 +51,14 @@ class CanonicalPredictionPresentationService
 
         return new CanonicalPredictionPresentationData(
             nflBoard: $nflBoard,
+            evidenceWindows: $prediction->sport === 'cfb' ? [
+                'home' => data_get($prediction->calculationRun?->inputSnapshot?->inlineInputs(), 'home.evidence_windows'),
+                'away' => data_get($prediction->calculationRun?->inputSnapshot?->inlineInputs(), 'away.evidence_windows'),
+            ] : null,
+            pregameMarket: $prediction->sport === 'cbb'
+                ? data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'pregame_market') : null,
+            liveFields: app(LivePredictionStore::class)->forPrediction($prediction, $prediction->sport),
+            liveBoard: $game instanceof CfbGame ? app(LiveBoardPresentation::class)->forGame($game) : [],
             recommendation: $prediction->sport === 'mlb'
                 ? $this->mlbRecommendation($mlbForecast) : null,
             marketAwareProjection: $prediction->sport === 'mlb'
@@ -45,6 +67,31 @@ class CanonicalPredictionPresentationService
             valueSignal: $game instanceof CfbGame ? $this->cfbValueSignals->forPrediction($prediction, $game) : null,
             modelBetContext: app(PredictionModelBetContext::class)->forPrediction($prediction, $game),
             weatherForecast: $game instanceof CfbGame ? app(PredictionWeatherContext::class)->forPrediction($prediction, $game) : null,
+        );
+    }
+
+    public function forDashboardPrediction(CanonicalPrediction $prediction, bool $compact = false): CanonicalPredictionPresentationData
+    {
+        if (! $compact) {
+            return $this->forPrediction($prediction);
+        }
+
+        $game = $prediction->sportEvent?->getRelation($prediction->sport.'Game');
+        $prepare = fn (): CanonicalPredictionPresentationData => new CanonicalPredictionPresentationData(
+            confidenceContext: [],
+            valueSignal: null,
+            recommendation: $prediction->sport === 'mlb'
+                ? $this->mlbRecommendation(app(BettingForecastSource::class)->fromModel($prediction, 'mlb')) : null,
+            weatherForecast: $game instanceof CfbGame ? app(PredictionWeatherContext::class)->forPrediction($prediction, $game) : null,
+            liveFields: app(LivePredictionStore::class)->forPrediction($prediction, $prediction->sport),
+            liveBoard: $game instanceof CfbGame ? app(LiveBoardPresentation::class)->forGame($game) : [],
+        );
+        $run = $prediction->sport === 'mlb' ? $prediction->calculationRun : null;
+        $snapshot = $run?->inputSnapshot;
+        $readSnapshot = fn (): CanonicalPredictionPresentationData => $snapshot ? $snapshot->withCachedJsonArrays($prepare) : $prepare();
+
+        return $prediction->withCachedJsonArrays(
+            fn (): CanonicalPredictionPresentationData => $run ? $run->withCachedJsonArrays($readSnapshot) : $readSnapshot(),
         );
     }
 

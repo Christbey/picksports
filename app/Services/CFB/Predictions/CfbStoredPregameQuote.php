@@ -4,6 +4,7 @@ namespace App\Services\CFB\Predictions;
 
 use App\Models\BetDecision;
 use App\Models\MarketQuote;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 
 /** The closing line is the last quote actually stored before kickoff, not a consensus or later revision. */
@@ -50,6 +51,28 @@ class CfbStoredPregameQuote
         return $this->latest((int) $decision->game_id, $market, (string) $decision->side, $kickoff,
             bookmaker: $decision->bookmaker, participant: $entry?->participant,
             contract: $entry ? [...self::contract($entry), '__participant' => $entry->participant] : []);
+    }
+
+    /** @param list<array{game_id: int, kickoff: string}> $games @return array<int, MarketQuote> */
+    public function latestForGames(array $games, string $marketKey, string $side): array
+    {
+        $selected = [];
+        foreach (array_chunk($games, 100) as $batch) {
+            $quotes = MarketQuote::query()->where('sport', 'cfb')->where('game_table', 'cfb_games')
+                ->where('market_key', $marketKey)->where('side', $side)->where('is_pregame', true)
+                ->where(function ($query) use ($batch): void {
+                    foreach ($batch as $game) {
+                        $kickoff = CarbonImmutable::parse($game['kickoff'])->setTimezone(config('app.timezone'));
+                        $query->orWhere(fn ($row) => $row->where('game_id', $game['game_id'])
+                            ->where('captured_at', '<', $kickoff)->where('created_at', '<', $kickoff));
+                    }
+                })->orderByDesc('created_at')->orderByDesc('id')->cursor();
+            foreach ($quotes as $quote) {
+                $selected[(int) $quote->game_id] ??= $quote;
+            }
+        }
+
+        return $selected;
     }
 
     public function latest(int $gameId, string $marketKey, string $side, CarbonInterface $kickoff, ?CarbonInterface $asOf = null, ?string $bookmaker = null, ?string $participant = null, array $contract = []): ?MarketQuote

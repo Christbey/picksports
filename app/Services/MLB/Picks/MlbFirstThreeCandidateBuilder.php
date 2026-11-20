@@ -12,6 +12,7 @@ class MlbFirstThreeCandidateBuilder
 {
     public function __construct(
         private readonly MlbPickMarketService $markets,
+        private readonly BettingForecastSource $forecasts,
         private readonly MlbPeriodModelContextService $periodModels,
     ) {}
 
@@ -20,7 +21,7 @@ class MlbFirstThreeCandidateBuilder
      */
     public function build(Model|BettingForecast $prediction): array
     {
-        $prediction = $prediction instanceof Model ? app(BettingForecastSource::class)->fromModel($prediction, 'mlb') : $prediction;
+        $prediction = $prediction instanceof Model ? $this->forecasts->fromModel($prediction, 'mlb') : $prediction;
 
         if ($prediction->isCanonical() && ($prediction->homePitcherElo === null || $prediction->awayPitcherElo === null)) {
             return [];

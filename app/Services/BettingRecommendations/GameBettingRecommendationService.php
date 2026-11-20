@@ -34,13 +34,13 @@ class GameBettingRecommendationService
 
         return $prediction->isCanonical()
             ? $this->canonical->forPrediction($prediction)
-            : $this->forGame($prediction->game, $prediction->sport);
+            : $this->forGame($prediction->game, $prediction->sport, $prediction->source);
     }
 
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function forGame(object $game, string $sport): array
+    public function forGame(object $game, string $sport, ?object $selectedPrediction = null): array
     {
         $sport = strtolower($sport);
         if ($this->predictions->usesCanonical($sport)) {
@@ -49,12 +49,17 @@ class GameBettingRecommendationService
             return $prediction !== null ? $this->canonical->forPrediction($prediction) : [];
         }
 
+        if ($selectedPrediction === null && $game instanceof Model) {
+            $game->loadMissing('prediction');
+            $selectedPrediction = $game->getRelation('prediction');
+        }
+
         $calculatorClass = self::SPORT_CALCULATORS[$sport] ?? GenericCalculateBettingValue::class;
         $calculator = app($calculatorClass);
 
         $recommendations = $calculatorClass === GenericCalculateBettingValue::class
-            ? $calculator->execute($game, $sport)
-            : $calculator->execute($game);
+            ? $calculator->execute($game, $sport, $selectedPrediction)
+            : $calculator->execute($game, $selectedPrediction);
 
         if (! is_array($recommendations)) {
             return [];

@@ -8,6 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // @expand-capacity string(64) -> string(128); retain the existing signedness and nullability.
         foreach (['nfl_predictions', 'prediction_evaluations'] as $tableName) {
             Schema::table($tableName, function (Blueprint $table): void {
                 $table->string('model_version', 128)->nullable()->change();

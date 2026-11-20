@@ -17,7 +17,7 @@ class NflPropAvailabilityContext
      * A conservative usage heuristic, not a calibrated injury win probability.
      * Current tables are deliberately never used to reconstruct historical games.
      */
-    public function resolve(Model $game, int $playerId, string $market): array
+    public function resolve(Model $game, int $playerId, string $market, array $verifiedAvailability = []): array
     {
         $context = ['version' => self::VERSION, 'factor' => 1.0, 'unavailable' => false, 'reason' => 'not_pregame', 'absences' => []];
         $kickoff = Carbon::parse($game->game_date)->format('Y-m-d').' '.($game->game_time ?: '00:00:00');
@@ -35,12 +35,27 @@ class NflPropAvailabilityContext
         $injuries = PlayerInjury::query()->where('team_id', $player->team_id)
             ->where('is_active', true)->where('updated_at', '>=', now()->subHours(12))
             ->where('updated_at', '<=', now())->get();
-        foreach ((array) $game->getAttribute('research_availability') as $fact) {
-            if ((int) $fact['team_id'] !== (int) $player->team_id) {
+        $asOf = now()->min($kickoff);
+        foreach ($verifiedAvailability as $fact) {
+            if (! is_array($fact) || (int) ($fact['player_id'] ?? 0) <= 0
+                || ! is_string($fact['status'] ?? null) || trim($fact['status']) === ''
+                || (int) ($fact['team_id'] ?? 0) !== (int) $player->team_id) {
+                continue;
+            }
+            if (empty($fact['observed_at']) || empty($fact['published_at'])) {
+                continue;
+            }
+            try {
+                $observedAt = Carbon::parse($fact['observed_at']);
+                $publishedAt = Carbon::parse($fact['published_at']);
+            } catch (\Throwable) {
+                continue;
+            }
+            if ($observedAt->gt($asOf) || $publishedAt->gt($asOf)) {
                 continue;
             }
             $existing = $injuries->firstWhere('player_id', $fact['player_id']);
-            if ($existing?->source_updated_at && $existing->source_updated_at->gt(Carbon::parse($fact['published_at']))) {
+            if ($existing?->source_updated_at && $existing->source_updated_at->gt($publishedAt)) {
                 continue;
             }
             $injuries = $injuries->reject(fn ($i) => (int) $i->player_id === (int) $fact['player_id']);

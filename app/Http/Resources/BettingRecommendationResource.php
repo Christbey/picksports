@@ -4,9 +4,7 @@ namespace App\Http\Resources;
 
 use App\Models\NFL\Game as NflGame;
 use App\Services\BettingRecommendations\NflPropGameTime;
-use App\Services\BettingRecommendations\NflPropSeasonSummary;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -35,7 +33,7 @@ class BettingRecommendationResource extends JsonResource
             ?? 'Unknown Player';
 
         $season = $game instanceof NflGame
-            ? ($this->resource['season_summary'] ?? app(NflPropSeasonSummary::class)->forProps(new Collection([$prop]))[$prop->id])
+            ? ($this->resource['season_summary'] ?? null)
             : null;
         $coverRecord = $this->resource['cover_record'] ?? null;
         if ($season !== null) {

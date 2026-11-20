@@ -7,9 +7,9 @@ use App\Application\Sports\ReadModels\TeamSummary;
 use App\Http\Resources\NFL\TeamResource;
 use App\Models\MLB\Game;
 use App\Models\NFL\Team;
+use App\Services\Api\V2\SelectedGameForecasts;
 use App\Services\Api\V2\SportContext;
 use App\Support\Sports\GameDateTimePresenter;
-use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -21,6 +21,7 @@ class SportGameResource extends JsonResource
     public function __construct(
         mixed $resource,
         private readonly SportContext $context,
+        private readonly ?array $matchupContext = null,
     ) {
         parent::__construct($resource);
     }
@@ -55,9 +56,7 @@ class SportGameResource extends JsonResource
             'short_name' => $this->short_name ?? null,
             'game_date' => $dateTime['game_date'],
             'game_time' => $dateTime['game_time'],
-            ...($this->context->slug === 'nfl' ? ['starts_at' => $this->game_date && $this->game_time
-                ? Carbon::parse($this->game_date->toDateString().' '.GameDateTimePresenter::timeString($this->game_time), 'UTC')->toIso8601String()
-                : null] : []),
+            ...($this->context->slug === 'nfl' ? ['starts_at' => GameDateTimePresenter::nflStartsAt($this->game_date, $this->game_time)] : []),
             'venue' => $this->venue_name ?? $this->venue ?? null,
             'venue_name' => $this->venue_name ?? $this->venue ?? null,
             'venue_city' => $this->venue_city ?? null,
@@ -127,14 +126,16 @@ class SportGameResource extends JsonResource
             'home_seed' => $this->home_seed ?? null,
             'away_seed' => $this->away_seed ?? null,
             'play_in_target_seed' => $this->play_in_target_seed ?? null,
-            'matchup_context' => $this->resource->getAttribute('matchup_context'),
+            'matchup_context' => $this->matchupContext,
             'home_team' => $this->teamPayload($this->whenLoaded('homeTeam')),
             'away_team' => $this->teamPayload($this->whenLoaded('awayTeam')),
             'home_starting_pitcher' => $this->resolvedPitcherPayload('home'),
             'away_starting_pitcher' => $this->resolvedPitcherPayload('away'),
             'home_starting_pitcher_forecast' => $this->startingPitcherForecastPayload('home'),
             'away_starting_pitcher_forecast' => $this->startingPitcherForecastPayload('away'),
-            'has_prediction' => $this->relationLoaded('prediction') && $this->prediction !== null,
+            'has_prediction' => app(SelectedGameForecasts::class)->contains($this->resource)
+                ? app(SelectedGameForecasts::class)->get($this->resource) !== null
+                : $this->relationLoaded('prediction') && $this->prediction !== null,
             'completed_at' => $this->serializeDateValue($this->completed_at ?? null),
             'updated_at' => $this->serializeDateValue($this->updated_at ?? null),
         ];
@@ -158,6 +159,7 @@ class SportGameResource extends JsonResource
             'short_name' => $game->shortName,
             'game_date' => $game->gameDate,
             'game_time' => $game->gameTime,
+            ...($game->sport === 'nfl' ? ['starts_at' => $game->startsAt] : []),
             'venue' => $game->venue,
             'venue_name' => $game->venue,
             'venue_city' => $game->venueCity,

@@ -8,6 +8,8 @@ use Spatie\Permission\Exceptions\PermissionDoesNotExist;
 
 class SportPredictionAccess
 {
+    public function __construct(private readonly TierAccessBypass $tierBypass) {}
+
     /**
      * @return array<int, string>
      */
@@ -51,7 +53,7 @@ class SportPredictionAccess
     {
         $sport = strtolower($sport);
 
-        if (app(TierAccessBypass::class)->shouldBypassTierChecks($user)) {
+        if ($this->tierBypass->shouldBypassTierChecks($user)) {
             return true;
         }
 

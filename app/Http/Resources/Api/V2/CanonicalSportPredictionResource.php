@@ -6,7 +6,6 @@ use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game;
 use App\Services\Api\V2\CanonicalPredictionPresentationData;
 use App\Services\Api\V2\SportContext;
-use App\Services\CFB\Live\LiveBoardPresentation;
 use App\Services\MLB\MlbRecommendationPresentation;
 use App\Services\Predictions\LivePredictionStore;
 use App\Support\Sports\GameDateTimePresenter;
@@ -51,14 +50,10 @@ class CanonicalSportPredictionResource extends JsonResource
         $evaluation = $prediction->latestEvaluation;
         $confidenceContext = $presentation->confidenceContext;
         $valueSignal = $presentation->valueSignal;
-        $live = app(LivePredictionStore::class)->forPrediction($prediction, $this->context->slug);
+        $live = $presentation->liveFields + LivePredictionStore::EMPTY_FIELDS;
         if (! in_array($game?->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD', 'STATUS_SUSPENDED', 'STATUS_DELAYED'], true)) {
             $live = LivePredictionStore::EMPTY_FIELDS;
         }
-
-        $cfbInputs = $prediction->sport === 'cfb'
-            ? $prediction->calculationRun?->inputSnapshot?->inlineInputs()
-            : null;
 
         return [
             'id' => $prediction->public_id,
@@ -89,10 +84,7 @@ class CanonicalSportPredictionResource extends JsonResource
             'confidence_score' => $confidence,
             'confidence_level' => $confidenceContext['tier'],
             'confidence_context' => $confidenceContext,
-            'evidence_windows' => $prediction->sport === 'cfb' ? [
-                'home' => data_get($cfbInputs, 'home.evidence_windows'),
-                'away' => data_get($cfbInputs, 'away.evidence_windows'),
-            ] : null,
+            'evidence_windows' => $presentation->evidenceWindows,
             'public_recommendation' => app(MlbRecommendationPresentation::class)->summary($presentation->recommendation),
             'model_bet_context' => [
                 'model_home_spread' => $this->number($homeSpread?->projected_line),
@@ -134,7 +126,7 @@ class CanonicalSportPredictionResource extends JsonResource
             'total_error' => $this->number(data_get($evaluation?->errors, 'total_absolute_error')),
             'winner_correct' => data_get($evaluation?->errors, 'winner_correct'),
             ...($prediction->sport === 'cbb' ? [
-                'pregame_market' => data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'pregame_market'),
+                'pregame_market' => $presentation->pregameMarket,
                 'market_evaluation' => ['status' => 'tracking_only', ...(array) data_get($evaluation?->market_comparison, 'pregame_market', [])],
                 'ats_pick_side' => data_get($evaluation?->market_comparison, 'pregame_market.spread.selection'),
                 'ats_pick_line' => data_get($evaluation?->market_comparison, 'pregame_market.spread.selection_line'),
@@ -157,7 +149,7 @@ class CanonicalSportPredictionResource extends JsonResource
             'live_outs_remaining' => $live['live_outs_remaining'],
             'live_updated_at' => $live['live_updated_at']?->toIso8601String(),
             ...($game instanceof Game
-                ? app(LiveBoardPresentation::class)->forGame($game) : []),
+                ? $presentation->liveBoard : []),
             'depth_chart_context' => null,
             'market_summary' => [
                 'has_odds' => $valueSignal !== null,

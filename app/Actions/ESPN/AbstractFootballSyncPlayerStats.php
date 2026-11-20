@@ -2,10 +2,13 @@
 
 namespace App\Actions\ESPN;
 
+use App\Actions\ESPN\Concerns\ValidatesBoxscoreReplacement;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractFootballSyncPlayerStats
 {
+    use ValidatesBoxscoreReplacement;
+
     protected const TEAM_MODEL_CLASS = Model::class;
 
     protected const PLAYER_MODEL_CLASS = Model::class;
@@ -14,71 +17,56 @@ abstract class AbstractFootballSyncPlayerStats
 
     public function execute(array $gameData, Model $game): int
     {
-        if (! isset($gameData['boxscore']['players'])) {
+        return $game->getConnection()->transaction(function () use ($gameData, $game): int {
+            $game->newQuery()->whereKey($game->getKey())->lockForUpdate()->firstOrFail();
+
+            return $this->replacePlayerStats($gameData, $game);
+        });
+    }
+
+    protected function replacePlayerStats(array $gameData, Model $game): int
+    {
+        $sections = $gameData['boxscore']['players'] ?? null;
+        if (! is_array($sections)) {
             return 0;
         }
-
-        $playerStatModel = $this->playerStatModelClass();
-        $playerStatModel::query()->where('game_id', $game->id)->delete();
-
-        $synced = 0;
-        $teamModel = $this->teamModelClass();
+        $statModel = $this->playerStatModelClass();
         $playerModel = $this->playerModelClass();
-
-        foreach ($gameData['boxscore']['players'] as $teamData) {
-            $teamEspnId = $teamData['team']['id'] ?? null;
-
-            if (! $teamEspnId) {
-                continue;
+        $teams = $this->replacementTeams($sections, $game, $this->teamModelClass(), $statModel);
+        if ($teams === null) {
+            return 0;
+        }
+        $players = $playerModel::query()->whereIn('espn_id', collect($sections)->flatMap(fn ($team) => collect($team['statistics'] ?? [])->flatMap(fn ($category) => collect($category['athletes'] ?? [])->pluck('athlete.id'))))->get()->keyBy('espn_id');
+        $rows = [];
+        $synced = 0;
+        foreach ($sections as $section) {
+            if (! is_array($section['statistics'] ?? null) || $section['statistics'] === []) {
+                return 0;
             }
-
-            $team = $teamModel::query()->where('espn_id', $teamEspnId)->first();
-
-            if (! $team || ! isset($teamData['statistics'])) {
-                continue;
-            }
-
-            foreach ($teamData['statistics'] as $statCategory) {
-                $categoryName = strtolower((string) ($statCategory['name'] ?? ''));
-                $athletes = $statCategory['athletes'] ?? [];
-                $labels = $statCategory['labels'] ?? [];
-
-                foreach ($athletes as $athleteData) {
-                    $playerEspnId = $athleteData['athlete']['id'] ?? null;
-
-                    if (! $playerEspnId) {
-                        continue;
+            $team = $teams->get($section['team']['id']);
+            foreach ($section['statistics'] as $category) {
+                if (! is_array($category['athletes'] ?? null)) {
+                    return 0;
+                }
+                foreach ($category['athletes'] as $athlete) {
+                    $player = $players->get(data_get($athlete, 'athlete.id'));
+                    if (! $player || ! is_array($athlete['stats'] ?? null) || $athlete['stats'] === []) {
+                        return 0;
                     }
-
-                    $player = $playerModel::query()->where('espn_id', $playerEspnId)->first();
-
-                    if (! $player) {
-                        continue;
-                    }
-
-                    $playerStat = $playerStatModel::query()
-                        ->where('player_id', $player->id)
-                        ->where('game_id', $game->id)
-                        ->first();
-
-                    if (! $playerStat) {
-                        $playerStat = $playerStatModel::create([
-                            'player_id' => $player->id,
-                            'game_id' => $game->id,
-                            'team_id' => $team->id,
-                        ]);
-                    }
-
-                    $mappedStats = $this->mapLabeledStats($labels, $athleteData['stats'] ?? []);
-                    $updates = $this->parseCategoryUpdates($categoryName, $mappedStats);
-
-                    if (! empty($updates)) {
-                        $playerStat->update($updates);
-                    }
-
+                    $mapped = $this->mapLabeledStats($category['labels'] ?? [], $athlete['stats']);
+                    $updates = $this->parseCategoryUpdates(strtolower((string) ($category['name'] ?? '')), $mapped);
+                    $rows[$player->id] = [...($rows[$player->id] ?? []), 'player_id' => $player->id, 'game_id' => $game->id, 'team_id' => $team->id, ...$updates];
                     $synced++;
                 }
             }
+        }
+        if ($rows === []) {
+            return 0;
+        }
+
+        $statModel::query()->where('game_id', $game->id)->delete();
+        foreach ($rows as $row) {
+            $statModel::query()->create($row);
         }
 
         return $synced;

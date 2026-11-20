@@ -114,7 +114,7 @@ it('keeps condition definitions stable across values/states and grades only know
     pipelineGrade(pipelineEvidence($a));
     pipelineGrade(pipelineEvidence($b, 'not_matched'));
     pipelineGrade(pipelineEvidence($c, 'insufficient_data'));
-    $observations = NflSignalObservation::where('signal_type', 'matchup_condition')->get();
+    $observations = NflSignalObservation::with('grades')->where('signal_type', 'matchup_condition')->get();
     expect($observations->pluck('definition_hash')->unique())->toHaveCount(1);
     $report = app(NflEvidenceLeaderboard::class)->report(['from_season' => 2026, 'to_season' => 2026]);
     $row = collect($report['rows'])->where('condition_state', 'matched')->firstWhere('market', 'spread');

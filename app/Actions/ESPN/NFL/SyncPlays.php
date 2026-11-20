@@ -7,10 +7,16 @@ use App\DataTransferObjects\ESPN\FootballPlayData;
 use App\Models\NFL\Game;
 use App\Models\NFL\Play;
 use App\Models\NFL\Team;
+use App\Services\ESPN\NFL\EspnService;
 
 class SyncPlays extends AbstractSyncPlays
 {
     protected const GAME_MODEL_CLASS = Game::class;
+
+    public function __construct(EspnService $espnService)
+    {
+        parent::__construct($espnService);
+    }
 
     protected const PLAY_MODEL_CLASS = Play::class;
 

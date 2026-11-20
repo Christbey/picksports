@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\PredictionSport;
+use App\Models\Relations\AllowedPredictionMorphTo;
 use Database\Factories\UserBetFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -61,16 +62,47 @@ class UserBet extends Model
 
     public function prediction(): MorphTo
     {
-        return $this->morphTo();
+        $class = self::supportedPredictionModel($this->getAttribute('prediction_type'));
+        $query = $class === null
+            ? $this->newQuery()->setEagerLoads([])
+            : (new $class)->newQuery();
+        $hasReference = array_key_exists('prediction_type', $this->getAttributes()) || $this->prediction_id !== null;
+        if ($hasReference) {
+            $sport = $this->normalizedPredictionSport();
+            if ($class === null || $sport === null || ($class !== CanonicalPrediction::class && PredictionSport::fromLegacyModelClass($class) !== $sport)) {
+                $query->whereRaw('1 = 0');
+            } elseif ($class === CanonicalPrediction::class) {
+                $query->where('sport', $sport->value)->whereHas('sportEvent', fn ($event) => $event->where('sport', $sport->value))
+                    ->when($this->sport_event_id !== null, fn ($forecast) => $forecast->where('sport_event_id', $this->sport_event_id));
+            } else {
+                $query->where(fn ($forecast) => $forecast->whereDoesntHave('game.sportEvent')
+                    ->orWhereHas('game.sportEvent', fn ($event) => $event->where('sport', $sport->value)))
+                    ->when($this->sport_event_id !== null, fn ($forecast) => $forecast->whereHas('game', fn ($game) => $game->where('sport_event_id', $this->sport_event_id)));
+            }
+        }
+
+        return new AllowedPredictionMorphTo($query, $this, 'prediction_id', 'id', 'prediction_type', 'prediction');
+    }
+
+    /** @return class-string<Model>|null */
+    public static function supportedPredictionModel(?string $type): ?string
+    {
+        if ($type === null) {
+            return null;
+        }
+        $class = static::getActualClassNameForMorph($type);
+
+        return $class === CanonicalPrediction::class || PredictionSport::fromLegacyModelClass($class) !== null
+            ? $class : null;
     }
 
     public function normalizedPredictionSport(): ?PredictionSport
     {
-        if ($this->prediction_sport instanceof PredictionSport) {
-            return $this->prediction_sport;
+        $stored = $this->getAttributes()['prediction_sport'] ?? null;
+        if ($stored !== null && $stored !== '') {
+            return PredictionSport::tryFrom((string) $stored);
         }
 
-        return PredictionSport::tryFrom((string) $this->prediction_sport)
-            ?? PredictionSport::fromLegacyModelClass($this->prediction_type);
+        return PredictionSport::fromLegacyModelClass(self::supportedPredictionModel($this->prediction_type));
     }
 }

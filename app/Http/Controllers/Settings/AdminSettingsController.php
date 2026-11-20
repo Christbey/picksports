@@ -3,6 +3,15 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Settings\AdminSettingsAddUserToGroupRequest;
+use App\Http\Requests\Settings\AdminSettingsCreateGroupRequest;
+use App\Http\Requests\Settings\AdminSettingsGrantFoundingAccessRequest;
+use App\Http\Requests\Settings\AdminSettingsInviteToGroupRequest;
+use App\Http\Requests\Settings\AdminSettingsRemoveUserFromGroupRequest;
+use App\Http\Requests\Settings\AdminSettingsRevokeFoundingAccessRequest;
+use App\Http\Requests\Settings\AdminSettingsRotateJoinLinkRequest;
+use App\Http\Requests\Settings\AdminSettingsSearchGroupUsersRequest;
+use App\Http\Requests\Settings\AdminSettingsUpdateFoundingLimitRequest;
 use App\Models\CbbBracket;
 use App\Models\Group;
 use App\Models\GroupInvitation;
@@ -71,15 +80,13 @@ class AdminSettingsController extends Controller
             ->where('owner_id', $request->user()->id)
             ->where('type', 'bracket_pool')
             ->where('sport', 'cbb')
-            ->with(['users:id,name,email', 'brackets:id,group_id,name', 'joinLink'])
+            ->with(['users:id,name,email', 'brackets:id,group_id,name', 'joinLink',
+                'invitations' => fn ($query) => $query->latest()->limit(20),
+            ])
             ->latest()
             ->get()
             ->map(function (Group $group) {
-                $invitations = GroupInvitation::query()
-                    ->where('group_id', $group->id)
-                    ->latest()
-                    ->limit(20)
-                    ->get()
+                $invitations = $group->invitations
                     ->map(fn (GroupInvitation $invitation) => [
                         'id' => $invitation->id,
                         'email' => $invitation->email,
@@ -142,12 +149,9 @@ class AdminSettingsController extends Controller
         ]);
     }
 
-    public function createGroup(Request $request): RedirectResponse
+    public function createGroup(AdminSettingsCreateGroupRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'season' => ['required', 'integer', 'min:2000', 'max:2100'],
-        ]);
+        $validated = $request->validated();
 
         $group = Group::query()->create([
             'owner_id' => $request->user()->id,
@@ -170,11 +174,9 @@ class AdminSettingsController extends Controller
         return $this->backSuccess("Created group {$group->name}.");
     }
 
-    public function rotateJoinLink(Request $request): RedirectResponse
+    public function rotateJoinLink(AdminSettingsRotateJoinLinkRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'group_id' => ['required', 'integer'],
-        ]);
+        $validated = $request->validated();
 
         $group = Group::query()
             ->where('id', $validated['group_id'])
@@ -196,12 +198,9 @@ class AdminSettingsController extends Controller
         return $this->backSuccess("Updated shared join link for {$group->name}.");
     }
 
-    public function inviteToGroup(Request $request): RedirectResponse
+    public function inviteToGroup(AdminSettingsInviteToGroupRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'group_id' => ['required', 'integer'],
-            'email' => ['required', 'email'],
-        ]);
+        $validated = $request->validated();
 
         $group = Group::query()
             ->where('id', $validated['group_id'])
@@ -226,12 +225,9 @@ class AdminSettingsController extends Controller
         return $this->backSuccess("Created invite for {$validated['email']}.");
     }
 
-    public function searchGroupUsers(Request $request): JsonResponse
+    public function searchGroupUsers(AdminSettingsSearchGroupUsersRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'group_id' => ['required', 'integer'],
-            'query' => ['nullable', 'string'],
-        ]);
+        $validated = $request->validated();
 
         $query = trim((string) ($validated['query'] ?? ''));
         if ($query === '' || mb_strlen($query) < 2) {
@@ -271,12 +267,9 @@ class AdminSettingsController extends Controller
         ]);
     }
 
-    public function addUserToGroup(Request $request): RedirectResponse
+    public function addUserToGroup(AdminSettingsAddUserToGroupRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'group_id' => ['required', 'integer'],
-            'user_id' => ['required', 'integer', 'exists:users,id'],
-        ]);
+        $validated = $request->validated();
 
         $group = Group::query()
             ->where('id', $validated['group_id'])
@@ -299,12 +292,9 @@ class AdminSettingsController extends Controller
         return $this->backSuccess("Added {$user->email} to {$group->name}.");
     }
 
-    public function removeUserFromGroup(Request $request): RedirectResponse
+    public function removeUserFromGroup(AdminSettingsRemoveUserFromGroupRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'group_id' => ['required', 'integer'],
-            'user_id' => ['required', 'integer', 'exists:users,id'],
-        ]);
+        $validated = $request->validated();
 
         $group = Group::query()
             ->where('id', $validated['group_id'])
@@ -335,11 +325,9 @@ class AdminSettingsController extends Controller
         return $this->backSuccess("Removed {$user->email} from {$group->name}.");
     }
 
-    public function grantFoundingAccess(Request $request, FoundingUserAccessService $foundingUserAccessService): RedirectResponse
+    public function grantFoundingAccess(AdminSettingsGrantFoundingAccessRequest $request, FoundingUserAccessService $foundingUserAccessService): RedirectResponse
     {
-        $validated = $request->validate([
-            'email' => ['required', 'email', 'exists:users,email'],
-        ]);
+        $validated = $request->validated();
 
         $roleName = (string) config('founding_users.role', 'founding_user');
         $guardName = (string) config('auth.defaults.guard', 'web');
@@ -368,11 +356,9 @@ class AdminSettingsController extends Controller
         return $this->backSuccess("Granted founding access to {$user->email}.");
     }
 
-    public function updateFoundingLimit(Request $request): RedirectResponse
+    public function updateFoundingLimit(AdminSettingsUpdateFoundingLimitRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'limit' => ['required', 'integer', 'min:0', 'max:1000000'],
-        ]);
+        $validated = $request->validated();
 
         try {
             $this->foundingUsersSettingsService->setLimit((int) $validated['limit']);
@@ -419,11 +405,9 @@ class AdminSettingsController extends Controller
         ]);
     }
 
-    public function revokeFoundingAccess(Request $request): RedirectResponse
+    public function revokeFoundingAccess(AdminSettingsRevokeFoundingAccessRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'user_id' => ['required', 'integer', 'exists:users,id'],
-        ]);
+        $validated = $request->validated();
 
         $roleName = (string) config('founding_users.role', 'founding_user');
         $user = User::query()->findOrFail($validated['user_id']);

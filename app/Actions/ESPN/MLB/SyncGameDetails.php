@@ -5,6 +5,7 @@ namespace App\Actions\ESPN\MLB;
 use App\Actions\ESPN\AbstractSyncGameDetails;
 use App\Actions\MLB\ReconcileGameScoreFromTeamStats;
 use App\Models\MLB\Game;
+use App\Services\ESPN\MLB\EspnService;
 use App\Services\MLB\MlbStartingPitcherForecastService;
 use App\Support\MLB\MlbGamePhase;
 use App\Support\MLB\MlbLineScores;
@@ -13,6 +14,11 @@ use Illuminate\Database\Eloquent\Model;
 class SyncGameDetails extends AbstractSyncGameDetails
 {
     protected const GAME_MODEL_CLASS = Game::class;
+
+    public function __construct(EspnService $espnService, SyncPlayerStats $syncPlayerStats, SyncTeamStats $syncTeamStats, SyncPlays $syncPlays)
+    {
+        parent::__construct($espnService, $syncPlayerStats, $syncTeamStats, $syncPlays);
+    }
 
     public function execute(string $eventId): array
     {

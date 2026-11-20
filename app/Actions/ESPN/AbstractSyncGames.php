@@ -107,15 +107,20 @@ abstract class AbstractSyncGames
 
         $gameModel = $this->gameModelClass();
         $synced = 0;
+        $prepared = collect($items)->filter(fn (array $item): bool => ! empty($item['id']))
+            ->map(fn (array $item): array => [$item, $this->gameDtoFromResponse($item)]);
+        $teamModel = $this->teamModelClass();
+        $teams = $teamModel::query()->whereIn('espn_id', $prepared->flatMap(fn (array $row): array => [$row[1]->homeTeamEspnId, $row[1]->awayTeamEspnId])->filter()->unique())->get()->keyBy('espn_id');
+        $uniqueKey = $this->getUniqueGameKey();
+        $existingGames = $gameModel::query()->whereIn($uniqueKey, $prepared->map(fn (array $row): string => $row[1]->espnEventId))->get()->keyBy($uniqueKey);
 
-        foreach ($items as $gameData) {
+        foreach ($prepared as [$gameData, $dto]) {
             if (empty($gameData['id'])) {
                 continue;
             }
 
-            $dto = $this->gameDtoFromResponse($gameData);
-            $homeTeam = $this->findTeamByEspnId($dto->homeTeamEspnId);
-            $awayTeam = $this->findTeamByEspnId($dto->awayTeamEspnId);
+            $homeTeam = $teams->get($dto->homeTeamEspnId);
+            $awayTeam = $teams->get($dto->awayTeamEspnId);
 
             $attributes = $this->buildGameAttributes($dto, $gameData, $homeTeam, $awayTeam);
 
@@ -144,8 +149,7 @@ abstract class AbstractSyncGames
                 continue;
             }
 
-            $uniqueKey = $this->getUniqueGameKey();
-            $existingGame = $gameModel::query()->where($uniqueKey, $dto->espnEventId)->first();
+            $existingGame = $existingGames->get($dto->espnEventId);
             if ($existingGame) {
                 $attributes = $this->preserveExistingTeamSlots($attributes, $existingGame);
                 $attributes = NflGameStateGuard::preserve($existingGame, $attributes);
@@ -170,6 +174,8 @@ abstract class AbstractSyncGames
             } else {
                 $game = $gameModel::query()->create($attributes);
             }
+
+            $existingGames->put($dto->espnEventId, $game);
 
             app(SportEventIdentitySynchronizer::class)->sync($this->sportKey(), $game);
             app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game, $previousStatus);

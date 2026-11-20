@@ -6,7 +6,6 @@ use App\Models\PredictionFeatureSnapshot;
 use App\Services\Api\V2\SportContext;
 use App\Services\Api\V2\SportPredictionPresentationData;
 use App\Services\MLB\MlbRecommendationPresentation;
-use App\Services\Predictions\LivePredictionStore;
 use App\Services\Sports\SportsDateWindowService;
 use App\Support\MLB\MlbGamePhase;
 use App\Support\Sports\GameDateTimePresenter;
@@ -834,7 +833,7 @@ class SportPredictionResource extends JsonResource
 
     private function liveAttribute(string $key): mixed
     {
-        return $this->isLivePrediction() ? (app(LivePredictionStore::class)->forPrediction($this->resource, $this->context->slug)[$key] ?? null) : null;
+        return $this->isLivePrediction() ? ($this->presentation->liveFields[$key] ?? null) : null;
     }
 
     private function liveFloatAttribute(string $key): ?float
@@ -894,7 +893,7 @@ class SportPredictionResource extends JsonResource
             return null;
         }
 
-        return array_key_exists($key, $this->resource->getAttributes())
+        return $this->resource->hasAttribute($key)
             ? $this->resource->getAttribute($key)
             : null;
     }

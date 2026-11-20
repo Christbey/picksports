@@ -58,6 +58,11 @@ class Group extends Model
         return $this->hasMany(CbbBracket::class);
     }
 
+    public function invitations(): HasMany
+    {
+        return $this->hasMany(GroupInvitation::class);
+    }
+
     public function joinLink(): HasOne
     {
         return $this->hasOne(GroupJoinLink::class);

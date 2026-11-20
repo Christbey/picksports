@@ -3,6 +3,9 @@
 use App\Actions\ESPN\NFL\SyncGameDetails;
 use App\Actions\ESPN\NFL\SyncGames;
 use App\Actions\ESPN\NFL\SyncGamesFromScoreboard;
+use App\Actions\ESPN\NFL\SyncPlayerStats;
+use App\Actions\ESPN\NFL\SyncPlays;
+use App\Actions\ESPN\NFL\SyncTeamStats;
 use App\Models\NFL\Game;
 use App\Models\NFL\Team;
 use App\Services\ESPN\NFL\EspnService;
@@ -58,15 +61,14 @@ it('restores NFL venue metadata from the summary gameInfo payload', function () 
     ];
     $service = Mockery::mock(EspnService::class);
     $service->shouldReceive('getGame')->once()->with('401999999')->andReturn($payload);
-    $stats = new class
-    {
-        public function execute(mixed ...$args): int
-        {
-            return 0;
-        }
-    };
+    $stats = Mockery::mock(SyncPlayerStats::class);
+    $stats->shouldReceive('execute')->once()->andReturn(0);
+    $teams = Mockery::mock(SyncTeamStats::class);
+    $teams->shouldReceive('execute')->once()->andReturn(0);
+    $plays = Mockery::mock(SyncPlays::class);
+    $plays->shouldReceive('execute')->once()->andReturn(0);
 
-    $result = (new SyncGameDetails($service, $stats, $stats, $stats))->execute('401999999');
+    $result = (new SyncGameDetails($service, $stats, $teams, $plays))->execute('401999999');
     expect($result['game_updated'])->toBeTrue()
         ->and($game->fresh()->venue_city)->toBe('Seattle')
         ->and($game->fresh()->venue_name)->toBe('Lumen Field')

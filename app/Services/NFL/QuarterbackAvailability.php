@@ -13,10 +13,10 @@ use Illuminate\Support\Str;
 class QuarterbackAvailability
 {
     /** Game-scoped evidence excluding a QB from the projected starting lineup. */
-    public function forGame(Game $game, int $teamId): array
+    public function forGame(Game $game, int $teamId, ?array $verifiedAvailability = null): array
     {
         return array_values(array_filter(
-            $this->designationsForGame($game, $teamId),
+            $this->designationsForGame($game, $teamId, $verifiedAvailability),
             fn (array $row): bool => $this->isUnavailable((string) $row['status']),
         ));
     }
@@ -89,7 +89,7 @@ class QuarterbackAvailability
                 'published_at' => Carbon::parse($row->source_updated_at)->toIso8601String()];
         }
 
-        foreach ($verifiedAvailability ?? (array) $game->getAttribute('research_availability') as $fact) {
+        foreach ($verifiedAvailability ?? [] as $fact) {
             if ((int) ($fact['team_id'] ?? 0) !== $teamId || empty($fact['observed_at']) || empty($fact['published_at'])
                 || Carbon::parse($fact['observed_at'])->gt($cutoff) || Carbon::parse($fact['published_at'])->gt($cutoff)) {
                 continue;

@@ -16,6 +16,7 @@ use App\Services\CFB\Signals\CfbFootballSignalJointModel;
 use App\Services\Predictions\CfbSnapshotInputStorage;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
@@ -73,103 +74,106 @@ class ExportScoringTrainingCommand extends Command
         $maxId = 0;
         $catalog = app(CfbScoringFeatures::class)->independentCatalog(CfbFootballSignalCatalog::all());
         try {
-            foreach (Game::with('sportEvent')->whereBetween('season', [$from, $to])->where('status', 'STATUS_FINAL')->where('id', '>', $after)->lazyById(50) as $game) {
-                if ($maximum && $scanned >= $maximum) {
-                    break;
-                }
-                $scanned++;
-                $lastScannedId = $game->id;
-                $kickoff = $game->sportEvent?->starts_at;
-                if (! $kickoff || $kickoff->gte($asOf) || $game->updated_at->gt($asOf)) {
-                    $coverage['excluded']['missing_or_future_kickoff'] = ($coverage['excluded']['missing_or_future_kickoff'] ?? 0) + 1;
-
-                    continue;
-                }
-                $checks = [];
-                foreach (['boxscore', 'plays'] as $component) {
-                    $checks[$component] = GameDataCheck::where('game_id', $game->id)->where('component', $component)
-                        ->whereNotNull('accepted_at')->where('accepted_at', '<=', $asOf)->latest('accepted_at')->latest('id')->first();
-                }
-                if (! $checks['boxscore'] || ! $checks['plays']) {
-                    $coverage['excluded']['unverified_sources'] = ($coverage['excluded']['unverified_sources'] ?? 0) + 1;
-
-                    continue;
-                }
-                $drives = DB::table('cfb_drives')->where('game_id', $game->id)->where('source_revision', $checks['plays']->source_hash)->orderBy('id')->get();
-                if ($drives->isEmpty() || $drives->contains(fn ($r) => $r->quality !== 'complete'
-                    || data_get(json_decode($r->data, true), 'normalizer_version') !== CfbDriveBuilder::VERSION
-                    || data_get(json_decode($r->data, true), 'score_ledger_revision') !== $checks['boxscore']->source_hash)) {
-                    $coverage['excluded']['unverified_drives'] = ($coverage['excluded']['unverified_drives'] ?? 0) + 1;
-
-                    continue;
-                }
-                // One original pregame snapshot per game, never rewritten using today's context.
-                $snapshotId = EventInputSnapshot::where('sport_event_id', $game->sport_event_id)->where('sport', 'cfb')->where('phase', 'pregame')
-                    ->where('captured_at', '<', $kickoff)->where('created_at', '<', $kickoff)
-                    ->where(fn ($q) => $q->whereNull('latest_source_available_at')->orWhere('latest_source_available_at', '<', $kickoff))->latest('captured_at')->latest('id')->value('id');
-                $columns = ['id', 'content_hash', 'captured_at'];
-                $paths = ['event', 'historical_signals', 'signal_context'];
-                foreach (['home', 'away'] as $side) {
-                    foreach (['elo', 'metrics', 'prior_metrics', 'personnel', 'injuries', 'large_spread_evidence'] as $field) {
-                        $paths[] = $side.'.'.$field;
+            foreach (Game::with('sportEvent')->whereBetween('season', [$from, $to])->where('status', 'STATUS_FINAL')->where('id', '>', $after)->lazyById(50)->chunk(50) as $games) {
+                $games = $games->collect();
+                $accepted = $this->acceptedChecks($games, $asOf);
+                $affiliations = TeamSeasonAffiliation::query()->whereIn('season', $games->pluck('season')->unique())
+                    ->whereIn('team_id', $games->flatMap(fn (Game $game): array => [$game->home_team_id, $game->away_team_id])->unique())->get()
+                    ->keyBy(fn (TeamSeasonAffiliation $row): string => $row->season.':'.$row->team_id);
+                foreach ($games as $game) {
+                    if ($maximum && $scanned >= $maximum) {
+                        break 2;
                     }
-                }
-                foreach ($paths as $inputPath) {
-                    $columns[] = 'inputs->'.str_replace('.', '->', $inputPath).' as '.str_replace('.', '_', $inputPath);
-                }
-                $snapshot = $snapshotId ? EventInputSnapshot::select($columns)->find($snapshotId) : null;
-                $inputs = [];
-                if ($snapshot) {
-                    foreach ($paths as $inputPath) {
-                        $value = $snapshot->getAttribute(str_replace('.', '_', $inputPath));
-                        data_set($inputs, $inputPath, app(CfbSnapshotInputStorage::class)->resolveProjectedSection($value));
+                    $scanned++;
+                    $lastScannedId = $game->id;
+                    $kickoff = $game->sportEvent?->starts_at;
+                    if (! $kickoff || $kickoff->gte($asOf) || $game->updated_at->gt($asOf)) {
+                        $coverage['excluded']['missing_or_future_kickoff'] = ($coverage['excluded']['missing_or_future_kickoff'] ?? 0) + 1;
+
+                        continue;
                     }
-                }
-                $signals = ['spread' => [], 'total' => []];
-                $signalMissing = [];
-                if ($snapshot) {
-                    $coverage['frozen_context']++;
-                    $signals = CfbFootballSignalJointModel::features($inputs, ['catalog' => $catalog, 'feature_policy' => 'observed_only']);
-                    $oriented = [];
+                    $checks = ['boxscore' => $accepted->get($game->id)?->get('boxscore'), 'plays' => $accepted->get($game->id)?->get('plays')];
+                    if (! $checks['boxscore'] || ! $checks['plays']) {
+                        $coverage['excluded']['unverified_sources'] = ($coverage['excluded']['unverified_sources'] ?? 0) + 1;
+
+                        continue;
+                    }
+                    $drives = DB::table('cfb_drives')->where('game_id', $game->id)->where('source_revision', $checks['plays']->source_hash)->orderBy('id')->get();
+                    if ($drives->isEmpty() || $drives->contains(fn ($r) => $r->quality !== 'complete'
+                        || data_get(json_decode($r->data, true), 'normalizer_version') !== CfbDriveBuilder::VERSION
+                        || data_get(json_decode($r->data, true), 'score_ledger_revision') !== $checks['boxscore']->source_hash)) {
+                        $coverage['excluded']['unverified_drives'] = ($coverage['excluded']['unverified_drives'] ?? 0) + 1;
+
+                        continue;
+                    }
+                    // One original pregame snapshot per game, never rewritten using today's context.
+                    $snapshotId = EventInputSnapshot::where('sport_event_id', $game->sport_event_id)->where('sport', 'cfb')->where('phase', 'pregame')
+                        ->where('captured_at', '<', $kickoff)->where('created_at', '<', $kickoff)
+                        ->where(fn ($q) => $q->whereNull('latest_source_available_at')->orWhere('latest_source_available_at', '<', $kickoff))->latest('captured_at')->latest('id')->value('id');
+                    $columns = ['id', 'content_hash', 'captured_at'];
+                    $paths = ['event', 'historical_signals', 'signal_context'];
                     foreach (['home', 'away'] as $side) {
-                        $oriented[$side] = CfbFootballSignalCatalog::features($inputs, $side, 'observed_only');
-                    }
-                    foreach ($catalog as $id => $rule) {
-                        $states = [];
-                        foreach (['home', 'away'] as $side) {
-                            $states[] = CfbFootballSignalCatalog::evaluate($rule, $oriented[$side]);
+                        foreach (['elo', 'metrics', 'prior_metrics', 'personnel', 'injuries', 'large_spread_evidence'] as $field) {
+                            $paths[] = $side.'.'.$field;
                         }
-                        $signalMissing[$id] = in_array(null, $states, true);
                     }
-                }
-                $available = max($checks['boxscore']->accepted_at, $checks['plays']->accepted_at, CarbonImmutable::parse($drives->max('updated_at')), CarbonImmutable::parse($game->updated_at));
-                if ($available->gt($asOf)) {
-                    $coverage['excluded']['derived_after_cutoff'] = ($coverage['excluded']['derived_after_cutoff'] ?? 0) + 1;
+                    foreach ($paths as $inputPath) {
+                        $columns[] = 'inputs->'.str_replace('.', '->', $inputPath).' as '.str_replace('.', '_', $inputPath);
+                    }
+                    $snapshot = $snapshotId ? EventInputSnapshot::select($columns)->find($snapshotId) : null;
+                    $inputs = [];
+                    if ($snapshot) {
+                        foreach ($paths as $inputPath) {
+                            $value = $snapshot->getAttribute(str_replace('.', '_', $inputPath));
+                            data_set($inputs, $inputPath, app(CfbSnapshotInputStorage::class)->resolveProjectedSection($value));
+                        }
+                    }
+                    $signals = ['spread' => [], 'total' => []];
+                    $signalMissing = [];
+                    if ($snapshot) {
+                        $coverage['frozen_context']++;
+                        $signals = CfbFootballSignalJointModel::features($inputs, ['catalog' => $catalog, 'feature_policy' => 'observed_only']);
+                        $oriented = [];
+                        foreach (['home', 'away'] as $side) {
+                            $oriented[$side] = CfbFootballSignalCatalog::features($inputs, $side, 'observed_only');
+                        }
+                        foreach ($catalog as $id => $rule) {
+                            $states = [];
+                            foreach (['home', 'away'] as $side) {
+                                $states[] = CfbFootballSignalCatalog::evaluate($rule, $oriented[$side]);
+                            }
+                            $signalMissing[$id] = in_array(null, $states, true);
+                        }
+                    }
+                    $available = max($checks['boxscore']->accepted_at, $checks['plays']->accepted_at, CarbonImmutable::parse($drives->max('updated_at')), CarbonImmutable::parse($game->updated_at));
+                    if ($available->gt($asOf)) {
+                        $coverage['excluded']['derived_after_cutoff'] = ($coverage['excluded']['derived_after_cutoff'] ?? 0) + 1;
 
-                    continue;
+                        continue;
+                    }
+                    $forecastAt = $snapshot?->captured_at ?? $kickoff->copy()->subHour();
+                    $quotes = MarketQuote::where('sport', 'cfb')->where('game_id', $game->id)->where('is_pregame', true)
+                        ->where('created_at', '<=', $forecastAt)->where('captured_at', '<=', $forecastAt)
+                        ->where('created_at', '<', $kickoff)->where('captured_at', '<', $kickoff)->orderByDesc('id')->get()
+                        ->unique(fn ($q) => CfbStoredPregameQuote::identity($q))
+                        ->map(fn ($q) => ['quote_id' => $q->id, 'market' => $q->market_key, 'side' => $q->side, 'participant' => data_get($q->metadata, 'participant_side'),
+                            'line' => $q->line === null ? null : (float) $q->line, 'price' => $q->price, 'bookmaker' => $q->bookmaker_key])->values()->all();
+                    $row = ['schema' => 'cfb-scoring-v1', 'game_id' => $game->id, 'season' => $game->season, 'week' => $game->week, 'kickoff' => $kickoff->toIso8601String(),
+                        'source_available_at' => $available->toIso8601String(), 'evidence' => 'retrospective_accepted_sources',
+                        'source_hashes' => array_map(fn ($c) => $c->source_hash, $checks), 'home_id' => (string) $game->home_team_id, 'away_id' => (string) $game->away_team_id,
+                        'home_score' => (int) $game->home_score, 'away_score' => (int) $game->away_score, 'neutral' => (bool) $game->neutral_site,
+                        'subdivisions' => collect([$game->home_team_id, $game->away_team_id])->mapWithKeys(fn (int $id): array => ($row = $affiliations->get($game->season.':'.$id)) ? [$id => $row->subdivision] : [])->all(),
+                        'snapshot_hash' => $snapshot?->content_hash, 'snapshot_available_at' => $snapshot?->captured_at?->toIso8601String(),
+                        'fpi' => ['home' => data_get($inputs, 'home.metrics.fpi'), 'away' => data_get($inputs, 'away.metrics.fpi')],
+                        'venue' => data_get($inputs, 'event.venue') ?: ($game->venue_name ?: $game->venue),
+                        'venue_source' => data_get($inputs, 'event.venue') ? 'original_pregame_snapshot' : 'retrospective_game_metadata', 'context' => app(CfbScoringFeatures::class)->capture($inputs),
+                        'signals' => $signals, 'signal_missing' => $signalMissing, 'quotes' => $quotes, 'forecast_at' => $forecastAt->toIso8601String(),
+                        'drives' => $drives->map(fn ($r) => ['offense_id' => (string) $r->offense_team_id, ...json_decode($r->data, true)])->all()];
+                    fwrite($file, json_encode($row, JSON_THROW_ON_ERROR)."\n");
+                    $coverage['included']++;
+                    $coverage['retrospective_labels']++;
+                    $maxId = max($maxId, $game->id);
                 }
-                $forecastAt = $snapshot?->captured_at ?? $kickoff->copy()->subHour();
-                $quotes = MarketQuote::where('sport', 'cfb')->where('game_id', $game->id)->where('is_pregame', true)
-                    ->where('created_at', '<=', $forecastAt)->where('captured_at', '<=', $forecastAt)
-                    ->where('created_at', '<', $kickoff)->where('captured_at', '<', $kickoff)->orderByDesc('id')->get()
-                    ->unique(fn ($q) => CfbStoredPregameQuote::identity($q))
-                    ->map(fn ($q) => ['quote_id' => $q->id, 'market' => $q->market_key, 'side' => $q->side, 'participant' => data_get($q->metadata, 'participant_side'),
-                        'line' => $q->line === null ? null : (float) $q->line, 'price' => $q->price, 'bookmaker' => $q->bookmaker_key])->values()->all();
-                $row = ['schema' => 'cfb-scoring-v1', 'game_id' => $game->id, 'season' => $game->season, 'week' => $game->week, 'kickoff' => $kickoff->toIso8601String(),
-                    'source_available_at' => $available->toIso8601String(), 'evidence' => 'retrospective_accepted_sources',
-                    'source_hashes' => array_map(fn ($c) => $c->source_hash, $checks), 'home_id' => (string) $game->home_team_id, 'away_id' => (string) $game->away_team_id,
-                    'home_score' => (int) $game->home_score, 'away_score' => (int) $game->away_score, 'neutral' => (bool) $game->neutral_site,
-                    'subdivisions' => TeamSeasonAffiliation::where('season', $game->season)->whereIn('team_id', [$game->home_team_id, $game->away_team_id])->pluck('subdivision', 'team_id')->all(),
-                    'snapshot_hash' => $snapshot?->content_hash, 'snapshot_available_at' => $snapshot?->captured_at?->toIso8601String(),
-                    'fpi' => ['home' => data_get($inputs, 'home.metrics.fpi'), 'away' => data_get($inputs, 'away.metrics.fpi')],
-                    'venue' => data_get($inputs, 'event.venue') ?: ($game->venue_name ?: $game->venue),
-                    'venue_source' => data_get($inputs, 'event.venue') ? 'original_pregame_snapshot' : 'retrospective_game_metadata', 'context' => app(CfbScoringFeatures::class)->capture($inputs),
-                    'signals' => $signals, 'signal_missing' => $signalMissing, 'quotes' => $quotes, 'forecast_at' => $forecastAt->toIso8601String(),
-                    'drives' => $drives->map(fn ($r) => ['offense_id' => (string) $r->offense_team_id, ...json_decode($r->data, true)])->all()];
-                fwrite($file, json_encode($row, JSON_THROW_ON_ERROR)."\n");
-                $coverage['included']++;
-                $coverage['retrospective_labels']++;
-                $maxId = max($maxId, $game->id);
             }
         } finally {
             fclose($file);
@@ -193,5 +197,19 @@ class ExportScoringTrainingCommand extends Command
         $this->line(json_encode($manifest, JSON_THROW_ON_ERROR));
 
         return $coverage['included'] ? self::SUCCESS : 2;
+    }
+
+    /**
+     * @param  Collection<int, Game>  $games
+     * @return Collection<int, Collection<string, GameDataCheck>>
+     */
+    private function acceptedChecks(Collection $games, CarbonImmutable $asOf): Collection
+    {
+        $ranked = DB::table('cfb_game_data_checks')->whereIn('game_id', $games->pluck('id'))
+            ->whereIn('component', ['boxscore', 'plays'])->whereNotNull('accepted_at')->where('accepted_at', '<=', $asOf)
+            ->select('id')->selectRaw('ROW_NUMBER() OVER (PARTITION BY game_id, component ORDER BY accepted_at DESC, id DESC) as source_rank');
+
+        return GameDataCheck::query()->whereIn('id', DB::query()->fromSub($ranked, 'accepted_checks')->select('id')->where('source_rank', 1))
+            ->get()->groupBy('game_id')->map(fn ($checks): Collection => $checks->keyBy('component'));
     }
 }

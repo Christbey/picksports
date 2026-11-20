@@ -3,10 +3,6 @@
 namespace App\Jobs\ESPN\NBA;
 
 use App\Actions\ESPN\NBA\SyncGameDetails;
-use App\Actions\ESPN\NBA\SyncPlayerStats;
-use App\Actions\ESPN\NBA\SyncPlays;
-use App\Actions\ESPN\NBA\SyncTeamStats;
-use App\Services\ESPN\NBA\EspnService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -30,14 +26,8 @@ class FetchGameDetails implements ShouldBeUnique, ShouldQueue
         return $this->eventId;
     }
 
-    public function handle(): void
+    public function handle(SyncGameDetails $action): void
     {
-        $service = new EspnService;
-        $syncPlayerStats = new SyncPlayerStats;
-        $syncTeamStats = new SyncTeamStats;
-        $syncPlays = new SyncPlays($service);
-        $action = new SyncGameDetails($service, $syncPlayerStats, $syncTeamStats, $syncPlays);
-
         $result = $action->execute($this->eventId);
 
         Log::info("NBA: Synced {$result['plays']} plays, {$result['player_stats']} player stats, and {$result['team_stats']} team stats for event {$this->eventId} from ESPN");

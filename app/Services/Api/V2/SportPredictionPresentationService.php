@@ -63,6 +63,7 @@ class SportPredictionPresentationService
 
         return new SportPredictionPresentationData(
             periodInsights: $periodInsights,
+            liveFields: app(LivePredictionStore::class)->forPrediction($prediction, $context->slug),
             nflBoard: $nflBoard,
             featureSnapshot: $snapshot,
             recommendation: $isMlbPrediction
@@ -72,7 +73,7 @@ class SportPredictionPresentationService
                 ? $this->mlbMarketAwareProjections->forPrediction($prediction)
                 : null,
             valueSignal: $context->slug === 'wnba'
-                ? $this->wnbaValueSignal($prediction->getRelationValue('game'))
+                ? $this->wnbaValueSignal($prediction->getRelationValue('game'), $prediction)
                 : null,
         );
     }
@@ -80,13 +81,13 @@ class SportPredictionPresentationService
     /**
      * @return array<string, mixed>|null
      */
-    private function wnbaValueSignal(mixed $game): ?array
+    private function wnbaValueSignal(mixed $game, Model $prediction): ?array
     {
         if (! $game instanceof Model) {
             return null;
         }
 
-        $recommendations = $this->wnbaBettingValue->execute($game);
+        $recommendations = $this->wnbaBettingValue->execute($game, $prediction);
         if (! is_array($recommendations) || $recommendations === []) {
             return [
                 'has_playable_value' => false,

@@ -3,6 +3,8 @@
 namespace App\Actions\NFL;
 
 use App\Actions\Sports\AbstractFootballUpdateLivePrediction;
+use App\Services\Predictions\LivePredictionStore;
+use Illuminate\Database\Eloquent\Model;
 
 class UpdateLivePrediction extends AbstractFootballUpdateLivePrediction
 {
@@ -10,7 +12,7 @@ class UpdateLivePrediction extends AbstractFootballUpdateLivePrediction
     public function preview(object $game): ?array
     {
         $state = LiveGameState::fromGame($game);
-        $prediction = $game->prediction;
+        $prediction = $game instanceof Model ? app(LivePredictionStore::class)->baseline($game) : null;
         if ($state === null || ! $prediction) {
             return null;
         }
@@ -35,22 +37,17 @@ class UpdateLivePrediction extends AbstractFootballUpdateLivePrediction
     public function execute(object $game): ?array
     {
         $values = $this->preview($game);
-        $prediction = $game->prediction;
+        $prediction = $game instanceof Model ? app(LivePredictionStore::class)->baseline($game) : null;
+        if (! $game instanceof Model) {
+            return null;
+        }
+        $store = app(LivePredictionStore::class);
         if ($values === null) {
-            if ($prediction && collect([
-                $prediction->live_updated_at,
-                $prediction->live_seconds_remaining,
-                $prediction->live_win_probability,
-                $prediction->live_predicted_spread,
-                $prediction->live_predicted_total,
-            ])->contains(fn ($value) => $value !== null)) {
-                $this->clearLivePrediction($prediction);
-            }
+            $store->clear($game, static::class);
 
             return null;
         }
-
-        $prediction->update([...$values, 'live_updated_at' => now()]);
+        $store->record($game, $prediction, $values, 'live', static::class);
 
         return $values;
     }

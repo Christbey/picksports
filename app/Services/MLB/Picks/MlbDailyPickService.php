@@ -2,9 +2,10 @@
 
 namespace App\Services\MLB\Picks;
 
+use App\Application\Sports\ReadModels\BettingForecast;
 use App\Models\MLB\Game;
 use App\Models\MLB\PickCandidate;
-use App\Models\MLB\Prediction;
+use App\Services\Predictions\BettingForecastSource;
 use App\Services\Sports\SportsDateWindowService;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -40,19 +41,21 @@ class MlbDailyPickService
         $generationRunId = (string) Str::uuid();
         $generatedAt = now();
         $games = Game::query()
-            ->with(['homeTeam', 'awayTeam', 'prediction', 'playerProps'])
+            ->with(['homeTeam', 'awayTeam', 'playerProps'])
             ->where('season', $season)
             ->where('status', config('mlb.statuses.scheduled', 'STATUS_SCHEDULED'))
             ->tap(fn ($query) => $this->dateWindows->applyGameDateWindow($query, $window))
             ->orderBy('game_date')
             ->get();
 
+        $forecasts = app(BettingForecastSource::class)->forGames('mlb', $games->pluck('id')->all(), $season)->keyBy('game.id');
+
         $payloads = collect();
         foreach ($games as $game) {
-            $prediction = $game->prediction;
+            $prediction = $forecasts->get($game->id);
             $candidateData = collect();
 
-            if ($prediction instanceof Prediction) {
+            if ($prediction instanceof BettingForecast) {
                 if ($marketSet['moneyline']) {
                     $candidateData = $candidateData->merge($this->moneyline->build($prediction));
                 }
@@ -74,11 +77,11 @@ class MlbDailyPickService
             }
 
             if ($marketSet['props']) {
-                $candidateData = $candidateData->merge($this->props->build($game));
+                $candidateData = $candidateData->merge($this->props->build($game, $prediction));
             }
 
             foreach ($candidateData as $candidate) {
-                $payloads->push($this->payload($candidate, $generationRunId, $generatedAt));
+                $payloads->push($this->payload($candidate, $generationRunId, $generatedAt, $prediction));
             }
         }
 
@@ -116,9 +119,17 @@ class MlbDailyPickService
         MlbPickCandidateData $candidate,
         string $generationRunId,
         CarbonInterface $generatedAt,
+        ?BettingForecast $forecast = null,
     ): array {
         $scored = $this->scorer->score($candidate);
         $promotion = $this->promotionGate->apply($scored['internal_label'], $candidate->marketType);
+        if ($candidate->canonicalPredictionId !== null) {
+            $promotion = [
+                'status' => 'tracking_only', 'recommendation_label' => 'tracking_only',
+                'is_public' => false, 'is_tracking_only' => true, 'is_bet' => false,
+                'blocked_reasons' => ['canonical_candidate_requires_validation'],
+            ];
+        }
         $payload = $candidate->toPayload();
 
         return [
@@ -147,6 +158,12 @@ class MlbDailyPickService
             'feature_snapshot' => [
                 ...$scored['feature_snapshot'],
                 'promotion_blocked_reasons' => $promotion['blocked_reasons'],
+                ...($forecast?->isCanonical() ? ['prediction_lineage' => [
+                    'source' => 'canonical', 'prediction_id' => $forecast->canonicalPredictionId(),
+                    'public_id' => $forecast->source->public_id,
+                    'calculation_run_id' => $forecast->source->calculation_run_id,
+                    'event_input_snapshot_id' => $forecast->source->calculationRun?->event_input_snapshot_id,
+                ]] : []),
             ],
             'generated_at' => $generatedAt,
         ];

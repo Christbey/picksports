@@ -7,6 +7,7 @@ use App\Actions\ESPN\CFB\SyncPlayers;
 use App\Actions\ESPN\NBA\SyncGamesFromScoreboard;
 use App\Actions\ESPN\NBA\SyncPlayerInjuries;
 use App\Events\GameFinalized;
+use App\Listeners\NotificationDeliverySubscriber;
 use App\Listeners\TriggerGameFinalizationGrading;
 use App\Models\DeveloperApiCredential;
 use App\Services\CommandHeartbeatService;
@@ -191,6 +192,7 @@ class AppServiceProvider extends ServiceProvider
 
     protected function registerEventListeners(): void
     {
+        Event::subscribe(NotificationDeliverySubscriber::class);
         Event::listen(GameFinalized::class, TriggerGameFinalizationGrading::class);
         Event::listen(CommandFinished::class, function (CommandFinished $event): void {
             $this->recordPipelineCommandHeartbeat($event);

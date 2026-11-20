@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\Predictions\LivePredictionStore;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Carbon;
@@ -84,6 +85,7 @@ class DashboardPredictionResource extends JsonResource
     {
         $prediction = $this->resource;
         $game = $prediction->game;
+        $live = app(LivePredictionStore::class)->fields($game);
 
         $isLive = in_array($game->status, $this->liveStatuses, true);
         $isFinal = in_array($game->status, $this->finalStatuses, true);
@@ -111,9 +113,9 @@ class DashboardPredictionResource extends JsonResource
             'home_score' => ($isLive || $isFinal) ? $game->home_score : null,
             'away_score' => ($isLive || $isFinal) ? $game->away_score : null,
             'status' => $game->status,
-            'live_win_probability' => $isLive && $prediction->live_win_probability !== null ? (float) $prediction->live_win_probability : null,
-            'live_predicted_spread' => $isLive && $prediction->live_predicted_spread !== null ? (float) $prediction->live_predicted_spread : null,
-            'live_predicted_total' => $isLive && $prediction->live_predicted_total !== null ? (float) $prediction->live_predicted_total : null,
+            'live_win_probability' => $isLive && $live['live_win_probability'] !== null ? (float) $live['live_win_probability'] : null,
+            'live_predicted_spread' => $isLive && $live['live_predicted_spread'] !== null ? (float) $live['live_predicted_spread'] : null,
+            'live_predicted_total' => $isLive && $live['live_predicted_total'] !== null ? (float) $live['live_predicted_total'] : null,
         ];
 
         if ($this->includeInning) {
@@ -128,7 +130,7 @@ class DashboardPredictionResource extends JsonResource
         }
 
         if ($this->liveRemainingField) {
-            $data[$this->liveRemainingField] = $isLive ? $prediction->{$this->liveRemainingField} : null;
+            $data[$this->liveRemainingField] = $isLive ? $live[$this->liveRemainingField] : null;
         }
 
         if ($this->includeBettingValue) {

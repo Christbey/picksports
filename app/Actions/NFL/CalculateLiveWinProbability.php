@@ -3,6 +3,7 @@
 namespace App\Actions\NFL;
 
 use App\Models\NFL\Game;
+use App\Services\Predictions\LivePredictionStore;
 
 class CalculateLiveWinProbability
 {
@@ -21,7 +22,7 @@ class CalculateLiveWinProbability
         $secondsRemaining = $state['seconds_remaining'];
         $margin = $state['margin'];
 
-        $preGameProbability = $game->prediction?->win_probability ?? 0.5;
+        $preGameProbability = app(LivePredictionStore::class)->baseline($game)?->win_probability ?? 0.5;
 
         $homeWinProbability = LiveGameState::homeProbability(
             $margin,

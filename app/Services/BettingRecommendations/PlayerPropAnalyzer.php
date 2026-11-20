@@ -27,13 +27,28 @@ class PlayerPropAnalyzer
 
     public const CFB_MODEL_VERSION = 'cfb-player-prop-v3';
 
-    public const NFL_MODEL_VERSION = 'nfl-player-prop-v3';
+    public const NFL_MODEL_VERSION = 'nfl-player-prop-v5-matchup';
+
+    public const NFL_OPPORTUNITY_MODEL_VERSION = 'nfl-player-prop-v5-opportunity-matchup';
+
+    public static function nflModelVersion(): string
+    {
+        return config('nfl.props.opportunity_projection_enabled', false)
+            ? self::NFL_OPPORTUNITY_MODEL_VERSION : self::NFL_MODEL_VERSION;
+    }
 
     protected ?int $nflModelSeason = null;
 
     protected ?int $nflPlayerTeamId = null;
 
+    protected ?string $nflQuarterbackName = null;
+
     protected array $nflHistoryEvidence = [];
+
+    /** @var array<string, Collection<int, Model>> */
+    protected array $nflStatsCache = [];
+
+    protected ?NflPropMatchupAdjustment $nflMatchups = null;
 
     public static function nflPregame(Model $game): bool
     {
@@ -292,7 +307,7 @@ class PlayerPropAnalyzer
 
     private function nflDisposition(Model $prop, string $status, ?string $reason = null): array
     {
-        return ['status' => $status, 'reason' => $reason, 'model_version' => self::NFL_MODEL_VERSION, 'evaluated_at' => now()->toIso8601String(),
+        return ['status' => $status, 'reason' => $reason, 'model_version' => self::nflModelVersion(), 'evaluated_at' => now()->toIso8601String(),
             'quote_fingerprint' => app(NflPlayerPropCoverage::class)->quoteFingerprint($prop)];
     }
 
@@ -304,6 +319,8 @@ class PlayerPropAnalyzer
             return [];
         }
         $this->persistSnapshots = false;
+        $this->nflStatsCache = [];
+        $this->nflMatchups = null;
         try {
             $rows = [];
             $config = $this->getSportConfig('NFL');
@@ -326,7 +343,9 @@ class PlayerPropAnalyzer
             return $rows;
         } finally {
             $this->persistSnapshots = true;
+            $this->nflStatsCache = [];
             $this->nflAnalysisProp = null;
+            $this->nflQuarterbackName = null;
         }
     }
 
@@ -337,6 +356,23 @@ class PlayerPropAnalyzer
         ?int $gameFilter = null,
         ?string $marketFilter = null,
         bool $attachNarratives = true
+    ): Collection {
+        $this->nflStatsCache = [];
+        $this->nflMatchups = null;
+        try {
+            return $this->analyzePropsBatch($sport, $minGames, $dateFilter, $gameFilter, $marketFilter, $attachNarratives);
+        } finally {
+            $this->nflStatsCache = [];
+        }
+    }
+
+    protected function analyzePropsBatch(
+        string $sport,
+        ?int $minGames,
+        ?string $dateFilter,
+        ?int $gameFilter,
+        ?string $marketFilter,
+        bool $attachNarratives
     ): Collection {
         $sportConfig = $this->getSportConfig($sport);
 
@@ -377,6 +413,10 @@ class PlayerPropAnalyzer
             if ($recommendation && $recommendation['confidence'] >= 60) {
                 $recommendations->push($recommendation);
             } elseif ($recommendation === null) {
+                if ($sport === 'NFL' && $this->nflAnalysisHold === 'no_edge') {
+                    // Retain the evaluated projection without publishing a selection.
+                    continue;
+                }
                 $this->clearPredictionSnapshot($prop);
                 if ($prop instanceof PlayerProp && $this->persistSnapshots) {
                     $evidence = app(CfbPlayerEvidenceService::class)->forProp($prop);
@@ -504,6 +544,7 @@ class PlayerPropAnalyzer
         $this->nflAnalysisProp = $sport === 'NFL' ? $prop : null;
         $this->nflModelSeason = null;
         $this->nflPlayerTeamId = null;
+        $this->nflQuarterbackName = null;
         $this->nflHistoryEvidence = [];
         if ($this->cfbAnalysisProp && ! CfbPropEligibility::eligible($this->cfbAnalysisProp)) {
             return null;
@@ -540,7 +581,10 @@ class PlayerPropAnalyzer
 
         if ($sport === 'NFL') {
             $this->nflPlayerTeamId = (int) $player->team_id;
-            $history = $this->finalizedPlayerStatsQuery($player->id, $sportConfig['player_stat_model'])->with('game')->get();
+            $history = $this->finalizedPlayerStats($player->id, $sportConfig['player_stat_model']);
+            $role = app(NflPropRoleHistory::class)->select($history, $player);
+            $history = $role['history'];
+            $this->nflQuarterbackName = $player->position === 'QB' ? $player->full_name : null;
             $current = $history->filter(fn ($row) => (int) $row->game->season === (int) $game->season);
             $this->nflModelSeason = $current->isNotEmpty() ? (int) $game->season : (int) $game->season - 1;
             $this->nflHistoryEvidence = [
@@ -549,6 +593,7 @@ class PlayerPropAnalyzer
                 'current_season_games' => $current->count(),
                 'eligible_history_games' => $history->count(),
                 'historical_average' => $this->averageStatValue($history, $statField),
+                'role' => $role['evidence'],
             ];
         }
 
@@ -581,7 +626,52 @@ class PlayerPropAnalyzer
         if ($sport === 'NFL' && ($context['availability']['reason'] ?? '') === 'player_availability_uncertain') {
             return $this->holdNflAnalysis('player_availability_uncertain');
         }
+        if ($sport === 'NFL') {
+            $modelHistory = $this->finalizedPlayerStats($player->id, $sportConfig['player_stat_model']);
+            $fullModelGames = $modelHistory->count();
+            $expectedQb = $isHome ? $game->home_qb_name : $game->away_qb_name;
+            $receiverRole = in_array($prop->market, ['player_receptions', 'player_reception_yds'], true)
+                ? app(NflPropRoleHistory::class)->select($modelHistory, $player, $expectedQb) : null;
+            if ($receiverRole !== null) {
+                $modelHistory = $receiverRole['history'];
+            }
+            $opportunity = app(NflPropOpportunityProjection::class)->project($modelHistory, (string) $prop->market);
+            // An incomplete opportunity feed must not silently select a favorable subset.
+            $complete = $opportunity !== null && $opportunity['missing_opportunity_games'] === 0;
+            $context['projection'] = $complete ? $opportunity : [
+                'method' => 'recency_weighted_stat_fallback',
+                'reason' => $opportunity === null ? 'no_supported_opportunities' : 'incomplete_opportunities',
+                'games' => $modelHistory->take(16)->count(),
+                'baseline_mean' => $this->recencyWeightedAverage($this->statValues($modelHistory->take(16), $statField), 0.86),
+            ];
+            $context['projection']['role'] = $receiverRole['evidence'] ?? $this->nflHistoryEvidence['role'];
+            $candidateFactor = round(max(0.85, min(1.15,
+                $context['pace_factor'] * $context['opponent_factor'] * ($context['availability']['factor'] ?? 1.0))), 3);
+            $context['opportunity_candidate'] = [
+                ...$context['projection'],
+                'projected_mean' => round(($context['projection']['baseline_mean'] ?? 0) * $candidateFactor, 3),
+                'context_factor' => $candidateFactor,
+                'model_version' => self::NFL_OPPORTUNITY_MODEL_VERSION,
+                'status' => 'experimental_not_validated',
+            ];
+            if (config('nfl.props.opportunity_projection_enabled', false)) {
+                // Opportunity recency already represents workload changes; do not apply that trend twice.
+                $context['usage_factor'] = $context['availability']['factor'] ?? 1.0;
+                $context['minutes_factor'] = $context['usage_factor'];
+                $context['usage_context'] = 'opportunity_volume_with_availability';
+                $context['combined_factor'] = $candidateFactor;
+            } else {
+                $context['projection'] = [
+                    'method' => 'legacy_weighted_baseline',
+                    'games' => $fullModelGames,
+                    'role' => $this->nflHistoryEvidence['role'],
+                ];
+            }
+        }
         $modelSample = $sport === 'NFL' ? $this->nflHistoryEvidence['current_season_games'] : ($timesCoveredSeason['games'] ?? 0);
+        if ($sport === 'NFL') {
+            $modelSample = min($modelSample, $context['projection']['games']);
+        }
         $dataQualityScore = $this->calculateDataQualityScore(
             seasonSample: $modelSample,
             recentSample: $timesCoveredLast5['games'] ?? 0,
@@ -615,6 +705,13 @@ class PlayerPropAnalyzer
         );
 
         if (! $analysis['recommendation']) {
+            if ($sport === 'NFL') {
+                $analysis['confidence_decomposition']['schema_version'] = self::nflModelVersion();
+                $analysis['confidence_decomposition']['history'] = $this->nflHistoryEvidence;
+                $analysis['confidence_decomposition']['projection_context'] = $context;
+                $this->persistPredictionSnapshot($prop, $analysis, $dataQualityScore, $matchQualityScore, $context['combined_factor']);
+            }
+
             return $this->holdNflAnalysis('no_edge');
         }
 
@@ -643,7 +740,7 @@ class PlayerPropAnalyzer
             'home_away_avg' => $homeAwayAvg !== null ? round($homeAwayAvg, 1) : null,
             'consistency' => $consistency,
         ];
-        $analysis['confidence_decomposition']['schema_version'] = $sport === 'NFL' ? self::NFL_MODEL_VERSION : ($sport === 'CFB' ? self::CFB_MODEL_VERSION : self::SIGNAL_MODEL_VERSION);
+        $analysis['confidence_decomposition']['schema_version'] = $sport === 'NFL' ? self::nflModelVersion() : ($sport === 'CFB' ? self::CFB_MODEL_VERSION : self::SIGNAL_MODEL_VERSION);
         if ($sport === 'NFL') {
             $analysis['confidence_decomposition']['history'] = $this->nflHistoryEvidence;
             $analysis['confidence_decomposition']['projection_context'] = $context;
@@ -753,25 +850,30 @@ class PlayerPropAnalyzer
         ];
 
         $line = (float) $prop->line;
-        $projection = $this->buildProjection(
-            seasonAvg: $seasonAvg,
-            recentAvg: $recentAvg,
-            last5Avg: $last5Avg,
-            vsOpponentAvg: $vsOpponentAvg,
-            homeAwayAvg: $homeAwayAvg,
-            vsOpponentSample: $vsOpponentSample,
-            homeAwaySample: $homeAwaySample,
-            profile: $profile
-        ) * ($context['combined_factor'] ?? 1.0);
+        $isNfl = $prop instanceof \App\Models\NFL\PlayerProp;
+        $baseline = $isNfl && is_numeric(data_get($context, 'projection.baseline_mean'))
+            ? (float) $context['projection']['baseline_mean']
+            : $this->buildProjection(
+                seasonAvg: $seasonAvg,
+                recentAvg: $recentAvg,
+                last5Avg: $last5Avg,
+                vsOpponentAvg: $vsOpponentAvg,
+                homeAwayAvg: $homeAwayAvg,
+                vsOpponentSample: $vsOpponentSample,
+                homeAwaySample: $homeAwaySample,
+                profile: $profile
+            );
+        $projection = $baseline * ($context['combined_factor'] ?? 1.0);
         $projectionDiff = $projection - $line;
 
-        $isNfl = $prop instanceof \App\Models\NFL\PlayerProp;
         $volatility = $this->estimateVolatility($consistency, $profile['volatility_floor']);
         if ($isNfl) {
             // Account for estimation uncertainty without pretending this is fitted calibration.
             $volatility *= sqrt(1 + 1 / max(1, $seasonSample));
         }
         $pushProbability = 0.0;
+        $probabilityMethod = $this->nflCountMarket((string) $prop->market)
+            ? 'overdispersed_count_uncalibrated' : 'discretized_normal_uncalibrated';
         if ($isNfl) {
             $probabilities = $this->nflOutcomeProbabilities($projection, $line, $volatility, (string) $prop->market);
             $pushProbability = $probabilities['push'];
@@ -832,6 +934,7 @@ class PlayerPropAnalyzer
                     ),
                 ],
                 'confidence_decomposition' => [
+                    ...($isNfl ? ['probability_method' => $probabilityMethod, 'push_probability' => round($pushProbability * 100, 3), 'probability_basis' => 'conditional_on_no_push', 'projected_mean' => round($projection, 3), 'predictive_std_dev' => round($volatility, 3)] : []),
                     'model_edge_score' => 0,
                     'data_quality_score' => $dataQualityScore,
                     'match_quality_score' => $matchQualityScore,
@@ -860,7 +963,7 @@ class PlayerPropAnalyzer
             ($recommendation === 'Over' ? $marketOverProbability : $marketUnderProbability) * 100
         );
         $reasoning[] = $isNfl
-            ? sprintf('Uncalibrated discrete-normal estimate; %.1f%% push probability. Side probability excludes pushes.', $pushProbability * 100)
+            ? sprintf('Uncalibrated %s estimate; %.1f%% push probability. Side probability excludes pushes.', $probabilityMethod, $pushProbability * 100)
             : sprintf('Probability blend: parametric %.1f%%, simulation %.1f%%.', $parametricOverProbability * 100, $simulatedOverProbability * 100);
         $reasoning[] = sprintf(
             'Projection %.1f vs line %.1f (edge %.1f).',
@@ -958,6 +1061,10 @@ class PlayerPropAnalyzer
             $confidence -= 8;
             $reasoning[] = 'Unresolved availability or workload evidence: signal capped at 68.';
         }
+        if ($isNfl && data_get($context, 'projection.role.reason') === 'insufficient_same_quarterback_history') {
+            $confidenceCap = min($confidenceCap, 68);
+            $reasoning[] = 'Limited evidence with the expected quarterback: signal capped at 68.';
+        }
         if ($confidence > $confidenceCap) {
             $reasoning[] = sprintf('Signal cap applied at %d for market volatility, edge, sample, and data quality.', $confidenceCap);
         }
@@ -973,7 +1080,7 @@ class PlayerPropAnalyzer
             'edge_probability' => round($edgeProbability * 100, 1),
             'reasoning' => $reasoning,
             'confidence_decomposition' => [
-                ...($isNfl ? ['probability_method' => 'discretized_normal_uncalibrated', 'push_probability' => round($pushProbability * 100, 3), 'probability_basis' => 'conditional_on_no_push', 'projected_mean' => round($projection, 3), 'predictive_std_dev' => round($volatility, 3)] : []),
+                ...($isNfl ? ['probability_method' => $probabilityMethod, 'push_probability' => round($pushProbability * 100, 3), 'probability_basis' => 'conditional_on_no_push', 'projected_mean' => round($projection, 3), 'predictive_std_dev' => round($volatility, 3)] : []),
                 'model_edge_score' => $modelEdgeScore,
                 'edge_confidence_score' => $edgeConfidenceScore,
                 'effective_edge_confidence_score' => $effectiveEdgeConfidence,
@@ -996,7 +1103,10 @@ class PlayerPropAnalyzer
     /** Integer outcomes: explicit pushes; count markets cannot take negative values. */
     protected function nflOutcomeProbabilities(float $mean, float $line, float $stdDev, string $market): array
     {
-        $count = in_array($market, ['player_rush_attempts', 'player_pass_attempts', 'player_pass_completions', 'player_receptions', 'player_anytime_td', 'player_pass_tds', 'player_pass_interceptions'], true);
+        $count = $this->nflCountMarket($market);
+        if ($count) {
+            return app(NflPropCountDistribution::class)->outcomes($mean, $line, $stdDev, $market === 'player_anytime_td');
+        }
         $cdf = fn (float $value): float => $this->normalCdf(($value - $mean) / max(0.001, $stdDev));
         $lower = $count ? $cdf(-0.5) : 0.0;
         $mass = max(0.000001, 1 - $lower);
@@ -1004,6 +1114,11 @@ class PlayerPropAnalyzer
         $under = max(0.0, min(1.0, ($cdf(ceil($line) - 0.5) - $lower) / $mass));
 
         return ['over' => $over, 'under' => $under, 'push' => max(0.0, 1 - $over - $under)];
+    }
+
+    protected function nflCountMarket(string $market): bool
+    {
+        return in_array($market, ['player_rush_attempts', 'player_pass_attempts', 'player_pass_completions', 'player_receptions', 'player_anytime_td', 'player_pass_tds', 'player_pass_interceptions'], true);
     }
 
     protected function buildProjection(
@@ -1315,8 +1430,33 @@ class PlayerPropAnalyzer
             }
         }
 
-        if (isset($sportConfig['team_stat_model'])) {
+        if ($game instanceof \App\Models\NFL\Game) {
+            $player = \App\Models\NFL\Player::find($playerId);
+            if ($player !== null) {
+                $matchupHistory = $this->finalizedPlayerStats($playerId, \App\Models\NFL\PlayerStat::class);
+                if (in_array($market, ['player_receptions', 'player_reception_yds'], true)) {
+                    $expectedQb = config('nfl.props.opportunity_projection_enabled', false)
+                        ? ($game->home_team_id === $playerTeamId ? $game->home_qb_name : $game->away_qb_name) : null;
+                    $matchupHistory = app(NflPropRoleHistory::class)->select($matchupHistory, $player, $expectedQb)['history'];
+                }
+                $matchup = ($this->nflMatchups ??= app(NflPropMatchupAdjustment::class))->resolve(
+                    $game, $player, $market, $matchupHistory
+                );
+                if ($matchup['field'] !== null) {
+                    $opponentEvidence = $matchup;
+                    $opponentFactor = $matchup['factor'];
+                }
+            }
+        }
+
+        if (isset($sportConfig['team_stat_model']) && ! isset($matchup['field'])) {
             $allowedField = $this->opponentAllowedStatField($market);
+            if ($sportConfig['player_stat_model'] === \App\Models\NFL\PlayerStat::class
+                && in_array($market, ['player_rush_yds', 'player_rush_attempts'], true)
+                && \App\Models\NFL\Player::find($playerId)?->position === 'QB') {
+                $allowedField = null;
+                $opponentEvidence = ['reason' => 'qb_specific_rushing_defense_unavailable'];
+            }
             if ($allowedField !== null) {
                 $teamStatModel = $sportConfig['team_stat_model'];
                 if ($teamStatModel !== TeamStat::class) {
@@ -1427,7 +1567,7 @@ class PlayerPropAnalyzer
 
     protected function footballUsageTrendFactor(int $playerId, string $market, string $playerStatModel): float
     {
-        $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)->take(16)->get();
+        $stats = $this->finalizedPlayerStats($playerId, $playerStatModel, 16);
         if ($stats->count() < 6) {
             return 1.0;
         }
@@ -1471,7 +1611,7 @@ class PlayerPropAnalyzer
 
     protected function minutesTrendFactor(int $playerId, string $playerStatModel): float
     {
-        $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)->take(16)->get();
+        $stats = $this->finalizedPlayerStats($playerId, $playerStatModel, 16);
         if ($stats->count() < 6) {
             return 1.0;
         }
@@ -1534,7 +1674,7 @@ class PlayerPropAnalyzer
             return;
         }
         if ($prop->getTable() === 'nfl_player_props') {
-            $analysis['confidence_decomposition']['analysis_disposition'] = $this->nflDisposition($prop, 'scored');
+            $analysis['confidence_decomposition']['analysis_disposition'] = $this->nflDisposition($prop, empty($analysis['recommendation']) ? 'hold' : 'scored', empty($analysis['recommendation']) ? 'no_edge' : null);
         }
         if ($prop instanceof PlayerProp) {
             app(CfbPropScoringShadowRecorder::class)->record($prop, $analysis);
@@ -1549,6 +1689,14 @@ class PlayerPropAnalyzer
             'match_quality_score' => $matchQualityScore,
             'context_adjustment_factor' => $contextFactor,
             'confidence_decomposition' => $analysis['confidence_decomposition'] ?? null,
+            ...(empty($analysis['recommendation']) ? [
+                'narrative_json' => null,
+                'narrative_provider' => null,
+                'narrative_model' => null,
+                'narrative_input_hash' => null,
+                'narrative_latency_ms' => null,
+                'narrative_generated_at' => null,
+            ] : []),
         ])->saveQuietly();
     }
 
@@ -1597,7 +1745,7 @@ class PlayerPropAnalyzer
         $schemaVersion = data_get($prop->confidence_decomposition, 'schema_version');
 
         if (
-            ! in_array($schemaVersion, $sport === 'NFL' ? (self::nflPregame($game) ? [self::NFL_MODEL_VERSION] : [self::NFL_MODEL_VERSION, self::SIGNAL_MODEL_VERSION]) : ($sport === 'CFB' ? [self::CFB_MODEL_VERSION] : [self::SIGNAL_MODEL_VERSION]), true)
+            ! in_array($schemaVersion, $sport === 'NFL' ? (self::nflPregame($game) ? [self::nflModelVersion()] : [self::NFL_MODEL_VERSION, self::NFL_OPPORTUNITY_MODEL_VERSION, 'nfl-player-prop-v4-integrity', 'nfl-player-prop-v4-opportunity', 'nfl-player-prop-v3', self::SIGNAL_MODEL_VERSION]) : ($sport === 'CFB' ? [self::CFB_MODEL_VERSION] : [self::SIGNAL_MODEL_VERSION]), true)
             || ! is_array($statSummary)
             || $statSummary === []
             || ! is_array($coverRecord)
@@ -1704,9 +1852,7 @@ class PlayerPropAnalyzer
      */
     protected function calculateSeasonAverage(int $playerId, string $statField, int $minGames, string $playerStatModel): ?float
     {
-        $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)
-            ->take(82) // Full season
-            ->get();
+        $stats = $this->finalizedPlayerStats($playerId, $playerStatModel, 82);
 
         if (($this->nflAnalysisProp ? ($this->nflHistoryEvidence['eligible_history_games'] ?? $stats->count()) : $stats->count()) < $minGames) {
             return null;
@@ -1720,9 +1866,7 @@ class PlayerPropAnalyzer
      */
     protected function calculateRecentAverage(int $playerId, string $statField, int $games, string $playerStatModel): ?float
     {
-        $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)
-            ->take($games)
-            ->get();
+        $stats = $this->finalizedPlayerStats($playerId, $playerStatModel, $games);
 
         if ($stats->isEmpty()) {
             return null;
@@ -1740,15 +1884,7 @@ class PlayerPropAnalyzer
         string $statField,
         string $playerStatModel
     ): array {
-        $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)
-            ->whereHas('game', function ($q) use ($opponentId) {
-                $q->where(function ($query) use ($opponentId) {
-                    $query->where('home_team_id', $opponentId)
-                        ->orWhere('away_team_id', $opponentId);
-                });
-            })
-            ->take(10) // Last 10 games vs this opponent
-            ->get();
+        $stats = $this->finalizedPlayerStats($playerId, $playerStatModel, 10, opponentId: $opponentId);
 
         if ($stats->isEmpty()) {
             return ['avg' => null, 'games' => 0];
@@ -1769,24 +1905,17 @@ class PlayerPropAnalyzer
         string $statField,
         string $playerStatModel
     ): array {
-        // Get player's team ID first
-        $playerStat = $playerStatModel::where('player_id', $playerId)->first();
-        if (! $playerStat || ! $playerStat->player || ! $playerStat->player->team_id) {
+        if ($playerStatModel === \App\Models\NFL\PlayerStat::class && $this->nflPlayerTeamId !== null) {
+            $teamId = $this->nflPlayerTeamId;
+        } else {
+            $playerStat = $playerStatModel::where('player_id', $playerId)->first();
+            $teamId = $playerStat?->player?->team_id;
+        }
+        if (! $teamId) {
             return ['avg' => null, 'games' => 0];
         }
 
-        $teamId = $playerStat->player->team_id;
-
-        $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)
-            ->whereHas('game', function ($q) use ($isHome, $teamId) {
-                if ($isHome) {
-                    $q->where('home_team_id', $teamId);
-                } else {
-                    $q->where('away_team_id', $teamId);
-                }
-            })
-            ->take(20) // Last 20 home or away games
-            ->get();
+        $stats = $this->finalizedPlayerStats($playerId, $playerStatModel, 20, venueTeamId: (int) $teamId, isHome: $isHome);
 
         if ($stats->count() < 3) {
             return ['avg' => null, 'games' => $stats->count()];
@@ -1876,15 +2005,7 @@ class PlayerPropAnalyzer
         float $line,
         string $playerStatModel
     ): ?array {
-        $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)
-            ->whereHas('game', function ($q) use ($opponentId) {
-                $q->where(function ($query) use ($opponentId) {
-                    $query->where('home_team_id', $opponentId)
-                        ->orWhere('away_team_id', $opponentId);
-                });
-            })
-            ->take(10) // Last 10 games vs this opponent
-            ->get();
+        $stats = $this->finalizedPlayerStats($playerId, $playerStatModel, 10, opponentId: $opponentId);
 
         if ($stats->isEmpty()) {
             return null;
@@ -1908,9 +2029,7 @@ class PlayerPropAnalyzer
         int $games,
         string $playerStatModel
     ): ?array {
-        $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)
-            ->take($games)
-            ->get();
+        $stats = $this->finalizedPlayerStats($playerId, $playerStatModel, $games);
 
         if ($stats->isEmpty()) {
             return null;
@@ -1938,40 +2057,24 @@ class PlayerPropAnalyzer
         string $playerStatModel,
         string $sport
     ): array {
-        $baseQuery = fn () => $this->finalizedPlayerStatsQuery($playerId, $playerStatModel);
-
-        $homeAwayStats = $baseQuery()
-            ->whereHas('game', function ($query) use ($isHome, $playerTeamId): void {
-                $query->where($isHome ? 'home_team_id' : 'away_team_id', $playerTeamId);
-            })
-            ->take(20)
-            ->get();
-
-        $vsOpponentStats = $baseQuery()
-            ->whereHas('game', function ($query) use ($opponentId): void {
-                $query->where(function ($nested) use ($opponentId): void {
-                    $nested->where('home_team_id', $opponentId)
-                        ->orWhere('away_team_id', $opponentId);
-                });
-            })
-            ->take(10)
-            ->get();
+        $homeAwayStats = $this->finalizedPlayerStats($playerId, $playerStatModel, 20, venueTeamId: $playerTeamId, isHome: $isHome);
+        $vsOpponentStats = $this->finalizedPlayerStats($playerId, $playerStatModel, 10, opponentId: $opponentId);
 
         return [
             'season' => $this->coverRecordFromStats(
-                $baseQuery()->take($this->seasonCoverRecordLimit($sport))->get(),
+                $this->finalizedPlayerStats($playerId, $playerStatModel, $this->seasonCoverRecordLimit($sport)),
                 $statField,
                 $line,
                 $recommendation
             ),
             'last_10' => $this->coverRecordFromStats(
-                $baseQuery()->take(10)->get(),
+                $this->finalizedPlayerStats($playerId, $playerStatModel, 10),
                 $statField,
                 $line,
                 $recommendation
             ),
             'last_5' => $this->coverRecordFromStats(
-                $baseQuery()->take(5)->get(),
+                $this->finalizedPlayerStats($playerId, $playerStatModel, 5),
                 $statField,
                 $line,
                 $recommendation
@@ -2223,9 +2326,7 @@ class PlayerPropAnalyzer
         int $games,
         string $playerStatModel
     ): ?array {
-        $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)
-            ->take($games)
-            ->get();
+        $stats = $this->finalizedPlayerStats($playerId, $playerStatModel, $games);
 
         if ($stats->count() < 3) {
             return null;
@@ -2267,9 +2368,7 @@ class PlayerPropAnalyzer
         float $line,
         string $playerStatModel
     ): ?array {
-        $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)
-            ->take(10)
-            ->get();
+        $stats = $this->finalizedPlayerStats($playerId, $playerStatModel, 10);
 
         if ($stats->count() < 2) {
             return null;
@@ -2309,6 +2408,44 @@ class PlayerPropAnalyzer
         ];
     }
 
+    /** @return Collection<int, Model> */
+    protected function finalizedPlayerStats(
+        int $playerId,
+        string $playerStatModel,
+        ?int $limit = null,
+        ?int $opponentId = null,
+        ?int $venueTeamId = null,
+        bool $isHome = true
+    ): Collection {
+        $query = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel);
+        if ($playerStatModel === \App\Models\NFL\PlayerStat::class && $this->nflAnalysisProp !== null) {
+            $key = hash('sha256', $query->toSql().serialize($query->getBindings()));
+            $stats = $this->nflStatsCache[$key] ??= $query->with('game')->get();
+            if ($opponentId !== null) {
+                $stats = $stats->filter(fn ($stat) => (int) $stat->game->home_team_id === $opponentId
+                    || (int) $stat->game->away_team_id === $opponentId);
+            }
+            if ($venueTeamId !== null) {
+                $column = $isHome ? 'home_team_id' : 'away_team_id';
+                $stats = $stats->filter(fn ($stat) => (int) $stat->game->{$column} === $venueTeamId);
+            }
+
+            return ($limit === null ? $stats : $stats->take($limit))->values();
+        }
+        if ($opponentId !== null) {
+            $query->whereHas('game', fn ($game) => $game->where(fn ($teams) => $teams
+                ->where('home_team_id', $opponentId)->orWhere('away_team_id', $opponentId)));
+        }
+        if ($venueTeamId !== null) {
+            $query->whereHas('game', fn ($game) => $game->where($isHome ? 'home_team_id' : 'away_team_id', $venueTeamId));
+        }
+        if ($limit !== null) {
+            $query->take($limit);
+        }
+
+        return $query->get();
+    }
+
     protected function finalizedPlayerStatsQuery(int $playerId, string $playerStatModel)
     {
         /** @var Model $statModel */
@@ -2328,6 +2465,23 @@ class PlayerPropAnalyzer
                     }
                     if ($this->nflModelSeason !== null) {
                         $g->where('season', $this->nflModelSeason);
+                    }
+                    if ($this->nflQuarterbackName !== null && $this->nflPlayerTeamId !== null) {
+                        $name = strtolower(trim($this->nflQuarterbackName));
+                        $team = $this->nflPlayerTeamId;
+                        $g->where(function ($q) use ($name, $team) {
+                            $q->where(function ($q) use ($name, $team) {
+                                $q->where('home_team_id', $team)->where(function ($q) use ($name) {
+                                    $q->whereNull('home_qb_name')->orWhereRaw("TRIM(home_qb_name) = ''")
+                                        ->orWhereRaw('LOWER(TRIM(home_qb_name)) = ?', [$name]);
+                                });
+                            })->orWhere(function ($q) use ($name, $team) {
+                                $q->where('away_team_id', $team)->where(function ($q) use ($name) {
+                                    $q->whereNull('away_qb_name')->orWhereRaw("TRIM(away_qb_name) = ''")
+                                        ->orWhereRaw('LOWER(TRIM(away_qb_name)) = ?', [$name]);
+                                });
+                            });
+                        });
                     }
                 });
                 if ($this->nflPlayerTeamId !== null) {

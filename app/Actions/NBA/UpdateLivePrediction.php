@@ -3,7 +3,8 @@
 namespace App\Actions\NBA;
 
 use App\Actions\Sports\AbstractAdvancedBasketballUpdateLivePrediction;
-use Carbon\Carbon;
+use App\Services\Predictions\LivePredictionStore;
+use Illuminate\Database\Eloquent\Model;
 
 class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePrediction
 {
@@ -22,18 +23,19 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
      */
     public function execute(object $game): ?array
     {
+        if (! $game instanceof Model) {
+            return null;
+        }
+        $store = app(LivePredictionStore::class);
         if (! $this->isGameInProgress($game)) {
-            $prediction = $game->prediction;
-            if ($prediction && $prediction->live_seconds_remaining !== null) {
-                $this->clearLivePrediction($prediction);
-            }
+            $store->clear($game, static::class);
 
             return null;
         }
+        $prediction = $store->baseline($game);
+        if ($prediction === null) {
+            $store->record($game, null, null, 'missing_pregame', static::class);
 
-        $prediction = $game->prediction;
-
-        if (! $prediction) {
             return null;
         }
 
@@ -50,13 +52,7 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
             return null;
         }
 
-        $prediction->update([
-            'live_predicted_spread' => $state['live_predicted_spread'],
-            'live_win_probability' => $state['live_win_probability'],
-            'live_predicted_total' => $state['live_predicted_total'],
-            'live_seconds_remaining' => $state['live_seconds_remaining'],
-            'live_updated_at' => Carbon::now(),
-        ]);
+        $store->record($game, $prediction, $state, 'live', static::class);
 
         return $state;
     }

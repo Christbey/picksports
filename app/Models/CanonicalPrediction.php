@@ -236,6 +236,17 @@ class CanonicalPrediction extends Model
         return $this->belongsTo(ModelArtifact::class);
     }
 
+    public function trackedWcbbSpread(): HasOne
+    {
+        return $this->hasOne(BetDecision::class, 'prediction_id')
+            ->where('prediction_table', $this->getTable())
+            ->where('sport', 'wcbb')
+            ->where('market_type', 'spread')
+            ->where('recommendation_label', 'model_lean')
+            ->where('is_tracking_only', true)
+            ->where('is_bet', false);
+    }
+
     public function markets(): HasMany
     {
         return $this->hasMany(PredictionMarket::class, 'prediction_id');

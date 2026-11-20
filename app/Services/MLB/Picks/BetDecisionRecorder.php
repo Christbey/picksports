@@ -13,7 +13,10 @@ class BetDecisionRecorder
 {
     public function record(PickCandidate $candidate): BetDecision
     {
-        $candidate->loadMissing(['game', 'prediction']);
+        $candidate->loadMissing('game');
+        if ($candidate->canonical_prediction_id === null) {
+            $candidate->loadMissing('prediction');
+        }
         $featureSnapshot = $this->featureSnapshot($candidate);
         $oddsSnapshot = $this->oddsSnapshot($candidate);
         $eligibilityReasons = $candidate->performanceExclusionReasons();
@@ -39,8 +42,8 @@ class BetDecisionRecorder
                 'sport' => 'mlb',
                 'game_table' => $candidate->game?->getTable() ?? 'mlb_games',
                 'game_id' => $candidate->game_id,
-                'prediction_table' => $candidate->prediction?->getTable(),
-                'prediction_id' => $candidate->prediction_id,
+                'prediction_table' => $candidate->canonical_prediction_id !== null ? 'predictions' : $candidate->prediction?->getTable(),
+                'prediction_id' => $candidate->canonical_prediction_id ?? $candidate->prediction_id,
                 'market_type' => $candidate->market_type,
                 'market_key' => $candidate->market_key,
                 'side' => $candidate->side,

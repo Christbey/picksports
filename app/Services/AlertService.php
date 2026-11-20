@@ -2,50 +2,29 @@
 
 namespace App\Services;
 
-use App\Models\NFL\Game;
-use App\Models\NFL\Prediction;
+use App\Application\Sports\ReadModels\PredictionDeliveryContext;
 use App\Models\User;
 use App\Models\UserAlertSent;
 use App\Notifications\BettingValueAlert;
+use App\Notifications\BettingValueAlertChannelResolver;
 use App\Services\BettingRecommendations\GameBettingRecommendationService;
-use Illuminate\Database\Eloquent\Model;
+use App\Services\Predictions\PredictionDeliverySource;
 
 class AlertService
 {
-    protected const SPORTS_MODELS = [
-        'nfl' => ['game' => Game::class, 'prediction' => Prediction::class],
-        'nba' => ['game' => \App\Models\NBA\Game::class, 'prediction' => \App\Models\NBA\Prediction::class],
-        'cbb' => ['game' => \App\Models\CBB\Game::class, 'prediction' => \App\Models\CBB\Prediction::class],
-        'wcbb' => ['game' => \App\Models\WCBB\Game::class, 'prediction' => \App\Models\WCBB\Prediction::class],
-        'mlb' => ['game' => \App\Models\MLB\Game::class, 'prediction' => \App\Models\MLB\Prediction::class],
-        'cfb' => ['game' => \App\Models\CFB\Game::class, 'prediction' => \App\Models\CFB\Prediction::class],
-        'wnba' => ['game' => \App\Models\WNBA\Game::class, 'prediction' => \App\Models\WNBA\Prediction::class],
-    ];
+    private const SPORT_ORDER = ['nfl', 'nba', 'cbb', 'wcbb', 'mlb', 'cfb', 'wnba'];
 
     public function __construct(
         private readonly NotificationTemplateDefaultService $templateDefaultService,
         private readonly GameBettingRecommendationService $gameBettingRecommendationService,
+        private readonly PredictionDeliverySource $predictions,
     ) {}
 
     public function checkForValueOpportunities(string $sport): int
     {
         $sport = strtolower($sport);
 
-        if (! isset(self::SPORTS_MODELS[$sport])) {
-            return 0;
-        }
-
-        $models = self::SPORTS_MODELS[$sport];
-        $predictionModel = $models['prediction'];
-
-        $predictions = $predictionModel::query()
-            ->with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', function ($query) {
-                $query->where('game_date', '>', now())
-                    ->whereNotNull('odds_data')
-                    ->where('status', '!=', 'completed');
-            })
-            ->get();
+        $predictions = $this->predictions->forAlerts($sport);
 
         $alertsSent = 0;
 
@@ -57,7 +36,9 @@ class AlertService
                     $prediction,
                     $sport,
                     $opportunity['expected_value'],
-                    $opportunity['recommendation']
+                    $opportunity['recommendation'],
+                    $opportunity['bet_decision_id'] ?? null,
+                    $opportunity['selection'],
                 );
             }
         }
@@ -65,98 +46,102 @@ class AlertService
         return $alertsSent;
     }
 
-    protected function analyzeOpportunities(Model $prediction): array
+    protected function analyzeOpportunities(PredictionDeliveryContext $prediction): array
     {
         $game = $prediction->game;
-        if (! $game || ! $game->odds_data) {
+        if (! $prediction->isCanonical() && ! $game->odds_data) {
             return [];
         }
 
-        $sport = strtolower($this->inferSportFromPrediction($prediction));
-
-        return collect($this->gameBettingRecommendationService->forGame($game, $sport))
+        return collect($this->gameBettingRecommendationService->forPrediction($prediction))
             ->filter(fn (array $recommendation) => is_numeric($recommendation['edge'] ?? null))
             ->map(fn (array $recommendation) => [
+                'bet_decision_id' => $recommendation['bet_decision_id'] ?? null,
                 'expected_value' => round((float) $recommendation['edge'], 2),
                 'recommendation' => (string) ($recommendation['recommendation'] ?? 'No recommendation available'),
+                'selection' => $recommendation,
             ])
             ->filter(fn (array $recommendation) => $recommendation['expected_value'] > 0)
             ->values()
             ->all();
     }
 
-    protected function inferSportFromPrediction(Model $prediction): string
+    protected function sendAlertsToUsers(PredictionDeliveryContext $prediction, string $sport, float $expectedValue, string $recommendation, ?int $betDecisionId = null, array $selection = []): int
     {
-        foreach (self::SPORTS_MODELS as $sport => $models) {
-            if (($models['prediction'] ?? null) === $prediction::class) {
-                return $sport;
-            }
-        }
-
-        return '';
-    }
-
-    protected function sendAlertsToUsers(Model $prediction, string $sport, float $expectedValue, string $recommendation): int
-    {
-        // Find the notification template
         $template = $this->templateDefaultService->resolve('betting_value_alert');
-
-        $users = User::query()
-            ->with('alertPreference')
-            ->whereHas('alertPreference', function ($query) use ($sport, $expectedValue) {
-                $query->where('enabled', true)
-                    ->where('minimum_edge', '<=', $expectedValue)
-                    ->whereJsonContains('sports', strtolower($sport));
-            })
-            ->get();
+        $users = User::query()->with('alertPreference')
+            ->whereHas('alertPreference', fn ($query) => $query->where('enabled', true)
+                ->whereJsonContains('sports', strtolower($sport)))->get();
 
         $alertsSent = 0;
 
         foreach ($users as $user) {
-            // TIER CHECK 1: Verify user's tier allows email alerts
-            if (! $user->hasTierFeature('email_alerts')) {
-                continue;
-            }
-
-            // TIER CHECK 2: Verify sport is accessible in user's tier
-            if (! $user->canAccessSport($sport)) {
-                continue;
-            }
-
-            // TIER CHECK 3: Verify user hasn't exceeded daily alert limit
-            if ($user->hasReachedDailyAlertLimit()) {
-                continue;
-            }
-
-            // Existing checks
-            if (! $user->alertPreference->isWithinTimeWindow()) {
-                continue;
-            }
-
-            // Check if user has enabled this template
-            if ($template && ! $user->alertPreference->shouldReceiveTemplate($template->id)) {
-                continue;
-            }
-
-            // Send the notification
-            $user->notify(new BettingValueAlert(
-                $prediction,
+            $identity = $betDecisionId !== null ? 'decision:'.$betDecisionId : 'legacy:'.hash('sha256', implode('|', [
+                $prediction->source::class, $prediction->source->getKey(), $prediction->source->updated_at?->toIso8601String(),
+                $selection['type'] ?? '', $recommendation,
+            ]));
+            $notification = new BettingValueAlert(
+                $prediction->source,
                 $sport,
                 $expectedValue,
                 $recommendation,
-                $template
-            ));
+                $template,
+                $betDecisionId,
+                $selection,
+                $identity,
+            );
+            $reason = app(BettingAlertEligibility::class)->reason($user, $sport, $expectedValue, $selection, $template);
+            if ($reason !== null) {
+                if ($reason === 'edge_threshold_unit_unconfigured') {
+                    $deliveries = app(NotificationDeliveryService::class);
+                    foreach (app(BettingValueAlertChannelResolver::class)->resolve($user) as $channel) {
+                        $record = $deliveries->record('betting_value_alert', $channel === 'mail' ? hash('sha256', strtolower(trim($user->email))) : 'user:'.$user->id,
+                            $channel, $notification->deliveryKey($user, $channel), ['source_type' => $prediction->source::class, 'source_id' => (string) $prediction->source->getKey()]);
+                        $deliveries->markSuppressed($record, $reason);
+                    }
+                }
 
-            // Record that alert was sent for tier limit tracking
-            UserAlertSent::create([
-                'user_id' => $user->id,
-                'sport' => strtolower($sport),
-                'alert_type' => 'betting_value',
-                'prediction_id' => $prediction->id,
-                'prediction_type' => get_class($prediction),
-                'expected_value' => $expectedValue,
-                'sent_at' => now(),
-            ]);
+                continue;
+            }
+            $reserved = $user->getConnection()->transaction(function () use ($user, $sport, $expectedValue, $prediction, $identity): bool {
+                $lockedUser = User::query()->lockForUpdate()->find($user->id);
+                $key = hash('sha256', $user->id.':'.$identity);
+                if ($lockedUser === null || $lockedUser->hasReachedDailyAlertLimit()
+                    || UserAlertSent::query()->where('deduplication_key', $key)->exists()) {
+                    return false;
+                }
+                UserAlertSent::query()->create([
+                    'user_id' => $user->id,
+                    'sport' => strtolower($sport),
+                    'alert_type' => 'betting_value',
+                    'prediction_id' => $prediction->source->getKey(),
+                    'prediction_type' => $prediction->source::class,
+                    'expected_value' => $expectedValue,
+                    'sent_at' => now(),
+                    'deduplication_key' => $key,
+                ]);
+
+                return true;
+            });
+            if (! $reserved) {
+                continue;
+            }
+            $deliveries = app(NotificationDeliveryService::class);
+            $records = [];
+            foreach (app(BettingValueAlertChannelResolver::class)->resolve($user) as $channel) {
+                $record = $deliveries->record('betting_value_alert', $channel === 'mail' ? hash('sha256', strtolower(trim($user->email))) : 'user:'.$user->id,
+                    $channel, $notification->deliveryKey($user, $channel), ['source_type' => $prediction->source::class, 'source_id' => (string) $prediction->source->getKey()]);
+                $deliveries->markDispatched($record);
+                $records[] = $record;
+            }
+            try {
+                $user->notify($notification);
+            } catch (\Throwable $error) {
+                foreach ($records as $record) {
+                    $deliveries->markFailed($record, 'dispatch_failed');
+                }
+                throw $error;
+            }
 
             $alertsSent++;
         }
@@ -168,7 +153,7 @@ class AlertService
     {
         $results = [];
 
-        foreach (array_keys(self::SPORTS_MODELS) as $sport) {
+        foreach (self::SPORT_ORDER as $sport) {
             $results[$sport] = $this->checkForValueOpportunities($sport);
         }
 

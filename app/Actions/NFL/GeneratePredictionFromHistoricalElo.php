@@ -30,6 +30,7 @@ use App\Services\NFL\NflTeamHistory;
 use App\Services\NFL\PlayerPositionGradeService;
 use App\Services\NFL\QuarterbackAvailability;
 use App\Services\NFL\Research\RecommendationEligibility;
+use App\Services\Predictions\PredictionDeliverySource;
 use App\Services\Sports\DepthChartImpactService;
 use App\Services\Sports\SportsDateWindowService;
 use App\Support\NflBetRuleEngine;
@@ -90,6 +91,9 @@ class GeneratePredictionFromHistoricalElo
 
     public function execute(Game $game): string
     {
+        if ($game->status !== 'STATUS_FINAL') {
+            app(PredictionDeliverySource::class)->assertLegacyWriterAvailable('nfl');
+        }
         $result = $this->generate($game, true);
 
         return is_string($result) ? $result : 'skipped';
@@ -105,10 +109,18 @@ class GeneratePredictionFromHistoricalElo
         return is_array($result) ? $result : null;
     }
 
+    /** Calculate current pregame recommendation evidence without publishing a legacy row. */
+    public function previewPregame(Game $game): ?array
+    {
+        $result = $this->generate($game, false, 'pregame');
+
+        return is_array($result) ? $result : null;
+    }
+
     /**
      * @return array<string, mixed>|string|null
      */
-    protected function generate(Game $game, bool $persist): array|string|null
+    protected function generate(Game $game, bool $persist, ?string $profile = null): array|string|null
     {
         $this->lastModelMetadata = [];
         $this->teamHistory = null;
@@ -157,7 +169,7 @@ class GeneratePredictionFromHistoricalElo
         $isFinal = (string) $game->status === (string) config('nfl.statuses.final', 'STATUS_FINAL');
         $historicalProfile = $isFinal
             ? (string) config('nfl.predictions.historical_profile', 'configured')
-            : ($persist ? 'pregame' : (string) config('nfl.predictions.historical_profile', 'configured'));
+            : ($profile ?? ($persist ? 'pregame' : (string) config('nfl.predictions.historical_profile', 'configured')));
         $profileSuffix = $historicalProfile !== 'configured' && $historicalProfile !== 'pregame'
             ? '-'.$historicalProfile
             : '';
@@ -337,6 +349,8 @@ class GeneratePredictionFromHistoricalElo
         foreach ($this->projectedQuarterbacks as $teamId => $quarterback) {
             $side = $teamId === (int) $game->home_team_id ? 'home' : 'away';
             $this->lastModelMetadata['game_depth_charts'][$side] = [
+                'qb_id' => $quarterback['qb_id'] ?? null,
+                'qb_name' => $quarterback['qb_name'] ?? null,
                 'depth_chart_game_link' => $quarterback['depth_chart_game_link'] ?? null,
                 'identity_status' => 'projected_not_confirmed_starter',
             ];

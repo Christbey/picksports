@@ -61,6 +61,7 @@ class MlbPickCandidateRepository
                 'season',
                 'game_id',
                 'prediction_id',
+                'canonical_prediction_id',
                 'team_id',
                 'player_id',
                 'market_type',

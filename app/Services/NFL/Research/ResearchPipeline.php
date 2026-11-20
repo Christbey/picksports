@@ -9,8 +9,11 @@ use App\Models\NFL\PlayerProp;
 use App\Models\NFL\ResearchRevision;
 use App\Models\SportsGameContextReport;
 use App\Services\AI\AiProviderRateLimitCircuitBreaker;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use App\Services\NFL\NflWebContextResearchService;
+use App\Services\NFL\Predictions\NflRecommendationInputBuilder;
+use App\Services\NFL\QuarterbackAvailability;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
@@ -24,7 +27,8 @@ class ResearchPipeline
     public function review(Game $game, bool $research = true, bool $forceResearch = false, ?int $requestedBy = null): ?ResearchRevision
     {
         $revision = Cache::lock('nfl-research-game:'.$game->id, 300)->get(function () use ($game, $research, $forceResearch, $requestedBy) {
-            $game->loadMissing(['homeTeam', 'awayTeam', 'prediction']);
+            $game->loadMissing(['homeTeam', 'awayTeam']);
+            $storedForecast = $this->storedForecast($game);
             $kickoff = app(SportsDateWindowService::class)->gameDateTimeUtc($game->game_date, $game->game_time);
             if (! $kickoff
                 || $kickoff->lte(now())
@@ -32,16 +36,39 @@ class ResearchPipeline
                 return null;
             }
             $packet = app(EvidencePacket::class)->forGame($game);
-            // Snapshot-only overlay: existing configured injury weights remain the sole numerical adjustment.
             $game->setAttribute('research_availability', $packet['availability']);
+            // Snapshot-only overlay: existing configured injury weights remain the sole numerical adjustment.
             $preview = app(GeneratePredictionFromHistoricalElo::class)->preview($game);
             if (! $preview) {
                 return null;
             }
-            $game->setAttribute('research_candidate', [...$preview['outputs'], 'model_metadata' => $preview['model_metadata']]);
+            $metadata = $preview['model_metadata'];
+            $availability = app(QuarterbackAvailability::class);
+            $quarterbacks = $availability->forecastDesignations($game, $metadata, $packet['availability']);
+            $gameHolds = $availability->forecastHolds($quarterbacks);
+            if ($storedForecast === null) {
+                $gameHolds[] = 'original_prediction_missing';
+            }
+
+            $market = $this->quotes($game);
+            $markets = [
+                'spread' => [$market, fn () => $this->quotes($game, requireFresh: false)],
+                'total' => [$this->additionalMarketQuotes($game, 'totals'), fn () => $this->additionalMarketQuotes($game, 'totals', requireFresh: false)],
+                'moneyline' => [$this->additionalMarketQuotes($game, 'h2h'), fn () => $this->additionalMarketQuotes($game, 'h2h', requireFresh: false)],
+            ];
+            $marketHolds = ['props' => []];
+            foreach ($markets as $scope => [$freshQuotes, $storedQuotes]) {
+                $marketHolds[$scope] = $gameHolds;
+                if ($freshQuotes === []) {
+                    $marketHolds[$scope][] = $scope.($storedQuotes() === [] ? '_quote_missing' : '_quote_stale');
+                }
+            }
+
+            $candidate = [...$preview['outputs'], 'model_metadata' => $metadata];
+            $game->setAttribute('research_candidate', $candidate);
             $report = SportsGameContextReport::where('sport', 'nfl')->where('game_id', $game->id)->latest('id')->first();
             $selectedDocuments = app(EvidencePacket::class)->researchDocuments($packet);
-            $candidateHash = $this->candidateContextHash([...$preview['outputs'], 'model_metadata' => $preview['model_metadata']]);
+            $candidateHash = $this->candidateContextHash($candidate, $quarterbacks);
             $policy = app(ResearchRefreshPolicy::class);
             $fingerprint = $policy->fingerprint($game, $packet);
             $deferred = null;
@@ -64,48 +91,15 @@ class ResearchPipeline
                     Log::warning('NFL research refresh failed', ['game_id' => $game->id, 'exception' => $exception::class]);
                 }
             }
-            $holds = $packet['holds'];
-            if (! $policy->current($report, $game, $fingerprint)) {
-                $holds[] = 'research_incomplete_or_stale';
-            }
-            if ($deferred) {
-                $holds[] = $deferred;
-            }
-            // Reusing facts is not revalidating old pro/con arguments against a new forecast.
-            if ($report && $candidateHash !== data_get($report->raw_payload, 'candidate_hash')) {
-                $holds[] = 'research_candidate_changed';
-            }
-            if (! $game->prediction) {
-                $holds[] = 'original_prediction_missing';
-            }
-            $market = $this->quotes($game);
-            if (! $this->marketIsFresh($game, $market)) {
-                $holds[] = 'market_stale';
-            }
             $decision = data_get($report?->raw_payload, 'decision_research', []);
-            if (empty($decision['supporting']) || empty($decision['opposing'])) {
-                $holds[] = 'two_sided_research_missing';
-            }
-            if (app(ResearchUncertaintyPolicy::class)->holdsFor($decision['unresolved'] ?? [], 'spread') !== []) {
-                $holds[] = 'unresolved_research_questions';
-            }
-            $analysis = data_get($preview, 'model_metadata.analysis_layer', []);
-            $eligibility = app(RecommendationEligibility::class)->evaluate($analysis, $preview['model_metadata'], $holds);
+            $eligibility = app(RecommendationEligibility::class)->evaluate($metadata['analysis_layer'] ?? [], $metadata, $marketHolds['spread']);
             $original = ResearchRevision::where('game_id', $game->id)->oldest('id')->first();
-            $baseline = $original?->baseline ?? $game->prediction?->only(['predicted_spread', 'predicted_total', 'win_probability', 'confidence_score', 'model_version', 'updated_at']) ?? [];
-            if ($market === []) {
-                $eligibility = app(RecommendationEligibility::class)->evaluate($analysis, $preview['model_metadata'], [...$holds, 'spread_quote_missing']);
-            }
+            $baseline = $original?->baseline ?? ($storedForecast !== null ? Arr::only($storedForecast, ['predicted_spread', 'predicted_total', 'win_probability', 'confidence_score', 'model_version', 'updated_at']) : null) ?? [];
             $props = app(PlayerPropAnalyzer::class)->previewNflGame($game);
-            $researchHolds = array_values(array_filter($holds, fn (string $hold): bool => str_starts_with($hold, 'research_')));
-            $propHolds = $this->marketHolds($researchHolds, $decision['unresolved'] ?? [], 'props');
-            if ($propHolds !== []) {
-                $props = array_map(fn ($prop) => [...$prop, 'status' => 'hold', 'research_holds' => $propHolds], $props);
-            }
             $previous = ResearchRevision::where('game_id', $game->id)->latest('id')->first();
             $brief = [
                 'requested_by' => $requestedBy,
-                'stored_prediction_hash' => $game->prediction ? $this->storedPredictionHash($game->prediction->toArray()) : null,
+                'stored_prediction_hash' => $storedForecast !== null ? $this->storedPredictionHash($storedForecast) : null,
                 'game' => $game->short_name ?: $game->name,
                 'kickoff_at' => $kickoff->toIso8601String(),
                 'eligibility' => $eligibility,
@@ -114,13 +108,17 @@ class ResearchPipeline
                 'player_props' => $props,
                 'prop_angles' => $decision['prop_angles'] ?? [],
                 'unresolved' => $decision['unresolved'] ?? [],
-                'market_holds' => collect(['spread', 'total', 'moneyline', 'props'])->mapWithKeys(fn ($scope) => [$scope => $this->marketHolds($researchHolds, $decision['unresolved'] ?? [], $scope)])->all(),
+                'market_holds' => $marketHolds,
+                'quarterbacks' => $quarterbacks,
+                'season_evidence' => data_get($report?->raw_payload, 'analysis_context.season_evidence'),
                 'facts' => $report?->facts ?? [],
                 'risk_flags' => $report?->risk_flags ?? [],
                 'model_signals' => ['qb' => data_get($preview, 'model_metadata.qb_form'), 'trenches' => data_get($preview, 'model_metadata.line_matchup'), 'injuries' => data_get($preview, 'model_metadata.depth_chart_injuries')],
                 'numeric_adjustment_policy' => 'Existing model weights only; narrative interpretation is not a calibrated adjustment.',
+                'analysis_quality' => data_get($report?->raw_payload, 'analysis_quality', []),
+                'decision_review' => data_get($report?->raw_payload, 'decision_review', []),
                 'source_report_id' => $report?->id,
-                'research_refresh' => ['deferred_reason' => $deferred, 'evidence_current' => $policy->current($report, $game, $fingerprint), 'candidate_current' => $policy->current($report, $game, $fingerprint, $candidateHash)],
+                'research_refresh' => ['deferred_reason' => $deferred, 'source_holds' => $packet['holds'], 'evidence_current' => $policy->current($report, $game, $fingerprint), 'candidate_current' => $policy->current($report, $game, $fingerprint, $candidateHash)],
                 'source_coverage' => $packet['source_coverage'] ?? [],
                 'previous_revision_id' => $previous?->id,
                 'change' => $previous ? ['spread' => round($preview['outputs']['predicted_spread'] - ($previous->revised['predicted_spread'] ?? 0), 2), 'total' => round($preview['outputs']['predicted_total'] - ($previous->revised['predicted_total'] ?? 0), 2), 'eligibility_changed' => data_get($previous->brief, 'eligibility.status') !== $eligibility['status']] : ['initial' => true],
@@ -149,29 +147,43 @@ class ResearchPipeline
         return $revision instanceof ResearchRevision ? $revision : null;
     }
 
-    /** Preserve scoped uncertainty records without array-to-string coercion. */
-    private function marketHolds(array $researchHolds, array $unresolved, string $scope): array
+    /** @return array<string, mixed>|null */
+    private function storedForecast(Game $game): ?array
     {
-        return collect([...$researchHolds, ...app(ResearchUncertaintyPolicy::class)->holdsFor($unresolved, $scope)])
-            ->unique(fn ($hold): string => json_encode($hold, JSON_THROW_ON_ERROR))
-            ->values()->all();
+        if (! (bool) config('prediction_lifecycle.canonical_pipeline.nfl', false)) {
+            return $game->loadMissing('prediction')->getRelation('prediction')?->toArray();
+        }
+        $prediction = app(CanonicalSportPredictionQuery::class)->queryForSport('nfl', ['game_id' => $game->id])
+            ->withOnly('calculationRun.inputSnapshot')->first();
+        $context = (array) data_get($prediction?->calculationRun?->inputSnapshot?->inputs, 'recommendation_context', []);
+        if ($prediction === null || ($context['version'] ?? null) !== NflRecommendationInputBuilder::VERSION) {
+            return null;
+        }
+
+        return [...(array) ($context['outputs'] ?? []),
+            'model_metadata' => (array) ($context['model_metadata'] ?? []),
+            'model_version' => $context['model_version'] ?? null,
+            'feature_version' => $prediction->feature_version, 'blend_version' => $prediction->blend_version,
+            'updated_at' => $prediction->generated_at?->toIso8601String()];
     }
 
     /** @param array<string, mixed> $candidate */
-    public function candidateContextHash(array $candidate): string
+    public function candidateContextHash(array $candidate, array $quarterbacks = []): string
     {
         $metadata = (array) ($candidate['model_metadata'] ?? []);
+        $designations = array_filter(array_map(fn ($qb) => $qb['designation'] ?? null, $quarterbacks));
 
         return hash('sha256', json_encode([
             'version' => 3,
             'uncertainty_policy_version' => ResearchUncertaintyPolicy::VERSION,
+            ...($designations === [] ? [] : ['quarterback_designations' => $designations]),
             'outputs' => [
                 'spread' => $this->bucket($candidate['predicted_spread'] ?? null, (float) config('nfl_research.material_revision.spread_increment', 0.5)),
                 'total' => $this->bucket($candidate['predicted_total'] ?? null, (float) config('nfl_research.material_revision.total_increment', 0.5)),
                 'probability' => $this->bucket($candidate['win_probability'] ?? null, (float) config('nfl_research.material_revision.probability_increment', 0.01)),
             ],
             'true_epa' => Arr::only((array) data_get($metadata, 'true_epa', []), ['enabled', 'applied', 'reason', 'source']),
-            'quarterbacks' => collect(['home', 'away'])->mapWithKeys(fn ($side) => [$side => Arr::only((array) data_get($metadata, 'qb_form.'.$side, []), ['qb_id', 'qb_name', 'reason', 'replaced_unavailable_qb_ids'])])->all(),
+            'quarterbacks' => collect(['home', 'away'])->mapWithKeys(fn ($side) => [$side => Arr::only((array) (data_get($metadata, 'qb_form.'.$side) ?? data_get($metadata, 'game_depth_charts.'.$side, [])), ['qb_id', 'qb_name', 'reason', 'replaced_unavailable_qb_ids'])])->all(),
             'analysis' => [
                 'classification' => data_get($metadata, 'analysis_layer.bet_classification'),
                 'raw_classification' => data_get($metadata, 'analysis_layer.raw_bet_classification'),
@@ -264,6 +276,10 @@ class ResearchPipeline
             ],
             'market' => $quotes,
             'eligibility' => Arr::only($eligibility, ['status', 'data_reasons', 'model_reasons']),
+            'market_holds' => $brief['market_holds'] ?? [],
+            'quarterbacks' => $brief['quarterbacks'] ?? [],
+            'season_evidence' => $brief['season_evidence'] ?? null,
+            'research_deferred_reason' => data_get($brief, 'research_refresh.deferred_reason'),
             'props' => $materialProps,
         ], JSON_UNESCAPED_SLASHES));
     }
@@ -306,14 +322,20 @@ class ResearchPipeline
     {
         $books = data_get($game->odds_data, 'bookmakers', []);
         $home = $game->odds_data['home_team'] ?? null;
+        $away = $game->odds_data['away_team'] ?? null;
         $quotes = [];
         foreach ($books as $book) {
             foreach ($book['markets'] ?? [] as $market) {
                 if (($market['key'] ?? null) !== 'spreads') {
                     continue;
                 }
-                foreach ($market['outcomes'] ?? [] as $outcome) {
-                    if (! is_numeric($outcome['point'] ?? null) || ! is_numeric($outcome['price'] ?? null) || ! $home) {
+                $outcomes = $market['outcomes'] ?? [];
+                $awayName = $away ?? (count($outcomes) === 2
+                    ? collect($outcomes)->pluck('name')->first(fn ($name) => filled($name) && $name !== $home)
+                    : null);
+                foreach ($outcomes as $outcome) {
+                    if (! is_numeric($outcome['point'] ?? null) || ! is_numeric($outcome['price'] ?? null) || abs((float) $outcome['price']) < 100
+                        || ! $home || ! $awayName || ! in_array($outcome['name'] ?? null, [$home, $awayName], true)) {
                         continue;
                     }
                     $quotes[] = ['bookmaker' => $book['key'], 'side' => $outcome['name'] === $home ? 'home' : 'away', 'line' => (float) $outcome['point'], 'price' => (int) $outcome['price'], 'observed_at' => $market['last_update'] ?? $book['last_update'] ?? $game->odds_updated_at?->toIso8601String()];

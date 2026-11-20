@@ -2,8 +2,10 @@
 
 namespace App\Services\MLB\Picks;
 
-use App\Models\MLB\Prediction;
+use App\Application\Sports\ReadModels\BettingForecast;
+use App\Services\Predictions\BettingForecastSource;
 use App\Support\MLB\MlbGameStart;
+use Illuminate\Database\Eloquent\Model;
 
 class MlbRunLineCandidateBuilder
 {
@@ -12,16 +14,18 @@ class MlbRunLineCandidateBuilder
     /**
      * @return list<MlbPickCandidateData>
      */
-    public function build(Prediction $prediction): array
+    public function build(Model|BettingForecast $prediction): array
     {
+        $prediction = $prediction instanceof Model ? app(BettingForecastSource::class)->fromModel($prediction, 'mlb') : $prediction;
+
         $game = $prediction->game;
-        if (! $game || ! is_numeric($prediction->predicted_spread)) {
+        if (! $game || ! is_numeric($prediction->predictedSpread)) {
             return [];
         }
 
         $outcomes = $this->markets->sideOutcomes($game, ['spreads']);
         $noVig = $this->markets->noVigSides($outcomes);
-        $homeMargin = (float) $prediction->predicted_spread;
+        $homeMargin = (float) $prediction->predictedSpread;
         $rows = [];
 
         foreach (['home', 'away'] as $side) {
@@ -41,7 +45,7 @@ class MlbRunLineCandidateBuilder
             if (abs($projectedValue) < 0.75) {
                 $riskFlags[] = 'one_run_game_risk';
             }
-            if (($prediction->predicted_total !== null) && (float) $prediction->predicted_total < 7.5) {
+            if (($prediction->predictedTotal !== null) && (float) $prediction->predictedTotal < 7.5) {
                 $riskFlags[] = 'low_total_run_line_risk';
             }
             if ($this->markets->stale($game)) {
@@ -50,8 +54,9 @@ class MlbRunLineCandidateBuilder
 
             $rows[] = new MlbPickCandidateData(
                 gameId: (int) $game->id,
-                predictionId: (int) $prediction->id,
-                season: (int) $prediction->season,
+                predictionId: $prediction->legacyPredictionId(),
+                canonicalPredictionId: $prediction->canonicalPredictionId(),
+                season: $prediction->season(),
                 marketType: 'run_line',
                 marketKey: 'spreads',
                 side: $side,

@@ -3,6 +3,7 @@
 namespace App\Services\Api\V2;
 
 use App\Models\CanonicalPrediction;
+use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -90,12 +91,14 @@ class CanonicalSportPredictionQuery
         return $this->queryForSport($context->slug, $filters)
             ->reorder()
             ->whereNotNull("{$gameTable}.game_date")
-            ->select("{$gameTable}.game_date as available_date")
-            ->distinct()
-            ->orderBy('available_date')
-            ->pluck('available_date')
-            ->map(fn (mixed $date): string => substr((string) $date, 0, 10))
+            ->select(["{$gameTable}.game_date", "{$gameTable}.game_time"])
+            ->orderBy("{$gameTable}.game_date")
+            ->orderBy("{$gameTable}.game_time")
+            ->toBase()->get()
+            ->map(fn (mixed $game): ?string => app(SportsDateWindowService::class)->gameDateForDisplay($game->game_date, $game->game_time))
+            ->filter()
             ->unique()
+            ->sort()
             ->values();
     }
 
@@ -120,6 +123,7 @@ class CanonicalSportPredictionQuery
             ->when($sport === 'cfb', fn (Builder $query) => $query->with(
                 'sportEvent.cfbGame.latestLiveSnapshot:cfb_live_prediction_snapshots.id,cfb_live_prediction_snapshots.game_id,status,projection,observed_at'
             ))
+            ->when($sport === 'wcbb', fn (Builder $query) => $query->with('trackedWcbbSpread'))
             ->where('predictions.sport', $sport)
             ->where('predictions.phase', 'pregame')
             ->where('predictions.publication_state', 'published')
@@ -145,8 +149,16 @@ class CanonicalSportPredictionQuery
                 });
             })
             ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where("{$gameTable}.status", $status))
-            ->when($filters['from_date'] ?? null, fn (Builder $query, string $date): Builder => $query->whereDate("{$gameTable}.game_date", '>=', $date))
-            ->when($filters['to_date'] ?? null, fn (Builder $query, string $date): Builder => $query->whereDate("{$gameTable}.game_date", '<=', $date))
+            ->tap(function (Builder $query) use ($filters, $gameTable): void {
+                if (isset($filters['from_date'], $filters['to_date'])) {
+                    $dates = app(SportsDateWindowService::class);
+                    $dates->applyGameDateWindow($query, $dates->forRange($filters['from_date'], $filters['to_date']), "{$gameTable}.game_date");
+                } elseif (isset($filters['from_date'])) {
+                    $query->whereDate("{$gameTable}.game_date", '>=', $filters['from_date']);
+                } elseif (isset($filters['to_date'])) {
+                    $query->whereDate("{$gameTable}.game_date", '<=', $filters['to_date']);
+                }
+            })
             ->when(array_key_exists('has_value', $filters), function (Builder $query) use ($filters): Builder {
                 $method = $filters['has_value'] ? 'whereHas' : 'whereDoesntHave';
 

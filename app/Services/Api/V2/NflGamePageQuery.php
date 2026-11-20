@@ -12,7 +12,7 @@ class NflGamePageQuery
 {
     public function __construct(
         private readonly SportGameQuery $games,
-        private readonly GamePredictionPayload $predictions,
+        private readonly SportPredictionReader $predictions,
         private readonly GameMatchupContextService $matchups,
     ) {}
 

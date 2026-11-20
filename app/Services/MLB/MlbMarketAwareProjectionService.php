@@ -2,11 +2,13 @@
 
 namespace App\Services\MLB;
 
+use App\Application\Sports\ReadModels\BettingForecast;
 use App\Models\GameOddsSnapshot;
 use App\Models\MLB\Game;
-use App\Models\MLB\Prediction;
+use App\Services\Predictions\BettingForecastSource;
 use App\Support\Odds\AmericanOdds;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 class MlbMarketAwareProjectionService
@@ -18,12 +20,13 @@ class MlbMarketAwareProjectionService
     /**
      * @return array<string,mixed>
      */
-    public function forPrediction(Prediction $prediction): array
+    public function forPrediction(Model|BettingForecast $prediction): array
     {
-        $prediction->loadMissing('game.homeTeam', 'game.awayTeam');
+        $prediction = $prediction instanceof BettingForecast ? $prediction : app(BettingForecastSource::class)->fromModel($prediction, 'mlb');
+        $prediction->game?->loadMissing('homeTeam', 'awayTeam');
 
         $game = $prediction->game;
-        $homeModelProbability = $this->boundedProbability($prediction->win_probability);
+        $homeModelProbability = $this->boundedProbability($prediction->winProbability);
         $awayModelProbability = $homeModelProbability === null ? null : round(1 - $homeModelProbability, 4);
         $modelPickSide = $homeModelProbability === null ? null : $this->sideFromHomeProbability($homeModelProbability);
         $oddsContext = $this->oddsContext($prediction);
@@ -80,7 +83,7 @@ class MlbMarketAwareProjectionService
     /**
      * @return array{odds_data:?array<string,mixed>,captured_at:?CarbonInterface,source:string,snapshot_id:?int}
      */
-    private function oddsContext(Prediction $prediction): array
+    private function oddsContext(BettingForecast $prediction): array
     {
         $game = $prediction->game;
         $start = $this->gameStartAt($prediction);
@@ -119,7 +122,7 @@ class MlbMarketAwareProjectionService
      * @param  array{home:?int,away:?int}  $prices
      * @return list<string>
      */
-    private function pointInTimeReasons(Prediction $prediction, array $oddsContext, array $prices): array
+    private function pointInTimeReasons(BettingForecast $prediction, array $oddsContext, array $prices): array
     {
         $game = $prediction->game;
         $reasons = [];
@@ -150,7 +153,7 @@ class MlbMarketAwareProjectionService
             $reasons[] = 'stale_odds';
         }
 
-        if ($prediction->live_win_probability !== null || $prediction->live_updated_at !== null) {
+        if ($prediction->liveWinProbability !== null || $prediction->liveUpdatedAt !== null) {
             $reasons[] = 'live_only_row';
         }
 
@@ -165,11 +168,11 @@ class MlbMarketAwareProjectionService
         return array_values(array_unique($reasons));
     }
 
-    private function predictionGeneratedAt(Prediction $prediction): ?CarbonInterface
+    private function predictionGeneratedAt(BettingForecast $prediction): ?CarbonInterface
     {
-        $generatedAt = data_get($prediction->model_metadata, 'point_in_time.generated_at')
-            ?? data_get($prediction->model_metadata, 'market_context.safety.prediction_generated_at')
-            ?? $prediction->created_at;
+        $generatedAt = data_get($prediction->modelMetadata, 'point_in_time.generated_at')
+            ?? data_get($prediction->modelMetadata, 'market_context.safety.prediction_generated_at')
+            ?? ($prediction->isCanonical() ? $prediction->source->generated_at : $prediction->source->created_at);
 
         return $generatedAt instanceof CarbonInterface ? $generatedAt : ($generatedAt === null ? null : Carbon::parse($generatedAt));
     }
@@ -185,7 +188,7 @@ class MlbMarketAwareProjectionService
         return $oddsUpdatedAt->lt(now()->subHours($staleHours));
     }
 
-    private function gameStartAt(Prediction $prediction): ?Carbon
+    private function gameStartAt(BettingForecast $prediction): ?Carbon
     {
         $game = $prediction->game;
         if (! $game?->game_date || ! $game->game_time) {
@@ -199,7 +202,7 @@ class MlbMarketAwareProjectionService
      * @param  array<string,mixed>|null  $oddsData
      * @return array{home:?int,away:?int}
      */
-    private function extractH2hPrices(Prediction $prediction, ?array $oddsData): array
+    private function extractH2hPrices(BettingForecast $prediction, ?array $oddsData): array
     {
         if (! is_array($oddsData)) {
             return ['home' => null, 'away' => null];

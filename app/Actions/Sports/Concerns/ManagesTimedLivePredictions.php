@@ -2,6 +2,8 @@
 
 namespace App\Actions\Sports\Concerns;
 
+use App\Services\Predictions\LivePredictionStore;
+
 trait ManagesTimedLivePredictions
 {
     protected function parseGameClock(?string $gameClock): int
@@ -24,12 +26,7 @@ trait ManagesTimedLivePredictions
 
     protected function clearTimedLivePrediction(object $prediction, string $remainingField = 'live_seconds_remaining'): void
     {
-        $prediction->update([
-            'live_predicted_spread' => null,
-            'live_win_probability' => null,
-            'live_predicted_total' => null,
-            $remainingField => null,
-            'live_updated_at' => null,
-        ]);
+        $store = app(LivePredictionStore::class);
+        $store->clear($store->gameFor($prediction), static::class);
     }
 }

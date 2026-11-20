@@ -89,12 +89,12 @@ class SportsDateWindowService
                 })
                 ->orWhere(function (Builder $localDateQuery) use ($column, $window, $dateColumn, $timeColumn): void {
                     $localDateQuery
-                        ->where(function (Builder $dateOnlyQuery) use ($dateColumn, $timeColumn): void {
+                        ->where(function (Builder $dateOnlyQuery) use ($timeColumn): void {
                             $dateOnlyQuery
                                 ->whereRaw("{$timeColumn} is null")
-                                ->orWhereRaw("{$timeColumn} = ?", [''])
-                                ->orWhereRaw("TIME({$dateColumn}) <> ?", ['00:00:00']);
+                                ->orWhereRaw("{$timeColumn} = ?", ['']);
                         })
+                        ->whereRaw("TIME({$dateColumn}) = ?", ['00:00:00'])
                         ->whereDate($column, '>=', $window->localStartDate())
                         ->whereDate($column, '<=', $window->localEndDate());
                 });
@@ -103,8 +103,9 @@ class SportsDateWindowService
 
     public function gameDateForDisplay(mixed $gameDate, mixed $gameTime = null): ?string
     {
-        if ($this->isDateOnly($gameDate) && ! (is_string($gameTime) && preg_match('/^\d{1,2}:\d{2}/', $gameTime) === 1)) {
-            return CarbonImmutable::parse((string) $gameDate, $this->timezone())->toDateString();
+        $hasTime = is_string($gameTime) && preg_match('/^\d{1,2}:\d{2}/', $gameTime) === 1;
+        if (! $hasTime && $gameDate !== null && CarbonImmutable::parse($gameDate, 'UTC')->isStartOfDay()) {
+            return CarbonImmutable::parse($gameDate, 'UTC')->toDateString();
         }
 
         $dateTime = $this->gameDateTimeUtc($gameDate, $gameTime);
@@ -148,11 +149,6 @@ class SportsDateWindowService
         return DB::connection()->getDriverName() === 'sqlite'
             ? "datetime(date({$dateColumn}) || ' ' || {$timeColumn})"
             : "timestamp(date({$dateColumn}), {$timeColumn})";
-    }
-
-    private function isDateOnly(mixed $value): bool
-    {
-        return is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', trim($value)) === 1;
     }
 
     private function fromLocalRange(CarbonImmutable $start, CarbonImmutable $end): DateWindow

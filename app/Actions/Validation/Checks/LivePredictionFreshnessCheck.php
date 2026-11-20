@@ -3,9 +3,12 @@
 namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
+use App\Services\Api\V2\SportContextResolver;
+use App\Services\Predictions\LivePredictionStore;
+use App\Services\Predictions\PredictionDeliverySource;
 use App\Services\Sports\SportsDateWindowService;
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class LivePredictionFreshnessCheck implements ValidationCheck
@@ -26,19 +29,12 @@ class LivePredictionFreshnessCheck implements ValidationCheck
     {
         $tables = $profile['tables'] ?? [];
         $gamesTable = $tables['games'] ?? null;
-        $predictionsTable = $tables['predictions'] ?? null;
-
-        if (
-            ! $gamesTable || ! $predictionsTable
-            || ! Schema::hasTable($gamesTable)
-            || ! Schema::hasTable($predictionsTable)
-            || ! Schema::hasColumn($predictionsTable, 'live_updated_at')
-            || ! Schema::hasColumn($predictionsTable, 'live_win_probability')
-        ) {
+        $context = app(SportContextResolver::class)->find($sport);
+        $gameModel = $context?->models['game'] ?? null;
+        if (! $gamesTable || $gameModel === null || ! Schema::hasTable($gamesTable)) {
             return null;
         }
-
-        $remainingColumn = $this->remainingColumn($predictionsTable, $profile);
+        $remainingColumn = $profile['live_prediction_remaining_column'] ?? ($sport === 'mlb' ? 'live_outs_remaining' : 'live_seconds_remaining');
         $dates = app(SportsDateWindowService::class);
         $window = $dates->forRange(
             CarbonImmutable::now($dates->timezone())->subDay(),
@@ -49,26 +45,20 @@ class LivePredictionFreshnessCheck implements ValidationCheck
         $warnPct = (float) config('validation.thresholds.live_prediction_freshness.problem_warn_pct', 0.01);
         $failPct = (float) config('validation.thresholds.live_prediction_freshness.problem_fail_pct', 0.01);
 
-        $games = DB::table($gamesTable)
-            ->leftJoin($predictionsTable, "{$predictionsTable}.game_id", '=', "{$gamesTable}.id")
-            ->whereIn("{$gamesTable}.status", self::LIVE_STATUSES)
-            ->whereDate("{$gamesTable}.game_date", '>=', $window->localStartDate())
-            ->whereDate("{$gamesTable}.game_date", '<=', $window->localEndDate())
-            ->get([
-                "{$gamesTable}.id",
-                "{$gamesTable}.espn_event_id",
-                "{$gamesTable}.short_name",
-                "{$gamesTable}.name",
-                "{$gamesTable}.status",
-                "{$gamesTable}.game_date",
-                "{$gamesTable}.updated_at as game_updated_at",
-                "{$predictionsTable}.id as prediction_id",
-                "{$predictionsTable}.live_win_probability",
-                "{$predictionsTable}.live_predicted_spread",
-                "{$predictionsTable}.live_predicted_total",
-                "{$predictionsTable}.live_updated_at",
-                DB::raw($remainingColumn ? "{$predictionsTable}.{$remainingColumn} as live_remaining" : 'null as live_remaining'),
-            ]);
+        $games = $gameModel::query()
+            ->whereIn('status', self::LIVE_STATUSES)
+            ->whereDate('game_date', '>=', $window->localStartDate())
+            ->whereDate('game_date', '<=', $window->localEndDate())->get();
+        $store = app(LivePredictionStore::class);
+        $store->preload($games);
+        if (app(PredictionDeliverySource::class)->usesCanonical($sport)) {
+            $predictionEvents = app(CanonicalSportPredictionQuery::class)->queryForSport($sport)
+                ->whereIn("{$sport}_games.id", $games->pluck('id'))->pluck('predictions.sport_event_id')->all();
+            $withPrediction = $games->whereIn('sport_event_id', $predictionEvents)->pluck('id')->all();
+        } else {
+            $predictionClass = $context->models['prediction'];
+            $withPrediction = $predictionClass::query()->whereIn('game_id', $games->pluck('id'))->pluck('game_id')->all();
+        }
 
         $problemGameIds = [];
         $missingPredictionCount = 0;
@@ -78,18 +68,19 @@ class LivePredictionFreshnessCheck implements ValidationCheck
 
         foreach ($games as $game) {
             $reasons = [];
-            $liveUpdatedAt = $game->live_updated_at ? CarbonImmutable::parse($game->live_updated_at) : null;
+            $live = $store->fields($game);
+            $liveUpdatedAt = $live['live_updated_at'] ? CarbonImmutable::parse($live['live_updated_at']) : null;
 
-            if (! $game->prediction_id) {
+            if (! in_array($game->id, $withPrediction, true)) {
                 $missingPredictionCount++;
                 $reasons[] = 'missing_prediction';
             }
 
             if (
-                $game->live_win_probability === null
-                || $game->live_predicted_spread === null
-                || $game->live_predicted_total === null
-                || ($remainingColumn && $game->live_remaining === null)
+                $live['live_win_probability'] === null
+                || $live['live_predicted_spread'] === null
+                || $live['live_predicted_total'] === null
+                || ($remainingColumn && $live[$remainingColumn] === null)
             ) {
                 $missingLiveModelCount++;
                 $reasons[] = 'missing_live_model_fields';
@@ -108,7 +99,7 @@ class LivePredictionFreshnessCheck implements ValidationCheck
                     'matchup' => $game->short_name ?: $game->name,
                     'status' => $game->status,
                     'game_date' => $game->game_date ? CarbonImmutable::parse($game->game_date)->toDateString() : null,
-                    'game_updated_at' => $game->game_updated_at ? CarbonImmutable::parse($game->game_updated_at)->toIso8601String() : null,
+                    'game_updated_at' => $game->updated_at ? CarbonImmutable::parse($game->updated_at)->toIso8601String() : null,
                     'live_updated_at' => $liveUpdatedAt?->toIso8601String(),
                     'reasons' => array_values(array_unique($reasons)),
                 ];
@@ -144,24 +135,5 @@ class LivePredictionFreshnessCheck implements ValidationCheck
                 'sample_games' => array_slice($sampleGames, 0, 5),
             ],
         ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $profile
-     */
-    private function remainingColumn(string $predictionsTable, array $profile): ?string
-    {
-        $configured = $profile['live_prediction_remaining_column'] ?? null;
-        if (is_string($configured) && Schema::hasColumn($predictionsTable, $configured)) {
-            return $configured;
-        }
-
-        foreach (['live_seconds_remaining', 'live_outs_remaining'] as $column) {
-            if (Schema::hasColumn($predictionsTable, $column)) {
-                return $column;
-            }
-        }
-
-        return null;
     }
 }

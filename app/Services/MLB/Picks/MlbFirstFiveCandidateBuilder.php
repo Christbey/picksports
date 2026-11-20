@@ -2,9 +2,11 @@
 
 namespace App\Services\MLB\Picks;
 
-use App\Models\MLB\Prediction;
+use App\Application\Sports\ReadModels\BettingForecast;
 use App\Services\MLB\MlbPeriodModelContextService;
+use App\Services\Predictions\BettingForecastSource;
 use App\Support\MLB\MlbGameStart;
+use Illuminate\Database\Eloquent\Model;
 
 class MlbFirstFiveCandidateBuilder
 {
@@ -16,8 +18,10 @@ class MlbFirstFiveCandidateBuilder
     /**
      * @return list<MlbPickCandidateData>
      */
-    public function build(Prediction $prediction): array
+    public function build(Model|BettingForecast $prediction): array
     {
+        $prediction = $prediction instanceof Model ? app(BettingForecastSource::class)->fromModel($prediction, 'mlb') : $prediction;
+
         return [
             ...$this->sideCandidates($prediction, 'first_5_moneyline', 'h2h_1st_5_innings', ['h2h_1st_5_innings', 'h2h_1st_5']),
             ...$this->sideCandidates($prediction, 'first_5_run_line', 'spreads_1st_5_innings', ['spreads_1st_5_innings', 'spreads_1st_5']),
@@ -29,8 +33,12 @@ class MlbFirstFiveCandidateBuilder
      * @param  list<string>  $marketKeys
      * @return list<MlbPickCandidateData>
      */
-    private function sideCandidates(Prediction $prediction, string $marketType, string $marketKey, array $marketKeys): array
+    private function sideCandidates(BettingForecast $prediction, string $marketType, string $marketKey, array $marketKeys): array
     {
+        if ($prediction->isCanonical() && ($prediction->homePitcherElo === null || $prediction->awayPitcherElo === null || $prediction->homeTeamElo === null || $prediction->awayTeamElo === null)) {
+            return [];
+        }
+
         $game = $prediction->game;
         if (! $game) {
             return [];
@@ -38,8 +46,8 @@ class MlbFirstFiveCandidateBuilder
 
         $outcomes = $this->markets->sideOutcomes($game, $marketKeys);
         $noVig = $this->markets->noVigSides($outcomes);
-        $pitcherEdge = ((float) ($prediction->home_pitcher_elo ?? 1500)) - ((float) ($prediction->away_pitcher_elo ?? 1500));
-        $teamEdge = ((float) ($prediction->home_team_elo ?? 1500)) - ((float) ($prediction->away_team_elo ?? 1500));
+        $pitcherEdge = ((float) ($prediction->homePitcherElo ?? 1500)) - ((float) ($prediction->awayPitcherElo ?? 1500));
+        $teamEdge = ((float) ($prediction->homeTeamElo ?? 1500)) - ((float) ($prediction->awayTeamElo ?? 1500));
         $rows = [];
 
         foreach (['home', 'away'] as $side) {
@@ -77,8 +85,9 @@ class MlbFirstFiveCandidateBuilder
 
             $rows[] = new MlbPickCandidateData(
                 gameId: (int) $game->id,
-                predictionId: (int) $prediction->id,
-                season: (int) $prediction->season,
+                predictionId: $prediction->legacyPredictionId(),
+                canonicalPredictionId: $prediction->canonicalPredictionId(),
+                season: $prediction->season(),
                 marketType: $marketType,
                 marketKey: $marketKey,
                 side: $side,
@@ -115,16 +124,16 @@ class MlbFirstFiveCandidateBuilder
     /**
      * @return list<MlbPickCandidateData>
      */
-    private function totalCandidates(Prediction $prediction): array
+    private function totalCandidates(BettingForecast $prediction): array
     {
         $game = $prediction->game;
-        if (! $game || ! is_numeric($prediction->predicted_total)) {
+        if (! $game || ! is_numeric($prediction->predictedTotal)) {
             return [];
         }
 
         $outcomes = $this->markets->totalOutcomes($game, ['totals_1st_5_innings', 'totals_1st_5']);
         $noVig = $this->markets->noVigTotals($outcomes);
-        $f5Total = ((float) $prediction->predicted_total - (float) config('mlb.picks.total_bias_correction', 1.0)) * 0.54;
+        $f5Total = ((float) $prediction->predictedTotal - (float) config('mlb.picks.total_bias_correction', 1.0)) * 0.54;
         $rows = [];
 
         foreach (['over', 'under'] as $side) {
@@ -140,8 +149,9 @@ class MlbFirstFiveCandidateBuilder
 
             $rows[] = new MlbPickCandidateData(
                 gameId: (int) $game->id,
-                predictionId: (int) $prediction->id,
-                season: (int) $prediction->season,
+                predictionId: $prediction->legacyPredictionId(),
+                canonicalPredictionId: $prediction->canonicalPredictionId(),
+                season: $prediction->season(),
                 marketType: 'first_5_total',
                 marketKey: 'totals_1st_5_innings',
                 side: $side,

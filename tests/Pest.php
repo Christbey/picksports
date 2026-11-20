@@ -1,7 +1,9 @@
 <?php
 
 use App\Http\Resources\Sports\AbstractPredictionResource;
+use App\Models\CanonicalPrediction;
 use App\Models\User;
+use App\Services\Predictions\LivePredictionStore;
 use App\Services\Predictions\PredictionResourcePreparer;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -74,4 +76,27 @@ function resolvePreparedPredictionResource(
     );
 
     return $resourceClass::make($prediction)->toArray($request);
+}
+
+/** Read live output independently of historical mutable prediction columns. */
+function livePredictionFor(Model $prediction): object
+{
+    $sport = $prediction instanceof CanonicalPrediction ? $prediction->sport : explode('_', $prediction->getTable())[0];
+
+    return (object) app(LivePredictionStore::class)->forPrediction($prediction, $sport);
+}
+
+/** Seed a captured live projection for resource/validation fixtures. */
+function seedLivePrediction(Model $prediction): void
+{
+    $store = app(LivePredictionStore::class);
+    $game = $prediction->getRelationValue('game');
+    $fields = [];
+    foreach (array_keys(LivePredictionStore::EMPTY_FIELDS) as $key) {
+        if ($key !== 'live_updated_at') {
+            $value = $prediction->getAttribute($key);
+            $fields[$key] = is_numeric($value) ? $value + 0 : null;
+        }
+    }
+    $store->record($game, $store->baseline($game), $fields, 'live', 'resource-fixture', $prediction->getAttribute('live_updated_at') ?? now());
 }

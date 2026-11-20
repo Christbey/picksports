@@ -704,6 +704,7 @@ export interface NflHistoricalPrediction {
 }
 
 export interface NflPagePrediction {
+    source_updated_at?: string | null;
     comparison_forecasts?: CfbComparisonForecasts | null;
     forecast_coordination?: Record<string, unknown> | null;
     spread_assessment?: {

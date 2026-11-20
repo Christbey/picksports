@@ -179,12 +179,22 @@ try {
         );
         await page
             .locator('summary')
-            .filter({ hasText: 'Model details & team ratings' })
+            .filter({ hasText: 'Team ratings' })
             .click();
         await assertVisible(page.getByText('1500', { exact: true }));
+        await assertVisible(
+            page.getByText('Pregame Elo rating', { exact: true }),
+        );
+        if (output && width === 390) {
+            await page.screenshot({
+                path: `${output}/team-ratings-390.png`,
+                fullPage: true,
+            });
+        }
+
         await page
             .locator('summary')
-            .filter({ hasText: 'Model details & team ratings' })
+            .filter({ hasText: 'Team ratings' })
             .click();
         await page
             .locator('summary')
@@ -209,7 +219,7 @@ try {
             .filter({ hasText: 'Box score & game statistics' })
             .click();
         await assertVisible(
-            page.getByText('Trends & Matchup History', { exact: true }),
+            page.getByRole('heading', { name: 'Team comparison', exact: true }),
             false,
         );
         await assertVisible(
@@ -270,55 +280,31 @@ try {
         const evidence = page.getByRole('region', {
             name: 'Team evidence windows',
         });
-        const trendsViews = page.getByRole('navigation', {
-            name: 'Trends views',
+        const metrics = evidence.getByRole('table', {
+            name: 'Team comparison metrics',
         });
-        for (const name of ['History', 'Patterns']) {
-            await trendsViews
-                .getByRole('button', { name, exact: true })
-                .click();
-            await assertVisible(evidence, false);
-            await checkWidth();
-        }
-        await trendsViews
-            .getByRole('button', { name: 'Team Evidence' })
-            .click();
-        const comparison = evidence.getByRole('region', {
-            name: 'Team evidence comparison',
-        });
-        await evidence.getByRole('button', { name: 'What changed?' }).click();
-        await assertVisible(comparison);
-        await probeReader('Trends comparison');
-        await assertVisible(evidence.getByRole('table'), false);
-        await evidence.getByRole('button', { name: 'Metrics' }).click();
-        await assertVisible(comparison, false);
-        await probeReader('Trends metrics');
+        await assertVisible(metrics);
+        await assertVisible(
+            metrics.getByRole('columnheader', { name: 'DET', exact: true }),
+        );
+        await assertVisible(
+            metrics.getByRole('columnheader', { name: 'BUF', exact: true }),
+        );
+        assert.ok(
+            (await metrics.boundingBox()).y < 700,
+            'Comparison should start in the first screen',
+        );
         await evidence
-            .getByText('How to read the metrics', { exact: true })
+            .getByRole('combobox', { name: 'Evidence window' })
+            .selectOption('historical');
+        await assertVisible(metrics);
+        await evidence
+            .getByText('Samples, ranks & methodology', { exact: true })
             .click();
         await evidence
-            .getByText('Regular season only. Windows overlap.')
+            .getByText(/Regular season only. Windows overlap./)
             .waitFor({ state: 'visible' });
         await probeReader('Trends metrics help');
-        await assertVisible(evidence.getByRole('heading', { name: /^DET ·/ }));
-        await assertVisible(
-            evidence.getByRole('heading', { name: /^BUF ·/ }),
-            false,
-        );
-        await evidence
-            .getByRole('button', { name: 'BUF', exact: true })
-            .click();
-        await assertVisible(evidence.getByRole('heading', { name: /^BUF ·/ }));
-        await assertVisible(
-            evidence.getByRole('heading', { name: /^DET ·/ }),
-            false,
-        );
-        await evidence
-            .getByRole('button', { name: 'Previous 3 seasons', exact: true })
-            .click();
-        await assertVisible(
-            evidence.getByRole('heading', { name: 'BUF · Previous 3 seasons' }),
-        );
         await checkWidth();
         if (output && width === 390)
             await page.screenshot({
@@ -344,6 +330,10 @@ try {
             page.getByText('Pregame forecast', { exact: true }),
         );
         if (output && width === 390) {
+            await page.screenshot({
+                path: `${output}/overview-desktop.png`,
+                fullPage: true,
+            });
             await page.evaluate(() =>
                 document.documentElement.classList.add('dark'),
             );
@@ -357,10 +347,14 @@ try {
         }
         await select('Trends');
         await assertVisible(
-            page.getByText('Trends & Matchup History', { exact: true }),
+            page.getByRole('heading', { name: 'Team comparison', exact: true }),
         );
-        await assertVisible(evidence.getByRole('heading', { name: /^DET ·/ }));
-        await assertVisible(evidence.getByRole('heading', { name: /^BUF ·/ }));
+        await assertVisible(
+            metrics.getByRole('columnheader', { name: 'DET', exact: true }),
+        );
+        await assertVisible(
+            metrics.getByRole('columnheader', { name: 'BUF', exact: true }),
+        );
         await checkWidth();
         console.log(
             `PASS: ${width}px mobile navigation, evidence, holds, overflow, 1280px desktop restoration`,

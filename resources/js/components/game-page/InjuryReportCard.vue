@@ -29,6 +29,7 @@ const props = withDefaults(
         homeInjuries: InjuryItem[];
         awayInjuriesAvailable?: boolean;
         homeInjuriesAvailable?: boolean;
+        storedListings?: boolean;
         depthChartContext?: PredictionSummary['depth_chart_context'] | null;
     }>(),
     { awayInjuriesAvailable: true, homeInjuriesAvailable: true },
@@ -175,9 +176,23 @@ const hasModelEffect = (injury: InjuryItem): boolean =>
     Math.abs(Number(injury.impact_spread || 0)) > 0 ||
     Math.abs(Number(injury.impact_total || 0)) > 0;
 
+const plainStatus = (value: string | null | undefined): string => {
+    const normalized = String(value || '')
+        .replace(/^INJURY_STATUS_/i, '')
+        .replaceAll('_', ' ')
+        .trim();
+    return normalized
+        ? normalized.charAt(0).toUpperCase() + normalized.slice(1).toLowerCase()
+        : 'Status unavailable';
+};
+
 const injuryNote = (injury: InjuryItem): string => {
     const parts = [injury.detail, injury.type]
         .map((value) => value?.trim())
+        .filter(
+            (value) =>
+                !props.storedListings || !value?.startsWith('INJURY_STATUS_'),
+        )
         .filter(Boolean);
 
     return [...new Set(parts)].join(' - ') || 'No injury detail';
@@ -191,6 +206,7 @@ const compactDate = (value: string | null | undefined): string | null => {
     return parsed.toLocaleDateString(undefined, {
         month: 'short',
         day: 'numeric',
+        year: 'numeric',
     });
 };
 
@@ -277,7 +293,8 @@ const modelImpactLines = computed(() => {
                     v-if="teams.every((team) => team.available)"
                     class="mt-1 text-xs text-muted-foreground"
                 >
-                    {{ totalInjuries }} active
+                    {{ totalInjuries }}
+                    {{ storedListings ? 'stored' : 'active' }}
                     {{ totalInjuries === 1 ? 'listing' : 'listings' }}
                 </p>
                 <p v-else class="mt-1 text-xs text-muted-foreground">
@@ -286,18 +303,44 @@ const modelImpactLines = computed(() => {
             </div>
         </div>
 
+        <div class="mt-3 space-y-1 text-xs text-muted-foreground">
+            <p v-for="team in teams" :key="team.key">
+                {{ team.label }}:
+                {{
+                    team.available
+                        ? availabilityFreshness(team.injuries)
+                        : 'Availability data unavailable.'
+                }}
+            </p>
+        </div>
+        <p v-if="storedListings" class="mt-2 text-sm text-muted-foreground">
+            Stored reports are not verified current availability. Check the
+            supplied source dates below.
+        </p>
         <details
             v-if="modelImpactLines.length > 0"
             class="mt-3 border-t border-border pt-3"
         >
-            <summary class="cursor-pointer text-sm font-medium">
-                Model availability impact
-            </summary>
-            <ul
-                class="mt-2 list-disc space-y-1 pl-4 text-sm text-muted-foreground"
+            <summary
+                class="flex min-h-11 cursor-pointer flex-wrap items-center justify-between gap-2 text-xs"
             >
-                <li v-for="line in modelImpactLines" :key="line">{{ line }}</li>
-            </ul>
+                <span
+                    class="font-semibold tracking-[0.14em] text-muted-foreground uppercase"
+                >
+                    Model availability impact
+                </span>
+                <span
+                    class="rounded-full bg-muted px-2 py-1 font-medium text-foreground/80"
+                >
+                    {{ modelImpactLines.length }}
+                    {{ modelImpactLines.length === 1 ? 'note' : 'notes' }}
+                </span>
+            </summary>
+            <div class="mt-2 space-y-1.5 text-sm text-foreground/90">
+                <p v-for="line in modelImpactLines" :key="line">
+                    {{ line }}
+                </p>
+            </div>
         </details>
 
         <div class="mt-4 grid gap-4 md:grid-cols-2">
@@ -313,7 +356,7 @@ const modelImpactLines = computed(() => {
                     <span class="text-xs text-muted-foreground">
                         {{
                             team.available
-                                ? `${team.injuries.length} active`
+                                ? `${team.injuries.length} ${storedListings ? 'stored listings' : 'active'}`
                                 : 'Unavailable'
                         }}
                     </span>
@@ -370,13 +413,24 @@ const modelImpactLines = computed(() => {
                                             statusClass(injury.status),
                                         ]"
                                     >
-                                        {{ injury.status || 'Injury' }}
+                                        {{
+                                            storedListings
+                                                ? plainStatus(injury.status)
+                                                : injury.status || 'Injury'
+                                        }}
                                     </span>
                                 </div>
 
-                                <div
+                                <component
+                                    :is="storedListings ? 'details' : 'div'"
                                     class="mt-2 flex flex-wrap items-center gap-1.5"
                                 >
+                                    <summary
+                                        v-if="storedListings"
+                                        class="min-h-11 cursor-pointer content-center text-xs"
+                                    >
+                                        Model impact details
+                                    </summary>
                                     <span
                                         :class="[
                                             'rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1',
@@ -407,6 +461,8 @@ const modelImpactLines = computed(() => {
                                             ).toFixed(2)
                                         }}
                                     </span>
+                                </component>
+                                <div class="mt-2 flex flex-wrap gap-1.5">
                                     <span
                                         v-if="compactDate(injury.return_date)"
                                         class="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
@@ -449,7 +505,9 @@ const modelImpactLines = computed(() => {
                 >
                     {{
                         team.available
-                            ? 'No active injuries listed.'
+                            ? storedListings
+                                ? 'No stored injuries listed; report freshness unverified.'
+                                : 'No active injuries listed.'
                             : 'Injury data unavailable.'
                     }}
                 </p>

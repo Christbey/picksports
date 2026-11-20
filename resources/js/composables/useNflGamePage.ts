@@ -89,7 +89,17 @@ export const normalizePrediction = (
     const canonical =
         source.phase === 'pregame' && typeof source.revision === 'number';
 
+    const sourceTimestamp = [
+        source.source_updated_at,
+        source.published_at,
+        source.generated_at,
+        source.updated_at,
+    ].find(
+        (value): value is string =>
+            typeof value === 'string' && Number.isFinite(Date.parse(value)),
+    );
     return {
+        source_updated_at: sourceTimestamp ?? null,
         sport: typeof source.sport === 'string' ? source.sport : undefined,
         confidence_context:
             source.confidence_context as NflPagePrediction['confidence_context'],

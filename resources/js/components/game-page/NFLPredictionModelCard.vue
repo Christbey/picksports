@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { ChevronDown } from 'lucide-vue-next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { NflPagePrediction } from '@/types';
 
@@ -43,6 +44,16 @@ const winner = computed(() => {
         chance: (homeWins ? probability.value : 1 - probability.value) * 100,
     };
 });
+const awayRating = computed(() => finite(props.prediction.away_elo));
+const homeRating = computed(() => finite(props.prediction.home_elo));
+const ratingEdge = computed(() => {
+    if (awayRating.value === null || homeRating.value === null) return null;
+    const difference = Math.round(homeRating.value - awayRating.value);
+    if (difference === 0) return 'Even ratings';
+    const team =
+        difference > 0 ? props.homeLabel || 'Home' : props.awayLabel || 'Away';
+    return `${team} +${Math.abs(difference)} rating edge`;
+});
 </script>
 
 <template>
@@ -71,10 +82,10 @@ const winner = computed(() => {
                     <p
                         class="text-xs font-semibold tracking-wider text-sky-700 uppercase dark:text-sky-300"
                     >
-                        Predicted winner
+                        Model winner
                     </p>
                     <p class="mt-1 text-2xl font-semibold tracking-tight">
-                        {{ winner?.label ?? 'Winner unavailable' }}
+                        {{ winner?.label ?? 'Model winner unavailable' }}
                     </p>
                 </div>
                 <div
@@ -200,56 +211,77 @@ const winner = computed(() => {
                 points; the minimum is
                 {{ prediction.spread_assessment.minimum_edge_points }}.
             </p>
-            <details class="border-t border-border/60">
+            <details class="group border-t border-border/60">
                 <summary
-                    class="min-h-11 cursor-pointer content-center text-xs text-muted-foreground hover:text-foreground"
+                    class="flex min-h-12 w-full cursor-pointer list-none items-center justify-between gap-3 rounded-md text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden"
                 >
-                    Model details &amp; team ratings
+                    Team ratings
+                    <ChevronDown
+                        class="size-4 text-muted-foreground transition-transform group-open:rotate-180"
+                        aria-hidden="true"
+                    />
                 </summary>
-                <div class="space-y-3 pb-1 text-xs text-muted-foreground">
-                    <p>
-                        Model estimates, not sportsbook lines or an approved
-                        bet.
+                <div class="space-y-4 pt-2 pb-1">
+                    <p class="text-xs text-muted-foreground">
+                        Pregame Elo rating
                     </p>
-                    <p
-                        v-if="
-                            prediction.sport === 'cfb' ||
-                            prediction.sport === 'nfl'
-                        "
-                    >
-                        <span
-                            v-if="
-                                prediction.confidence_context
-                                    ?.probability_status ===
-                                'uncalibrated_model_estimate'
-                            "
-                            >Win probability is an uncalibrated model estimate.
-                        </span>
-                        Win probability does not measure the chance of covering
-                        the spread.
-                    </p>
-                    <dl class="flex flex-wrap gap-x-8 gap-y-2">
-                        <div class="flex gap-2">
-                            <dt>{{ awayLabel || 'Away' }} Elo</dt>
+                    <dl class="grid grid-cols-2 gap-4">
+                        <div>
+                            <dt class="text-sm text-muted-foreground">
+                                {{ awayLabel || 'Away' }}
+                            </dt>
                             <dd
-                                class="font-medium text-foreground tabular-nums"
+                                class="mt-1 text-2xl font-semibold tabular-nums"
                             >
                                 {{
-                                    formatNumber(finite(prediction.away_elo), 0)
+                                    awayRating === null
+                                        ? '—'
+                                        : formatNumber(awayRating, 0)
                                 }}
                             </dd>
                         </div>
-                        <div class="flex gap-2">
-                            <dt>{{ homeLabel || 'Home' }} Elo</dt>
+                        <div class="text-right">
+                            <dt class="text-sm text-muted-foreground">
+                                {{ homeLabel || 'Home' }}
+                            </dt>
                             <dd
-                                class="font-medium text-foreground tabular-nums"
+                                class="mt-1 text-2xl font-semibold tabular-nums"
                             >
                                 {{
-                                    formatNumber(finite(prediction.home_elo), 0)
+                                    homeRating === null
+                                        ? '—'
+                                        : formatNumber(homeRating, 0)
                                 }}
                             </dd>
                         </div>
                     </dl>
+                    <p class="text-sm font-medium">
+                        {{ ratingEdge ?? 'Rating comparison unavailable' }}
+                    </p>
+                    <div class="space-y-2 text-xs text-muted-foreground">
+                        <p>
+                            Higher ratings indicate stronger teams. These
+                            ratings are one input to the forecast.
+                        </p>
+                        <p
+                            v-if="
+                                prediction.sport === 'cfb' ||
+                                prediction.sport === 'nfl'
+                            "
+                        >
+                            <span
+                                v-if="
+                                    prediction.confidence_context
+                                        ?.probability_status ===
+                                    'uncalibrated_model_estimate'
+                                "
+                                >Win probability is an uncalibrated model
+                                estimate.
+                            </span>
+                            Win probability reflects winning outright, not
+                            covering the spread.
+                        </p>
+                    </div>
                 </div>
             </details>
         </CardContent>

@@ -155,7 +155,7 @@ test('forecast leads with model spread and total, preserves sign and marks even 
     assert.match(html, /aria-label="Model pick"/);
     assert.match(html, /63\.0%/);
     assert.match(html, /37\.0%/);
-    assert.match(html, /not sportsbook lines or an approved bet/);
+    assert.match(html, /Higher ratings indicate stronger teams/);
     assert.doesNotMatch(html, /<details[^>]*\bopen\b/);
     const even = await forecastHtml({
         predicted_spread: 0,
@@ -167,7 +167,7 @@ test('forecast leads with model spread and total, preserves sign and marks even 
     const away = await forecastHtml({ predicted_spread: -3.5 });
     assert.match(away, /\+3\.5/);
     assert.match(away, /DET projected to win by 3\.5/);
-    assert.match(away, /Winner unavailable/);
+    assert.match(away, /Model winner unavailable/);
 });
 
 test('missing or invalid forecast values never become zero, a favorite or a fake probability', async () => {
@@ -245,7 +245,7 @@ test('pregame forecast stays explicitly labeled during live play', async () => {
     );
     assert.match(html, /Pregame forecast/);
     assert.match(html, /do not update during live play/);
-    assert.match(html, /Predicted winner/);
+    assert.match(html, /Model winner/);
     assert.match(html, /Pregame win outlook/);
     assert.doesNotMatch(html, /60\.0% model win/);
 });
@@ -371,7 +371,7 @@ test('CFB page converts canonical home lines once and preserves legacy margins a
             else assert.match(html, /Unavailable/);
             if (fixture.team)
                 assert.ok(html.includes(`${fixture.team} to win`));
-            assert.match(html, /Predicted winner/);
+            assert.match(html, /Model winner/);
             assert.match(html, /Uncalibrated model estimate/);
             assert.ok(
                 html.indexOf('Uncalibrated model estimate') <
@@ -397,6 +397,103 @@ test('forecast does not label calibrated or unspecified estimates as uncalibrate
             confidence_context,
         });
         assert.doesNotMatch(html, /Uncalibrated model estimate/);
-        assert.match(html, /Predicted winner/);
+        assert.match(html, /Model winner/);
+    }
+});
+
+test('stored roster codes become plain status names without claiming current availability', async () => {
+    const { default: component } = await server.ssrLoadModule(
+        '/resources/js/components/game-page/InjuryReportCard.vue',
+    );
+    const html = await renderToString(
+        createSSRApp(component, {
+            storedListings: true,
+            awayInjuries: [
+                {
+                    id: 1,
+                    player_id: 1,
+                    player_name: 'Stored Player',
+                    status: 'INJURY_STATUS_OUT',
+                    impact_spread: 0.2,
+                    impact_total: 0.1,
+                    type: 'INJURY_STATUS_OUT',
+                    source_updated_at: '2022-10-01T12:00:00Z',
+                    injury_date: '2022-10-01',
+                },
+            ],
+            homeInjuries: [],
+        }),
+    );
+    assert.match(html, /Out/);
+    assert.match(html, /2022/);
+    assert.match(html, /stored listings/);
+    assert.match(html, /not verified current availability/);
+    assert.match(html, /Model impact details/);
+    assert.doesNotMatch(html, /<details[^>]*\bopen\b/);
+    assert.doesNotMatch(html, /INJURY_STATUS|1 active/);
+});
+
+test('NFL comparison renders both teams, truthful seasons and missing metric samples together', async () => {
+    const { default: component } = await server.ssrLoadModule(
+        '/resources/js/components/game-page/NflTeamEvidencePanel.vue',
+    );
+    const evidence = {
+        label: 'Last 5',
+        sample_size: 5,
+        record: { wins: 3, losses: 2, ties: 0 },
+        seasons: [2025],
+        from_date: '2025-12-01',
+        through_date: '2025-12-29',
+        metrics: {
+            points_for: { value: 28, sample_size: 5 },
+            turnovers: { value: 0, sample_size: 0 },
+        },
+    };
+    const profile = { windows: { recent_5: { evidence } }, changes: [] };
+    const html = await renderToString(
+        createSSRApp(component, {
+            workspace: true,
+            away: profile,
+            home: profile,
+            awayLabel: 'DET',
+            homeLabel: 'BUF',
+            window: 'recent_5',
+        }),
+    );
+    assert.match(html, /Team comparison metrics/);
+    assert.match(html, /DET/);
+    assert.match(html, /BUF/);
+    assert.match(html, /Seasons: 2025/);
+    assert.match(html, /28\.00/);
+    assert.doesNotMatch(
+        html,
+        /0\.00|Team evidence selection|Evidence views|Metric group/,
+    );
+    assert.doesNotMatch(html, /<details[^>]*\bopen\b/);
+});
+
+test('team ratings explain Elo and compare available ratings without inventing missing edges', async () => {
+    for (const [away, home, expected] of [
+        [1459, 1515, 'BUF +56 rating edge'],
+        [1515, 1459, 'DET +56 rating edge'],
+        [1500, 1500, 'Even ratings'],
+        [0, 56, 'BUF +56 rating edge'],
+    ]) {
+        const html = await forecastHtml({
+            sport: 'nfl',
+            away_elo: away,
+            home_elo: home,
+        });
+        assert.match(html, /Team ratings/);
+        assert.match(html, /Pregame Elo rating/);
+        assert.ok(html.includes(expected));
+        assert.match(html, /These ratings are one input to the forecast/);
+        assert.match(html, /winning outright, not covering the spread/);
+        assert.doesNotMatch(html, /<details[^>]*\bopen\b/);
+    }
+    for (const missing of [null, undefined, '', 'bad', Infinity]) {
+        const html = await forecastHtml({ away_elo: missing, home_elo: 1500 });
+        assert.match(html, /Rating comparison unavailable/);
+        assert.doesNotMatch(html, /rating edge|NaN|Infinity/);
     }
 });

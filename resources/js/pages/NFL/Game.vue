@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { storedTimestamp } from '@/lib/dataFreshness';
 import { Button } from '@/components/ui/button';
 import { Activity, ClipboardList, Shield, TrendingUp } from 'lucide-vue-next';
 import BettingPlanCard from '@/components/game-page/BettingPlanCard.vue';
@@ -25,6 +26,9 @@ const {
     depthCharts,
 } = useNflDetailedGamePage(props.gameId);
 
+const forecastSourceUpdatedAt = computed(
+    () => predictionSectionProps.value.prediction?.source_updated_at,
+);
 const awayInjuries = computed(
     () => pageProps.value.awayTeam?.active_injuries ?? [],
 );
@@ -69,13 +73,13 @@ const sectionClass = (section: string) =>
         <template #afterHero>
             <nav
                 aria-label="Game sections"
-                class="grid grid-cols-2 gap-2 rounded-2xl border border-border/70 bg-card p-2 sm:flex"
+                class="grid grid-cols-4 gap-1 border-b border-border/70 pb-2"
             >
                 <Button
                     v-for="(section, key) in mobileSections"
                     :key="key"
                     type="button"
-                    class="min-h-11 min-w-0 flex-1 justify-start px-3 sm:justify-center"
+                    class="min-h-11 min-w-0 flex-1 flex-col gap-1 px-1 text-xs sm:flex-row sm:justify-center"
                     :variant="mobileSection === key ? 'default' : 'ghost'"
                     :aria-pressed="mobileSection === key"
                     @click="selectSection(key)"
@@ -88,20 +92,11 @@ const sectionClass = (section: string) =>
                 v-if="mobileSection !== 'research'"
                 class="text-xs text-muted-foreground"
             >
-                <span
-                    v-if="
-                        analysisSectionProps.livePredictionData?.sourceUpdatedAt
-                    "
+                <span v-if="forecastSourceUpdatedAt"
+                    >Forecast source updated
+                    {{ storedTimestamp(forecastSourceUpdatedAt) }}</span
                 >
-                    Updated
-                    {{
-                        new Date(
-                            analysisSectionProps.livePredictionData
-                                .sourceUpdatedAt,
-                        ).toLocaleString()
-                    }}</span
-                >
-                <span v-else>Latest saved game information</span>
+                <span v-else>Forecast update time unavailable</span>
             </p>
             <div :class="sectionClass('overview')">
                 <NflGameEnhancements v-bind="predictionSectionProps" />
@@ -122,6 +117,7 @@ const sectionClass = (section: string) =>
                     Current availability report—not a preserved kickoff roster.
                 </p>
                 <InjuryReportCard
+                    stored-listings
                     :away-team-abbr="pageProps.awayTeam?.abbreviation"
                     :home-team-abbr="pageProps.homeTeam?.abbreviation"
                     :away-injuries="awayInjuries"

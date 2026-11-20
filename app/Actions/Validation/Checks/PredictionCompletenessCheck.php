@@ -38,6 +38,9 @@ class PredictionCompletenessCheck implements ValidationCheck
         if ($sport === 'cfb') {
             $games = $games->filter(fn ($game) => $coverage->requiredTeamIds($game) !== [])->values();
         }
+        $consideredGames = $games->count();
+        $expectedHolds = $predictionCoverage->expectedHolds($sport, $games);
+        $games = $games->reject(fn (Model $game): bool => $expectedHolds->has($game->id))->values();
         $published = $predictionCoverage->forGames($sport, $games);
         $totalGames = $games->count();
         $missingGames = $games->filter(fn (Model $game) => ! $published->has($predictionCoverage->key($sport, $game)))->values();
@@ -53,7 +56,7 @@ class PredictionCompletenessCheck implements ValidationCheck
         $failPct = (float) config('validation.thresholds.prediction_completeness.missing_fail_pct', 0.20);
 
         $status = 'passing';
-        $message = "Predictions are present for {$totalGames}/{$totalGames} active games in the next {$windowDays} days.";
+        $message = "Predictions are present for {$totalGames}/{$totalGames} forecast-eligible active games in the next {$windowDays} days.";
 
         if ($missingCount > 0) {
             $status = $missingPct >= $failPct ? 'failing' : 'warning';
@@ -63,6 +66,10 @@ class PredictionCompletenessCheck implements ValidationCheck
         if ($staleGames->isNotEmpty()) {
             $status = 'failing';
             $message .= ' '.$staleGames->count().' published pregame forecast(s) are older than 24 hours.';
+        }
+
+        if ($expectedHolds->isNotEmpty()) {
+            $message .= ' '.$expectedHolds->count().' placeholder matchup(s) remain expected forecast holds.';
         }
 
         return [
@@ -77,6 +84,10 @@ class PredictionCompletenessCheck implements ValidationCheck
                 'window_days' => $windowDays,
                 'season_stage' => $stageContext->toArray(),
                 'active_games' => $totalGames,
+                'scheduled_games_considered' => $consideredGames,
+                'expected_forecast_holds' => $expectedHolds->count(),
+                'forecast_hold_reasons' => $expectedHolds->countBy()->all(),
+                'sample_expected_hold_game_ids' => $expectedHolds->keys()->take(5)->all(),
                 'games_missing_predictions' => $missingCount,
                 'prediction_source' => $canonicalMode ? 'canonical' : 'legacy',
                 'games_with_stale_predictions' => $staleGames->count(),

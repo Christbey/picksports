@@ -2,6 +2,7 @@
 
 use App\Actions\NBA\GenerateCanonicalPrediction;
 use App\Actions\NBA\GeneratePrediction;
+use App\Exceptions\Predictions\WcbbUnusableMetricsException;
 use App\Models\BetDecision;
 use App\Models\CanonicalPrediction;
 use App\Models\NBA\Game;
@@ -172,14 +173,14 @@ it('rejects NBA recovery flags for college basketball', function () {
     $this->artisan('sports:ensure-basketball-predictions cbb --refresh-existing')->assertFailed();
 });
 
-it('schedules missing NBA and CBB coverage across the full readiness horizon without refreshing existing forecasts', function (string $sport) {
+it('schedules missing NBA CBB and WCBB coverage across the full readiness horizon without refreshing existing forecasts', function (string $sport) {
     $event = collect(app(Schedule::class)->events())
         ->firstWhere('description', strtoupper($sport).': Ensure Pregame Prediction Coverage');
     expect($event)->not->toBeNull()->and($event->command)->toContain("sports:ensure-basketball-predictions {$sport} --days-forward=8")
         ->and($event->command)->not->toContain('--refresh-existing')->and($event->expression)->toBe('*/5 * * * *');
-})->with(['nba', 'cbb']);
+})->with(['nba', 'cbb', 'wcbb']);
 
-it('fills eighth-day NBA and CBB forecasts once while retaining narrower explicit windows', function (string $sport) {
+it('fills eighth-day NBA CBB and WCBB forecasts once while retaining narrower explicit windows', function (string $sport) {
     config(["prediction_lifecycle.canonical_pipeline.{$sport}" => true, "prediction_lifecycle.canonical_reads.{$sport}" => false]);
     $context = app(SportContextResolver::class)->resolve($sport);
     $gameClass = $context->models['game'];
@@ -202,7 +203,7 @@ it('fills eighth-day NBA and CBB forecasts once while retaining narrower explici
     $this->artisan('sports:ensure-basketball-predictions', ['sport' => $sport, '--days-forward' => 8])
         ->expectsOutput('Pregame coverage: 0 generated; 0 still missing.')->assertSuccessful();
     expect(CanonicalPrediction::where('sport', $sport)->count())->toBe(1)->and(BetDecision::count())->toBe(0);
-})->with(['nba', 'cbb']);
+})->with(['nba', 'cbb', 'wcbb']);
 
 it('reports CBB placeholder holds without failing or using the generation batch', function () {
     config(['prediction_lifecycle.canonical_pipeline.cbb' => false]);
@@ -252,3 +253,24 @@ it('records a college missed tipoff once while retrying a game with a recoverabl
         ->expectsOutput('Pregame coverage: 1 generated; 0 still missing.')->assertSuccessful();
     expect($missed->prediction()->exists())->toBeFalse();
 })->with(['cbb', 'wcbb']);
+
+it('keeps unusable WCBB inputs held throughout the widened scheduled repair horizon', function () {
+    config(['prediction_lifecycle.canonical_pipeline.wcbb' => true, 'prediction_lifecycle.canonical_reads.wcbb' => false]);
+    $tip = now()->addDays(8)->startOfDay()->addHours(20);
+    $event = SportEvent::factory()->create(['sport' => 'wcbb', 'season' => 2027, 'starts_at' => $tip]);
+    $utc = $event->fresh()->starts_at->utc();
+    App\Models\WCBB\Game::factory()->create([
+        'season' => 2027, 'season_type' => 2, 'status' => 'STATUS_SCHEDULED',
+        'sport_event_id' => $event->id, 'game_date' => $utc->toDateString(), 'game_time' => $utc->toTimeString(),
+        'home_team_id' => App\Models\WCBB\Team::factory(), 'away_team_id' => App\Models\WCBB\Team::factory(),
+    ]);
+    $this->mock(App\Actions\WCBB\GenerateCanonicalPrediction::class)->shouldReceive('execute')->once()
+        ->andThrow(new WcbbUnusableMetricsException('Metrics remain unusable.'));
+    $this->mock(PipelineCommandRunner::class)->shouldNotReceive('call');
+
+    $this->artisan('sports:ensure-basketball-predictions wcbb --days-forward=8')
+        ->expectsOutput('WCBB coverage: 0 newly missed tipoff; 0 pending inputs; 1 held for unusable metrics; 0 deferred by batch limit.')
+        ->expectsOutput('Pregame coverage: 0 generated; 0 still missing.')->assertSuccessful();
+    expect(CanonicalPrediction::where('sport', 'wcbb')->count())->toBe(0)
+        ->and(BetDecision::count())->toBe(0);
+});

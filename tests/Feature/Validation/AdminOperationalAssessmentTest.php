@@ -73,6 +73,22 @@ it('labels fallback comparisons and leaves changes unknown when no baseline exis
         ->and($wcbb['evidence_gaps'])->not->toBeEmpty();
 });
 
+it('keeps expected placeholder holds visible without double counting checks or creating repair actions', function () {
+    operationalAssessmentRun('cbb', 'full', '2026-11-18 07:00:00', [
+        'validation_prediction_completeness' => ['status' => 'passing', 'facts' => ['expected_forecast_holds' => 24]],
+        'validation_upcoming_game_readiness' => ['status' => 'passing', 'facts' => ['expected_forecast_holds' => 24]],
+        'malformed_count' => ['status' => 'passing', 'facts' => ['expected_forecast_holds' => 99.5]],
+    ], 'passing');
+
+    $assessment = app(AdminOperationalAssessment::class)->build();
+    $cbb = collect($assessment['sports'])->first(fn ($entry) => $entry['sport'] === 'cbb' && $entry['scope'] === 'full');
+
+    expect($cbb['status'])->toBe('passing')
+        ->and($cbb['expected_hold_count'])->toBe(24)
+        ->and($cbb['findings'])->toBe([])
+        ->and(collect($assessment['actions'])->where('sport', 'cbb'))->toBeEmpty();
+});
+
 it('preserves incomplete attempt evidence and separates full and data scope baselines', function () {
     $full = operationalAssessmentRun('nba', 'full', '2026-11-18 06:00:00', ['odds' => ['status' => 'passing']], 'passing', ['execution_status' => 'failed', 'post_processing_errors' => ['summary' => 'RuntimeException']]);
     $data = operationalAssessmentRun('nba', 'data', '2026-11-18 06:30:00', ['stats' => ['status' => 'warning']], 'warning');

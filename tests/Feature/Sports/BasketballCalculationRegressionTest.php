@@ -271,6 +271,8 @@ it('keeps neutral games in college season metrics but excludes them from stored 
             'away_team_id' => $swapped ? $home->id : $away->id,
             'season' => 2027, 'status' => 'STATUS_FINAL',
             'game_date' => '2026-10-19', 'neutral_site' => $neutral,
+            'home_score' => $swapped ? 70 : ($neutral ? 100 : 80),
+            'away_score' => $swapped ? ($neutral ? 100 : 80) : 70,
         ]);
         foreach ([[$home, $neutral ? 100 : 80], [$away, 70]] as [$team, $points]) {
             calculationReviewStat($sport, $statClass, [

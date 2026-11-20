@@ -12,6 +12,12 @@ class CollegeBasketballPregameEligibility
         return ! $this->placeholder($home) && ! $this->placeholder($away);
     }
 
+    public function hasPlaceholderTeams(?Model $home, ?Model $away): bool
+    {
+        return $home !== null && $away !== null
+            && ($this->placeholder($home) || $this->placeholder($away));
+    }
+
     public function identityMatches(Model $game): bool
     {
         $event = $game->sportEvent;

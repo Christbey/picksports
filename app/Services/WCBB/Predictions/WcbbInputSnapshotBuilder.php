@@ -56,11 +56,14 @@ class WcbbInputSnapshotBuilder extends BasketballInputSnapshotBuilder
             return parent::metricFor($game, $team, $capturedAt, $cutoffAt, $release);
         }
 
-        return app(GeneratePrediction::class)->metricWithPreviousSeasonFallback(
-            (int) $team->getKey(),
-            (int) $game->season,
-            $capturedAt,
-            $game->game_date->toDateString(),
+        return app(EstablishedModelTransport::class)->usingConfiguration(
+            (array) data_get($release->configuration, 'forecast.configuration', []),
+            fn () => app(GeneratePrediction::class)->metricWithPreviousSeasonFallback(
+                (int) $team->getKey(),
+                (int) $game->season,
+                $capturedAt,
+                $game->game_date->toDateString(),
+            ),
         );
     }
 

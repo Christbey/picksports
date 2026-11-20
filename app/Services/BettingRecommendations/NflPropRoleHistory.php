@@ -10,6 +10,7 @@ class NflPropRoleHistory
     /** Do not confuse a known relief appearance with a normal starting workload. */
     public function select(Collection $history, Player $player, ?string $expectedQuarterback = null): array
     {
+        (new \Illuminate\Database\Eloquent\Collection($history->all()))->loadMissing('game');
         $starter = fn ($row) => (int) $row->team_id === (int) $row->game->home_team_id
             ? $row->game->home_qb_name : $row->game->away_qb_name;
         $same = fn (?string $a, ?string $b) => filled($a) && filled($b) && strcasecmp(trim($a), trim($b)) === 0;

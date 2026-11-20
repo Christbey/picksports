@@ -9,6 +9,12 @@ use Illuminate\Http\Resources\Json\JsonResource;
 /** @mixin CfbdTeamMapping */
 class CfbdTeamMappingResource extends JsonResource
 {
+    /** @param array{name: string, score: int}|null $suggestion */
+    public function __construct(mixed $resource, private readonly ?array $suggestion = null)
+    {
+        parent::__construct($resource);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -20,8 +26,8 @@ class CfbdTeamMappingResource extends JsonResource
             'external_team_name' => $this->cfbd_team_name,
             'external_team_abbreviation' => $this->cfbd_abbreviation,
             'external_team_id' => $this->cfbd_team_id,
-            'suggested_espn_team_name' => $this->suggested_espn_team_name,
-            'suggested_match_quality_score' => $this->suggested_match_quality_score,
+            'suggested_espn_team_name' => $this->suggestion['name'] ?? null,
+            'suggested_match_quality_score' => $this->suggestion['score'] ?? null,
             'sport' => $this->sport,
             'conference' => $this->conference,
             'division' => $this->division,

@@ -5,12 +5,18 @@ namespace App\Actions\ESPN\NFL;
 use App\Actions\ESPN\AbstractStandardSyncGameDetails;
 use App\Actions\GradePlayerProps;
 use App\Models\NFL\Game;
+use App\Services\ESPN\NFL\EspnService;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Model;
 
 class SyncGameDetails extends AbstractStandardSyncGameDetails
 {
     protected const GAME_MODEL_CLASS = Game::class;
+
+    public function __construct(EspnService $espnService, SyncPlayerStats $syncPlayerStats, SyncTeamStats $syncTeamStats, SyncPlays $syncPlays)
+    {
+        parent::__construct($espnService, $syncPlayerStats, $syncTeamStats, $syncPlays);
+    }
 
     protected function includeGameUpdatedFlag(): bool
     {

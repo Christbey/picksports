@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Sports;
 
+use App\Http\Resources\NFL\GameResource;
 use App\Models\User;
 use App\Services\Predictions\LivePredictionStore;
 use App\Services\Predictions\PredictionResourcePresentationData;
@@ -40,7 +41,9 @@ abstract class AbstractPredictionResource extends JsonResource
             'game_id' => $this->game_id,
             'game' => $this->when(
                 $this->preparedData()->includeGame,
-                fn () => $gameResourceClass::make($this->whenLoaded('game')),
+                fn () => $gameResourceClass === GameResource::class
+                    ? new $gameResourceClass($this->whenLoaded('game'), $this->preparedData()->liveWinProbability)
+                    : $gameResourceClass::make($this->whenLoaded('game')),
             ),
         ];
     }
@@ -107,9 +110,7 @@ abstract class AbstractPredictionResource extends JsonResource
     /** @return array<string, mixed> */
     private function liveFields(): array
     {
-        return $this->liveFields ??= app(LivePredictionStore::class)->forPrediction(
-            $this->resource, explode('_', $this->resource->getTable())[0],
-        );
+        return $this->liveFields ??= $this->preparedData()->liveFields + LivePredictionStore::EMPTY_FIELDS;
     }
 
     /**

@@ -2,36 +2,47 @@
 
 namespace App\Actions\ESPN;
 
+use App\Actions\ESPN\Concerns\ValidatesBoxscoreReplacement;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractFootballSyncTeamStats
 {
+    use ValidatesBoxscoreReplacement;
+
     protected const TEAM_MODEL_CLASS = Model::class;
 
     protected const TEAM_STAT_MODEL_CLASS = Model::class;
 
     public function execute(array $gameData, Model $game): int
     {
-        if (! isset($gameData['boxscore']['teams'])) {
+        return $game->getConnection()->transaction(function () use ($gameData, $game): int {
+            $game->newQuery()->whereKey($game->getKey())->lockForUpdate()->firstOrFail();
+
+            return $this->replaceTeamStats($gameData, $game);
+        });
+    }
+
+    protected function replaceTeamStats(array $gameData, Model $game): int
+    {
+        $sections = $gameData['boxscore']['teams'] ?? null;
+        if (! is_array($sections) || $sections === []) {
             return 0;
         }
 
         $teamStatModel = $this->teamStatModelClass();
-        $this->clearExisting($game);
 
         $synced = 0;
         $teamModel = $this->teamModelClass();
+        $teams = $this->replacementTeams($sections, $game, $teamModel, $teamStatModel);
+        if ($teams === null) {
+            return 0;
+        }
+        $rows = [];
 
-        foreach ($gameData['boxscore']['teams'] as $teamData) {
-            $teamEspnId = $teamData['team']['id'] ?? null;
-            if (! $teamEspnId) {
-                continue;
-            }
-
-            $team = $teamModel::query()->where('espn_id', $teamEspnId)->first();
-
-            if (! $team) {
-                continue;
+        foreach ($sections as $teamData) {
+            $team = $teams->get($teamData['team']['id']);
+            if (! is_array($teamData['statistics'] ?? null) || $teamData['statistics'] === []) {
+                return 0;
             }
 
             $stats = $this->parseTeamStats($teamData['statistics'] ?? []);
@@ -43,14 +54,23 @@ abstract class AbstractFootballSyncTeamStats
                 ...$this->sportSpecificAttributes($stats),
             ];
 
+            if (collect(array_diff_key($attributes, array_flip(['team_id', 'game_id'])))->every(fn ($value): bool => $value === null)) {
+                return 0;
+            }
+
             $teamType = $this->resolveTeamType($team, $game, $teamData);
             if ($teamType !== null) {
                 $attributes['team_type'] = $teamType;
             }
 
-            $this->storeStat($attributes);
+            $rows[] = $attributes;
 
             $synced++;
+        }
+
+        $this->clearExisting($game);
+        foreach ($rows as $attributes) {
+            $this->storeStat($attributes);
         }
 
         return $synced;

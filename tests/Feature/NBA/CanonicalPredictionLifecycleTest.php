@@ -183,8 +183,8 @@ it('evaluates NBA results idempotently and appends corrected result history', fu
         '--game' => $fixture['game']->getKey(),
     ])->assertSuccessful();
 
-    $results = SportEventResult::query()->orderBy('revision')->get();
-    $evaluations = PredictionEvaluation::query()->orderBy('evaluation_revision')->get();
+    $results = SportEventResult::query()->with('supersedes')->orderBy('revision')->get();
+    $evaluations = PredictionEvaluation::query()->with('supersedes')->orderBy('evaluation_revision')->get();
 
     expect($results)->toHaveCount(2)
         ->and($results[1]->supersedes->is($results[0]))->toBeTrue()

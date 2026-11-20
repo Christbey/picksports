@@ -16,6 +16,8 @@ class BettingForecastSource
         private readonly PredictionDeliverySource $delivery,
         private readonly CanonicalSportPredictionQuery $canonical,
         private readonly SportContextResolver $sports,
+        private readonly LivePredictionStore $live,
+        private readonly GameBettingRecommendationService $recommendations,
     ) {}
 
     public function usesCanonical(string $sport): bool
@@ -48,7 +50,7 @@ class BettingForecastSource
         $models = $query->get();
         $games = $models->map(fn (Model $model) => $model instanceof CanonicalPrediction
             ? $model->sportEvent?->getRelation($sport.'Game') : $model->getRelationValue('game'))->filter();
-        app(LivePredictionStore::class)->preload($games);
+        $this->live->preload($games);
 
         return $models->map(fn (Model $model): BettingForecast => $this->map($model, $sport))
             ->filter(fn (BettingForecast $forecast): bool => $forecast->game !== null)->values();
@@ -135,7 +137,7 @@ class BettingForecastSource
                 continue;
             }
             $context = $this->delivery->context($forecast->source, $forecast->source->sport, $forecast->game);
-            foreach (app(GameBettingRecommendationService::class)->forPrediction($context) as $recommendation) {
+            foreach ($this->recommendations->forPrediction($context) as $recommendation) {
                 $side = $recommendation['pick_side'];
                 $game = $forecast->game;
                 $team = $side === 'home' ? $game->homeTeam : ($side === 'away' ? $game->awayTeam : null);
@@ -170,7 +172,7 @@ class BettingForecastSource
         $inputs = (array) ($model->calculationRun?->inputSnapshot?->inputs ?? []);
         $market = data_get($inputs, 'pregame_market.available') === true ? (array) data_get($inputs, 'pregame_market.consensus', []) : [];
         $homeBookmakerLine = $this->number(data_get($market, 'spread.line'));
-        $live = app(LivePredictionStore::class)->fields($context->game);
+        $live = $this->live->fields($context->game);
 
         return new BettingForecast(
             source: $model,
@@ -199,7 +201,7 @@ class BettingForecastSource
     {
         $metadata = (array) ($model->model_metadata ?? []);
         $game ??= $model->getRelationValue('game');
-        $live = $game instanceof Model ? app(LivePredictionStore::class)->fields($game) : LivePredictionStore::EMPTY_FIELDS;
+        $live = $game instanceof Model ? $this->live->fields($game) : LivePredictionStore::EMPTY_FIELDS;
         foreach (['signal_market_spread' => 'market_spread', 'signal_market_total' => 'market_total'] as $attribute => $key) {
             if (is_numeric($model->getAttribute($attribute))) {
                 data_set($metadata, 'analysis_layer.calculated_edge.'.$key, (float) $model->getAttribute($attribute));

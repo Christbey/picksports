@@ -56,10 +56,10 @@ class SportGameController extends Controller
     ): JsonResponse {
         $context = $sports->resolve($sport);
         $resolvedGame = $games->find($context, $game, $request->user());
-        $resolvedGame->setAttribute('matchup_context', $matchupContext->forGame($resolvedGame));
+        $preparedMatchup = $matchupContext->forGame($resolvedGame);
 
         return response()->json([
-            'data' => new SportGameResource($resolvedGame, $context),
+            'data' => new SportGameResource($resolvedGame, $context, $preparedMatchup),
             ...(in_array($context->slug, ['nba', 'cbb', 'mlb', 'wcbb', 'wnba'], true) ? ['historical_prediction' => app(HistoricalForecastArchive::class)->forGame($resolvedGame, $context->slug)] : []),
             'meta' => [
                 'sport' => $context->slug,

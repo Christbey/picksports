@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Api\V2;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V2\NativeDeviceSessionRefreshRequest;
+use App\Http\Requests\Api\V2\NativeDeviceSessionStorePushRegistrationRequest;
+use App\Http\Requests\Api\V2\NativeDeviceSessionStoreRequest;
 use App\Models\DeviceSession;
 use App\Services\Auth\Native\DevicePushRegistrationService;
 use App\Services\Auth\Native\DeviceSessionTokenService;
@@ -11,17 +14,12 @@ use App\Services\Auth\Native\InvalidRefreshToken;
 use App\Support\Api\ApiV2ErrorResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 
 class NativeDeviceSessionController extends Controller
 {
-    public function store(Request $request, DeviceSessionTokenService $tokens): JsonResponse
+    public function store(NativeDeviceSessionStoreRequest $request, DeviceSessionTokenService $tokens): JsonResponse
     {
-        $validated = $request->validate([
-            'device_name' => ['required', 'string', 'max:120'],
-            'platform' => ['required', Rule::in(['ios', 'android'])],
-            'device_identifier' => ['nullable', 'string', 'max:255'],
-        ]);
+        $validated = $request->validated();
 
         $pair = $tokens->issue(
             $request->user(),
@@ -34,13 +32,11 @@ class NativeDeviceSessionController extends Controller
     }
 
     public function refresh(
-        Request $request,
+        NativeDeviceSessionRefreshRequest $request,
         DeviceSessionTokenService $tokens,
         ApiV2ErrorResponse $errors,
     ): JsonResponse {
-        $validated = $request->validate([
-            'refresh_token' => ['required', 'string', 'max:512'],
-        ]);
+        $validated = $request->validated();
 
         try {
             $pair = $tokens->rotate($validated['refresh_token']);
@@ -67,15 +63,11 @@ class NativeDeviceSessionController extends Controller
     }
 
     public function storePushRegistration(
-        Request $request,
+        NativeDeviceSessionStorePushRegistrationRequest $request,
         string $deviceSession,
         DevicePushRegistrationService $registrations,
     ): JsonResponse {
-        $validated = $request->validate([
-            'provider' => ['required', Rule::in(['apns', 'fcm'])],
-            'device_token' => ['required', 'string', 'max:4096'],
-            'environment' => ['nullable', Rule::in(['sandbox', 'production'])],
-        ]);
+        $validated = $request->validated();
         $session = $this->ownedActiveSession($request, $deviceSession);
         $registration = $registrations->register(
             $session,

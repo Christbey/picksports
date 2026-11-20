@@ -4,6 +4,7 @@ namespace App\Services\Sports;
 
 use App\Models\SportEvent;
 use App\Models\SportEventProviderMapping;
+use App\Services\Relationships\SportRecordResolver;
 use App\Services\Sports\Exceptions\SportEventIdentityConflict;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
@@ -16,9 +17,12 @@ use InvalidArgumentException;
 
 class SportEventIdentitySynchronizer
 {
+    public function __construct(private readonly SportRecordResolver $records) {}
+
     public function sync(string $sport, Model $game): SportEvent
     {
         $sport = strtolower(trim($sport));
+        $this->records->assertGameType($sport, $game);
         if ($sport === '' || ! $game->exists) {
             throw new InvalidArgumentException('A sport and persisted game are required.');
         }

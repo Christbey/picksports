@@ -3,6 +3,11 @@
 namespace App\Http\Controllers\Api\CBB;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\CBB\BracketIndexRequest;
+use App\Http\Requests\Api\CBB\BracketLeaderboardRequest;
+use App\Http\Requests\Api\CBB\BracketShowCurrentRequest;
+use App\Http\Requests\Api\CBB\BracketStoreRequest;
+use App\Http\Requests\Api\CBB\BracketUpsertCurrentRequest;
 use App\Http\Resources\CbbBracketResource;
 use App\Models\CbbBracket;
 use App\Models\Group;
@@ -16,11 +21,9 @@ use Illuminate\Validation\ValidationException;
 
 class BracketController extends Controller
 {
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(BracketIndexRequest $request): AnonymousResourceCollection
     {
-        $validated = $request->validate([
-            'season' => 'nullable|integer|min:2000|max:2100',
-        ]);
+        $validated = $request->validated();
 
         $query = $this->ownedBrackets($request);
 
@@ -33,13 +36,9 @@ class BracketController extends Controller
         );
     }
 
-    public function leaderboard(Request $request): JsonResponse
+    public function leaderboard(BracketLeaderboardRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'season' => 'required|integer|min:2000|max:2100',
-            'group_id' => 'nullable|integer',
-            'limit' => 'nullable|integer|min:1|max:100',
-        ]);
+        $validated = $request->validated();
 
         $limit = $validated['limit'] ?? 25;
         $groupId = $this->resolveOwnedGroupId($request, $validated['group_id'] ?? null, (int) $validated['season']);
@@ -78,11 +77,9 @@ class BracketController extends Controller
         return response()->json(['data' => $rows]);
     }
 
-    public function showCurrent(Request $request): JsonResponse|CbbBracketResource
+    public function showCurrent(BracketShowCurrentRequest $request): JsonResponse|CbbBracketResource
     {
-        $validated = $request->validate([
-            'season' => 'required|integer|min:2000|max:2100',
-        ]);
+        $validated = $request->validated();
 
         $bracket = $this->ownedBrackets($request)
             ->where('season', $validated['season'])
@@ -101,15 +98,9 @@ class BracketController extends Controller
         return new CbbBracketResource($this->findOwnedBracket($request, $publicId));
     }
 
-    public function store(Request $request): JsonResponse|CbbBracketResource
+    public function store(BracketStoreRequest $request): JsonResponse|CbbBracketResource
     {
-        $validated = $request->validate([
-            'season' => 'required|integer|min:2000|max:2100',
-            'name' => 'nullable|string|max:255',
-            'group_id' => 'nullable|integer',
-            'picks' => 'nullable|array',
-            'picks.*' => 'string|max:255',
-        ]);
+        $validated = $request->validated();
 
         $this->ensureSeasonUnlocked((int) $validated['season']);
         $groupId = $this->resolveOwnedGroupId($request, $validated['group_id'] ?? null, (int) $validated['season']);
@@ -129,15 +120,9 @@ class BracketController extends Controller
             ->setStatusCode(201);
     }
 
-    public function upsertCurrent(Request $request): JsonResponse|CbbBracketResource
+    public function upsertCurrent(BracketUpsertCurrentRequest $request): JsonResponse|CbbBracketResource
     {
-        $validated = $request->validate([
-            'season' => 'required|integer|min:2000|max:2100',
-            'name' => 'nullable|string|max:255',
-            'group_id' => 'nullable|integer',
-            'picks' => 'required|array',
-            'picks.*' => 'string|max:255',
-        ]);
+        $validated = $request->validated();
 
         $this->ensureSeasonUnlocked((int) $validated['season']);
         $groupId = $this->resolveOwnedGroupId($request, $validated['group_id'] ?? null, (int) $validated['season']);

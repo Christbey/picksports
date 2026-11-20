@@ -3,11 +3,11 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Settings\AlertPreferenceUpdateRequest;
 use App\Models\UserAlertPreference;
 use App\Services\AlertService;
 use App\Services\Settings\AlertPreferencePageDataService;
 use App\Support\SportCatalog;
-use App\Support\Validation\AlertPreferenceRules;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -22,9 +22,9 @@ class AlertPreferenceController extends Controller
         return Inertia::render('settings/AlertPreferences', $this->pageDataService->build($request->user()));
     }
 
-    public function update(Request $request): RedirectResponse
+    public function update(AlertPreferenceUpdateRequest $request): RedirectResponse
     {
-        $validated = $request->validate(AlertPreferenceRules::settingsUpdate());
+        $validated = $request->validated();
         $existing = UserAlertPreference::query()
             ->where('user_id', $request->user()->id)
             ->first();

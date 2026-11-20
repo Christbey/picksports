@@ -17,10 +17,35 @@ class LivePropProjector
     {
         $pregame = PlayerProp::where('game_id', $game->id)->whereNotNull('player_id')
             ->where('fetched_at', '<', CfbPropEligibility::kickoff($game)->setTimezone(config('app.timezone')))
-            ->with('player')->latest('fetched_at')->get()->unique(fn ($p) => $p->player_id.':'.$p->market);
+            ->where('id', PlayerProp::query()->from('cfb_player_props as candidate')->select('candidate.id')
+                ->whereColumn('candidate.game_id', 'cfb_player_props.game_id')
+                ->whereColumn('candidate.player_id', 'cfb_player_props.player_id')
+                ->whereColumn('candidate.market', 'cfb_player_props.market')
+                ->where('candidate.fetched_at', '<', CfbPropEligibility::kickoff($game)->setTimezone(config('app.timezone')))
+                ->orderByDesc('candidate.fetched_at')->orderByDesc('candidate.id')->limit(1))
+            ->with(['player' => fn ($query) => $query->withExists([
+                'activeInjuries as unavailable' => fn ($injuries) => $injuries->whereRaw("LOWER(status) NOT IN ('active', 'available', 'probable')"),
+            ])])->latest('fetched_at')->get();
         $first = LivePredictionSnapshot::where('game_id', $game->id)->where('source', 'live_feed')->oldest('id')->first();
         $baselines = collect($first?->props ?? [])->keyBy(fn ($p) => $p['player_id'].':'.$p['market']);
         $stats = $statsObserved ? PlayerStat::where('game_id', $game->id)->when($statsObservedSince, fn ($q) => $q->where('updated_at', '>=', $statsObservedSince))->get()->keyBy('player_id') : collect();
+        $histories = [];
+        foreach (self::FIELDS as $market => $field) {
+            $needed = $pregame->where('market', $market)->filter(function ($prop) use ($baselines) {
+                $baseline = $baselines->get($prop->player_id.':'.$prop->market);
+
+                return $prop->player && ($baseline === null || ! isset($baseline['sample']));
+            });
+            if ($needed->isEmpty()) {
+                continue;
+            }
+            $histories[$field] = PlayerStat::query()->whereIn('player_id', $needed->pluck('player_id')->unique())
+                ->whereIn('team_id', [$game->home_team_id, $game->away_team_id])->whereNotNull($field)
+                ->whereHas('game', fn ($query) => $query->where('status', 'STATUS_FINAL')->whereDate('game_date', '<', $game->game_date)
+                    ->where('season', '>=', (int) $game->season - 1)->whereIn('season_type', [2, 3]))
+                ->select(['player_id', 'team_id'])->selectRaw('COUNT(*) as sample, AVG('.$field.') as mean')
+                ->groupBy('player_id', 'team_id')->get()->keyBy(fn ($row) => $row->player_id.':'.$row->team_id);
+        }
         $rows = [];
         foreach ($pregame as $prop) {
             $field = self::FIELDS[$prop->market] ?? null;
@@ -28,15 +53,14 @@ class LivePropProjector
                 continue;
             }
             $baseline = $baselines->get($prop->player_id.':'.$prop->market);
-            $history = PlayerStat::where('player_id', $prop->player_id)->where('team_id', $prop->player->team_id)->whereNotNull($field)
-                ->whereHas('game', fn ($q) => $q->where('status', 'STATUS_FINAL')->whereDate('game_date', '<', $game->game_date)
-                    ->where('season', '>=', (int) $game->season - 1)->whereIn('season_type', [2, 3]))->get();
-            $mean = $baseline !== null ? $baseline['pregame_mean'] : ($history->count() >= 3 ? round((float) $history->avg($field), 2) : null);
+            $history = ($histories[$field] ?? collect())->get($prop->player_id.':'.$prop->player->team_id);
+            $sample = (int) ($history?->getAttribute('sample') ?? 0);
+            $mean = $baseline !== null ? $baseline['pregame_mean'] : ($sample >= 3 ? round((float) $history->getAttribute('mean'), 2) : null);
             $actual = $stats->get($prop->player_id)?->{$field};
             $row = ['pregame_prop_id' => $prop->id, 'player_id' => $prop->player_id, 'player' => $prop->player_name, 'market' => $prop->market,
-                'pregame_line' => (float) $prop->line, 'pregame_mean' => $mean, 'sample' => $baseline['sample'] ?? $history->count(),
+                'pregame_line' => (float) $prop->line, 'pregame_mean' => $mean, 'sample' => $baseline['sample'] ?? $sample,
                 'actual' => is_numeric($actual) ? (float) $actual : null, 'projected' => null, 'status' => 'missing_live_stats', 'quotes' => []];
-            $unavailable = $prop->player->activeInjuries()->whereRaw("LOWER(status) NOT IN ('active', 'available', 'probable')")->exists();
+            $unavailable = (bool) $prop->player->getAttribute('unavailable');
             if ($game->status === 'STATUS_FINAL' && is_numeric($actual)) {
                 $row['projected'] = (float) $actual;
                 $row['status'] = 'final';

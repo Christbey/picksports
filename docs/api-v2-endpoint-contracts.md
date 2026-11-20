@@ -137,3 +137,13 @@ Required means the schema requires the field when submitting that body. Passkey 
 Native push registration can return **201** for a new registration or **200** for an existing one. Clients must accept both.
 
 CBB team-player collections additionally accept `season` (ending year, default current). The player-directory route requires `team_id` when selecting a roster season. Membership and season profile fields come from the latest known immutable roster observation; `meta.roster` identifies it and warnings distinguish missing/stale coverage. Other sports retain their existing player directory contracts.
+
+## Prepared serialization contracts
+
+NFL game list and detail representations expose the same nullable `starts_at` UTC timestamp when both stored game date and time are available. Display `game_date` and `game_time` retain their existing presentation timezone. Canonical summary mappers preserve missing moneyline probability and confidence as null; they do not substitute an unobserved 50 percent probability or spread confidence.
+
+Game queries keep selected canonical forecasts separate from the sport model's legacy `prediction` relationship. A request-local selected-forecast result includes missing selections, so composite page readers reuse the gated selection without silently falling back or querying it again. Matchup context is an explicit response input and does not become a dirty database-model attribute.
+
+Stats and team metrics use explicit per-sport public field lists in `SportPublicFields`; a new schema/model field is not automatically public. Stat values honor declared model casts. Team metric numeric coercion remains compatible with the existing API. Query column capabilities in `SportQuerySchema` are checked against migrated schema in tests and must be deliberately updated alongside applicable schema changes. Missing required tables fail visibly; unsupported sport capabilities return the declared unsupported response.
+
+Prediction live fields and loaded injury impacts are prepared before resource serialization. Main page/list readers retain batch snapshot/stat/player preparation; callers of legacy injury resources must prepare the explicitly loaded graph through `PreparedInjuryImpacts`. This preparation does not load additional injury coverage. NFL legacy game resources accept a prepared live win estimate; standalone resources omit unavailable estimates rather than selecting a forecast during JSON serialization. Recommendation resources use supplied batch season summaries and make no single-prop summary query fallback.

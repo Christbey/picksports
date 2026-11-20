@@ -6,7 +6,6 @@ use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game;
 use App\Services\Api\V2\CanonicalPredictionPresentationData;
 use App\Services\Api\V2\SportContext;
-use App\Services\CFB\Live\LiveBoardPresentation;
 use App\Services\MLB\MlbRecommendationPresentation;
 use App\Services\Predictions\LivePredictionStore;
 use App\Support\Sports\GameDateTimePresenter;
@@ -51,7 +50,7 @@ class CanonicalSportPredictionResource extends JsonResource
         $evaluation = $prediction->latestEvaluation;
         $confidenceContext = $presentation->confidenceContext;
         $valueSignal = $presentation->valueSignal;
-        $live = app(LivePredictionStore::class)->forPrediction($prediction, $this->context->slug);
+        $live = $presentation->liveFields + LivePredictionStore::EMPTY_FIELDS;
         if (! in_array($game?->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD', 'STATUS_SUSPENDED', 'STATUS_DELAYED'], true)) {
             $live = LivePredictionStore::EMPTY_FIELDS;
         }
@@ -157,7 +156,7 @@ class CanonicalSportPredictionResource extends JsonResource
             'live_outs_remaining' => $live['live_outs_remaining'],
             'live_updated_at' => $live['live_updated_at']?->toIso8601String(),
             ...($game instanceof Game
-                ? app(LiveBoardPresentation::class)->forGame($game) : []),
+                ? $presentation->liveBoard : []),
             'depth_chart_context' => null,
             'market_summary' => [
                 'has_odds' => $valueSignal !== null,

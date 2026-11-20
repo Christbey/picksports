@@ -39,6 +39,17 @@ class GameDateTimePresenter
         ];
     }
 
+    /** NFL game date/time storage is UTC, independently of the display timezone. */
+    public static function nflStartsAt(mixed $gameDate, mixed $gameTime): ?string
+    {
+        $time = self::timeString($gameTime);
+        if ($gameDate === null || $time === null || $time === '') {
+            return null;
+        }
+
+        return Carbon::parse(self::dateString($gameDate).' '.$time, 'UTC')->toIso8601String();
+    }
+
     public static function serializeDateValue(mixed $value): ?string
     {
         if ($value === null) {

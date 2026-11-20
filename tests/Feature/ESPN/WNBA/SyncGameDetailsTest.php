@@ -1,6 +1,9 @@
 <?php
 
 use App\Actions\ESPN\WNBA\SyncGameDetails;
+use App\Actions\ESPN\WNBA\SyncPlayerStats;
+use App\Actions\ESPN\WNBA\SyncPlays;
+use App\Actions\ESPN\WNBA\SyncTeamStats;
 use App\Events\GameFinalized;
 use App\Models\WNBA\Game;
 use App\Models\WNBA\Team;
@@ -26,8 +29,8 @@ function wnbaSummaryAction(array $data, bool $imports): SyncGameDetails
     $provider = Mockery::mock(EspnService::class);
     $provider->shouldReceive('getGame')->once()->with('12345')->andReturn($data);
     $stats = [];
-    foreach (range(1, 3) as $unused) {
-        $mock = Mockery::mock();
+    foreach ([SyncPlayerStats::class, SyncTeamStats::class, SyncPlays::class] as $actionClass) {
+        $mock = Mockery::mock($actionClass);
         if ($imports) {
             $mock->shouldReceive('execute')->once()->andReturn(0);
         } else {

@@ -70,7 +70,7 @@ class LiveScoreboardPayloadService
                 ->whereIn($context->slug.'_games.status', $statuses)->get();
             app(LivePredictionStore::class)->preload($predictions->map(fn ($prediction) => $prediction->sportEvent?->getRelation($context->slug.'Game'))->filter());
 
-            return $predictions->map(fn ($prediction): array => (new CanonicalDashboardPredictionResource($prediction, $context, $config))->resolve());
+            return $predictions->map(fn ($prediction): array => (new CanonicalDashboardPredictionResource($prediction, $context, $config, app(CanonicalPredictionPresentationService::class)->forPrediction($prediction)))->resolve());
         }
 
         $predictions = $config['prediction_model']::with(['game.homeTeam', 'game.awayTeam'])
@@ -84,6 +84,7 @@ class LiveScoreboardPayloadService
 
         return $predictions->map(function ($prediction) use ($sport, $config) {
             return DashboardPredictionResource::make($prediction)
+                ->liveFields(app(LivePredictionStore::class)->fields($prediction->game))
                 ->sport($sport)
                 ->statuses($config['live_statuses'], $config['final_statuses'])
                 ->includeInning($config['include_inning'])

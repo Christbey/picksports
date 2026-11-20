@@ -29,6 +29,51 @@ function destructiveMigrationOperations(string $source): array
         ->all();
 }
 
+/** Only recognized signed range, decimal precision and string-length widening chains qualify, never arbitrary change(). */
+function isExplicitCapacityExpansion(string $source): bool
+{
+    $up = migrationUpMethodSource($source);
+    if (destructiveMigrationOperations($up) !== ['in-place column change']) {
+        return false;
+    }
+    if (preg_match('/@expand-capacity\s+decimal\((\d+),\s*(\d+)\)\s*->\s*decimal\((\d+),\s*(\d+)\)/', $up, $decimal) === 1) {
+        [$oldPrecision, $oldScale, $newPrecision, $newScale] = array_map('intval', array_slice($decimal, 1));
+        if ($oldPrecision < 1 || $oldScale < 0 || $oldScale > $oldPrecision
+            || $newPrecision <= $oldPrecision || $newPrecision > 65 || $newScale !== $oldScale || $newScale > 30) {
+            return false;
+        }
+        $chain = '/\$table->decimal\(\s*\x27[a-z_]+\x27,\s*'.$newPrecision.',\s*'.$newScale.'\s*\)(?:->nullable\(\))?->change\s*\(\s*\)/';
+        $count = preg_match_all($chain, $up);
+
+        return $count > 0 && $count === preg_match_all('/->change\s*\(/', $up);
+    }
+    if (preg_match('/@expand-capacity\s+(string\((\d+)\)|tinyInteger|smallInteger|integer)\s*->\s*(string\((\d+)\)|smallInteger|integer|bigInteger)/', $up, $declaration) !== 1) {
+        return false;
+    }
+    $from = $declaration[1];
+    $to = $declaration[3];
+    $integerRanks = ['tinyInteger' => 1, 'smallInteger' => 2, 'integer' => 3, 'bigInteger' => 4];
+    if (str_starts_with($from, 'string(') && str_starts_with($to, 'string(')) {
+        $oldLength = (int) $declaration[2];
+        $newLength = (int) $declaration[4];
+        if ($oldLength < 1 || $newLength <= $oldLength) {
+            return false;
+        }
+        $type = 'string';
+        $length = ',\s*'.$newLength;
+    } elseif (isset($integerRanks[$from], $integerRanks[$to]) && $integerRanks[$to] > $integerRanks[$from]) {
+        $type = $to;
+        $length = '';
+    } else {
+        return false;
+    }
+    // Reject unsigned conversions, defaults, nullable(false), other type changes and unaccounted changes.
+    $chain = '/\$table->'.$type.'\(\s*\x27[a-z_]+\x27'.$length.'\s*\)(?:->nullable\(\))?->change\s*\(\s*\)/';
+    $count = preg_match_all($chain, $up);
+
+    return $count > 0 && $count === preg_match_all('/->change\s*\(/', $up);
+}
+
 it('requires expand-first migrations after the platform guardrail date', function () {
     $migrationPaths = glob(dirname(__DIR__, 2).'/database/migrations/*.php') ?: [];
     $violations = [];
@@ -51,7 +96,7 @@ it('requires expand-first migrations after the platform guardrail date', functio
         $isExplicitNullabilityExpansion = $operations === ['in-place column change']
             && str_contains($source, '@expand-nullability');
 
-        if (! $isExplicitContractMigration && ! $isExplicitNullabilityExpansion) {
+        if (! $isExplicitContractMigration && ! $isExplicitNullabilityExpansion && ! isExplicitCapacityExpansion($source)) {
             $violations[$name] = $operations;
         }
     }
@@ -104,3 +149,24 @@ PHP;
     expect(destructiveMigrationOperations(migrationUpMethodSource($migration)))
         ->toBe(['drop column or constraint']);
 });
+
+it('accepts only declared capacity widening with fully accounted change chains', function (string $declaration, string $changes, bool $allowed) {
+    $source = "<?php\nreturn new class {\npublic function up(): void {\n// @expand-capacity {$declaration}\n{$changes}\n}\npublic function down(): void {}\n};";
+
+    expect(isExplicitCapacityExpansion($source))->toBe($allowed);
+})->with([
+    'longer string' => ['string(64) -> string(128)', '$table->string(\'model_version\', 128)->nullable()->change();', true],
+    'wider signed integer' => ['tinyInteger -> smallInteger', '$table->smallInteger(\'rest_days_home\')->nullable()->change();', true],
+    'narrower string' => ['string(128) -> string(64)', '$table->string(\'model_version\', 64)->change();', false],
+    'narrower integer' => ['integer -> smallInteger', '$table->smallInteger(\'rest_days_home\')->change();', false],
+    'false target declaration' => ['string(64) -> string(128)', '$table->string(\'model_version\', 32)->change();', false],
+    'unsigned conversion' => ['tinyInteger -> smallInteger', '$table->unsignedSmallInteger(\'rest_days_home\')->change();', false],
+    'tightened nullability' => ['string(64) -> string(128)', '$table->string(\'model_version\', 128)->nullable(false)->change();', false],
+    'changed default' => ['string(64) -> string(128)', '$table->string(\'model_version\', 128)->default(\'new\')->change();', false],
+    'unaccounted change' => ['tinyInteger -> smallInteger', '$table->smallInteger(\'rest_days_home\')->change(); $table->text(\'name\')->change();', false],
+    'wider decimal precision' => ['decimal(5,3) -> decimal(7,3)', "\$table->decimal('home_recent_form', 7, 3)->nullable()->change();", true],
+    'changed decimal scale' => ['decimal(5,3) -> decimal(7,2)', "\$table->decimal('home_recent_form', 7, 2)->nullable()->change();", false],
+    'narrower decimal precision' => ['decimal(7,3) -> decimal(5,3)', "\$table->decimal('home_recent_form', 5, 3)->change();", false],
+    'mismatched decimal target' => ['decimal(5,3) -> decimal(7,3)', "\$table->decimal('home_recent_form', 5, 3)->nullable()->change();", false],
+    'mixed index drop' => ['tinyInteger -> smallInteger', '$table->smallInteger(\'rest_days_home\')->change(); $table->dropUnique(\'old\');', false],
+]);

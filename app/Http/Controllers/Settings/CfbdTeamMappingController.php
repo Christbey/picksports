@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Settings\CfbdTeamMappingUpdateRequest;
 use App\Models\CFB\Team as CfbTeam;
 use App\Models\CfbdTeamMapping;
 use App\Services\Settings\CfbdTeamMappingIndexDataService;
@@ -49,11 +50,9 @@ class CfbdTeamMappingController extends Controller
         ]);
     }
 
-    public function update(Request $request, CfbdTeamMapping $mapping)
+    public function update(CfbdTeamMappingUpdateRequest $request, CfbdTeamMapping $mapping)
     {
-        $validated = $request->validate([
-            'espn_team_name' => 'nullable|string|max:255',
-        ]);
+        $validated = $request->validated();
 
         $mapping->update($validated);
 

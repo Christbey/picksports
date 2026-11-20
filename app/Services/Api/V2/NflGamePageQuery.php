@@ -19,13 +19,13 @@ class NflGamePageQuery
     public function get(SportContext $context, string $id, Request $request): array
     {
         $game = $this->games->find($context, $id, $request->user());
-        $game->setAttribute('matchup_context', $this->matchups->forGame($game));
+        $preparedMatchup = $this->matchups->forGame($game);
         $game->loadMissing('teamStats.team');
         $payload = $this->predictions->forLoadedGame($context, $game);
 
         return [
             'data' => [
-                'game' => new SportGameResource($game, $context),
+                'game' => new SportGameResource($game, $context, $preparedMatchup),
                 'prediction' => $payload['data'] ?? null,
                 'historical_prediction' => $payload === null ? app(NflHistoricalForecastArchive::class)->forGame($game) : null,
                 'team_stats' => $game->teamStats->map(fn ($stat) => new SportStatResource($stat, $context, 'team'))->values(),

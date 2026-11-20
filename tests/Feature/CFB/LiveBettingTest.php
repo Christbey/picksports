@@ -22,6 +22,7 @@ use App\Services\OddsApi\OddsApiService;
 use App\Support\NflGameStateGuard;
 use App\Support\PredictionFieldAccess;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 
 beforeEach(function () {
@@ -291,4 +292,32 @@ test('accepts an unchanged fresh state when the snapshot is deduplicated within 
     $odds = Mockery::mock(OddsApiService::class);
     $odds->shouldReceive('getEventOdds')->andReturn(null);
     expect((new LiveBettingSync($espn, $odds))->execute($this->game)['status'])->toBe('captured');
+});
+
+test('batches live prop histories and skips them once frozen baselines are complete', function () {
+    $baselines = [];
+    foreach (range(1, 5) as $index) {
+        $player = Player::factory()->create(['espn_id' => 'batch-runner-'.$index, 'full_name' => 'Runner '.$index, 'team_id' => $this->home->id]);
+        foreach ([3, 2] as $hours) {
+            PlayerProp::create(['game_id' => $this->game->id, 'player_id' => $player->id, 'player_name' => $player->full_name,
+                'market' => 'player_rush_yds', 'line' => 80.5, 'fetched_at' => now()->subHours($hours)]);
+        }
+        $baselines[] = ['player_id' => $player->id, 'market' => 'player_rush_yds', 'pregame_mean' => 100, 'sample' => 5];
+    }
+    DB::enableQueryLog();
+    $rows = app(LivePropProjector::class)->project($this->game, null, null, false);
+    $queries = collect(DB::getQueryLog());
+    DB::disableQueryLog();
+    expect($rows)->toHaveCount(5)
+        ->and($queries->filter(fn ($query) => str_contains($query['query'], 'from "cfb_player_stats"')))->toHaveCount(1);
+    app(LiveSnapshotRecorder::class)->record($this->game, ['prediction_id' => null], null, 'live', 'live_feed', [], $baselines);
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    $rows = app(LivePropProjector::class)->project($this->game, null, null, false);
+    $queries = collect(DB::getQueryLog());
+    DB::disableQueryLog();
+    expect($rows)->toHaveCount(5)
+        ->and($rows[0]['pregame_mean'])->toBe(100)
+        ->and($rows[0]['sample'])->toBe(5)
+        ->and($queries->filter(fn ($query) => str_contains($query['query'], 'from "cfb_player_stats"')))->toHaveCount(0);
 });

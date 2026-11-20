@@ -2,33 +2,47 @@
 
 namespace App\Actions\ESPN\MLB;
 
+use App\Actions\ESPN\Concerns\ValidatesBoxscoreReplacement;
 use App\Actions\ESPN\MLB\Concerns\ParsesMlbStatValues;
 use App\Actions\ESPN\MLB\Concerns\ResolvesMlbBoxscoreTeams;
 use App\Actions\MLB\ReconcileGameScoreFromTeamStats;
 use App\Models\MLB\Game;
+use App\Models\MLB\Team;
 use App\Models\MLB\TeamStat;
 
 class SyncTeamStats
 {
     use ParsesMlbStatValues;
     use ResolvesMlbBoxscoreTeams;
+    use ValidatesBoxscoreReplacement;
 
     public function execute(array $gameData, Game $game): int
+    {
+        return $game->getConnection()->transaction(function () use ($gameData, $game): int {
+            $game->newQuery()->whereKey($game->getKey())->lockForUpdate()->firstOrFail();
+
+            return $this->replaceTeamStats($gameData, $game);
+        });
+    }
+
+    protected function replaceTeamStats(array $gameData, Game $game): int
     {
         $teamSections = $this->boxscoreSection($gameData, 'teams');
         if ($teamSections === []) {
             return 0;
         }
 
-        // Delete existing team stats for this game
-        TeamStat::query()->where('game_id', $game->id)->delete();
-
+        $teams = $this->replacementTeams($teamSections, $game, Team::class, TeamStat::class);
+        if ($teams === null) {
+            return 0;
+        }
+        $rows = [];
         $synced = 0;
 
         foreach ($teamSections as $teamData) {
-            $team = $this->resolveTeamFromBoxscore($teamData);
-            if (! $team) {
-                continue;
+            $team = $teams->get($teamData['team']['id']);
+            if (! is_array($teamData['statistics'] ?? null) || $teamData['statistics'] === []) {
+                return 0;
             }
 
             // Determine home/away from game record
@@ -36,7 +50,7 @@ class SyncTeamStats
 
             $stats = $this->parseTeamStats($teamData['statistics'] ?? []);
 
-            TeamStat::create([
+            $attributes = [
                 'team_id' => $team->id,
                 'game_id' => $game->id,
                 'team_type' => $teamType,
@@ -82,9 +96,19 @@ class SyncTeamStats
                 'assists' => $stats['fielding']['assists'] ?? null,
                 'double_plays' => $stats['fielding']['doublePlays'] ?? null,
                 'passed_balls' => $stats['fielding']['passedBalls'] ?? null,
-            ]);
+            ];
+
+            if (collect(array_diff_key($attributes, array_flip(['team_id', 'game_id', 'team_type'])))->every(fn ($value): bool => $value === null)) {
+                return 0;
+            }
+            $rows[] = $attributes;
 
             $synced++;
+        }
+
+        TeamStat::query()->where('game_id', $game->id)->delete();
+        foreach ($rows as $row) {
+            TeamStat::query()->create($row);
         }
 
         if ($synced > 0) {

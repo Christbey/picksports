@@ -7,11 +7,15 @@ use App\Http\Resources\Settings\EspnTeamOptionResource;
 use App\Models\CFB\Team;
 use App\Models\CfbdTeamMapping;
 use App\Support\ResourcePayload;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Pagination\LengthAwarePaginator;
 
 class CfbdTeamMappingIndexDataService
 {
+    /** @var array<string, Collection> */
+    private array $teamCandidates = [];
+
     /**
      * @return array<string, int>
      */
@@ -19,11 +23,11 @@ class CfbdTeamMappingIndexDataService
     {
         $baseQuery = CfbdTeamMapping::query()->where('sport', $sport);
 
-        return [
-            'total' => (clone $baseQuery)->count(),
-            'mapped' => (clone $baseQuery)->whereNotNull('espn_team_name')->count(),
-            'unmapped' => (clone $baseQuery)->whereNull('espn_team_name')->count(),
-        ];
+        $counts = $baseQuery->selectRaw('COUNT(*) as total, COUNT(espn_team_name) as mapped')->first();
+        $total = (int) $counts->getAttribute('total');
+        $mapped = (int) $counts->getAttribute('mapped');
+
+        return ['total' => $total, 'mapped' => $mapped, 'unmapped' => $total - $mapped];
     }
 
     public function mappings(string $sport, string $filter, int $perPage = 50): LengthAwarePaginator
@@ -46,7 +50,8 @@ class CfbdTeamMappingIndexDataService
 
         $mappings->through(
             fn (CfbdTeamMapping $mapping) => (new CfbdTeamMappingResource(
-                $this->withSuggestedMapping($mapping, $espnTeams)
+                $mapping,
+                $mapping->espn_team_name ? null : $this->bestSuggestion($mapping, $espnTeams)
             ))->resolve()
         );
 
@@ -59,14 +64,7 @@ class CfbdTeamMappingIndexDataService
      */
     public function espnTeams(array $config): array
     {
-        $teamModel = $config['teamModel'];
-        $teamField = $config['teamField'];
-        $teams = $teamModel::query()
-            ->select('id', $teamField.' as name', 'abbreviation', 'mascot')
-            ->orderBy($teamField)
-            ->get();
-
-        return ResourcePayload::from(EspnTeamOptionResource::collection($teams));
+        return ResourcePayload::from(EspnTeamOptionResource::collection($this->candidateModels($config)));
     }
 
     /**
@@ -86,13 +84,7 @@ class CfbdTeamMappingIndexDataService
      */
     protected function espnTeamCandidates(array $config): array
     {
-        $teamModel = $config['teamModel'];
-        $teamField = $config['teamField'];
-
-        return $teamModel::query()
-            ->select('id', $teamField.' as name', 'abbreviation', 'mascot')
-            ->orderBy($teamField)
-            ->get()
+        return $this->candidateModels($config)
             ->map(fn ($team) => [
                 'id' => $team->id,
                 'name' => (string) $team->name,
@@ -102,25 +94,16 @@ class CfbdTeamMappingIndexDataService
             ->all();
     }
 
-    /**
-     * @param  array<int, array<string, mixed>>  $espnTeams
-     */
-    protected function withSuggestedMapping(CfbdTeamMapping $mapping, array $espnTeams): CfbdTeamMapping
+    /** @param array{teamModel: class-string<Model>, teamField: string} $config */
+    private function candidateModels(array $config): Collection
     {
-        if ($mapping->espn_team_name) {
-            return $mapping;
-        }
+        $model = $config['teamModel'];
+        $field = $config['teamField'];
+        $key = $model.':'.$field;
 
-        $suggestion = $this->bestSuggestion($mapping, $espnTeams);
-
-        if ($suggestion === null) {
-            return $mapping;
-        }
-
-        $mapping->setAttribute('suggested_espn_team_name', $suggestion['name']);
-        $mapping->setAttribute('suggested_match_quality_score', $suggestion['score']);
-
-        return $mapping;
+        return $this->teamCandidates[$key] ??= $model::query()
+            ->select('id', $field.' as name', 'abbreviation', 'mascot')
+            ->orderBy($field)->get();
     }
 
     /**

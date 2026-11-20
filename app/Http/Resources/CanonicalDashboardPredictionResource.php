@@ -4,14 +4,10 @@ namespace App\Http\Resources;
 
 use App\Http\Resources\Api\V2\CanonicalSportPredictionResource;
 use App\Models\CanonicalPrediction;
-use App\Models\CFB\Game as CfbGame;
-use App\Services\Api\V2\CanonicalPredictionPresentationService;
+use App\Services\Api\V2\CanonicalPredictionPresentationData;
 use App\Services\Api\V2\PredictionModelBetContext;
-use App\Services\Api\V2\PredictionWeatherContext;
 use App\Services\Api\V2\SportContext;
-use App\Services\CFB\Live\LiveBoardPresentation;
 use App\Services\MLB\MlbRecommendationPresentation;
-use App\Services\Predictions\BettingForecastSource;
 use App\Services\Predictions\LivePredictionStore;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -19,7 +15,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class CanonicalDashboardPredictionResource extends JsonResource
 {
-    public function __construct(CanonicalPrediction $resource, private readonly SportContext $context, private readonly array $config, private readonly bool $compact = false, private readonly array $marketContext = [], private readonly ?string $dashboardSignal = null)
+    public function __construct(CanonicalPrediction $resource, private readonly SportContext $context, private readonly array $config, private readonly CanonicalPredictionPresentationData $presentation, private readonly bool $compact = false, private readonly array $marketContext = [], private readonly ?string $dashboardSignal = null)
     {
         parent::__construct($resource);
     }
@@ -48,7 +44,7 @@ class CanonicalDashboardPredictionResource extends JsonResource
             : (new CanonicalSportPredictionResource(
                 $prediction,
                 $this->context,
-                app(CanonicalPredictionPresentationService::class)->forPrediction($prediction),
+                $this->presentation,
             ))->resolve();
 
         return array_merge($payload, [
@@ -80,13 +76,10 @@ class CanonicalDashboardPredictionResource extends JsonResource
         $spread = $this->number($prediction->marketFor('spread', 'home')?->projected_line);
         $evaluation = $prediction->latestEvaluation;
         $live = in_array($game->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD', 'STATUS_SUSPENDED', 'STATUS_DELAYED'], true)
-            ? app(LivePredictionStore::class)->forPrediction($prediction, $sport)
+            ? $this->presentation->liveFields + LivePredictionStore::EMPTY_FIELDS
             : LivePredictionStore::EMPTY_FIELDS;
 
-        if ($sport === 'mlb') {
-            $forecast = app(BettingForecastSource::class)->fromModel($prediction, $sport);
-            $recommendation = app(CanonicalPredictionPresentationService::class)->mlbRecommendation($forecast);
-        }
+        $recommendation = $this->presentation->recommendation;
 
         return [
             'id' => $prediction->public_id,
@@ -102,10 +95,10 @@ class CanonicalDashboardPredictionResource extends JsonResource
             'updated_at' => $prediction->updated_at?->toIso8601String(),
             'recommendation' => $recommendation ?? null,
             'public_recommendation' => app(MlbRecommendationPresentation::class)->summary($recommendation ?? null),
-            'weather_forecast' => $game instanceof CfbGame ? app(PredictionWeatherContext::class)->forPrediction($prediction, $game) : null,
+            'weather_forecast' => $this->presentation->weatherForecast,
             ...$live,
             'live_updated_at' => $live['live_updated_at']?->toIso8601String(),
-            ...($game instanceof CfbGame ? app(LiveBoardPresentation::class)->forGame($game) : []),
+            ...($this->presentation->liveBoard),
         ];
     }
 

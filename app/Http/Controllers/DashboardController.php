@@ -6,6 +6,7 @@ use App\Http\Resources\CanonicalDashboardPredictionResource;
 use App\Http\Resources\DashboardPredictionResource;
 use App\Models\Healthcheck;
 use App\Models\MLB\Prediction as MLBPrediction;
+use App\Services\Api\V2\CanonicalPredictionPresentationService;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Api\V2\DashboardSportConfig;
 use App\Services\Api\V2\PredictionModelBetContext;
@@ -130,7 +131,7 @@ class DashboardController extends Controller
                             'published_at' => $prediction->published_at,
                             'id' => $prediction->id,
                             'payload' => (new CanonicalDashboardPredictionResource(
-                                $prediction, $context, $config, compact: true, marketContext: $marketContexts[$gameId] ?? [],
+                                $prediction, $context, $config, app(CanonicalPredictionPresentationService::class)->forDashboardPrediction($prediction, true), compact: true, marketContext: $marketContexts[$gameId] ?? [],
                                 dashboardSignal: $signals[$prediction->getKey()] ?? null,
                             ))->resolve(),
                         ]);
@@ -146,6 +147,7 @@ class DashboardController extends Controller
 
         return $predictions->map(function ($prediction) use ($sport, $config) {
             $resource = DashboardPredictionResource::make($prediction)
+                ->liveFields(app(LivePredictionStore::class)->fields($prediction->game))
                 ->sport($sport)
                 ->statuses($config['live_statuses'], $config['final_statuses'])
                 ->includeInning($config['include_inning'])

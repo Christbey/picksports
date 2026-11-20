@@ -127,7 +127,7 @@ class SnapshotBetFilterCommand extends Command
 
         $graded = 0;
         foreach ($ids->chunk(100) as $batchIds) {
-            $rows = BetFilterResult::query()->with('game')->whereKey($batchIds)->whereNull('graded_at')->orderBy('id')->get();
+            $rows = BetFilterResult::query()->with(['game.homeTeam', 'game.awayTeam'])->whereKey($batchIds)->whereNull('graded_at')->orderBy('id')->get();
             $rows->filter(fn (BetFilterResult $row): bool => $row->canonical_prediction_id === null)->loadMissing('prediction');
             $closingOdds = [];
             foreach ($rows as $row) {

@@ -200,7 +200,7 @@ class ExportTrainingDataCommand extends Command
      */
     private function snapshotRow(PredictionFeatureSnapshot $snapshot): ?array
     {
-        $snapshot->setAttribute('prediction_horizon', $this->predictionHorizon($snapshot));
+        $predictionHorizon = $this->predictionHorizon($snapshot);
         $features = $this->arrayValue($snapshot->features);
         $outputs = $this->arrayValue($snapshot->outputs);
         $actuals = $this->arrayValue($snapshot->evaluation_actuals);
@@ -238,7 +238,7 @@ class ExportTrainingDataCommand extends Command
             'game_id' => $snapshot->game_id,
             'season' => $snapshot->season,
             'prediction_id' => $snapshot->prediction_id,
-            'prediction_horizon' => $snapshot->prediction_horizon,
+            'prediction_horizon' => $predictionHorizon,
             'model_version' => $snapshot->model_version,
             'feature_version' => $snapshot->feature_version,
             'blend_version' => $snapshot->blend_version,
@@ -260,7 +260,7 @@ class ExportTrainingDataCommand extends Command
                 'snapshot_run_id' => $snapshot->snapshot_run_id,
                 'model_run_id' => $snapshot->model_run_id,
                 'game_id' => (int) $snapshot->game_id,
-                'prediction_horizon' => $snapshot->prediction_horizon,
+                'prediction_horizon' => $predictionHorizon,
                 'model_version' => $snapshot->model_version,
                 'feature_version' => $snapshot->feature_version,
                 'blend_version' => $snapshot->blend_version,

@@ -76,6 +76,7 @@ final class DeviceSessionTokenService
             }
 
             $session = DeviceSession::query()
+                ->with('accessToken')
                 ->with('user')
                 ->lockForUpdate()
                 ->find($refreshToken->device_session_id);
@@ -146,6 +147,7 @@ final class DeviceSessionTokenService
     {
         return DB::transaction(function () use ($user, $deviceSessionPublicId, $reason): bool {
             $session = DeviceSession::query()
+                ->with('accessToken')
                 ->where('user_id', $user->getKey())
                 ->where('public_id', $deviceSessionPublicId)
                 ->lockForUpdate()
@@ -171,6 +173,7 @@ final class DeviceSessionTokenService
 
         return DB::transaction(function () use ($user, $accessToken, $reason): bool {
             $session = DeviceSession::query()
+                ->with('accessToken')
                 ->where('user_id', $user->getKey())
                 ->where('access_token_id', $accessToken->getKey())
                 ->lockForUpdate()
@@ -190,6 +193,7 @@ final class DeviceSessionTokenService
     {
         return DB::transaction(function () use ($user, $reason): int {
             $sessions = DeviceSession::query()
+                ->with('accessToken')
                 ->where('user_id', $user->getKey())
                 ->whereNull('revoked_at')
                 ->lockForUpdate()

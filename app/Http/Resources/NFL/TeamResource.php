@@ -2,7 +2,7 @@
 
 namespace App\Http\Resources\NFL;
 
-use App\Support\InjuryImpactScorer;
+use App\Services\Api\V2\PreparedInjuryImpacts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -15,7 +15,7 @@ class TeamResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $impactScorer = app(InjuryImpactScorer::class);
+        $impactScorer = app(PreparedInjuryImpacts::class);
 
         return [
             'id' => $this->id,
@@ -37,7 +37,7 @@ class TeamResource extends JsonResource
             'active_injuries' => $this->when(
                 $this->relationLoaded('activePlayerInjuries'),
                 fn () => $this->activePlayerInjuries->map(function ($injury) use ($impactScorer) {
-                    $impact = $impactScorer->describe('nfl', (int) $injury->player_id, $injury->status);
+                    $impact = $impactScorer->get($injury);
 
                     return [
                         'id' => $injury->id,

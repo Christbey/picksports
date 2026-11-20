@@ -261,7 +261,7 @@ it('keeps live fields out of official pregame bet counts', function () {
         ->and(data_get($recommendation, 'pregame_recommendation.is_bet'))->toBeTrue();
 });
 
-it('clears live prediction fields for delayed games instead of treating them as live', function () {
+it('withholds delayed live output without rewriting retired legacy columns', function () {
     $home = Team::factory()->create();
     $away = Team::factory()->create();
     $game = Game::factory()->create([

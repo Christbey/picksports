@@ -325,31 +325,31 @@ it('stores the full candidate hash before prompt compaction and reuses it consis
     $game = costControlGame();
     $candidate = ['predicted_spread' => 5, 'predicted_total' => 42, 'win_probability' => .6,
         'model_metadata' => ['analysis_layer' => ['raw_bet_classification' => 'no_bet_risk', 'bet_classification' => 'hold']]];
-    $game->setAttribute('research_candidate', $candidate);
+
     $service = app(NflWebContextResearchService::class);
-    $first = $service->research($game);
+    $first = $service->research($game, candidate: $candidate);
     expect($first['report']->raw_payload['candidate_hash'])->toBe(app(ResearchPipeline::class)->candidateContextHash($candidate));
-    expect($service->research($game)['reused'])->toBeTrue();
+    expect($service->research($game, candidate: $candidate)['reused'])->toBeTrue();
     Http::assertSentCount(1);
 });
 
 it('revalidates a material forecast change after the minimum interval without bypassing budgets', function () {
     Http::fake(['*' => Http::response(costControlResponse())]);
     $game = costControlGame();
-    $game->setAttribute('research_candidate', ['predicted_spread' => 2, 'predicted_total' => 42]);
+    $candidate = ['predicted_spread' => 2, 'predicted_total' => 42];
     $service = app(NflWebContextResearchService::class);
-    $first = $service->research($game);
-    $game->setAttribute('research_candidate', ['predicted_spread' => 8, 'predicted_total' => 42]);
-    expect(fn () => $service->research($game))->toThrow(ResearchDeferred::class, 'research_retry_not_due');
+    $first = $service->research($game, candidate: $candidate);
+    $candidate = ['predicted_spread' => 8, 'predicted_total' => 42];
+    expect(fn () => $service->research($game, candidate: $candidate))->toThrow(ResearchDeferred::class, 'research_retry_not_due');
     $this->travel(16)->minutes();
-    $second = $service->research($game);
+    $second = $service->research($game, candidate: $candidate);
     expect($second['report']->id)->not->toBe($first['report']->id)
-        ->and($second['report']->raw_payload['candidate_hash'])->toBe(app(ResearchPipeline::class)->candidateContextHash($game->getAttribute('research_candidate')));
+        ->and($second['report']->raw_payload['candidate_hash'])->toBe(app(ResearchPipeline::class)->candidateContextHash($candidate));
     Http::assertSentCount(2);
     config(['nfl_research.cost_control.daily_budget_usd' => 0]);
-    $game->setAttribute('research_candidate', ['predicted_spread' => 12]);
+    $candidate = ['predicted_spread' => 12];
     $this->travel(16)->minutes();
-    expect(fn () => $service->research($game))->toThrow(ResearchDeferred::class, 'research_daily_budget_reached');
+    expect(fn () => $service->research($game, candidate: $candidate))->toThrow(ResearchDeferred::class, 'research_daily_budget_reached');
     Http::assertSentCount(2);
 });
 
@@ -430,8 +430,8 @@ it('bases pick holds on a game designation and paired quote rather than research
         ->toBe(array_values(array_filter($expected, fn ($reason) => str_contains($reason, 'starting_qb'))));
 })->with([
     'full practice without a game designation' => [null, 1, []],
-    'questionable starter remains projected without a forced data hold' => ['Questionable', 1, []],
-    'modeled doubtful starter must be replaced' => ['Doubtful', 1, ['home_starting_qb_unavailable_in_forecast']],
+    'full practice with an official questionable designation' => ['Questionable', 1, []],
+    'modeled starter doubtful requires replacement' => ['Doubtful', 1, ['home_starting_qb_unavailable_in_forecast']],
     'modeled starter ruled out' => ['Out', 1, ['home_starting_qb_unavailable_in_forecast']],
     'explicitly available with stale odds' => ['Available', 37, ['spread_quote_stale']],
 ]);

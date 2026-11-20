@@ -49,10 +49,10 @@ function qbInjurySnapshot(Game $game, array $statuses, ?string $observedAt = nul
     return $snapshot;
 }
 
-function projectedQb(Game $game): ?array
+function projectedQb(Game $game, ?array $verifiedAvailability = null): ?array
 {
     return (new ReflectionMethod(GeneratePredictionFromHistoricalElo::class, 'projectedQbContextFromDepthChart'))
-        ->invoke(app(GeneratePredictionFromHistoricalElo::class), $game, $game->home_team_id);
+        ->invoke(app(GeneratePredictionFromHistoricalElo::class), $game, $game->home_team_id, $verifiedAvailability);
 }
 
 it('selects the ranked backup and his own prior statistics for an excluded starter', function (string $status) {
@@ -196,11 +196,9 @@ it('honors a newer verified clearance without letting older research override th
     qbInjurySnapshot($game, [$starter->id => 'Out']);
     $fact = ['team_id' => $game->home_team_id, 'player_id' => $starter->id, 'player_name' => $starter->full_name,
         'status' => 'Available', 'observed_at' => now()->toIso8601String(), 'published_at' => now()->subHour()->toIso8601String()];
-    $game->setAttribute('research_availability', [$fact]);
-    expect(projectedQb($game)['qb_id'])->toBe($backup->id);
+    expect(projectedQb($game, [$fact])['qb_id'])->toBe($backup->id);
     $fact['published_at'] = now()->toIso8601String();
-    $game->setAttribute('research_availability', [$fact]);
-    expect(projectedQb($game)['qb_id'])->toBe($starter->id);
+    expect(projectedQb($game, [$fact])['qb_id'])->toBe($starter->id);
 });
 
 it('uses current-week nflverse injuries without crossing season types', function () {

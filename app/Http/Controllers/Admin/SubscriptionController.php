@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\SubscriptionAssignTierRequest;
 use App\Http\Resources\Admin\AdminUserSubscriptionResource;
 use App\Http\Resources\Admin\SubscriptionTierOptionResource;
 use App\Models\User;
@@ -86,11 +87,9 @@ class SubscriptionController extends Controller
         return $this->backSuccess($message);
     }
 
-    public function assignTier(Request $request, User $user): RedirectResponse
+    public function assignTier(SubscriptionAssignTierRequest $request, User $user): RedirectResponse
     {
-        $request->validate([
-            'tier_slug' => 'required|exists:subscription_tiers,slug',
-        ]);
+        $request->validated();
 
         $tier = $this->subscriptionTierCache->tierBySlug((string) $request->tier_slug);
 

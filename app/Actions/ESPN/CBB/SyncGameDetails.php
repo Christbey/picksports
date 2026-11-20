@@ -5,12 +5,18 @@ namespace App\Actions\ESPN\CBB;
 use App\Actions\ESPN\AbstractSummaryUpdatingSyncGameDetails;
 use App\Models\CBB\Game;
 use App\Services\CBB\CbbDataQuality;
+use App\Services\ESPN\CBB\EspnService;
 use RuntimeException;
 use Throwable;
 
 class SyncGameDetails extends AbstractSummaryUpdatingSyncGameDetails
 {
     protected const GAME_MODEL_CLASS = Game::class;
+
+    public function __construct(EspnService $espnService, SyncPlayerStats $syncPlayerStats, SyncTeamStats $syncTeamStats, SyncPlays $syncPlays)
+    {
+        parent::__construct($espnService, $syncPlayerStats, $syncTeamStats, $syncPlays);
+    }
 
     public function execute(string $eventId): array
     {

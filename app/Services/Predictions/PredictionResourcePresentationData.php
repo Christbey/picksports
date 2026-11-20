@@ -22,6 +22,8 @@ final readonly class PredictionResourcePresentationData
         public ?array $bettingValueSummary = null,
         public ?array $predictionAnalysis = null,
         public ?array $marketAwareProjection = null,
+        public array $liveFields = LivePredictionStore::EMPTY_FIELDS,
+        public ?array $liveWinProbability = null,
     ) {}
 
     public function canView(string $field): bool

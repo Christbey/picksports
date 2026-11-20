@@ -3,10 +3,9 @@
 namespace App\Http\Controllers\Subscription;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Subscription\CheckoutRequest;
 use App\Services\SubscriptionCheckoutService;
 use App\Support\SubscriptionTierCache;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 
 class CheckoutController extends Controller
 {
@@ -15,17 +14,8 @@ class CheckoutController extends Controller
         private readonly SubscriptionCheckoutService $subscriptionCheckoutService
     ) {}
 
-    public function __invoke(Request $request)
+    public function __invoke(CheckoutRequest $request)
     {
-        $configuredTierSlugs = array_keys(config('subscriptions.tiers', []));
-        $tierSlugs = $this->subscriptionTierCache->activeOrdered()->pluck('slug')->values()->all();
-        $validTierSlugs = array_values(array_unique([...$configuredTierSlugs, ...$tierSlugs]));
-
-        $request->validate([
-            'tier' => ['required', Rule::in($validTierSlugs)],
-            'billing_period' => ['required', Rule::in(['monthly', 'yearly'])],
-        ]);
-
         $user = $request->user();
         $tierSlug = $request->input('tier');
         $billingPeriod = $request->input('billing_period');

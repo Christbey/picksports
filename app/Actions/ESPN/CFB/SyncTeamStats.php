@@ -18,6 +18,7 @@ class SyncTeamStats extends AbstractFootballSyncTeamStats
 
     public function execute(array $gameData, Model $game): int
     {
+        $game->loadMissing(['homeTeam', 'awayTeam']);
         $validation = app(CfbGameDataValidator::class)->boxscore($gameData, $game);
         if ($validation['state'] !== 'complete') {
             return 0;

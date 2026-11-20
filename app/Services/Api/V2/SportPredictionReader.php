@@ -21,6 +21,7 @@ class SportPredictionReader
         private readonly CanonicalSportPredictionQuery $canonical,
         private readonly SportPredictionPresentationService $legacyPresentations,
         private readonly CanonicalPredictionPresentationService $canonicalPresentations,
+        private readonly SelectedGameForecasts $selectedForecasts,
     ) {}
 
     public function queryFor(SportContext $context): SportPredictionQuery|CanonicalSportPredictionQuery
@@ -58,13 +59,22 @@ class SportPredictionReader
         }
 
         if ($predictions->first() instanceof CanonicalPrediction) {
-            (new \Illuminate\Database\Eloquent\Collection($predictions->all()))->loadMissing(['sportEvent.'.$context->slug.'Game.homeTeam', 'sportEvent.'.$context->slug.'Game.awayTeam']);
+            (new \Illuminate\Database\Eloquent\Collection($predictions->all()))->loadMissing([
+                'markets',
+                'latestEvaluation.eventResult',
+                'calculationRun.release',
+                'calculationRun.inputSnapshot',
+                'sportEvent.'.$context->slug.'Game.homeTeam',
+                'sportEvent.'.$context->slug.'Game.awayTeam',
+                ...($context->slug === 'cfb' ? ['sportEvent.cfbGame.weather', 'sportEvent.cfbGame.latestLiveSnapshot'] : []),
+            ]);
             app(LivePredictionStore::class)->preload($predictions->map(fn ($prediction) => $prediction->sportEvent?->getRelation($context->slug.'Game'))->filter());
 
+            app(PreparedInjuryImpacts::class)->prepare($predictions);
             $nflBoards = $context->slug === 'nfl' ? app(NflPredictionBoardContext::class)->forPredictions($predictions) : collect();
 
             return $predictions->map(fn (CanonicalPrediction $prediction): JsonResource => new CanonicalSportPredictionResource(
-                $prediction, $context, fn () => $this->canonicalPresentations->forPrediction($prediction, $nflBoards->get($prediction->id)),
+                $prediction, $context, $this->canonicalPresentations->forPrediction($prediction, $nflBoards->get($prediction->id)),
             ));
         }
 
@@ -87,7 +97,9 @@ class SportPredictionReader
     public function forLoadedGame(SportContext $context, Model $game): ?array
     {
         $prediction = $this->canonical->supports($context)
-            ? $this->canonical->queryForSport($context->slug, ['game_id' => $game->getKey()])->first()
+            ? ($this->selectedForecasts->contains($game)
+                ? $this->selectedForecasts->get($game)
+                : $this->canonical->queryForSport($context->slug, ['game_id' => $game->getKey()])->first())
             : $game->loadMissing('prediction')->getRelation('prediction');
 
         if (! $prediction instanceof Model) {

@@ -9,6 +9,7 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // @expand-capacity decimal(5,3) -> decimal(7,3); retain scale, signedness and nullability.
         Schema::table('cbb_predictions', function (Blueprint $table): void {
             $table->decimal('home_recent_form', 7, 3)->nullable()->change();
             $table->decimal('away_recent_form', 7, 3)->nullable()->change();

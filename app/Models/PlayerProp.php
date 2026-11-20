@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\NBA\Player;
+use App\Models\Relations\AllowedLegacyPropGameMorphTo;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
@@ -47,12 +48,33 @@ class PlayerProp extends Model
 
     public function gameable(): MorphTo
     {
-        return $this->morphTo();
+        $class = self::supportedGameModel($this->sport, $this->gameable_type);
+        $query = $class === null ? $this->newQuery()->setEagerLoads([]) : (new $class)->newQuery();
+        if ($class === null && (array_key_exists('gameable_type', $this->getAttributes()) || $this->gameable_id !== null)) {
+            $query->whereRaw('1 = 0');
+        }
+
+        return new AllowedLegacyPropGameMorphTo($query, $this, 'gameable_id', 'id', 'gameable_type', 'gameable');
     }
 
     public function player(): BelongsTo
     {
         return $this->belongsTo($this->resolvePlayerModelClass(), 'player_id');
+    }
+
+    /** @return class-string<Model>|null */
+    public static function supportedGameModel(?string $providerSport, ?string $type): ?string
+    {
+        $expected = match ($providerSport) {
+            'basketball_nba' => NBA\Game::class,
+            'basketball_ncaab' => CBB\Game::class,
+            'americanfootball_nfl' => NFL\Game::class,
+            'baseball_mlb' => MLB\Game::class,
+            default => null,
+        };
+        $actual = $type !== null ? static::getActualClassNameForMorph($type) : null;
+
+        return $expected !== null && $actual === $expected ? $expected : null;
     }
 
     private function resolvePlayerModelClass(): string

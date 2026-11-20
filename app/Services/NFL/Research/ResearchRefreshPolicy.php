@@ -60,6 +60,7 @@ class ResearchRefreshPolicy
 
     public function fingerprint(Game $game, array $packet): string
     {
+        $game->loadMissing('weather');
         $weather = $game->weather;
         $weatherValues = [];
         // Ignore retrieval timestamps and insignificant forecast noise, not threshold crossings.

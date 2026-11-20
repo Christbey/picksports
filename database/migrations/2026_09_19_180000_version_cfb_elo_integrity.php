@@ -13,7 +13,6 @@ return new class extends Migration
             Schema::table('cfb_elo_ratings', function (Blueprint $table) {
                 $table->unsignedBigInteger('game_id')->nullable();
                 $table->date('date')->nullable();
-                $table->dropUnique('cfb_elo_ratings_team_id_season_week_season_type_unique');
             });
         }
         Schema::table('cfb_elo_ratings', function (Blueprint $table) {
@@ -26,9 +25,7 @@ return new class extends Migration
             $table->unsignedBigInteger('season_initialization_id')->nullable();
             $table->timestamp('rebuilt_at')->nullable();
         });
-        if (Schema::hasIndex('cfb_elo_ratings', 'cfb_elo_ratings_team_id_game_id_unique')) {
-            Schema::table('cfb_elo_ratings', fn (Blueprint $table) => $table->dropUnique('cfb_elo_ratings_team_id_game_id_unique'));
-        }
+        // Legacy uniqueness is retired by a later, explicitly reviewed contract migration.
         Schema::table('cfb_elo_ratings', fn (Blueprint $table) => $table->unique(['team_id', 'game_id', 'active_slot'], 'cfb_elo_active_pair_unique'));
         Schema::create('cfb_elo_season_initializations', function (Blueprint $table) {
             $table->id();

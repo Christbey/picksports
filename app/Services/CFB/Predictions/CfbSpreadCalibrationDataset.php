@@ -3,7 +3,6 @@
 namespace App\Services\CFB\Predictions;
 
 use App\Models\SportEvent;
-use Carbon\CarbonImmutable;
 
 class CfbSpreadCalibrationDataset
 {
@@ -17,9 +16,10 @@ class CfbSpreadCalibrationDataset
         $excluded = $frozen['excluded'];
         $excluded['no_verified_contemporaneous_prediction'] = max(0, $completed - count($frozen['rows']));
         $rows = [];
+        $quotes = app(CfbStoredPregameQuote::class)->latestForGames($frozen['rows'], 'spreads', 'home');
         foreach ($frozen['rows'] as $row) {
             // The last stored quote before kickoff is the user's closing-line convention.
-            $quote = app(CfbStoredPregameQuote::class)->latest($row['game_id'], 'spreads', 'home', CarbonImmutable::parse($row['kickoff']));
+            $quote = $quotes[(int) $row['game_id']] ?? null;
             if (! $quote || ! is_numeric($quote->line) || ! is_numeric($row['model_margin'])
                 || abs((float) $quote->line * 2 - round((float) $quote->line * 2)) > 0.000001) {
                 $excluded['missing_result_or_stored_closing_line'] = ($excluded['missing_result_or_stored_closing_line'] ?? 0) + 1;

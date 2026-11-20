@@ -6,16 +6,17 @@ use App\Models\CBB\Game as CbbGame;
 use App\Models\CBB\Team as CbbTeam;
 use App\Models\NBA\Game as NbaGame;
 use App\Models\NBA\Team as NbaTeam;
-use App\Services\ESPN\BaseEspnService;
+use App\Services\ESPN\CBB\EspnService as CbbEspnService;
+use App\Services\ESPN\NBA\EspnService as NbaEspnService;
 use Illuminate\Support\Facades\DB;
 
-it('keeps identical basketball refreshes read-only and applies genuine corrections', function (string $gameClass, string $teamClass, string $actionClass, bool $summaryPlays) {
+it('keeps identical basketball refreshes read-only and applies genuine corrections', function (string $gameClass, string $teamClass, string $actionClass, bool $summaryPlays, string $serviceClass) {
     $game = $gameClass::factory()->create([
         'home_team_id' => $teamClass::factory(),
         'away_team_id' => $teamClass::factory(),
     ]);
     $payload = [['id' => '1001', 'text' => 'Made basket', 'homeScore' => 2, 'scoringPlay' => true]];
-    $service = Mockery::mock(BaseEspnService::class);
+    $service = Mockery::mock($serviceClass);
     $service->shouldReceive('getGame')->andReturnUsing(function () use (&$payload, $summaryPlays): array {
         return $summaryPlays ? ['plays' => $payload] : ['competitions' => [['id' => '1']]];
     });
@@ -47,6 +48,6 @@ it('keeps identical basketball refreshes read-only and applies genuine correctio
     expect($sync->execute($game->espn_event_id))->toBe(1)
         ->and($game->plays()->sole()->play_text)->toBe('Corrected basket');
 })->with([
-    'CBB' => [CbbGame::class, CbbTeam::class, SyncCbbPlays::class, false],
-    'NBA' => [NbaGame::class, NbaTeam::class, SyncNbaPlays::class, true],
+    'CBB' => [CbbGame::class, CbbTeam::class, SyncCbbPlays::class, false, CbbEspnService::class],
+    'NBA' => [NbaGame::class, NbaTeam::class, SyncNbaPlays::class, true, NbaEspnService::class],
 ]);

@@ -147,7 +147,7 @@ class NflEvidenceTrialService
         $periods = ['discovery' => [], 'validation' => []];
         $excluded = [];
         $seen = [];
-        $query = ShadowModelOutput::with(['featureSnapshot', 'featureSnapshot.nflGame'])
+        $query = ShadowModelOutput::with(['featureSnapshot.modelRun', 'featureSnapshot.nflGame.sportEvent'])
             ->where('model_artifact_id', $artifact->id)->orderByDesc('generated_at')->orderByDesc('id');
         foreach ($query->get() as $shadow) {
             $s = $shadow->featureSnapshot;

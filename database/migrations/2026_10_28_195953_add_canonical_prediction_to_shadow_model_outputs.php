@@ -12,6 +12,7 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // @expand-nullability Native canonical shadow rows do not require a legacy feature snapshot; the existing unsigned key and FK are retained.
         Schema::table('shadow_model_outputs', function (Blueprint $table) {
             $table->unsignedBigInteger('prediction_feature_snapshot_id')->nullable()->change();
             $table->foreignId('canonical_prediction_id')->nullable()->constrained('predictions')->restrictOnDelete();

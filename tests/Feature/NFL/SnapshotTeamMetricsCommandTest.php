@@ -6,6 +6,7 @@ use App\Models\NFL\Team;
 use App\Models\NFL\TeamMetric;
 use App\Models\NFL\TeamMetricSnapshot;
 use App\Models\NFL\TeamStat;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 
 it('captures nfl team metric snapshots for a season', function () {
@@ -39,6 +40,7 @@ it('captures nfl team metric snapshots for a season', function () {
 });
 
 it('can backfill nfl team metric snapshots from game records across dates', function () {
+    $this->travelTo(Carbon::parse('2025-08-01T12:00:00Z'));
     $team = Team::factory()->create([
         'abbreviation' => 'KC',
     ]);
@@ -84,6 +86,7 @@ it('can backfill nfl team metric snapshots from game records across dates', func
         ]);
     }
 
+    $this->travelTo(Carbon::parse('2025-09-10T21:00:00Z'));
     $firstGame = Game::factory()->create([
         'season' => 2025,
         'season_type' => config('nfl.season.types.regular'),
@@ -145,6 +148,7 @@ it('can backfill nfl team metric snapshots from game records across dates', func
         'elo_change' => -10.0,
     ]);
 
+    $this->travelTo(Carbon::parse('2025-09-20T21:00:00Z'));
     Game::factory()->create([
         'season' => 2025,
         'season_type' => config('nfl.season.types.regular'),
@@ -156,6 +160,7 @@ it('can backfill nfl team metric snapshots from game records across dates', func
         'away_score' => 14,
     ]);
 
+    $this->travelTo(Carbon::parse('2025-09-26T21:00:00Z'));
     Artisan::call('nfl:snapshot-team-metrics', [
         '--season' => 2025,
         '--from-date' => '2025-09-15',
@@ -167,12 +172,12 @@ it('can backfill nfl team metric snapshots from game records across dates', func
 
     $firstDateSnapshot = TeamMetricSnapshot::query()
         ->where('team_id', $team->id)
-        ->where('captured_at', '2025-09-15 12:00:00')
+        ->where('captured_at', Carbon::parse('2025-09-15T12:00:00Z')->setTimezone(config('app.timezone'))->toDateTimeString())
         ->first();
 
     $secondDateSnapshot = TeamMetricSnapshot::query()
         ->where('team_id', $team->id)
-        ->where('captured_at', '2025-09-25 12:00:00')
+        ->where('captured_at', Carbon::parse('2025-09-25T12:00:00Z')->setTimezone(config('app.timezone'))->toDateTimeString())
         ->first();
 
     expect($firstDateSnapshot)->not->toBeNull()

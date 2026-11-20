@@ -5,12 +5,14 @@ namespace App\Services\Api\V2;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game as CfbGame;
 use App\Models\WCBB\Game as WcbbGame;
+use App\Services\CFB\Live\LiveBoardPresentation;
 use App\Services\CFB\Predictions\CfbCanonicalSpreadValueSignalService;
 use App\Services\CFB\Predictions\CfbPredictionInputQuality;
 use App\Services\MLB\MlbMarketAwareProjectionService;
 use App\Services\MLB\MlbPredictionRecommendationService;
 use App\Services\MLB\MlbRecommendationPresentation;
 use App\Services\Predictions\BettingForecastSource;
+use App\Services\Predictions\LivePredictionStore;
 use App\Services\WCBB\Predictions\WcbbSpreadTracking;
 
 class CanonicalPredictionPresentationService
@@ -27,6 +29,8 @@ class CanonicalPredictionPresentationService
             ? app(BettingForecastSource::class)->fromModel($prediction, 'mlb') : null;
 
         return new CanonicalPredictionPresentationData(
+            liveFields: app(LivePredictionStore::class)->forPrediction($prediction, $prediction->sport),
+            liveBoard: $game instanceof CfbGame ? app(LiveBoardPresentation::class)->forGame($game) : [],
             recommendation: $prediction->sport === 'mlb'
                 ? app(MlbRecommendationPresentation::class)->sanitize(app(MlbPredictionRecommendationService::class)->forPrediction($mlbForecast)) : null,
             marketAwareProjection: $prediction->sport === 'mlb'

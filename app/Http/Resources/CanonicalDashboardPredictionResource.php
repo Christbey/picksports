@@ -4,14 +4,14 @@ namespace App\Http\Resources;
 
 use App\Http\Resources\Api\V2\CanonicalSportPredictionResource;
 use App\Models\CanonicalPrediction;
-use App\Services\Api\V2\CanonicalPredictionPresentationService;
+use App\Services\Api\V2\CanonicalPredictionPresentationData;
 use App\Services\Api\V2\SportContext;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 class CanonicalDashboardPredictionResource extends JsonResource
 {
-    public function __construct(CanonicalPrediction $resource, private readonly SportContext $context, private readonly array $config)
+    public function __construct(CanonicalPrediction $resource, private readonly SportContext $context, private readonly array $config, private readonly CanonicalPredictionPresentationData $presentation)
     {
         parent::__construct($resource);
     }
@@ -22,7 +22,7 @@ class CanonicalDashboardPredictionResource extends JsonResource
         $payload = (new CanonicalSportPredictionResource(
             $prediction,
             $this->context,
-            app(CanonicalPredictionPresentationService::class)->forPrediction($prediction),
+            $this->presentation,
         ))->resolve();
         $game = $prediction->sportEvent->getRelation($this->context->slug.'Game');
         $isLive = in_array($game->status, $this->config['live_statuses'], true);

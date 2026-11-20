@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Sports;
 
+use App\Http\Resources\NFL\GameResource;
 use App\Models\User;
 use App\Services\Predictions\LivePredictionStore;
 use App\Services\Predictions\PredictionResourcePresentationData;
@@ -13,6 +14,9 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 abstract class AbstractPredictionResource extends JsonResource
 {
+    /** @var array<string, mixed>|null */
+    private ?array $liveFields = null;
+
     /**
      * @return array<int, string>
      */
@@ -37,7 +41,9 @@ abstract class AbstractPredictionResource extends JsonResource
             'game_id' => $this->game_id,
             'game' => $this->when(
                 $this->preparedData()->includeGame,
-                fn () => $gameResourceClass::make($this->whenLoaded('game')),
+                fn () => $gameResourceClass === GameResource::class
+                    ? new $gameResourceClass($this->whenLoaded('game'), $this->preparedData()->liveWinProbability)
+                    : $gameResourceClass::make($this->whenLoaded('game')),
             ),
         ];
     }
@@ -101,6 +107,12 @@ abstract class AbstractPredictionResource extends JsonResource
         return $data;
     }
 
+    /** @return array<string, mixed> */
+    private function liveFields(): array
+    {
+        return $this->liveFields ??= $this->preparedData()->liveFields + LivePredictionStore::EMPTY_FIELDS;
+    }
+
     /**
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
@@ -108,7 +120,7 @@ abstract class AbstractPredictionResource extends JsonResource
     protected function appendLiveSpreadFields(array $data): array
     {
         $isLive = $this->isLivePrediction();
-        $live = app(LivePredictionStore::class)->fields($this->resource->getRelationValue('game'));
+        $live = $this->liveFields();
 
         $data['live_predicted_spread'] = $isLive && $live['live_predicted_spread'] !== null
             ? (float) $live['live_predicted_spread']
@@ -127,7 +139,7 @@ abstract class AbstractPredictionResource extends JsonResource
     protected function appendLiveWinProbabilityFields(array $data, string $remainingField = 'live_seconds_remaining'): array
     {
         $isLive = $this->isLivePrediction();
-        $live = app(LivePredictionStore::class)->fields($this->resource->getRelationValue('game'));
+        $live = $this->liveFields();
 
         $data['live_win_probability'] = $isLive && $live['live_win_probability'] !== null
             ? (float) $live['live_win_probability']

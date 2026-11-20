@@ -5,9 +5,12 @@ namespace App\Services\Predictions;
 use App\Actions\CBB\CalculateBettingValue as CalculateCbbBettingValue;
 use App\Actions\NBA\CalculateBettingValue as CalculateNbaBettingValue;
 use App\Actions\NFL\CalculateBettingValue as CalculateNflBettingValue;
+use App\Actions\NFL\CalculateLiveWinProbability;
 use App\Actions\WNBA\CalculateBettingValue as CalculateWnbaBettingValue;
+use App\Models\NFL\Game;
 use App\Models\SportsAiPredictionAnalysis;
 use App\Models\User;
+use App\Services\Api\V2\PreparedInjuryImpacts;
 use App\Services\MLB\MlbMarketAwareProjectionService;
 use App\Support\PredictionDataPermissions;
 use App\Support\PredictionFieldAccess;
@@ -45,6 +48,8 @@ final class PredictionResourcePreparer
 
         $sport = strtolower($sport);
         $predictions->loadMissing(['game.homeTeam', 'game.awayTeam']);
+        app(PreparedInjuryImpacts::class)->prepare($predictions);
+        app(LivePredictionStore::class)->preload($predictions->pluck('game')->filter());
         $permissions = $this->permissions($user);
         $analyses = $this->analyses($sport, $predictions, $permissions['betting_value'] ?? false);
 
@@ -149,6 +154,9 @@ final class PredictionResourcePreparer
             : null;
 
         return new PredictionResourcePresentationData(
+            liveFields: $game ? app(LivePredictionStore::class)->fields($game) : LivePredictionStore::EMPTY_FIELDS,
+            liveWinProbability: $sport === 'nfl' && $game instanceof Game
+                ? app(CalculateLiveWinProbability::class)->execute($game) : null,
             fieldAccess: $permissions,
             includeGame: $includeGame,
             narrative: $narrative,
@@ -170,26 +178,13 @@ final class PredictionResourcePreparer
             return $stored;
         }
 
-        $hadPredictionRelation = $game->relationLoaded('prediction');
-        $previousPrediction = $hadPredictionRelation ? $game->getRelation('prediction') : null;
-
-        $game->setRelation('prediction', $prediction);
-
-        try {
-            return match ($sport) {
-                'nba' => $this->nbaBettingValue->execute($game),
-                'nfl' => $this->nflBettingValue->execute($game),
-                'cbb' => $this->cbbBettingValue->execute($game),
-                'wnba' => $this->wnbaBettingValue->execute($game),
-                default => null,
-            };
-        } finally {
-            if ($hadPredictionRelation) {
-                $game->setRelation('prediction', $previousPrediction);
-            } else {
-                $game->unsetRelation('prediction');
-            }
-        }
+        return match ($sport) {
+            'nba' => $this->nbaBettingValue->execute($game, $prediction),
+            'nfl' => $this->nflBettingValue->execute($game, $prediction),
+            'cbb' => $this->cbbBettingValue->execute($game, $prediction),
+            'wnba' => $this->wnbaBettingValue->execute($game, $prediction),
+            default => null,
+        };
     }
 
     /** @return array<string, mixed>|null */

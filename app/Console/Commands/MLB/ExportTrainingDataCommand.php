@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\MLB;
 
+use App\DataTransferObjects\MLB\TrainingExportSnapshot;
 use App\Models\PredictionFeatureSnapshot;
 use App\Services\ML\CsvDataset;
 use App\Services\Predictions\SnapshotEvaluationProjector;
@@ -159,22 +160,21 @@ class ExportTrainingDataCommand extends Command
             $current = $canonicalSnapshots->get($canonicalKey);
 
             if (
-                ! $current instanceof PredictionFeatureSnapshot
-                || $this->isLaterSnapshot($snapshot, $current)
+                ! $current instanceof TrainingExportSnapshot
+                || $this->isLaterSnapshot($snapshot, $current->snapshot)
             ) {
-                $snapshot->setAttribute('prediction_horizon', $horizon);
-                $canonicalSnapshots->put($canonicalKey, $snapshot);
+                $canonicalSnapshots->put($canonicalKey, new TrainingExportSnapshot($snapshot, $horizon));
             }
         }
 
         $limit = max(0, (int) $this->option('limit'));
         $canonicalSnapshots = $canonicalSnapshots
-            ->sortBy(fn (PredictionFeatureSnapshot $snapshot): array => [
-                $snapshot->game_start_at?->toIso8601String()
-                    ?? $snapshot->generated_at?->toIso8601String()
+            ->sortBy(fn (TrainingExportSnapshot $export): array => [
+                $export->snapshot->game_start_at?->toIso8601String()
+                    ?? $export->snapshot->generated_at?->toIso8601String()
                     ?? '',
-                (int) $snapshot->game_id,
-                (string) $snapshot->prediction_horizon,
+                (int) $export->snapshot->game_id,
+                $export->predictionHorizon,
             ])
             ->values();
 
@@ -182,7 +182,8 @@ class ExportTrainingDataCommand extends Command
             $canonicalSnapshots = $canonicalSnapshots->take($limit)->values();
         }
 
-        return $canonicalSnapshots->map(function (PredictionFeatureSnapshot $snapshot): ?array {
+        return $canonicalSnapshots->map(function (TrainingExportSnapshot $export): ?array {
+            $snapshot = $export->snapshot;
             $features = $this->arrayValue($snapshot->features);
             $outputs = $this->arrayValue($snapshot->outputs);
             $actuals = $this->arrayValue($snapshot->evaluation_actuals);
@@ -220,7 +221,7 @@ class ExportTrainingDataCommand extends Command
                 'game_id' => $snapshot->game_id,
                 'season' => $snapshot->season,
                 'prediction_id' => $snapshot->prediction_id,
-                'prediction_horizon' => $snapshot->prediction_horizon,
+                'prediction_horizon' => $export->predictionHorizon,
                 'model_version' => $snapshot->model_version,
                 'feature_version' => $snapshot->feature_version,
                 'blend_version' => $snapshot->blend_version,
@@ -242,7 +243,7 @@ class ExportTrainingDataCommand extends Command
                     'snapshot_run_id' => $snapshot->snapshot_run_id,
                     'model_run_id' => $snapshot->model_run_id,
                     'game_id' => (int) $snapshot->game_id,
-                    'prediction_horizon' => $snapshot->prediction_horizon,
+                    'prediction_horizon' => $export->predictionHorizon,
                     'model_version' => $snapshot->model_version,
                     'feature_version' => $snapshot->feature_version,
                     'blend_version' => $snapshot->blend_version,

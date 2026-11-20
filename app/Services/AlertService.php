@@ -9,6 +9,8 @@ use App\Notifications\BettingValueAlert;
 use App\Notifications\BettingValueAlertChannelResolver;
 use App\Services\BettingRecommendations\GameBettingRecommendationService;
 use App\Services\Predictions\PredictionDeliverySource;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 
 class AlertService
 {
@@ -18,7 +20,14 @@ class AlertService
         private readonly NotificationTemplateDefaultService $templateDefaultService,
         private readonly GameBettingRecommendationService $gameBettingRecommendationService,
         private readonly PredictionDeliverySource $predictions,
-    ) {}
+        private ?BettingAlertEligibility $eligibility = null,
+        private ?NotificationDeliveryService $deliveries = null,
+        private ?BettingValueAlertChannelResolver $channels = null,
+    ) {
+        $this->eligibility ??= app(BettingAlertEligibility::class);
+        $this->deliveries ??= app(NotificationDeliveryService::class);
+        $this->channels ??= app(BettingValueAlertChannelResolver::class);
+    }
 
     public function checkForValueOpportunities(string $sport): int
     {
@@ -27,6 +36,8 @@ class AlertService
         $predictions = $this->predictions->forAlerts($sport);
 
         $alertsSent = 0;
+        $template = $this->templateDefaultService->resolve('betting_value_alert');
+        $users = $this->recipientQuery($sport)->get();
 
         foreach ($predictions as $prediction) {
             $opportunities = $this->analyzeOpportunities($prediction);
@@ -39,6 +50,8 @@ class AlertService
                     $opportunity['recommendation'],
                     $opportunity['bet_decision_id'] ?? null,
                     $opportunity['selection'],
+                    $users,
+                    $template,
                 );
             }
         }
@@ -66,12 +79,19 @@ class AlertService
             ->all();
     }
 
-    protected function sendAlertsToUsers(PredictionDeliveryContext $prediction, string $sport, float $expectedValue, string $recommendation, ?int $betDecisionId = null, array $selection = []): int
+    private function recipientQuery(string $sport): Builder
     {
-        $template = $this->templateDefaultService->resolve('betting_value_alert');
-        $users = User::query()->with('alertPreference')
+        return User::query()->with(['alertPreference', 'subscriptions'])
             ->whereHas('alertPreference', fn ($query) => $query->where('enabled', true)
-                ->whereJsonContains('sports', strtolower($sport)))->get();
+                ->whereJsonContains('sports', strtolower($sport)));
+    }
+
+    protected function sendAlertsToUsers(PredictionDeliveryContext $prediction, string $sport, float $expectedValue, string $recommendation, ?int $betDecisionId = null, array $selection = [], ?Collection $users = null, ?object $template = null): int
+    {
+        if ($users === null) {
+            $template ??= $this->templateDefaultService->resolve('betting_value_alert');
+        }
+        $users ??= $this->recipientQuery($sport)->get();
 
         $alertsSent = 0;
 
@@ -90,11 +110,11 @@ class AlertService
                 $selection,
                 $identity,
             );
-            $reason = app(BettingAlertEligibility::class)->reason($user, $sport, $expectedValue, $selection, $template);
+            $reason = $this->eligibility->reason($user, $sport, $expectedValue, $selection, $template);
             if ($reason !== null) {
                 if ($reason === 'edge_threshold_unit_unconfigured') {
-                    $deliveries = app(NotificationDeliveryService::class);
-                    foreach (app(BettingValueAlertChannelResolver::class)->resolve($user) as $channel) {
+                    $deliveries = $this->deliveries;
+                    foreach ($this->channels->resolve($user) as $channel) {
                         $record = $deliveries->record('betting_value_alert', $channel === 'mail' ? hash('sha256', strtolower(trim($user->email))) : 'user:'.$user->id,
                             $channel, $notification->deliveryKey($user, $channel), ['source_type' => $prediction->source::class, 'source_id' => (string) $prediction->source->getKey()]);
                         $deliveries->markSuppressed($record, $reason);
@@ -126,9 +146,9 @@ class AlertService
             if (! $reserved) {
                 continue;
             }
-            $deliveries = app(NotificationDeliveryService::class);
+            $deliveries = $this->deliveries;
             $records = [];
-            foreach (app(BettingValueAlertChannelResolver::class)->resolve($user) as $channel) {
+            foreach ($this->channels->resolve($user) as $channel) {
                 $record = $deliveries->record('betting_value_alert', $channel === 'mail' ? hash('sha256', strtolower(trim($user->email))) : 'user:'.$user->id,
                     $channel, $notification->deliveryKey($user, $channel), ['source_type' => $prediction->source::class, 'source_id' => (string) $prediction->source->getKey()]);
                 $deliveries->markDispatched($record);

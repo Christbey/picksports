@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\PlayerPropCardExportIndexRequest;
 use App\Http\Resources\Api\V2\CanonicalSportPredictionResource;
 use App\Http\Resources\BettingRecommendationResource;
 use App\Models\CBB\Prediction as CbbPrediction;
@@ -18,7 +19,6 @@ use App\Services\Api\V2\SportContextResolver;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -28,16 +28,9 @@ class PlayerPropCardExportController extends Controller
         protected PlayerPropAnalyzer $analyzer
     ) {}
 
-    public function index(Request $request): Response
+    public function index(PlayerPropCardExportIndexRequest $request): Response
     {
-        $validated = $request->validate([
-            'sport' => ['nullable', 'in:NBA,NFL,MLB,CBB'],
-            'date' => ['nullable', 'date'],
-            'game' => ['nullable', 'integer'],
-            'market' => ['nullable', 'string', 'max:100'],
-            'tab' => ['nullable', 'in:props,predictions,futures,tournament'],
-            'season' => ['nullable', 'integer', 'min:2000', 'max:2100'],
-        ]);
+        $validated = $request->validated();
 
         $sport = $validated['sport'] ?? 'NBA';
         $dateFilter = $validated['date'] ?? null;

@@ -108,6 +108,17 @@ return [
     |
     */
 
+    'code_version' => (static function (): ?string {
+        foreach (['SOURCE_VERSION', 'APP_COMMIT_SHA', 'GIT_COMMIT'] as $key) {
+            $version = env($key);
+            if (is_string($version) && trim($version) !== '') {
+                return trim($version);
+            }
+        }
+
+        return null;
+    })(),
+
     'cipher' => 'AES-256-CBC',
 
     'key' => env('APP_KEY'),

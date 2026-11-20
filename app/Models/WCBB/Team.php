@@ -73,7 +73,8 @@ class Team extends Model
         return $this->hasMany(TeamMetric::class, 'team_id');
     }
 
-    public function predictions(): Builder
+    /** Query forecasts for either home or away games; this is not an eager-loadable relation. */
+    public function queryPredictions(): Builder
     {
         return Prediction::query()->whereHas('game', function (Builder $query): void {
             $query->where('home_team_id', $this->id)

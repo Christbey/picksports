@@ -4,9 +4,7 @@ namespace App\Http\Resources;
 
 use App\Models\NFL\Game as NflGame;
 use App\Services\BettingRecommendations\NflPropGameTime;
-use App\Services\BettingRecommendations\NflPropSeasonSummary;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -35,13 +33,13 @@ class BettingRecommendationResource extends JsonResource
             ?? 'Unknown Player';
 
         $season = $game instanceof NflGame
-            ? ($this->resource['season_summary'] ?? app(NflPropSeasonSummary::class)->forProps(new Collection([$prop]))[$prop->id])
+            ? ($this->resource['season_summary'] ?? null)
             : null;
         $coverRecord = $this->resource['cover_record'] ?? null;
         if ($season !== null) {
             $coverRecord = [
                 ...($coverRecord ?? []),
-                'historical_last_17' => data_get($prop->confidence_decomposition, 'schema_version') === PlayerPropAnalyzer::NFL_MODEL_VERSION ? null : ($coverRecord['season'] ?? null),
+                'historical_last_17' => in_array(data_get($prop->confidence_decomposition, 'schema_version'), [PlayerPropAnalyzer::NFL_MODEL_VERSION, PlayerPropAnalyzer::NFL_OPPORTUNITY_MODEL_VERSION, 'nfl-player-prop-v3'], true) ? null : ($coverRecord['season'] ?? null),
                 ...$season['records'],
             ];
             // Presentation win rates exclude pushes; do not mutate model snapshots.
@@ -125,6 +123,8 @@ class BettingRecommendationResource extends JsonResource
             str_contains($modelClass, '\\MLB\\') => 'mlb',
             str_contains($modelClass, '\\NFL\\') => 'nfl',
             str_contains($modelClass, '\\CBB\\') => 'cbb',
+            str_contains($modelClass, '\\CFB\\') => 'cfb',
+            str_contains($modelClass, '\\WNBA\\') => 'wnba',
             default => 'nba',
         };
     }

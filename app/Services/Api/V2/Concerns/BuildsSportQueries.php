@@ -3,14 +3,11 @@
 namespace App\Services\Api\V2\Concerns;
 
 use App\Services\Api\V2\SportContext;
+use App\Services\Api\V2\SportQuerySchema;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Schema;
 
 trait BuildsSportQueries
 {
-    /** @var array<string, array<int, string>> */
-    private array $columnsByTable = [];
-
     /**
      * @return class-string<Model>
      */
@@ -27,9 +24,7 @@ trait BuildsSportQueries
 
     private function hasColumn(string $table, string $column): bool
     {
-        $this->columnsByTable[$table] ??= Schema::getColumnListing($table);
-
-        return in_array($column, $this->columnsByTable[$table], true);
+        return SportQuerySchema::hasColumn($table, $column);
     }
 
     /**

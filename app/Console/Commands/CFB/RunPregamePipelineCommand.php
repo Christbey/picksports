@@ -65,7 +65,7 @@ class RunPregamePipelineCommand extends Command
         }
         try {
             $gameColumns = array_merge(CalculateElo::RESULT_COLUMNS, ['sport_event_id', 'updated_at', 'espn_event_id']);
-            $games = Game::with(['homeTeam', 'awayTeam'])->select($gameColumns)->where('season', $season)
+            $games = Game::with(['homeTeam', 'awayTeam', 'sportEvent'])->select($gameColumns)->where('season', $season)
                 ->when($this->option('game'), fn ($q, $v) => $q->whereKey($v))
                 ->when($this->option('games'), fn ($q, $v) => $q->whereKey(array_map('intval', explode(',', $v))))
                 ->when($this->option('week'), fn ($q, $v) => $q->where('week', $v))
@@ -102,7 +102,7 @@ class RunPregamePipelineCommand extends Command
                 gc_mem_caches();
             }
             // Reapply the future horizon using confirmed kickoff times, not imported placeholders.
-            $games = Game::select($gameColumns)->with(['homeTeam', 'awayTeam'])
+            $games = Game::select($gameColumns)->with(['homeTeam', 'awayTeam', 'sportEvent'])
                 ->whereIn('id', $games->modelKeys())
                 ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_PRE_GAME', 'STATUS_DELAYED'])
                 ->whereHas('sportEvent', fn ($q) => $q->where('starts_at', '>', now())->where('starts_at', '<=', now()->addDays((int) $days)))

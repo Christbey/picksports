@@ -2,90 +2,81 @@
 
 namespace App\Actions\ESPN\MLB;
 
+use App\Actions\ESPN\Concerns\ValidatesBoxscoreReplacement;
 use App\Actions\ESPN\MLB\Concerns\ParsesMlbStatValues;
 use App\Actions\ESPN\MLB\Concerns\ResolvesMlbBoxscoreTeams;
 use App\Models\MLB\Game;
 use App\Models\MLB\Player;
 use App\Models\MLB\PlayerStat;
+use App\Models\MLB\Team;
 
 class SyncPlayerStats
 {
     use ParsesMlbStatValues;
     use ResolvesMlbBoxscoreTeams;
+    use ValidatesBoxscoreReplacement;
 
     public function execute(array $gameData, Game $game): int
+    {
+        return $game->getConnection()->transaction(function () use ($gameData, $game): int {
+            $game->newQuery()->whereKey($game->getKey())->lockForUpdate()->firstOrFail();
+
+            return $this->replacePlayerStats($gameData, $game);
+        });
+    }
+
+    protected function replacePlayerStats(array $gameData, Game $game): int
     {
         $playerSections = $this->boxscoreSection($gameData, 'players');
         if ($playerSections === []) {
             return 0;
         }
 
-        // Delete existing stats for this game to avoid duplicates
-        PlayerStat::query()->where('game_id', $game->id)->delete();
-
+        $teams = $this->replacementTeams($playerSections, $game, Team::class, PlayerStat::class);
+        if ($teams === null) {
+            return 0;
+        }
+        $players = Player::query()->whereIn('espn_id', collect($playerSections)->flatMap(fn ($team) => collect($team['statistics'] ?? [])->flatMap(fn ($section) => collect($section['athletes'] ?? [])->pluck('athlete.id'))))->get()->keyBy('espn_id');
+        $rows = [];
         $synced = 0;
-
         foreach ($playerSections as $teamData) {
-            $team = $this->resolveTeamFromBoxscore($teamData);
-            if (! $team) {
-                continue;
+            $team = $teams->get($teamData['team']['id']);
+            if (! is_array($teamData['statistics'] ?? null) || $teamData['statistics'] === []) {
+                return 0;
             }
-
-            // Baseball has multiple statistics sections (batting, pitching, fielding)
-            if (! isset($teamData['statistics'])) {
-                continue;
-            }
-
-            foreach ($teamData['statistics'] as $statSection) {
-                $statType = strtolower($statSection['type'] ?? 'batting');
-
-                if (! isset($statSection['athletes'])) {
-                    continue;
+            foreach ($teamData['statistics'] as $section) {
+                $type = strtolower($section['type'] ?? 'batting');
+                if (! is_array($section['athletes'] ?? null)) {
+                    return 0;
                 }
-
-                foreach ($statSection['athletes'] as $athleteData) {
-                    $playerEspnId = $athleteData['athlete']['id'] ?? null;
-
-                    if (! $playerEspnId) {
-                        continue;
+                foreach ($section['athletes'] as $athlete) {
+                    $player = $players->get(data_get($athlete, 'athlete.id'));
+                    if (! $player || ! is_array($athlete['stats'] ?? null) || $athlete['stats'] === []) {
+                        return 0;
                     }
-
-                    $player = Player::query()->where('espn_id', $playerEspnId)->first();
-
-                    if (! $player) {
-                        continue;
-                    }
-
-                    $stats = $athleteData['stats'] ?? [];
-                    $labels = $statSection['labels'] ?? $statSection['names'] ?? [];
-
-                    // Parse stats based on type
-                    $statData = match ($statType) {
+                    $stats = $athlete['stats'];
+                    $labels = $section['labels'] ?? $section['names'] ?? [];
+                    $data = match ($type) {
                         'batting' => $this->parseBattingStats($stats, $labels),
                         'pitching' => $this->parsePitchingStats($stats, $labels),
                         'fielding' => $this->parseFieldingStats($stats, $labels),
                         default => [],
                     };
-
-                    if (empty($statData)) {
+                    if ($data === []) {
                         continue;
                     }
-
-                    PlayerStat::query()->updateOrCreate(
-                        [
-                            'player_id' => $player->id,
-                            'game_id' => $game->id,
-                            'stat_type' => $statType,
-                        ],
-                        [
-                            'team_id' => $team->id,
-                            ...$statData,
-                        ]
-                    );
-
+                    $rows[$player->id.':'.$type] = ['player_id' => $player->id, 'game_id' => $game->id, 'team_id' => $team->id, 'stat_type' => $type, ...$data];
                     $synced++;
                 }
             }
+        }
+        if ($rows === []) {
+            return 0;
+        }
+
+        PlayerStat::query()->where('game_id', $game->id)->delete();
+        foreach ($rows as $row) {
+            PlayerStat::query()->create($row);
         }
 
         return $synced;

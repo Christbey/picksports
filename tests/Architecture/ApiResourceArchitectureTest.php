@@ -27,15 +27,8 @@ function knownResourceCalculationDebt(): array
     return [
         'Api/V2/MlbPickCandidateResource.php',
         'CBB/PlayerStatResource.php',
-        'CBB/TeamResource.php',
-        'MLB/TeamResource.php',
-        'NBA/PlayerInjuryResource.php',
         'NBA/PlayerStatResource.php',
-        'NFL/GameResource.php',
         'NFL/PlayerStatResource.php',
-        'NFL/TeamResource.php',
-        'WCBB/TeamResource.php',
-        'WNBA/TeamResource.php',
     ];
 }
 

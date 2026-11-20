@@ -24,8 +24,9 @@ class GameMatchupContextService
     public function forGame(Model $game): array
     {
         $config = $this->configForGame($game);
-        $homeTeam = $game->relationLoaded('homeTeam') ? $game->homeTeam : $game->homeTeam()->first();
-        $awayTeam = $game->relationLoaded('awayTeam') ? $game->awayTeam : $game->awayTeam()->first();
+        $game->loadMissing(['homeTeam', 'awayTeam']);
+        $homeTeam = $game->homeTeam;
+        $awayTeam = $game->awayTeam;
 
         if (! $homeTeam || ! $awayTeam) {
             return ['rows' => []];
@@ -599,12 +600,12 @@ class GameMatchupContextService
             return null;
         }
 
-        $homePitcher = $homePitcherId !== ''
-            ? Player::query()->where('espn_id', $homePitcherId)->first()
-            : null;
-        $awayPitcher = $awayPitcherId !== ''
-            ? Player::query()->where('espn_id', $awayPitcherId)->first()
-            : null;
+        $homePitcher = $game->relationLoaded('probableHomePitcher')
+            ? $game->getRelation('probableHomePitcher')
+            : ($homePitcherId !== '' ? Player::query()->where('espn_id', $homePitcherId)->first() : null);
+        $awayPitcher = $game->relationLoaded('probableAwayPitcher')
+            ? $game->getRelation('probableAwayPitcher')
+            : ($awayPitcherId !== '' ? Player::query()->where('espn_id', $awayPitcherId)->first() : null);
 
         return $this->makeRow(
             key: 'starter_matchup',

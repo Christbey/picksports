@@ -66,7 +66,7 @@ class ResearchGameContextCommand extends Command
         }
 
         $games = Game::query()
-            ->with(['homeTeam', 'awayTeam'])
+            ->with(['homeTeam', 'awayTeam', 'weather'])
             ->where(fn ($query) => $dateWindowService->applyGameDateWindow($query, $window))
             ->where('status', (string) config('nfl.statuses.scheduled', 'STATUS_SCHEDULED'))
             ->when($season, fn ($query) => $query->where('season', (int) $season))

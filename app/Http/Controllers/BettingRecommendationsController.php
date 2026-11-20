@@ -2,50 +2,45 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
+use App\Http\Requests\BettingRecommendationsRenderPlayerPropsRequest;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class BettingRecommendationsController extends Controller
 {
-    public function nba(Request $request): Response
+    public function nba(BettingRecommendationsRenderPlayerPropsRequest $request): Response
     {
         return $this->renderPlayerProps('NBA', $request, 'NBA/PlayerProps');
     }
 
-    public function mlb(Request $request): Response
+    public function mlb(BettingRecommendationsRenderPlayerPropsRequest $request): Response
     {
         return $this->renderPlayerProps('MLB', $request, 'MLB/PlayerProps');
     }
 
-    public function nfl(Request $request): Response
+    public function nfl(BettingRecommendationsRenderPlayerPropsRequest $request): Response
     {
         return $this->renderPlayerProps('NFL', $request, 'NFL/PlayerProps');
     }
 
-    public function cfb(Request $request): Response
+    public function cfb(BettingRecommendationsRenderPlayerPropsRequest $request): Response
     {
         return $this->renderPlayerProps('CFB', $request, 'CFB/PlayerProps');
     }
 
-    public function cbb(Request $request): Response
+    public function cbb(BettingRecommendationsRenderPlayerPropsRequest $request): Response
     {
         return $this->renderPlayerProps('CBB', $request, 'CBB/PlayerProps');
     }
 
-    public function wnba(Request $request): Response
+    public function wnba(BettingRecommendationsRenderPlayerPropsRequest $request): Response
     {
         return $this->renderPlayerProps('WNBA', $request, 'WNBA/PlayerProps');
     }
 
-    protected function renderPlayerProps(string $sport, Request $request, string $component): Response
+    protected function renderPlayerProps(string $sport, BettingRecommendationsRenderPlayerPropsRequest $request, string $component): Response
     {
-        $validated = $request->validate([
-            'date' => ['nullable', 'date'],
-            'view' => ['nullable', 'in:recommendations,all'],
-            'game' => ['nullable', 'integer'],
-            'market' => ['nullable', 'string', 'max:100'],
-        ]);
+        $validated = $request->validated();
 
         return Inertia::render($component, [
             'sport' => $sport,

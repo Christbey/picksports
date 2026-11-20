@@ -9,6 +9,7 @@ use App\Models\MLB\Team;
 use App\Models\MLB\TeamMetric;
 use App\Models\PredictionFeatureSnapshot;
 use App\Services\MLB\MlbPredictionRecommendationService;
+use App\Services\Predictions\LivePredictionStore;
 use App\Support\MLB\MlbGamePhase;
 use App\Support\MLB\MlbMarketSpread;
 use Illuminate\Support\Carbon;
@@ -260,7 +261,7 @@ it('keeps live fields out of official pregame bet counts', function () {
         ->and(data_get($recommendation, 'pregame_recommendation.is_bet'))->toBeTrue();
 });
 
-it('clears live prediction fields for delayed games instead of treating them as live', function () {
+it('withholds delayed live output without rewriting retired legacy columns', function () {
     $home = Team::factory()->create();
     $away = Team::factory()->create();
     $game = Game::factory()->create([
@@ -282,9 +283,10 @@ it('clears live prediction fields for delayed games instead of treating them as 
 
     expect($result)->toBeNull();
     $prediction->refresh();
-    expect($prediction->live_win_probability)->toBeNull()
-        ->and($prediction->live_predicted_spread)->toBeNull()
-        ->and($prediction->live_predicted_total)->toBeNull();
+    expect((float) $prediction->live_win_probability)->toBe(0.75)
+        ->and((float) $prediction->live_predicted_spread)->toBe(2.0)
+        ->and((float) $prediction->live_predicted_total)->toBe(9.0)
+        ->and(app(LivePredictionStore::class)->fields($game)['live_win_probability'])->toBeNull();
 });
 
 it('documents mlb market spread sign conversion', function () {

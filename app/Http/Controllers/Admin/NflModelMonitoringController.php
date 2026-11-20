@@ -3,20 +3,16 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\NflModelMonitoringInvokeRequest;
 use App\Services\NFL\NflModelMonitoringService;
-use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class NflModelMonitoringController extends Controller
 {
-    public function __invoke(Request $request, NflModelMonitoringService $monitoring): Response
+    public function __invoke(NflModelMonitoringInvokeRequest $request, NflModelMonitoringService $monitoring): Response
     {
-        $filters = $request->validate([
-            'evidence_season' => ['nullable', 'integer', 'between:2000,2100'],
-            'evidence_model' => ['nullable', 'string', 'max:128'],
-            'evidence_week' => ['nullable', 'integer', 'between:2,22'],
-        ]);
+        $filters = $request->validated();
         $evidence = array_filter([
             'from_season' => $filters['evidence_season'] ?? null,
             'to_season' => $filters['evidence_season'] ?? null,

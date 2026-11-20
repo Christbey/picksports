@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\AlertPreferenceStoreRequest;
 use App\Http\Resources\UserAlertPreferenceResource;
 use App\Models\UserAlertPreference;
 use App\Support\SportCatalog;
@@ -25,9 +26,9 @@ class AlertPreferenceController extends Controller
         return new UserAlertPreferenceResource($preference);
     }
 
-    public function store(Request $request): UserAlertPreferenceResource
+    public function store(AlertPreferenceStoreRequest $request): UserAlertPreferenceResource
     {
-        $validated = $request->validate(AlertPreferenceRules::apiStore());
+        $validated = $request->validated();
         $existing = UserAlertPreference::query()
             ->where('user_id', $request->user()->id)
             ->first();

@@ -19,5 +19,6 @@ final readonly class SportPredictionPresentationData
         public ?array $marketAwareProjection = null,
         public ?array $valueSignal = null,
         public ?array $nflBoard = null,
+        public array $liveFields = [],
     ) {}
 }

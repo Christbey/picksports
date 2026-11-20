@@ -27,3 +27,7 @@ The command is not a read-only connection test. Do not activate a candidate, syn
 Verify the active calculation release and frozen input provenance separately from the active Elo state. A repaired historical rating does not prove that a forecast possessed that information before kickoff. Do not overwrite immutable forecasts, backdate reconstructed inputs, or approve a release simply because a rebuild succeeded.
 
 See [model lifecycle](model-lifecycle.md), [CFB decision policy](cfb-decision-policy.md), and [CFB football signals](cfb-football-signals.md) for prediction ownership and interpretation. Production connection procedures are in [production access](operations/production-access.md).
+
+## Schema release sequence
+
+`2026_09_19_180000_version_cfb_elo_integrity` adds the version-aware unique key and supporting team index while retaining legacy uniqueness. Deploy the `active_slot`-aware readers and writers before applying `2026_11_19_220000_contract_cfb_elo_legacy_uniqueness`. The contract verifies the replacement indexes and valid active-slot values before retiring the obsolete game/week unique indexes. It also works when an earlier deployment already removed those indexes. Retained rating versions prevent restoring legacy uniqueness, so rollback requires a reviewed forward repair; the contract migration refuses `down()`. No rows are deleted.

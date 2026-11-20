@@ -3,6 +3,7 @@
 namespace App\Http\Resources\Api\V2;
 
 use App\Services\Api\V2\SportContext;
+use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -146,7 +147,7 @@ class SportPlayerPropResource extends JsonResource
             return null;
         }
 
-        return array_key_exists($key, $this->resource->getAttributes())
+        return $this->resource->hasAttribute($key)
             ? $this->resource->getAttribute($key)
             : null;
     }
@@ -175,14 +176,6 @@ class SportPlayerPropResource extends JsonResource
 
     private function serializeDateValue(mixed $value): ?string
     {
-        if ($value === null) {
-            return null;
-        }
-
-        if (is_object($value) && method_exists($value, 'toIso8601String')) {
-            return $value->toIso8601String();
-        }
-
-        return (string) $value;
+        return GameDateTimePresenter::serializeDateValue($value);
     }
 }

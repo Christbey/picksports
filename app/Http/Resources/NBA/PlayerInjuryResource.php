@@ -2,7 +2,7 @@
 
 namespace App\Http\Resources\NBA;
 
-use App\Support\InjuryImpactScorer;
+use App\Services\Api\V2\PreparedInjuryImpacts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -15,7 +15,7 @@ class PlayerInjuryResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $impact = app(InjuryImpactScorer::class)->describe('nba', (int) $this->player_id, $this->status);
+        $impact = app(PreparedInjuryImpacts::class)->get($this->resource);
 
         return [
             'id' => $this->id,

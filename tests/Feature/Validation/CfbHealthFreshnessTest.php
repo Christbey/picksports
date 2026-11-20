@@ -158,7 +158,8 @@ it('skips recovery only when a completed audit is recent', function () {
         ->expectsOutput('Recent completed validation is available.')->assertSuccessful();
     expect(ValidationRun::count())->toBe(1);
     $event = collect(app(Schedule::class)->events())->first(fn ($event) => str_contains((string) $event->command, 'healthcheck:validate-data --sport=cfb --if-stale'));
-    expect($event)->not->toBeNull()->and($event->expression)->toBe('55 * * * *');
+    expect($event !== null)->toBeTrue();
+    expect($event?->expression)->toBe('55 * * * *');
 });
 
 it('checks actual canonical source ordering without requiring legacy command heartbeats', function () {

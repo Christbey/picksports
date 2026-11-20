@@ -10,14 +10,14 @@ use Illuminate\Database\Eloquent\Model;
 
 class MlbFirstInningCandidateBuilder
 {
-    public function __construct(private readonly MlbPickMarketService $markets) {}
+    public function __construct(private readonly MlbPickMarketService $markets, private readonly BettingForecastSource $forecasts) {}
 
     /**
      * @return list<MlbPickCandidateData>
      */
     public function build(Model|BettingForecast $prediction): array
     {
-        $prediction = $prediction instanceof Model ? app(BettingForecastSource::class)->fromModel($prediction, 'mlb') : $prediction;
+        $prediction = $prediction instanceof Model ? $this->forecasts->fromModel($prediction, 'mlb') : $prediction;
 
         if ($prediction->isCanonical() && ($prediction->homePitcherElo === null || $prediction->awayPitcherElo === null)) {
             return [];

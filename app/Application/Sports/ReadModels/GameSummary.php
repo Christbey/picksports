@@ -90,5 +90,6 @@ final readonly class GameSummary
         public ?PredictionSummary $prediction,
         public ?string $completedAt,
         public ?string $updatedAt,
+        public ?string $startsAt = null,
     ) {}
 }

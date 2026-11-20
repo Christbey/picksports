@@ -15,14 +15,37 @@ use App\Support\Odds\AmericanOdds;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 class MlbBettingSignalService
 {
     public const FILTER_VERSION = 'selective_mlb_bet_filter_v1';
 
+    /** @var array<int, BettingForecast|null> */
+    private array $historyForecasts = [];
+
+    private function primeHistoryForecasts(Collection $games): void
+    {
+        $missing = $games->filter(fn (Game $game): bool => ! array_key_exists($game->id, $this->historyForecasts));
+        $forecasts = $this->forecasts->historyForGames($missing, 'mlb');
+        foreach ($missing as $game) {
+            $this->historyForecasts[$game->id] = $forecasts->get($game->id);
+        }
+    }
+
+    private function historyForecast(Game $game): ?BettingForecast
+    {
+        if (! array_key_exists($game->id, $this->historyForecasts)) {
+            $this->historyForecasts[$game->id] = $this->forecasts->forGame($game, 'mlb');
+        }
+
+        return $this->historyForecasts[$game->id];
+    }
+
     public function __construct(
         protected FuturesOddsLookupService $futuresOddsLookup,
         protected FuturesEdgeService $futuresEdgeService,
+        protected BettingForecastSource $forecasts,
         protected SportsDateWindowService $dateWindows,
     ) {}
 
@@ -31,6 +54,8 @@ class MlbBettingSignalService
      */
     public function signals(int $season, ?CarbonInterface $asOfDate = null): array
     {
+        $this->historyForecasts = [];
+
         $asOfDate ??= now();
         $slateDate = $this->targetSlateDate($season, $asOfDate);
         $slatePredictions = $slateDate !== null ? $this->slatePredictionRows($season, $slateDate) : [];
@@ -38,7 +63,7 @@ class MlbBettingSignalService
 
         return [
             'season' => $season,
-            'prediction_source' => app(BettingForecastSource::class)->usesCanonical('mlb') ? 'canonical' : 'legacy',
+            'prediction_source' => $this->forecasts->usesCanonical('mlb') ? 'canonical' : 'legacy',
             'as_of_date' => $asOfDate->toDateString(),
             'slate_date' => $slateDate?->toDateString(),
             'backend_review' => $this->backendReview(),
@@ -53,8 +78,8 @@ class MlbBettingSignalService
             'live_coverage_status' => 'separate_live_snapshots',
             'bet_filter' => $this->betFilterSummary(),
             'moneyline_readiness' => $this->moneylineReadiness($slatePredictions),
-            'recommended_bets' => app(BettingForecastSource::class)->usesCanonical('mlb')
-                ? app(BettingForecastSource::class)->approvedSignalRows($slatePredictions)
+            'recommended_bets' => $this->forecasts->usesCanonical('mlb')
+                ? $this->forecasts->approvedSignalRows($slatePredictions)
                 : $this->publicRecommendedBets($candidateBets),
             'shadow_recommended_bets' => $candidateBets,
             'pass_summary' => $this->passSummary($slatePredictions),
@@ -206,7 +231,7 @@ class MlbBettingSignalService
         $ids = Game::query()->whereDate('game_date', $slateDate->toDateString())
             ->where('status', config('mlb.statuses.scheduled'))->pluck('id')->all();
 
-        return app(BettingForecastSource::class)->forGames('mlb', $ids, $season)->all();
+        return $this->forecasts->forGames('mlb', $ids, $season)->all();
     }
 
     /**
@@ -472,7 +497,7 @@ class MlbBettingSignalService
         $ids = Game::query()->whereIn('status', $liveStatuses)
             ->tap(fn ($query) => $this->dateWindows->applyGameDateWindow($query, $window))->pluck('id')->all();
 
-        return app(BettingForecastSource::class)->forGames('mlb', $ids, $season, live: true)
+        return $this->forecasts->forGames('mlb', $ids, $season, live: true)
             ->map(fn (BettingForecast $prediction): array => $this->liveSignalRow($prediction))
             ->sortByDesc(fn (array $row): float => (float) ($row['live_probability_delta'] ?? 0.0))
             ->values()
@@ -838,7 +863,7 @@ class MlbBettingSignalService
      */
     public function betCandidatesForPrediction(Model|BettingForecast $prediction, bool $enabledOnly = true, bool $includePasses = true): array
     {
-        $prediction = $prediction instanceof Model ? app(BettingForecastSource::class)->fromModel($prediction, 'mlb') : $prediction;
+        $prediction = $prediction instanceof Model ? $this->forecasts->fromModel($prediction, 'mlb') : $prediction;
 
         $candidates = [];
 
@@ -1523,6 +1548,8 @@ class MlbBettingSignalService
             ->limit(16)
             ->get();
 
+        $this->primeHistoryForecasts($games);
+
         $streakKey = null;
         $length = 0;
         $sample = [];
@@ -1582,7 +1609,7 @@ class MlbBettingSignalService
 
     protected function runLineResult(Game $game, int $teamId): ?string
     {
-        $prediction = app(BettingForecastSource::class)->forGame($game, 'mlb');
+        $prediction = $this->historyForecast($game);
         if (! $prediction || $prediction->vegasSpread === null || $game->home_score === null || $game->away_score === null) {
             return null;
         }
@@ -1596,7 +1623,7 @@ class MlbBettingSignalService
 
     protected function totalResult(Game $game): ?string
     {
-        $forecast = app(BettingForecastSource::class)->forGame($game, 'mlb');
+        $forecast = $this->historyForecast($game);
         $marketTotal = $forecast?->isCanonical() ? $forecast->marketTotal : data_get($forecast?->modelMetadata, 'market_context.market_total');
         if ($game->home_score === null || $game->away_score === null || ! is_numeric($marketTotal)) {
             return null;

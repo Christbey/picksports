@@ -55,10 +55,10 @@ class SportGameController extends Controller
     ): JsonResponse {
         $context = $sports->resolve($sport);
         $resolvedGame = $games->find($context, $game, $request->user());
-        $resolvedGame->setAttribute('matchup_context', $matchupContext->forGame($resolvedGame));
+        $preparedMatchup = $matchupContext->forGame($resolvedGame);
 
         return response()->json([
-            'data' => new SportGameResource($resolvedGame, $context),
+            'data' => new SportGameResource($resolvedGame, $context, $preparedMatchup),
             'meta' => [
                 'sport' => $context->slug,
                 'freshness' => [],

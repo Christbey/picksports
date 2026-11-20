@@ -19,6 +19,7 @@ class NbaBettingSignalService
     public function __construct(
         protected FuturesOddsLookupService $futuresOddsLookup,
         protected FuturesEdgeService $futuresEdgeService,
+        protected BettingForecastSource $forecasts,
     ) {}
 
     /**
@@ -32,7 +33,7 @@ class NbaBettingSignalService
 
         return [
             'season' => $season,
-            'prediction_source' => app(BettingForecastSource::class)->usesCanonical('nba') ? 'canonical' : 'legacy',
+            'prediction_source' => $this->forecasts->usesCanonical('nba') ? 'canonical' : 'legacy',
             'as_of_date' => $asOfDate->toDateString(),
             'slate_date' => $slateDate?->toDateString(),
             'backend_review' => $this->backendReview(),
@@ -220,7 +221,7 @@ class NbaBettingSignalService
         $ids = Game::query()->where('season', $season)
             ->whereDate('game_date', $slateDate->toDateString())->where('status', '!=', 'STATUS_FINAL')->pluck('id')->all();
 
-        return app(BettingForecastSource::class)->forGames('nba', $ids, $season)->all();
+        return $this->forecasts->forGames('nba', $ids, $season)->all();
     }
 
     /**
@@ -297,8 +298,8 @@ class NbaBettingSignalService
      */
     protected function recommendedBets(array $predictions): array
     {
-        if (app(BettingForecastSource::class)->usesCanonical('nba')) {
-            return app(BettingForecastSource::class)->approvedSignalRows($predictions);
+        if ($this->forecasts->usesCanonical('nba')) {
+            return $this->forecasts->approvedSignalRows($predictions);
         }
 
         $rows = array_values(array_filter(

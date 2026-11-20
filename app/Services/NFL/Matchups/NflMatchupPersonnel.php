@@ -24,7 +24,7 @@ final class NflMatchupPersonnel
         $result = [];
         foreach (['home', 'away'] as $side) {
             $teamId = (int) $target->{$side.'_team_id'};
-            $link = GameDepthChartLink::with('snapshot.entries')->where('game_id', $target->id)->where('team_id', $teamId)->where('side', $side)
+            $link = GameDepthChartLink::with('snapshot.entries.player')->where('game_id', $target->id)->where('team_id', $teamId)->where('side', $side)
                 ->where('as_of', '<=', $asOf)->where('observed_at', '<=', $asOf)->latest('as_of')->latest('id')->first();
             $snapshot = $link?->snapshot;
             $current = $this->validSnapshot($snapshot, $teamId, (int) $target->season, $asOf) ? $snapshot : null;

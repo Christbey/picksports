@@ -14,16 +14,32 @@ use Illuminate\Support\Str;
 
 class BettingValueAlertFormatter
 {
+    public function __construct(private readonly PredictionDeliverySource $predictions) {}
+
+    private function deliveryContext(Model|PredictionDeliveryContext $prediction, string $sport): PredictionDeliveryContext
+    {
+        $sport = strtolower($sport);
+        if ($prediction instanceof PredictionDeliveryContext) {
+            if ($prediction->sport !== $sport) {
+                throw new \InvalidArgumentException('Prediction sport does not match the alert format.');
+            }
+
+            return $prediction;
+        }
+
+        return $this->predictions->context($prediction, $sport);
+    }
+
     public function toMail(
         object $notifiable,
-        Model $prediction,
+        Model|PredictionDeliveryContext $prediction,
         string $sport,
         float $expectedValue,
         string $recommendation,
         ?NotificationTemplate $template = null,
         array $selection = [],
     ): MailMessage {
-        $prediction = app(PredictionDeliverySource::class)->context($prediction, strtolower($sport));
+        $prediction = $this->deliveryContext($prediction, $sport);
         $template = $this->compatibleTemplate($template, $selection);
 
         if ($template) {
@@ -75,14 +91,14 @@ class BettingValueAlertFormatter
      */
     public function toArray(
         object $notifiable,
-        Model $prediction,
+        Model|PredictionDeliveryContext $prediction,
         string $sport,
         float $expectedValue,
         string $recommendation,
         ?NotificationTemplate $template = null,
         array $selection = [],
     ): array {
-        $prediction = app(PredictionDeliverySource::class)->context($prediction, strtolower($sport));
+        $prediction = $this->deliveryContext($prediction, $sport);
         $template = $this->compatibleTemplate($template, $selection);
 
         $game = $prediction->game;
@@ -115,14 +131,14 @@ class BettingValueAlertFormatter
 
     public function toWhatsApp(
         object $notifiable,
-        Model $prediction,
+        Model|PredictionDeliveryContext $prediction,
         string $sport,
         float $expectedValue,
         string $recommendation,
         ?NotificationTemplate $template = null,
         array $selection = [],
     ): string {
-        $prediction = app(PredictionDeliverySource::class)->context($prediction, strtolower($sport));
+        $prediction = $this->deliveryContext($prediction, $sport);
         $template = $this->compatibleTemplate($template, $selection);
 
         if ($template) {
@@ -144,14 +160,14 @@ class BettingValueAlertFormatter
 
     public function toVonage(
         object $notifiable,
-        Model $prediction,
+        Model|PredictionDeliveryContext $prediction,
         string $sport,
         float $expectedValue,
         string $recommendation,
         ?NotificationTemplate $template = null,
         array $selection = [],
     ): VonageMessage {
-        $prediction = app(PredictionDeliverySource::class)->context($prediction, strtolower($sport));
+        $prediction = $this->deliveryContext($prediction, $sport);
         $template = $this->compatibleTemplate($template, $selection);
 
         if ($template) {
@@ -180,14 +196,14 @@ class BettingValueAlertFormatter
      */
     public function toWebPush(
         object $notifiable,
-        Model $prediction,
+        Model|PredictionDeliveryContext $prediction,
         string $sport,
         float $expectedValue,
         string $recommendation,
         ?NotificationTemplate $template = null,
         array $selection = [],
     ): array {
-        $prediction = app(PredictionDeliverySource::class)->context($prediction, strtolower($sport));
+        $prediction = $this->deliveryContext($prediction, $sport);
         $template = $this->compatibleTemplate($template, $selection);
 
         $game = $prediction->game;

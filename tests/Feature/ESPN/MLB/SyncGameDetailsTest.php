@@ -1,6 +1,8 @@
 <?php
 
 use App\Actions\ESPN\MLB\SyncGameDetails;
+use App\Actions\ESPN\MLB\SyncPlayerStats;
+use App\Actions\ESPN\MLB\SyncPlays;
 use App\Actions\ESPN\MLB\SyncTeamStats;
 use App\Jobs\ESPN\MLB\FetchGameDetails;
 use App\Models\MLB\Game;
@@ -107,29 +109,14 @@ it('updates inning half and count state from mlb game details', function () {
     $espnService = m::mock(EspnService::class);
     $espnService->shouldReceive('getGame')->once()->with('401999001')->andReturn($gameData);
 
-    $syncPlayerStats = new class
-    {
-        public function execute(...$args): int
-        {
-            return 0;
-        }
-    };
+    $syncPlayerStats = m::mock(SyncPlayerStats::class);
+    $syncPlayerStats->shouldReceive('execute')->once()->andReturn(0);
 
-    $syncTeamStats = new class
-    {
-        public function execute(...$args): int
-        {
-            return 0;
-        }
-    };
+    $syncTeamStats = m::mock(SyncTeamStats::class);
+    $syncTeamStats->shouldReceive('execute')->once()->andReturn(0);
 
-    $syncPlays = new class
-    {
-        public function execute(...$args): int
-        {
-            return 0;
-        }
-    };
+    $syncPlays = m::mock(SyncPlays::class);
+    $syncPlays->shouldReceive('execute')->once()->andReturn(0);
 
     $result = (new SyncGameDetails($espnService, $syncPlayerStats, $syncTeamStats, $syncPlays))
         ->execute('401999001');
@@ -191,7 +178,7 @@ it('reconciles missing final scores after normal team stat ingestion', function 
     $espnService = m::mock(EspnService::class);
     $espnService->shouldReceive('getGame')->once()->with($game->espn_event_id)->andReturn($gameData);
 
-    $syncTeamStats = new class
+    $syncTeamStats = new class extends SyncTeamStats
     {
         public function execute(array $gameData, Game $game): int
         {
@@ -212,15 +199,12 @@ it('reconciles missing final scores after normal team stat ingestion', function 
         }
     };
 
-    $noOpSync = new class
-    {
-        public function execute(...$args): int
-        {
-            return 0;
-        }
-    };
+    $syncPlayerStats = m::mock(SyncPlayerStats::class);
+    $syncPlayerStats->shouldReceive('execute')->once()->andReturn(0);
+    $syncPlays = m::mock(SyncPlays::class);
+    $syncPlays->shouldReceive('execute')->once()->andReturn(0);
 
-    $result = (new SyncGameDetails($espnService, $noOpSync, $syncTeamStats, $noOpSync))
+    $result = (new SyncGameDetails($espnService, $syncPlayerStats, $syncTeamStats, $syncPlays))
         ->execute($game->espn_event_id);
 
     expect($result['score_reconciliation'])
@@ -261,7 +245,7 @@ it('does not overwrite score conflicts during normal final game sync', function 
     $espnService = m::mock(EspnService::class);
     $espnService->shouldReceive('getGame')->once()->with($game->espn_event_id)->andReturn($gameData);
 
-    $syncTeamStats = new class
+    $syncTeamStats = new class extends SyncTeamStats
     {
         public function execute(array $gameData, Game $game): int
         {
@@ -282,15 +266,12 @@ it('does not overwrite score conflicts during normal final game sync', function 
         }
     };
 
-    $noOpSync = new class
-    {
-        public function execute(...$args): int
-        {
-            return 0;
-        }
-    };
+    $syncPlayerStats = m::mock(SyncPlayerStats::class);
+    $syncPlayerStats->shouldReceive('execute')->once()->andReturn(0);
+    $syncPlays = m::mock(SyncPlays::class);
+    $syncPlays->shouldReceive('execute')->once()->andReturn(0);
 
-    $result = (new SyncGameDetails($espnService, $noOpSync, $syncTeamStats, $noOpSync))
+    $result = (new SyncGameDetails($espnService, $syncPlayerStats, $syncTeamStats, $syncPlays))
         ->execute($game->espn_event_id);
 
     expect($result['score_reconciliation'])

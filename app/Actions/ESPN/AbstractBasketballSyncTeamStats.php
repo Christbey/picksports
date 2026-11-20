@@ -2,10 +2,13 @@
 
 namespace App\Actions\ESPN;
 
+use App\Actions\ESPN\Concerns\ValidatesBoxscoreReplacement;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractBasketballSyncTeamStats
 {
+    use ValidatesBoxscoreReplacement;
+
     protected const TEAM_MODEL_CLASS = Model::class;
 
     protected const TEAM_STAT_MODEL_CLASS = Model::class;
@@ -14,21 +17,34 @@ abstract class AbstractBasketballSyncTeamStats
 
     public function execute(array $gameData, Model $game): int
     {
-        if (! isset($gameData['boxscore']['teams'])) {
+        return $game->getConnection()->transaction(function () use ($gameData, $game): int {
+            $game->newQuery()->whereKey($game->getKey())->lockForUpdate()->firstOrFail();
+
+            return $this->replaceTeamStats($gameData, $game);
+        });
+    }
+
+    protected function replaceTeamStats(array $gameData, Model $game): int
+    {
+        $sections = $gameData['boxscore']['teams'] ?? null;
+        if (! is_array($sections) || $sections === []) {
             return 0;
         }
 
         $teamStatModel = $this->teamStatModelClass();
-        $teamStatModel::query()->where('game_id', $game->id)->delete();
 
         $synced = 0;
         $teamModel = $this->teamModelClass();
+        $teams = $this->replacementTeams($sections, $game, $teamModel, $teamStatModel);
+        if ($teams === null) {
+            return 0;
+        }
+        $rows = [];
 
-        foreach ($gameData['boxscore']['teams'] as $teamData) {
-            $team = $teamModel::query()->where('espn_id', $teamData['team']['id'])->first();
-
-            if (! $team) {
-                continue;
+        foreach ($sections as $teamData) {
+            $team = $teams->get($teamData['team']['id']);
+            if (! is_array($teamData['statistics'] ?? null) || $teamData['statistics'] === []) {
+                return 0;
             }
 
             $stats = $this->parseTeamStats($teamData['statistics'] ?? []);
@@ -38,7 +54,7 @@ abstract class AbstractBasketballSyncTeamStats
             $ftMade = $stats['freeThrowsMade'] ?? 0;
             $calculatedPoints = (($fgMade - $threeMade) * 2) + ($threeMade * 3) + $ftMade;
 
-            $teamStatModel::create([
+            $attributes = [
                 'team_id' => $team->id,
                 'game_id' => $game->id,
                 'team_type' => $this->resolveTeamType($teamData, $game, $team),
@@ -65,9 +81,21 @@ abstract class AbstractBasketballSyncTeamStats
                 'biggest_lead' => $stats['biggestLead'] ?? null,
                 'times_tied' => $stats['timesTied'] ?? null,
                 'lead_changes' => $stats['leadChanges'] ?? null,
-            ]);
+            ];
+
+            $observed = array_diff_key($attributes, array_flip(['team_id', 'game_id', 'team_type', 'points', 'possessions']));
+            if (collect($observed)->every(fn ($value): bool => $value === null)
+                && ! is_numeric($stats['points'] ?? null) && ! is_numeric($stats['possessions'] ?? null)) {
+                return 0;
+            }
+            $rows[] = $attributes;
 
             $synced++;
+        }
+
+        $teamStatModel::query()->where('game_id', $game->id)->delete();
+        foreach ($rows as $row) {
+            $teamStatModel::query()->create($row);
         }
 
         return $synced;

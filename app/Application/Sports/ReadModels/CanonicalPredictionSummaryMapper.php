@@ -28,8 +28,8 @@ final class CanonicalPredictionSummaryMapper
             id: $prediction->public_id,
             predictedSpread: $homeSpread?->projectedLine,
             predictedTotal: $total?->projectedLine,
-            confidenceScore: $homeMoneyline?->confidenceScore ?? $homeSpread?->confidenceScore,
-            homeWinProbability: $homeMoneyline?->probability ?? 0.5,
+            confidenceScore: $homeMoneyline?->confidenceScore,
+            homeWinProbability: $homeMoneyline?->probability,
             markets: $markets,
         );
     }

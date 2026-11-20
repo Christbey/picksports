@@ -48,6 +48,17 @@ test('does not reallocate questionable doubtful or inactive injuries', function 
     expect(($this->resolve)()['factor'])->toBe(1.0);
 })->with([['Questionable', true], ['Doubtful', true], ['Out', false]]);
 
+test('distinguishes the prop player game designation from a practice entry', function (string $status, string $reason) {
+    $this->injury->update(['player_id' => $this->starter->id, 'status' => $status]);
+
+    expect(($this->resolve)()['reason'])->toBe($reason);
+})->with([
+    ['Full Participation', 'no_new_confirmed_absence'],
+    ['Available', 'no_new_confirmed_absence'],
+    ['Questionable', 'player_availability_uncertain'],
+    ['Inactive', 'player_unavailable'],
+]);
+
 test('does not use stale injury or depth observations', function ($table, $age) {
     DB::table($table)->update(['updated_at' => now()->subHours($age)]);
     expect(($this->resolve)()['factor'])->toBe(1.0);
@@ -109,4 +120,72 @@ test('applies workload to probabilities and invalidates stored props when injury
     expect($analyzer->precomputedRecommendations('NFL', gameFilter: $this->game->id))->toBeEmpty();
     $analyzer->analyzeProps('NFL', 3, gameFilter: $this->game->id, attachNarratives: false);
     expect($prop->fresh()->recommended_side)->toBeNull();
+});
+
+function explicitNflResearchAvailability(int $playerId, int $teamId, string $status = 'Out'): array
+{
+    return ['player_id' => $playerId, 'team_id' => $teamId, 'status' => $status,
+        'published_at' => now()->subMinutes(5)->toIso8601String(), 'observed_at' => now()->toIso8601String(),
+        'document_id' => 1, 'certainty' => 'confirmed'];
+}
+
+test('uses explicit verified availability without attaching research attributes or persisting injuries', function () {
+    $before = $this->game->getAttributes();
+    $facts = [explicitNflResearchAvailability($this->starter->id, $this->team->id)];
+    $context = app(NflPropAvailabilityContext::class)->resolve($this->game, $this->starter->id, 'player_rush_attempts', $facts);
+    expect($context['unavailable'])->toBeTrue()->and($context['reason'])->toBe('player_unavailable')
+        ->and($this->game->getAttributes())->toBe($before)
+        ->and(PlayerInjury::count())->toBe(1);
+});
+
+test('an explicit newer clearance overrides the injury report but older and opposing facts do not', function () {
+    $this->injury->update(['source_updated_at' => now()->subMinutes(10)]);
+    $service = app(NflPropAvailabilityContext::class);
+    $clearance = explicitNflResearchAvailability($this->backup->id, $this->team->id, 'Available');
+    expect($service->resolve($this->game, $this->starter->id, 'player_rush_attempts', [$clearance])['factor'])->toBe(1.0);
+    $clearance['published_at'] = now()->subMinutes(20)->toIso8601String();
+    expect($service->resolve($this->game, $this->starter->id, 'player_rush_attempts', [$clearance])['factor'])->toBe(1.15);
+    $clearance = explicitNflResearchAvailability($this->backup->id, $this->opponent->id, 'Available');
+    expect($service->resolve($this->game, $this->starter->id, 'player_rush_attempts', [$clearance])['factor'])->toBe(1.15);
+});
+
+test('rejects unavailable future or malformed publication observation evidence', function (string $case) {
+    $fact = explicitNflResearchAvailability($this->starter->id, $this->team->id);
+    match ($case) {
+        'future_observation' => $fact['observed_at'] = now()->addMinute()->toIso8601String(),
+        'future_publication' => $fact['published_at'] = now()->addMinute()->toIso8601String(),
+        'missing_observation' => $fact['observed_at'] = null,
+        'invalid_publication' => $fact['published_at'] = 'invalid date',
+    };
+    $context = app(NflPropAvailabilityContext::class)->resolve($this->game, $this->starter->id, 'player_rush_attempts', [$fact]);
+    expect($context['unavailable'])->toBeFalse();
+})->with(['future_observation', 'future_publication', 'missing_observation', 'invalid_publication']);
+
+test('preserves explicit research facts during prop previews and clears them before the next preview', function () {
+    $prop = PlayerProp::create(['game_id' => $this->game->id, 'player_id' => $this->starter->id,
+        'player_name' => $this->starter->full_name, 'market' => 'player_rush_attempts', 'line' => 12.5,
+        'over_price' => -110, 'under_price' => -110, 'fetched_at' => now()]);
+    $analyzer = app(PlayerPropAnalyzer::class);
+    $facts = [explicitNflResearchAvailability($this->starter->id, $this->team->id)];
+    $held = $analyzer->previewNflGame($this->game, $facts);
+    $normal = $analyzer->previewNflGame($this->game);
+    expect($held[0]['hold_reason'])->toBe('player_unavailable')
+        ->and($normal[0]['hold_reason'])->not->toBe('player_unavailable')
+        ->and(array_key_exists('research_availability', $this->game->getAttributes()))->toBeFalse()
+        ->and($prop->fresh()->recommended_side)->toBeNull();
+});
+
+test('clears the explicit prop research batch when preview preparation throws', function () {
+    $analyzer = new class extends PlayerPropAnalyzer
+    {
+        protected function getSportConfig(string $sport): array
+        {
+            throw new RuntimeException('fixture preparation failure');
+        }
+    };
+    expect(fn () => $analyzer->previewNflGame($this->game, [explicitNflResearchAvailability($this->starter->id, $this->team->id)]))
+        ->toThrow(RuntimeException::class, 'fixture preparation failure');
+    $facts = new ReflectionProperty(PlayerPropAnalyzer::class, 'nflResearchAvailability');
+    $persist = new ReflectionProperty(PlayerPropAnalyzer::class, 'persistSnapshots');
+    expect($facts->getValue($analyzer))->toBe([])->and($persist->getValue($analyzer))->toBeTrue();
 });

@@ -2,12 +2,16 @@
 
 namespace App\Http\Resources\NFL;
 
-use App\Actions\NFL\CalculateLiveWinProbability;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 class GameResource extends JsonResource
 {
+    public function __construct(mixed $resource, private readonly ?array $liveWinProbability = null)
+    {
+        parent::__construct($resource);
+    }
+
     /**
      * Transform the resource into an array.
      *
@@ -44,7 +48,7 @@ class GameResource extends JsonResource
             'away_team' => TeamResource::make($this->whenLoaded('awayTeam')),
             'team_stats' => TeamStatResource::collection($this->whenLoaded('teamStats')),
             'prediction' => PredictionResource::make($this->whenLoaded('prediction')),
-            'live_win_probability' => app(CalculateLiveWinProbability::class)->execute($this->resource),
+            'live_win_probability' => $this->liveWinProbability,
         ];
     }
 }

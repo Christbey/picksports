@@ -2,10 +2,12 @@
 
 namespace App\Services\NFL;
 
+use App\DataTransferObjects\NFL\CalibrationGameResult;
+use App\DataTransferObjects\NFL\CalibrationObservation;
 use App\Models\NFL\Game;
-use App\Models\NFL\Prediction;
 use App\Models\PredictionFeatureSnapshot;
 use App\Services\Predictions\SnapshotProvenanceResolver;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 
 /** A bounded, slate-scoped corpus; mutable prediction rows are never evidence. */
@@ -18,7 +20,7 @@ class NflCalibrationHistory
         $this->cache = [];
     }
 
-    /** @return Collection<int, Prediction> */
+    /** @return Collection<int, CalibrationObservation> */
     public function prior(Game $target, string $modelVersion, int $limit, string $stage = 'published'): Collection
     {
         $date = $target->game_date?->toDateString();
@@ -53,7 +55,7 @@ class NflCalibrationHistory
                 ->limit($capacity)->get();
             $games = Game::query()->whereIn('id', $snapshots->pluck('game_id'))
                 ->with('sportEvent')->get(['id', 'sport_event_id', 'game_date', 'game_time', 'home_score', 'away_score'])->keyBy('id');
-            $this->cache[$key] = $snapshots->map(function (PredictionFeatureSnapshot $snapshot) use ($games): ?Prediction {
+            $this->cache[$key] = $snapshots->map(function (PredictionFeatureSnapshot $snapshot) use ($games): ?CalibrationObservation {
                 $game = $games->get($snapshot->game_id);
                 $kickoff = $game ? app(SnapshotProvenanceResolver::class)->gameStartAt($game) : null;
                 if ($kickoff === null || $snapshot->generated_at->gte($kickoff)
@@ -69,31 +71,19 @@ class NflCalibrationHistory
                 if ((float) $outputs['win_probability'] <= 0 || (float) $outputs['win_probability'] >= 1) {
                     return null;
                 }
-                $prediction = new Prediction(array_intersect_key($outputs, array_flip([
-                    'predicted_spread', 'predicted_total', 'win_probability',
-                ])));
-                $prediction->setRelation('game', $game);
-                $prediction->setAttribute('calibration_inputs', $outputs['calibration_inputs'] ?? []);
 
-                return $prediction;
+                return CalibrationObservation::fromOutputs(
+                    (int) $snapshot->id,
+                    CarbonImmutable::instance($snapshot->generated_at),
+                    CarbonImmutable::instance($snapshot->features_available_at),
+                    new CalibrationGameResult((int) $game->id, (int) $game->home_score, (int) $game->away_score),
+                    $outputs,
+                );
             })->filter()->values();
         }
 
-        return $this->cache[$key]->map(function (Prediction $prediction) use ($stage): ?Prediction {
-            if ($stage === 'published') {
-                return $prediction;
-            }
-            $inputs = $prediction->getAttribute('calibration_inputs')[$stage] ?? [];
-            $fields = $stage === 'point' ? ['predicted_spread', 'predicted_total'] : ['win_probability'];
-            $row = clone $prediction;
-            foreach ($fields as $field) {
-                if (! is_numeric($inputs[$field] ?? null) || ! is_finite((float) $inputs[$field])) {
-                    return null;
-                }
-                $row->setAttribute($field, $inputs[$field]);
-            }
-
-            return $row;
-        })->filter()->take($limit)->values();
+        return $this->cache[$key]
+            ->map(fn (CalibrationObservation $observation): ?CalibrationObservation => $observation->forStage($stage))
+            ->filter()->take($limit)->values();
     }
 }

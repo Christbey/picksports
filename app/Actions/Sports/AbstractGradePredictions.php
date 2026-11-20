@@ -58,6 +58,7 @@ abstract class AbstractGradePredictions
     protected function baseUngradedFinalPredictionsQuery()
     {
         return $this->newPredictionQuery()
+            ->with('game')
             ->join($this->gamesTable(), $this->predictionTable().'.game_id', '=', $this->gamesTable().'.id')
             ->where($this->gamesTable().'.status', 'STATUS_FINAL')
             ->whereNotNull($this->gamesTable().'.home_score')

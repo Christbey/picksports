@@ -9,9 +9,9 @@ abstract class AbstractLineBasedCalculateBettingValue
 {
     use InteractsWithBettingMarkets;
 
-    public function execute(object $game): ?array
+    public function execute(object $game, ?object $prediction = null): ?array
     {
-        $prediction = $game->prediction ?? null;
+        $prediction ??= $game->prediction ?? null;
         $oddsData = $game->odds_data ?? null;
 
         if (! $prediction || ! $oddsData || ! isset($oddsData['bookmakers'])) {

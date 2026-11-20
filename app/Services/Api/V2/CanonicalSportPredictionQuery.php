@@ -121,7 +121,7 @@ class CanonicalSportPredictionQuery
                 'calculationRun.inputSnapshot',
             ])
             ->when($sport === 'cfb', fn (Builder $query) => $query->with(
-                'sportEvent.cfbGame.latestLiveSnapshot:cfb_live_prediction_snapshots.id,cfb_live_prediction_snapshots.game_id,status,projection,observed_at'
+                ['sportEvent.cfbGame.latestLiveSnapshot:cfb_live_prediction_snapshots.id,cfb_live_prediction_snapshots.game_id,status,projection,observed_at', 'sportEvent.cfbGame.weather']
             ))
             ->when($sport === 'wcbb', fn (Builder $query) => $query->with('trackedWcbbSpread'))
             ->where('predictions.sport', $sport)

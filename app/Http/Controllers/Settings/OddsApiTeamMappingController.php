@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Settings\OddsApiTeamMappingUpdateRequest;
 use App\Models\CBB\Team as CbbTeam;
 use App\Models\CFB\Team as CfbTeam;
 use App\Models\MLB\Team as MlbTeam;
@@ -127,11 +128,9 @@ class OddsApiTeamMappingController extends Controller
         ]);
     }
 
-    public function update(Request $request, OddsApiTeamMapping $mapping)
+    public function update(OddsApiTeamMappingUpdateRequest $request, OddsApiTeamMapping $mapping)
     {
-        $validated = $request->validate([
-            'espn_team_name' => 'nullable|string|max:255',
-        ]);
+        $validated = $request->validated();
 
         $mapping->update($validated);
 

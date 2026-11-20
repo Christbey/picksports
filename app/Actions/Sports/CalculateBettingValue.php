@@ -10,9 +10,9 @@ class CalculateBettingValue
 {
     use InteractsWithBettingMarkets;
 
-    public function execute(object $game, string $sportKey = 'nba'): ?array
+    public function execute(object $game, string $sportKey = 'nba', ?object $prediction = null): ?array
     {
-        $prediction = $game->prediction ?? null;
+        $prediction ??= $game->prediction ?? null;
         $oddsData = $game->odds_data ?? null;
 
         if (! $prediction || ! is_array($oddsData) || ! isset($oddsData['bookmakers'])) {

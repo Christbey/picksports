@@ -1,6 +1,9 @@
 <?php
 
 use App\Actions\ESPN\NFL\SyncGameDetails;
+use App\Actions\ESPN\NFL\SyncPlayerStats;
+use App\Actions\ESPN\NFL\SyncPlays;
+use App\Actions\ESPN\NFL\SyncTeamStats;
 use App\Actions\GradePlayerProps;
 use App\Models\NFL\Game;
 use App\Models\NFL\Player;
@@ -83,11 +86,11 @@ test('grades props after completed game detail ingestion', function () {
     $prop = ($this->prop)('player_receptions');
     $service = Mockery::mock(EspnService::class);
     $service->shouldReceive('getGame')->with($this->game->espn_event_id)->andReturn(['boxscore' => []]);
-    $stats = Mockery::mock();
+    $stats = Mockery::mock(SyncPlayerStats::class);
     $stats->shouldReceive('execute')->once()->andReturn(1);
-    $teams = Mockery::mock();
+    $teams = Mockery::mock(SyncTeamStats::class);
     $teams->shouldReceive('execute')->once()->andReturn(2);
-    $plays = Mockery::mock();
+    $plays = Mockery::mock(SyncPlays::class);
     $plays->shouldReceive('execute')->once()->andReturn(1);
     $sync = new SyncGameDetails($service, $stats, $teams, $plays);
     $sync->execute($this->game->espn_event_id);

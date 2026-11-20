@@ -64,16 +64,23 @@ class DailyDigestService
 
         $sent = 0;
 
-        $users = User::query()->with('alertPreference')->whereNotNull('email')->get();
-        $dueUsers = $users->filter(fn (User $user): bool => $this->isDueForDigest($user, $now))->values();
-        if ($dueUsers->isEmpty()) {
-            return 0;
-        }
-        $payload = $this->buildDigestForUser($dueUsers->first(), $now);
-        if ($payload === null) {
-            return 0;
-        }
-        foreach ($dueUsers as $user) {
+        $users = User::query()
+            ->with('alertPreference')
+            ->whereNotNull('email')
+            ->whereNotExists(fn ($query) => $query->selectRaw('1')->from('daily_digest_sends')
+                ->whereColumn('daily_digest_sends.user_id', 'users.id')
+                ->whereDate('digest_date', $now->toDateString()))
+            ->lazyById(100);
+        $payload = null;
+
+        foreach ($users as $user) {
+            if (! $this->isDueForDigest($user, $now, checkHistory: false)) {
+                continue;
+            }
+            $payload ??= $this->buildDigestForUser($user, $now);
+            if ($payload === null) {
+                return 0;
+            }
             $delivery = $this->deliveries->record('daily_digest', hash('sha256', strtolower(trim($user->email))), 'mail', 'digest:'.$user->id.':'.$now->toDateString());
             if (! $delivery->wasRecentlyCreated) {
                 continue;
@@ -132,7 +139,7 @@ class DailyDigestService
         return ! in_array($host, ['127.0.0.1', 'localhost', '0.0.0.0'], true);
     }
 
-    public function isDueForDigest(User $user, CarbonInterface $now): bool
+    public function isDueForDigest(User $user, CarbonInterface $now, bool $checkHistory = true): bool
     {
         if (! $this->canReceiveDigestEmails($user)) {
             return false;
@@ -151,7 +158,7 @@ class DailyDigestService
             return false;
         }
 
-        return ! DailyDigestSend::query()
+        return ! $checkHistory || ! DailyDigestSend::query()
             ->where('user_id', $user->id)
             ->whereDate('digest_date', $now->toDateString())
             ->exists();

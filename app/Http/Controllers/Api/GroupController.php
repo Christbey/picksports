@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\GroupIndexRequest;
+use App\Http\Requests\Api\GroupStoreRequest;
 use App\Http\Resources\GroupResource;
 use App\Models\Group;
 use Illuminate\Database\Eloquent\Builder;
@@ -11,13 +13,9 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class GroupController extends Controller
 {
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(GroupIndexRequest $request): AnonymousResourceCollection
     {
-        $validated = $request->validate([
-            'type' => 'nullable|string|max:100',
-            'sport' => 'nullable|string|max:50',
-            'season' => 'nullable|integer|min:2000|max:2100',
-        ]);
+        $validated = $request->validated();
 
         $query = $this->visibleGroups($request);
 
@@ -30,14 +28,9 @@ class GroupController extends Controller
         return GroupResource::collection($query->latest('updated_at')->get());
     }
 
-    public function store(Request $request)
+    public function store(GroupStoreRequest $request)
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'type' => 'nullable|string|max:100',
-            'sport' => 'nullable|string|max:50',
-            'season' => 'nullable|integer|min:2000|max:2100',
-        ]);
+        $validated = $request->validated();
 
         $group = Group::query()->create([
             'owner_id' => $request->user()->id,

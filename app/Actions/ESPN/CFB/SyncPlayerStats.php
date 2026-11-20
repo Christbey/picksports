@@ -11,6 +11,7 @@ use App\Services\CFB\Data\CfbGameDataValidator;
 use App\Services\CFB\Data\CfbPlayerIdentityResolver;
 use App\Services\CFB\Data\CfbSourceRevision;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 
 class SyncPlayerStats extends AbstractFootballSyncPlayerStats
@@ -23,6 +24,7 @@ class SyncPlayerStats extends AbstractFootballSyncPlayerStats
 
     public function execute(array $gameData, Model $game, bool $recordSource = true): int
     {
+        $game->loadMissing(['homeTeam', 'awayTeam']);
         $validation = app(CfbGameDataValidator::class)->boxscore($gameData, $game);
         if ($recordSource) {
             app(CfbSourceRevision::class)->record($game, 'boxscore', $gameData, $validation);
@@ -35,6 +37,9 @@ class SyncPlayerStats extends AbstractFootballSyncPlayerStats
             Game::whereKey($game->id)->lockForUpdate()->firstOrFail();
             app(CfbPlayerIdentityResolver::class)->resolve($gameData, $game);
 
+            $athleteIds = collect($gameData['boxscore']['players'])->flatMap(fn ($team) => collect($team['statistics'])->flatMap(fn ($category) => collect($category['athletes'] ?? [])->pluck('athlete.id')))->filter();
+            $players = Player::whereIn('espn_id', $athleteIds)->get()->keyBy('espn_id');
+            $existing = PlayerStat::where('game_id', $game->id)->get()->keyBy('player_id');
             $rows = [];
             $teams = collect([$game->homeTeam, $game->awayTeam])->keyBy('espn_id');
             foreach ($gameData['boxscore']['players'] as $teamData) {
@@ -44,7 +49,7 @@ class SyncPlayerStats extends AbstractFootballSyncPlayerStats
                         if ((int) data_get($athlete, 'athlete.id') <= 0) {
                             continue;
                         }
-                        $player = Player::where('espn_id', data_get($athlete, 'athlete.id'))->firstOrFail();
+                        $player = $players->get(data_get($athlete, 'athlete.id')) ?? throw new ModelNotFoundException('Resolved player missing.');
                         $mapped = $this->mapLabeledStats($category['labels'] ?? [], $athlete['stats'] ?? []);
                         $updates = $this->parseCategoryUpdates(strtolower($category['name'] ?? ''), $mapped);
                         $rows[$player->id] = [...($rows[$player->id] ?? []), 'team_id' => $team->id, ...$updates];
@@ -53,7 +58,8 @@ class SyncPlayerStats extends AbstractFootballSyncPlayerStats
             }
             $fields = array_diff((new PlayerStat)->getFillable(), ['player_id', 'game_id', 'team_id']);
             foreach ($rows as $id => $values) {
-                PlayerStat::updateOrCreate(['player_id' => $id, 'game_id' => $game->id], [...array_fill_keys($fields, null), ...$values]);
+                $stat = $existing->get($id) ?? new PlayerStat(['player_id' => $id, 'game_id' => $game->id]);
+                $stat->fill([...array_fill_keys($fields, null), ...$values])->save();
             }
             PlayerStat::where('game_id', $game->id)->whereNotIn('player_id', array_keys($rows))->delete();
 

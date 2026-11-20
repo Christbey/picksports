@@ -9,11 +9,16 @@ use App\Models\LivePredictionSnapshot;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\CFB\Live\LiveSnapshotRecorder;
 use Carbon\CarbonInterface;
+use Illuminate\Container\Attributes\Scoped;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
+#[Scoped]
 class LivePredictionStore
 {
+    /** @var \WeakMap<LivePredictionSnapshot, bool> */
+    private \WeakMap $baselineValidity;
+
     private const ACTIVE_STATUSES = ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD', 'STATUS_SUSPENDED', 'STATUS_DELAYED', 'in_progress'];
 
     public const EMPTY_FIELDS = [
@@ -21,7 +26,10 @@ class LivePredictionStore
         'live_seconds_remaining' => null, 'live_outs_remaining' => null, 'live_updated_at' => null,
     ];
 
-    public function __construct(private readonly PredictionDeliverySource $predictions, private readonly SportContextResolver $sports) {}
+    public function __construct(private readonly PredictionDeliverySource $predictions, private readonly SportContextResolver $sports)
+    {
+        $this->baselineValidity = new \WeakMap;
+    }
 
     public function sport(Model $game): string
     {
@@ -58,8 +66,8 @@ class LivePredictionStore
             return false;
         }
 
-        if ($snapshot !== null && $snapshot->relationLoaded('baselineValidity')) {
-            return $snapshot->getRelation('baselineValidity');
+        if ($snapshot !== null && isset($this->baselineValidity[$snapshot])) {
+            return $this->baselineValidity[$snapshot];
         }
 
         return ! $canonical || CanonicalPrediction::query()->whereKey($baseline['canonical_prediction_id'] ?? null)
@@ -104,7 +112,7 @@ class LivePredictionStore
         $validIds = $canonicalIds->isNotEmpty() ? CanonicalPrediction::query()->whereIn('id', $canonicalIds)
             ->where('sport', $this->sport($first))->whereIn('publication_state', ['published', 'superseded'])->pluck('id')->all() : [];
         foreach ($snapshots as $snapshot) {
-            $snapshot->setRelation('baselineValidity', $snapshot->canonical_prediction_id === null || in_array($snapshot->canonical_prediction_id, $validIds, true));
+            $this->baselineValidity[$snapshot] = $snapshot->canonical_prediction_id === null || in_array($snapshot->canonical_prediction_id, $validIds, true);
         }
         foreach ($games as $game) {
             $game->setRelation('livePredictionSnapshot', $snapshots->get($game->getKey()));

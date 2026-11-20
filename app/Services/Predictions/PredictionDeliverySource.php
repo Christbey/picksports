@@ -7,6 +7,7 @@ use App\Models\CanonicalPrediction;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\BettingRecommendations\RecommendationDisplay;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -62,17 +63,40 @@ class PredictionDeliverySource
     /** @return Collection<int, PredictionDeliveryContext> */
     public function forDigest(string $sport, CarbonInterface $now): Collection
     {
-        $query = $this->usesCanonical($sport)
-            ? $this->canonical->queryForSport($sport, ['from_date' => $now->toDateString(), 'to_date' => $now->toDateString()])
-            : $this->legacyQuery($sport)->whereHas('game', fn (Builder $query) => $query->whereDate('game_date', $now->toDateString()));
+        $statuses = ['STATUS_SCHEDULED', 'STATUS_DELAYED', 'scheduled'];
+        if ($this->usesCanonical($sport)) {
+            return $this->canonical->queryForSport($sport, ['from_date' => $now->toDateString(), 'to_date' => $now->toDateString()])
+                ->whereIn("{$sport}_games.status", $statuses)
+                ->where('sport_events.starts_at', '>', $now)
+                ->withOnly(['markets', "sportEvent.{$sport}Game.homeTeam", "sportEvent.{$sport}Game.awayTeam"])
+                ->limit(30)->get()
+                ->map(fn (Model $prediction): PredictionDeliveryContext => $this->context($prediction, $sport));
+        }
 
-        return $query->get()->map(fn (Model $prediction): PredictionDeliveryContext => $this->context($prediction, $sport))
+        // Retain both supported legacy storage forms: a full timestamp or a
+        // date plus game_time. The exact PHP check below remains authoritative.
+        $utc = CarbonImmutable::instance($now)->utc();
+        $query = $this->legacyQuery($sport)->whereHas('game', function (Builder $query) use ($now, $statuses, $utc): void {
+            $query->whereDate('game_date', $now->toDateString())->whereIn('status', $statuses)
+                ->where(function (Builder $remaining) use ($utc): void {
+                    $remaining->whereDate('game_date', '>', $utc->toDateString())
+                        ->orWhere(function (Builder $today) use ($utc): void {
+                            $today->whereDate('game_date', $utc->toDateString())
+                                ->where(function (Builder $start) use ($utc): void {
+                                    $start->where('game_time', '>', $utc->toTimeString())
+                                        ->orWhere('game_date', '>', $utc->toDateTimeString());
+                                });
+                        });
+                });
+        });
+
+        return $query->lazy(50)
+            ->map(fn (Model $prediction): PredictionDeliveryContext => $this->context($prediction, $sport))
             ->filter(function (PredictionDeliveryContext $prediction) use ($now): bool {
-                $kickoff = RecommendationDisplay::kickoff($prediction->game, $prediction->isCanonical() ? $prediction->source->sportEvent?->starts_at : null);
+                $kickoff = RecommendationDisplay::kickoff($prediction->game);
 
-                return in_array($prediction->game->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED', 'scheduled'], true)
-                    && $kickoff !== null && $kickoff->greaterThan($now);
-            })->take(30)->values();
+                return $kickoff !== null && $kickoff->greaterThan($now);
+            })->take(30)->values()->collect();
     }
 
     public function forGame(Model $game, string $sport): ?PredictionDeliveryContext

@@ -24,6 +24,7 @@ class SportGameQuery
 
     public function __construct(
         private readonly GameSummaryMapper $summaries,
+        private readonly SelectedGameForecasts $selectedForecasts,
     ) {}
 
     /**
@@ -40,7 +41,7 @@ class SportGameQuery
 
         $paginator->setCollection(
             $paginator->getCollection()
-                ->map(fn (Model $game): GameSummary => $this->summaries->fromModel($context, $game))
+                ->map(fn (Model $game): GameSummary => $this->summaries->fromModel($context, $game, $this->selectedForecasts->get($game)))
         );
 
         return $paginator;
@@ -125,6 +126,8 @@ class SportGameQuery
             $this->attachCanonicalPredictions($context, $paginator->getCollection());
         }
 
+        app(PreparedInjuryImpacts::class)->prepare($paginator->getCollection());
+
         return $paginator;
     }
 
@@ -145,6 +148,8 @@ class SportGameQuery
             $this->attachCanonicalPredictions($context, collect([$resolved]));
         }
 
+        app(PreparedInjuryImpacts::class)->prepare([$resolved]);
+
         return $resolved;
     }
 
@@ -157,9 +162,14 @@ class SportGameQuery
         }
         $predictions = $canonical->queryForSport($context->slug)
             ->whereIn('predictions.sport_event_id', $games->pluck('sport_event_id')->filter())
-            ->withOnly(['markets'])->get()->keyBy('sport_event_id');
+            ->withOnly(['markets'])->get()->unique('sport_event_id')->keyBy('sport_event_id');
         foreach ($games as $game) {
-            $game->setRelation('prediction', $predictions->get($game->sport_event_id));
+            $prediction = $predictions->get($game->sport_event_id);
+            if ($prediction !== null && $game->relationLoaded('sportEvent') && $game->sportEvent !== null) {
+                $game->sportEvent->setRelation($context->slug.'Game', $game);
+                $prediction->setRelation('sportEvent', $game->sportEvent);
+            }
+            $this->selectedForecasts->put($game, $prediction);
         }
     }
 
@@ -177,7 +187,10 @@ class SportGameQuery
 
         return $gameModel::query()
             ->when($context->slug === 'nba', fn (Builder $query): Builder => $query->withoutCompletedPlayoffSeriesPlaceholders())
-            ->with($this->relationsFor($gameModel, $relationProfile))
+            ->with(array_values(array_filter(
+                $this->relationsFor($gameModel, $relationProfile),
+                fn (string $relation): bool => $relation !== 'prediction' || ! app(CanonicalSportPredictionQuery::class)->supports($context),
+            )))
             ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
             ->when($filters['season'] ?? null, fn (Builder $query, int $season): Builder => $query->where('season', $season))
             ->when($filters['season_type'] ?? null, fn (Builder $query, string $phase): Builder => $query->where('season_type', $phase))

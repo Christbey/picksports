@@ -23,6 +23,11 @@ abstract class AbstractSyncPlays
 
     protected const SKIP_EMPTY_PLAY_ID = false;
 
+    /** @var array<string, Model|null> */
+    private array $possessionTeams = [];
+
+    private bool $teamsPreloaded = false;
+
     public function __construct(
         protected BaseEspnService $espnService
     ) {}
@@ -42,29 +47,53 @@ abstract class AbstractSyncPlays
             return 0;
         }
 
+        if ($plays === []) {
+            return 0;
+        }
         $playModel = $this->playModelClass();
-        $playModel::query()->where('game_id', $game->id)->delete();
-
-        $synced = 0;
         $dtoClass = $this->playDtoClass();
-
+        $dtos = [];
+        $hasStoredPlays = null;
         foreach ($plays as $index => $playData) {
-            if ($this->shouldSkipPlay($playData)) {
-                continue;
+            if (! is_array($playData) || ! filled($playData['id'] ?? null)) {
+                if (is_array($playData) && $this->shouldSkipPlay($playData)
+                    && ! ($hasStoredPlays ??= $playModel::query()->where('game_id', $game->id)->exists())) {
+                    continue;
+                }
+
+                return 0;
+            }
+            $dtos[] = $dtoClass::fromEspnResponse($playData, $index);
+        }
+        if ($dtos === []) {
+            return 0;
+        }
+        $teamModel = $this->teamModelClass();
+        $ids = collect($dtos)->flatMap(fn (object $dto): array => [$dto->possessionTeamEspnId ?? null, $dto->battingTeamEspnId ?? null, $dto->pitchingTeamEspnId ?? null])->filter()->unique();
+        $this->possessionTeams = $teamModel::query()->whereIn('espn_id', $ids)->get()->keyBy('espn_id')->all();
+        $this->teamsPreloaded = true;
+        try {
+            $rows = [];
+            foreach ($dtos as $dto) {
+                $attributes = $dto->toArray();
+                $attributes['game_id'] = $game->id;
+                $this->applyTeamRelations($attributes, $dto);
+                $rows[] = $attributes;
             }
 
-            $dto = $dtoClass::fromEspnResponse($playData, $index);
+            return $game->getConnection()->transaction(function () use ($game, $playModel, $rows) {
+                $game->newQuery()->whereKey($game->getKey())->lockForUpdate()->firstOrFail();
+                $playModel::query()->where('game_id', $game->id)->delete();
+                foreach ($rows as $row) {
+                    $playModel::query()->create($row);
+                }
 
-            $playAttributes = $dto->toArray();
-            $playAttributes['game_id'] = $game->id;
-
-            $this->applyTeamRelations($playAttributes, $dto);
-
-            $playModel::create($playAttributes);
-            $synced++;
+                return count($rows);
+            });
+        } finally {
+            $this->possessionTeams = [];
+            $this->teamsPreloaded = false;
         }
-
-        return $synced;
     }
 
     protected function fetchPlaysPayload(string $eventId): ?array
@@ -85,6 +114,10 @@ abstract class AbstractSyncPlays
 
         if (! $response || ! isset($response['items']) || ! is_array($response['items'])) {
             return null;
+        }
+
+        if (isset($response['count']) && (int) $response['count'] > count($response['items'])) {
+            throw new \RuntimeException('Incomplete play feed; preserving stored plays.');
         }
 
         return $response['items'];
@@ -129,12 +162,21 @@ abstract class AbstractSyncPlays
             return;
         }
 
-        $teamModel = $this->teamModelClass();
-        $possessionTeam = $teamModel::query()->where('espn_id', $dto->possessionTeamEspnId)->first();
+        $possessionTeam = $this->resolvePlayTeam((string) $dto->possessionTeamEspnId);
 
         if ($possessionTeam) {
             $playAttributes['possession_team_id'] = $possessionTeam->id;
         }
+    }
+
+    protected function resolvePlayTeam(string $espnId): ?Model
+    {
+        if ($this->teamsPreloaded) {
+            return $this->possessionTeams[$espnId] ?? null;
+        }
+        $teamModel = $this->teamModelClass();
+
+        return $teamModel::query()->where('espn_id', $espnId)->first();
     }
 
     /**

@@ -19,13 +19,12 @@ class SportInjuryQuery
         $playerTable = "{$context->slug}_players";
         $teamTable = "{$context->slug}_teams";
 
-        if (! Schema::hasTable($injuryTable) || ! Schema::hasTable($teamTable) || ! Schema::hasTable($playerTable)) {
-            return collect();
-        }
+        abort_unless(SportQuerySchema::columns($injuryTable) !== []
+            && SportQuerySchema::columns($teamTable) !== []
+            && SportQuerySchema::columns($playerTable) !== [], 404, 'Injuries are not supported for this sport.');
 
-        $nameColumn = $this->resolvePlayerNameColumn(Schema::getColumnListing($playerTable));
-
-        $playerColumns = Schema::getColumnListing($playerTable);
+        $playerColumns = SportQuerySchema::columns($playerTable);
+        $nameColumn = $this->resolvePlayerNameColumn($playerColumns);
         $positionColumn = in_array('position', $playerColumns, true)
             ? 'p.position as player_position'
             : DB::raw('NULL as player_position');

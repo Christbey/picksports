@@ -36,9 +36,8 @@ class ResearchPipeline
                 return null;
             }
             $packet = app(EvidencePacket::class)->forGame($game);
-            $game->setAttribute('research_availability', $packet['availability']);
             // Snapshot-only overlay: existing configured injury weights remain the sole numerical adjustment.
-            $preview = app(GeneratePredictionFromHistoricalElo::class)->preview($game);
+            $preview = app(GeneratePredictionFromHistoricalElo::class)->preview($game, $packet['availability']);
             if (! $preview) {
                 return null;
             }
@@ -65,7 +64,6 @@ class ResearchPipeline
             }
 
             $candidate = [...$preview['outputs'], 'model_metadata' => $metadata];
-            $game->setAttribute('research_candidate', $candidate);
             $report = SportsGameContextReport::where('sport', 'nfl')->where('game_id', $game->id)->latest('id')->first();
             $selectedDocuments = app(EvidencePacket::class)->researchDocuments($packet);
             $candidateHash = $this->candidateContextHash($candidate, $quarterbacks);
@@ -74,7 +72,7 @@ class ResearchPipeline
             $deferred = null;
             if ($research && ($forceResearch || ! $policy->current($report, $game, $fingerprint, $candidateHash))) {
                 try {
-                    $report = app(NflWebContextResearchService::class)->research($game, force: $forceResearch)['report'];
+                    $report = app(NflWebContextResearchService::class)->research($game, force: $forceResearch, candidate: $candidate)['report'];
                 } catch (ResearchDeferred $exception) {
                     $deferred = $exception->getMessage();
                 } catch (Throwable $exception) {
@@ -95,7 +93,7 @@ class ResearchPipeline
             $eligibility = app(RecommendationEligibility::class)->evaluate($metadata['analysis_layer'] ?? [], $metadata, $marketHolds['spread']);
             $original = ResearchRevision::where('game_id', $game->id)->oldest('id')->first();
             $baseline = $original?->baseline ?? ($storedForecast !== null ? Arr::only($storedForecast, ['predicted_spread', 'predicted_total', 'win_probability', 'confidence_score', 'model_version', 'updated_at']) : null) ?? [];
-            $props = app(PlayerPropAnalyzer::class)->previewNflGame($game);
+            $props = app(PlayerPropAnalyzer::class)->previewNflGame($game, $packet['availability']);
             $previous = ResearchRevision::where('game_id', $game->id)->latest('id')->first();
             $brief = [
                 'requested_by' => $requestedBy,

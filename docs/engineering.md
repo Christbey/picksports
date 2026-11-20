@@ -32,7 +32,7 @@ Trace a changed field or calculation through its producer, persistence, resource
 
 Check season, season type, completed-game cutoffs, timezone, and freshness semantics for the affected sport. Keep current-season evidence separate from historical assumptions and market inputs. Update the relevant contract and regression coverage when payloads or calculations change.
 
-For schema changes, inspect the actual schema and migration history first. Preserve existing column attributes when altering columns. Test migrations on a local database or approved disposable clone; do not use production to discover whether a migration works.
+For schema changes, inspect the actual schema and migration history first. Preserve existing column attributes when altering columns. Test migrations on a local database or approved disposable clone; do not use production to discover whether a migration works. The architecture guard requires expand-first changes after August 12, 2026. Document nullability expansions with `@expand-nullability`. Capacity expansions require `@expand-capacity string(64) -> string(128)` or an equivalent signed integer widening declaration; the guard validates every change chain. Preserve existing nullability, signedness and defaults, and verify the prior definition in migration history. Retire old constraints in a later `_contract_` migration with `@contract-migration`, `@requires-zero-legacy-usage`, and replacement-schema preflight checks.
 
 ## Frontend changes
 

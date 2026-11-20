@@ -35,3 +35,9 @@ All PHP checks used explicit testing SQLite in memory and a disposable release w
 | Repository-wide Pint | Passed |
 
 Deployment completion and post-release verification are recorded separately after the platform confirms the release. No provider refresh, forecast regeneration, calibration promotion or numerical tuning is part of deployment verification.
+
+## CI follow-up
+
+The first full CI run exposed boundaries beyond the initial local shards. Bracket payloads no longer eager-load unused predictions; CBB's grading override loads its game; shared prediction command batches include sport events. Canonical presentation shares existing JSON decode scopes and carries only the small required input sections to serialization: one frozen-input decode during preparation, none during repeated serialization, with large-document caches released immediately. The CFB lock mock retains the real test cache store for permission initialization. Alert fixtures freeze the Chicago/UTC boundary and specify future UTC kickoffs, preserving the real send-time safety gate.
+
+Follow-up isolated validation passes: HTTP/canonical-source coverage 1,264 tests and 16,661 assertions; CBB/bracket/grading coverage 259 tests and 1,500 assertions; NBA and WNBA generation coverage 186 tests and 999 assertions; delivery coverage 98 tests and 354 assertions; CFB pipeline coverage 55 tests and 241 assertions. These overlap prior runs. CI must pass on the updated release before merging.

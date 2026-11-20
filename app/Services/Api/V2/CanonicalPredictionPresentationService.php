@@ -22,6 +22,18 @@ class CanonicalPredictionPresentationService
 
     public function forPrediction(CanonicalPrediction $prediction, ?array $nflBoard = null): CanonicalPredictionPresentationData
     {
+        $run = $prediction->calculationRun;
+        $snapshot = $run?->inputSnapshot;
+        $prepare = fn (): CanonicalPredictionPresentationData => $this->preparePrediction($prediction, $nflBoard);
+        $readSnapshot = fn (): CanonicalPredictionPresentationData => $snapshot ? $snapshot->withCachedJsonArrays($prepare) : $prepare();
+
+        return $prediction->withCachedJsonArrays(
+            fn (): CanonicalPredictionPresentationData => $run ? $run->withCachedJsonArrays($readSnapshot) : $readSnapshot(),
+        );
+    }
+
+    private function preparePrediction(CanonicalPrediction $prediction, ?array $nflBoard): CanonicalPredictionPresentationData
+    {
         $market = $prediction->marketFor('moneyline', 'home');
         $confidence = is_numeric($market?->confidence_score) ? (float) $market->confidence_score : null;
         $game = $prediction->sportEvent?->getRelation($prediction->sport.'Game');
@@ -39,6 +51,12 @@ class CanonicalPredictionPresentationService
 
         return new CanonicalPredictionPresentationData(
             nflBoard: $nflBoard,
+            evidenceWindows: $prediction->sport === 'cfb' ? [
+                'home' => data_get($prediction->calculationRun?->inputSnapshot?->inlineInputs(), 'home.evidence_windows'),
+                'away' => data_get($prediction->calculationRun?->inputSnapshot?->inlineInputs(), 'away.evidence_windows'),
+            ] : null,
+            pregameMarket: $prediction->sport === 'cbb'
+                ? data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'pregame_market') : null,
             liveFields: app(LivePredictionStore::class)->forPrediction($prediction, $prediction->sport),
             liveBoard: $game instanceof CfbGame ? app(LiveBoardPresentation::class)->forGame($game) : [],
             recommendation: $prediction->sport === 'mlb'

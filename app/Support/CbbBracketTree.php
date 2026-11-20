@@ -32,7 +32,7 @@ class CbbBracketTree
 
     public function build(Collection $games, array $picks = [], ?int $season = null): array
     {
-        (new \Illuminate\Database\Eloquent\Collection($games->all()))->loadMissing(['homeTeam', 'awayTeam', 'prediction']);
+        (new \Illuminate\Database\Eloquent\Collection($games->all()))->loadMissing(['homeTeam', 'awayTeam']);
         $season ??= $this->resolveSeason($games);
         $gamePayloads = $games
             ->map(fn (Game $game) => $this->mapGame($game))

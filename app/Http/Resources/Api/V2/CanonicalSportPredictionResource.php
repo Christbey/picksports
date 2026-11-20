@@ -55,10 +55,6 @@ class CanonicalSportPredictionResource extends JsonResource
             $live = LivePredictionStore::EMPTY_FIELDS;
         }
 
-        $cfbInputs = $prediction->sport === 'cfb'
-            ? $prediction->calculationRun?->inputSnapshot?->inlineInputs()
-            : null;
-
         return [
             'id' => $prediction->public_id,
             'sport' => $prediction->sport,
@@ -88,10 +84,7 @@ class CanonicalSportPredictionResource extends JsonResource
             'confidence_score' => $confidence,
             'confidence_level' => $confidenceContext['tier'],
             'confidence_context' => $confidenceContext,
-            'evidence_windows' => $prediction->sport === 'cfb' ? [
-                'home' => data_get($cfbInputs, 'home.evidence_windows'),
-                'away' => data_get($cfbInputs, 'away.evidence_windows'),
-            ] : null,
+            'evidence_windows' => $presentation->evidenceWindows,
             'public_recommendation' => app(MlbRecommendationPresentation::class)->summary($presentation->recommendation),
             'model_bet_context' => [
                 'model_home_spread' => $this->number($homeSpread?->projected_line),
@@ -133,7 +126,7 @@ class CanonicalSportPredictionResource extends JsonResource
             'total_error' => $this->number(data_get($evaluation?->errors, 'total_absolute_error')),
             'winner_correct' => data_get($evaluation?->errors, 'winner_correct'),
             ...($prediction->sport === 'cbb' ? [
-                'pregame_market' => data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'pregame_market'),
+                'pregame_market' => $presentation->pregameMarket,
                 'market_evaluation' => ['status' => 'tracking_only', ...(array) data_get($evaluation?->market_comparison, 'pregame_market', [])],
                 'ats_pick_side' => data_get($evaluation?->market_comparison, 'pregame_market.spread.selection'),
                 'ats_pick_line' => data_get($evaluation?->market_comparison, 'pregame_market.spread.selection_line'),

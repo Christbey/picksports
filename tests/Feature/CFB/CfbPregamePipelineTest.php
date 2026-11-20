@@ -558,6 +558,8 @@ it('lets Redis redeliver an interrupted pregame job after its queued lock expire
     expect($job->tries)->toBe(2)
         ->and($job->timeout)->toBeLessThan($retryAfter)
         ->and($job->uniqueFor)->toBeGreaterThan($retryAfter + $job->timeout);
+    $cacheStore = Cache::store();
+    Cache::shouldReceive('store')->andReturn($cacheStore);
     Cache::shouldReceive('lock')->with('cfb:pregame-pipeline', Mockery::on(
         fn (int $seconds): bool => $seconds > $job->timeout && $seconds < $retryAfter,
     ))->once()->andReturn(Mockery::mock(Lock::class, ['get' => false]));

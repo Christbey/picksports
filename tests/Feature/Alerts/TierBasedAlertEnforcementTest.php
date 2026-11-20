@@ -9,6 +9,7 @@ use App\Models\UserAlertPreference;
 use App\Models\UserAlertSent;
 use App\Notifications\BettingValueAlert;
 use App\Services\AlertService;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
 
@@ -33,6 +34,8 @@ function subscribeUserToTier(User $user, SubscriptionTier $tier): void
 }
 
 beforeEach(function () {
+    // Exercise the Chicago/UTC date boundary with a deterministic future UTC kickoff.
+    $this->travelTo(CarbonImmutable::parse('2026-11-19 22:24:00', 'America/Chicago'));
     config(['alerts.opportunity.unit_thresholds.points' => 0]);
     // Sync tiers from config to database
     $this->artisan('tiers:sync');
@@ -59,7 +62,8 @@ test('free tier users do not receive email alerts', function () {
     $awayTeam = Team::factory()->create(['location' => 'Boston', 'name' => 'Celtics']);
 
     $game = Game::factory()->create([
-        'game_date' => now()->addDay(),
+        'game_date' => now()->utc()->addDay()->toDateString(),
+        'game_time' => '18:00:00',
         'odds_updated_at' => now(),
         'status' => 'scheduled',
         'home_team_id' => $homeTeam->id,
@@ -119,7 +123,8 @@ test('basic tier users receive email alerts for allowed sports', function () {
     $awayTeam = Team::factory()->create(['location' => 'Boston', 'name' => 'Celtics']);
 
     $game = Game::factory()->create([
-        'game_date' => now()->addDay(),
+        'game_date' => now()->utc()->addDay()->toDateString(),
+        'game_time' => '18:00:00',
         'odds_updated_at' => now(),
         'status' => 'scheduled',
         'home_team_id' => $homeTeam->id,
@@ -280,7 +285,8 @@ test('alert sent records include all required data', function () {
     $awayTeam = Team::factory()->create(['location' => 'Boston', 'name' => 'Celtics']);
 
     $game = Game::factory()->create([
-        'game_date' => now()->addDay(),
+        'game_date' => now()->utc()->addDay()->toDateString(),
+        'game_time' => '18:00:00',
         'odds_updated_at' => now(),
         'status' => 'scheduled',
         'home_team_id' => $homeTeam->id,
@@ -348,7 +354,8 @@ test('moneyline alerts use win probability edge instead of confidence score', fu
     $awayTeam = Team::factory()->create(['location' => 'Boston', 'name' => 'Celtics']);
 
     $game = Game::factory()->create([
-        'game_date' => now()->addDay(),
+        'game_date' => now()->utc()->addDay()->toDateString(),
+        'game_time' => '18:00:00',
         'odds_updated_at' => now(),
         'status' => 'scheduled',
         'home_team_id' => $homeTeam->id,
@@ -413,7 +420,8 @@ test('moneyline alerts are not sent on high confidence alone without enough mode
     $awayTeam = Team::factory()->create(['location' => 'Boston', 'name' => 'Celtics']);
 
     $game = Game::factory()->create([
-        'game_date' => now()->addDay(),
+        'game_date' => now()->utc()->addDay()->toDateString(),
+        'game_time' => '18:00:00',
         'odds_updated_at' => now(),
         'status' => 'scheduled',
         'home_team_id' => $homeTeam->id,
@@ -473,7 +481,8 @@ test('spread alerts use calculator edge instead of confidence score gating', fun
     $awayTeam = Team::factory()->create(['location' => 'Boston', 'name' => 'Celtics']);
 
     $game = Game::factory()->create([
-        'game_date' => now()->addDay(),
+        'game_date' => now()->utc()->addDay()->toDateString(),
+        'game_time' => '18:00:00',
         'odds_updated_at' => now(),
         'status' => 'scheduled',
         'home_team_id' => $homeTeam->id,

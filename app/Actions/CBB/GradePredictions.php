@@ -17,7 +17,7 @@ class GradePredictions extends AbstractGradePredictions
 
     protected function baseUngradedFinalPredictionsQuery(): Builder
     {
-        return Prediction::query()->join('cbb_games', 'cbb_predictions.game_id', '=', 'cbb_games.id')
+        return Prediction::query()->with('game')->join('cbb_games', 'cbb_predictions.game_id', '=', 'cbb_games.id')
             ->where('cbb_games.status', 'STATUS_FINAL')->whereNotNull('cbb_games.home_score')->whereNotNull('cbb_games.away_score')
             ->where(function (Builder $query): void {
                 $query->whereNull('cbb_predictions.graded_at')

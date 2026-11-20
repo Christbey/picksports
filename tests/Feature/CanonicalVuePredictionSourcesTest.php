@@ -241,7 +241,7 @@ it('paginates canonical forecasts with ordered IDs before hydrating large JSON r
     }
 })->with(['cfb', 'nfl', 'nba', 'cbb', 'wcbb', 'wnba', 'mlb']);
 
-it('decodes frozen inputs once per API resource and releases the document after serialization', function () {
+it('decodes frozen inputs once during API preparation and releases the document before serialization', function () {
     config()->set('prediction_lifecycle.canonical_reads.cfb', true);
     $prediction = vueCanonicalFixture('cfb');
     $context = app(SportContextResolver::class)->resolve('cfb');
@@ -263,7 +263,12 @@ it('decodes frozen inputs once per API resource and releases the document after 
     $tracked->setRawAttributes($snapshot->getAttributes(), true)->setRelations($snapshot->getRelations());
     $prediction->calculationRun->setRelation('inputSnapshot', $tracked);
     $resource = app(SportPredictionReader::class)->resource($context, $prediction);
-    expect($tracked->inputDecodes)->toBe(0);
+    expect($tracked->inputDecodes)->toBe(1);
+    foreach ([$prediction, $prediction->calculationRun, $tracked] as $model) {
+        $class = $model instanceof EventInputSnapshot ? EventInputSnapshot::class : get_class($model);
+        expect((new ReflectionProperty($class, 'decodedJsonArrays'))->getValue($model))->toBeEmpty()
+            ->and($model->isDirty())->toBeFalse();
+    }
     $first = $resource->resolve();
     expect($tracked->inputDecodes)->toBe(1)
         ->and($first['id'])->toBe($prediction->public_id)
@@ -274,7 +279,7 @@ it('decodes frozen inputs once per API resource and releases the document after 
             ->and($model->isDirty())->toBeFalse();
     }
     expect($resource->resolve())->toBe($first)
-        ->and($tracked->inputDecodes)->toBe(2);
+        ->and($tracked->inputDecodes)->toBe(1);
 });
 
 it('hydrates dashboard forecast graphs in bounded unsorted batches without losing slate order', function () {

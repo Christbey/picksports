@@ -407,3 +407,25 @@ test('final result displays archived pregame projections separately without nati
     assert.doesNotMatch(native, /Archived pregame forecast/);
     assert.ok(native.includes('44.0'));
 });
+
+test('NFL forecast source time is retained from stored timestamps without inventing query time', async () => {
+    const { normalizePrediction } = await server.ssrLoadModule(
+        '/resources/js/composables/useNflGamePage.ts',
+    );
+    assert.equal(
+        normalizePrediction({ updated_at: '2026-07-20T12:00:00Z' })
+            .source_updated_at,
+        '2026-07-20T12:00:00Z',
+    );
+    assert.equal(
+        normalizePrediction({
+            published_at: '2026-07-19T12:00:00Z',
+            updated_at: '2026-07-20T12:00:00Z',
+        }).source_updated_at,
+        '2026-07-19T12:00:00Z',
+    );
+    assert.equal(
+        normalizePrediction({ updated_at: 'invalid' }).source_updated_at,
+        null,
+    );
+});

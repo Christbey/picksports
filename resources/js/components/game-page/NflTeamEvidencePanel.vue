@@ -63,6 +63,166 @@ const date = (value: string | null | undefined) =>
 
 <template>
     <section
+        v-if="workspace"
+        aria-label="Team evidence windows"
+        class="space-y-3"
+    >
+        <label
+            class="flex items-center justify-between gap-3 text-sm font-medium"
+        >
+            Compare teams
+            <select
+                aria-label="Evidence window"
+                :value="window"
+                class="min-h-11 rounded-md border bg-background px-3"
+                @change="
+                    emit(
+                        'update:window',
+                        ($event.target as HTMLSelectElement).value,
+                    )
+                "
+            >
+                <option v-for="(label, key) in windows" :key="key" :value="key">
+                    {{ label }}
+                </option>
+            </select>
+        </label>
+        <p class="text-xs text-muted-foreground">
+            <span v-for="(side, index) in sides" :key="side.key"
+                >{{ index ? ' · ' : '' }}{{ side.label }}:
+                {{ side.evidence?.sample_size ?? 0 }} games · seasons
+                {{ side.evidence?.seasons.join(', ') || 'unavailable' }}</span
+            >
+        </p>
+        <table aria-label="Team comparison metrics" class="w-full text-sm">
+            <thead>
+                <tr>
+                    <th scope="col" class="py-2 text-left">Metric</th>
+                    <th
+                        v-for="side in sides"
+                        :key="side.key"
+                        scope="col"
+                        class="py-2 text-right"
+                    >
+                        {{ side.label }}
+                    </th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr v-for="(label, key) in labels" :key="key">
+                    <th scope="row" class="border-t py-2 text-left font-normal">
+                        {{ label }}
+                    </th>
+                    <td
+                        v-for="side in sides"
+                        :key="side.key"
+                        class="border-t py-2 text-right tabular-nums"
+                    >
+                        {{
+                            side.evidence?.metrics[key]?.sample_size
+                                ? format(side.evidence.metrics[key]?.value)
+                                : 'Unavailable'
+                        }}
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="grid grid-cols-2 gap-3 text-xs text-muted-foreground">
+            <div v-for="side in sides" :key="side.key">
+                <p class="font-medium text-foreground">
+                    {{ side.label }} ·
+                    {{ side.evidence?.sample_size ?? 0 }} games
+                </p>
+                <template v-if="side.evidence?.sample_size">
+                    <p>
+                        {{ side.evidence.record.wins }}–{{
+                            side.evidence.record.losses
+                        }}–{{ side.evidence.record.ties }} W–L–T
+                    </p>
+                    <p>
+                        {{ date(side.evidence.from_date) }} –
+                        {{ date(side.evidence.through_date) }}
+                    </p>
+                    <p>Seasons: {{ side.evidence.seasons.join(', ') }}</p>
+                    <p v-if="side.evidence.seasons.length > 1">
+                        Cross-season sample; personnel and coaching may differ.
+                    </p>
+                </template>
+                <p v-else>
+                    No completed-game evidence available. No comparison
+                    inferred.
+                </p>
+            </div>
+        </div>
+        <details>
+            <summary
+                class="min-h-11 cursor-pointer content-center text-sm font-medium"
+            >
+                Samples, ranks &amp; methodology
+            </summary>
+            <p class="text-xs text-muted-foreground">
+                Regular season only. Windows overlap. Averages exclude missing
+                stats. Ranks use the same window before kickoff; rank 1 is best.
+                These are historical results, not betting recommendations.
+            </p>
+            <div v-for="side in sides" :key="side.key" class="mt-3 text-xs">
+                <h3 class="font-medium">{{ side.label }}</h3>
+                <p>
+                    Source updated:
+                    {{ side.evidence?.latest_source_update ?? 'Unavailable' }}
+                </p>
+                <p v-for="(label, key) in labels" :key="key">
+                    {{ label }}:
+                    {{ side.evidence?.metrics[key]?.sample_size ?? 0 }}/{{
+                        side.evidence?.sample_size ?? 0
+                    }}
+                    games · Rank
+                    {{ side.evidence?.metrics[key]?.rank_tied ? 'T-' : ''
+                    }}{{
+                        side.evidence?.metrics[key]?.rank ?? 'unavailable'
+                    }}/{{
+                        side.evidence?.metrics[key]?.ranked_teams ??
+                        'unavailable'
+                    }}
+                </p>
+            </div>
+        </details>
+        <details aria-label="Team evidence comparison">
+            <summary
+                class="min-h-11 cursor-pointer content-center text-sm font-medium"
+            >
+                What changed? Last 5 vs preceding 10
+            </summary>
+            <p class="text-xs text-muted-foreground">
+                Non-overlapping samples; at least 3 recorded games on each side
+                required. Not opponent-adjusted.
+            </p>
+            <div v-for="side in sides" :key="side.key" class="mt-2 text-sm">
+                <h3 class="font-medium">{{ side.label }}</h3>
+                <p v-if="!side.profile?.changes.length">
+                    Comparison unavailable.
+                </p>
+                <p
+                    v-for="change in side.profile?.changes ?? []"
+                    :key="change.metric"
+                >
+                    {{ labels[change.metric] }}:
+                    {{ format(change.recent.value) }} (n={{
+                        change.recent.sample_size
+                    }}) vs {{ format(change.baseline.value) }} (n={{
+                        change.baseline.sample_size
+                    }}) ·
+                    {{
+                        change.delta == null
+                            ? 'Insufficient evidence'
+                            : `Change ${change.delta.toFixed(2)}`
+                    }}
+                </p>
+            </div>
+        </details>
+    </section>
+    <section
+        v-else
         class="space-y-4 rounded-lg border bg-background/35 p-3 sm:p-4"
         aria-label="Team evidence windows"
     >

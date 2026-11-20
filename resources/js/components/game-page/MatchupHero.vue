@@ -58,6 +58,22 @@ const props = withDefaults(
 
 const awayColor = computed(() => normalizeTeamColor(props.awayTeam?.color));
 const homeColor = computed(() => normalizeTeamColor(props.homeTeam?.color));
+const kickoffLabel = (): string => {
+    if (
+        !props.game.starts_at ||
+        !/[T ]\d{2}:\d{2}.*(?:Z|[+-]\d{2}:?\d{2})$/.test(props.game.starts_at)
+    )
+        return 'Kickoff time unavailable';
+    const value = new Date(props.game.starts_at);
+    return Number.isFinite(value.getTime())
+        ? value.toLocaleTimeString('en-US', {
+              hour: 'numeric',
+              minute: '2-digit',
+              timeZone: 'America/Chicago',
+              timeZoneName: 'short',
+          })
+        : 'Kickoff time unavailable';
+};
 
 const teamName = (team: GamePageTeam, fallback: string): string =>
     team.display_name ||
@@ -157,7 +173,7 @@ function formatStarterLine(
             <span class="flex-1" :style="{ backgroundColor: awayColor }" />
             <span class="flex-1" :style="{ backgroundColor: homeColor }" />
         </div>
-        <div class="px-3 py-4 sm:px-4 md:px-6 md:py-6">
+        <div class="px-4 md:px-5" :class="compact ? 'py-2' : 'py-4'">
             <div
                 data-matchup-row
                 class="grid items-center md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
@@ -375,7 +391,12 @@ function formatStarterLine(
             <div
                 class="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 md:gap-x-6"
             >
-                <span>{{ formatDate(game.game_date) }}</span>
+                <span
+                    >{{ formatDate(game.game_date)
+                    }}<template v-if="compact">
+                        · {{ kickoffLabel() }}</template
+                    ></span
+                >
                 <span v-for="(item, idx) in props.extraInfoItems" :key="idx">{{
                     item
                 }}</span>

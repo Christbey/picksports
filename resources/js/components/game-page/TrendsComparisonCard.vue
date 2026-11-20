@@ -74,7 +74,52 @@ const viewClass = (view: string) =>
         : '';
 </script>
 <template>
-    <Card class="overflow-hidden py-0">
+    <section
+        v-if="workspace"
+        class="ui-surface space-y-3 p-4"
+        aria-label="Team comparison"
+    >
+        <h2 class="text-lg font-semibold">Team comparison</h2>
+        <p v-if="trendsLoading" class="text-sm text-muted-foreground">
+            Loading team evidence…
+        </p>
+        <NflTeamEvidencePanel
+            v-else-if="hasEvidence"
+            v-model:window="selectedWindow"
+            workspace
+            :home="props.homeTrends?.team_evidence"
+            :away="props.awayTrends?.team_evidence"
+            :home-label="homeLabel || 'Home'"
+            :away-label="awayLabel || 'Away'"
+        />
+        <p v-else class="text-sm text-muted-foreground">
+            Team evidence unavailable.
+        </p>
+        <details>
+            <summary
+                class="min-h-11 cursor-pointer content-center text-sm font-medium"
+            >
+                Matchup history
+            </summary>
+            <TrendMatchupContext />
+            <p v-if="!matchupRows.length" class="text-sm text-muted-foreground">
+                No matchup history is available.
+            </p>
+        </details>
+        <details>
+            <summary
+                class="min-h-11 cursor-pointer content-center text-sm font-medium"
+            >
+                Advanced patterns &amp; filters
+            </summary>
+            <p class="text-xs text-muted-foreground">
+                Historical context only. Pattern ranks are not win probabilities
+                or validated betting advantages; small samples are uncertain.
+            </p>
+            <TrendContextualInsights /><TrendCategoryDetails />
+        </details>
+    </section>
+    <Card v-else class="overflow-hidden py-0">
         <CardHeader class="gap-2 px-4 py-4 md:px-5">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>

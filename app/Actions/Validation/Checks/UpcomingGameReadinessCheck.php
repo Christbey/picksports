@@ -3,10 +3,14 @@
 namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
+use App\Exceptions\Predictions\PredictionLifecycleException;
+use App\Models\WCBB\Game;
+use App\Services\Predictions\CalculationReleaseSelector;
 use App\Services\Sports\SeasonStage\SeasonStageService;
 use App\Services\Sports\SportsDateWindowService;
 use App\Services\Validation\CfbValidationCoverage;
 use App\Services\Validation\PredictionValidationCoverage;
+use App\Services\WCBB\Predictions\WcbbPregameInputReadiness;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -72,7 +76,16 @@ class UpcomingGameReadinessCheck implements ValidationCheck
         if ($sport === 'cfb') {
             $upcomingGames = $upcomingGames->filter(fn ($game) => $cfbCoverage->requiredTeamIds($game) !== [])->values();
         }
+        $consideredGames = $upcomingGames->count();
+        $expectedHolds = $predictionCoverage->expectedHolds($sport, $upcomingGames);
+        $upcomingGames = $upcomingGames->reject(fn ($game): bool => $expectedHolds->has($game->id))->values();
         $published = $predictionCoverage->forGames($sport, $upcomingGames);
+        $wcbbGames = $sport === 'wcbb' && $predictionCoverage->usesCanonical($sport)
+            ? Game::query()->whereKey($upcomingGames->pluck('id'))
+                ->select(['id', 'sport_event_id', 'home_team_id', 'away_team_id', 'season', 'season_type', 'game_date', 'game_time'])
+                ->with('sportEvent')->get()->keyBy('id')
+            : collect();
+        $wcbbReadiness = $this->wcbbReadiness($wcbbGames, $published);
         $seasonTypeAware = Schema::hasColumn($teamMetricsTable, 'season_type');
         $metricColumns = ['team_id', 'season', ...($seasonTypeAware ? ['season_type'] : [])];
         $metrics = DB::table($teamMetricsTable)->whereIn('season', $upcomingGames->pluck('season')->unique())
@@ -84,6 +97,9 @@ class UpcomingGameReadinessCheck implements ValidationCheck
         $missingPredictions = 0;
         $missingOdds = 0;
         $missingTeamMetrics = 0;
+        $frozenPriorMetricGames = 0;
+        $frozenCurrentMetricGames = 0;
+        $invalidMetricGames = 0;
         $staleGameRows = 0;
         $providerUnavailableFarOdds = 0;
         $providerUnavailableSoftOdds = 0;
@@ -134,9 +150,21 @@ class UpcomingGameReadinessCheck implements ValidationCheck
                 }
             }
 
-            if (! $this->hasMetricsForBothTeams($metrics, $seasonTypeAware, $game, $sport === 'cfb' ? $cfbCoverage->requiredTeamIds($game) : null)) {
+            $forecast = $published->get($predictionCoverage->key($sport, $game));
+            $frozenSources = $predictionCoverage->frozenMetricSources($game, $forecast);
+            if (in_array('frozen_prior_season', $frozenSources, true)) {
+                $frozenPriorMetricGames++;
+            }
+            if (in_array('frozen_current_season', $frozenSources, true)) {
+                $frozenCurrentMetricGames++;
+            }
+            if (! $this->hasMetricsForBothTeams($metrics, $seasonTypeAware, $game, $sport === 'cfb' ? $cfbCoverage->requiredTeamIds($game) : null, $frozenSources)) {
                 $missingTeamMetrics++;
                 $reasons[] = 'missing_team_metrics';
+            }
+            if (($wcbbReadiness[$gameId]['holds'] ?? []) !== []) {
+                $invalidMetricGames++;
+                $reasons[] = 'unusable_team_metrics';
             }
 
             $updatedAt = $game->updated_at ? CarbonImmutable::parse($game->updated_at) : null;
@@ -165,11 +193,15 @@ class UpcomingGameReadinessCheck implements ValidationCheck
         $warnPct = (float) config('validation.thresholds.upcoming_game_readiness.problem_warn_pct', 0.05);
         $failPct = (float) config('validation.thresholds.upcoming_game_readiness.problem_fail_pct', 0.20);
         $status = 'passing';
-        $message = "Upcoming game pages look ready for {$totalGames} active game(s) in the next {$windowDays} days.";
+        $message = "Upcoming game pages look ready for {$totalGames} forecast-eligible active game(s) in the next {$windowDays} days.";
 
         if ($problemGames > 0) {
             $status = $problemPct >= $failPct ? 'failing' : ($problemPct >= $warnPct ? 'warning' : 'passing');
             $message = "{$problemGames}/{$totalGames} upcoming game page(s) are missing pregame readiness data.";
+        }
+
+        if ($expectedHolds->isNotEmpty()) {
+            $message .= ' '.$expectedHolds->count().' placeholder matchup(s) remain expected forecast holds.';
         }
 
         return [
@@ -182,6 +214,10 @@ class UpcomingGameReadinessCheck implements ValidationCheck
                 'window_days' => $windowDays,
                 'season_stage' => $stageContext->toArray(),
                 'upcoming_games' => $totalGames,
+                'scheduled_games_considered' => $consideredGames,
+                'expected_forecast_holds' => $expectedHolds->count(),
+                'forecast_hold_reasons' => $expectedHolds->countBy()->all(),
+                'sample_expected_hold_game_ids' => $expectedHolds->keys()->take(5)->all(),
                 'market_ready_games' => count($stageContext->marketReadyGameIds),
                 'games_missing_teams' => $missingTeams,
                 'games_missing_espn_event_ids' => $missingEspnEventIds,
@@ -192,6 +228,9 @@ class UpcomingGameReadinessCheck implements ValidationCheck
                 'provider_unavailable_soft_window_odds' => $providerUnavailableSoftOdds,
                 'provider_unavailable_expected_window_odds' => $providerUnavailableExpectedOdds,
                 'games_missing_team_metrics' => $missingTeamMetrics,
+                'games_with_frozen_prior_season_metrics' => $frozenPriorMetricGames,
+                'games_with_frozen_current_season_metrics' => $frozenCurrentMetricGames,
+                'games_with_unusable_team_metrics' => $invalidMetricGames,
                 'stale_game_rows' => $staleGameRows,
                 'sample_game_ids' => array_slice(array_values(array_unique($flaggedGameIds)), 0, 5),
                 'sample_games' => array_slice($sampleGames, 0, 5),
@@ -200,7 +239,40 @@ class UpcomingGameReadinessCheck implements ValidationCheck
         ];
     }
 
-    private function hasMetricsForBothTeams(Collection $metrics, bool $seasonTypeAware, object $game, ?array $requiredTeamIds = null): bool
+    /** @return array<int, array<string, mixed>> */
+    private function wcbbReadiness(Collection $games, Collection $forecasts): array
+    {
+        $groups = [];
+        $activeRelease = null;
+        $activeReleaseResolved = false;
+        foreach ($games as $game) {
+            if ($game->sportEvent === null) {
+                continue;
+            }
+            $release = $forecasts->get($game->sport_event_id)?->calculationRun?->release;
+            if ($release === null && ! $activeReleaseResolved) {
+                $activeReleaseResolved = true;
+                try {
+                    $activeRelease = app(CalculationReleaseSelector::class)->select($game->sportEvent, 'pregame');
+                } catch (PredictionLifecycleException) {
+                    // Missing release coverage remains a real missing-forecast finding.
+                }
+            }
+            $release ??= $activeRelease;
+            if ($release !== null) {
+                $groups[$release->id]['release'] = $release;
+                $groups[$release->id]['games'][] = $game;
+            }
+        }
+        $results = [];
+        foreach ($groups as $group) {
+            $results += app(WcbbPregameInputReadiness::class)->forGames(collect($group['games']), $group['release']);
+        }
+
+        return $results;
+    }
+
+    private function hasMetricsForBothTeams(Collection $metrics, bool $seasonTypeAware, object $game, ?array $requiredTeamIds = null, array $frozenSources = []): bool
     {
         if (! $game->home_team_id || ! $game->away_team_id || ! $game->season) {
             return false;
@@ -211,7 +283,14 @@ class UpcomingGameReadinessCheck implements ValidationCheck
             $matching = $matching->where('season_type', $game->season_type);
         }
 
-        return $matching->pluck('team_id')->unique()->count() >= count($requiredTeamIds);
+        $coveredTeamIds = $matching->pluck('team_id')->all();
+        foreach (['home', 'away'] as $side) {
+            if (isset($frozenSources[$side])) {
+                $coveredTeamIds[] = (int) $game->{$side.'_team_id'};
+            }
+        }
+
+        return count(array_intersect($requiredTeamIds, array_unique($coveredTeamIds))) >= count($requiredTeamIds);
     }
 
     /**

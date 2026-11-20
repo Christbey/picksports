@@ -64,6 +64,9 @@ Betting opportunity checks: {{ ($report['features']['betting_alert_check_registe
     if ($sport['run_id'] ?? null) {
         $result .= ' · run '.$sport['run_id'].' · '.$sport['age_minutes'].' min old';
     }
+    if (($sport['expected_hold_count'] ?? 0) > 0) {
+        $result .= ' · '.$sport['expected_hold_count'].' expected forecast holds';
+    }
     $metrics = [];
     foreach (($sport['findings'] ?? []) as $finding) {
         foreach (($finding['metrics'] ?? []) as $name => $count) {

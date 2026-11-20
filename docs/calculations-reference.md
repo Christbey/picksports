@@ -151,6 +151,8 @@ Source:
   - `app/Actions/CBB/CalculateTeamMetrics.php`
   - `app/Actions/WCBB/CalculateTeamMetrics.php`
 
+WCBB additionally requires complete paired scoring and possession evidence before replacing a team metric. An empty box-score row does not establish zero points or zero possessions. Each side must have observed scoring consistent with an available final score, and either positive observed possessions or all fields needed by the existing possession estimate. Invalid replacements preserve the prior stored rows and metrics. Current-season inputs with incomplete source coverage remain held; an approved release may use its explicitly permitted valid prior-season fallback. Preseason defaults before any eligible completed game are unchanged. These checks change input eligibility, not the metric formulas or previously published forecasts.
+
 Raw formulas are the same as pro basketball:
 - offensive efficiency
 - defensive efficiency

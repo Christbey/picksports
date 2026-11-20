@@ -29,6 +29,7 @@ function adminReportRenderingPayload(): array
             ], [
                 'sport' => 'cfb', 'scope' => 'data', 'status' => 'passing', 'run_id' => 1053,
                 'age_minutes' => 30, 'url' => url('/admin/healthchecks?validation_run=1053'),
+                'expected_hold_count' => 24,
                 'baseline_kind' => 'previous_completed', 'changes' => ['recovered' => [[], []]],
             ]],
             'evidence_gaps' => ['WCBB comparison is unavailable.'],
@@ -53,6 +54,7 @@ it('renders a concise prioritized admin report with bounded actions and direct e
     $mail->assertSeeInText('nba:sync-odds');
     $mail->assertSeeInText('**Current unresolved mail:** 2');
     $mail->assertSeeInHtml('Mail dispatched');
+    $mail->assertSeeInHtml('24 expected forecast holds');
     expect($html)->toContain('href="'.e(url('/admin/healthchecks?validation_run=1055')).'"', '<table');
     expect(strpos($html, 'Review first'))->toBeLessThan(strpos($html, 'Activity —'));
     $document = new DOMDocument;

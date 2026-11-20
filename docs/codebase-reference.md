@@ -1135,6 +1135,8 @@ MLB release `1.1.0` / `mlb-pregame-v2` freezes the established generator configu
 
 ### WCBB canonical cutover preparation
 
+College validation distinguishes explicit placeholder matchups from genuinely missing teams and forecasts. Expected placeholder holds remain counted and visible in the admin report, without inflating the required-forecast denominator. Readiness can use the exact published forecast's frozen usable metric evidence when its approved release permits the recorded prior-season fallback; unrelated forecasts, teams, releases, or future input observations cannot establish coverage. WCBB regeneration holds remain actionable when scoring or possession evidence is unusable. Scheduled coverage repair now spans the same eight-day horizon as college canonical generation; this does not bypass those holds or generate retrospective forecasts.
+
 WCBB release `1.1.0` / `wcbb-pregame-v2` uses the shared established-model transport with frozen WCBB configuration, including the effective prior-season fallback policy. It preserves the established ensemble, neutral-site behavior, probability/calibration metadata and confidence outputs. Original `1.0.0` replay remains supported; the original smaller calculator cannot establish full-model readiness.
 
 `CollegeBasketballPregameEligibility` and `AbstractGenerateCollegeBasketballCanonicalPredictionsCommand` share CBB/WCBB known-team, identity, bounded horizon and explicit-target behavior. CBB retains its compatibility eligibility entry point. Generation defaults to eight days; explicit game/date targets keep their existing scope. Shared command hooks preserve all other sports' defaults and counters.

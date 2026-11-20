@@ -6,6 +6,16 @@ use App\Models\WCBB\Team;
 use App\Models\WCBB\TeamMetric;
 use App\Models\WCBB\TeamStat;
 
+function wcbbMetricSourceStat(array $attributes): TeamStat
+{
+    $stat = TeamStat::factory()->create($attributes);
+    $game = $stat->game;
+    $scoreField = $game->home_team_id === $stat->team_id ? 'home_score' : 'away_score';
+    $game->update([$scoreField => $stat->points]);
+
+    return $stat;
+}
+
 uses()->group('wcbb', 'team-metrics');
 
 beforeEach(function () {
@@ -31,7 +41,7 @@ it('calculates basic team metrics for a season', function () {
     ]);
 
     // Create team stats with possessions
-    TeamStat::factory()->create([
+    wcbbMetricSourceStat([
         'team_id' => $this->team->id,
         'game_id' => $game1->id,
         'points' => 80,
@@ -42,14 +52,14 @@ it('calculates basic team metrics for a season', function () {
         'free_throws_attempted' => 15,
     ]);
 
-    TeamStat::factory()->create([
+    wcbbMetricSourceStat([
         'team_id' => $this->opponent1->id,
         'game_id' => $game1->id,
         'points' => 75,
         'possessions' => 68.0,
     ]);
 
-    TeamStat::factory()->create([
+    wcbbMetricSourceStat([
         'team_id' => $this->team->id,
         'game_id' => $game2->id,
         'points' => 85,
@@ -60,7 +70,7 @@ it('calculates basic team metrics for a season', function () {
         'free_throws_attempted' => 18,
     ]);
 
-    TeamStat::factory()->create([
+    wcbbMetricSourceStat([
         'team_id' => $this->opponent2->id,
         'game_id' => $game2->id,
         'points' => 70,
@@ -113,7 +123,7 @@ it('does not calculate metrics when completed game stats are incomplete', functi
         'status' => 'STATUS_FINAL',
     ]);
 
-    TeamStat::factory()->create([
+    wcbbMetricSourceStat([
         'team_id' => $this->team->id,
         'game_id' => $game->id,
         'points' => 80,
@@ -143,14 +153,14 @@ it('calculates rolling window metrics', function () {
         // Later games: higher performance
         $points = $i < $rollingWindowSize ? 70 : 90;
 
-        TeamStat::factory()->create([
+        wcbbMetricSourceStat([
             'team_id' => $this->team->id,
             'game_id' => $game->id,
             'points' => $points,
             'possessions' => 70.0,
         ]);
 
-        TeamStat::factory()->create([
+        wcbbMetricSourceStat([
             'team_id' => $opponent->id,
             'game_id' => $game->id,
             'points' => 75,
@@ -180,14 +190,14 @@ it('calculates home and away splits', function () {
             'status' => 'STATUS_FINAL',
         ]);
 
-        TeamStat::factory()->create([
+        wcbbMetricSourceStat([
             'team_id' => $this->team->id,
             'game_id' => $game->id,
             'points' => 90,
             'possessions' => 70.0,
         ]);
 
-        TeamStat::factory()->create([
+        wcbbMetricSourceStat([
             'team_id' => $opponent->id,
             'game_id' => $game->id,
             'points' => 70,
@@ -205,14 +215,14 @@ it('calculates home and away splits', function () {
             'status' => 'STATUS_FINAL',
         ]);
 
-        TeamStat::factory()->create([
+        wcbbMetricSourceStat([
             'team_id' => $this->team->id,
             'game_id' => $game->id,
             'points' => 75,
             'possessions' => 70.0,
         ]);
 
-        TeamStat::factory()->create([
+        wcbbMetricSourceStat([
             'team_id' => $opponent->id,
             'game_id' => $game->id,
             'points' => 80,
@@ -247,14 +257,14 @@ it('respects minimum games threshold', function () {
             'status' => 'STATUS_FINAL',
         ]);
 
-        TeamStat::factory()->create([
+        wcbbMetricSourceStat([
             'team_id' => $this->team->id,
             'game_id' => $game->id,
             'points' => 80,
             'possessions' => 70.0,
         ]);
 
-        TeamStat::factory()->create([
+        wcbbMetricSourceStat([
             'team_id' => $opponent->id,
             'game_id' => $game->id,
             'points' => 75,
@@ -287,14 +297,14 @@ it('marks metrics as meeting minimum when threshold is met', function () {
             'status' => 'STATUS_FINAL',
         ]);
 
-        TeamStat::factory()->create([
+        wcbbMetricSourceStat([
             'team_id' => $this->team->id,
             'game_id' => $game->id,
             'points' => 80,
             'possessions' => 70.0,
         ]);
 
-        TeamStat::factory()->create([
+        wcbbMetricSourceStat([
             'team_id' => $opponent->id,
             'game_id' => $game->id,
             'points' => 75,
@@ -322,7 +332,7 @@ it('estimates possessions when not provided', function () {
     ]);
 
     // Create team stat without possessions field
-    TeamStat::factory()->create([
+    wcbbMetricSourceStat([
         'team_id' => $this->team->id,
         'game_id' => $game->id,
         'points' => 80,
@@ -333,7 +343,7 @@ it('estimates possessions when not provided', function () {
         'free_throws_attempted' => 15,
     ]);
 
-    TeamStat::factory()->create([
+    wcbbMetricSourceStat([
         'team_id' => $this->opponent1->id,
         'game_id' => $game->id,
         'points' => 75,
@@ -362,7 +372,7 @@ it('ignores non-final games', function () {
         'status' => 'STATUS_SCHEDULED',
     ]);
 
-    TeamStat::factory()->create([
+    wcbbMetricSourceStat([
         'team_id' => $this->team->id,
         'game_id' => $scheduledGame->id,
         'points' => 80,
@@ -385,14 +395,14 @@ it('updates existing metric instead of creating duplicate', function () {
         'status' => 'STATUS_FINAL',
     ]);
 
-    TeamStat::factory()->create([
+    wcbbMetricSourceStat([
         'team_id' => $this->team->id,
         'game_id' => $game->id,
         'points' => 80,
         'possessions' => 70.0,
     ]);
 
-    TeamStat::factory()->create([
+    wcbbMetricSourceStat([
         'team_id' => $this->opponent1->id,
         'game_id' => $game->id,
         'points' => 75,
@@ -421,14 +431,14 @@ it('calculates metrics for multiple seasons separately', function () {
         'status' => 'STATUS_FINAL',
     ]);
 
-    TeamStat::factory()->create([
+    wcbbMetricSourceStat([
         'team_id' => $this->team->id,
         'game_id' => $game2025->id,
         'points' => 70,
         'possessions' => 70.0,
     ]);
 
-    TeamStat::factory()->create([
+    wcbbMetricSourceStat([
         'team_id' => $this->opponent1->id,
         'game_id' => $game2025->id,
         'points' => 80,
@@ -443,14 +453,14 @@ it('calculates metrics for multiple seasons separately', function () {
         'status' => 'STATUS_FINAL',
     ]);
 
-    TeamStat::factory()->create([
+    wcbbMetricSourceStat([
         'team_id' => $this->team->id,
         'game_id' => $game2026->id,
         'points' => 90,
         'possessions' => 70.0,
     ]);
 
-    TeamStat::factory()->create([
+    wcbbMetricSourceStat([
         'team_id' => $this->opponent2->id,
         'game_id' => $game2026->id,
         'points' => 70,
@@ -499,14 +509,14 @@ it('calculates opponent-adjusted metrics for all teams', function () {
                     'status' => 'STATUS_FINAL',
                 ]);
 
-                TeamStat::factory()->create([
+                wcbbMetricSourceStat([
                     'team_id' => $homeTeam->id,
                     'game_id' => $game->id,
                     'points' => 80,
                     'possessions' => 70.0,
                 ]);
 
-                TeamStat::factory()->create([
+                wcbbMetricSourceStat([
                     'team_id' => $awayTeam->id,
                     'game_id' => $game->id,
                     'points' => 75,

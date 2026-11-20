@@ -21,6 +21,8 @@ class AdminOperationalAssessment
         'games_missing_grading', 'games_missing_game_scores', 'stale_games',
         'missing_predictions', 'missing_live_model_fields', 'stale_live_models',
         'teams_missing_stats',
+        'expected_forecast_holds', 'games_with_frozen_prior_season_metrics',
+        'games_with_frozen_current_season_metrics', 'games_with_unusable_team_metrics',
     ];
 
     public function __construct(private readonly ValidationRunRecorder $recorder) {}
@@ -150,12 +152,16 @@ class AdminOperationalAssessment
             $incomplete = true;
             $gaps[] = 'The completed run contains no finding records; its check coverage cannot be verified.';
         }
+        $expectedHoldCount = $currentFindings->map(fn (ValidationFinding $finding): mixed => data_get($finding->facts, 'expected_forecast_holds'))
+            ->filter(fn (mixed $value): bool => is_numeric($value) && is_finite((float) $value) && (float) $value >= 0 && floor((float) $value) === (float) $value)
+            ->max() ?? 0;
 
         return [
             'sport' => $sport, 'scope' => $scope, 'status' => $current?->status ?? 'unknown',
             'in_season' => $inSeason, 'run_id' => $current?->id,
             'completed_at' => $current?->completed_at?->copy()->timezone('America/Chicago')->toIso8601String(),
             'age_minutes' => $ageMinutes, 'evidence_incomplete' => $incomplete,
+            'expected_hold_count' => (int) $expectedHoldCount,
             'url' => $this->url($sport, $current?->id),
             'baseline_run_id' => $baseline?->id, 'baseline_kind' => $baselineKind,
             'baseline_completed_at' => $baseline?->completed_at?->copy()->timezone('America/Chicago')->toIso8601String(),

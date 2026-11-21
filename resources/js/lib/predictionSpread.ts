@@ -5,6 +5,20 @@ export function predictionHomeMargin(
 ): number | null {
     if (!prediction || typeof prediction !== 'object') return null;
     const value = prediction as Record<string, unknown>;
+    // Board adapters can omit canonical phase/revision metadata. This field is
+    // explicitly a home handicap in both API and dashboard payloads.
+    const context = value.model_bet_context;
+    const modelLine =
+        context && typeof context === 'object'
+            ? (context as Record<string, unknown>).model_home_spread
+            : null;
+    if (
+        (typeof modelLine === 'number' ||
+            (typeof modelLine === 'string' && modelLine.trim())) &&
+        Number.isFinite(Number(modelLine))
+    ) {
+        return Number(modelLine) === 0 ? 0 : -Number(modelLine);
+    }
     const spread = value.predicted_spread;
     if (typeof spread !== 'number' && typeof spread !== 'string') return null;
     if (typeof spread === 'string' && !spread.trim()) return null;

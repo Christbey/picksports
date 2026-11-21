@@ -51,3 +51,10 @@ This documentation pass checked repository scripts, dependency manifests, databa
 
 - [NBA research rollout](operations/nba-research-rollout.md): opt-in source admission, review ownership, activation and rollback.
 - [Shared descriptive research](operations/multi-sport-research.md) and [prediction review execution](operations/prediction-review.md).
+
+## NBA structured evidence
+
+- [NBA capture](operations/nba-injury-observation-implementation.md) and [structured research adapter](operations/nba-structured-research-adapter.md): disabled-by-default acquisition ordering, provenance, verification and activation gates.
+- [NBA source refresh plan](operations/nba-source-refresh-plan.md): optional PDFs, overnight coverage and review deduplication gates.
+
+- [NBA adapter release candidate](operations/nba-adapter-release-candidate-2026-11-21.md): live nonproduction end-to-end canary, isolated baseline, review evidence and unexecuted activation/rollback sequence.

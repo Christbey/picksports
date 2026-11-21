@@ -1,0 +1,610 @@
+{
+  "schema_version": "nba_production_roster_mapping_v1",
+  "verified_at_utc": "2026-11-21T20:18:32.446663+00:00",
+  "production_observed_at_utc": "2026-11-21T20:17:03+00:00",
+  "production_command_id": "comm-a347e784-f51b-4494-913c-a14b1e0572f7",
+  "provenance": "Laravel Cloud production database; no application API credential available",
+  "production_transaction": "read_only",
+  "scope": "All stored NBA teams compared to ESPN roster JSON; no provider refresh or application writes",
+  "teams_checked": 30,
+  "verified_teams": 30,
+  "gap_teams": 0,
+  "unavailable_teams": 0,
+  "injury_identity_checks": {
+    "total_rows": 6946,
+    "stored_team_mismatches": "990",
+    "active_team_mismatches": "0",
+    "active_rows": "105",
+    "raw_athlete_mismatches": "0"
+  },
+  "production_settings_observed": {
+    "nba.injuries.observations_enabled": null,
+    "nba.injuries.research_adapter_enabled": null,
+    "game_analysis.schedule_enabled": false,
+    "game_analysis.publisher_enabled": false,
+    "nfl_research.enabled": true,
+    "prediction_lifecycle.canonical_reads.nfl": true,
+    "prediction_lifecycle.canonical_pipeline.nfl": true
+  },
+  "results": [
+    {
+      "team_id": 1,
+      "espn_team_id": "1",
+      "abbreviation": "ATL",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/1/roster",
+      "provider_roster_count": 18,
+      "mapped_count": 18,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "3137259",
+        "4279118",
+        "4397003",
+        "4585618",
+        "4683857",
+        "4712845",
+        "4712902"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 2,
+      "espn_team_id": "2",
+      "abbreviation": "BOS",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/2/roster",
+      "provider_roster_count": 17,
+      "mapped_count": 17,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "4397885",
+        "4398356",
+        "4701992",
+        "4837238",
+        "5106272",
+        "5176420"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 3,
+      "espn_team_id": "17",
+      "abbreviation": "BKN",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/17/roster",
+      "provider_roster_count": 18,
+      "mapped_count": 18,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "3934620",
+        "4395620",
+        "4432189",
+        "4432821",
+        "4432887",
+        "5107242",
+        "5177736"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 4,
+      "espn_team_id": "30",
+      "abbreviation": "CHA",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/30/roster",
+      "provider_roster_count": 18,
+      "mapped_count": 18,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "2578239",
+        "4277964",
+        "4278729",
+        "4597865",
+        "4702484",
+        "4897504",
+        "5460427"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 5,
+      "espn_team_id": "4",
+      "abbreviation": "CHI",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/4/roster",
+      "provider_roster_count": 18,
+      "mapped_count": 18,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "4017844",
+        "4397071",
+        "4397689",
+        "4432117",
+        "4432162",
+        "4432946",
+        "4433218",
+        "4592933",
+        "4684275",
+        "5091709",
+        "5106674",
+        "5107156",
+        "5107264"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 6,
+      "espn_team_id": "5",
+      "abbreviation": "CLE",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/5/roster",
+      "provider_roster_count": 18,
+      "mapped_count": 18,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "4278046",
+        "4397450",
+        "4431734",
+        "4593815",
+        "4701845",
+        "4702528",
+        "4898369",
+        "5457832"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 7,
+      "espn_team_id": "6",
+      "abbreviation": "DAL",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/6/roster",
+      "provider_roster_count": 18,
+      "mapped_count": 18,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "2531367",
+        "4431775",
+        "4898238",
+        "5105410",
+        "5105411",
+        "5167876",
+        "5358755",
+        "6576"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 8,
+      "espn_team_id": "7",
+      "abbreviation": "DEN",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/7/roster",
+      "provider_roster_count": 17,
+      "mapped_count": 17,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "4277890",
+        "4395667",
+        "4432872",
+        "4432976",
+        "4588201",
+        "4593041",
+        "4683834",
+        "6477"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 9,
+      "espn_team_id": "8",
+      "abbreviation": "DET",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/8/roster",
+      "provider_roster_count": 18,
+      "mapped_count": 18,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "3032978",
+        "4592187",
+        "4592843",
+        "4906923",
+        "5106708"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 10,
+      "espn_team_id": "9",
+      "abbreviation": "GS",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/9/roster",
+      "provider_roster_count": 18,
+      "mapped_count": 18,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "2326307",
+        "3074213",
+        "4397821",
+        "4431914",
+        "4696317",
+        "5108969",
+        "5170949"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 11,
+      "espn_team_id": "10",
+      "abbreviation": "HOU",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/10/roster",
+      "provider_roster_count": 17,
+      "mapped_count": 17,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "3209",
+        "3922230",
+        "4432394",
+        "984"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 12,
+      "espn_team_id": "11",
+      "abbreviation": "IND",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/11/roster",
+      "provider_roster_count": 17,
+      "mapped_count": 17,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "3999",
+        "4278516",
+        "4592677",
+        "5105647"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 13,
+      "espn_team_id": "12",
+      "abbreviation": "LAC",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/12/roster",
+      "provider_roster_count": 19,
+      "mapped_count": 19,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "3416",
+        "4397355",
+        "4683749",
+        "4702785",
+        "5105853",
+        "5159895",
+        "5363895"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 14,
+      "espn_team_id": "13",
+      "abbreviation": "LAL",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/13/roster",
+      "provider_roster_count": 19,
+      "mapped_count": 19,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "2960236",
+        "4397134",
+        "4596528",
+        "4683686",
+        "4711203",
+        "5107258"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 15,
+      "espn_team_id": "29",
+      "abbreviation": "MEM",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/29/roster",
+      "provider_roster_count": 18,
+      "mapped_count": 18,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "3906665",
+        "3986",
+        "4279147",
+        "4432735",
+        "4700873",
+        "4896365",
+        "5107069"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 16,
+      "espn_team_id": "14",
+      "abbreviation": "MIA",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/14/roster",
+      "provider_roster_count": 17,
+      "mapped_count": 17,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "3074752",
+        "3950760",
+        "4065697",
+        "4431720",
+        "4432753",
+        "4433133",
+        "4693954",
+        "4702784",
+        "4898237",
+        "5106051"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 17,
+      "espn_team_id": "15",
+      "abbreviation": "MIL",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/15/roster",
+      "provider_roster_count": 18,
+      "mapped_count": 18,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "2999547",
+        "3102533",
+        "4397140",
+        "4398257",
+        "4432174",
+        "4432452",
+        "4432588",
+        "5184016"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 18,
+      "espn_team_id": "16",
+      "abbreviation": "MIN",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/16/roster",
+      "provider_roster_count": 17,
+      "mapped_count": 17,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "2968436",
+        "4431828",
+        "4592686",
+        "4592699",
+        "4897438"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 19,
+      "espn_team_id": "3",
+      "abbreviation": "NO",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/3/roster",
+      "provider_roster_count": 18,
+      "mapped_count": 18,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "4431778",
+        "4432068",
+        "4432180",
+        "4433623",
+        "4701819"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 20,
+      "espn_team_id": "18",
+      "abbreviation": "NY",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/18/roster",
+      "provider_roster_count": 17,
+      "mapped_count": 17,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "3914285",
+        "4065670",
+        "5234862"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 21,
+      "espn_team_id": "25",
+      "abbreviation": "OKC",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/25/roster",
+      "provider_roster_count": 18,
+      "mapped_count": 18,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "4277923",
+        "4395676",
+        "4397018",
+        "4433159",
+        "4685802",
+        "4697270",
+        "4897155",
+        "5106270",
+        "5109790",
+        "5116468"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 22,
+      "espn_team_id": "19",
+      "abbreviation": "ORL",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/19/roster",
+      "provider_roster_count": 17,
+      "mapped_count": 17,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "4278075",
+        "4565201",
+        "4576085",
+        "5105875"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 23,
+      "espn_team_id": "20",
+      "abbreviation": "PHI",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/20/roster",
+      "provider_roster_count": 17,
+      "mapped_count": 17,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "3012",
+        "3064230",
+        "4397179",
+        "4432179",
+        "4592444",
+        "4702049",
+        "4702159",
+        "4897471",
+        "5239799",
+        "5241706",
+        "5460402"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 24,
+      "espn_team_id": "21",
+      "abbreviation": "PHX",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/21/roster",
+      "provider_roster_count": 17,
+      "mapped_count": 17,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "4066387",
+        "4277957",
+        "4291678",
+        "4432646",
+        "4432809",
+        "4591259",
+        "4702602",
+        "4909710"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 25,
+      "espn_team_id": "22",
+      "abbreviation": "POR",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/22/roster",
+      "provider_roster_count": 17,
+      "mapped_count": 17,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "4597259",
+        "4610139",
+        "4684737"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 26,
+      "espn_team_id": "23",
+      "abbreviation": "SAC",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/23/roster",
+      "provider_roster_count": 17,
+      "mapped_count": 17,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "2528588",
+        "2583639",
+        "3468",
+        "4397654",
+        "4432916",
+        "4433246",
+        "4592965",
+        "4683024",
+        "4701192",
+        "5182573"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 27,
+      "espn_team_id": "24",
+      "abbreviation": "SA",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/24/roster",
+      "provider_roster_count": 17,
+      "mapped_count": 17,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "2489663",
+        "3155937",
+        "4066317",
+        "4277880",
+        "4279532",
+        "4279815",
+        "4433176",
+        "4703421",
+        "6427"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 28,
+      "espn_team_id": "28",
+      "abbreviation": "TOR",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/28/roster",
+      "provider_roster_count": 17,
+      "mapped_count": 17,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "4023",
+        "4067017",
+        "4279143",
+        "4395623",
+        "4432190",
+        "4433138",
+        "4590360",
+        "4598611",
+        "4897696",
+        "4898260"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 29,
+      "espn_team_id": "26",
+      "abbreviation": "UTAH",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/26/roster",
+      "provider_roster_count": 18,
+      "mapped_count": 18,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "3134932",
+        "3449",
+        "4278395",
+        "4395997",
+        "4396963",
+        "4397227",
+        "4433268",
+        "4683933",
+        "5106293"
+      ],
+      "status": "verified"
+    },
+    {
+      "team_id": 30,
+      "espn_team_id": "27",
+      "abbreviation": "WSH",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/27/roster",
+      "provider_roster_count": 18,
+      "mapped_count": 18,
+      "missing_or_wrong_team": [],
+      "stored_players_not_in_provider_roster": [
+        "3136776",
+        "3936296",
+        "4432173",
+        "4432645",
+        "4433622",
+        "4592216",
+        "4704043",
+        "4708972"
+      ],
+      "status": "verified"
+    }
+  ],
+  "active_identity_command_id": "comm-a347e8a3-dfee-4659-86dd-fc3ead802ca3",
+  "active_identity_observed_at_utc": "2026-11-21T20:20:10+00:00"
+}

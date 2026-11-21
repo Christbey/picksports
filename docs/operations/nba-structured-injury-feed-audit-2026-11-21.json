@@ -1,0 +1,507 @@
+{
+  "schema_version": "structured_injury_feed_audit_v1",
+  "audit_date_central": "2026-11-21",
+  "observed_at_utc": "2026-11-21T06:23:30+00:00",
+  "cloud_command_id": "comm-a346bd6b-f5a0-4269-9bcc-dbd1a0302412",
+  "transaction": "read_only",
+  "provenance": "PickSports production database through authorized Laravel Cloud access; application API token unavailable",
+  "deployed_source_matches_reviewed_39807a44": {
+    "app/Actions/ESPN/AbstractSyncPlayerInjuries.php": true,
+    "app/Actions/ESPN/NBA/SyncPlayerInjuries.php": true,
+    "app/Jobs/ESPN/NBA/FetchPlayerInjuries.php": true,
+    "app/Console/Commands/ESPN/AbstractSyncInjuriesCommand.php": true,
+    "app/Services/Api/V2/SportInjuryQuery.php": true,
+    "config/espn.php": true,
+    "routes/console.php": true
+  },
+  "nba": {
+    "nba_columns": [
+      {
+        "name": "id",
+        "type": "bigint unsigned"
+      },
+      {
+        "name": "player_id",
+        "type": "bigint unsigned"
+      },
+      {
+        "name": "team_id",
+        "type": "bigint unsigned"
+      },
+      {
+        "name": "injury_key",
+        "type": "varchar(120)"
+      },
+      {
+        "name": "espn_injury_id",
+        "type": "varchar(100)"
+      },
+      {
+        "name": "status",
+        "type": "varchar(100)"
+      },
+      {
+        "name": "detail",
+        "type": "varchar(255)"
+      },
+      {
+        "name": "type",
+        "type": "varchar(100)"
+      },
+      {
+        "name": "injury_date",
+        "type": "date"
+      },
+      {
+        "name": "return_date",
+        "type": "date"
+      },
+      {
+        "name": "source_updated_at",
+        "type": "timestamp"
+      },
+      {
+        "name": "is_active",
+        "type": "tinyint(1)"
+      },
+      {
+        "name": "raw_payload",
+        "type": "json"
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp"
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp"
+      }
+    ],
+    "nba_summary": {
+      "total_rows": 6923,
+      "active_rows": "106",
+      "active_teams": 30,
+      "latest_observed_at": "2026-11-20 22:32:12",
+      "latest_source_updated_at": "2026-11-21 04:06:00",
+      "active_missing_source_time": "0"
+    },
+    "nba_teams": [
+      {
+        "id": 1,
+        "abbreviation": "ATL",
+        "rows_count": 154,
+        "active_count": "6",
+        "last_row_observed": "2026-11-20 22:32:06",
+        "latest_source_updated_at": "2026-11-20 22:15:00"
+      },
+      {
+        "id": 2,
+        "abbreviation": "BOS",
+        "rows_count": 145,
+        "active_count": "2",
+        "last_row_observed": "2026-11-20 22:32:08",
+        "latest_source_updated_at": "2026-11-21 01:07:00"
+      },
+      {
+        "id": 3,
+        "abbreviation": "BKN",
+        "rows_count": 200,
+        "active_count": "2",
+        "last_row_observed": "2026-11-20 22:32:08",
+        "latest_source_updated_at": "2026-11-21 02:25:00"
+      },
+      {
+        "id": 4,
+        "abbreviation": "CHA",
+        "rows_count": 150,
+        "active_count": "4",
+        "last_row_observed": "2026-11-20 22:32:11",
+        "latest_source_updated_at": "2026-11-21 00:35:00"
+      },
+      {
+        "id": 5,
+        "abbreviation": "CHI",
+        "rows_count": 357,
+        "active_count": "3",
+        "last_row_observed": "2026-11-20 22:32:11",
+        "latest_source_updated_at": "2026-11-20 23:19:00"
+      },
+      {
+        "id": 6,
+        "abbreviation": "CLE",
+        "rows_count": 258,
+        "active_count": "3",
+        "last_row_observed": "2026-11-20 22:32:11",
+        "latest_source_updated_at": "2026-11-19 21:55:00"
+      },
+      {
+        "id": 7,
+        "abbreviation": "DAL",
+        "rows_count": 377,
+        "active_count": "6",
+        "last_row_observed": "2026-11-20 22:32:12",
+        "latest_source_updated_at": "2026-11-20 22:40:00"
+      },
+      {
+        "id": 8,
+        "abbreviation": "DEN",
+        "rows_count": 169,
+        "active_count": "1",
+        "last_row_observed": "2026-11-20 22:32:12",
+        "latest_source_updated_at": "2026-11-09 19:23:00"
+      },
+      {
+        "id": 9,
+        "abbreviation": "DET",
+        "rows_count": 238,
+        "active_count": "6",
+        "last_row_observed": "2026-11-20 22:32:12",
+        "latest_source_updated_at": "2026-11-21 00:34:00"
+      },
+      {
+        "id": 10,
+        "abbreviation": "GS",
+        "rows_count": 347,
+        "active_count": "6",
+        "last_row_observed": "2026-11-20 22:32:12",
+        "latest_source_updated_at": "2026-11-20 03:53:00"
+      },
+      {
+        "id": 11,
+        "abbreviation": "HOU",
+        "rows_count": 128,
+        "active_count": "1",
+        "last_row_observed": "2026-11-20 22:32:07",
+        "latest_source_updated_at": "2026-11-19 23:22:00"
+      },
+      {
+        "id": 12,
+        "abbreviation": "IND",
+        "rows_count": 334,
+        "active_count": "3",
+        "last_row_observed": "2026-11-20 22:32:07",
+        "latest_source_updated_at": "2026-11-20 20:41:00"
+      },
+      {
+        "id": 13,
+        "abbreviation": "LAC",
+        "rows_count": 120,
+        "active_count": "3",
+        "last_row_observed": "2026-11-20 22:32:07",
+        "latest_source_updated_at": "2026-11-20 20:20:00"
+      },
+      {
+        "id": 14,
+        "abbreviation": "LAL",
+        "rows_count": 289,
+        "active_count": "1",
+        "last_row_observed": "2026-11-20 22:32:07",
+        "latest_source_updated_at": "2026-11-21 01:26:00"
+      },
+      {
+        "id": 15,
+        "abbreviation": "MEM",
+        "rows_count": 355,
+        "active_count": "7",
+        "last_row_observed": "2026-11-20 22:32:10",
+        "latest_source_updated_at": "2026-11-20 23:14:00"
+      },
+      {
+        "id": 16,
+        "abbreviation": "MIA",
+        "rows_count": 220,
+        "active_count": "1",
+        "last_row_observed": "2026-11-20 22:32:07",
+        "latest_source_updated_at": "2026-11-19 14:45:00"
+      },
+      {
+        "id": 17,
+        "abbreviation": "MIL",
+        "rows_count": 258,
+        "active_count": "1",
+        "last_row_observed": "2026-11-20 22:32:08",
+        "latest_source_updated_at": "2026-11-20 03:55:00"
+      },
+      {
+        "id": 18,
+        "abbreviation": "MIN",
+        "rows_count": 172,
+        "active_count": "3",
+        "last_row_observed": "2026-11-20 22:32:08",
+        "latest_source_updated_at": "2026-11-18 23:11:00"
+      },
+      {
+        "id": 19,
+        "abbreviation": "NO",
+        "rows_count": 190,
+        "active_count": "4",
+        "last_row_observed": "2026-11-20 22:32:11",
+        "latest_source_updated_at": "2026-11-19 21:15:00"
+      },
+      {
+        "id": 20,
+        "abbreviation": "NY",
+        "rows_count": 167,
+        "active_count": "2",
+        "last_row_observed": "2026-11-20 22:32:08",
+        "latest_source_updated_at": "2026-11-20 22:21:00"
+      },
+      {
+        "id": 21,
+        "abbreviation": "OKC",
+        "rows_count": 239,
+        "active_count": "6",
+        "last_row_observed": "2026-11-20 22:32:10",
+        "latest_source_updated_at": "2026-11-20 23:24:00"
+      },
+      {
+        "id": 22,
+        "abbreviation": "ORL",
+        "rows_count": 209,
+        "active_count": "4",
+        "last_row_observed": "2026-11-20 22:32:08",
+        "latest_source_updated_at": "2026-11-18 17:25:00"
+      },
+      {
+        "id": 23,
+        "abbreviation": "PHI",
+        "rows_count": 243,
+        "active_count": "6",
+        "last_row_observed": "2026-11-20 22:32:09",
+        "latest_source_updated_at": "2026-11-20 22:13:00"
+      },
+      {
+        "id": 24,
+        "abbreviation": "PHX",
+        "rows_count": 401,
+        "active_count": "2",
+        "last_row_observed": "2026-11-20 22:32:09",
+        "latest_source_updated_at": "2026-11-21 04:06:00"
+      },
+      {
+        "id": 25,
+        "abbreviation": "POR",
+        "rows_count": 137,
+        "active_count": "5",
+        "last_row_observed": "2026-11-20 22:32:09",
+        "latest_source_updated_at": "2026-11-20 22:18:00"
+      },
+      {
+        "id": 26,
+        "abbreviation": "SAC",
+        "rows_count": 207,
+        "active_count": "3",
+        "last_row_observed": "2026-11-20 22:32:09",
+        "latest_source_updated_at": "2026-11-20 21:21:00"
+      },
+      {
+        "id": 27,
+        "abbreviation": "SA",
+        "rows_count": 179,
+        "active_count": "3",
+        "last_row_observed": "2026-11-20 22:32:09",
+        "latest_source_updated_at": "2026-11-19 20:07:00"
+      },
+      {
+        "id": 28,
+        "abbreviation": "TOR",
+        "rows_count": 234,
+        "active_count": "4",
+        "last_row_observed": "2026-11-20 22:32:10",
+        "latest_source_updated_at": "2026-11-20 20:42:00"
+      },
+      {
+        "id": 29,
+        "abbreviation": "UTAH",
+        "rows_count": 189,
+        "active_count": "3",
+        "last_row_observed": "2026-11-20 22:32:10",
+        "latest_source_updated_at": "2026-11-20 22:40:00"
+      },
+      {
+        "id": 30,
+        "abbreviation": "WSH",
+        "rows_count": 257,
+        "active_count": "5",
+        "last_row_observed": "2026-11-20 22:32:10",
+        "latest_source_updated_at": "2026-11-21 00:43:00"
+      }
+    ],
+    "nba_active_statuses": [
+      {
+        "status": "Out",
+        "rows_count": 94
+      },
+      {
+        "status": "Day-To-Day",
+        "rows_count": 12
+      }
+    ],
+    "nba_raw_payload_shapes": [
+      {
+        "id": 451103,
+        "team_id": 7,
+        "top_level_keys": "[\"id\", \"$ref\", \"date\", \"team\", \"type\", \"source\", \"status\", \"athlete\", \"details\", \"longComment\", \"shortComment\"]",
+        "source_updated_at": "2026-11-20 22:35:00",
+        "updated_at": "2026-11-20 22:32:12"
+      },
+      {
+        "id": 450896,
+        "team_id": 7,
+        "top_level_keys": "[\"id\", \"$ref\", \"date\", \"team\", \"type\", \"source\", \"status\", \"athlete\", \"details\", \"longComment\", \"shortComment\"]",
+        "source_updated_at": "2026-11-17 22:53:00",
+        "updated_at": "2026-11-20 22:32:12"
+      },
+      {
+        "id": 451102,
+        "team_id": 7,
+        "top_level_keys": "[\"id\", \"$ref\", \"date\", \"team\", \"type\", \"source\", \"status\", \"athlete\", \"details\", \"longComment\", \"shortComment\"]",
+        "source_updated_at": "2026-11-20 22:40:00",
+        "updated_at": "2026-11-20 22:32:12"
+      },
+      {
+        "id": 451075,
+        "team_id": 10,
+        "top_level_keys": "[\"id\", \"$ref\", \"date\", \"team\", \"type\", \"source\", \"status\", \"athlete\", \"details\", \"longComment\", \"shortComment\"]",
+        "source_updated_at": "2026-11-20 03:53:00",
+        "updated_at": "2026-11-20 22:32:12"
+      },
+      {
+        "id": 450887,
+        "team_id": 7,
+        "top_level_keys": "[\"id\", \"$ref\", \"date\", \"team\", \"type\", \"source\", \"status\", \"athlete\", \"details\", \"longComment\", \"shortComment\"]",
+        "source_updated_at": "2026-11-17 22:42:00",
+        "updated_at": "2026-11-20 22:32:12"
+      }
+    ],
+    "snapshot_tables": [
+      {
+        "name": "nfl_player_injury_snapshot_entries"
+      },
+      {
+        "name": "nfl_player_injury_snapshots"
+      }
+    ],
+    "heartbeats": [
+      {
+        "sport": "cbb",
+        "command": "espn:sync-cbb-injuries",
+        "status": "success",
+        "latest_at": "2026-11-20 22:36:07"
+      },
+      {
+        "sport": "cfb",
+        "command": "espn:sync-cfb-injuries",
+        "status": "success",
+        "latest_at": "2026-11-20 22:58:24"
+      },
+      {
+        "sport": "nba",
+        "command": "espn:sync-nba-injuries",
+        "status": "success",
+        "latest_at": "2026-11-20 22:32:06"
+      },
+      {
+        "sport": "nfl",
+        "command": "espn:sync-nfl-injuries",
+        "status": "success",
+        "latest_at": "2026-11-20 22:56:37"
+      },
+      {
+        "sport": "wcbb",
+        "command": "espn:sync-wcbb-injuries",
+        "status": "success",
+        "latest_at": "2026-11-20 22:40:13"
+      }
+    ],
+    "deployed_file_hashes": {
+      "app/Actions/ESPN/AbstractSyncPlayerInjuries.php": "e03a7c65018cb2e7347e0be324d09576fc145511b5669662729e0e0eb5969361",
+      "app/Actions/ESPN/NBA/SyncPlayerInjuries.php": "dc793fceae1f7c651122936e3951cd347f13e411ca5188cebfb4c0f1c737fee2",
+      "app/Jobs/ESPN/NBA/FetchPlayerInjuries.php": "4dc32207346d295589ff5c772dfeb4e47f8b3b7e3126bd4498d2077254c03f69",
+      "app/Console/Commands/ESPN/AbstractSyncInjuriesCommand.php": "2b0ba01e7781cde7bd3261a3218a892d14273cde1051c74fc6fe54fc4a50b909",
+      "app/Services/Api/V2/SportInjuryQuery.php": "89e8f1a963dd1c11758d7b0677661077fe9805514c8dda9f9452270152227bc3",
+      "config/espn.php": "07716083599cf0a313104d438e29722c1fba3d457583bb334ee26afc8fc70f29",
+      "routes/console.php": "a213f383011825747c4bb32dd8e2bfa6adc65b53bc5b01e022318fc7d595eb33"
+    }
+  },
+  "clock_audit": {
+    "cloud_command_id": "comm-a346bdec-bcab-4239-ad40-852ca8aaa3e0",
+    "observed_at_utc": "2026-11-21T06:24:54+00:00",
+    "rows": [
+      {
+        "id": 451120,
+        "team_id": 24,
+        "source_updated_at": "2026-11-21 04:06:00",
+        "updated_at": "2026-11-20 22:32:09",
+        "raw_last_updated": null,
+        "raw_date": "2026-11-21T04:06Z"
+      },
+      {
+        "id": 451119,
+        "team_id": 3,
+        "source_updated_at": "2026-11-21 02:25:00",
+        "updated_at": "2026-11-20 22:32:08",
+        "raw_last_updated": null,
+        "raw_date": "2026-11-21T02:25Z"
+      },
+      {
+        "id": 451118,
+        "team_id": 14,
+        "source_updated_at": "2026-11-21 01:26:00",
+        "updated_at": "2026-11-20 22:32:07",
+        "raw_last_updated": null,
+        "raw_date": "2026-11-21T01:26Z"
+      },
+      {
+        "id": 451116,
+        "team_id": 2,
+        "source_updated_at": "2026-11-21 01:07:00",
+        "updated_at": "2026-11-20 22:32:08",
+        "raw_last_updated": null,
+        "raw_date": "2026-11-21T01:07Z"
+      },
+      {
+        "id": 451117,
+        "team_id": 2,
+        "source_updated_at": "2026-11-21 01:00:00",
+        "updated_at": "2026-11-20 22:32:08",
+        "raw_last_updated": null,
+        "raw_date": "2026-11-21T01:00Z"
+      },
+      {
+        "id": 451113,
+        "team_id": 30,
+        "source_updated_at": "2026-11-21 00:43:00",
+        "updated_at": "2026-11-20 22:32:10",
+        "raw_last_updated": null,
+        "raw_date": "2026-11-21T00:43Z"
+      },
+      {
+        "id": 451115,
+        "team_id": 9,
+        "source_updated_at": "2026-11-21 00:34:00",
+        "updated_at": "2026-11-20 22:32:12",
+        "raw_last_updated": null,
+        "raw_date": "2026-11-21T00:34Z"
+      },
+      {
+        "id": 451104,
+        "team_id": 21,
+        "source_updated_at": "2026-11-20 23:24:00",
+        "updated_at": "2026-11-20 22:32:10",
+        "raw_last_updated": null,
+        "raw_date": "2026-11-20T23:24Z"
+      }
+    ]
+  },
+  "automation": {
+    "analysis_schedule_enabled": false,
+    "publisher_enabled": false
+  },
+  "actions": {
+    "production_variables_changed": false,
+    "provider_refresh_triggered": false,
+    "paid_calls": 0,
+    "application_behavior_changed": false
+  }
+}

@@ -1181,7 +1181,7 @@ class V2OpenApiGenerateCommand extends Command
                 'facts' => ['type' => 'array', 'items' => ['$ref' => '#/components/schemas/GameResearchFinding']],
                 'season_evidence' => $nullableOpenObject,
                 'unresolved' => ['type' => 'array', 'items' => ['$ref' => '#/components/schemas/GameResearchFinding']],
-                'sources' => ['type' => 'array', 'items' => $this->objectSchemaWithOptionalFields(['url'], ['url' => ['type' => 'string', 'format' => 'uri'], 'title' => ['type' => 'string'], 'published_at' => $nullableDateTime, 'observed_at' => $nullableDateTime])],
+                'sources' => ['type' => 'array', 'items' => $this->objectSchemaWithOptionalFields(['url'], ['url' => ['type' => 'string', 'format' => 'uri'], 'title' => ['type' => 'string'], 'published_at' => $nullableDateTime, 'observed_at' => $nullableDateTime, 'provider' => ['type' => 'string'], 'publisher' => ['type' => 'string'], 'source_label' => ['type' => 'string'], 'source_scope' => ['type' => 'string'], 'parser_version' => ['type' => 'string'], 'snapshot_id' => ['type' => 'integer'], 'observation_id' => ['type' => 'integer'], 'payload_hash' => ['type' => 'string'], 'material_hash' => ['type' => 'string']])],
                 'reason_codes' => ['type' => 'array', 'items' => ['type' => 'string']],
                 'capabilities' => $this->objectSchemaWithOptionalFields(['can_retry'], ['can_retry' => ['type' => 'boolean']]),
                 'review' => $this->objectSchemaWithOptionalFields(['status'], [
@@ -1195,6 +1195,14 @@ class V2OpenApiGenerateCommand extends Command
                 'team_side' => ['type' => 'string'],
                 'source_url' => ['type' => ['string', 'null']], 'reason_code' => ['type' => 'string'],
                 'evidence_kind' => ['type' => 'string'], 'evidence_reference' => ['type' => 'string'], 'evidence_status' => ['type' => 'string'],
+                'provider' => ['type' => 'string'], 'publisher' => ['type' => 'string'], 'source_label' => ['type' => 'string'],
+                'source_scope' => ['type' => 'string'], 'parser_version' => ['type' => 'string'],
+                'snapshot_id' => ['type' => 'integer'], 'observation_id' => ['type' => 'integer'],
+                'payload_hash' => ['type' => 'string'], 'material_hash' => ['type' => 'string'],
+                'json_pointer' => ['type' => 'string'], 'espn_athlete_id' => ['type' => 'string'],
+                'raw_status' => ['type' => ['string', 'null']], 'normalized_status' => ['type' => 'string'],
+                'source_time_field' => ['type' => ['string', 'null']], 'source_time_raw' => ['type' => ['string', 'null']],
+                'observed_at' => $nullableDateTime, 'published_at' => $nullableDateTime,
             ]),
             'NflResearchData' => $this->fixedObjectSchema(['game_id', 'revisions'], [
                 'game_id' => ['type' => 'integer'],

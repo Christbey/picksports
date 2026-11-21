@@ -2,6 +2,13 @@
 
 return [
 
+    // Additive evidence capture; does not enable research/review scheduling or PDF acquisition.
+    'injuries' => [
+        'research_adapter_enabled' => (bool) env('NBA_RESEARCH_SOURCE_REFRESH_ENABLED', false),
+        'observations_enabled' => (bool) env('NBA_INJURY_OBSERVATIONS_ENABLED', false),
+        'maximum_response_bytes' => 2097152,
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Game Status Constants

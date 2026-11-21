@@ -221,6 +221,15 @@ const reviewLabels: Record<string, string> = {
                             {{ finding.interpretation }}</span
                         >
                         <span
+                            v-if="finding.evidence_kind === 'structured'"
+                            class="text-xs text-muted-foreground"
+                        >
+                            · {{ finding.source_label }} · Team-wide observation
+                            <template v-if="finding.observed_at">
+                                · {{ finding.observed_at }}</template
+                            >
+                        </span>
+                        <span
                             v-if="finding.evidence_kind === 'application'"
                             class="text-xs text-muted-foreground"
                         >

@@ -18,9 +18,11 @@ class GameResearchPresentation
             'schema_version', 'sport', 'game_id', 'sport_event_id', 'status', 'applicability',
             'assessed_at', 'expires_at', 'report_id', 'reason_codes',
         ]);
+        $structuredFields = ($research['sport'] ?? null) === 'nba'
+            ? ['provider', 'publisher', 'source_label', 'source_scope', 'parser_version', 'snapshot_id', 'observation_id', 'payload_hash', 'material_hash', 'json_pointer', 'raw_status', 'normalized_status', 'espn_athlete_id', 'source_time_field', 'source_time_raw', 'observed_at', 'published_at'] : [];
         foreach (['supporting', 'concerns', 'facts', 'unresolved'] as $section) {
-            $data[$section] = collect($research[$section] ?? [])->filter(fn ($finding): bool => is_array($finding))->map(function (array $finding): array {
-                $finding = Arr::only($finding, ['claim', 'interpretation', 'topic', 'team_side', 'scope', 'reason_code', 'evidence_kind', 'evidence_reference', 'evidence_status', 'source_url']);
+            $data[$section] = collect($research[$section] ?? [])->filter(fn ($finding): bool => is_array($finding))->map(function (array $finding) use ($structuredFields): array {
+                $finding = Arr::only($finding, ['claim', 'interpretation', 'topic', 'team_side', 'scope', 'reason_code', 'evidence_kind', 'evidence_reference', 'evidence_status', 'source_url', ...$structuredFields]);
                 if (isset($finding['source_url']) && ! $this->safeUrl($finding['source_url'])) {
                     $finding['source_url'] = null;
                 }
@@ -30,7 +32,7 @@ class GameResearchPresentation
         }
         $data['sources'] = collect($research['sources'] ?? [])->filter(fn ($source): bool => is_array($source))
             ->filter(fn (array $source): bool => $this->safeUrl($source['url'] ?? null))
-            ->map(fn (array $source): array => Arr::only($source, ['url', 'title', 'published_at', 'observed_at']))
+            ->map(fn (array $source): array => Arr::only($source, ['url', 'title', 'published_at', 'observed_at', ...$structuredFields]))
             ->values()->all();
         $data['review'] = Arr::only($review, ['status', 'reviewed_at', 'summary', 'context_summary', 'key_factors', 'risk_flags', 'reason_code']);
         $data['season_evidence'] = [];

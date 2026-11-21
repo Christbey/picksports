@@ -3,6 +3,7 @@
 namespace App\Services\Research;
 
 use App\Models\ResearchDocument;
+use App\Services\NBA\Injuries\StructuredInjuryEvidence;
 use App\Services\Predictions\CanonicalPayloadHasher;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Database\Eloquent\Model;
@@ -71,7 +72,22 @@ class StoredGameEvidence
                 ];
             }
         }
-        $unresolved = [];
+        $structuredUnresolved = [];
+        if ($sport === 'nba' && config('nba.injuries.research_adapter_enabled', false)) {
+            $structured = app(StructuredInjuryEvidence::class)->build($game, $cutoff);
+            foreach (['home', 'away'] as $side) {
+                if ($structured['coverage'][$side] && $coverage['availability'][$side]) {
+                    $structuredUnresolved[] = ['claim' => 'Manual and structured availability sources require reconciliation for the '.$side.' team.',
+                        'topic' => 'availability', 'team_side' => $side, 'reason_code' => 'source_reconciliation_required',
+                        'blocking' => false, 'scope' => 'research', 'evidence_status' => 'unresolved'];
+                }
+                $coverage['availability'][$side] = $coverage['availability'][$side] || $structured['coverage'][$side];
+            }
+            $neutral = [...$neutral, ...$structured['facts']];
+            $sources = [...array_values($sources), ...$structured['sources']];
+            $structuredUnresolved = [...$structuredUnresolved, ...$structured['unresolved']];
+        }
+        $unresolved = $structuredUnresolved;
         foreach ($coverage as $topic => $sides) {
             foreach ($sides as $side => $available) {
                 if (! $available) {

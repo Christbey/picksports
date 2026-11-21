@@ -1,4 +1,24 @@
-export type GameResearchFinding = {
+export type StructuredResearchProvenance = {
+    provider?: string;
+    publisher?: string;
+    source_label?: string;
+    source_scope?: string;
+    parser_version?: string;
+    snapshot_id?: number;
+    observation_id?: number;
+    payload_hash?: string;
+    material_hash?: string;
+    observed_at?: string | null;
+    published_at?: string | null;
+};
+
+export type GameResearchFinding = StructuredResearchProvenance & {
+    json_pointer?: string;
+    raw_status?: string | null;
+    normalized_status?: string;
+    espn_athlete_id?: string;
+    source_time_field?: string | null;
+    source_time_raw?: string | null;
     claim?: string;
     interpretation?: string;
     topic?: string;
@@ -21,12 +41,12 @@ export type GameResearchData = {
     concerns: GameResearchFinding[];
     facts: GameResearchFinding[];
     unresolved: GameResearchFinding[];
-    sources: {
+    sources: (StructuredResearchProvenance & {
         url: string;
         title?: string;
         published_at?: string | null;
         observed_at?: string | null;
-    }[];
+    })[];
     season_evidence: Partial<
         Record<
             'home' | 'away',

@@ -30,6 +30,8 @@ class PredictionReviewCoordinator
         $deadline = data_get($input?->identity, 'starts_at') !== null
             ? CarbonImmutable::parse($input->identity['starts_at'])
             : app(SportsDateWindowService::class)->gameDateTimeUtc($game->game_date, $game->game_time);
+        // SQL timestamps follow the application timezone, while input identities use UTC.
+        $deadline = $deadline?->setTimezone((string) config('app.timezone', 'UTC'));
         if ($input === null || ! $deadline?->isFuture() || ! in_array($game->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true)) {
             AnalysisWorkItem::where('work_key', $key)->update(['state' => 'cancelled', 'reason_code' => 'forecast_or_pregame_unavailable', 'lease_token' => null, 'lease_expires_at' => null]);
 
@@ -52,6 +54,9 @@ class PredictionReviewCoordinator
                     'execution_spec' => $this->fingerprints->executionSpec(), 'evidence' => $evidence,
                     'state' => 'pending', 'reason_code' => null, 'attempts' => 0, 'deadline_at' => $deadline,
                     'next_attempt_at' => now(), 'lease_token' => null, 'lease_expires_at' => null]);
+            } elseif ($item->deadline_at?->timestamp !== $deadline->timestamp) {
+                // Repair earlier serialized deadlines without resetting attempts, leases or paid history.
+                $item->update(['deadline_at' => $deadline]);
             }
 
             return $item->refresh();

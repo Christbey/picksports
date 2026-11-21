@@ -336,3 +336,8 @@ CBB stale-game recovery uses the supported `--sync` option. CBB injury refreshes
 New NFL prop shadow captures freeze numeric values to eight decimals with versioned, typed fingerprints. Grading reports invalid snapshot IDs and continues with valid records, but invalid records keep the command failing. Existing snapshots and hashes are never rewritten. Charting accepts whole-number decimal counts and rejects invalid counts before writes. Pregame market selection requires complete same-book quote pairs.
 
 Automatic CFB incremental EPA waits for final games; explicit single-game requests still reject unsafe inputs. Odds sync measures matches against offered events in the requested window, reports local coverage separately, and reuses its execution response for diagnostics. An empty response with actionable local games still fails, and readiness continues to report missing local markets. Football signal audits read batches of 100; shadow decisions skip already-decided outputs and apply limits to pending work.
+
+
+### Opt-in shared game analysis
+
+All new schedules require `GAME_ANALYSIS_SCHEDULE_ENABLED=true` (default false), with per-sport capabilities independently gated. `sports:reconcile-game-analysis` runs every 15 minutes, `sports:reconcile-prediction-reviews` at minutes 2/17/32/47, and `sports:run-prediction-reviews` every minute. These use the existing heartbeat hook, single-server and overlap protection. Shared reconciliation selects future game windows and uses bounded default-queue work; dispatch is not completion. It consumes stored documents without fetching new reports. Existing NFL schedules and flags retain ownership. See [NBA rollout](docs/operations/nba-research-rollout.md).

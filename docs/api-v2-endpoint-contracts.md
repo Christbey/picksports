@@ -147,3 +147,10 @@ Game queries keep selected canonical forecasts separate from the sport model's l
 Stats and team metrics use explicit per-sport public field lists in `SportPublicFields`; a new schema/model field is not automatically public. Stat values honor declared model casts. Team metric numeric coercion remains compatible with the existing API. Query column capabilities in `SportQuerySchema` are checked against migrated schema in tests and must be deliberately updated alongside applicable schema changes. Missing required tables fail visibly; unsupported sport capabilities return the declared unsupported response.
 
 Prediction live fields and loaded injury impacts are prepared before resource serialization. Main page/list readers retain batch snapshot/stat/player preparation; callers of legacy injury resources must prepare the explicitly loaded graph through `PreparedInjuryImpacts`. This preparation does not load additional injury coverage. NFL legacy game resources accept a prepared live win estimate; standalone resources omit unavailable estimates rather than selecting a forecast during JSON serialization. Recommendation resources use supplied batch season summaries and make no single-prop summary query fallback.
+
+
+## Opt-in shared research administration
+
+`GET /api/v2/sports/{sport}/games/{game}/analysis/research` returns the stored descriptive assessment and independently applicable AI review. It requires admin status and the corresponding prediction disclosure permissions; it never fetches sources, writes assessment/work records or purchases provider calls. Missing schema/capability yields an explicit unavailable state. Existing NFL `/research` behavior is retained.
+
+`POST /api/v2/admin/{sport}/games/{game}/analysis/retry` requires admin and disclosure access, write throttling and enabled capabilities. It returns 202 after dispatch, not completion; queued work rechecks authorization. Explicit retry can create assessment/work and invoke a paid review only when its gates are enabled. Shared flags default false. See [operations](operations/nba-research-rollout.md) and generated [OpenAPI](openapi-v2.json) for the contract and staged rollout.

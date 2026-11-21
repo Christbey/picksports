@@ -21,7 +21,7 @@ const {
 </script>
 
 <template>
-    <SportDetailedGamePage v-bind="pageProps">
+    <SportDetailedGamePage research-sport="cfb" v-bind="pageProps">
         <template #afterHero>
             <NflGameEnhancements v-bind="predictionSectionProps" />
         </template>

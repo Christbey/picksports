@@ -8,6 +8,7 @@ use App\Services\AI\SportsAiContentService;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Predictions\PredictionDeliverySource;
+use App\Services\Predictions\Review\PredictionReviewCoordinator;
 use App\Services\Predictions\SportsAiPredictionPayloadBuilder;
 use App\Services\Predictions\SportsAiPublishingDecisionPolicy;
 use App\Services\Sports\SportsDateWindowService;
@@ -53,6 +54,22 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
             $this->error('No supported sports selected.');
 
             return self::FAILURE;
+        }
+
+        // Explicit activation transfers ownership rather than purchasing both
+        // legacy and native reviews for the same sport. Defaults are unchanged.
+        $reviews = app(PredictionReviewCoordinator::class);
+        $sports = array_values(array_filter($sports, function (string $sport) use ($reviews): bool {
+            if ($reviews->enabled($sport)) {
+                $this->line(strtoupper($sport).': review ownership moved to the shared review pipeline.');
+
+                return false;
+            }
+
+            return true;
+        }));
+        if ($sports === []) {
+            return self::SUCCESS;
         }
 
         $dateWindowService = app(SportsDateWindowService::class);

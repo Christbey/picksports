@@ -1,0 +1,351 @@
+{
+  "cloud_command_id": "comm-a346920e-315a-4add-b720-f710158ccb04",
+  "cloud_command_status": "command.success",
+  "exit_code": 0,
+  "report": {
+    "schema_version": "nba_rollout_preflight_v1",
+    "observed_at_utc": "2026-11-21T04:22:14+00:00",
+    "application_root": "/var/www/html",
+    "app_environment": "production",
+    "app_url": "https://picksports.app",
+    "app_timezone": "America/Chicago",
+    "cached_settings": {
+      "prediction_lifecycle.canonical_reads.nba": true,
+      "prediction_lifecycle.canonical_pipeline.nba": true,
+      "prediction_lifecycle.canonical_reads.nfl": true,
+      "prediction_lifecycle.canonical_pipeline.nfl": true,
+      "research.enabled": null,
+      "research.sports.nba.enabled": null,
+      "research.sports.nfl.enabled": null,
+      "prediction_review.enabled": null,
+      "prediction_review.sports.nba": null,
+      "prediction_review.sports.nfl": null,
+      "game_analysis.schedule_enabled": null,
+      "game_analysis.publisher_enabled": null,
+      "nfl_research.enabled": true,
+      "nfl_research.web_search_enabled": false,
+      "ai.features.nfl_game_context_research.enabled": true,
+      "ai.features.nfl_game_context_research.model": "gpt-5.6-luna",
+      "ai.features.daily_prediction_analysis.enabled": true,
+      "ai.features.daily_prediction_analysis.model": "gpt-4o-mini"
+    },
+    "queue": {
+      "connection": "redis",
+      "retry_after": 2100,
+      "declared_default_worker_timeout": 120
+    },
+    "release_files": {
+      "database/migrations/2026_11_20_230100_create_prediction_review_work_tables.php": null,
+      "database/migrations/2026_11_21_010000_create_shared_research_storage.php": null,
+      "app/Services/Research/GameResearchService.php": null,
+      "app/Services/Predictions/Review/PredictionReviewCoordinator.php": null,
+      "app/Services/Predictions/PredictionResourcePreparer.php": "e7a6c12efe4ef73c04af2e8fa23b13c5eb7f2930e8c0cf311cbf6b8dda2a1f40",
+      "app/Services/Research/ResearchDocumentStore.php": null,
+      "app/Console/Commands/Sports/IngestResearchDocumentCommand.php": null
+    },
+    "database": {
+      "driver": "mysql",
+      "server_version": "8.4.7-7",
+      "innodb_page_size": 16384,
+      "transaction": "read_only"
+    },
+    "tables": {
+      "migrations": "InnoDB",
+      "sport_events": "InnoDB",
+      "predictions": "InnoDB",
+      "ai_generations": "InnoDB",
+      "sports_game_context_reports": "InnoDB",
+      "analysis_work_items": null,
+      "prediction_review_revisions": null,
+      "research_sources": null,
+      "research_documents": null,
+      "game_research_assessments": null,
+      "nba_games": "InnoDB",
+      "nba_teams": "InnoDB",
+      "nfl_research_sources": "InnoDB",
+      "nfl_research_documents": "InnoDB",
+      "nfl_research_revisions": "InnoDB"
+    },
+    "rollout_migrations": {
+      "2026_11_20_230100_create_prediction_review_work_tables": false,
+      "2026_11_21_010000_create_shared_research_storage": false
+    },
+    "deployed_pending_migrations": [],
+    "candidate_pending_migrations": [
+      "2026_11_20_230100_create_prediction_review_work_tables",
+      "2026_11_21_010000_create_shared_research_storage"
+    ],
+    "parent_key_types": [
+      {
+        "table_name": "ai_generations",
+        "column_type": "bigint unsigned"
+      },
+      {
+        "table_name": "predictions",
+        "column_type": "bigint unsigned"
+      },
+      {
+        "table_name": "sport_events",
+        "column_type": "bigint unsigned"
+      },
+      {
+        "table_name": "sports_game_context_reports",
+        "column_type": "bigint unsigned"
+      }
+    ],
+    "shared_schema_columns": [],
+    "nba_sources": null,
+    "nba_canary_candidates": [
+      {
+        "game_id": 1705,
+        "sport_event_id": 13363,
+        "season": 2027,
+        "season_type": "2",
+        "home_team_id": 23,
+        "away_team_id": 17,
+        "status": "STATUS_SCHEDULED",
+        "starts_at_stored": "2026-11-21 12:00:00",
+        "starts_at_utc": "2026-11-21T18:00:00+00:00",
+        "starts_at_central": "2026-11-21T12:00:00-06:00"
+      },
+      {
+        "game_id": 1706,
+        "sport_event_id": 13364,
+        "season": 2027,
+        "season_type": "2",
+        "home_team_id": 20,
+        "away_team_id": 25,
+        "status": "STATUS_SCHEDULED",
+        "starts_at_stored": "2026-11-21 18:30:00",
+        "starts_at_utc": "2026-11-22T00:30:00+00:00",
+        "starts_at_central": "2026-11-21T18:30:00-06:00"
+      },
+      {
+        "game_id": 1707,
+        "sport_event_id": 13365,
+        "season": 2027,
+        "season_type": "2",
+        "home_team_id": 7,
+        "away_team_id": 13,
+        "status": "STATUS_SCHEDULED",
+        "starts_at_stored": "2026-11-21 19:00:00",
+        "starts_at_utc": "2026-11-22T01:00:00+00:00",
+        "starts_at_central": "2026-11-21T19:00:00-06:00"
+      },
+      {
+        "game_id": 1708,
+        "sport_event_id": 13366,
+        "season": 2027,
+        "season_type": "2",
+        "home_team_id": 18,
+        "away_team_id": 15,
+        "status": "STATUS_SCHEDULED",
+        "starts_at_stored": "2026-11-21 19:00:00",
+        "starts_at_utc": "2026-11-22T01:00:00+00:00",
+        "starts_at_central": "2026-11-21T19:00:00-06:00"
+      },
+      {
+        "game_id": 1709,
+        "sport_event_id": 13367,
+        "season": 2027,
+        "season_type": "2",
+        "home_team_id": 27,
+        "away_team_id": 19,
+        "status": "STATUS_SCHEDULED",
+        "starts_at_stored": "2026-11-21 19:00:00",
+        "starts_at_utc": "2026-11-22T01:00:00+00:00",
+        "starts_at_central": "2026-11-21T19:00:00-06:00"
+      },
+      {
+        "game_id": 1710,
+        "sport_event_id": 13368,
+        "season": 2027,
+        "season_type": "2",
+        "home_team_id": 26,
+        "away_team_id": 2,
+        "status": "STATUS_SCHEDULED",
+        "starts_at_stored": "2026-11-21 21:00:00",
+        "starts_at_utc": "2026-11-22T03:00:00+00:00",
+        "starts_at_central": "2026-11-21T21:00:00-06:00"
+      },
+      {
+        "game_id": 1711,
+        "sport_event_id": 13369,
+        "season": 2027,
+        "season_type": "2",
+        "home_team_id": 1,
+        "away_team_id": 9,
+        "status": "STATUS_SCHEDULED",
+        "starts_at_stored": "2026-11-22 14:30:00",
+        "starts_at_utc": "2026-11-22T20:30:00+00:00",
+        "starts_at_central": "2026-11-22T14:30:00-06:00"
+      },
+      {
+        "game_id": 1712,
+        "sport_event_id": 13370,
+        "season": 2027,
+        "season_type": "2",
+        "home_team_id": 16,
+        "away_team_id": 21,
+        "status": "STATUS_SCHEDULED",
+        "starts_at_stored": "2026-11-22 17:00:00",
+        "starts_at_utc": "2026-11-22T23:00:00+00:00",
+        "starts_at_central": "2026-11-22T17:00:00-06:00"
+      }
+    ],
+    "nba_team_lookup": [
+      {
+        "id": 1,
+        "abbreviation": "ATL",
+        "name": "Hawks"
+      },
+      {
+        "id": 2,
+        "abbreviation": "BOS",
+        "name": "Celtics"
+      },
+      {
+        "id": 3,
+        "abbreviation": "BKN",
+        "name": "Nets"
+      },
+      {
+        "id": 4,
+        "abbreviation": "CHA",
+        "name": "Hornets"
+      },
+      {
+        "id": 5,
+        "abbreviation": "CHI",
+        "name": "Bulls"
+      },
+      {
+        "id": 6,
+        "abbreviation": "CLE",
+        "name": "Cavaliers"
+      },
+      {
+        "id": 7,
+        "abbreviation": "DAL",
+        "name": "Mavericks"
+      },
+      {
+        "id": 8,
+        "abbreviation": "DEN",
+        "name": "Nuggets"
+      },
+      {
+        "id": 9,
+        "abbreviation": "DET",
+        "name": "Pistons"
+      },
+      {
+        "id": 10,
+        "abbreviation": "GS",
+        "name": "Warriors"
+      },
+      {
+        "id": 11,
+        "abbreviation": "HOU",
+        "name": "Rockets"
+      },
+      {
+        "id": 12,
+        "abbreviation": "IND",
+        "name": "Pacers"
+      },
+      {
+        "id": 13,
+        "abbreviation": "LAC",
+        "name": "Clippers"
+      },
+      {
+        "id": 14,
+        "abbreviation": "LAL",
+        "name": "Lakers"
+      },
+      {
+        "id": 15,
+        "abbreviation": "MEM",
+        "name": "Grizzlies"
+      },
+      {
+        "id": 16,
+        "abbreviation": "MIA",
+        "name": "Heat"
+      },
+      {
+        "id": 17,
+        "abbreviation": "MIL",
+        "name": "Bucks"
+      },
+      {
+        "id": 18,
+        "abbreviation": "MIN",
+        "name": "Timberwolves"
+      },
+      {
+        "id": 19,
+        "abbreviation": "NO",
+        "name": "Pelicans"
+      },
+      {
+        "id": 20,
+        "abbreviation": "NY",
+        "name": "Knicks"
+      },
+      {
+        "id": 21,
+        "abbreviation": "OKC",
+        "name": "Thunder"
+      },
+      {
+        "id": 22,
+        "abbreviation": "ORL",
+        "name": "Magic"
+      },
+      {
+        "id": 23,
+        "abbreviation": "PHI",
+        "name": "76ers"
+      },
+      {
+        "id": 24,
+        "abbreviation": "PHX",
+        "name": "Suns"
+      },
+      {
+        "id": 25,
+        "abbreviation": "POR",
+        "name": "Trail Blazers"
+      },
+      {
+        "id": 26,
+        "abbreviation": "SAC",
+        "name": "Kings"
+      },
+      {
+        "id": 27,
+        "abbreviation": "SA",
+        "name": "Spurs"
+      },
+      {
+        "id": 28,
+        "abbreviation": "TOR",
+        "name": "Raptors"
+      },
+      {
+        "id": 29,
+        "abbreviation": "UTAH",
+        "name": "Jazz"
+      },
+      {
+        "id": 30,
+        "abbreviation": "WSH",
+        "name": "Wizards"
+      }
+    ],
+    "nfl_research_latest_assessment_at": "2026-11-20 22:11:32",
+    "result": "read_only_inspection_completed"
+  }
+}

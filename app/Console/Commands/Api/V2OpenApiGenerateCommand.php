@@ -346,6 +346,8 @@ class V2OpenApiGenerateCommand extends Command
             'v2.sports.games.trends.show',
             'v2.sports.games.live-snapshot.show',
             'v2.sports.games.research.show',
+            'v2.sports.games.analysis.research.show',
+            'v2.admin.game-analysis.retry',
             'v2.sports.games.market-history.show',
             'v2.sports.games.matchup-signals.show',
         ], true);
@@ -373,7 +375,7 @@ class V2OpenApiGenerateCommand extends Command
      */
     private function queryParameterNames(string $routeName): array
     {
-        if (in_array($routeName, ['v2.sports.games.live-betting.show', 'v2.sports.games.live-snapshot.show', 'v2.sports.games.research.show'], true)) {
+        if (in_array($routeName, ['v2.sports.games.live-betting.show', 'v2.sports.games.live-snapshot.show', 'v2.sports.games.research.show', 'v2.sports.games.analysis.research.show'], true)) {
             return [];
         }
         if ($routeName === 'v2.sports.players.index') {
@@ -617,7 +619,7 @@ class V2OpenApiGenerateCommand extends Command
     private function successStatuses(Route $route): array
     {
         return match ($route->getName()) {
-            'v2.admin.nfl.research-retry.store' => ['202'],
+            'v2.admin.nfl.research-retry.store', 'v2.admin.game-analysis.retry' => ['202'],
             'v2.auth.logout',
             'v2.auth.logout-all',
             'v2.auth.device-sessions.destroy',
@@ -692,6 +694,7 @@ class V2OpenApiGenerateCommand extends Command
 
         $schema = match ($name) {
             'v2.admin.payload-inspector' => 'PayloadInspectorResponse',
+            'v2.admin.game-analysis.retry' => 'GameAnalysisRetryResponse',
             'v2.admin.nfl.research-retry.show', 'v2.admin.nfl.research-retry.store' => 'NflResearchRetryResponse',
             'v2.alert-preferences.show',
             'v2.alert-preferences.store',
@@ -723,6 +726,7 @@ class V2OpenApiGenerateCommand extends Command
             'v2.sports.games.show' => 'SportGameResponse',
             'v2.sports.games.page.show' => 'SportGamePageResponse',
             'v2.sports.games.research.show' => 'NflResearchResponse',
+            'v2.sports.games.analysis.research.show' => 'GameResearchSummaryResponse',
             'v2.security.reports.csp', 'v2.security.reports.integrity' => 'SecurityReportResponse',
             'v2.sports.games.live-betting.show' => 'CfbLiveBettingResponse',
             'v2.sports.games.live-snapshot.show' => 'NflLiveSnapshotResponse',
@@ -1159,6 +1163,39 @@ class V2OpenApiGenerateCommand extends Command
                 'message' => ['type' => 'string'],
             ]),
             'NflResearchResponse' => $this->sportCustomEnvelope('NflResearchData'),
+            'GameResearchSummaryResponse' => $this->sportCustomEnvelope('GameResearchSummaryData'),
+            'GameAnalysisRetryResponse' => $this->objectSchemaWithOptionalFields(['data', 'message'], [
+                'data' => $this->objectSchemaWithOptionalFields(['status', 'game_id', 'sport'], [
+                    'status' => ['type' => 'string', 'enum' => ['queued']], 'game_id' => ['type' => 'integer'], 'sport' => ['type' => 'string'],
+                ]),
+                'message' => ['type' => 'string'],
+            ]),
+            'GameResearchSummaryData' => $this->objectSchemaWithOptionalFields(['sport', 'game_id', 'status', 'applicability', 'supporting', 'concerns', 'unresolved', 'sources', 'review'], [
+                'schema_version' => ['type' => 'string'], 'sport' => ['type' => 'string'], 'game_id' => ['type' => 'integer'],
+                'sport_event_id' => ['type' => ['integer', 'null']], 'report_id' => ['type' => ['integer', 'null']],
+                'status' => ['type' => 'string', 'enum' => ['ready', 'partial', 'unavailable']],
+                'applicability' => ['type' => 'string', 'enum' => ['current', 'outdated', 'expired', 'archived']],
+                'assessed_at' => $nullableDateTime, 'expires_at' => $nullableDateTime,
+                'supporting' => ['type' => 'array', 'items' => ['$ref' => '#/components/schemas/GameResearchFinding']],
+                'concerns' => ['type' => 'array', 'items' => ['$ref' => '#/components/schemas/GameResearchFinding']],
+                'facts' => ['type' => 'array', 'items' => ['$ref' => '#/components/schemas/GameResearchFinding']],
+                'season_evidence' => $nullableOpenObject,
+                'unresolved' => ['type' => 'array', 'items' => ['$ref' => '#/components/schemas/GameResearchFinding']],
+                'sources' => ['type' => 'array', 'items' => $this->objectSchemaWithOptionalFields(['url'], ['url' => ['type' => 'string', 'format' => 'uri'], 'title' => ['type' => 'string'], 'published_at' => $nullableDateTime, 'observed_at' => $nullableDateTime])],
+                'reason_codes' => ['type' => 'array', 'items' => ['type' => 'string']],
+                'capabilities' => $this->objectSchemaWithOptionalFields(['can_retry'], ['can_retry' => ['type' => 'boolean']]),
+                'review' => $this->objectSchemaWithOptionalFields(['status'], [
+                    'status' => ['type' => 'string'], 'reviewed_at' => $nullableDateTime,
+                    'summary' => ['type' => ['string', 'null']], 'context_summary' => ['type' => ['string', 'null']], 'key_factors' => ['type' => 'array', 'items' => ['type' => 'string']],
+                    'risk_flags' => ['type' => 'array', 'items' => ['type' => 'string']], 'reason_code' => ['type' => ['string', 'null']],
+                ]),
+            ]),
+            'GameResearchFinding' => $this->objectSchemaWithOptionalFields([], [
+                'claim' => ['type' => 'string'], 'interpretation' => ['type' => 'string'], 'topic' => ['type' => 'string'], 'scope' => ['type' => 'string'],
+                'team_side' => ['type' => 'string'],
+                'source_url' => ['type' => ['string', 'null']], 'reason_code' => ['type' => 'string'],
+                'evidence_kind' => ['type' => 'string'], 'evidence_reference' => ['type' => 'string'], 'evidence_status' => ['type' => 'string'],
+            ]),
             'NflResearchData' => $this->fixedObjectSchema(['game_id', 'revisions'], [
                 'game_id' => ['type' => 'integer'],
                 'revisions' => ['type' => 'array', 'maxItems' => 20, 'items' => ['$ref' => '#/components/schemas/NflResearchRevision']],
@@ -1349,6 +1386,12 @@ class V2OpenApiGenerateCommand extends Command
             'properties' => $properties,
             'additionalProperties' => $additionalProperties,
         ];
+    }
+
+    /** @param list<string> $required @param array<string, mixed> $properties */
+    private function objectSchemaWithOptionalFields(array $required, array $properties): array
+    {
+        return ['type' => 'object', 'required' => $required, 'properties' => $properties, 'additionalProperties' => false];
     }
 
     private function itemEnvelope(string $schema, bool $withMeta, bool $nullable = false): array

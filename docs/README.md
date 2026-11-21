@@ -46,3 +46,8 @@ When changing a route, command, environment key, or deployment behavior, update 
 ## Review baseline — November 17, 2026
 
 This documentation pass checked repository scripts, dependency manifests, database configuration, API authentication documentation, and test configuration. It added the missing onboarding/access guides and removed the dependency on Claude for shared engineering conventions. It did not verify live production connectivity or audit every sport formula. Superseded Cloud migration notes and other obsolete plans/reports were removed; the production guide states what remains unverified about the active environment.
+
+## Shared research rollout
+
+- [NBA research rollout](operations/nba-research-rollout.md): opt-in source admission, review ownership, activation and rollback.
+- [Shared descriptive research](operations/multi-sport-research.md) and [prediction review execution](operations/prediction-review.md).

@@ -4,8 +4,11 @@ namespace App\Services\Predictions;
 
 use App\Exceptions\Predictions\PredictionLifecycleException;
 use App\Jobs\Predictions\GeneratePredictionNarrative;
+use App\Jobs\Predictions\RefreshGameAnalysis;
 use App\Models\CanonicalPrediction;
 use App\Models\PredictionMarket;
+use App\Services\Predictions\Review\PredictionReviewCoordinator;
+use App\Services\Research\GameResearchService;
 use App\Support\SportsViewCache;
 use Illuminate\Support\Facades\DB;
 
@@ -72,6 +75,14 @@ class PredictionPublisher
                     SportsViewCache::SEGMENT_PREDICTIONS_AVAILABLE_DATES,
                     SportsViewCache::SEGMENT_PREDICTIONS_AVAILABLE_SEASONS,
                 ]);
+                if (config('game_analysis.publisher_enabled', false)
+                    && (app(GameResearchService::class)->enabled($prediction->sport)
+                        || app(PredictionReviewCoordinator::class)->enabled($prediction->sport))) {
+                    $game = $prediction->sportEvent?->getRelationValue($prediction->sport.'Game');
+                    if ($game !== null) {
+                        RefreshGameAnalysis::dispatch($prediction->sport, (int) $game->getKey());
+                    }
+                }
                 if ($prediction->sport !== 'nfl' && $prediction->calculationRun?->trigger !== 'coverage'
                     && app(PredictionDeliverySource::class)->legacyWriterRetired($prediction->sport)) {
                     GeneratePredictionNarrative::dispatch(CanonicalPrediction::class, $prediction->id, $prediction->sport);

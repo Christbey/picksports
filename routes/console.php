@@ -1552,3 +1552,16 @@ $nflMonitorEvent = Schedule::command($nflMonitorCommand)->everyMinute()->timezon
     ->when(fn (): bool => app(NflMonitorReportCache::class)->hasRecentDemand())
     ->onOneServer()->withoutOverlapping(20)->runInBackground()->name('NFL: Refresh Admin Monitor Reports');
 $attachCommandHeartbeat($nflMonitorEvent, $nflMonitorCommand, 'NFL: Refresh Admin Monitor Reports');
+
+// Shared analysis is additive and opt-in. Existing NFL schedules keep ownership
+// until the corresponding capability is explicitly activated.
+foreach ([
+    ['sports:reconcile-game-analysis', '*/15 * * * *', 'Sports: Reconcile Game Analysis'],
+    ['sports:reconcile-prediction-reviews', '2,17,32,47 * * * *', 'Sports: Reconcile Prediction Reviews'],
+    ['sports:run-prediction-reviews', '* * * * *', 'Sports: Dispatch Prediction Reviews'],
+] as [$command, $cadence, $name]) {
+    $event = Schedule::command($command)->cron($cadence)->timezone('America/Chicago')
+        ->when(fn () => (bool) config('game_analysis.schedule_enabled', false))
+        ->onOneServer()->withoutOverlapping(15)->runInBackground()->name($name);
+    $attachCommandHeartbeat($event, $command, $name);
+}

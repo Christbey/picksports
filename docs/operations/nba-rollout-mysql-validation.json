@@ -1,0 +1,172 @@
+{
+    "observed_at_utc": "2026-11-21T04:22:58+00:00",
+    "scope": "isolated socket-only temporary MySQL; exact isolated candidate migration files; minimal parent-key fixtures, not a production clone",
+    "candidate_migration_root": "/private/tmp/picksports-nba-release-candidate",
+    "server": {
+        "version": "8.4.6",
+        "page_size": 16384
+    },
+    "migration_sha256": {
+        "2026_11_20_230100_create_prediction_review_work_tables.php": "75b159574297b59c81c1a248f44ca73c27b0f4011b6c7850e75f7a79ab34fe83",
+        "2026_11_21_010000_create_shared_research_storage.php": "67ed786d93e6274a6d17bddfd9a53f9cfc2e6fc5863d8c71ef848573761396ca"
+    },
+    "checks_passed": 27,
+    "checks": [
+        "MySQL 8.4 server",
+        "16 KB InnoDB pages",
+        "created analysis_work_items",
+        "created prediction_review_revisions",
+        "created research_sources",
+        "created research_documents",
+        "created game_research_assessments",
+        "all nine lineage foreign keys installed",
+        "five-column document unique index installed",
+        "nullable canonical and AI lineage preserved",
+        "due-work dispatch index installed",
+        "actual foreign-key violation rejected",
+        "disposable down removed analysis_work_items",
+        "disposable down removed prediction_review_revisions",
+        "disposable down removed research_sources",
+        "disposable down removed research_documents",
+        "disposable down removed game_research_assessments",
+        "recreated analysis_work_items",
+        "recreated prediction_review_revisions",
+        "recreated research_sources",
+        "recreated research_documents",
+        "recreated game_research_assessments",
+        "parent schema/rows preserved sport_events",
+        "parent schema/rows preserved predictions",
+        "parent schema/rows preserved ai_generations",
+        "parent schema/rows preserved sports_game_context_reports",
+        "parent schema/rows preserved nfl_research_revisions"
+    ],
+    "foreign_keys": {
+        "analysis_work_items": [
+            {
+                "name": "analysis_work_items_sport_event_id_foreign",
+                "columns": [
+                    "sport_event_id"
+                ],
+                "foreign_schema": "nba_rollout_eac315732b9f",
+                "foreign_table": "sport_events",
+                "foreign_columns": [
+                    "id"
+                ],
+                "on_update": "no action",
+                "on_delete": "no action"
+            }
+        ],
+        "prediction_review_revisions": [
+            {
+                "name": "prediction_review_revisions_ai_generation_id_foreign",
+                "columns": [
+                    "ai_generation_id"
+                ],
+                "foreign_schema": "nba_rollout_eac315732b9f",
+                "foreign_table": "ai_generations",
+                "foreign_columns": [
+                    "id"
+                ],
+                "on_update": "no action",
+                "on_delete": "no action"
+            },
+            {
+                "name": "prediction_review_revisions_analysis_work_item_id_foreign",
+                "columns": [
+                    "analysis_work_item_id"
+                ],
+                "foreign_schema": "nba_rollout_eac315732b9f",
+                "foreign_table": "analysis_work_items",
+                "foreign_columns": [
+                    "id"
+                ],
+                "on_update": "no action",
+                "on_delete": "no action"
+            },
+            {
+                "name": "prediction_review_revisions_canonical_prediction_id_foreign",
+                "columns": [
+                    "canonical_prediction_id"
+                ],
+                "foreign_schema": "nba_rollout_eac315732b9f",
+                "foreign_table": "predictions",
+                "foreign_columns": [
+                    "id"
+                ],
+                "on_update": "no action",
+                "on_delete": "no action"
+            },
+            {
+                "name": "prediction_review_revisions_sport_event_id_foreign",
+                "columns": [
+                    "sport_event_id"
+                ],
+                "foreign_schema": "nba_rollout_eac315732b9f",
+                "foreign_table": "sport_events",
+                "foreign_columns": [
+                    "id"
+                ],
+                "on_update": "no action",
+                "on_delete": "no action"
+            }
+        ],
+        "research_sources": [],
+        "research_documents": [
+            {
+                "name": "research_documents_source_id_foreign",
+                "columns": [
+                    "source_id"
+                ],
+                "foreign_schema": "nba_rollout_eac315732b9f",
+                "foreign_table": "research_sources",
+                "foreign_columns": [
+                    "id"
+                ],
+                "on_update": "no action",
+                "on_delete": "no action"
+            },
+            {
+                "name": "research_documents_sport_event_id_foreign",
+                "columns": [
+                    "sport_event_id"
+                ],
+                "foreign_schema": "nba_rollout_eac315732b9f",
+                "foreign_table": "sport_events",
+                "foreign_columns": [
+                    "id"
+                ],
+                "on_update": "no action",
+                "on_delete": "no action"
+            }
+        ],
+        "game_research_assessments": [
+            {
+                "name": "game_research_assessments_report_id_foreign",
+                "columns": [
+                    "report_id"
+                ],
+                "foreign_schema": "nba_rollout_eac315732b9f",
+                "foreign_table": "sports_game_context_reports",
+                "foreign_columns": [
+                    "id"
+                ],
+                "on_update": "no action",
+                "on_delete": "no action"
+            },
+            {
+                "name": "game_research_assessments_sport_event_id_foreign",
+                "columns": [
+                    "sport_event_id"
+                ],
+                "foreign_schema": "nba_rollout_eac315732b9f",
+                "foreign_table": "sport_events",
+                "foreign_columns": [
+                    "id"
+                ],
+                "on_update": "no action",
+                "on_delete": "no action"
+            }
+        ]
+    },
+    "cleanup": "database dropped in finally"
+}

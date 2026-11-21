@@ -65,13 +65,15 @@ class SportsExternalGameContextBuilder
             'sources' => array_values((array) ($report->sources ?? [])),
             'risk_flags' => array_values((array) ($report->risk_flags ?? [])),
             'deterministic_adjustment' => $adjustments,
-            'context_adjusted_model' => [
+            // Other sports consume descriptive evidence only. The NFL conversion
+            // is not a shared probability model and must not leak into expansion.
+            'context_adjusted_model' => strtolower($sport) === 'nfl' ? [
                 'predicted_spread' => $contextSpread,
                 'predicted_total' => $contextTotal,
                 'home_win_probability' => $contextSpread !== null && $spreadCoefficient > 0
                     ? round(1 / (1 + exp(-$contextSpread / $spreadCoefficient)), 4)
                     : null,
-            ],
+            ] : null,
         ];
     }
 

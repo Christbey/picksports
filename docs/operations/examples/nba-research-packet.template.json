@@ -1,0 +1,48 @@
+{
+  "schema_version": "nba_research_packet_v1",
+  "template_only": true,
+  "sport": "nba",
+  "game_id": null,
+  "sport_event_id": null,
+  "season": null,
+  "season_type": null,
+  "starts_at": "REPLACE_WITH_VERIFIED_ISO8601_WITH_OFFSET",
+  "source": {
+    "url": "REPLACE_WITH_FRESH_OFFICIAL_PDF_HTTPS_URL",
+    "allowed_hosts": ["ak-static.cms.nba.com"],
+    "published_at": "REPLACE_WITH_ORIGINAL_REPORT_ISO8601_WITH_OFFSET",
+    "observed_at": "REPLACE_WITH_ORIGINAL_OBSERVATION_ISO8601_WITH_OFFSET",
+    "raw_file": "report.pdf",
+    "raw_sha256": "REPLACE_WITH_SHA256_OF_ORIGINAL_PDF",
+    "extractor": "REPLACE_WITH_TOOL_AND_VERSION",
+    "extraction_command": "REPLACE_WITH_COMMAND_AND_OPTIONS",
+    "text_file": "report.txt",
+    "text_sha256": "REPLACE_WITH_SHA256_OF_REVIEWED_UTF8_TEXT"
+  },
+  "teams": [
+    {
+      "side": "home",
+      "team_id": null,
+      "source_key": "REPLACE_WITH_STABLE_APPROVED_HOME_SOURCE_KEY",
+      "claims_file": "home-claims.json",
+      "claims_sha256": "REPLACE_WITH_SHA256_OF_CLAIMS_JSON",
+      "reviewer": null,
+      "reviewed_at": null
+    },
+    {
+      "side": "away",
+      "team_id": null,
+      "source_key": "REPLACE_WITH_STABLE_APPROVED_AWAY_SOURCE_KEY",
+      "claims_file": "away-claims.json",
+      "claims_sha256": "REPLACE_WITH_SHA256_OF_CLAIMS_JSON",
+      "reviewer": null,
+      "reviewed_at": null
+    }
+  ],
+  "coverage": {
+    "availability": "UNREVIEWED",
+    "lineup": "UNAVAILABLE",
+    "rotation": "UNAVAILABLE",
+    "rest_travel": "UNAVAILABLE"
+  }
+}

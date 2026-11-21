@@ -5,6 +5,8 @@ export const apiV2Routes = {
     'admin.nfl.researchRetry.store':
         '/api/v2/admin/nfl/games/{game}/research-retry',
     'admin.payloadInspector': '/api/v2/admin/payload-inspector',
+    'admin.gameAnalysis.retry':
+        '/api/v2/admin/{sport}/games/{game}/analysis/retry',
     'alertPreferences.show': '/api/v2/alert-preferences',
     'alertPreferences.store': '/api/v2/alert-preferences',
     'alertPreferences.update': '/api/v2/alert-preferences',
@@ -37,6 +39,8 @@ export const apiV2Routes = {
         '/api/v2/sports/{sport}/games/{game}/prediction',
     'sports.games.research.show':
         '/api/v2/sports/{sport}/games/{game}/research',
+    'sports.games.analysis.research.show':
+        '/api/v2/sports/{sport}/games/{game}/analysis/research',
     'sports.games.show': '/api/v2/sports/{sport}/games/{game}',
     'sports.games.trends.show': '/api/v2/sports/{sport}/games/{game}/trends',
     'sports.index': '/api/v2/sports',

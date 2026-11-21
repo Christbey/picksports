@@ -12,6 +12,7 @@ use App\Models\SportsAiPredictionAnalysis;
 use App\Models\User;
 use App\Services\Api\V2\PreparedInjuryImpacts;
 use App\Services\MLB\MlbMarketAwareProjectionService;
+use App\Services\Predictions\Review\PredictionReviewCoordinator;
 use App\Support\PredictionDataPermissions;
 use App\Support\PredictionFieldAccess;
 use Illuminate\Database\Eloquent\Collection;
@@ -91,6 +92,11 @@ final class PredictionResourcePreparer
      */
     private function analyses(string $sport, Collection $predictions, bool $allowed): \Illuminate\Support\Collection
     {
+        // Replacement ownership must also retire the old analysis read path;
+        // otherwise saved legacy tiers could outlive the writer's cutover.
+        if (app(PredictionReviewCoordinator::class)->enabled($sport)) {
+            return collect();
+        }
         if (! $allowed || ! Schema::hasTable('sports_ai_prediction_analyses')) {
             return collect();
         }
@@ -104,7 +110,9 @@ final class PredictionResourcePreparer
             ->orderByDesc('created_at')
             ->get();
 
-        if ($sport !== 'nfl') {
+        // NBA rollback may restore legacy ownership; it must not restore a
+        // review for different inputs. Preserve the established NFL guard.
+        if (! in_array($sport, ['nfl', 'nba'], true)) {
             return $analyses
                 ->unique('prediction_id')
                 ->keyBy(fn (SportsAiPredictionAnalysis $analysis): int => (int) $analysis->prediction_id);
@@ -114,14 +122,14 @@ final class PredictionResourcePreparer
 
         return $analyses
             ->groupBy(fn (SportsAiPredictionAnalysis $analysis): int => (int) $analysis->prediction_id)
-            ->map(function ($candidates, int $predictionId) use ($predictionsById): ?SportsAiPredictionAnalysis {
+            ->map(function ($candidates, int $predictionId) use ($predictionsById, $sport): ?SportsAiPredictionAnalysis {
                 $prediction = $predictionsById->get($predictionId);
                 if (! $prediction) {
                     return null;
                 }
 
                 $currentHash = $this->aiPayloadBuilder->hash(
-                    $this->aiPayloadBuilder->build('nfl', $prediction),
+                    $this->aiPayloadBuilder->build($sport, $prediction),
                 );
 
                 return $candidates->first(fn (SportsAiPredictionAnalysis $analysis): bool => $analysis->input_hash !== '' && hash_equals($analysis->input_hash, $currentHash)

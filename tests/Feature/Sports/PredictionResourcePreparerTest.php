@@ -7,6 +7,7 @@ use App\Models\NBA\Team;
 use App\Models\SportsAiPredictionAnalysis;
 use App\Models\User;
 use App\Services\Predictions\PredictionResourcePreparer;
+use App\Services\Predictions\SportsAiPredictionPayloadBuilder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -66,6 +67,15 @@ test('bulk preparation fetches ai analyses once and serialization performs no qu
         ->whereKey($predictions->modelKeys())
         ->orderBy('id')
         ->get();
+
+    // Persist the same hydrated packet the production reader verifies, after
+    // every fixture is present. Placeholder hashes cannot establish freshness.
+    $builder = app(SportsAiPredictionPayloadBuilder::class);
+    foreach ($predictions as $prediction) {
+        $payload = $builder->build('nba', $prediction);
+        SportsAiPredictionAnalysis::where('sport', 'nba')->where('prediction_id', $prediction->id)
+            ->update(['input_hash' => $builder->hash($payload), 'raw_payload' => $payload]);
+    }
 
     DB::flushQueryLog();
     DB::enableQueryLog();

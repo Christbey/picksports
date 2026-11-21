@@ -1,0 +1,21 @@
+{
+  "provenance": "Synthetic local regression fixtures; not production predictions or sports facts.",
+  "observed_at": "2026-11-20T12:00:00-06:00",
+  "sports": {
+    "nba": { "season": 2027, "season_type": 2, "total": 224.5 },
+    "nfl": { "season": 2026, "season_type": 2, "total": 44.5 },
+    "mlb": { "season": 2026, "season_type": 2, "total": 8.5 },
+    "cbb": { "season": 2027, "season_type": 2, "total": 144.5 },
+    "wcbb": { "season": 2027, "season_type": 2, "total": 134.5 },
+    "wnba": { "season": 2026, "season_type": 2, "total": 164.5 },
+    "cfb": { "season": 2026, "season_type": 2, "total": 54.5 }
+  },
+  "projection": { "legacy_spread": 4.5, "canonical_home_line": -4.5, "home_probability": 0.62, "confidence": 68 },
+  "nfl_policy_cases": [
+    { "name": "AI cannot promote a watch", "ceiling": "watch", "market": "spread", "ai_tier": "bet", "ai_market": "spread", "expected_tier": "watch", "expected_market": "pass" },
+    { "name": "AI cannot strengthen a lean", "ceiling": "lean", "market": "spread", "ai_tier": "bet", "ai_market": "spread", "expected_tier": "lean", "expected_market": "spread" },
+    { "name": "AI cannot switch the selected market", "ceiling": "bet", "market": "spread", "ai_tier": "bet", "ai_market": "total", "expected_tier": "bet", "expected_market": "spread" },
+    { "name": "AI may pass", "ceiling": "bet", "market": "spread", "ai_tier": "bet", "ai_market": "pass", "expected_tier": "pass", "expected_market": "pass" },
+    { "name": "AI may downgrade", "ceiling": "bet", "market": "spread", "ai_tier": "lean", "ai_market": "spread", "expected_tier": "lean", "expected_market": "spread" }
+  ]
+}

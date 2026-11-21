@@ -36,7 +36,7 @@ const homeInjuries = computed(
 </script>
 
 <template>
-    <SportDetailedGamePage v-bind="pageProps">
+    <SportDetailedGamePage research-sport="cbb" v-bind="pageProps">
         <template #beforePrediction>
             <BasketballGameInsights
                 v-bind="insightsProps"

@@ -4,6 +4,7 @@ import {
     type ApiMutationOptions,
 } from '@/composables/useApiClient';
 import { apiRoute, type RouteQueryOptions } from '@/lib/apiV2Routes';
+import type { GameResearchData } from '@/types/game-research';
 import type {
     ApiV2CollectionResponse,
     ApiV2FuturesOdd,
@@ -305,6 +306,30 @@ export function useApiV2Client() {
         },
 
         games: {
+            retryAnalysis: (sport: ApiV2SportSlug, game: ApiV2Id) =>
+                mutate<
+                    ApiV2ItemResponse<{
+                        status: 'queued';
+                        game_id: number;
+                        sport: string;
+                    }>
+                >(
+                    apiRoute('admin.gameAnalysis.retry', { sport, game }),
+                    'POST',
+                    {},
+                ),
+            researchSummary: (
+                sport: ApiV2SportSlug,
+                game: ApiV2Id,
+                options: RequestOptions = {},
+            ) =>
+                item<GameResearchData>(
+                    apiRoute('sports.games.analysis.research.show', {
+                        sport,
+                        game,
+                    }),
+                    options,
+                ),
             matchupSignals: <T = ApiV2Record>(
                 sport: ApiV2SportSlug,
                 game: ApiV2Id,

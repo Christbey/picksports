@@ -1,0 +1,56 @@
+{
+    "scope": "isolated release candidate, local SQLite in-memory; no production ingestion",
+    "observed_at_utc": "2026-11-21T04:27:22+00:00",
+    "candidate_root": "/private/tmp/picksports-nba-release-candidate",
+    "packet_sha256": "c952a94ce9fa23cd36827659ffed1d132830d1f4142a4908cc81458494455ce1",
+    "source_raw_sha256": "88e0d0753f51670773acd14b092218e248a1a11d63f43f8c2c9d5d00a12ac878",
+    "source_text_sha256": "5e4c3069b026ac619b30126742eb669890ac3d5cdf136e98a2ffd279a770dabd",
+    "identity_mapping": {
+        "production_game_id": 1705,
+        "local_game_id": 1,
+        "production_event_id": 13363,
+        "local_event_id": 1,
+        "teams": [
+            {
+                "side": "home",
+                "production_team_id": 23,
+                "local_team_id": 1
+            },
+            {
+                "side": "away",
+                "production_team_id": 17,
+                "local_team_id": 2
+            }
+        ]
+    },
+    "assessment_status": "partial",
+    "applicability": "current",
+    "source_coverage": {
+        "availability": {
+            "home": true,
+            "away": true
+        },
+        "lineup": {
+            "home": false,
+            "away": false
+        },
+        "rotation": {
+            "home": false,
+            "away": false
+        },
+        "rest_travel": {
+            "home": false,
+            "away": false
+        }
+    },
+    "expires_at": "2026-11-20T23:45:00-06:00",
+    "sources_registered_locally": 2,
+    "documents_admitted_locally": 2,
+    "assessments_created_locally": 1,
+    "predictions_markets_and_approval_unchanged": true,
+    "http_requests": 0,
+    "queue_pushes": 0,
+    "ai_generation_rows": 0,
+    "review_work_items": 0,
+    "production_writes": 0
+}

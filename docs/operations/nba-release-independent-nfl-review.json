@@ -1,0 +1,65 @@
+{
+  "review": "independent_NFL_preservation_and_scope",
+  "observed_at_utc": "2026-11-21T04:28:46.564928+00:00",
+  "candidate_root": "/private/tmp/picksports-nba-release-candidate",
+  "candidate_baseline": "b176298f6e39b20f0f64dc5cd236af3f0331da69",
+  "live_remote_main": "b176298f6e39b20f0f64dc5cd236af3f0331da69",
+  "remote_verification_command": "git ls-remote origin refs/heads/main",
+  "remote_tracking_note": "Local refs/remotes/origin/main=45c73accb3bf04750514888b0e6548cbad719a44 was stale and was not used as baseline.",
+  "reviewed_file_sha256": {
+    "app/Services/Predictions/PredictionPublisher.php": "87047df3b97491d8376a95e214d2524c0c9be10e045be79cdafc77bfd2330d9d",
+    "app/Services/Predictions/PredictionResourcePreparer.php": "d7dc9a49f8f58b3899e9bd960ec0fd2ef9bd2a0f6d5f8358934f5bb1d8f8c2d5",
+    "app/Services/Predictions/SportsExternalGameContextBuilder.php": "581cd8dfbbb822e121fb9efe45fe52e124de25b0d85e671f8c49143ff4d2d95e",
+    "app/Console/Commands/Sports/AnalyzeDailyPredictionsWithAiCommand.php": "f31adf67b94e1758e6c5c45d3dab8978c0b492c6f9024e1113fd7b98d9f6928e",
+    "routes/console.php": "a213f383011825747c4bb32dd8e2bfa6adc65b53bc5b01e022318fc7d595eb33",
+    "routes/api-v2.php": "dbb62196fdbfef51fd003099a93b01a745892831700a7408faca7802e83a36aa",
+    "config/research.php": "32a0c644e0576fdad74825c1af23f62785376688917030b701e7a13cdc49dfaa",
+    "config/prediction_review.php": "fd280fcc6c28746dd982b75ccce11b7c58b4b5d5800392f3ebccac99d5b4a73a",
+    "config/game_analysis.php": "d48160c3fa85474d77757c2afd274376ff087298ef642b966ab05240c59ce245"
+  },
+  "checks": [
+    {
+      "check": "Original NFL implementation/models/actions/jobs/UI/settings unchanged",
+      "result": "pass",
+      "evidence": "git diff --name-only app/Services/NFL app/Actions/NFL app/Models/NFL app/AI/Agents/NflGameContextResearchAgent.php app/Jobs/NFL resources/js/pages/NFL resources/js/components/game-page/NflResearchBrief.vue config/nfl.php config/queue.php config/ai.php produced no paths."
+    },
+    {
+      "check": "Legacy NFL daily AI ownership",
+      "result": "pass",
+      "evidence": "Existing NFL remains selected because new global+NFL review gates default false; skip applies only if both shared gates enabled."
+    },
+    {
+      "check": "Shared publisher path off by default",
+      "result": "pass",
+      "evidence": "New after-commit dispatch requires publisher flag plus enabled sport research or review; all defaultsfalse."
+    },
+    {
+      "check": "Existing NFL legacy hash guard",
+      "result": "pass",
+      "evidence": "Guard logic and currentHash construction unchanged forNFL; added sport closure remains nfl when sportnfl. NBA-only expansion handles rollback freshness."
+    },
+    {
+      "check": "NFL context numerical behavior",
+      "result": "pass",
+      "evidence": "NFL context_adjusted_model expression retained within NFL-only branch; nonNFL receivesnull."
+    },
+    {
+      "check": "Existing NFL scheduler definitions",
+      "result": "pass",
+      "evidence": "Only3new shared entries appended with off-by-defaultscheduleflag; existing definitions retained."
+    },
+    {
+      "check": "NFL original research API/UI",
+      "result": "pass",
+      "evidence": "Original routes and page consumers unchanged; new analysis/research endpoint is additive and adminpermissiongated."
+    }
+  ],
+  "actionable_findings": [],
+  "remaining_operational_dependencies": [
+    "OpenAI circuit breaker shared: NBAquota/ratefailure can pauseNFLcalls.",
+    "Default queue shared: automaticNBAwork requirescapacityreview.",
+    "Global spend admission aggregatespriorAIusage; inspectheadroombeforepaidcanary."
+  ],
+  "tests": "Root reassigned broadNFLexecution to clean_release_candidate agent; this report is independent source/diff review, not duplicate test execution.",
+  "production_actions": "None; remote main ref read only."
+}

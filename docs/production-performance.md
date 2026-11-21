@@ -1,10 +1,6 @@
 # Production Performance
 
-## Current production release workflow
-
-Production was verified on Laravel Cloud on November 19, 2026, using `main`, PHP 8.5 and Node 24. See [production access](operations/production-access.md) for environment identification. Use the platform's configured release workflow; the historical Forge helper below is not the current Cloud deploy command.
-
-The Cloud build installs locked Composer/npm dependencies, builds Vite assets and runs `php artisan optimize`. The deploy command is `php artisan migrate --force`. Verify the deployed commit, health endpoint and migration results after rollout. Do not run syncs or regenerate forecasts as a release smoke check.
+Current production was verified on **Laravel Cloud** on November 20, 2026. See [production access](operations/production-access.md) and the [NBA rollout runbook](operations/nba-research-rollout.md) for current release, worker and deployment behavior. The Forge helper below is historical and must not be run as a Cloud deployment procedure.
 
 ## Historical Forge Deployment
 

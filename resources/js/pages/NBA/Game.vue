@@ -42,7 +42,11 @@ const isPregame = computed(() =>
 </script>
 
 <template>
-    <SportDetailedGamePage v-bind="pageProps" :show-prediction-summary="false">
+    <SportDetailedGamePage
+        research-sport="nba"
+        v-bind="pageProps"
+        :show-prediction-summary="false"
+    >
         <template #afterHero>
             <section
                 v-if="pageProps.prediction"

@@ -652,3 +652,10 @@ same subscription gates and canonical-reader selection as `/prediction`.
 Supplemental team evidence, research, depth charts, independent analysis and
 market history remain separate requests, listed in `meta.deferred`. MLB retains
 its existing composite page contract.
+
+
+## Opt-in shared research administration
+
+`GET /api/v2/sports/{sport}/games/{game}/analysis/research` returns the stored descriptive assessment and independently applicable AI review. It requires admin status and the corresponding prediction disclosure permissions; it never fetches sources, writes assessment/work records or purchases provider calls. Missing schema/capability yields an explicit unavailable state. Existing NFL `/research` behavior is retained.
+
+`POST /api/v2/admin/{sport}/games/{game}/analysis/retry` requires admin and disclosure access, write throttling and enabled capabilities. It returns 202 after dispatch, not completion; queued work rechecks authorization. Explicit retry can create assessment/work and invoke a paid review only when its gates are enabled. Shared flags default false. See [operations](operations/nba-research-rollout.md) and generated [OpenAPI](openapi-v2.json) for the contract and staged rollout.

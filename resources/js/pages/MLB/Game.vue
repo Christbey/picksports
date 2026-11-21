@@ -102,7 +102,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <SportDetailedGamePage v-bind="pageProps">
+    <SportDetailedGamePage research-sport="mlb" v-bind="pageProps">
         <template #afterPrediction>
             <HistoricalForecastReview
                 :historical-prediction="historicalPrediction"

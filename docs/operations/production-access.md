@@ -1,16 +1,12 @@
 # Production access
 
-Scope: identify the active environment and perform authorized read-only inspection. Reviewed from repository evidence on November 17, 2026. Evidence: [Forge deployment instructions](../production-performance.md), [deployment helper](../../scripts/post-deploy.sh), [API routes](../../routes/api-v2.php), and [game filters](../../app/Http/Requests/Api/V2/SportGameIndexRequest.php). No live SSH, API, or database connection was tested during this documentation review.
-
-## Verified current production
-
-On November 19, 2026, the authenticated Laravel Cloud configuration confirmed application `picksports`, environment `production` (`env-a27d3483-e0d2-445f-9993-e61fffd04683`), repository `Christbey/picksports`, branch `main`, PHP 8.5 and Node 24. Its verified primary domain is `picksports.app`. Release integration and bounded schema checks are recorded in [the cleanup release validation](../../outputs/laravel-eloquent-audit-2026-11-19/release-validation.md). This deployment check does not certify all production data or grant sports-analysis mutation scope.
-
-Use the existing authenticated `cloud` CLI to inspect configuration and deployment status. Request only needed fields, and never use `--show-sensitive` for ordinary inspection. Integrate a release into current `main`, verify checks, then use the environment's configured Laravel Cloud release workflow. Its deploy command runs `php artisan migrate --force`; the build installs locked dependencies, builds assets and optimizes Laravel.
+Scope: identify the active environment and perform authorized read-only inspection. Live read-only verification on November 20, 2026 established **Laravel Cloud** as current production, application `picksports`, environment `production`, primary domain `picksports.app`, release root `/var/www/html`. See the [NBA rollout runbook](nba-research-rollout.md) for verified deployment metadata, staging behavior and redacted preflight evidence.
 
 ## Identify the environment first
 
-Reconfirm the active platform, environment, branch, domain and current deployment before each release. Prior Forge instructions and the ignored tunnel helper describe provisioned infrastructure, not proof of the active application location. During the November 19 verification, the helper's Forge host did not contain `/home/forge/picksports.app/current`, and the configured Forge API credential returned an access error. Do not use that host or an old Cloud/Forge document to choose a production database without verification.
+Use the current Laravel Cloud environment and deployment configuration as the authority. Push-to-deploy is enabled for `main`, and the deploy command runs migrations. The local API key must be mapped privately from `LARAVEL_CLOUD_API_TOKEN` to the CLI's `LARAVEL_CLOUD_TOKEN`; never print either value.
+
+The Forge SSH/tunnel helper and `/home/forge/picksports.app/current` instructions below are **historical**. The saved Forge host contained an old storage-only release during inspection and is not the active application. Do not use it as current production database evidence or deploy there for Cloud rollout.
 
 Access prerequisites:
 
@@ -20,7 +16,7 @@ Access prerequisites:
 
 Do not copy `.env.forge` or `.env.production` over local `.env`. Their filenames do not establish freshness. Do not print full environment files, cached configuration, or tokens in logs or chat.
 
-## Historical Forge SSH procedure (verify before use)
+## Historical: SSH to a verified Forge release
 
 Replace the placeholder with the authorized host. SSH uses your existing agent or configured identity:
 

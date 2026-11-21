@@ -27,7 +27,7 @@ const homeInjuries = computed(
 </script>
 
 <template>
-    <SportDetailedGamePage v-bind="pageProps">
+    <SportDetailedGamePage research-sport="wnba" v-bind="pageProps">
         <template #afterPrediction>
             <BettingPlanCard
                 :betting-plan="pageProps.prediction?.narrative?.betting_plan"

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import GamePageErrorBoundary from '@/components/game-page/GamePageErrorBoundary.vue';
+import GameResearchSection from '@/components/game-page/GameResearchSection.vue';
 import GamePageShell from '@/components/game-page/GamePageShell.vue';
 import LinescoreCard from '@/components/game-page/LinescoreCard.vue';
 import MatchupHero from '@/components/game-page/MatchupHero.vue';
@@ -26,6 +27,7 @@ withDefaults(
         homeTeam: GamePageTeam | null;
         game: GamePageGame;
         gameStatus: string;
+        researchSport?: string | null;
         formatDate: (dateString: string | null) => string;
         teamLink: (id: number) => GamePageHrefLike;
         gradientClass: string;
@@ -91,6 +93,7 @@ withDefaults(
     }>(),
     {
         error: null,
+        researchSport: null,
         awayRecentForm: undefined,
         homeRecentForm: undefined,
         venueLabel: undefined,
@@ -228,6 +231,11 @@ const resolveTeamName = (team: GamePageTeam | null, fallback: string): string =>
             />
 
             <slot name="afterPrediction" />
+            <GameResearchSection
+                v-if="researchSport && researchSport !== 'nfl'"
+                :sport="researchSport"
+                :game-id="game.id"
+            />
             <slot name="beforeTrends" />
 
             <TrendsComparisonCard

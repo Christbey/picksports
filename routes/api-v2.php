@@ -6,11 +6,13 @@ use App\Http\Controllers\Api\Auth\TokenAuthController;
 use App\Http\Controllers\Api\CBB\BracketController as CbbBracketController;
 use App\Http\Controllers\Api\GroupController;
 use App\Http\Controllers\Api\SecurityReportController;
+use App\Http\Controllers\Api\V2\Admin\GameAnalysisRetryController;
 use App\Http\Controllers\Api\V2\Admin\NflResearchRetryController;
 use App\Http\Controllers\Api\V2\Admin\PayloadInspectorController;
 use App\Http\Controllers\Api\V2\CfbLiveBettingController;
 use App\Http\Controllers\Api\V2\DeveloperSandboxController;
 use App\Http\Controllers\Api\V2\FrontendContextController;
+use App\Http\Controllers\Api\V2\GameResearchController;
 use App\Http\Controllers\Api\V2\LiveScoreboardController;
 use App\Http\Controllers\Api\V2\MlbDailyPickController;
 use App\Http\Controllers\Api\V2\NativeDeviceSessionController;
@@ -172,6 +174,8 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
         ->name('admin.')
         ->group(function (): void {
             Route::get('/payload-inspector', PayloadInspectorController::class)->name('payload-inspector');
+            Route::post('/{sport}/games/{game}/analysis/retry', GameAnalysisRetryController::class)
+                ->middleware('throttle:api-v2-writes')->name('game-analysis.retry');
             Route::get('/nfl/games/{game}/research-retry', [NflResearchRetryController::class, 'show'])->name('nfl.research-retry.show');
             Route::post('/nfl/games/{game}/research-retry', [NflResearchRetryController::class, 'store'])
                 ->middleware('throttle:api-v2-writes')->name('nfl.research-retry.store');
@@ -185,6 +189,8 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
             Route::get('/games/{game}/research', NflResearchController::class)
                 ->middleware(['admin', 'permission:view-nfl-predictions', 'permission:view-prediction-spread', 'permission:view-prediction-win-probability', 'permission:view-prediction-betting-value'])
                 ->name('games.research.show');
+            Route::get('/games/{game}/analysis/research', GameResearchController::class)
+                ->middleware('admin')->name('games.analysis.research.show');
             Route::get('/games/{game}/page', SportGamePageController::class)->name('games.page.show');
             Route::get('/games/{game}/live-snapshot', NflLiveSnapshotController::class)->name('games.live-snapshot.show');
             Route::get('/games/{game}/matchup-signals', NflMatchupSignalController::class)->name('games.matchup-signals.show');

@@ -197,7 +197,9 @@ class CfbCanonicalSpreadValueSignalService
         $hasDifferentiatedElo = abs($homeElo - $defaultElo) >= 0.001
             || abs($awayElo - $defaultElo) >= 0.001;
         $hasBidirectionalMetricSample = $homeSample > 0 && $awaySample > 0;
-        $modelInputsQualified = array_diff($quality['risk_flags'], ['home_quarterback_unresolved', 'away_quarterback_unresolved']) === [] && ($hasDifferentiatedElo
+        // Optional play coverage and validation holds limit betting eligibility, not the core model direction.
+        $essentialInputFlags = array_filter($quality['risk_flags'], fn (string $flag): bool => str_ends_with($flag, '_missing_team_metrics') || str_ends_with($flag, '_unverified_elo_provenance'));
+        $modelInputsQualified = $essentialInputFlags === [] && ($hasDifferentiatedElo
             || $hasBidirectionalMetricSample || ($quality['evidence_path'] ?? null) === 'independent_completed_results');
         $riskFlags = $quality['risk_flags'];
 

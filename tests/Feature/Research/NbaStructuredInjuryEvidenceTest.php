@@ -9,6 +9,7 @@ use App\Models\ResearchSource;
 use App\Services\Api\V2\GameResearchPresentation;
 use App\Services\ESPN\NBA\EspnService;
 use App\Services\NBA\Injuries\InjuryAcquisitionOrder;
+use App\Services\NBA\Injuries\InjuryCanaryScope;
 use App\Services\NBA\Injuries\InjuryFeedClient;
 use App\Services\NBA\Injuries\StructuredInjuryEvidence;
 use App\Services\Research\GameResearchService;
@@ -27,6 +28,7 @@ beforeEach(function () {
         'nba.injuries.observations_enabled' => true, 'nba.injuries.research_adapter_enabled' => true,
         'espn.cache.enabled' => false]);
     [$this->game, $this->legacy, $this->prediction] = PredictionReviewFixtures::game('nba');
+    config(['nba.injuries.canary_team_ids' => [$this->game->home_team_id, $this->game->away_team_id], 'nba.injuries.canary_expires_at' => now()->addDay()->toIso8601String()]);
     $this->game->sportEvent->update(['season' => $this->game->season, 'season_type' => $this->game->season_type]);
     Team::query()->whereKey($this->game->home_team_id)->update(['espn_id' => 'canary-home']);
     Team::query()->whereKey($this->game->away_team_id)->update(['espn_id' => 'canary-away']);
@@ -166,3 +168,27 @@ it('does not renew source validity from repeated cached acquisition', function (
     $evidence = app(StoredGameEvidence::class)->build($this->game, 'nba');
     expect($evidence['sources'][0]['observed_at'])->toBe($observed->toIso8601String());
 });
+
+it('does not add structured evidence or admit the source command outside both selected teams', function (string $policy) {
+    config(['nba.injuries.research_adapter_enabled' => false]);
+    $legacy = app(StoredGameEvidence::class)->build($this->game, 'nba');
+    config(['nba.injuries.research_adapter_enabled' => true]);
+    if ($policy === 'one_team') {
+        config(['nba.injuries.canary_team_ids' => [$this->game->home_team_id]]);
+    } else {
+        config(['nba.injuries.canary_expires_at' => now()->subSecond()->toIso8601String()]);
+    }
+    expect(app(StoredGameEvidence::class)->build($this->game, 'nba'))->toBe($legacy);
+    $this->artisan('nba:refresh-injury-research', ['game' => $this->game->id])->assertFailed();
+})->with(['one_team', 'expired']);
+
+it('fails closed for invalid or overly broad canary policy', function (array $ids, ?string $expires) {
+    config(['nba.injuries.canary_team_ids' => $ids, 'nba.injuries.canary_expires_at' => $expires]);
+    expect(app(InjuryCanaryScope::class)->allowsTeam(1))->toBeFalse();
+})->with([
+    [[1, 2, 3], '2099-01-01T00:00:00Z'],
+    [[1, 'bad'], '2099-01-01T00:00:00Z'],
+    [[1], null],
+    [[1], 'not-a-dateZ'],
+    [[1], '2099-01-01 00:00:00'],
+]);

@@ -22,6 +22,7 @@ beforeEach(function () {
     Queue::fake();
     $this->team = Team::factory()->create(['espn_id' => '23']);
     $this->player = Player::factory()->create(['team_id' => $this->team->id, 'espn_id' => '123']);
+    config(['nba.injuries.canary_team_ids' => [$this->team->id], 'nba.injuries.canary_expires_at' => now()->addDay()->toIso8601String()]);
     $this->url = app(InjuryFeedClient::class)->teamUrl('23');
     $this->rosterUrl = app(InjuryFeedClient::class)->teamUrl('23', true);
     $this->entry = ['id' => 'injury-123', 'athlete' => ['id' => '123'], 'status' => 'Out', 'date' => '2026-11-21T04:06:00Z'];
@@ -274,3 +275,19 @@ it('never lets an older overlapping response overwrite the newest team attempt',
         expect($newerFails ? $cached : $cached['payload']['items'][0]['status'])->toBe($newerFails ? null : 'Doubtful');
     }
 })->with([[false, false], [true, false], [false, true], [true, true]]);
+
+it('keeps unselected or expired teams on the legacy path without capture side effects', function (string $policy) {
+    if ($policy === 'unselected') {
+        config(['nba.injuries.canary_team_ids' => [$this->team->id + 1000]]);
+    } elseif ($policy === 'empty') {
+        config(['nba.injuries.canary_team_ids' => []]);
+    } else {
+        config(['nba.injuries.canary_expires_at' => now()->subMinute()->toIso8601String()]);
+    }
+    $this->service->payload = ['items' => [$this->entry]];
+    expect($this->sync->execute('23'))->toBe(1)
+        ->and(PlayerInjury::query()->sole()->source_updated_at->toDateTimeString())->toBe('2026-11-21 04:06:00')
+        ->and(PlayerInjuryObservation::query()->count())->toBe(0)
+        ->and(DB::table('nba_injury_team_states')->count())->toBe(0);
+    Http::assertNothingSent();
+})->with(['unselected', 'empty', 'expired']);

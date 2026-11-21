@@ -3,6 +3,7 @@
 namespace App\Services\Research;
 
 use App\Models\ResearchDocument;
+use App\Services\NBA\Injuries\InjuryCanaryScope;
 use App\Services\NBA\Injuries\StructuredInjuryEvidence;
 use App\Services\Predictions\CanonicalPayloadHasher;
 use App\Services\Sports\SportsDateWindowService;
@@ -73,7 +74,8 @@ class StoredGameEvidence
             }
         }
         $structuredUnresolved = [];
-        if ($sport === 'nba' && config('nba.injuries.research_adapter_enabled', false)) {
+        if ($sport === 'nba' && config('nba.injuries.research_adapter_enabled', false)
+            && app(InjuryCanaryScope::class)->allowsGame($game)) {
             $structured = app(StructuredInjuryEvidence::class)->build($game, $cutoff);
             foreach (['home', 'away'] as $side) {
                 if ($structured['coverage'][$side] && $coverage['availability'][$side]) {

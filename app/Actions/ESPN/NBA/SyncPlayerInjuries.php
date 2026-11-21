@@ -6,6 +6,7 @@ use App\Actions\ESPN\AbstractSyncPlayerInjuries;
 use App\Models\NBA\Player;
 use App\Models\NBA\Team;
 use App\Services\NBA\Injuries\InjuryAcquisitionOrder;
+use App\Services\NBA\Injuries\InjuryCanaryScope;
 use App\Services\NBA\Injuries\InjuryFeedClient;
 use App\Services\NBA\Injuries\InjurySnapshotRecorder;
 use Carbon\Carbon;
@@ -41,14 +42,16 @@ class SyncPlayerInjuries extends AbstractSyncPlayerInjuries
         if (! $this->capturing) {
             return parent::execute($teamEspnId);
         }
+        $team = $this->findTeamByEspnId($teamEspnId);
+        if (! $team || ! app(InjuryCanaryScope::class)->allowsTeam((int) $team->id)) {
+            $this->capturing = false;
+
+            return parent::execute($teamEspnId);
+        }
         foreach (['nba_player_injury_snapshots', 'nba_player_injury_snapshot_entries', 'nba_player_injury_observations', 'nba_injury_team_states'] as $table) {
             if (! Schema::hasTable($table)) {
                 throw new \RuntimeException('Install NBA injury observation storage before activation.');
             }
-        }
-        $team = $this->findTeamByEspnId($teamEspnId);
-        if (! $team) {
-            return 0;
         }
         $this->prepared = false;
         $this->allEntries = $this->projectionEntries = $this->entryIssues = $this->references = [];

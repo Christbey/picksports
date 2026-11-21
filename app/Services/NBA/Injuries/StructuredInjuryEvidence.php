@@ -36,7 +36,9 @@ class StructuredInjuryEvidence
                 ? PlayerInjuryObservation::query()->with('snapshot.entries')->find($state->latest_observation_id) : null;
             $mapping = $receipt ? Player::query()->where('team_id', $teamId)->pluck('espn_id', 'id')->all() : [];
             $url = $team ? app(InjuryFeedClient::class)->teamUrl((string) $team->espn_id) : '';
-            if (! config('nba.injuries.observations_enabled', false)) {
+            if (! app(InjuryCanaryScope::class)->allowsGame($game)) {
+                $reason = 'structured_canary_scope_denied';
+            } elseif (! config('nba.injuries.observations_enabled', false)) {
                 $reason = 'structured_capture_disabled';
             } elseif (! $game->sport_event_id || $game->sportEvent?->sport !== 'nba'
                 || (int) $game->sportEvent->season !== (int) $game->season

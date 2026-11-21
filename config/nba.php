@@ -6,6 +6,8 @@ return [
     'injuries' => [
         'research_adapter_enabled' => (bool) env('NBA_RESEARCH_SOURCE_REFRESH_ENABLED', false),
         'observations_enabled' => (bool) env('NBA_INJURY_OBSERVATIONS_ENABLED', false),
+        'canary_team_ids' => array_values(array_filter(array_map('trim', explode(',', (string) env('NBA_INJURY_CANARY_TEAM_IDS', ''))), fn ($id) => $id !== '')),
+        'canary_expires_at' => env('NBA_INJURY_CANARY_EXPIRES_AT'),
         'maximum_response_bytes' => 2097152,
     ],
 

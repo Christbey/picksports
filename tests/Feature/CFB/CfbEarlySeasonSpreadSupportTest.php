@@ -161,3 +161,23 @@ it('preserves the away underdog sign when the model is a tie', function () {
         ->and($result['best']['market_line'])->toBe(2.5)->and($result['best']['edge'])->toBe(2.5)
         ->and($result['best']['market_home_line'])->toBe(-2.5);
 });
+
+it('retains the core direction when optional play coverage or challenger validation is incomplete', function (string $warning) {
+    $inputs = earlySpreadEvidence();
+    if ($warning === 'home_historical_play_data_incomplete') {
+        $inputs['home']['historical_play_quality']['state'] = 'incomplete';
+    } elseif ($warning === 'home_injury_coverage_unknown') {
+        $inputs['require_availability_coverage'] = true;
+    } elseif ($warning === 'home_quarterback_replacement_unvalidated') {
+        $inputs['home']['quarterback_replacement']['status'] = 'unvalidated';
+    } else {
+        $inputs['scoring_challenger']['promoted'] = true;
+    }
+    $result = earlySpreadSignal($inputs, calibrated: false);
+    expect($result['decision_status'])->toBe('provisional')
+        ->and($result['best']['side'])->toBe('home')
+        ->and($result['best']['risk_flags'])->toContain($warning)
+        ->and($result['best']['risk_flags'])->not->toContain('missing_model_inputs')
+        ->and($result['has_playable_value'])->toBeFalse();
+})->with(['home_historical_play_data_incomplete', 'challenger_market_validation_required',
+    'home_injury_coverage_unknown', 'home_quarterback_replacement_unvalidated']);

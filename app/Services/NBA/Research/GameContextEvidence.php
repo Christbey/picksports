@@ -44,11 +44,7 @@ class GameContextEvidence
                 'source_url' => rtrim(config('app.url'), '/').'/api/v2/sports/nba/teams/'.$teamId.'/games',
                 'observed_at' => null, 'published_at' => null,
                 'interpretation' => 'Derived from stored completed games; not a new provider observation or a prediction of tonight’s lineup, minutes or actual travel.'];
-            $past = Game::query()->with('sportEvent')->where('season', $game->season)->where('season_type', $game->season_type)
-                ->where('id', '!=', $game->id)->whereDate('game_date', '<=', $cutoff->copy()->utc()->addDay()->toDateString())
-                ->where(fn ($q) => $q->where('home_team_id', $teamId)->orWhere('away_team_id', $teamId))
-                ->orderByDesc('game_date')->orderByDesc('game_time')->limit(40)->get()
-                ->filter(fn ($row) => ($start = $this->start($row)) && $start->lt($cutoff) && $start->lt(now()))->values();
+            $past = app(RecentGames::class)->before($game, $teamId, $cutoff);
             $last = $past->first();
             if ($last && $last->status === 'STATUS_FINAL' && (! $last->completed_at || ($last->completed_at->lt($cutoff) && $last->completed_at->lte(now())))) {
                 $start = $this->start($last);
@@ -64,13 +60,36 @@ class GameContextEvidence
             } else {
                 $r['unresolved'][] = $this->gap($side, 'rest_travel', 'preceding_game_not_verified_complete');
             }
-            $sample = $past->take(5);
+            $hasRawHistory = $packet && collect(array_keys($packet->responses))->contains(fn ($key) => str_starts_with($key, $side.'_history_'));
+            $sample = $past->take($hasRawHistory ? 3 : 5);
             $totals = [];
             $refs = [];
             $valid = $sample->count() >= 3;
             foreach ($sample as $prior) {
                 if ($prior->status !== 'STATUS_FINAL' || ($prior->completed_at && ($prior->completed_at->gte($cutoff) || $prior->completed_at->isFuture()))) {
                     $valid = false;
+
+                    continue;
+                }
+                $historyKey = $side.'_history_'.$prior->id;
+                if ($hasRawHistory && array_key_exists($historyKey, $packet->responses)) {
+                    $raw = $this->response($packet, $historyKey, $cutoff);
+                    $minutes = $raw ? $this->boxscoreMinutes($raw['payload'], $prior, $team, $players) : null;
+                    if ($minutes === null) {
+                        $valid = false;
+
+                        continue;
+                    }
+                    $sum = array_sum($minutes);
+                    $expected = 240 + max(0, (int) $prior->period - 4) * 25;
+                    if ($sum < $expected - 3 || $sum > $expected + 3 || count(array_filter($minutes)) < 5) {
+                        $valid = false;
+                    }
+                    foreach ($minutes as $id => $value) {
+                        $totals[$id] = ($totals[$id] ?? 0) + $value;
+                    }
+                    $refs[] = 'nba_research_context_snapshots:'.$packet->id.'#/responses/'.$historyKey.'/payload/boxscore/players';
+                    $r['sources'][] = $this->source($packet, $raw);
 
                     continue;
                 }
@@ -201,6 +220,55 @@ class GameContextEvidence
         return $at->lte(now()) && $at->gte(now()->subMinutes(120)) && $at->lt($cutoff) ? $r : null;
     }
 
+    private function boxscoreMinutes(array $body, Game $prior, Team $team, $players): ?array
+    {
+        $header = $body['header'] ?? [];
+        $competition = $header['competitions'][0] ?? [];
+        try {
+            $date = is_string($competition['date'] ?? null) && preg_match('/(?:Z|[+-]\d{2}:\d{2})$/', $competition['date']) ? CarbonImmutable::parse($competition['date']) : null;
+        } catch (\Throwable) {
+            return null;
+        }
+        $ids = array_map('strval', array_column(array_column($competition['competitors'] ?? [], 'team'), 'id'));
+        $expected = Team::query()->whereIn('id', [$prior->home_team_id, $prior->away_team_id])->pluck('espn_id')->map('strval')->all();
+        sort($ids);
+        sort($expected);
+        if ((string) ($header['id'] ?? '') !== (string) $prior->espn_event_id || $ids !== $expected || ! $date
+            || abs($date->timestamp - $this->start($prior)->timestamp) > 60 || ($competition['status']['type']['name'] ?? '') !== 'STATUS_FINAL') {
+            return null;
+        }
+        foreach (is_array($body['boxscore']['players'] ?? null) ? $body['boxscore']['players'] : [] as $section) {
+            if ((string) ($section['team']['id'] ?? '') !== (string) $team->espn_id) {
+                continue;
+            }
+            $group = $section['statistics'][0] ?? [];
+            $labels = $group['labels'] ?? $group['names'] ?? [];
+            $index = collect($labels)->search(fn ($label) => in_array(strtolower((string) $label), ['min', 'minutes'], true));
+            if ($index === false || ! is_array($group['athletes'] ?? null)) {
+                return null;
+            }
+            $minutes = [];
+            $seen = [];
+            foreach ($group['athletes'] as $row) {
+                $id = (string) ($row['athlete']['id'] ?? '');
+                if ($id === '' || isset($seen[$id])) {
+                    return null;
+                } $seen[$id] = true;
+                $value = ($row['didNotPlay'] ?? false) === true ? 0.0 : $this->minutes($row['stats'][$index] ?? null);
+                if ($value === null || ($value > 0 && ! isset($players[$id]))) {
+                    return null;
+                }
+                if (isset($players[$id])) {
+                    $minutes[$players[$id]->id] = $value;
+                }
+            }
+
+            return $minutes;
+        }
+
+        return null;
+    }
+
     private function lineup(string $side, $players, array $ids, ResearchContextSnapshot $packet, array $response, bool $confirmed): array
     {
         return ['topic' => 'lineup', 'team_side' => $side, 'claim' => ($confirmed ? 'ESPN event-reported starters: ' : 'Projected ESPN depth-chart starters, not confirmed for this game: ')
@@ -215,8 +283,8 @@ class GameContextEvidence
 
     private function source(ResearchContextSnapshot $packet, array $response): array
     {
-        return ['url' => $response['url'], 'title' => 'ESPN NBA structured lineup context', 'publisher' => 'ESPN', 'provider' => 'espn',
-            'source_scope' => 'lineup_context', 'parser_version' => self::VERSION, 'snapshot_id' => $packet->id,
+        return ['url' => $response['url'], 'title' => 'ESPN NBA structured game context', 'publisher' => 'ESPN', 'provider' => 'espn',
+            'source_scope' => 'game_context', 'parser_version' => self::VERSION, 'snapshot_id' => $packet->id,
             'content_hash' => app(CanonicalPayloadHasher::class)->hash($response['payload']), 'observed_at' => $response['fetched_at'], 'published_at' => null];
     }
 

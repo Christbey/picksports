@@ -10,7 +10,7 @@ class CaptureNbaResearchContextCommand extends Command
 {
     protected $signature = 'nba:capture-research-context {game : Selected NBA game ID}';
 
-    protected $description = 'Explicitly capture three bounded NBA JSON sources; no model generation or AI review';
+    protected $description = 'Explicitly capture bounded NBA JSON context sources; no model generation or AI review';
 
     public function handle(CaptureGameContext $capture): int
     {

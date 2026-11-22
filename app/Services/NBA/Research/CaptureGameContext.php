@@ -44,7 +44,7 @@ class CaptureGameContext
             throw new \RuntimeException('Register an event context source explicitly.');
         }
 
-        return Cache::lock('nba-context-capture:'.$game->id, 90)->block(2, function () use ($game, $source): ResearchContextSnapshot {
+        return Cache::lock('nba-context-capture:'.$game->id, 210)->block(2, function () use ($game, $source): ResearchContextSnapshot {
             $urls = ['summary' => self::summaryUrl($game)];
             foreach (['home' => $game->home_team_id, 'away' => $game->away_team_id] as $side => $id) {
                 $team = Team::query()->findOrFail($id);
@@ -52,6 +52,11 @@ class CaptureGameContext
                     throw new \RuntimeException('Invalid provider team identity.');
                 }
                 $urls[$side.'_depth'] = 'https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/'.$game->season.'/teams/'.$team->espn_id.'/depthcharts';
+                foreach (app(RecentGames::class)->before($game, $id, $game->sportEvent->starts_at)->take(3) as $prior) {
+                    if ($prior->status === 'STATUS_FINAL' && ctype_digit((string) $prior->espn_event_id)) {
+                        $urls[$side.'_history_'.$prior->id] = self::summaryUrl($prior);
+                    }
+                }
             }
             $responses = [];
             foreach ($urls as $key => $url) {
@@ -59,7 +64,12 @@ class CaptureGameContext
                     throw new \RuntimeException('NBA context source is not approved.');
                 }
                 // One response per source; no reference expansion or hidden retries.
-                $responses[$key] = app(InjuryFeedClient::class)->fetch($url, false);
+                $response = app(InjuryFeedClient::class)->fetch($url, false);
+                if (strlen(json_encode($responses, JSON_THROW_ON_ERROR)) + strlen(json_encode($response, JSON_THROW_ON_ERROR)) > 4194304) {
+                    $response['payload'] = null;
+                    $response['error_code'] = 'context_packet_too_large';
+                }
+                $responses[$key] = $response;
             }
             $hash = app(CanonicalPayloadHasher::class)->hash($responses);
 

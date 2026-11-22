@@ -8,6 +8,8 @@ use App\Models\NBA\Team;
 use App\Models\ResearchSource;
 use App\Services\NBA\Research\CaptureGameContext;
 use App\Services\NBA\Research\GameContextEvidence;
+use App\Services\NBA\Research\RecentGames;
+use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -104,10 +106,10 @@ it('preserves immutable packets', function () {
     expect(fn () => $this->packet->delete())->toThrow(LogicException::class);
 });
 
-it('captures only three explicit scoped sources without dispatching assessment or reviews', function () {
+it('captures only bounded explicit scoped sources without dispatching assessment or reviews', function () {
     Http::fake(fn () => Http::response(['header' => ['id' => $this->game->espn_event_id]]));
     app(CaptureGameContext::class)->capture($this->game);
-    Http::assertSentCount(3);
+    Http::assertSentCount(9);
     expect(DB::table('analysis_work_items')->count())->toBe(0)->and(DB::table('game_research_assessments')->count())->toBe(0);
 });
 
@@ -144,4 +146,27 @@ it('round trips the additive context table without touching NFL schema', functio
     $migration->up();
     expect(Schema::hasTable('nba_research_context_snapshots'))->toBeTrue()
         ->and(Schema::getColumns('nfl_player_injuries'))->toBe($schema);
+});
+
+it('uses explicit raw DNP flags and the latest three full box scores without rewriting null minute rows', function () {
+    $responses = $this->packet->responses;
+    foreach (['home', 'away'] as $side) {
+        $team = Team::findOrFail($this->game->{$side.'_team_id'});
+        $past = app(RecentGames::class)->before($this->game, $team->id, $this->game->sportEvent->starts_at)->take(3);
+        foreach ($past as $prior) {
+            PlayerStat::query()->where('game_id', $prior->id)->where('team_id', $team->id)->first()->update(['minutes_played' => null]);
+            $rows = $this->players[$side]->map(fn ($p) => ['athlete' => ['id' => $p->espn_id], 'stats' => ['48'], 'didNotPlay' => false])->all();
+            $rows[] = ['athlete' => ['id' => 'unmapped-dnp'], 'stats' => [], 'didNotPlay' => true];
+            $competitors = Team::query()->whereIn('id', [$prior->home_team_id, $prior->away_team_id])->get()->map(fn ($t) => ['team' => ['id' => $t->espn_id]])->all();
+            $start = app(SportsDateWindowService::class)->gameDateTimeUtc($prior->game_date, $prior->game_time);
+            $responses[$side.'_history_'.$prior->id] = ['url' => CaptureGameContext::summaryUrl($prior), 'error_code' => null, 'fetched_at' => now()->toIso8601String(),
+                'payload' => ['header' => ['id' => $prior->espn_event_id, 'competitions' => [['date' => $start->toIso8601String(), 'competitors' => $competitors, 'status' => ['type' => ['name' => 'STATUS_FINAL']]]]],
+                    'boxscore' => ['players' => [['team' => ['id' => $team->espn_id], 'statistics' => [['labels' => ['MIN'], 'athletes' => $rows]]]]]]];
+        }
+    }
+    ResearchContextSnapshot::create(['game_id' => $this->game->id, 'source_id' => $this->source->id, 'identity_hash' => CaptureGameContext::identity($this->game),
+        'capture_hash' => hash('sha256', 'raw-history'), 'responses' => $responses, 'captured_at' => now()]);
+    $r = app(GameContextEvidence::class)->build($this->game, $this->game->sportEvent->starts_at);
+    expect($r['coverage']['rotation'])->toBe(['home' => true, 'away' => true])
+        ->and(PlayerStat::query()->whereNull('minutes_played')->count())->toBe(6);
 });

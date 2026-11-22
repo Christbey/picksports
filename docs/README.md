@@ -62,3 +62,5 @@ This documentation pass checked repository scripts, dependency manifests, databa
 - [NBA team canary scope](operations/nba-team-canary-scope.md): two-team, expiring capture/research admission with unchanged nonselected NBA and NFL behavior.
 
 - [NBA expanded context research](operations/nba-expanded-context-research.md): explicitly captured lineup projections/starter flags, historical rotation, and schedule-based rest/travel within the existing canary scope.
+
+- [NBA identical-content review reuse candidate](operations/nba-review-provenance-reuse.md): default-off append-only provenance revalidation with original paid validity and NFL compatibility preserved.

@@ -5,6 +5,7 @@ use App\Support\SportCatalog;
 return [
     'enabled' => (bool) env('PREDICTION_REVIEW_ENABLED', false),
     'sports' => collect(SportCatalog::ALL)->mapWithKeys(fn (string $sport): array => [$sport => (bool) env('PREDICTION_REVIEW_'.strtoupper($sport).'_ENABLED', false)])->all(),
+    'nba_provenance_reuse_enabled' => (bool) env('NBA_REVIEW_PROVENANCE_REUSE_ENABLED', false),
     'provider' => env('PREDICTION_REVIEW_PROVIDER', 'openai'),
     'model' => env('PREDICTION_REVIEW_MODEL', 'gpt-4o-mini'),
     'prompt_version' => 'prediction-review-v1',

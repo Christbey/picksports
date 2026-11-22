@@ -12,6 +12,10 @@ Input changes atomically replace the desired fingerprint and release an old leas
 
 Every valid result creates an immutable `PredictionReviewRevision`. A response arriving after the input/lease changed is retained as `superseded`, never made current. Presentation must compare current fingerprints, applicability, and expiry and recheck deterministic eligibility. Raw review prose is interpretation and cannot establish approval.
 
+## NBA provenance revalidation
+
+The optional `NBA_REVIEW_PROVENANCE_REUSE_ENABLED` flag defaults false. With additive storage installed, identical archived NBA research content can be explicitly revalidated against an unexpired original review through immutable provenance associations. Full desired fingerprints, original paid validity/accounting and fresh deterministic decision checks remain authoritative. NFL and manual/PDF evidence retain the existing path. See [the candidate contract and rollout steps](nba-review-provenance-reuse.md); this does not enable a scheduler or source refresh.
+
 ## Accounting and retries
 
 Every paid new review request reserves estimated cost in `ai_generations` before calling the provider and records usage for valid and malformed responses. Timeouts and uncertain usage retain conservative reservations; they are never zero cost. The same uncertain request is not immediately purchased again. A validated completed response recorded before a worker persistence crash can be recovered from its generation record without another provider call.

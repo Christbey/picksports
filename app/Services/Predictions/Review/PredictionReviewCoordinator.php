@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Schema;
 
 class PredictionReviewCoordinator
 {
-    public function __construct(private readonly PredictionReviewInputBuilder $inputs, private readonly ReviewFingerprint $fingerprints) {}
+    public function __construct(private readonly PredictionReviewInputBuilder $inputs, private readonly ReviewFingerprint $fingerprints, private readonly NbaReviewReuse $nbaReuse) {}
 
     public function enabled(string $sport): bool
     {
@@ -47,8 +47,16 @@ class PredictionReviewCoordinator
                 'state' => 'pending', 'deadline_at' => $deadline, 'next_attempt_at' => now(),
             ]);
             $item = AnalysisWorkItem::lockForUpdate()->findOrFail($item->id);
+            if ($item->desired_fingerprint !== $hashes['fingerprint'] && $this->nbaReuse->revalidate($item, $hashes, $evidence) !== null) {
+                $item->update(['desired_fingerprint' => $hashes['fingerprint'], 'input_payload' => $input->toArray(),
+                    'execution_spec' => $this->fingerprints->executionSpec(), 'evidence' => $evidence,
+                    'deadline_at' => $deadline, 'reason_code' => 'unchanged_evidence_revalidated']);
+
+                return $item->refresh();
+            }
             $changed = $item->desired_fingerprint !== $hashes['fingerprint'];
-            $expired = $item->state === 'succeeded' && ! $item->revisions()->where('desired_fingerprint', $item->desired_fingerprint)->where('expires_at', '>', now())->exists();
+            $expired = $item->state === 'succeeded' && ! $item->revisions()->where('desired_fingerprint', $item->desired_fingerprint)->where('expires_at', '>', now())->exists()
+                && $this->nbaReuse->current($item, $hashes, $evidence) === null;
             if ($changed || $expired || $item->state === 'cancelled') {
                 $item->update(['desired_fingerprint' => $hashes['fingerprint'], 'input_payload' => $input->toArray(),
                     'execution_spec' => $this->fingerprints->executionSpec(), 'evidence' => $evidence,

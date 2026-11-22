@@ -100,8 +100,9 @@ it('uses shared UTC kickoff and Central business dates across midnight and DST',
 
 it('does not confuse matching numeric IDs in canonical and legacy prediction tables', function () {
     [$game, $legacy, $native] = Fixtures::game('nba');
+    // MySQL auto-increments survive rolled-back tests; construct the collision explicitly.
+    $legacy->forceFill(['id' => $native->id, 'predicted_spread' => 77])->save();
     expect($legacy->id)->toBe($native->id);
-    $legacy->update(['predicted_spread' => 77]);
     config(['prediction_lifecycle.canonical_reads.nba' => true]);
     $input = app(PredictionReviewInputBuilder::class)->forGame($game, 'nba');
 

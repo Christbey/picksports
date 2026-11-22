@@ -29,6 +29,7 @@ class PredictionReviewRunner
         private readonly PredictionReviewDecisionPolicy $policy,
         private readonly SportContextResolver $sports,
         private readonly AiProviderRateLimitCircuitBreaker $circuit,
+        private readonly NbaReviewReuse $nbaReuse,
     ) {}
 
     public function run(AnalysisWorkItem $item): string
@@ -96,10 +97,10 @@ class PredictionReviewRunner
             $current = $latestInput !== null && $this->fingerprints->forInput($latestInput, $latestEvidence)['fingerprint'] === $fingerprint;
             $decision = $this->policy->constrain($input, $output);
             $hashes = $this->fingerprints->forInput($input, $evidence);
-            $applicable = DB::transaction(function () use ($item, $generation, $output, $decision, $hashes, $current, $token): bool {
+            $applicable = DB::transaction(function () use ($item, $generation, $output, $decision, $hashes, $current, $token, $evidence): bool {
                 $locked = AnalysisWorkItem::lockForUpdate()->findOrFail($item->id);
                 $applicable = $current && $locked->desired_fingerprint === $item->desired_fingerprint && $locked->lease_token === $token;
-                PredictionReviewRevision::firstOrCreate(['ai_generation_id' => $generation->id], [
+                $revision = PredictionReviewRevision::firstOrCreate(['ai_generation_id' => $generation->id], [
                     'analysis_work_item_id' => $item->id, 'sport_event_id' => $item->sport_event_id,
                     'canonical_prediction_id' => data_get($item->input_payload, 'identity.source') === 'canonical' ? data_get($item->input_payload, 'identity.prediction_id') : null,
                     'sport' => $item->sport, 'prediction_table' => data_get($item->input_payload, 'identity.prediction_table'),
@@ -111,6 +112,7 @@ class PredictionReviewRunner
                     'expires_at' => min($item->deadline_at, now()->addMinutes(max(1, (int) config('prediction_review.valid_minutes', 360)))), 'created_at' => now(),
                 ]);
                 if ($applicable) {
+                    $this->nbaReuse->record($revision, $evidence);
                     $locked->update(['state' => 'succeeded', 'reason_code' => null, 'lease_token' => null, 'lease_expires_at' => null]);
                 }
 

@@ -21,6 +21,7 @@ class CurrentPredictionReview
         private readonly PredictionReviewDecisionPolicy $decisions,
         private readonly GameResearchService $research,
         private readonly SportsAiPublishingDecisionPolicy $nflPolicy,
+        private readonly NbaReviewReuse $nbaReuse,
     ) {}
 
     /** @return array<string, mixed> */
@@ -39,7 +40,8 @@ class CurrentPredictionReview
             return [...$empty, 'reason_code' => 'selected_forecast_unavailable'];
         }
         $evidence = $this->research->forGame($game, $sport);
-        $fingerprint = $this->fingerprints->forInput($input, $evidence)['fingerprint'];
+        $hashes = $this->fingerprints->forInput($input, $evidence);
+        $fingerprint = $hashes['fingerprint'];
         $work = AnalysisWorkItem::query()->where('sport', $sport)
             ->where('game_table', $game->getTable())->where('game_id', $game->getKey())
             ->where('stage', 'prediction_review')->first();
@@ -49,6 +51,7 @@ class CurrentPredictionReview
         $revision = PredictionReviewRevision::query()->where('analysis_work_item_id', $work->id)
             ->where('applicability', 'current')
             ->where('desired_fingerprint', $fingerprint)->orderByDesc('id')->first();
+        $revision ??= $this->nbaReuse->current($work, $hashes, $evidence, includeExpired: true);
         if ($revision !== null && $revision->expires_at?->isFuture()
             && ! $revision->created_at?->isFuture()) {
             $output = (array) $revision->output;

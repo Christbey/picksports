@@ -79,6 +79,8 @@ On upstream error, retain last-good evidence only through its original validity.
 
 ## 4. Prevent duplicate paid interpretations
 
+An NBA-only, default-off identical-content reuse candidate is now implemented locally. See [the implementation and rollout contract](nba-review-provenance-reuse.md). It retains full provenance and the existing exact fingerprint; broader claim-only material deduplication is deferred. No production reuse activation or automation change has occurred.
+
 Current [StoredGameEvidence](../../app/Services/Research/StoredGameEvidence.php) and [ReviewFingerprint](../../app/Services/Predictions/Review/ReviewFingerprint.php) include document/provenance identities and times. New receipts can therefore invalidate paid review even with unchanged material facts.
 
 Separate versioned material identity from provenance:

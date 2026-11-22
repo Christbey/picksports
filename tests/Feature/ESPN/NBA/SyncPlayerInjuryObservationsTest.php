@@ -10,6 +10,7 @@ use App\Models\NBA\Team;
 use App\Services\ESPN\BaseEspnService;
 use App\Services\NBA\Injuries\InjuryFeedClient;
 use App\Services\NBA\Injuries\InjurySnapshotRecorder;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -291,3 +292,31 @@ it('keeps unselected or expired teams on the legacy path without capture side ef
         ->and(DB::table('nba_injury_team_states')->count())->toBe(0);
     Http::assertNothingSent();
 })->with(['unselected', 'empty', 'expired']);
+
+it('can manually capture complete NBA observations overnight when explicitly admitted without scheduling work', function (string $time) {
+    $this->travelTo(CarbonImmutable::parse($time));
+    config(['nba.injuries.canary_expires_at' => now()->addHours(2)->toIso8601String()]);
+    $entry = [...$this->entry, 'date' => now()->subDay()->utc()->toIso8601String()];
+    Http::fake([$this->url => Http::response(['count' => 1, 'items' => [$entry]])]);
+    $nflSchema = Schema::getColumns('nfl_player_injuries');
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    expect($this->sync->execute('23'))->toBe(1);
+    $receipt = PlayerInjuryObservation::query()->sole();
+    expect($receipt->outcome)->toBe('complete')->and($receipt->projection_applied)->toBeTrue()
+        ->and($receipt->observed_at->timestamp)->toBe(now()->timestamp)
+        ->and($receipt->cache_hit)->toBeFalse()->and($receipt->issues)->toBe([])
+        ->and(Schema::getColumns('nfl_player_injuries'))->toBe($nflSchema);
+    expect(collect(DB::getQueryLog())->contains(fn ($query) => preg_match('/^\s*(insert|update|delete).*\bnfl_/i', $query['query'])))->toBeFalse();
+    DB::disableQueryLog();
+    Http::assertSentCount(1);
+    Queue::assertNothingPushed();
+})->with([
+    'midnight' => '2026-11-22T00:02:00-06:00',
+    'overnight' => '2026-11-22T03:32:00-06:00',
+    'before daytime acquisition' => '2026-11-22T07:32:00-06:00',
+    'spring DST before jump' => '2026-03-08T01:32:00-06:00',
+    'spring DST after jump' => '2026-03-08T03:02:00-05:00',
+    'fall DST first hour' => '2026-11-01T01:32:00-05:00',
+    'fall DST repeated hour' => '2026-11-01T01:32:00-06:00',
+]);

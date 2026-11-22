@@ -2,7 +2,7 @@
 
 Updated November 21, 2026. **Use existing structured injury data first; PDF handling is optional.** This replaces the November 20 PDF-first proposal. The [structured feed audit](nba-structured-injury-feed-audit.md) records deployed code and read-only production evidence. NBA research/manual AI review are live; shared analysis scheduling and publisher dispatch remain off until the replacement flow is verified.
 
-The NBA timestamp/snapshot foundation is now implemented locally behind `NBA_INJURY_OBSERVATIONS_ENABLED=false`; see the [implementation and verification record](nba-injury-observation-implementation.md). It is not deployed or activated. The NBA ordering and structured adapter are also now implemented locally behind disabled gates; see the [adapter record](nba-structured-research-adapter.md). Automation, release promotion and paid-review material deduplication remain gated. Production settings, NFL behavior and provider schedules are unchanged.
+The NBA timestamp/snapshot foundation, acquisition ordering, structured adapter and identical-content review reuse are deployed in `4df92d68`. The limited BOS/SAC injury-observation reuse canary passed with one paid review and no second purchase; source admission retains its original November 21, 7:55:04 p.m. Central expiry. Shared analysis automation remains off. The full-context `nba-context-v2` identity fix is now verified locally but not deployed. [The context identity and overnight audit](nba-context-identity-overnight-2026-11-21.md) records the new candidate and the failed overnight coverage gate. NFL and provider schedules remain unchanged.
 
 ## What replaces the official report source?
 
@@ -79,7 +79,7 @@ On upstream error, retain last-good evidence only through its original validity.
 
 ## 4. Prevent duplicate paid interpretations
 
-An NBA-only, default-off identical-content reuse candidate is now implemented locally. See [the implementation and rollout contract](nba-review-provenance-reuse.md). It retains full provenance and the existing exact fingerprint; broader claim-only material deduplication is deferred. No production reuse activation or automation change has occurred.
+NBA-only identical-content reuse is deployed and its limited injury-observation canary passed. See [the implementation contract](nba-review-provenance-reuse.md). The new [full-context identity fix and overnight audit](nba-context-identity-overnight-2026-11-21.md) passes cross-packet reuse locally; production promotion remains pending. Full provenance and the existing exact fingerprint remain authoritative; broad claim-only deduplication is deferred. Analysis automation remains off.
 
 Current [StoredGameEvidence](../../app/Services/Research/StoredGameEvidence.php) and [ReviewFingerprint](../../app/Services/Predictions/Review/ReviewFingerprint.php) include document/provenance identities and times. New receipts can therefore invalidate paid review even with unchanged material facts.
 
@@ -96,9 +96,9 @@ Preserve paid timestamp, generation and accounting. If a new provenance associat
 
 ## 5. Scheduling, health and application flow
 
-The existing NBA provider schedule runs at minute 2/32 within 08:00–23:00 Central. Its last normal dispatch is 22:32, then 08:02. Before promising two-hour coverage, define and verify NBA-specific overnight/pregame acquisition behavior. Leave NFL schedules unchanged.
+The existing NBA provider schedule runs at minute 2/32 within 08:00–23:00 Central. Its last normal dispatch is 22:32, then 08:02. The live 14-day audit found zero overnight injury-command heartbeats and no context/assessment bridge. Overnight coverage therefore fails verification. Define and verify the [bounded source-only trial](nba-context-identity-overnight-2026-11-21.md) before promising two-hour coverage. Leave NFL schedules unchanged.
 
-Proposed `NBA_RESEARCH_SOURCE_REFRESH_ENABLED=false` controls the new verified-observation-to-assessment workflow independently of paid analysis. **Implemented locally, default off; the explicit command is `nba:refresh-injury-research`. No scheduler/listener was added.** Enable source-only operation first; both existing analysis automation flags remain false.
+Proposed `NBA_RESEARCH_SOURCE_REFRESH_ENABLED=false` controls the new verified-observation-to-assessment workflow independently of paid analysis. **Implemented and deployed, default off; production admission is limited by the existing two-team/expiry gate. The explicit command is `nba:refresh-injury-research`. No scheduler/listener was added.** Enable source-only operation first; both existing analysis automation flags remain false.
 
 - Persist completion after actual team acquisition, not when the dispatch command returns success. Overall job success cannot hide partial team failures.
 - Process new verified observations after commit with idempotent, bounded batches and overlap/lease protection. Reuse workers only after capacity review; a queue must have a consumer before it is enabled.

@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Schema;
 /** Descriptive, stored NBA context. Historical minutes and projected depth are never confirmed lineups. */
 class GameContextEvidence
 {
-    public const VERSION = 'nba-context-v1';
+    public const VERSION = 'nba-context-v2';
 
     public function build(Game $game, ?CarbonInterface $cutoff, array $availability = []): array
     {
@@ -64,6 +64,7 @@ class GameContextEvidence
             $sample = $past->take($hasRawHistory ? 3 : 5);
             $totals = [];
             $refs = [];
+            $contentRefs = [];
             $valid = $sample->count() >= 3;
             foreach ($sample as $prior) {
                 if ($prior->status !== 'STATUS_FINAL' || ($prior->completed_at && ($prior->completed_at->gte($cutoff) || $prior->completed_at->isFuture()))) {
@@ -88,6 +89,9 @@ class GameContextEvidence
                     foreach ($minutes as $id => $value) {
                         $totals[$id] = ($totals[$id] ?? 0) + $value;
                     }
+                    // Content identity must survive a new immutable receipt of the same raw body.
+                    $contentRefs[] = ['game_id' => $prior->id, 'provider_event_id' => $prior->espn_event_id,
+                        'content_hash' => app(CanonicalPayloadHasher::class)->hash($raw['payload'])];
                     $refs[] = 'nba_research_context_snapshots:'.$packet->id.'#/responses/'.$historyKey.'/payload/boxscore/players';
                     $r['sources'][] = $this->source($packet, $raw);
 
@@ -106,6 +110,7 @@ class GameContextEvidence
                     $sum += $value;
                     $minutes[$stat->player_id] = $value;
                     $refs[] = 'nba_player_stats:'.$stat->id;
+                    $contentRefs[] = ['stat_id' => $stat->id, 'game_id' => $prior->id, 'player_id' => $stat->player_id, 'minutes' => $value];
                 }
                 $expected = 240 + max(0, (int) $prior->period - 4) * 25;
                 if ($sum < $expected - 3 || $sum > $expected + 3 || $stats->count() < 5) {
@@ -201,7 +206,7 @@ class GameContextEvidence
             if ($last || $valid) {
                 $r['sources'][] = ['url' => $base['source_url'], 'title' => $base['source_label'], 'publisher' => 'PickSports', 'provider' => 'picksports',
                     'source_scope' => 'historical_team_context', 'parser_version' => self::VERSION, 'observed_at' => null, 'published_at' => null,
-                    'content_hash' => app(CanonicalPayloadHasher::class)->hash([$last?->only(['id', 'season', 'season_type', 'status', 'game_date', 'game_time', 'venue_city']), $totals, $refs])];
+                    'content_hash' => app(CanonicalPayloadHasher::class)->hash([$last?->only(['id', 'season', 'season_type', 'status', 'game_date', 'game_time', 'venue_city']), $totals, $contentRefs])];
             }
         }
 

@@ -89,6 +89,8 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 - Sync futures odds every 4 hours between `08:00` and `23:00`
 - Run NBA EPA lifecycle jobs via `scheduleEpaLifecycle()`
 
+NBA research coverage audit (November 21): injury dispatch is actually at **:02/:32**, last **22:32**, next **08:02**. The 9.5-hour gap does not satisfy continuous two-hour research freshness. No overnight injury heartbeat or scheduled context/assessment bridge was verified. Shared analysis automation stays off; see [the identity fix and overnight audit](docs/operations/nba-context-identity-overnight-2026-11-21.md). No schedule change was made.
+
 ### CBB
 
 - Active October–April, including schedule preparation before opening day. Uses the ending-year season and the five-minute pregame coverage check described above.

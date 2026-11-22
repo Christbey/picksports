@@ -64,3 +64,5 @@ This documentation pass checked repository scripts, dependency manifests, databa
 - [NBA expanded context research](operations/nba-expanded-context-research.md): explicitly captured lineup projections/starter flags, historical rotation, and schedule-based rest/travel within the existing canary scope.
 
 - [NBA identical-content review reuse candidate](operations/nba-review-provenance-reuse.md): default-off append-only provenance revalidation with original paid validity and NFL compatibility preserved.
+
+- [NBA context identity fix and overnight audit](operations/nba-context-identity-overnight-2026-11-21.md): cross-packet reuse verification, failed overnight coverage gate and source-only trial requirements; automation remains off.

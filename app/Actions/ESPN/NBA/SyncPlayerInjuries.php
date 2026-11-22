@@ -36,14 +36,21 @@ class SyncPlayerInjuries extends AbstractSyncPlayerInjuries
 
     private array $references = [];
 
-    public function execute(string $teamEspnId): int
+    public function execute(string $teamEspnId, bool $requireCapture = false): int
     {
         $this->capturing = (bool) config('nba.injuries.observations_enabled', false);
         if (! $this->capturing) {
+            if ($requireCapture) {
+                throw new \RuntimeException('NBA structured capture is required.');
+            }
+
             return parent::execute($teamEspnId);
         }
         $team = $this->findTeamByEspnId($teamEspnId);
         if (! $team || ! app(InjuryCanaryScope::class)->allowsTeam((int) $team->id)) {
+            if ($requireCapture) {
+                throw new \RuntimeException('NBA structured capture admission denied.');
+            }
             $this->capturing = false;
 
             return parent::execute($teamEspnId);

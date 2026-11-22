@@ -66,3 +66,5 @@ This documentation pass checked repository scripts, dependency manifests, databa
 - [NBA identical-content review reuse candidate](operations/nba-review-provenance-reuse.md): default-off append-only provenance revalidation with original paid validity and NFL compatibility preserved.
 
 - [NBA context identity fix and overnight audit](operations/nba-context-identity-overnight-2026-11-21.md): cross-packet reuse verification, failed overnight coverage gate and source-only trial requirements; automation remains off.
+
+- [NBA overnight source bridge release candidate](operations/nba-overnight-source-bridge-rc-2026-11-21.md): disabled NBA acquisition/assessment, isolated worker, context identity fix, tested overnight/DST behavior and deployment gates.

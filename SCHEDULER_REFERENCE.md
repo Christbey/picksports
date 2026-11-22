@@ -89,7 +89,7 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 - Sync futures odds every 4 hours between `08:00` and `23:00`
 - Run NBA EPA lifecycle jobs via `scheduleEpaLifecycle()`
 
-NBA research coverage audit (November 21): injury dispatch is actually at **:02/:32**, last **22:32**, next **08:02**. The 9.5-hour gap does not satisfy continuous two-hour research freshness. No overnight injury heartbeat or scheduled context/assessment bridge was verified. Shared analysis automation stays off; see [the identity fix and overnight audit](docs/operations/nba-context-identity-overnight-2026-11-21.md). No schedule change was made.
+NBA daytime injury dispatch remains **:02/:32**, last **22:32**, next **08:02**. The candidate adds a separately disabled source-only supplement: `NBA_OVERNIGHT_SOURCE_BRIDGE_ENABLED=false` gates **:12/:42, 23:00–07:59 Central**, via a unique Redis **`nba-sources`** job. It acquires admitted team observations and assesses at most one approved game within eight hours, without invoking paid analysis. It needs a dedicated worker and an explicit unexpired team scope. Both shared analysis automation flags remain false. The prior live audit found the 9.5-hour gap; a real overnight cycle is still unverified. See [the bridge release candidate and activation gates](docs/operations/nba-overnight-source-bridge-rc-2026-11-21.md). NFL and existing daytime schedules are unchanged.
 
 ### CBB
 

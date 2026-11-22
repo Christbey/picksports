@@ -2,6 +2,9 @@
 
 return [
 
+    // Source-only overnight bridge; independent of paid analysis automation.
+    'source_bridge' => ['enabled' => (bool) env('NBA_OVERNIGHT_SOURCE_BRIDGE_ENABLED', false)],
+
     // Additive evidence capture; does not enable research/review scheduling or PDF acquisition.
     'injuries' => [
         'research_adapter_enabled' => (bool) env('NBA_RESEARCH_SOURCE_REFRESH_ENABLED', false),

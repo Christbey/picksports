@@ -1,0 +1,87 @@
+{
+  "schema_version": "nba_overnight_source_rc_v1",
+  "branch": "codex/nba-overnight-source-rc",
+  "production_base": "4df92d6802cb8ba1356ad888d500347b4f2c6b56",
+  "included_context_identity_commit": "94d787a43b2a48ac1db84a5e30c61e602dfe560d",
+  "deployed": false,
+  "new_flag": {
+    "name": "NBA_OVERNIGHT_SOURCE_BRIDGE_ENABLED",
+    "default": false
+  },
+  "source_contract": {
+    "team_cap": 2,
+    "event_cap": 1,
+    "event_horizon_hours": 8,
+    "fetch_slot_cap": 24,
+    "global_lease_seconds": 660,
+    "worker_connection": "redis",
+    "worker_queue": "nba-sources",
+    "worker_timeout_seconds": 600,
+    "worker_tries": 1,
+    "worker_unique_seconds": 720,
+    "schedule_cron": "12,42 * * * *",
+    "window": "23:00-07:59 America/Chicago",
+    "source_completion_heartbeat": "nba_source_bridge",
+    "worker_completion_heartbeat": "nba_source_worker",
+    "ai_review_or_forecast_generation": false
+  },
+  "verification": {
+    "sqlite": {
+      "tests": 320,
+      "assertions": 2097,
+      "passed": true
+    },
+    "mysql": {
+      "version": "8.4.6",
+      "tests": 320,
+      "assertions": 2097,
+      "passed": true,
+      "cleanup": "Disposable database dropped, socket-only server stopped, temporary data removed"
+    },
+    "pint": "passed",
+    "diff_check": "passed",
+    "frontend": "No frontend/API shape or permission changes; no frontend build required",
+    "migrations_added": 0,
+    "nfl_code_changes": false,
+    "nfl_schedule_definitions": "Identical before and after the new gate in schedule regression cases"
+  },
+  "production_read_only": {
+    "observed_at": "2026-11-21T20:33:06-06:00",
+    "bridge_enabled": false,
+    "analysis_scheduler": false,
+    "analysis_publisher": false,
+    "capture": true,
+    "adapter": true,
+    "reuse": true,
+    "source_team_ids": [
+      "2",
+      "26"
+    ],
+    "source_expires": "2026-11-22T01:55:04+00:00",
+    "migrations": 356,
+    "bridge_command_exists": false
+  },
+  "production_command_id": "comm-a3486e01-7bfa-4d79-9e80-0f2ec81a79d7",
+  "production_settings_or_workers_changed": false,
+  "live_sports_provider_requests": 0,
+  "live_openai_requests": 0,
+  "verification_limits": [
+    "No production deployment or activation",
+    "No actual overnight network/worker cycle",
+    "Dedicated worker capacity/redelivery prerequisites require review",
+    "Current team scope was not extended or renewed"
+  ],
+  "files_sha256": {
+    ".env.example": "0d0fafa02d477587be34b28dd0c6f9e6ef0541df71c202d47efecf86b03ef4d9",
+    "app/Actions/ESPN/NBA/SyncPlayerInjuries.php": "1633df11027c96abb36c6a8fcda66c1165cbc627f97a35999d2087acc3198e28",
+    "app/Services/NBA/Research/GameContextEvidence.php": "26277f6ab2b276d50ca586fcad2885b435514b2485bda63c93dfe2c4cd851287",
+    "app/Services/NBA/Injuries/BoundedInjuryFeedClient.php": "1fa7ce50477ae9524944a6c0ab8dccf956b8c9a627f4df4c1c70c1906ea7d0f0",
+    "app/Services/NBA/Research/OvernightSourceBridge.php": "74c7d388a495f0bb4c5f00b63f00818539fedb1804622d361de1f7e31a13727f",
+    "app/Console/Commands/Sports/RefreshNbaOvernightSourcesCommand.php": "ff97fcc77dca689d2aeac1420bed1b43372625f29f80aa551082573c979d6300",
+    "app/Jobs/NBA/RefreshOvernightSources.php": "28224d81f98cfb374f5198b4d45ab39c3c381eda4db3919ea29a84a05992feda",
+    "config/nba.php": "bf155a11e75db70c9f5b649d1ee5224e8cfebf6e90712fad17f9a02f269cf63e",
+    "routes/console.php": "0af6f8d1ee5c59c278676a90e535bfc1ae93c472569e83211891425dc36d18e6",
+    "tests/Feature/Research/NbaOvernightSourceBridgeTest.php": "7679e02880703e9d3857e4fa928c71e9ff975503d2f0017a9e5b3fa24d3920e2",
+    "tests/Feature/Scheduling/NbaOvernightSourceBridgeScheduleTest.php": "fcfcbe87d5afc2433b2a3f8d509c93c4b3373a198481eaa228fa0383d8a81d56"
+  }
+}

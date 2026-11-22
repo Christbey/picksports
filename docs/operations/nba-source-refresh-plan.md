@@ -96,6 +96,8 @@ Preserve paid timestamp, generation and accounting. If a new provenance associat
 
 ## 5. Scheduling, health and application flow
 
+The [NBA overnight source bridge candidate](nba-overnight-source-bridge-rc-2026-11-21.md) is now implemented and verified locally together with the context identity fix. `NBA_OVERNIGHT_SOURCE_BRIDGE_ENABLED=false` is independent of paid analysis, uses a dedicated `nba-sources` worker, retains explicit two-team/expiry/source approval, and records actual acquisition/assessment completion. It is not deployed or activated. The original live overnight coverage gate remains open until a reviewed real cycle succeeds.
+
 The existing NBA provider schedule runs at minute 2/32 within 08:00–23:00 Central. Its last normal dispatch is 22:32, then 08:02. The live 14-day audit found zero overnight injury-command heartbeats and no context/assessment bridge. Overnight coverage therefore fails verification. Define and verify the [bounded source-only trial](nba-context-identity-overnight-2026-11-21.md) before promising two-hour coverage. Leave NFL schedules unchanged.
 
 Proposed `NBA_RESEARCH_SOURCE_REFRESH_ENABLED=false` controls the new verified-observation-to-assessment workflow independently of paid analysis. **Implemented and deployed, default off; production admission is limited by the existing two-team/expiry gate. The explicit command is `nba:refresh-injury-research`. No scheduler/listener was added.** Enable source-only operation first; both existing analysis automation flags remain false.

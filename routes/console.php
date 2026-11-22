@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\NBA\RefreshOvernightSources;
 use App\Models\ApiIdempotencyKey;
 use App\Models\CommandHeartbeat;
 use App\Models\NFL\Game;
@@ -1565,3 +1566,9 @@ foreach ([
         ->onOneServer()->withoutOverlapping(15)->runInBackground()->name($name);
     $attachCommandHeartbeat($event, $command, $name);
 }
+
+// A separate source queue preserves existing NFL worker capacity. Disabled by default.
+Schedule::job(new RefreshOvernightSources)->cron('12,42 * * * *')->timezone('America/Chicago')
+    ->between('23:00', '07:59')->when($nbaInSeason)
+    ->when(fn (): bool => (bool) config('nba.source_bridge.enabled', false))
+    ->onOneServer()->withoutOverlapping(12)->name('NBA: Overnight Source Acquisition');

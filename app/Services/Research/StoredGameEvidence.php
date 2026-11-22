@@ -5,6 +5,7 @@ namespace App\Services\Research;
 use App\Models\ResearchDocument;
 use App\Services\NBA\Injuries\InjuryCanaryScope;
 use App\Services\NBA\Injuries\StructuredInjuryEvidence;
+use App\Services\NBA\Research\GameContextEvidence;
 use App\Services\Predictions\CanonicalPayloadHasher;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Database\Eloquent\Model;
@@ -85,6 +86,16 @@ class StoredGameEvidence
                 }
                 $coverage['availability'][$side] = $coverage['availability'][$side] || $structured['coverage'][$side];
             }
+            $context = app(GameContextEvidence::class)->build($game, $cutoff, $structured['facts']);
+            foreach ($context['coverage'] as $topic => $sides) {
+                foreach ($sides as $side => $available) {
+                    $coverage[$topic][$side] = $coverage[$topic][$side] || $available;
+                }
+            }
+            $concerns = [...$concerns, ...$context['concerns']];
+            $neutral = [...$neutral, ...$context['facts']];
+            $sources = [...array_values($sources), ...$context['sources']];
+            $structuredUnresolved = [...$structuredUnresolved, ...$context['unresolved']];
             $neutral = [...$neutral, ...$structured['facts']];
             $sources = [...array_values($sources), ...$structured['sources']];
             $structuredUnresolved = [...$structuredUnresolved, ...$structured['unresolved']];

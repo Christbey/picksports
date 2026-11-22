@@ -1,0 +1,22 @@
+# NBA lineup, rotation and rest/travel research
+
+The expansion remains inside the existing two-team expiring canary. It adds no schedule, publisher, AI call, model adjustment or approval writer, and changes no NFL code. PDFs remain optional.
+
+`nba:capture-research-context <NBA_GAME_ID>` is a new explicit acquisition command. It requires both feature flags, approved NBA research capability, an unexpired two-team scope, a future canonical NBA event, and a separately registered `structured_espn` source key `espn-nba-context:<ESPN_EVENT_ID>` with no team ID. Register its summary URL with both exact approved ESPN hosts. Three bounded responses are captured: the selected event summary and the current-season depth chart for each participating team. There is no recursive reference expansion. Transport errors remain in immutable raw snapshots and cause a failed command exit; they do not silently promote a previous successful packet.
+
+The additive `nba_research_context_snapshots` table retains raw response envelopes and original fetch times with the exact game/event/season/team/kickoff identity. The application rejects model-level mutation/deletion. A per-game cache lease serializes explicit captures; three 20-second HTTP deadlines fit inside its 90-second lease. All provider host, path and response-size limits reuse the NBA acquisition client. Reading or assessing stored research never invokes this capture command or fetches a source.
+
+Lineup findings distinguish:
+
+- **Event-reported starters**: exactly five unique, roster-mapped athlete rows with explicit boolean starter flags, only when the summary header ID, both provider team IDs and event time match the selected canonical NBA event.
+- **Projected current-season depth-chart starters**: exactly five unique mapped rank-one athletes from a complete, single-page current-season chart. These are labeled projections, not confirmed game starters. A missing confirmed five remains an explicit unresolved question even when projected lineup context is available. An Out/Doubtful availability conflict adds a concern and unresolved limitation, never silently substitutes a replacement.
+
+Old season-2026 depth rows found in production are not refreshed or reused as current evidence. Captured context uses the original network observation time and a two-hour freshness ceiling, bounded by kickoff and the canary scope. Source revocation, packet identity changes, incomplete mappings and missing starter flags cannot produce confirmed lineups. Injury dates do not become publication times.
+
+Rotation uses up to five recent current-season/type team games, at least three, all explicitly final and before both the target kickoff and now. Numeric minutes and MM:SS values are supported. Five-player team totals must fit regulation/overtime minutes within rounding tolerance; unknown minutes, incomplete box scores or changed roster mappings keep coverage incomplete. Averages use team games as the denominator, with absence counted as zero. Findings are historical usage, not a coach's future rotation or guaranteed playing time.
+
+Rest/travel uses the most recent stored prior game only when it is explicitly final; a missing/unresolved intervening game is not skipped. It reports full Central-calendar days and hours **between tipoffs**, plus the stored venue-city sequence. It does not infer actual recovery hours, flights, distance or itinerary. Missing venue information remains unavailable.
+
+Historical schedule/box-score sources are labeled stored PickSports evidence with original row references. Their dates are not refreshed to now or treated as live reports; observation/publication time is null and the research hash includes the material stored inputs. Research expiry remains anchored by the actual fresh availability/context sources and pregame policy. Material historical corrections invalidate the descriptive assessment through its evidence hash.
+
+The existing manual `nba:refresh-injury-research <NBA_GAME_ID>` reads this context together with availability. Lineup coverage means grounded context is present, not necessarily a confirmed five; the explicit confirmation question still prevents a complete assessment. No supporting betting argument is fabricated to clear the two-sided research requirement. Partial research must remain partial until its actual gaps are resolved.

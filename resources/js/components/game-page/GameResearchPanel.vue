@@ -224,7 +224,15 @@ const reviewLabels: Record<string, string> = {
                             v-if="finding.evidence_kind === 'structured'"
                             class="text-xs text-muted-foreground"
                         >
-                            · {{ finding.source_label }} · Team-wide observation
+                            · {{ finding.source_label }} ·
+                            {{
+                                finding.source_scope === 'event_reported_lineup'
+                                    ? 'Reported game starters'
+                                    : finding.source_scope ===
+                                        'projected_depth_chart'
+                                      ? 'Projected lineup'
+                                      : 'Team-wide observation'
+                            }}
                             <template v-if="finding.observed_at">
                                 · {{ finding.observed_at }}</template
                             >

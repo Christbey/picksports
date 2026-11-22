@@ -60,3 +60,5 @@ This documentation pass checked repository scripts, dependency manifests, databa
 - [NBA adapter release candidate](operations/nba-adapter-release-candidate-2026-11-21.md): live nonproduction end-to-end canary, isolated baseline, review evidence and unexecuted activation/rollback sequence.
 
 - [NBA team canary scope](operations/nba-team-canary-scope.md): two-team, expiring capture/research admission with unchanged nonselected NBA and NFL behavior.
+
+- [NBA expanded context research](operations/nba-expanded-context-research.md): explicitly captured lineup projections/starter flags, historical rotation, and schedule-based rest/travel within the existing canary scope.

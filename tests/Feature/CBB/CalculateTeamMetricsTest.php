@@ -281,6 +281,8 @@ it('calculates home and away splits', function () {
 });
 
 it('respects minimum games threshold', function () {
+    config()->set('cbb.metrics.minimum_games', 3);
+
     $minimumGames = config('cbb.metrics.minimum_games');
 
     // Create games less than minimum threshold
@@ -320,6 +322,8 @@ it('respects minimum games threshold', function () {
 });
 
 it('marks metrics as meeting minimum when threshold is met', function () {
+    config()->set('cbb.metrics.minimum_games', 3);
+
     $minimumGames = config('cbb.metrics.minimum_games');
 
     // Create exactly minimum games

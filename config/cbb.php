@@ -131,11 +131,10 @@ return [
         | are considered statistically valid and included in opponent adjustments.
         | Lower values expand the opponent network but may reduce accuracy.
         |
-        | Recommended: 5-8 games
-        | Current: 5 games (78 qualifying teams, MAE 6.57 vs KenPom)
+        | Current default: 3 completed games.
         |
         */
-        'minimum_games' => env('CBB_MINIMUM_GAMES', 5),
+        'minimum_games' => env('CBB_MINIMUM_GAMES', 3),
 
         /*
         |--------------------------------------------------------------------------

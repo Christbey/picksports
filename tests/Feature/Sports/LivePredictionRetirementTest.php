@@ -30,7 +30,7 @@ function liveRetirementFixture(string $sport = 'nba'): array
         'game_date' => now()->toDateString(), 'game_time' => '11:00:00',
     ]);
     $release = CalculationRelease::factory()->approved()->create(['sport' => $sport, 'phase' => 'pregame']);
-    $input = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id,
+    $input = EventInputSnapshot::factory()->create(['sport' => $sport, 'inputs' => ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]], 'sport_event_id' => $event->id,
         'phase' => 'pregame', 'pregame_safety_status' => 'verified', 'captured_at' => now(), 'cutoff_at' => $event->starts_at]);
     $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
         'calculation_release_id' => $release->id, 'status' => 'succeeded']);

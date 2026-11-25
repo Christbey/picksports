@@ -41,7 +41,7 @@ function canonicalAnalysisFixture(string $sport, ?CalculationRelease $release = 
         'phase' => 'pregame', 'pregame_safety_status' => 'verified', 'captured_at' => now(), 'cutoff_at' => now(),
         'inputs' => ['recommendation_context' => ['version' => NflRecommendationInputBuilder::VERSION,
             'outputs' => ['predicted_spread' => 4.0, 'predicted_total' => 9.0, 'win_probability' => 0.7], 'model_metadata' => ['source' => 'frozen-canonical']], 'pregame_market' => ['available' => true, 'captured_at' => now()->toIso8601String(),
-                'consensus' => ['spread' => ['line' => -2.5], 'total' => ['line' => 8.0]]], 'home' => ['elo' => 1550], 'away' => ['elo' => 1490],
+                'consensus' => ['spread' => ['line' => -2.5], 'total' => ['line' => 8.0]]], 'home' => ['team_id' => $game->home_team_id, 'elo' => 1550], 'away' => ['team_id' => $game->away_team_id, 'elo' => 1490],
             'pitching' => ['home' => ['elo' => 1600, 'espn_id' => '100'], 'away' => ['elo' => 1450, 'espn_id' => '200']]]]);
     $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
         'calculation_release_id' => $release->id, 'status' => 'succeeded']);
@@ -209,7 +209,7 @@ it('builds external research context from native primary markets without mutatin
     $before = $prediction->getRawOriginal();
     $context = app(SportsExternalGameContextBuilder::class)->build('nba', $game, $prediction);
     expect($context['available'])->toBeTrue()
-        ->and($context['context_adjusted_model']['predicted_spread'])->toBe(4.0)
-        ->and($context['context_adjusted_model']['predicted_total'])->toBe(9.0)
+        ->and($context['context_adjusted_model'])->toBeNull()
+        ->and($context['deterministic_adjustment'])->toMatchArray(['home_margin_points' => 0.0, 'total_points' => 0.0])
         ->and($prediction->fresh()->getRawOriginal())->toBe($before);
 });

@@ -44,7 +44,7 @@ function epaReportForecast(string $sport, string $variant = 'valid', mixed $appl
     if ($variant === 'precedence') {
         $metadata = ['true_epa' => ['true_epa_applied' => false, 'applied' => true]];
     }
-    $inputs = ['event' => ['starts_at' => match ($variant) {
+    $inputs = ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id], 'event' => ['starts_at' => match ($variant) {
         'missing_start' => null, 'kickoff_mismatch' => $start->copy()->addHour()->toIso8601String(), default => $start->toIso8601String()
     }],
         'recommendation_context' => ['version' => NflRecommendationInputBuilder::VERSION,

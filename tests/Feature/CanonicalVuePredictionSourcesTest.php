@@ -30,13 +30,13 @@ function vueCanonicalFixture(string $sport, float $homeLine = 4.5, float $homePr
     $namespace = strtoupper($sport);
     $gameClass = "App\\Models\\{$namespace}\\Game";
     $teamClass = "App\\Models\\{$namespace}\\Team";
-    $gameClass::factory()->create([
+    $game = $gameClass::factory()->create([
         'sport_event_id' => $event->id, 'season' => 2026,
         'game_date' => now()->utc()->toDateString(), 'game_time' => now()->addHour()->utc()->toTimeString(),
         'home_team_id' => $teamClass::factory(), 'away_team_id' => $teamClass::factory(),
         'status' => 'STATUS_SCHEDULED',
     ]);
-    $snapshot = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id]);
+    $snapshot = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id, 'inputs' => ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]]]);
     $run = CalculationRun::factory()->create([
         'sport_event_id' => $event->id, 'event_input_snapshot_id' => $snapshot->id, 'status' => 'succeeded',
     ]);

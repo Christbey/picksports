@@ -37,7 +37,7 @@ function gameReadRetirementFixture(string $sport, string $variant = 'valid'): ar
         'home_team_elo' => 1500, 'away_team_elo' => 1500, 'predicted_spread' => -20,
         'predicted_total' => 199.0, 'win_probability' => 0.1]);
     $release = CalculationRelease::factory()->approved()->create(['sport' => $sport, 'phase' => 'pregame']);
-    $input = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id,
+    $input = EventInputSnapshot::factory()->create(['sport' => $sport, 'inputs' => ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]], 'sport_event_id' => $event->id,
         'pregame_safety_status' => $variant === 'unsafe' ? 'unverified' : 'verified']);
     $run = CalculationRun::factory()->create(['sport_event_id' => $event->id,
         'calculation_release_id' => $release->id, 'event_input_snapshot_id' => $input->id, 'status' => 'succeeded']);

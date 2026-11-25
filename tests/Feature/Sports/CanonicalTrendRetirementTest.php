@@ -51,7 +51,7 @@ function trendRetirementFixture(string $sport, string $variant = 'valid', int $c
             'cutoff_at' => $variant === 'late_input' ? $start->addMinute() : $start->subHours(2),
             'latest_source_available_at' => $start->subHours(3),
             'source_timestamps' => ['ratings' => $start->subHours(3)->toIso8601String()],
-            'inputs' => ['home' => ['elo' => 1600], 'away' => ['elo' => 1600]]]);
+            'inputs' => ['home' => ['team_id' => $game->home_team_id, 'elo' => 1600], 'away' => ['team_id' => $game->away_team_id, 'elo' => 1600]]]);
         $run = CalculationRun::factory()->create(['sport_event_id' => $event->id,
             'event_input_snapshot_id' => $input->id, 'calculation_release_id' => $release->id, 'status' => 'succeeded']);
         $native = CanonicalPrediction::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id,

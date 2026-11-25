@@ -41,7 +41,7 @@ function selectionGame(string $sport, string $date, ?string $time, bool $canonic
     DB::table($game->getTable())->where('id', $game->id)->update(['game_date' => $date, 'game_time' => $time]);
 
     if ($canonical) {
-        $snapshot = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id]);
+        $snapshot = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id, 'inputs' => ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]]]);
         $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'event_input_snapshot_id' => $snapshot->id, 'status' => 'succeeded']);
         CanonicalPrediction::factory()->create([
             'sport' => $sport, 'sport_event_id' => $event->id, 'calculation_run_id' => $run->id,

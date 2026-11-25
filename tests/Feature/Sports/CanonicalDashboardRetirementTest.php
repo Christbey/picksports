@@ -38,7 +38,7 @@ function dashboardRetirementFixture(string $sport, int $daysForward = 0): array
         'game_date' => $start->toDateString(), 'game_time' => $start->toTimeString(), 'status' => 'STATUS_SCHEDULED',
         'home_team_id' => $teamClass::factory(), 'away_team_id' => $teamClass::factory()]);
     $release = CalculationRelease::factory()->approved()->create(['sport' => $sport, 'phase' => 'pregame']);
-    $input = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id]);
+    $input = EventInputSnapshot::factory()->create(['sport' => $sport, 'inputs' => ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]], 'sport_event_id' => $event->id]);
     $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
         'calculation_release_id' => $release->id, 'status' => 'succeeded']);
     $native = CanonicalPrediction::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id,

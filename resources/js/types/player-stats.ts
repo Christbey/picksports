@@ -85,6 +85,7 @@ export interface SportPlayerStatsShellConfig {
     breadcrumb: BreadcrumbItem;
     bannerStorageKey: string;
     showEpaColumns?: boolean;
+    showTeamFilter?: boolean;
     sortOptions?: SortOption[];
     statColumns?: StatColumn[];
     statCategoryOptions?: StatCategoryOption[];

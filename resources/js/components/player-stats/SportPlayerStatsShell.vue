@@ -17,6 +17,7 @@ const {
     players,
     fetchPlayers,
     searchQuery,
+    selectedTeamLabel,
     selectedSeasonType,
     sortDesc,
     selectedSeason,
@@ -81,6 +82,12 @@ const {
                             (option) => option.value === selectedSeasonType,
                         )?.label ?? selectedSeasonType
                     }}
+                </span>
+                <span
+                    v-if="config.showTeamFilter && selectedTeamLabel"
+                    class="ui-chip text-foreground/80"
+                >
+                    Team: {{ selectedTeamLabel }}
                 </span>
                 <span v-if="searchQuery" class="ui-chip text-foreground/80">
                     Search: "{{ searchQuery }}"

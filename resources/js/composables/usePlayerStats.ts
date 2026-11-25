@@ -21,6 +21,7 @@ export function usePlayerStats(props: PlayerStatsProps) {
     const loading = ref(true);
     const error = ref<string | null>(null);
     const searchQuery = ref('');
+    const selectedTeam = ref('');
     const selectedSeasonType = ref(props.config.defaultSeasonType ?? '');
     const sortBy = ref('points_per_game');
     const sortDesc = ref(true);
@@ -115,9 +116,35 @@ export function usePlayerStats(props: PlayerStatsProps) {
         return options;
     });
 
+    const teamOptions = computed(() => {
+        const teams = new Map<number, string>();
+        for (const entry of players.value) {
+            const team = entry.player?.team;
+            if (team) {
+                teams.set(
+                    team.id,
+                    team.display_name || team.name || team.abbreviation,
+                );
+            }
+        }
+        return [...teams]
+            .map(([id, label]) => ({ value: String(id), label }))
+            .sort((a, b) => a.label.localeCompare(b.label));
+    });
+
+    const selectedTeamLabel = computed(
+        () =>
+            teamOptions.value.find((team) => team.value === selectedTeam.value)
+                ?.label,
+    );
+
     const filteredPlayers = computed(() => {
         const eligiblePlayers = players.value.filter(
-            (player) => player.games_played >= activeMinGames.value,
+            (player) =>
+                player.games_played >= activeMinGames.value &&
+                (!props.config.showTeamFilter ||
+                    !selectedTeam.value ||
+                    String(player.player?.team?.id) === selectedTeam.value),
         );
         const categoryFilteredPlayers = activeCategory.value?.match
             ? eligiblePlayers.filter(
@@ -273,7 +300,16 @@ export function usePlayerStats(props: PlayerStatsProps) {
         }
     });
 
-    watch([searchQuery, sortBy, sortDesc, activeCategory], () => {
+    watch(teamOptions, (teams) => {
+        if (
+            selectedTeam.value &&
+            !teams.some((team) => team.value === selectedTeam.value)
+        ) {
+            selectedTeam.value = '';
+        }
+    });
+
+    watch([searchQuery, selectedTeam, sortBy, sortDesc, activeCategory], () => {
         visibleLimit.value = 100;
     });
 
@@ -290,6 +326,9 @@ export function usePlayerStats(props: PlayerStatsProps) {
         loading,
         error,
         searchQuery,
+        selectedTeam,
+        teamOptions,
+        selectedTeamLabel,
         selectedSeasonType,
         sortBy,
         sortDesc,

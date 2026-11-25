@@ -65,6 +65,7 @@ export const nbaPlayerStatsPageConfig = {
 };
 
 export const cbbPlayerStatsPageConfig = {
+    showTeamFilter: true,
     sport: 'cbb',
     pageTitle: 'CBB Player Stats',
     heading: 'CBB Player Stats',

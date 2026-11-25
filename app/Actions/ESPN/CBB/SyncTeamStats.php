@@ -7,6 +7,7 @@ use App\Models\CBB\Game;
 use App\Models\CBB\Team;
 use App\Models\CBB\TeamStat;
 use App\Services\CBB\CbbDataQuality;
+use App\Services\CBB\TeamScoringCredit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -26,6 +27,23 @@ class SyncTeamStats extends AbstractBasketballSyncTeamStats
         }
         if ($game->status !== 'STATUS_FINAL' && collect($gameData['boxscore']['teams'])->every(fn (array $team): bool => empty($team['statistics']))) {
             return 0;
+        }
+
+        if ($game instanceof Game && $game->status === 'STATUS_FINAL') {
+            foreach ($gameData['boxscore']['teams'] as &$section) {
+                $team = Team::where('espn_id', data_get($section, 'team.id'))->first();
+                if ($team === null) {
+                    continue;
+                }
+                $stats = $this->parseTeamStats($section['statistics'] ?? []);
+                $shootingPoints = 2 * ($stats['fieldGoalsMade'] ?? 0) + ($stats['threePointFieldGoalsMade'] ?? 0) + ($stats['freeThrowsMade'] ?? 0);
+                $final = $team->id === $game->home_team_id ? $game->home_score : $game->away_score;
+                $credit = $shootingPoints !== $final ? app(TeamScoringCredit::class)->points($game, (int) $team->id) : 0;
+                if ($credit > 0 && ! array_key_exists('points', $stats) && $shootingPoints + $credit === $final) {
+                    $section['statistics'][] = ['name' => 'points', 'displayValue' => (string) $final];
+                }
+            }
+            unset($section);
         }
 
         return DB::transaction(function () use ($gameData, $game): int {

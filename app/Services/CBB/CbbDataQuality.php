@@ -66,7 +66,8 @@ class CbbDataQuality
                 }
             }
             if ($stat->field_goals_made !== null && $stat->three_point_made !== null && $stat->free_throws_made !== null
-                && 2 * $stat->field_goals_made + $stat->three_point_made + $stat->free_throws_made !== (int) $stat->points) {
+                && 2 * $stat->field_goals_made + $stat->three_point_made + $stat->free_throws_made !== (int) $stat->points
+                && 2 * $stat->field_goals_made + $stat->three_point_made + $stat->free_throws_made + app(TeamScoringCredit::class)->points($game, (int) $teamId) !== (int) $stat->points) {
                 $issues[] = 'shooting_points_do_not_reconcile';
             }
         }

@@ -3,9 +3,11 @@
 namespace App\Actions\ESPN\CBB;
 
 use App\Actions\ESPN\AbstractBasketballSyncPlayerStats;
+use App\Models\CBB\Game;
 use App\Models\CBB\Player;
 use App\Models\CBB\PlayerStat;
 use App\Models\CBB\Team;
+use App\Services\CBB\TeamScoringCredit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -69,7 +71,10 @@ class SyncPlayerStats extends AbstractBasketballSyncPlayerStats
             if ($game->status === 'STATUS_FINAL') {
                 $totals = $game->playerStats()->selectRaw('team_id, sum(points) as points')->groupBy('team_id')->get()->keyBy('team_id');
                 foreach ([$game->home_team_id => $game->home_score, $game->away_team_id => $game->away_score] as $teamId => $score) {
-                    if ($score === null || ! $totals->has($teamId) || (int) $totals[$teamId]->points !== (int) $score) {
+                    if ($score !== null && $totals->has($teamId) && (int) $totals[$teamId]->points === (int) $score) {
+                        continue;
+                    }
+                    if ($score === null || ! $totals->has($teamId) || (int) $totals[$teamId]->points + ($game instanceof Game ? app(TeamScoringCredit::class)->points($game, (int) $teamId) : 0) !== (int) $score) {
                         throw new RuntimeException('Rejected incomplete CBB player box score: points do not match final.');
                     }
                 }

@@ -1,3 +1,4 @@
+import { defaultSportSeason } from '@/lib/sportSeason';
 import {
     computed,
     ref,
@@ -56,14 +57,10 @@ export function usePlayerStats(props: PlayerStatsProps) {
             : [];
 
         if (!selectedSeason.value && availableSeasons.value.length > 0) {
-            const currentYear = new Date().getFullYear();
-            const preferredSeason =
-                props.config.sport !== 'cbb' &&
-                availableSeasons.value.includes(currentYear)
-                    ? currentYear
-                    : Math.max(...availableSeasons.value);
-
-            selectedSeason.value = String(preferredSeason);
+            selectedSeason.value = defaultSportSeason(
+                props.config.sport,
+                availableSeasons.value,
+            );
         }
     };
 

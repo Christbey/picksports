@@ -279,7 +279,8 @@ test('ranking retries preserve selected season and local filters while retaining
     }
 });
 
-test('CBB defaults to the latest available season and team filtering combines with player search', async () => {
+test('CBB defaults to its current sport season and team filtering combines with player search', async (t) => {
+    t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-24T18:00:00Z').getTime() });
     const year = new Date().getFullYear();
     const calls = [];
     const entry = (id, name, teamId, teamName, abbreviation) => ({

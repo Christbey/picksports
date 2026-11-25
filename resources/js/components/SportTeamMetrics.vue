@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { defaultSportSeason } from '@/lib/sportSeason';
 import { Head, Link } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import RenderErrorBoundary from '@/components/RenderErrorBoundary.vue';
@@ -91,12 +92,10 @@ const fetchAvailableSeasons = async () => {
         : [];
 
     if (!selectedSeason.value && availableSeasons.value.length > 0) {
-        const currentYear = new Date().getFullYear();
-        const preferredSeason = availableSeasons.value.includes(currentYear)
-            ? currentYear
-            : Math.max(...availableSeasons.value);
-
-        selectedSeason.value = String(preferredSeason);
+        selectedSeason.value = defaultSportSeason(
+            sport.value,
+            availableSeasons.value,
+        );
     }
 };
 

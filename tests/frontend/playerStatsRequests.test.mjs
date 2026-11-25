@@ -278,3 +278,39 @@ test('ranking retries preserve selected season and local filters while retaining
         delete globalThis.__playerStatsApi;
     }
 });
+
+test('CBB defaults to the latest available season and team filtering combines with player search', async () => {
+    const year = new Date().getFullYear();
+    const calls = [];
+    const entry = (id, name, teamId, teamName, abbreviation) => ({
+        player_id: id,
+        games_played: 12,
+        points_per_game: id,
+        player: { full_name: name, team: { id: teamId, display_name: teamName, name: teamName, abbreviation } },
+    });
+    globalThis.__playerStatsApi = {
+        leaderboards: {
+            playerAvailableSeasons: async () => ({ data: [year, year + 1] }),
+            players: async (sport, options) => {
+                calls.push(options.query);
+                return { data: [entry(1, 'Alex One', 10, 'Duke Blue Devils', 'DUKE'), entry(2, 'Alex Two', 20, 'Kansas Jayhawks', 'KU')] };
+            },
+        },
+    };
+    const { app, state } = mount({ sport: 'cbb', showTeamFilter: true });
+    await flush();
+    assert.equal(state.selectedSeason.value, String(year + 1));
+    assert.equal(calls[0].season, String(year + 1));
+    assert.match(state.teamOptions.value.find((team) => team.value === '20').search, /KU/);
+    state.selectedTeam.value = '10';
+    state.visibleLimit.value = 200;
+    await nextTick();
+    assert.equal(state.visibleLimit.value, 100);
+    assert.deepEqual(state.sortedPlayers.value.map((row) => row.player_id), [1]);
+    state.searchQuery.value = 'Two';
+    assert.equal(state.sortedPlayers.value.length, 0);
+    state.selectedTeam.value = '';
+    assert.deepEqual(state.sortedPlayers.value.map((row) => row.player_id), [2]);
+    assert.equal(calls.length, 1);
+    app.unmount();
+});

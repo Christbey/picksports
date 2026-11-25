@@ -57,9 +57,11 @@ export function usePlayerStats(props: PlayerStatsProps) {
 
         if (!selectedSeason.value && availableSeasons.value.length > 0) {
             const currentYear = new Date().getFullYear();
-            const preferredSeason = availableSeasons.value.includes(currentYear)
-                ? currentYear
-                : Math.max(...availableSeasons.value);
+            const preferredSeason =
+                props.config.sport !== 'cbb' &&
+                availableSeasons.value.includes(currentYear)
+                    ? currentYear
+                    : Math.max(...availableSeasons.value);
 
             selectedSeason.value = String(preferredSeason);
         }
@@ -117,18 +119,20 @@ export function usePlayerStats(props: PlayerStatsProps) {
     });
 
     const teamOptions = computed(() => {
-        const teams = new Map<number, string>();
+        const teams = new Map<number, { label: string; search: string }>();
         for (const entry of players.value) {
             const team = entry.player?.team;
             if (team) {
-                teams.set(
-                    team.id,
-                    team.display_name || team.name || team.abbreviation,
-                );
+                teams.set(team.id, {
+                    label: team.display_name || team.name || team.abbreviation,
+                    search: [team.display_name, team.name, team.abbreviation]
+                        .filter(Boolean)
+                        .join(' '),
+                });
             }
         }
         return [...teams]
-            .map(([id, label]) => ({ value: String(id), label }))
+            .map(([id, team]) => ({ value: String(id), ...team }))
             .sort((a, b) => a.label.localeCompare(b.label));
     });
 
@@ -160,8 +164,13 @@ export function usePlayerStats(props: PlayerStatsProps) {
         return categoryFilteredPlayers.filter(
             (p) =>
                 p.player?.full_name?.toLowerCase().includes(query) ||
-                p.player?.team?.display_name?.toLowerCase().includes(query) ||
-                p.player?.team?.abbreviation?.toLowerCase().includes(query),
+                (!props.config.showTeamFilter &&
+                    (p.player?.team?.display_name
+                        ?.toLowerCase()
+                        .includes(query) ||
+                        p.player?.team?.abbreviation
+                            ?.toLowerCase()
+                            .includes(query))),
         );
     });
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PlayerStatsTeamSelect from './PlayerStatsTeamSelect.vue';
 import SeasonSelect from '@/components/SeasonSelect.vue';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -6,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { usePlayerStatsContext } from '@/composables/usePlayerStats';
 const {
     config,
+    loading,
     searchQuery,
     selectedTeam,
     teamOptions,
@@ -50,29 +52,21 @@ const {
                         </option>
                     </select>
                 </div>
-                <div v-if="config.showTeamFilter" class="space-y-2">
-                    <label for="player-stats-team" class="ui-kicker"
-                        >Team</label
-                    >
-                    <select
-                        id="player-stats-team"
-                        v-model="selectedTeam"
-                        class="flex h-10 w-full min-w-[180px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none"
-                    >
-                        <option value="">All teams</option>
-                        <option
-                            v-for="team in teamOptions"
-                            :key="team.value"
-                            :value="team.value"
-                        >
-                            {{ team.label }}
-                        </option>
-                    </select>
-                </div>
+                <PlayerStatsTeamSelect
+                    v-if="config.showTeamFilter"
+                    v-model="selectedTeam"
+                    :options="teamOptions"
+                    :disabled="loading"
+                />
                 <div class="min-w-[200px] flex-1">
                     <Input
                         v-model="searchQuery"
-                        placeholder="Search by player or team name..."
+                        :placeholder="
+                            config.showTeamFilter
+                                ? 'Search players...'
+                                : 'Search by player or team name...'
+                        "
+                        aria-label="Search players"
                         class="w-full"
                     />
                 </div>

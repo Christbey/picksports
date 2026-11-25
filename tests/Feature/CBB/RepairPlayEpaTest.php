@@ -107,3 +107,15 @@ test('repair can recover a completed box-scored game with no stored plays', func
     $this->artisan('cbb:repair-play-epa', ['--season' => 2027, '--limit' => 1, '--apply' => true])->assertSuccessful();
     expect(Play::query()->whereNotNull('true_epa')->count())->toBe(2);
 });
+
+test('an exact recovery allowlist excludes other newly eligible games', function () {
+    fakeCbbRepairFeed();
+    $extra = Game::factory()->create(['season' => 2027, 'season_type' => 2, 'status' => 'STATUS_FINAL', 'home_team_id' => $this->home->id, 'away_team_id' => $this->away->id]);
+    foreach ([$this->home, $this->away] as $team) {
+        TeamStat::factory()->create(['game_id' => $extra->id, 'team_id' => $team->id]);
+    }
+    $this->artisan('cbb:repair-play-epa', ['--season' => 2027, '--limit' => 1, '--game-ids' => (string) $this->game->id, '--apply' => true])->assertSuccessful();
+    expect(Play::query()->where('game_id', $extra->id)->count())->toBe(0)
+        ->and(Play::query()->where('game_id', $this->game->id)->whereNotNull('true_epa')->count())->toBe(2);
+    Http::assertSentCount(3);
+});

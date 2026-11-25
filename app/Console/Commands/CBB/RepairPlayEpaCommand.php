@@ -19,6 +19,7 @@ class RepairPlayEpaCommand extends Command
         {--after-game-id=0 : Resume after this game ID}
         {--through-game-id= : Upper bound for a disjoint recovery batch}
         {--game-id= : Repair one completed game}
+        {--game-ids= : Exact comma-separated allowlist of at most 50 game IDs}
         {--limit=10 : Maximum games per batch (1-50)}
         {--refresh-metrics : Refresh only covered existing team EPA aggregates, without provider calls}
         {--apply : Fetch complete feeds and persist repaired play EPA and team EPA}';
@@ -34,6 +35,21 @@ class RepairPlayEpaCommand extends Command
 
             return self::INVALID;
         }
+        $gameIds = [];
+        if ($this->option('game-ids') !== null) {
+            $rawIds = (string) $this->option('game-ids');
+            if (! preg_match('/^[1-9][0-9]*(,[1-9][0-9]*)*$/', $rawIds)) {
+                $this->error('Use comma-separated positive game IDs.');
+
+                return self::INVALID;
+            }
+            $gameIds = array_values(array_unique(array_map('intval', explode(',', $rawIds))));
+            if (count($gameIds) > 50 || count($gameIds) > $limit) {
+                $this->error('The exact allowlist must fit the batch limit (at most 50).');
+
+                return self::INVALID;
+            }
+        }
         if ($this->option('refresh-metrics')) {
             $updated = 0;
             if ($this->option('apply')) {
@@ -47,6 +63,7 @@ class RepairPlayEpaCommand extends Command
             return self::SUCCESS;
         }
         $query = Game::query()->where('season', $season)
+            ->when($gameIds !== [], fn ($query) => $query->whereIn('id', $gameIds))
             ->where('status', config('cbb.statuses.final'))
             ->whereHas('teamStats', fn ($query) => $query->whereColumn('team_id', 'cbb_games.home_team_id'))
             ->whereHas('teamStats', fn ($query) => $query->whereColumn('team_id', 'cbb_games.away_team_id'))

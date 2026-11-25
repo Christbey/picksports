@@ -23,3 +23,5 @@ Each game fetches a summary and complete play pages through the existing ESPN se
 Validate with `tests/Feature/CBB/RepairPlayEpaTest.php`, the CBB/NFL sync tests and shared atomic-ingestion tests. After deployment, start with one game and verify full play count, offense attribution, non-null play EPA and both teams' Net EPA before increasing batch size. Track repaired/failed games and remaining coverage; a successful command is not proof of complete league coverage.
 
 After all source batches, `php artisan cbb:repair-play-epa --refresh-metrics --apply` refreshes covered existing team EPA rows without any provider requests. Rows whose stored game count disagrees or whose game coverage remains incomplete have the three EPA fields held at null, including any earlier partial aggregate.
+
+For a reviewed recovery manifest, use `--game-ids=123,456 --limit=2 --apply`. This exact allowlist excludes newly eligible games inside the same ID range. Range bounds alone are not a fixed recovery manifest; do not use them to enforce an approved ID list.

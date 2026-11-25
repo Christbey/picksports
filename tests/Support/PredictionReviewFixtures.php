@@ -36,6 +36,10 @@ class PredictionReviewFixtures
             'game_date' => $event->starts_at->utc()->toDateString(), 'game_time' => $event->starts_at->utc()->toTimeString(),
             'status' => 'STATUS_SCHEDULED', 'odds_data' => ['bookmakers' => []],
         ]);
+        if ($sport === 'cbb') {
+            $inputs['home']['team_id'] ??= $game->home_team_id;
+            $inputs['away']['team_id'] ??= $game->away_team_id;
+        }
         $legacyAttributes = [
             'game_id' => $game->id,
             'predicted_spread' => $baseline['projection']['legacy_spread'],

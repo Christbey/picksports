@@ -49,7 +49,7 @@ it('keeps every prediction endpoint on the selected source without legacy fallba
         $this->getJson("{$base}/games/{$game->id}/page")->assertOk()->assertJsonPath('data.prediction', null);
     }
 
-    $snapshot = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id]);
+    $snapshot = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id, 'inputs' => ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]]]);
     $run = CalculationRun::factory()->create([
         'sport_event_id' => $event->id, 'event_input_snapshot_id' => $snapshot->id, 'status' => 'succeeded',
     ]);

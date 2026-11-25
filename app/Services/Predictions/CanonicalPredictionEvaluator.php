@@ -7,6 +7,7 @@ use App\Models\CanonicalPrediction;
 use App\Models\PredictionEvaluation;
 use App\Models\PredictionMarket;
 use App\Models\SportEventResult;
+use App\Services\CBB\Predictions\CbbForecastResultIdentity;
 use App\Services\CBB\Predictions\CbbPregameMarketSnapshot;
 use App\Services\CFB\Predictions\CfbCandidateReview;
 use App\Services\CFB\Predictions\CfbForecastCandidates;
@@ -21,7 +22,7 @@ class CanonicalPredictionEvaluator
 
     public const NFL_MARKET_SCORING_VERSION = 'canonical-nfl-market-v2';
 
-    public const CBB_MARKET_SCORING_VERSION = 'canonical-cbb-market-v1';
+    public const CBB_MARKET_SCORING_VERSION = 'canonical-cbb-market-v2';
 
     public function __construct(private readonly CanonicalPayloadHasher $hasher) {}
 
@@ -118,6 +119,11 @@ class CanonicalPredictionEvaluator
     /** @return array{actuals:array<string,mixed>,errors:array<string,mixed>,market_comparison:array<string,mixed>} */
     private function score(CanonicalPrediction $prediction, SportEventResult $result): array
     {
+        $identity = $prediction->sport === 'cbb'
+            ? app(CbbForecastResultIdentity::class)->scores($prediction, $result)
+            : ['home_score' => $result->home_score, 'away_score' => $result->away_score];
+        $homeScore = $identity['home_score'];
+        $awayScore = $identity['away_score'];
         $homeMoneyline = $this->market($prediction, 'moneyline', 'home');
         $homeSpread = $this->market($prediction, 'spread', 'home');
         $total = $this->market($prediction, 'total', 'combined');
@@ -137,13 +143,13 @@ class CanonicalPredictionEvaluator
             throw new PredictionLifecycleException('Home moneyline probability must be strictly between zero and one.');
         }
 
-        $actualHomeMargin = $result->home_score - $result->away_score;
+        $actualHomeMargin = $homeScore - $awayScore;
 
         if ($actualHomeMargin === 0 && $prediction->sport !== 'nfl') {
             throw new PredictionLifecycleException('Canonical winner evaluation does not support tied final results.');
         }
 
-        $actualTotal = $result->home_score + $result->away_score;
+        $actualTotal = $homeScore + $awayScore;
         $actualHomeWin = $actualHomeMargin === 0 ? null : ($actualHomeMargin > 0 ? 1.0 : 0.0);
         $predictedHomeMargin = -$homeLine;
         $spreadSignedError = $actualHomeMargin - $predictedHomeMargin;
@@ -170,12 +176,12 @@ class CanonicalPredictionEvaluator
             $suite = app(CfbCandidateReview::class)->suite($prediction);
             $marketComparison['cfb_comparison'] = ['version' => CfbForecastCandidates::VERSION,
                 'status' => $suite['status'], 'market' => $suite['market'],
-                'grades' => app(CfbForecastCandidates::class)->grade($suite, $result->home_score, $result->away_score),
+                'grades' => app(CfbForecastCandidates::class)->grade($suite, $homeScore, $awayScore),
                 'approval_status' => 'tracking_only'];
         }
 
         $teamErrors = [];
-        foreach (['home' => $result->home_score, 'away' => $result->away_score] as $side => $score) {
+        foreach (['home' => $homeScore, 'away' => $awayScore] as $side => $score) {
             $market = $prediction->markets->first(fn ($m) => $m->market_type === 'team_total' && $m->selection === $side);
             if ($market && is_numeric($market->projected_line)) {
                 $teamErrors[$side] = [
@@ -187,8 +193,9 @@ class CanonicalPredictionEvaluator
 
         return [
             'actuals' => [
-                'home_score' => $result->home_score,
-                'away_score' => $result->away_score,
+                ...($prediction->sport === 'cbb' ? ['home_team_id' => $identity['home_team_id'], 'away_team_id' => $identity['away_team_id']] : []),
+                'home_score' => $homeScore,
+                'away_score' => $awayScore,
                 'home_margin' => $actualHomeMargin,
                 'total_points' => $actualTotal,
                 'winner' => $actualHomeWin === null ? 'tie' : ($actualHomeWin === 1.0 ? 'home' : 'away'),

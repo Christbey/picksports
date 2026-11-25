@@ -53,7 +53,7 @@ function predictionDeliveryFixture(string $sport = 'nba', ?float $probability = 
         'status' => 'STATUS_SCHEDULED', 'odds_data' => ['bookmakers' => []],
     ]);
     $release = CalculationRelease::factory()->approved()->create(['sport' => $sport, 'phase' => 'pregame']);
-    $snapshot = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id]);
+    $snapshot = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id, 'inputs' => ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]]]);
     $run = CalculationRun::factory()->create([
         'sport_event_id' => $event->id, 'event_input_snapshot_id' => $snapshot->id,
         'calculation_release_id' => $release->id, 'status' => 'succeeded',

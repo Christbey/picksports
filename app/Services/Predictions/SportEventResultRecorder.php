@@ -42,6 +42,7 @@ class SportEventResultRecorder
             'status' => 'official',
             'home_score' => $homeScore,
             'away_score' => $awayScore,
+            ...($event->sport === 'cbb' ? ['team_identity' => array_intersect_key($metadata, array_flip(['home_team_id', 'away_team_id']))] : []),
         ]);
 
         return DB::transaction(function () use (
@@ -63,7 +64,11 @@ class SportEventResultRecorder
                 ->first();
 
             if ($latest !== null && $latest->status === 'official'
-                && $latest->home_score === $homeScore && $latest->away_score === $awayScore) {
+                && $latest->home_score === $homeScore && $latest->away_score === $awayScore
+                && ($event->sport !== 'cbb' || (
+                    data_get($latest->metadata, 'home_team_id') === ($metadata['home_team_id'] ?? null)
+                    && data_get($latest->metadata, 'away_team_id') === ($metadata['away_team_id'] ?? null)
+                ))) {
                 return $latest;
             }
 

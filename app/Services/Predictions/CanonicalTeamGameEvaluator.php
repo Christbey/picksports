@@ -56,7 +56,10 @@ class CanonicalTeamGameEvaluator
             finalizedAt: $game->getAttribute('completed_at') === null
                 ? null
                 : CarbonImmutable::parse($game->getAttribute('completed_at')),
-            metadata: ["{$sport}_game_id" => $game->getKey()],
+            metadata: [
+                "{$sport}_game_id" => $game->getKey(),
+                ...($sport === 'cbb' ? ['home_team_id' => (int) $game->home_team_id, 'away_team_id' => (int) $game->away_team_id] : []),
+            ],
         );
 
         return $this->evaluator->evaluate($prediction, $result);
@@ -98,7 +101,10 @@ class CanonicalTeamGameEvaluator
                 $game = $eligible->get($prediction->sport_event_id);
                 $result = $results->get($prediction->sport_event_id);
                 if ($result === null || $result->status !== 'official' || $result->home_score !== (int) $game->home_score
-                    || $result->away_score !== (int) $game->away_score || ! $current->contains($prediction->id)) {
+                    || $result->away_score !== (int) $game->away_score
+                    || ($sport === 'cbb' && (data_get($result->metadata, 'home_team_id') !== (int) $game->home_team_id
+                        || data_get($result->metadata, 'away_team_id') !== (int) $game->away_team_id))
+                    || ! $current->contains($prediction->id)) {
                     $pending->push($game->getKey());
                 }
             }

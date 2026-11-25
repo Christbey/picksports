@@ -164,7 +164,9 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             $calibration,
             $recentWeight
         );
-        $factorAdjustments = $this->recentPossessionFactorAdjustments($game, (int) $game->season, $config);
+        $factorAdjustments = ($config['total_factor_adjustments_enabled'] ?? true)
+            ? $this->recentPossessionFactorAdjustments($game, (int) $game->season, $config)
+            : ['home_adjustment' => 0.0, 'away_adjustment' => 0.0, 'metadata' => ['home' => [], 'away' => [], 'enabled' => false]];
         $factorAdjustmentCap = (float) ($calibration['factor_adjustment_cap'] ?? 5.0);
         $homeFactorAdjustment = $this->clamp($factorAdjustments['home_adjustment'], -$factorAdjustmentCap, $factorAdjustmentCap);
         $awayFactorAdjustment = $this->clamp($factorAdjustments['away_adjustment'], -$factorAdjustmentCap, $factorAdjustmentCap);
@@ -718,8 +720,11 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             $pace += ($paceFloor - $pace) * $paceFloorBlend;
         }
 
-        $restHome = $this->metadata['rest_days_home'] ?? null;
-        $restAway = $this->metadata['rest_days_away'] ?? null;
+        // Total pace must not depend on which spread calculator populated metadata.
+        $restHome = $this->getRestDays($game->homeTeam, $game);
+        $restAway = $this->getRestDays($game->awayTeam, $game);
+        $this->metadata['rest_days_home'] = $restHome;
+        $this->metadata['rest_days_away'] = $restAway;
         $restPaceAdjustment = 0.0;
         if ($restHome !== null && $restHome <= 1) {
             $restPaceAdjustment -= 1.0;

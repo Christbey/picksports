@@ -110,9 +110,9 @@ it('freezes market evidence in the new release and grades ATS and totals without
         ->and(data_get($input->inputs, 'established_model.evidence.features.vegas_spread'))->toBe(-5.5);
     $this->travelTo($this->event->starts_at->addHour());
     $this->game->update(['odds_data' => [], 'odds_updated_at' => now()]);
-    $result = SportEventResult::factory()->create(['sport_event_id' => $this->event->id, 'home_score' => 90, 'away_score' => 70]);
+    $result = SportEventResult::factory()->create(['sport_event_id' => $this->event->id, 'metadata' => ['home_team_id' => $this->home->id, 'away_team_id' => $this->away->id], 'home_score' => 90, 'away_score' => 70]);
     $evaluation = app(CanonicalPredictionEvaluator::class)->evaluate($prediction, $result);
-    expect($evaluation->scoring_version)->toBe('canonical-cbb-market-v1')
+    expect($evaluation->scoring_version)->toBe('canonical-cbb-market-v2')
         ->and(data_get($evaluation->market_comparison, 'pregame_market.spread.selection'))->toBe('home')
         ->and(data_get($evaluation->market_comparison, 'pregame_market.spread.selection_price'))->toBe(-115)
         ->and(data_get($evaluation->market_comparison, 'pregame_market.spread.result'))->toBe('win')
@@ -131,6 +131,7 @@ it('freezes market evidence in the new release and grades ATS and totals without
 });
 
 it('removes the high total boost in the new CBB release while preserving the forecast inputs', function (): void {
+    config(['cbb.prediction.total_calibration.high_total_slope' => 0.8]);
     cbbMarginFinal($this->home, $this->away, 20);
     cbbRecordMarket($this->game, $this->event);
     $registrar = app(CbbCalculationReleaseRegistrar::class);
@@ -170,7 +171,7 @@ it('recovers only archived quotes actually known before an older forecast withou
     DB::table('event_input_snapshots')->where('id', $input->id)->update(['inputs' => json_encode($legacyInputs)]);
     $prediction->unsetRelation('calculationRun');
     $this->travelTo($this->event->starts_at->addHour());
-    $result = SportEventResult::factory()->create(['sport_event_id' => $this->event->id, 'home_score' => 90, 'away_score' => 70]);
+    $result = SportEventResult::factory()->create(['sport_event_id' => $this->event->id, 'metadata' => ['home_team_id' => $this->home->id, 'away_team_id' => $this->away->id], 'home_score' => 90, 'away_score' => 70]);
     $evaluation = app(CanonicalPredictionEvaluator::class)->evaluate($prediction, $result);
     expect(data_get($evaluation->market_comparison, 'pregame_market.evidence_origin'))->toBe('archived_quotes_known_at_forecast')
         ->and(data_get($evaluation->market_comparison, 'pregame_market.game_odds_snapshot_id'))->toBe($snapshot->id)
@@ -208,7 +209,7 @@ it('grades pushes and leaves an absent total ungraded', function (): void {
     app(CbbCalculationReleaseRegistrar::class)->register('1.2.1', effectiveAt: now()->subMinute()->toImmutable());
     $prediction = app(GenerateCanonicalPrediction::class)->execute($this->game->fresh());
     $this->travelTo($this->event->starts_at->addHour());
-    $result = SportEventResult::factory()->create(['sport_event_id' => $this->event->id, 'home_score' => 86, 'away_score' => 80]);
+    $result = SportEventResult::factory()->create(['sport_event_id' => $this->event->id, 'metadata' => ['home_team_id' => $this->home->id, 'away_team_id' => $this->away->id], 'home_score' => 86, 'away_score' => 80]);
     $evaluation = app(CanonicalPredictionEvaluator::class)->evaluate($prediction, $result);
     expect(data_get($evaluation->market_comparison, 'pregame_market.spread.result'))->toBe('push')
         ->and(data_get($evaluation->market_comparison, 'pregame_market.total.result'))->toBeNull();
@@ -257,7 +258,7 @@ it('grades historical CBB markets independently of stored boundary probabilities
     app(CbbCalculationReleaseRegistrar::class)->register('1.1.0', effectiveAt: now()->subMinute()->toImmutable());
     $prediction = app(GenerateCanonicalPrediction::class)->execute($this->game->fresh());
     $this->travelTo($this->event->starts_at->addHour());
-    $result = SportEventResult::factory()->create(['sport_event_id' => $this->event->id, 'home_score' => 90, 'away_score' => 70]);
+    $result = SportEventResult::factory()->create(['sport_event_id' => $this->event->id, 'metadata' => ['home_team_id' => $this->home->id, 'away_team_id' => $this->away->id], 'home_score' => 90, 'away_score' => 70]);
     $evaluation = app(CanonicalPredictionEvaluator::class)->evaluate($prediction, $result);
     expect($evaluation->errors['log_loss'])->toBeNull()
         ->and($evaluation->errors['probability_metric_status'])->toBe('boundary_probability_log_loss_unavailable')

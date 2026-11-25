@@ -268,6 +268,21 @@ class CanonicalPrediction extends Model
         $query->where('publication_state', 'published');
     }
 
+    /** Keep frozen CBB selections from being relabelled by mutable matchup slots. */
+    public function scopeMatchingCbbIdentity(Builder $query): void
+    {
+        $query->where(function (Builder $identity): void {
+            $identity->where('predictions.sport', '!=', 'cbb')
+                ->orWhere('predictions.phase', '!=', 'pregame')
+                ->orWhereHas('calculationRun.inputSnapshot', function (Builder $snapshot): void {
+                    $snapshot->whereHas('sportEvent.cbbGame', function (Builder $game): void {
+                        $game->whereColumn('event_input_snapshots.inputs->home->team_id', 'cbb_games.home_team_id')
+                            ->whereColumn('event_input_snapshots.inputs->away->team_id', 'cbb_games.away_team_id');
+                    });
+                });
+        });
+    }
+
     private function validatedSport(string $sport): string
     {
         $sport = strtolower(trim($sport));

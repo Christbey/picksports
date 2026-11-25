@@ -34,6 +34,10 @@ class CbbInputSnapshotBuilder extends BasketballInputSnapshotBuilder
         }
 
         $snapshot = parent::build($event, $release);
+        if ((int) data_get($snapshot->inputs, 'home.team_id') !== (int) $game->home_team_id
+            || (int) data_get($snapshot->inputs, 'away.team_id') !== (int) $game->away_team_id) {
+            throw new PredictionLifecycleException('CBB matchup participants changed during forecast capture.');
+        }
         if (data_get($release->configuration['forecast']['configuration']['cbb.prediction'] ?? [], 'score_margin.enabled') === true) {
             $game = $this->withFrozenMarket($game, $snapshot);
         }

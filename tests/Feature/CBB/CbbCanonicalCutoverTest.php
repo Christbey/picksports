@@ -15,14 +15,19 @@ use App\Models\CBB\TeamMetric;
 use App\Models\PredictionFeatureSnapshot;
 use App\Models\SportEvent;
 use App\Models\User;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\BettingRecommendations\GameBettingRecommendationService;
+use App\Services\CBB\CbbScoreMarginRatings;
 use App\Services\CBB\Predictions\CbbCalculationReleaseRegistrar;
 use App\Services\CBB\Predictions\CbbCalculator;
 use App\Services\CBB\Predictions\CbbCanonicalCutoverReadinessService;
 use App\Services\CBB\Predictions\CbbInputSnapshotBuilder;
 use App\Services\Predictions\CalculationReleaseManager;
+use App\Services\Predictions\CanonicalPredictionEvaluator;
+use App\Services\Predictions\CanonicalPredictionReadRepository;
 use App\Services\Predictions\HistoricalForecastArchive;
 use App\Services\Predictions\PredictionDeliverySource;
+use App\Services\Predictions\SportEventResultRecorder;
 use Laravel\Sanctum\Sanctum;
 
 function cbbCutoverFixture(bool $neutral = false): array
@@ -179,3 +184,75 @@ it('freezes the established CBB prior-season fallback policy in both model captu
     $metrics = $p->calculationRun->inputSnapshot->inputs['home']['metrics'];
     expect($metrics === null)->toBe(! $fallback);
 })->with([false, true]);
+
+it('holds CBB reads after team slots change and grades by frozen participants', function () {
+    config(['prediction_lifecycle.canonical_reads.cbb' => true]);
+    $f = cbbCutoverFixture(true);
+    app(CbbCalculationReleaseRegistrar::class)->register('1.7.0', effectiveAt: now()->subMinute()->toImmutable());
+    $p = app(GenerateCanonicalPrediction::class)->execute($f['game']->fresh());
+    $homeProbability = (float) $p->marketFor('moneyline', 'home')->probability;
+    $f['game']->update(['home_team_id' => $f['away']->id, 'away_team_id' => $f['home']->id,
+        'status' => 'STATUS_FINAL', 'home_score' => 92, 'away_score' => 94, 'game_clock' => '0:00']);
+
+    expect(app(CanonicalSportPredictionQuery::class)->queryForSport('cbb')->whereKey($p->id)->exists())->toBeFalse()
+        ->and(app(CanonicalPredictionReadRepository::class)->currentForEvent($f['event']->fresh()))->toBeNull();
+
+    $result = app(SportEventResultRecorder::class)->record($f['event'], 92, 94, 'espn',
+        metadata: ['home_team_id' => $f['away']->id, 'away_team_id' => $f['home']->id]);
+    $evaluation = app(CanonicalPredictionEvaluator::class)->evaluate($p->fresh(), $result);
+    expect($evaluation->actuals['home_team_id'])->toBe($f['home']->id)
+        ->and($evaluation->actuals['home_score'])->toBe(94)
+        ->and($evaluation->actuals['away_score'])->toBe(92)
+        ->and($evaluation->actuals['home_margin'])->toBe(2)
+        ->and($evaluation->errors['winner_correct'])->toBe($homeProbability >= 0.5)
+        ->and($evaluation->scoring_version)->toBe('canonical-cbb-market-v2');
+});
+
+it('holds CBB evaluations when the result contains a different participant', function () {
+    $f = cbbCutoverFixture();
+    app(CbbCalculationReleaseRegistrar::class)->register('1.7.0', effectiveAt: now()->subMinute()->toImmutable());
+    $p = app(GenerateCanonicalPrediction::class)->execute($f['game']->fresh());
+    $other = Team::factory()->create();
+    $result = app(SportEventResultRecorder::class)->record($f['event'], 80, 70, 'espn',
+        metadata: ['home_team_id' => $f['home']->id, 'away_team_id' => $other->id]);
+    expect(fn () => app(CanonicalPredictionEvaluator::class)->evaluate($p, $result))
+        ->toThrow(PredictionLifecycleException::class, 'participants differ');
+    expect($p->evaluations()->count())->toBe(0);
+});
+
+it('versions CBB results when participant identity changes without a score change', function () {
+    $f = cbbCutoverFixture();
+    $recorder = app(SportEventResultRecorder::class);
+    $first = $recorder->record($f['event'], 80, 70, 'espn', metadata: ['home_team_id' => $f['home']->id, 'away_team_id' => $f['away']->id]);
+    $second = $recorder->record($f['event'], 80, 70, 'espn', metadata: ['home_team_id' => $f['away']->id, 'away_team_id' => $f['home']->id]);
+    $repeat = $recorder->record($f['event'], 80, 70, 'espn', metadata: ['home_team_id' => $f['away']->id, 'away_team_id' => $f['home']->id]);
+    expect($second->revision)->toBe(2)->and($second->supersedes_sport_event_result_id)->toBe($first->id)
+        ->and($repeat->id)->toBe($second->id);
+});
+
+it('retires unsafe additive total corrections and applies short rest with the score margin model', function () {
+    config(['cbb.prediction.score_margin.enabled' => true]);
+    $f = cbbCutoverFixture(true);
+    $this->mock(CbbScoreMarginRatings::class)->shouldReceive('forGame')->andReturn([
+        'available' => true, 'home_margin' => 3.0, 'home' => ['rating' => 3.0], 'away' => ['rating' => 0.0],
+    ]);
+    foreach ([$f['home'], $f['away']] as $team) {
+        Game::factory()->create(['home_team_id' => $team->id, 'away_team_id' => Team::factory(),
+            'season' => 2027, 'season_type' => 2, 'status' => 'STATUS_FINAL',
+            'game_date' => $f['game']->game_date->subDay()->toDateString(), 'game_time' => '18:00:00',
+            'home_score' => 75, 'away_score' => 70]);
+    }
+    $release = app(CbbCalculationReleaseRegistrar::class)->register('1.7.0', effectiveAt: now()->subMinute()->toImmutable());
+    $p = app(GenerateCanonicalPrediction::class)->execute($f['game']->fresh());
+    $inputs = $p->calculationRun->inputSnapshot->inputs;
+    $model = data_get($inputs, 'established_model.model_metadata.total_model');
+    expect($release->semantic_version)->toBe('1.7.0')
+        ->and($release->configuration['forecast']['configuration']['cbb.prediction']['total_factor_adjustments_enabled'])->toBeFalse()
+        ->and($model['home_total_factor_adjustment'])->toEqual(0)
+        ->and($model['away_total_factor_adjustment'])->toEqual(0)
+        ->and($model['total_base_adjustment'])->toEqual(0)
+        ->and($model['high_total_boost'])->toEqual(0)
+        ->and($model['rest_pace_adjustment'])->toEqual(-2)
+        ->and(data_get($inputs, 'established_model.evidence.features.rest_days_home'))->toBe(1)
+        ->and(data_get($inputs, 'established_model.evidence.features.rest_days_away'))->toBe(1);
+});

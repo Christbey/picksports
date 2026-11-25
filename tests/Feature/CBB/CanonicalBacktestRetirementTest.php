@@ -47,7 +47,7 @@ function cbbBacktestRetirementFixture(string $variant = 'valid', int $season = 2
         'pregame_safety_status' => $variant === 'unsafe' ? 'unverified' : 'verified', 'captured_at' => $captured, 'cutoff_at' => $start,
         'latest_source_available_at' => $variant === 'future_source' ? $generated->copy()->addMinute() : $captured,
         'inputs' => ['event' => ['starts_at' => $variant === 'missing_start' ? null : ($variant === 'kickoff_mismatch' ? $start->copy()->addHour() : $start)->toIso8601String()],
-            'home' => ['elo' => 1600], 'away' => ['elo' => 1500],
+            'home' => ['team_id' => $home->id, 'elo' => 1600], 'away' => ['team_id' => $away->id, 'elo' => 1500],
             'pregame_market' => $variant === 'no_frozen_market' ? [] : ['available' => $variant !== 'missing_market', 'consensus' => [
                 'spread' => ['line' => $variant === 'missing_spread_line' ? null : -3.5],
                 'total' => ['line' => $variant === 'missing_total_line' ? null : 230.0],

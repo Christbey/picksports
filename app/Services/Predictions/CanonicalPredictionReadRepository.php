@@ -18,6 +18,7 @@ class CanonicalPredictionReadRepository
             ->where('sport_event_id', $event->getKey())
             ->where('phase', $phase)
             ->published()
+            ->matchingCbbIdentity()
             ->orderByDesc('revision')
             ->first();
     }
@@ -28,6 +29,7 @@ class CanonicalPredictionReadRepository
             ->with(['markets', 'sportEvent', 'calculationRun.release'])
             ->where('public_id', $publicId)
             ->published()
+            ->matchingCbbIdentity()
             ->firstOrFail();
     }
 

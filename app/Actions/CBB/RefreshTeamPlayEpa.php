@@ -15,14 +15,25 @@ class RefreshTeamPlayEpa
 
     public function execute(Team $team, int $season): bool
     {
-        $games = $this->getCompletedGamesForTeam($team, $season, 'CBB');
-        if ($games->isEmpty()) {
+        $metric = TeamMetric::query()->where('team_id', $team->id)->where('season', $season)->first();
+        if ($metric === null) {
             return false;
         }
+        $games = $this->getCompletedGamesForTeam($team, $season, 'CBB')->filter(
+            fn ($game): bool => $game->teamStats->contains('team_id', $game->home_team_id)
+                && $game->teamStats->contains('team_id', $game->away_team_id)
+        );
+        // Match the stored metric's complete-game denominator and require EPA
+        // from both sides of every included game before publishing an aggregate.
+        if ($games->isEmpty() || $games->count() !== (int) $metric->games_played) {
+            return $this->hold($metric);
+        }
+        $coverage = Play::query()->whereIn('game_id', $games->modelKeys())
+            ->whereNotNull('true_epa')->select(['game_id', 'possession_team_id'])->distinct()->get()->groupBy('game_id');
         foreach ($games as $game) {
-            if (! $game->teamStats->contains('team_id', $game->home_team_id)
-                || ! $game->teamStats->contains('team_id', $game->away_team_id)) {
-                return false;
+            $teams = $coverage->get($game->id, collect())->pluck('possession_team_id');
+            if (! $teams->contains($game->home_team_id) || ! $teams->contains($game->away_team_id)) {
+                return $this->hold($metric);
             }
         }
         $values = $this->calculateTeamTrueEpaMetrics(Play::class, (int) $team->id, $games);
@@ -30,5 +41,16 @@ class RefreshTeamPlayEpa
 
         return TeamMetric::query()->where('team_id', $team->id)->where('season', $season)
             ->update([...$values, 'updated_at' => now()]) > 0;
+    }
+
+    private function hold(TeamMetric $metric): bool
+    {
+        TeamMetric::query()->whereKey($metric->id)->update([
+            'offensive_true_epa_per_play' => null,
+            'defensive_true_epa_per_play' => null,
+            'net_true_epa_per_play' => null,
+        ]);
+
+        return false;
     }
 }

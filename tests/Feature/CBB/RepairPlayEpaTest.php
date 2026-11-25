@@ -22,7 +22,7 @@ beforeEach(function () {
     $this->oldPlay = Play::factory()->create(['game_id' => $this->game->id, 'possession_team_id' => null, 'true_epa' => null]);
     foreach ([$this->home, $this->away] as $team) {
         TeamStat::factory()->create(['game_id' => $this->game->id, 'team_id' => $team->id]);
-        TeamMetric::factory()->create(['team_id' => $team->id, 'season' => 2027, 'net_true_epa_per_play' => null]);
+        TeamMetric::factory()->create(['team_id' => $team->id, 'season' => 2027, 'games_played' => 1, 'net_true_epa_per_play' => null]);
     }
 });
 
@@ -87,4 +87,23 @@ test('identical CBB refresh preserves calculated EPA and play identities', funct
     $before = Play::query()->orderBy('id')->get(['id', 'true_epa', 'epa_calculated_at'])->toArray();
     app(SyncPlays::class)->execute('repair-event');
     expect(Play::query()->orderBy('id')->get(['id', 'true_epa', 'epa_calculated_at'])->toArray())->toBe($before);
+});
+
+test('team EPA remains unavailable until every complete game in its denominator has EPA', function () {
+    fakeCbbRepairFeed();
+    $extra = Game::factory()->create(['season' => 2027, 'season_type' => 2, 'status' => 'STATUS_FINAL', 'home_team_id' => $this->home->id, 'away_team_id' => $this->away->id]);
+    foreach ([$this->home, $this->away] as $team) {
+        TeamStat::factory()->create(['game_id' => $extra->id, 'team_id' => $team->id]);
+    }
+    TeamMetric::query()->update(['games_played' => 2]);
+    $this->artisan('cbb:repair-play-epa', ['--season' => 2027, '--game-id' => $this->game->id, '--apply' => true])->assertSuccessful();
+    expect(Play::query()->whereNotNull('true_epa')->count())->toBe(2)
+        ->and(TeamMetric::query()->whereNotNull('net_true_epa_per_play')->count())->toBe(0);
+});
+
+test('repair can recover a completed box-scored game with no stored plays', function () {
+    fakeCbbRepairFeed();
+    $this->oldPlay->delete();
+    $this->artisan('cbb:repair-play-epa', ['--season' => 2027, '--limit' => 1, '--apply' => true])->assertSuccessful();
+    expect(Play::query()->whereNotNull('true_epa')->count())->toBe(2);
 });

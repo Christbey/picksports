@@ -7,6 +7,7 @@ use App\Actions\CBB\RefreshTeamPlayEpa;
 use App\Actions\ESPN\CBB\SyncPlays;
 use App\Models\CBB\Game;
 use App\Models\CBB\Team;
+use App\Models\CBB\TeamMetric;
 use App\Support\BasketballSeason;
 use App\Support\SportsViewCache;
 use Illuminate\Console\Command;
@@ -16,8 +17,10 @@ class RepairPlayEpaCommand extends Command
     protected $signature = 'cbb:repair-play-epa
         {--season= : Defaults to the current basketball season}
         {--after-game-id=0 : Resume after this game ID}
+        {--through-game-id= : Upper bound for a disjoint recovery batch}
         {--game-id= : Repair one completed game}
         {--limit=10 : Maximum games per batch (1-50)}
+        {--refresh-metrics : Refresh only covered existing team EPA aggregates, without provider calls}
         {--apply : Fetch complete feeds and persist repaired play EPA and team EPA}';
 
     protected $description = 'Repair completed CBB games missing play EPA in bounded, resumable batches';
@@ -31,10 +34,24 @@ class RepairPlayEpaCommand extends Command
 
             return self::INVALID;
         }
+        if ($this->option('refresh-metrics')) {
+            $updated = 0;
+            if ($this->option('apply')) {
+                foreach (Team::query()->whereIn('id', TeamMetric::query()->where('season', $season)->select('team_id'))->get() as $team) {
+                    $updated += $refresh->execute($team, $season) ? 1 : 0;
+                }
+                $cache->bustSegments([SportsViewCache::SEGMENT_TEAM_METRICS_INDEX, SportsViewCache::SEGMENT_TEAM_METRICS_BY_TEAM]);
+            }
+            $this->info("Covered team EPA aggregates updated: {$updated}.");
+
+            return self::SUCCESS;
+        }
         $query = Game::query()->where('season', $season)
             ->where('status', config('cbb.statuses.final'))
-            ->whereHas('plays')
+            ->whereHas('teamStats', fn ($query) => $query->whereColumn('team_id', 'cbb_games.home_team_id'))
+            ->whereHas('teamStats', fn ($query) => $query->whereColumn('team_id', 'cbb_games.away_team_id'))
             ->where('id', '>', (int) $this->option('after-game-id'))
+            ->when($this->option('through-game-id'), fn ($query, $id) => $query->where('id', '<=', (int) $id))
             ->when($this->option('game-id'), fn ($query, $id) => $query->whereKey((int) $id))
             ->whereDoesntHave('plays', fn ($query) => $query->whereNotNull('true_epa'));
         $remaining = (clone $query)->count();

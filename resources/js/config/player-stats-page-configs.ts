@@ -1,3 +1,4 @@
+import { buildDefaultPlayerStatColumns } from '@/lib/playerStatsPresentation';
 import CBBTeamController from '@/actions/App/Http/Controllers/CBB/TeamController';
 import MLBTeamController from '@/actions/App/Http/Controllers/MLB/TeamController';
 import NBAPlayerController from '@/actions/App/Http/Controllers/NBA/PlayerController';
@@ -78,6 +79,25 @@ export const cbbPlayerStatsPageConfig = {
         { value: '3', label: 'Postseason' },
     ],
     showEpaColumns: true,
+    sortOptions: [
+        { key: 'points_per_game', label: 'PPG' },
+        { key: 'rebounds_per_game', label: 'RPG' },
+        { key: 'assists_per_game', label: 'APG' },
+        { key: 'three_pointers_made_per_game', label: '3PM/G' },
+        { key: 'estimated_epa_per_game', label: 'EPA/G' },
+        { key: 'estimated_epa_per_36', label: 'EPA/36' },
+    ],
+    statColumns: [
+        ...buildDefaultPlayerStatColumns(true).slice(0, 3),
+        {
+            key: 'three_pointers_made_per_game',
+            label: '3PM/G',
+            cellClass: 'p-2 text-right',
+            format: (value: number | undefined) =>
+                value === undefined ? '—' : value.toFixed(1),
+        },
+        ...buildDefaultPlayerStatColumns(true).slice(3),
+    ],
     playerLink: (id: number) => `/cbb/players/${id}`,
     teamLink: (id: number) => CBBTeamController(id),
 };

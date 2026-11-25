@@ -30,6 +30,7 @@ class BasketballLeaderboardService
                 AVG(turnovers) as turnovers_per_game,
                 AVG(steals) as steals_per_game,
                 AVG(blocks) as blocks_per_game,
+                AVG(three_point_made) as three_pointers_made_per_game,
                 AVG(field_goals_made) as field_goals_made_per_game,
                 AVG(field_goals_attempted) as field_goals_attempted_per_game,
                 AVG(free_throws_made) as free_throws_made_per_game,
@@ -106,6 +107,9 @@ class BasketballLeaderboardService
                 'turnovers_per_game' => round($row->turnovers_per_game, 1),
                 'steals_per_game' => round($row->steals_per_game, 1),
                 'blocks_per_game' => round($row->blocks_per_game, 1),
+                'three_pointers_made_per_game' => $row->three_pointers_made_per_game === null
+                    ? null
+                    : round((float) $row->three_pointers_made_per_game, 1),
                 'minutes_per_game' => round($minutesPerGame, 1),
                 'field_goals_made_per_game' => round((float) $row->field_goals_made_per_game, 1),
                 'field_goals_attempted_per_game' => round((float) $row->field_goals_attempted_per_game, 1),

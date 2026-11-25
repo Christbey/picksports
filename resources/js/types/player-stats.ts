@@ -27,6 +27,7 @@ export interface PlayerLeaderboardEntry {
     minutes_per_game: number;
     field_goal_percentage: number;
     three_point_percentage: number;
+    three_pointers_made_per_game?: number | null;
     free_throw_percentage: number;
     estimated_epa_per_game?: number;
     estimated_epa_per_36?: number;

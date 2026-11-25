@@ -65,3 +65,41 @@ test('cbb leaderboard endpoint includes estimated epa fields', function () {
 beforeEach(function () {
     Sanctum::actingAs(User::factory()->create());
 });
+
+test('cbb threes per game respects season filters and missing values', function (array $made, ?float $expected) {
+    $team = CbbTeamFactory::new()->create();
+    $opponent = CbbTeamFactory::new()->create();
+    $player = Player::query()->create([
+        'team_id' => $team->id,
+        'espn_id' => 'cbb-threes-player',
+        'full_name' => 'Threes Test Player',
+    ]);
+
+    foreach ([...array_map(fn ($value) => [2027, 2, $value], $made), [2026, 2, 10], [2027, 3, 10]] as [$season, $seasonType, $threes]) {
+        $game = CbbGameFactory::new()->create([
+            'home_team_id' => $team->id,
+            'away_team_id' => $opponent->id,
+            'season' => $season,
+            'season_type' => $seasonType,
+        ]);
+        PlayerStat::query()->create([
+            'player_id' => $player->id,
+            'game_id' => $game->id,
+            'team_id' => $team->id,
+            'three_point_made' => $threes,
+        ]);
+    }
+
+    $response = $this->getJson('/api/v2/sports/cbb/leaderboards/players?season=2027&season_type=2&min_games=1')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.games_played', count($made));
+
+    $actual = $response->json('data.0.three_pointers_made_per_game');
+    expect($actual === null ? null : (float) $actual)->toBe($expected);
+})->with([
+    'made threes and scoreless games' => [[0, 2, 3], 1.7],
+    'missing game excluded from average' => [[null, 2, 3], 2.5],
+    'recorded zero' => [[0, 0], 0.0],
+    'all values missing' => [[null, null], null],
+]);

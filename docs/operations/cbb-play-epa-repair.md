@@ -28,7 +28,7 @@ For a reviewed recovery manifest, use `--game-ids=123,456 --limit=2 --apply`. Th
 
 ## Consistent samples and normal ingestion
 
-`Services/CBB/TeamMetricSample` owns the validated game set used by both the normal CBB team metric calculator and the EPA refresher. It retains the existing reconciled-box-score, real-event, season-type and completed-date rules. Coverage requires offensive EPA from both matchup teams in every included game; the normal metric writer holds EPA at null for a partial sample, just like the refresher. Sample-count mismatches require the ordinary CBB metric calculator to rebuild that exact team's row before refreshing EPA.
+`Services/CBB/TeamMetricSample` owns the validated game set used by both the normal CBB team metric calculator and the EPA refresher. It retains the existing reconciled-box-score, real-event, season-type and completed-date rules. Coverage requires offensive EPA from both matchup teams in every included game and no attributed plays awaiting calculation; the normal metric writer holds EPA at null for a partial sample, just like the refresher. Sample-count mismatches require the ordinary CBB metric calculator to rebuild that exact team's row before refreshing EPA.
 
 Completed-game CBB play ingestion computes derived play EPA after a successful validated replacement when unscored plays with both offensive teams are present. An unchanged, already-scored refresh retains its existing EPA and play identities. This closes the gap where a detail refresh replaced stored plays but left their EPA awaiting the small incremental backlog job. Live/incomplete or unattributable feeds are not forced into EPA eligibility.
 

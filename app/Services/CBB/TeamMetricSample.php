@@ -33,10 +33,14 @@ class TeamMetricSample
         $coverage = Play::query()->whereIn('game_id', $games->pluck('id'))
             ->whereNotNull('true_epa')->when($eligibleOnly, fn ($query) => $query->where('is_epa_eligible', true))
             ->select(['game_id', 'possession_team_id'])->distinct()->get()->groupBy('game_id');
+        $pending = Play::query()->whereIn('game_id', $games->pluck('id'))
+            ->whereNotNull('possession_team_id')->whereNull('true_epa')->whereNull('epa_calculated_at')
+            ->when($eligibleOnly, fn ($query) => $query->where('is_epa_eligible', true))
+            ->distinct()->pluck('game_id');
         $missing = [];
         foreach ($games as $game) {
             $teams = $coverage->get($game->id, collect())->pluck('possession_team_id');
-            if (! $teams->contains($game->home_team_id) || ! $teams->contains($game->away_team_id)
+            if ($pending->contains($game->id) || ! $teams->contains($game->home_team_id) || ! $teams->contains($game->away_team_id)
                 || $teams->diff([$game->home_team_id, $game->away_team_id])->isNotEmpty()) {
                 $missing[] = (int) $game->id;
             }

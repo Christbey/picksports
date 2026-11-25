@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\CBB\CalculateGamePlayEpa;
 use App\Actions\CBB\CalculateTeamMetrics;
 use App\Actions\CBB\RefreshTeamPlayEpa;
 use App\Actions\ESPN\CBB\SyncPlays;
@@ -186,4 +187,15 @@ test('score reconstruction rejects missing scoring points and unknown scorers', 
     expect(app(PlayScoreReconciler::class)->reconcile($plays, $game))->toBeNull();
     $plays = [$start, cbbRepairPlay('p1', '130', 1, 0), cbbRepairPlay('p2', '999999', 1, 1), $end];
     expect(app(PlayScoreReconciler::class)->reconcile($plays, $game))->toBeNull();
+});
+
+test('CBB EPA stays held while an attributed play is still unscored', function () {
+    fakeCbbRepairFeed();
+    app(SyncPlays::class)->execute('repair-event');
+    Play::factory()->create(['game_id' => $this->game->id, 'possession_team_id' => $this->home->id, 'espn_play_id' => 'pending', 'sequence_number' => 3, 'period' => 2, 'clock' => '0:01', 'home_score' => 2, 'away_score' => 2, 'play_type' => 'Lost Ball Turnover', 'play_text' => 'Home turnover', 'true_epa' => null, 'epa_calculated_at' => null]);
+    $metric = app(CalculateTeamMetrics::class)->execute($this->home, 2027);
+    expect($metric->net_true_epa_per_play)->toBeNull();
+    app(CalculateGamePlayEpa::class)->execute($this->game);
+    $metric = app(CalculateTeamMetrics::class)->execute($this->home, 2027);
+    expect($metric->net_true_epa_per_play)->not->toBeNull();
 });

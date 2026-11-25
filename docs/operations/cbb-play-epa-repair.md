@@ -25,3 +25,14 @@ Validate with `tests/Feature/CBB/RepairPlayEpaTest.php`, the CBB/NFL sync tests 
 After all source batches, `php artisan cbb:repair-play-epa --refresh-metrics --apply` refreshes covered existing team EPA rows without any provider requests. Rows whose stored game count disagrees or whose game coverage remains incomplete have the three EPA fields held at null, including any earlier partial aggregate.
 
 For a reviewed recovery manifest, use `--game-ids=123,456 --limit=2 --apply`. This exact allowlist excludes newly eligible games inside the same ID range. Range bounds alone are not a fixed recovery manifest; do not use them to enforce an approved ID list.
+
+## Consistent samples and normal ingestion
+
+`Services/CBB/TeamMetricSample` owns the validated game set used by both the normal CBB team metric calculator and the EPA refresher. It retains the existing reconciled-box-score, real-event, season-type and completed-date rules. Coverage requires offensive EPA from both matchup teams in every included game; the normal metric writer holds EPA at null for a partial sample, just like the refresher. Sample-count mismatches require the ordinary CBB metric calculator to rebuild that exact team's row before refreshing EPA.
+
+Completed-game CBB play ingestion computes derived play EPA after a successful validated replacement when unscored plays with both offensive teams are present. An unchanged, already-scored refresh retains its existing EPA and play identities. This closes the gap where a detail refresh replaced stored plays but left their EPA awaiting the small incremental backlog job. Live/incomplete or unattributable feeds are not forced into EPA eligibility.
+
+For recovery, complete stored feeds can be rescored without provider requests after revalidating first/last state, final scores, distinct play identities and both matchup teams under the existing per-game lock. Preserve invalid or unavailable provider feeds; do not assign opponents from names, swap score columns by inference, or substitute a box-score proxy for play EPA.
+
+
+If a complete feed's scoreboard disagrees with the final, CBB may reconstruct its score state from explicit scoring-event team IDs and 1/2/3-point values. This requires a zero-score first-half start at 20:00, a terminal 0:00 state, known matchup scorers for every scoring event, and exact reconciliation of both accumulated final scores. Unknown scorers, missing scoring points, incomplete sequences and foreign matchup teams remain held. The original scoreboard hash is logged when reconstruction succeeds; this is deterministic score accounting, not an inferred home/away swap.

@@ -3,15 +3,14 @@
 namespace App\Actions\CBB;
 
 use App\Actions\Sports\Concerns\CalculatesTeamTrueEpaFromPlays;
-use App\Concerns\FiltersTeamGames;
 use App\Models\CBB\Play;
 use App\Models\CBB\Team;
 use App\Models\CBB\TeamMetric;
+use App\Services\CBB\TeamMetricSample;
 
 class RefreshTeamPlayEpa
 {
     use CalculatesTeamTrueEpaFromPlays;
-    use FiltersTeamGames;
 
     public function execute(Team $team, int $season): bool
     {
@@ -19,22 +18,15 @@ class RefreshTeamPlayEpa
         if ($metric === null) {
             return false;
         }
-        $games = $this->getCompletedGamesForTeam($team, $season, 'CBB')->filter(
-            fn ($game): bool => $game->teamStats->contains('team_id', $game->home_team_id)
-                && $game->teamStats->contains('team_id', $game->away_team_id)
-        );
+        $sample = app(TeamMetricSample::class);
+        $games = $sample->forTeam($team, $season);
         // Match the stored metric's complete-game denominator and require EPA
         // from both sides of every included game before publishing an aggregate.
         if ($games->isEmpty() || $games->count() !== (int) $metric->games_played) {
             return $this->hold($metric);
         }
-        $coverage = Play::query()->whereIn('game_id', $games->modelKeys())
-            ->whereNotNull('true_epa')->select(['game_id', 'possession_team_id'])->distinct()->get()->groupBy('game_id');
-        foreach ($games as $game) {
-            $teams = $coverage->get($game->id, collect())->pluck('possession_team_id');
-            if (! $teams->contains($game->home_team_id) || ! $teams->contains($game->away_team_id)) {
-                return $this->hold($metric);
-            }
+        if ($sample->missingEpaGameIds($games) !== []) {
+            return $this->hold($metric);
         }
         $values = $this->calculateTeamTrueEpaMetrics(Play::class, (int) $team->id, $games);
         $values = array_map(fn (?float $value): ?float => $this->roundOrNull($value, 3), $values);

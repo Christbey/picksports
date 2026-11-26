@@ -327,6 +327,12 @@
                 {{ $betaLabel }}
             </div>
         @endif
-        @inertia
+        {{-- Keep this exclusion inside the document body and outside the Vue mount.
+             Safari Reader penalizes ancestor IDs/classes containing "comment";
+             both tokens prevent expanded app panels being mistaken for articles.
+             Render it before app content so automatic Reader cannot cache a candidate. --}}
+        <div id="app-reader-comment" class="reader-comment contents">
+            @inertia
+        </div>
     </body>
 </html>

@@ -497,3 +497,28 @@ test('team ratings explain Elo and compare available ratings without inventing m
         assert.doesNotMatch(html, /rating edge|NaN|Infinity/);
     }
 });
+
+test('NFL game details render stored kickoff weather and its source timing', async () => {
+    const html = await forecastHtml({
+        predicted_spread: 6,
+        predicted_total: 42.6,
+        win_probability: 0.7,
+        weather_forecast: {
+            available: true,
+            source: 'latest_forecast',
+            provider: 'open_meteo',
+            forecast_valid_at: '2026-11-27T01:00:00Z',
+            received_at: '2026-11-26T20:36:42Z',
+            temperature_f: 34.9,
+            wind_speed_mph: 20,
+            wind_gust_mph: 38.9,
+            precipitation_inches: 0.098,
+            precipitation_probability: 100,
+        },
+    });
+    assert.match(html, /Game weather forecast/);
+    assert.match(html, /34.9°F/);
+    assert.match(html, /Wind 20 mph/);
+    assert.match(html, /7:00 PM CST/);
+    assert.match(html, /Latest stored forecast/);
+});

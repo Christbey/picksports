@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { predictionWeather } from '@/lib/predictionWeather';
 import { ChevronDown } from 'lucide-vue-next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { NflPagePrediction } from '@/types';
@@ -21,6 +22,9 @@ const finite = (value: unknown): number | null => {
     const number = Number(value);
     return Number.isFinite(number) ? number : null;
 };
+const weather = computed(() =>
+    predictionWeather(props.prediction.weather_forecast),
+);
 const margin = computed(() => finite(props.prediction.predicted_spread));
 const total = computed(() => {
     const value = finite(props.prediction.predicted_total);
@@ -289,6 +293,18 @@ const ratingEdge = computed(() => {
                     </div>
                 </div>
             </details>
+            <section
+                aria-label="Game weather forecast"
+                class="rounded-xl border border-border/60 px-4 py-3 text-sm"
+            >
+                <p class="font-medium">{{ weather.summary }}</p>
+                <details class="mt-1 text-xs text-muted-foreground">
+                    <summary class="cursor-pointer">
+                        Forecast source and timing
+                    </summary>
+                    <p class="mt-1">{{ weather.detail }}</p>
+                </details>
+            </section>
         </CardContent>
     </Card>
 </template>

@@ -196,7 +196,7 @@ const {
             </button>
         </div>
         <section
-            v-if="sport === 'cfb'"
+            v-if="sport === 'cfb' || sport === 'nfl'"
             aria-label="Game weather forecast"
             class="text-xs"
             :class="

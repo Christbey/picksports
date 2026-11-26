@@ -1502,7 +1502,7 @@ it('rejects an unverified model-selected line even when the raw market payload m
 
 it('defaults new operator registration to the corrected full-model release without rewriting old releases', function () {
     $this->artisan('nfl:register-calculation-release', ['--draft' => true])->assertSuccessful();
-    $release = CalculationRelease::query()->where('semantic_version', '1.3.1')->sole();
+    $release = CalculationRelease::query()->where('semantic_version', '1.3.2')->sole();
     expect($release->status)->toBe('draft')
         ->and(data_get($release->configuration, 'forecast.source'))->toBe('frozen_nfl_model_v1');
 });

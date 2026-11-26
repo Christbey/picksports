@@ -14,7 +14,8 @@ class CalculationReleaseSelector
         string $phase,
         ?CarbonImmutable $effectiveAt = null,
     ): CalculationRelease {
-        $effectiveAt ??= now()->toImmutable();
+        // Query bindings must use the same wall-clock timezone as persisted release windows.
+        $effectiveAt = ($effectiveAt ?? now()->toImmutable())->setTimezone((string) config('app.timezone', 'UTC'));
 
         $releases = CalculationRelease::query()
             ->where('sport', $event->sport)

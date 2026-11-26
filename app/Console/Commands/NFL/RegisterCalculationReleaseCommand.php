@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\DB;
 class RegisterCalculationReleaseCommand extends AbstractRegisterCalculationReleaseCommand
 {
     protected $signature = 'nfl:register-calculation-release
-        {--release-version=1.3.1}
+        {--release-version=1.3.2}
         {--draft}
         {--replace-active : Atomically retire active NFL pregame releases when approving this release}
         {--effective-at=}

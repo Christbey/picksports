@@ -23,6 +23,10 @@ class CalculationReleaseManager
             throw new PredictionLifecycleException('Calculation release approval requires an actor and reason.');
         }
 
+        // DATETIME columns store a local wall clock, not the Carbon object's offset.
+        // Normalize explicit instants before Eloquent drops their timezone on write.
+        $effectiveAt = ($effectiveAt ?? now()->toImmutable())->setTimezone((string) config('app.timezone', 'UTC'));
+
         return DB::transaction(function () use ($release, $actor, $reason, $effectiveAt): CalculationRelease {
             $release = CalculationRelease::query()->lockForUpdate()->findOrFail($release->getKey());
 
@@ -44,7 +48,7 @@ class CalculationReleaseManager
 
             $release->update([
                 'status' => 'approved',
-                'effective_at' => $effectiveAt ?? now(),
+                'effective_at' => $effectiveAt,
                 'approved_at' => now(),
                 'approved_by' => trim($actor),
                 'approval_reason' => trim($reason),
@@ -56,6 +60,8 @@ class CalculationReleaseManager
 
     public function retire(CalculationRelease $release, ?CarbonImmutable $retiredAt = null): CalculationRelease
     {
+        $retiredAt = ($retiredAt ?? now()->toImmutable())->setTimezone((string) config('app.timezone', 'UTC'));
+
         return DB::transaction(function () use ($release, $retiredAt): CalculationRelease {
             $release = CalculationRelease::query()->lockForUpdate()->findOrFail($release->getKey());
 
@@ -65,7 +71,7 @@ class CalculationReleaseManager
 
             $release->update([
                 'status' => 'retired',
-                'retired_at' => $retiredAt ?? now(),
+                'retired_at' => $retiredAt,
             ]);
 
             return $release->fresh();

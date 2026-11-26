@@ -5,6 +5,7 @@ namespace App\Http\Resources\Api\V2;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game;
 use App\Services\Api\V2\CanonicalPredictionPresentationData;
+use App\Services\Api\V2\NflSnapshotTeamRatings;
 use App\Services\Api\V2\SportContext;
 use App\Services\MLB\MlbRecommendationPresentation;
 use App\Services\Predictions\LivePredictionStore;
@@ -40,6 +41,9 @@ class CanonicalSportPredictionResource extends JsonResource
         $prediction = $this->resource;
         $presentation = $this->presentation instanceof \Closure ? ($this->presentation)() : $this->presentation;
         $game = $this->gameModel($prediction);
+        $ratings = $prediction->sport === 'nfl'
+            ? app(NflSnapshotTeamRatings::class)->forPrediction($prediction, $game)
+            : ['home' => null, 'away' => null];
         $homeMoneyline = $prediction->marketFor('moneyline', 'home');
         $awayMoneyline = $prediction->marketFor('moneyline', 'away');
         $homeSpread = $prediction->marketFor('spread', 'home');
@@ -112,10 +116,10 @@ class CanonicalSportPredictionResource extends JsonResource
             'period_insights' => [],
             'cfb_signal_context' => null,
             ...($prediction->sport === 'cfb' ? ['scoring_model' => $this->cfbScoringModel($prediction)] : []),
-            'home_elo' => null,
-            'away_elo' => null,
-            'home_team_elo' => null,
-            'away_team_elo' => null,
+            'home_elo' => $ratings['home'],
+            'away_elo' => $ratings['away'],
+            'home_team_elo' => $ratings['home'],
+            'away_team_elo' => $ratings['away'],
             'home_pitcher_elo' => null,
             'away_pitcher_elo' => null,
             'home_combined_elo' => null,

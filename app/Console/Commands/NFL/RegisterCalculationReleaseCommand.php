@@ -49,7 +49,8 @@ class RegisterCalculationReleaseCommand extends AbstractRegisterCalculationRelea
             return self::FAILURE;
         }
 
-        $effectiveAt = CarbonImmutable::parse((string) $this->option('effective-at'));
+        $effectiveAt = CarbonImmutable::parse((string) $this->option('effective-at'))
+            ->setTimezone((string) config('app.timezone', 'UTC'));
         $registrar = app(NflCalculationReleaseRegistrar::class);
         $release = DB::transaction(function () use ($effectiveAt, $registrar): CalculationRelease {
             $release = $registrar->register(

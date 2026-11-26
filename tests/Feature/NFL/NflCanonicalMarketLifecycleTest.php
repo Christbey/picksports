@@ -1532,3 +1532,19 @@ it('never publishes corrected numeric inputs under the older full-model release 
         ->toThrow(PredictionLifecycleException::class, 'require calculation release 1.3.1');
     expect(CanonicalPrediction::query()->where('publication_state', 'published')->count())->toBe(0);
 });
+
+it('uses the activation instant rather than its UTC wall clock when retiring active NFL releases', function () {
+    config(['app.timezone' => 'America/Chicago']);
+    $this->travelTo(Carbon::parse('2026-11-25T19:00:00-06:00'));
+    $future = CalculationRelease::factory()->approved()->create([
+        'sport' => 'nfl', 'phase' => 'pregame', 'semantic_version' => 'future-test',
+        'effective_at' => now()->addHours(2), 'retired_at' => null,
+    ]);
+    $instant = now()->toImmutable();
+    $this->artisan('nfl:register-calculation-release', [
+        '--replace-active' => true, '--effective-at' => $instant->utc()->toIso8601String(),
+    ])->assertSuccessful();
+    $current = CalculationRelease::query()->where('sport', 'nfl')->where('semantic_version', '1.3.2')->sole();
+    expect($future->fresh()->status)->toBe('approved')->and($future->fresh()->retired_at)->toBeNull()
+        ->and($current->effective_at->equalTo($instant))->toBeTrue();
+});

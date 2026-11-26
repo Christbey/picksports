@@ -485,9 +485,12 @@ test('team ratings explain Elo and compare available ratings without inventing m
             home_elo: home,
         });
         assert.match(html, /Team ratings/);
-        assert.match(html, /Pregame Elo rating/);
+        assert.match(html, /Captured pregame Elo rating/);
         assert.ok(html.includes(expected));
-        assert.match(html, /These ratings are one input to the forecast/);
+        assert.match(
+            html,
+            /ratings were stored alongside the pregame forecast/,
+        );
         assert.match(html, /winning outright, not covering the spread/);
         assert.doesNotMatch(html, /<details[^>]*\bopen\b/);
     }

@@ -232,7 +232,7 @@ const ratingEdge = computed(() => {
                 </summary>
                 <div class="space-y-4 pt-2 pb-1">
                     <p class="text-xs text-muted-foreground">
-                        Pregame Elo rating
+                        Captured pregame Elo rating
                     </p>
                     <dl class="grid grid-cols-2 gap-4">
                         <div>
@@ -270,7 +270,9 @@ const ratingEdge = computed(() => {
                     <div class="space-y-2 text-xs text-muted-foreground">
                         <p>
                             Higher ratings indicate stronger teams. These
-                            ratings are one input to the forecast.
+                            ratings were stored alongside the pregame forecast;
+                            they are not league rankings or standalone betting
+                            signals.
                         </p>
                         <p
                             v-if="

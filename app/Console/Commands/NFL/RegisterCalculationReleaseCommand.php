@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\DB;
 class RegisterCalculationReleaseCommand extends AbstractRegisterCalculationReleaseCommand
 {
     protected $signature = 'nfl:register-calculation-release
-        {--release-version=1.3.1}
+        {--release-version=1.3.2}
         {--draft}
         {--replace-active : Atomically retire active NFL pregame releases when approving this release}
         {--effective-at=}
@@ -49,7 +49,8 @@ class RegisterCalculationReleaseCommand extends AbstractRegisterCalculationRelea
             return self::FAILURE;
         }
 
-        $effectiveAt = CarbonImmutable::parse((string) $this->option('effective-at'));
+        $effectiveAt = CarbonImmutable::parse((string) $this->option('effective-at'))
+            ->setTimezone((string) config('app.timezone', 'UTC'));
         $registrar = app(NflCalculationReleaseRegistrar::class);
         $release = DB::transaction(function () use ($effectiveAt, $registrar): CalculationRelease {
             $release = $registrar->register(

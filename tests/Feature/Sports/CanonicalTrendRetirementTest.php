@@ -52,9 +52,9 @@ function trendRetirementFixture(string $sport, string $variant = 'valid', int $c
             'latest_source_available_at' => $start->subHours(3),
             'source_timestamps' => ['ratings' => $start->subHours(3)->toIso8601String()],
             'inputs' => ['home' => ['team_id' => $game->home_team_id, 'elo' => 1600], 'away' => ['team_id' => $game->away_team_id, 'elo' => 1600]]]);
-        $run = CalculationRun::factory()->create(['sport_event_id' => $event->id,
+        $run = CalculationRun::factory()->create(['output_hash' => str_repeat('a', 64), 'sport_event_id' => $event->id,
             'event_input_snapshot_id' => $input->id, 'calculation_release_id' => $release->id, 'status' => 'succeeded']);
-        $native = CanonicalPrediction::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id,
+        $native = CanonicalPrediction::factory()->create(['output_hash' => str_repeat('a', 64), 'sport' => $sport, 'sport_event_id' => $event->id,
             'calculation_run_id' => $run->id, 'phase' => 'pregame', 'publication_state' => 'draft',
             'generated_at' => $start->subHour(), 'detail_source' => null, 'detail_sport' => null, 'detail_id' => null]);
         foreach ([['moneyline', 'home', null, 0.7], ['spread', 'home', -8.0, null], ['total', 'combined', 40.0, null]] as [$type, $side, $line, $probability]) {

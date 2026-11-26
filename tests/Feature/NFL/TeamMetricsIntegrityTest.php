@@ -96,6 +96,7 @@ it('does not calculate a final game with unsynchronized scores', function () {
 });
 
 it('reports actual eligible EPA play samples including valid zero', function () {
+    config(['nfl.predictions.true_epa.custom_epa_quarantined' => false]);
     $game = ($this->game)();
     foreach ([[true, 0], [true, 1], [false, 10], [true, null]] as [$eligible, $epa]) {
         Play::factory()->create(['game_id' => $game->id, 'possession_team_id' => $this->team->id, 'true_epa' => $epa, 'is_epa_eligible' => $eligible]);
@@ -105,4 +106,27 @@ it('reports actual eligible EPA play samples including valid zero', function () 
         ->and($metric->sample_sizes['defensive_epa_plays'])->toBe(0)
         ->and($metric->offensive_true_epa_per_play)->toBe('0.500')
         ->and($metric->net_true_epa_per_play)->toBeNull();
+});
+
+it('withholds historical custom EPA and stops rebuilding it while quarantined', function () {
+    config(['nfl.predictions.true_epa.custom_epa_quarantined' => true]);
+    ($this->game)();
+    $old = TeamMetric::create([
+        'team_id' => $this->team->id, 'season' => 2026, 'season_type' => 2,
+        'offensive_true_epa_per_play' => 0.5, 'defensive_true_epa_per_play' => -0.2,
+        'net_true_epa_per_play' => 0.7,
+    ]);
+    expect($old->fresh()->toArray())
+        ->offensive_true_epa_per_play->toBeNull()
+        ->defensive_true_epa_per_play->toBeNull()
+        ->net_true_epa_per_play->toBeNull();
+    expect((float) $old->fresh()->getRawOriginal('net_true_epa_per_play'))->toBe(0.7);
+    $metric = (new CalculateTeamMetrics)->execute($this->team, 2026);
+    expect((float) $metric->getRawOriginal('net_true_epa_per_play'))->toBe(0.7)
+        ->and($metric->net_true_epa_per_play)->toBeNull()
+        ->and($metric->sample_sizes)->not->toHaveKey('offensive_epa_plays')
+        ->and($metric->net_rating)->not->toBeNull();
+    $this->artisan('nfl:calculate-play-epa', ['--rebuild' => true])
+        ->expectsOutput('Custom NFL EPA is quarantined; no plays were read or updated.')
+        ->assertSuccessful();
 });

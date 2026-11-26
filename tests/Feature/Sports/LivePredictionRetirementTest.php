@@ -33,9 +33,9 @@ function liveRetirementFixture(string $sport = 'nba'): array
     $input = EventInputSnapshot::factory()->create(['sport' => $sport, 'inputs' => ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]], 'sport_event_id' => $event->id,
         'phase' => 'pregame', 'pregame_safety_status' => 'verified', 'captured_at' => now(), 'cutoff_at' => $event->starts_at]);
     $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
-        'calculation_release_id' => $release->id, 'status' => 'succeeded']);
+        'calculation_release_id' => $release->id, 'status' => 'succeeded', 'output_hash' => str_repeat('a', 64)]);
     $native = CanonicalPrediction::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id,
-        'calculation_run_id' => $run->id, 'phase' => 'pregame', 'publication_state' => 'draft',
+        'calculation_run_id' => $run->id, 'output_hash' => $run->output_hash, 'phase' => 'pregame', 'publication_state' => 'draft',
         'detail_source' => null, 'detail_id' => null, 'detail_sport' => null,
         'output_metadata' => ['input_quality' => ['qualified' => true], 'market_conventions' => ['spread' => 'sportsbook_home_line']]]);
     $total = $sport === 'mlb' ? 8.5 : (in_array($sport, ['nfl', 'cfb'], true) ? 45.0 : 150.0);
@@ -190,4 +190,35 @@ it('avoids inactive snapshot churn for scheduled and already-cleared games', fun
     $action->execute($game->fresh());
     expect(LivePredictionSnapshot::query()->count())->toBe(2)
         ->and(app(LivePredictionStore::class)->fields($game->fresh())['live_win_probability'])->toBeNull();
+});
+
+it('rejects a pinned live baseline from a different NFL game in single and batch reads', function () {
+    [$game] = liveRetirementFixture('nfl');
+    [$other, $foreign] = liveRetirementFixture('nfl');
+    config(['prediction_lifecycle.canonical_reads.nfl' => true]);
+    $this->travel(2)->hours();
+    putGameInProgress($game, 'nfl');
+    $store = app(LivePredictionStore::class);
+    $baseline = $store->baseline($other);
+    $store->record($game, $baseline, ['live_win_probability' => 0.99], 'live', 'foreign-fixture');
+    expect($store->fields($game->fresh())['live_win_probability'])->toBeNull()
+        ->and($store->baseline($game->fresh())->lineage['canonical_prediction_id'])->not->toBe($foreign->id);
+    $games = collect([$game->fresh()]);
+    $store->preload($games);
+    expect($store->fields($games->first())['live_win_probability'])->toBeNull();
+});
+
+it('rejects postkickoff canonical revisions as pinned live baselines', function () {
+    [$game, $native] = liveRetirementFixture('nfl');
+    config(['prediction_lifecycle.canonical_reads.nfl' => true]);
+    $store = app(LivePredictionStore::class);
+    $baseline = $store->baseline($game);
+    $this->travel(2)->hours();
+    putGameInProgress($game, 'nfl');
+    DB::table('predictions')->where('id', $native->id)->update(['published_at' => now()]);
+    $store->record($game, $baseline, ['live_win_probability' => 0.99], 'live', 'late-fixture');
+    expect($store->fields($game->fresh())['live_win_probability'])->toBeNull();
+    $games = collect([$game->fresh()]);
+    $store->preload($games);
+    expect($store->fields($games->first())['live_win_probability'])->toBeNull();
 });

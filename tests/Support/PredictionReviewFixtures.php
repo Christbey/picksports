@@ -52,11 +52,11 @@ class PredictionReviewFixtures
             : $predictionClass::factory()->create($legacyAttributes);
         $release = CalculationRelease::factory()->approved()->create(['sport' => $sport, 'phase' => 'pregame']);
         $snapshot = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id, 'inputs' => $inputs]);
-        $run = CalculationRun::factory()->create([
+        $run = CalculationRun::factory()->create(['output_hash' => str_repeat('a', 64),
             'sport_event_id' => $event->id, 'event_input_snapshot_id' => $snapshot->id,
             'calculation_release_id' => $release->id, 'status' => 'succeeded',
         ]);
-        $canonical = CanonicalPrediction::factory()->create([
+        $canonical = CanonicalPrediction::factory()->create(['output_hash' => str_repeat('a', 64),
             'sport' => $sport, 'sport_event_id' => $event->id, 'calculation_run_id' => $run->id,
             'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null,
             'detail_source' => null, 'detail_sport' => null, 'detail_id' => null, 'revision' => 1,

@@ -58,7 +58,10 @@ class SportTeamMetricResource extends JsonResource
 
         $metrics = collect(SportPublicFields::METRIC_FIELDS[$this->context->slug] ?? [])
             ->mapWithKeys(fn (string $key): array => [$key => $this->metricAttribute($key)])
-            ->filter(fn (mixed $value): bool => $value !== null)
+            ->filter(fn (mixed $value, string $key): bool => $value !== null
+                || ($this->context->slug === 'nfl' && in_array($key, [
+                    'offensive_true_epa_per_play', 'defensive_true_epa_per_play', 'net_true_epa_per_play',
+                ], true)))
             ->all();
 
         $this->aliasMetric($metrics, 'offensive_rating', 'offensive_efficiency');

@@ -107,6 +107,28 @@ class NflInputSnapshotBuilder extends FootballInputSnapshotBuilder
         }
 
         $context = $this->recommendationContext;
+        $modelMarketHash = $context['market_input_payload_hash'] ?? null;
+        if (is_string($modelMarketHash) && (! is_string($market['model_input_payload_hash'] ?? null)
+            || ! hash_equals($modelMarketHash, $market['model_input_payload_hash']))) {
+            throw new PredictionLifecycleException('NFL model market inputs do not match the frozen paired quote snapshot.');
+        }
+        foreach ((array) ($context['market_input_selection'] ?? []) as $key => $selected) {
+            $side = $key === 'spreads' ? 'home' : 'over';
+            $oppositeSide = $key === 'spreads' ? 'away' : 'under';
+            $quotes = collect($market['quotes'] ?? []);
+            $sameBook = fn (array $quote): bool => ($quote['bookmaker_key'] ?? null) === ($selected['bookmaker_key'] ?? null)
+                && ($quote['bookmaker_title'] ?? null) === ($selected['bookmaker_title'] ?? null);
+            $line = (float) $selected['line'];
+            $paired = $quotes->contains(fn (array $quote): bool => $sameBook($quote) && $quote['market_key'] === $key
+                && $quote['side'] === $side && is_numeric($quote['price'] ?? null) && is_numeric($quote['line'] ?? null)
+                && abs((float) $quote['line'] - $line) < 0.001)
+                && $quotes->contains(fn (array $quote): bool => $sameBook($quote) && $quote['market_key'] === $key
+                    && $quote['side'] === $oppositeSide && is_numeric($quote['price'] ?? null) && is_numeric($quote['line'] ?? null)
+                    && abs((float) $quote['line'] - ($key === 'spreads' ? -$line : $line)) < 0.001);
+            if (! $paired) {
+                throw new PredictionLifecycleException('NFL model selected a market without matching fresh paired quote evidence.');
+            }
+        }
         unset($context['captured_at']);
 
         return ['pregame_market' => $market, 'recommendation_context' => $context];

@@ -343,3 +343,7 @@ Automatic CFB incremental EPA waits for final games; explicit single-game reques
 ### Opt-in shared game analysis
 
 All new schedules require `GAME_ANALYSIS_SCHEDULE_ENABLED=true` (default false), with per-sport capabilities independently gated. `sports:reconcile-game-analysis` runs every 15 minutes, `sports:reconcile-prediction-reviews` at minutes 2/17/32/47, and `sports:run-prediction-reviews` every minute. These use the existing heartbeat hook, single-server and overlap protection. Shared reconciliation selects future game windows and uses bounded default-queue work; dispatch is not completion. It consumes stored documents without fetching new reports. Existing NFL schedules and flags retain ownership. See [NBA rollout](docs/operations/nba-research-rollout.md).
+
+## NFL custom EP quarantine
+
+When `nfl.predictions.true_epa.custom_epa_quarantined` is true, the NFL custom EP baseline, blend-calibration and incremental play-calculation tasks are not registered. Manual `nfl:calculate-play-epa` exits without reading/writing plays. This affects only custom internal EP, not nflverse matchup EPA, prop capture/grade/report, research ingestion, canonical forecasts, live updates or final-result grading. The admin experimental rating page reads retained aggregates only and never dispatches these jobs.

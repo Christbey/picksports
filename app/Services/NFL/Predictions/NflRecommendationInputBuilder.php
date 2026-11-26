@@ -16,6 +16,8 @@ class NflRecommendationInputBuilder
 {
     public const VERSION = 'nfl-recommendation-context-v1';
 
+    public const NUMERIC_CONTRACT = 'nfl-market-isolation-integrity-v5';
+
     public function __construct(
         private readonly GeneratePredictionFromHistoricalElo $calculator,
         private readonly NflTrueEpaReadinessService $epa,
@@ -52,9 +54,15 @@ class NflRecommendationInputBuilder
             'version' => self::VERSION,
             'evidence_source_version' => NflEvidenceForecastSource::VERSION,
             'runtime_configuration_hash' => app(ModelRunRecorder::class)->configHash('nfl'),
+            'market_input_payload_hash' => $this->hasher->hash($game->odds_data),
+            'market_input_selection' => app(NflMarketQuoteLines::class)->selected((array) $game->odds_data),
             'captured_at' => now()->toIso8601String(),
             'authority' => 'nfl_deterministic_analysis_and_pro_signal_consensus',
+            // Historical key retained for snapshot compatibility; release 1.3 also uses these frozen outputs as its primary forecast.
             'forecast_role' => 'recommendation_evidence_only',
+            'calculation_method' => 'deterministic_statistical_model',
+            'numeric_contract' => self::NUMERIC_CONTRACT,
+            'ai_numeric_authority' => false,
             'model_version' => $preview['model_version'],
             'outputs' => [
                 ...$preview['outputs'],

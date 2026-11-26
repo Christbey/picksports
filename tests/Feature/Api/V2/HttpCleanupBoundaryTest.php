@@ -8,9 +8,7 @@ use App\Http\Resources\Api\V2\SportStatResource;
 use App\Http\Resources\BettingRecommendationResource;
 use App\Http\Resources\NBA\TeamResource;
 use App\Http\Resources\NFL\GameResource;
-use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
-use App\Models\EventInputSnapshot;
 use App\Models\NBA\Player as NbaPlayer;
 use App\Models\NBA\PlayerInjury as NbaInjury;
 use App\Models\NBA\Team as NbaTeam;
@@ -32,6 +30,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\CanonicalReadFixture;
 
 function httpCleanupGame(): Game
 {
@@ -43,12 +42,10 @@ function httpCleanupGame(): Game
 
 function httpCleanupCanonical(Game $game, bool $published = true): CanonicalPrediction
 {
-    $snapshot = EventInputSnapshot::factory()->create(['sport' => 'nfl', 'sport_event_id' => $game->sport_event_id]);
-    $run = CalculationRun::factory()->create(['sport_event_id' => $game->sport_event_id,
-        'event_input_snapshot_id' => $snapshot->id, 'status' => 'succeeded']);
+    $run = CanonicalReadFixture::run($game->sportEvent, []);
 
     return CanonicalPrediction::factory()->create(['sport' => 'nfl', 'sport_event_id' => $game->sport_event_id,
-        'calculation_run_id' => $run->id, 'phase' => 'pregame', 'publication_state' => $published ? 'published' : 'draft', 'published_at' => $published ? now() : null,
+        'calculation_run_id' => $run->id, 'output_hash' => $run->output_hash, 'generated_at' => $run->inputSnapshot->captured_at, 'phase' => 'pregame', 'publication_state' => $published ? 'published' : 'draft', 'published_at' => $published ? now() : null,
         'detail_source' => null, 'detail_sport' => null, 'detail_id' => null]);
 }
 

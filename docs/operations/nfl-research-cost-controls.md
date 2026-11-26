@@ -41,9 +41,8 @@ The read-only production audit on September 18, 2026 observed 432 completed call
 
 ## Refresh policy
 
-- More than 48 hours before kickoff: 24-hour research freshness.
-- Between 6 and 48 hours: 6-hour freshness.
-- Within 6 hours: 90-minute freshness, never extending beyond kickoff.
+- Research freshness is configured separately for more than 48 hours before kickoff, 6–48 hours, and the last 6 hours. All three currently default to 2,160 minutes (36 hours) in `config/nfl_research.php`; environment overrides can make a stage tighter. Expiry is capped at kickoff.
+- Reuse requires the same NFL game identity, a matching evidence/candidate fingerprint, and a research observation no later than the current instant. A matching hash never makes future-dated or wrong-game evidence current.
 - Existing report timestamps and expirations are never renewed by reuse. Entering a tighter window can make an earlier report due before its stored expiry.
 - Material source documents, availability/player-linkage, synced injury details, team/QB/coach/venue/kickoff changes and coarse weather/roof changes invalidate reuse. Document ordering, source-check timestamps and market-only changes do not cause paid research. Material candidate changes (bucketed outputs or decision context) require revalidation; identical and immaterial forecasts reuse the report.
 - Partial/insufficient reports and unknown failures with unchanged evidence retry no sooner than six hours (90 minutes near kickoff). Changed evidence can retry after a 15-minute minimum interval. A shared per-game lock prevents overlapping manual and scheduled requests.

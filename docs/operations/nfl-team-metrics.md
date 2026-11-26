@@ -22,3 +22,12 @@ The NFL page defaults to one season type (regular season). The API still accepts
 The page shows calculation timestamps, not a guarantee that all upstream inputs are fresh. Current Elo opponent rank groups and heuristic predictive/injury/fatigue ratings remain descriptive; these changes do not make them calibrated probabilities or historical as-known snapshots.
 
 Tests: `TeamMetricsIntegrityTest`, existing NFL calculation/snapshot and v2 endpoint contracts, plus `tests/frontend/nflTeamMetrics.test.mjs`. `node tests/browser/nfl-team-metrics-preview.mjs` serves a synthetic responsive QA fixture on port 5193.
+
+
+## Custom EPA quarantine
+
+While `nfl.predictions.true_epa.custom_epa_quarantined` is true (default), team metrics skip custom EPA scans and preserve existing custom aggregates without refreshing them on normal metrics refresh. Model access and API serialization also null historical custom EPA values; raw stored history is retained. The nullable API keys remain compatible. The NFL board removes custom EPA and defaults to scoring margin.
+
+NFL custom EPA baseline, blend-calibration and incremental tasks are not scheduled during quarantine. Manual `nfl:calculate-play-epa` exits without reading or writing plays. Existing prediction guards remain. Separate nflverse EPA matchup evidence and prospective prop experiments are unchanged. Deployment is required for production effect.
+
+Admin-only `/admin/nfl-experimental-ratings?season=2026` displays raw historical custom EP aggregates with explicit experimental, source, quarantine and unknown-calculation-time labels. It performs a bounded read of at most 32 aggregate rows, never a play scan or generation job. Public readers continue to return null.

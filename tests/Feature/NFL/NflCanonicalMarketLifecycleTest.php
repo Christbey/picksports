@@ -21,6 +21,7 @@ use App\Models\PredictionFeatureSnapshot;
 use App\Models\SportEvent;
 use App\Models\SportsGameContextReport;
 use App\Services\Api\V2\CanonicalPredictionPresentationService;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\NFL\NflEvidenceForecastSource;
 use App\Services\NFL\NflPredictionBoardContext;
 use App\Services\NFL\NflPredictionDispositionRecorder;
@@ -33,10 +34,13 @@ use App\Services\NFL\Predictions\NflPregameMarketSnapshot;
 use App\Services\NFL\Predictions\NflRecommendationInputBuilder;
 use App\Services\NFL\Research\ResearchPipeline;
 use App\Services\OddsApi\GameOddsSnapshotRecorder;
+use App\Services\Predictions\CanonicalPayloadHasher;
 use App\Services\Predictions\CanonicalSportCutoverReadinessService;
+use App\Services\Predictions\CanonicalTeamGameEvaluator;
 use App\Services\Predictions\ModelRunRecorder;
 use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 function nflCanonicalMarketFixture(string $seasonType = '2'): array
@@ -686,6 +690,7 @@ it('atomically replaces the active NFL release before v3 generation', function (
 
     $this->artisan('nfl:register-calculation-release', [
         '--replace-active' => true,
+        '--release-version' => '1.2.0',
         '--effective-at' => $effectiveAt->toIso8601String(),
         '--actor' => 'test-suite',
         '--reason' => 'Test atomic NFL release replacement.',
@@ -694,6 +699,7 @@ it('atomically replaces the active NFL release before v3 generation', function (
         ->assertSuccessful();
     $this->artisan('nfl:register-calculation-release', [
         '--replace-active' => true,
+        '--release-version' => '1.2.0',
         '--effective-at' => $effectiveAt->toIso8601String(),
         '--actor' => 'test-suite',
         '--reason' => 'Test idempotent NFL release replacement.',
@@ -1404,7 +1410,9 @@ it('preserves canonical board research evidence without promoting held research 
     $board = app(NflPredictionBoardContext::class)->forPredictions(collect([$prediction]))->get($prediction->id);
     expect($board['research']['status'])->toBe('reviewed')
         ->and($board['research']['prediction_changed'])->toBeFalse()
-        ->and((float) $board['forecast']['predicted_spread'])->toBe(7.0);
+        ->and($board['forecast'])->toBeNull()
+        ->and($board['forecast_source'])->toBe('Published model forecast')
+        ->and((float) $board['research_scenario']['predicted_spread'])->toBe(7.0);
     $presentation = app(CanonicalPredictionPresentationService::class)->forPrediction($prediction, $board);
     expect($presentation->nflBoard['research']['decision'])->toBe('hold')
         ->and($presentation->nflBoard['research']['reasons'])->toContain('canonical_approval_required');
@@ -1429,4 +1437,98 @@ it('selects the median among complete same-book quote pairs instead of an unpair
         ->and($market['consensus']['total']['bookmaker_key'])->toBe('testbook')
         ->and($market['consensus']['spread']['opposite_quote']['bookmaker_key'])->toBe('testbook')
         ->and($market['consensus']['total']['opposite_quote']['bookmaker_key'])->toBe('testbook');
+});
+
+it('rejects a model market payload that differs from its frozen quote authority', function () {
+    $fixture = nflCanonicalMarketFixture();
+    recordNflMarketSnapshot($fixture);
+    freezeNflRecommendationEvidence($fixture);
+    $records = app('nfl-test-recommendation-evidence');
+    $records[$fixture['game']->id]['market_input_payload_hash'] = str_repeat('f', 64);
+    app()->instance('nfl-test-recommendation-evidence', $records);
+    app(NflCalculationReleaseRegistrar::class)->register('1.3.0', effectiveAt: now()->subMinute()->toImmutable());
+    expect(fn () => app(GenerateCanonicalPrediction::class)->execute($fixture['game']))
+        ->toThrow(PredictionLifecycleException::class, 'model market inputs do not match');
+    expect(CanonicalPrediction::query()->where('publication_state', 'published')->count())->toBe(0);
+});
+
+it('grades the latest safe NFL pregame revision instead of a newer invalid revision', function (string $corruption) {
+    $fixture = nflCanonicalMarketFixture();
+    recordNflMarketSnapshot($fixture);
+    app(NflCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinutes(2)->toImmutable());
+    $first = app(GenerateCanonicalPrediction::class)->execute($fixture['game']->fresh());
+    $this->travel(1)->minutes();
+    recordNflMarketSnapshot($fixture, homeLine: -4.0);
+    $second = app(GenerateCanonicalPrediction::class)->execute($fixture['game']->fresh());
+    expect($second->id)->not->toBe($first->id);
+    $input = $second->calculationRun->inputSnapshot;
+    match ($corruption) {
+        'late_generated' => DB::table('predictions')->where('id', $second->id)
+            ->update(['generated_at' => $fixture['event']->starts_at->addMinute()]),
+        'source_after_capture' => DB::table('event_input_snapshots')->where('id', $input->id)
+            ->update(['cutoff_at' => $fixture['event']->starts_at, 'latest_source_available_at' => $input->captured_at->addMinute()]),
+        'unsafe_input' => DB::table('event_input_snapshots')->where('id', $input->id)
+            ->update(['pregame_safety_status' => 'unknown']),
+        'late_cutoff' => DB::table('event_input_snapshots')->where('id', $input->id)
+            ->update(['cutoff_at' => $fixture['event']->starts_at->addMinute()]),
+        'mismatched_output' => DB::table('calculation_runs')->where('id', $second->calculation_run_id)
+            ->update(['output_hash' => str_repeat('0', 64)]),
+    };
+    expect(app(CanonicalSportPredictionQuery::class)->queryForSport('nfl', ['game_id' => $fixture['game']->id])->exists())->toBeFalse();
+    $this->travel(1)->day();
+    $fixture['game']->update(['status' => 'STATUS_FINAL', 'home_score' => 30, 'away_score' => 20, 'game_clock' => '0:00']);
+    $grader = app(CanonicalTeamGameEvaluator::class);
+    expect($grader->pendingGameIds(collect([$fixture['game']->fresh()]), 'nfl')->all())->toBe([$fixture['game']->id]);
+    $evaluation = $grader->evaluate($fixture['game']->fresh(), 'nfl');
+    expect($evaluation->canonical_prediction_id)->toBe($first->id)
+        ->and($grader->pendingGameIds(collect([$fixture['game']->fresh()]), 'nfl'))->toBeEmpty();
+})->with(['late_generated', 'source_after_capture', 'unsafe_input', 'late_cutoff', 'mismatched_output']);
+
+it('rejects an unverified model-selected line even when the raw market payload matches', function () {
+    $fixture = nflCanonicalMarketFixture();
+    recordNflMarketSnapshot($fixture);
+    freezeNflRecommendationEvidence($fixture);
+    $records = app('nfl-test-recommendation-evidence');
+    $records[$fixture['game']->id]['market_input_payload_hash'] = app(CanonicalPayloadHasher::class)->hash($fixture['game']->fresh()->odds_data);
+    $records[$fixture['game']->id]['market_input_selection'] = [
+        'spreads' => ['bookmaker_key' => 'stale-first-book', 'bookmaker_title' => 'Stale First Book', 'line' => -15.0],
+    ];
+    app()->instance('nfl-test-recommendation-evidence', $records);
+    app(NflCalculationReleaseRegistrar::class)->register('1.3.0', effectiveAt: now()->subMinute()->toImmutable());
+    expect(fn () => app(GenerateCanonicalPrediction::class)->execute($fixture['game']))
+        ->toThrow(PredictionLifecycleException::class, 'without matching fresh paired quote evidence');
+    expect(CanonicalPrediction::query()->where('publication_state', 'published')->count())->toBe(0);
+});
+
+it('defaults new operator registration to the corrected full-model release without rewriting old releases', function () {
+    $this->artisan('nfl:register-calculation-release', ['--draft' => true])->assertSuccessful();
+    $release = CalculationRelease::query()->where('semantic_version', '1.3.1')->sole();
+    expect($release->status)->toBe('draft')
+        ->and(data_get($release->configuration, 'forecast.source'))->toBe('frozen_nfl_model_v1');
+});
+
+it('compares model market content independently of JSON object key order', function () {
+    $fixture = nflCanonicalMarketFixture();
+    recordNflMarketSnapshot($fixture);
+    freezeNflRecommendationEvidence($fixture);
+    $records = app('nfl-test-recommendation-evidence');
+    $reordered = array_reverse($fixture['game']->fresh()->odds_data, true);
+    $records[$fixture['game']->id]['market_input_payload_hash'] = app(CanonicalPayloadHasher::class)->hash($reordered);
+    app()->instance('nfl-test-recommendation-evidence', $records);
+    app(NflCalculationReleaseRegistrar::class)->register('1.3.1', effectiveAt: now()->subMinute()->toImmutable());
+    $prediction = app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
+    expect($prediction->publication_state)->toBe('published')->and($prediction->model_version)->toBe('1.3.1');
+});
+
+it('never publishes corrected numeric inputs under the older full-model release identity', function () {
+    $fixture = nflCanonicalMarketFixture();
+    recordNflMarketSnapshot($fixture);
+    freezeNflRecommendationEvidence($fixture);
+    $records = app('nfl-test-recommendation-evidence');
+    $records[$fixture['game']->id]['numeric_contract'] = NflRecommendationInputBuilder::NUMERIC_CONTRACT;
+    app()->instance('nfl-test-recommendation-evidence', $records);
+    app(NflCalculationReleaseRegistrar::class)->register('1.3.0', effectiveAt: now()->subMinute()->toImmutable());
+    expect(fn () => app(GenerateCanonicalPrediction::class)->execute($fixture['game']))
+        ->toThrow(PredictionLifecycleException::class, 'require calculation release 1.3.1');
+    expect(CanonicalPrediction::query()->where('publication_state', 'published')->count())->toBe(0);
 });

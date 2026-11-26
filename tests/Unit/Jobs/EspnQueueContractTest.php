@@ -7,6 +7,7 @@ use App\Jobs\ESPN\CBB\FetchTeamSchedule;
 use App\Jobs\ESPN\CFB\FetchGameDetails;
 use App\Jobs\ESPN\CFB\FetchPlayerInjuries;
 use App\Jobs\ESPN\MLB\FetchTeamDepthCharts;
+use App\Jobs\NBA\RefreshOvernightSources;
 use Illuminate\Support\Facades\File;
 use Tests\TestCase;
 
@@ -97,4 +98,17 @@ it('has a worker contract for every statically named application queue', functio
         ->values();
 
     expect($namedQueues->diff(array_keys(config('queue.worker_contracts')))->all())->toBeEmpty();
+});
+
+it('declares the isolated NBA source worker without provisioning it or sharing the live queue', function () {
+    $job = new RefreshOvernightSources;
+    $contract = config('queue.worker_contracts.nba-sources');
+
+    expect($job->queue)->toBe('nba-sources')
+        ->and($job->connection)->toBe($contract['connection'])
+        ->and($contract['requires_provisioning'])->toBeTrue()
+        ->and($contract['timeout'])->toBe($job->timeout)
+        ->and($contract['tries'])->toBe($job->tries)->toBe(1)
+        ->and($contract['timeout'])->toBeLessThan((int) config('queue.connections.redis.retry_after'))
+        ->and($job->uniqueFor)->toBeGreaterThan($job->timeout);
 });

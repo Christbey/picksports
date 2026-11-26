@@ -6,6 +6,8 @@ use App\Models\NFL\Team;
 use App\Services\NFL\TrueEpaCalculator;
 use Illuminate\Support\Collection;
 
+beforeEach(fn () => config(['nfl.predictions.true_epa.custom_epa_quarantined' => false]));
+
 it('only loads games with unprocessed plays unless rebuild is requested', function () {
     $home = Team::factory()->create();
     $away = Team::factory()->create();

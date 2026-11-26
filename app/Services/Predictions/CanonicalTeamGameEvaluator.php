@@ -13,6 +13,7 @@ use App\Models\SportEvent;
 use App\Models\SportEventResult;
 use App\Models\WCBB\Game as WcbbGame;
 use App\Models\WNBA\Game as WnbaGame;
+use App\Services\NFL\Predictions\NflCanonicalPregameEvidenceBoundary;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
@@ -88,6 +89,7 @@ class CanonicalTeamGameEvaluator
                     $query->from('predictions as candidate')->select('candidate.id')->whereColumn('candidate.sport_event_id', 'predictions.sport_event_id')
                         ->where('candidate.sport', $sport)->where('candidate.phase', 'pregame')->whereIn('candidate.publication_state', ['published', 'superseded'])
                         ->whereNotNull('candidate.published_at')->whereColumn('candidate.published_at', '<=', 'sport_events.starts_at')
+                        ->when($sport === 'nfl', fn ($query) => app(NflCanonicalPregameEvidenceBoundary::class)->apply($query, 'candidate'))
                         ->orderByDesc('candidate.revision')->limit(1);
                 })->get();
             $results = SportEventResult::query()->whereIn('sport_event_id', $eligible->keys())
@@ -127,6 +129,7 @@ class CanonicalTeamGameEvaluator
             ->whereIn('publication_state', ['published', 'superseded'])
             ->whereNotNull('published_at')
             ->where('published_at', '<=', $event->starts_at)
+            ->when($sport === 'nfl', fn ($query) => app(NflCanonicalPregameEvidenceBoundary::class)->apply($query))
             ->orderByDesc('revision')
             ->first();
 

@@ -22,7 +22,10 @@ export function nflBoardPresentation(
     isAdmin = false,
 ) {
     const board = record(prediction.nfl_board);
-    const forecast = record(board.forecast);
+    const canonical =
+        record(prediction).phase === 'pregame' &&
+        typeof record(prediction).revision === 'number';
+    const forecast = canonical ? {} : record(board.forecast);
     const p = numberValue(
         forecast.win_probability ??
             prediction.home_win_probability ??
@@ -39,9 +42,6 @@ export function nflBoardPresentation(
     const team = (s: 'home' | 'away') =>
         teamLabel(s === 'home' ? game?.home_team : game?.away_team);
     const storedMargin = numberValue(prediction.predicted_spread);
-    const canonical =
-        record(prediction).phase === 'pregame' &&
-        typeof record(prediction).revision === 'number';
     const margin =
         numberValue(forecast.predicted_spread) ??
         (storedMargin === null
@@ -144,7 +144,9 @@ export function nflBoardPresentation(
             typeof research.assessed_at === 'string'
                 ? research.assessed_at
                 : null,
-        forecastSource: String(board.forecast_source ?? 'Model forecast'),
+        forecastSource: canonical
+            ? 'Published model forecast'
+            : String(board.forecast_source ?? 'Model forecast'),
         forecastAt:
             typeof board.forecast_at === 'string'
                 ? board.forecast_at

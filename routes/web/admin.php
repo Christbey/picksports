@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\HealthcheckController as AdminHealthcheckController;
 use App\Http\Controllers\Admin\ImpersonationController as AdminImpersonationController;
 use App\Http\Controllers\Admin\MlbModelMonitoringController as AdminMlbModelMonitoringController;
+use App\Http\Controllers\Admin\NflExperimentalRatingController;
 use App\Http\Controllers\Admin\NflModelMonitoringController as AdminNflModelMonitoringController;
 use App\Http\Controllers\Admin\PermissionController as AdminPermissionController;
 use App\Http\Controllers\Admin\PlayerPropCardExportController as AdminPlayerPropCardExportController;
@@ -28,6 +29,7 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
         ['patch', '/permissions/tiers/{tier}', [AdminPermissionController::class, 'updateTierPermissions'], 'permissions.tiers.update'],
         ['get', '/healthchecks', [AdminHealthcheckController::class, 'index'], 'healthchecks'],
         ['get', '/mlb-model-monitoring', AdminMlbModelMonitoringController::class, 'mlb-model-monitoring'],
+        ['get', '/nfl-experimental-ratings', NflExperimentalRatingController::class, 'nfl-experimental-ratings'],
         ['get', '/nfl-model-monitoring', AdminNflModelMonitoringController::class, 'nfl-model-monitoring'],
         ['post', '/healthchecks/run', [AdminHealthcheckController::class, 'run'], 'healthchecks.run'],
         ['post', '/healthchecks/sync', [AdminHealthcheckController::class, 'sync'], 'healthchecks.sync'],

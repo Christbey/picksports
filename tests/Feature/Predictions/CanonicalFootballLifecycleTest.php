@@ -147,6 +147,7 @@ function recordCanonicalFootballNflMarket(array $fixture): void
             ]],
         ]],
     ];
+    $fixture['game']->update(['odds_data' => $oddsData, 'odds_updated_at' => now()->subMinute()]);
     app(GameOddsSnapshotRecorder::class)->record(
         'nfl',
         $fixture['game'],

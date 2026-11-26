@@ -75,7 +75,7 @@ const render = (rows, expanded = []) =>
                 metrics: rows,
                 columns: config.columns,
                 teamLink: (id) => `/nfl/teams/${id}`,
-                sortLabel: 'Net EPA/Play',
+                sortLabel: 'Net',
             },
         ),
     );
@@ -96,6 +96,8 @@ test('defensive metrics start best-first and nulls sort last in both directions'
 });
 test('NFL starts with regular season and preserves fractional turnover rates', () => {
     assert.equal(config.defaultSeasonType, '2');
+    assert.equal(config.defaultSort, 'net_rating');
+    assert.ok(config.sortOptions.every((option) => !option.key.includes('true_epa')));
     assert.equal(
         config.columns
             .find((c) => c.label === 'TO+/-')
@@ -108,7 +110,7 @@ test('core stats remain visible while advanced metrics are collapsed with sample
     const primary = html;
     assert.match(primary, /1-0-1/);
     assert.match(primary, /#8/);
-    assert.match(primary, /0\.125/);
+    assert.doesNotMatch(primary, /0\.125|Net EPA|Off EPA|Def EPA/);
     assert.match(primary, /Small sample: 2/);
     assert.match(primary, /Calculated/);
     assert.doesNotMatch(html, /<details[^>]*\bopen\b/);
@@ -174,7 +176,7 @@ test('two board instances never reuse disclosure or panel identifiers', async ()
         metrics: [fixture],
         columns: config.columns,
         teamLink: (id) => `/nfl/teams/${id}`,
-        sortLabel: 'Net EPA/Play',
+        sortLabel: 'Net',
     };
     const html = await renderToString(
         createSSRApp({

@@ -28,6 +28,7 @@ final class PredictionLifecycleTestSnapshotBuilder implements EventInputSnapshot
         public array $inputs,
         private readonly CarbonImmutable $capturedAt,
         private readonly CarbonImmutable $cutoffAt,
+        private readonly ?CarbonImmutable $sourceAvailableAt = null,
     ) {}
 
     public function build(SportEvent $event, CalculationReleaseData $release): EventInputSnapshotData
@@ -37,7 +38,7 @@ final class PredictionLifecycleTestSnapshotBuilder implements EventInputSnapshot
             inputs: $this->inputs,
             capturedAt: $this->capturedAt,
             cutoffAt: $this->cutoffAt,
-            latestSourceAvailableAt: $this->capturedAt->subMinute(),
+            latestSourceAvailableAt: $this->sourceAvailableAt ?? $this->capturedAt->subMinute(),
             sourceTimestamps: ['team_metrics' => $this->capturedAt->subMinute()->toIso8601String()],
             pregameSafetyStatus: 'verified',
             metadata: ['builder' => self::class],
@@ -353,4 +354,42 @@ it('hashes signed zeros consistently without equating nonzero metadata changes',
     $stored = json_decode(json_encode($before, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR);
     expect($hasher->hash($before))->toBe($hasher->hash($stored))
         ->and($hasher->hash(['margin' => 0]))->not->toBe($hasher->hash(['margin' => -0.1]));
+});
+
+it('rejects a pregame snapshot whose verified cutoff exceeds the absolute kickoff instant', function () {
+    $this->travelTo('2026-11-25 10:00:00');
+    $event = SportEvent::factory()->create(['sport' => 'nfl', 'starts_at' => now()->addHour()]);
+    lifecycleRulesRelease('nfl');
+    $builder = new PredictionLifecycleTestSnapshotBuilder(['home_probability' => 0.6], now()->toImmutable(), now()->addHours(2)->toImmutable());
+    $calculator = new PredictionLifecycleTestCalculator;
+    expect(fn () => app(PredictionLifecycleOrchestrator::class)->generate($event, $builder, $calculator))
+        ->toThrow(PredictionLifecycleException::class, 'cutoff must not exceed kickoff');
+    expect($calculator->calls)->toBe(0)->and(EventInputSnapshot::count())->toBe(0);
+    $this->travelBack();
+});
+
+it('rejects future-dated pregame capture even when it falls before kickoff', function () {
+    $this->travelTo('2026-11-25 10:00:00');
+    $event = SportEvent::factory()->create(['sport' => 'nfl', 'starts_at' => now()->addHours(2)]);
+    lifecycleRulesRelease('nfl');
+    $builder = new PredictionLifecycleTestSnapshotBuilder(['home_probability' => 0.6], now()->addHour()->toImmutable(), now()->addHours(2)->toImmutable());
+    $calculator = new PredictionLifecycleTestCalculator;
+    expect(fn () => app(PredictionLifecycleOrchestrator::class)->generate($event, $builder, $calculator))
+        ->toThrow(PredictionLifecycleException::class, 'capture cannot be in the future');
+    expect($calculator->calls)->toBe(0)->and(CalculationRun::count())->toBe(0);
+    $this->travelBack();
+});
+
+it('rejects source evidence available after capture even when the verified cutoff is before kickoff', function () {
+    $this->travelTo('2026-11-25 10:00:00');
+    $event = SportEvent::factory()->create(['sport' => 'nfl', 'starts_at' => now()->addHours(2)]);
+    lifecycleRulesRelease('nfl');
+    $builder = new PredictionLifecycleTestSnapshotBuilder(
+        ['home_probability' => 0.6], now()->toImmutable(), now()->addHour()->toImmutable(), now()->addMinute()->toImmutable(),
+    );
+    $calculator = new PredictionLifecycleTestCalculator;
+    expect(fn () => app(PredictionLifecycleOrchestrator::class)->generate($event, $builder, $calculator))
+        ->toThrow(PredictionLifecycleException::class, 'source availability cannot exceed snapshot capture time');
+    expect($calculator->calls)->toBe(0)->and(EventInputSnapshot::count())->toBe(0);
+    $this->travelBack();
 });

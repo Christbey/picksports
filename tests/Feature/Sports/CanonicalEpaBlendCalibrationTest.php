@@ -55,9 +55,9 @@ function epaReportForecast(string $sport, string $variant = 'valid', mixed $appl
         'captured_at' => $captured, 'cutoff_at' => $start, 'latest_source_available_at' => $variant === 'future_source' ? $start->copy()->addHour() : $captured,
         'pregame_safety_status' => $variant === 'unsafe' ? 'unverified' : 'verified', 'inputs' => $inputs]);
     $release = CalculationRelease::factory()->approved()->create(['sport' => $sport, 'phase' => 'pregame']);
-    $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
+    $run = CalculationRun::factory()->create(['output_hash' => str_repeat('a', 64), 'sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
         'calculation_release_id' => $release->id, 'status' => 'succeeded']);
-    $prediction = CanonicalPrediction::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id, 'calculation_run_id' => $run->id,
+    $prediction = CanonicalPrediction::factory()->create(['output_hash' => str_repeat('a', 64), 'sport' => $sport, 'sport_event_id' => $event->id, 'calculation_run_id' => $run->id,
         'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null, 'generated_at' => $generated,
         'output_metadata' => $sport === 'nfl' ? ['true_epa' => ['applied' => false]] : $metadata]);
     PredictionMarket::factory()->create(['prediction_id' => $prediction->id, 'market_type' => 'spread', 'selection' => 'home',

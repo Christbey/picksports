@@ -11,6 +11,8 @@
 
 ## Application references
 
+- [NFL prediction authority](operations/nfl-prediction-authority.md): numerical model, AI research, canonical publication, scenarios and grading; November 25 audit.
+
 - [Codebase reference](codebase-reference.md): domain layers and data semantics.
 - [API v2 operating policies](api/v2/README.md): changelog, versioning/deprecation, sandbox, and service objectives.
 - [API v2 reference](api-v2-reference.md), [endpoint contracts](api-v2-endpoint-contracts.md), and [OpenAPI](openapi-v2.json): routes, authentication, and payloads. Route and request implementations resolve disagreements.

@@ -61,6 +61,27 @@ class TeamMetric extends Model
         'calculation_date',
     ];
 
+    /** Retain historical storage without exposing quarantined custom EPA to readers. */
+    public function getOffensiveTrueEpaPerPlayAttribute(mixed $value): ?string
+    {
+        return config('nfl.predictions.true_epa.custom_epa_quarantined', true) || $value === null
+            ? null : number_format((float) $value, 3, '.', '');
+    }
+
+    /** Retain historical storage without exposing quarantined custom EPA to readers. */
+    public function getDefensiveTrueEpaPerPlayAttribute(mixed $value): ?string
+    {
+        return config('nfl.predictions.true_epa.custom_epa_quarantined', true) || $value === null
+            ? null : number_format((float) $value, 3, '.', '');
+    }
+
+    /** Retain historical storage without exposing quarantined custom EPA to readers. */
+    public function getNetTrueEpaPerPlayAttribute(mixed $value): ?string
+    {
+        return config('nfl.predictions.true_epa.custom_epa_quarantined', true) || $value === null
+            ? null : number_format((float) $value, 3, '.', '');
+    }
+
     protected function casts(): array
     {
         return [

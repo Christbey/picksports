@@ -100,6 +100,7 @@ export const normalizePrediction = (
     );
     return {
         source_updated_at: sourceTimestamp ?? null,
+        weather_forecast: source.weather_forecast,
         sport: typeof source.sport === 'string' ? source.sport : undefined,
         confidence_context:
             source.confidence_context as NflPagePrediction['confidence_context'],

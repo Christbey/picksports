@@ -78,8 +78,8 @@ function captureRetirementFixture(string $variant = 'valid', bool $legacy = fals
         'inputs' => $inputs, 'content_hash' => app(CanonicalPayloadHasher::class)->hash($inputs)]);
     $release = CalculationRelease::factory()->approved()->create(['sport' => 'nfl', 'phase' => 'pregame']);
     $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
-        'calculation_release_id' => $release->id, 'status' => 'succeeded']);
-    $native = CanonicalPrediction::factory()->create(['sport' => 'nfl', 'sport_event_id' => $event->id, 'calculation_run_id' => $run->id,
+        'calculation_release_id' => $release->id, 'status' => 'succeeded', 'output_hash' => str_repeat('a', 64)]);
+    $native = CanonicalPrediction::factory()->create(['sport' => 'nfl', 'sport_event_id' => $event->id, 'calculation_run_id' => $run->id, 'output_hash' => $run->output_hash,
         'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null, 'generated_at' => $generated,
         'detail_source' => null, 'detail_sport' => null, 'detail_id' => null]);
     foreach ([['moneyline', 'home', null, 0.7], ['spread', 'home', -7.0, null], ['total', 'combined', 55.0, null]] as [$type, $side, $line, $probability]) {

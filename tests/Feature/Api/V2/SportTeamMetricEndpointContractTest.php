@@ -471,3 +471,19 @@ function createV2TeamMetricContractMetric(string $metricModel, array $attributes
 
     return Model::unguarded(fn () => $metricModel::query()->create($payload));
 }
+
+it('retains nullable NFL EPA keys without exposing quarantined historical values', function () {
+    config(['nfl.predictions.true_epa.custom_epa_quarantined' => true]);
+    Sanctum::actingAs(User::factory()->create());
+    $team = NflTeam::factory()->create();
+    NflTeamMetric::create([
+        'team_id' => $team->id, 'season' => 2026, 'season_type' => 2,
+        'offensive_true_epa_per_play' => 0.5, 'defensive_true_epa_per_play' => -0.2,
+        'net_true_epa_per_play' => 0.7,
+    ]);
+    $response = $this->getJson('/api/v2/sports/nfl/metrics/teams?season=2026&season_type=2')->assertOk();
+    foreach (['offensive_true_epa_per_play', 'defensive_true_epa_per_play', 'net_true_epa_per_play'] as $key) {
+        $response->assertJsonStructure(['data' => [[$key]]])
+            ->assertJsonPath('data.0.'.$key, null);
+    }
+});

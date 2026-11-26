@@ -1,11 +1,10 @@
 <?php
 
-use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
-use App\Models\EventInputSnapshot;
 use App\Models\PredictionMarket;
 use App\Models\SportEvent;
 use App\Models\User;
+use Tests\Support\CanonicalReadFixture;
 
 it('keeps every prediction endpoint on the selected source without legacy fallback', function (string $sport) {
     $namespace = strtoupper($sport);
@@ -49,12 +48,9 @@ it('keeps every prediction endpoint on the selected source without legacy fallba
         $this->getJson("{$base}/games/{$game->id}/page")->assertOk()->assertJsonPath('data.prediction', null);
     }
 
-    $snapshot = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id, 'inputs' => ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]]]);
-    $run = CalculationRun::factory()->create([
-        'sport_event_id' => $event->id, 'event_input_snapshot_id' => $snapshot->id, 'status' => 'succeeded',
-    ]);
+    $run = CanonicalReadFixture::run($event, ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]]);
     $canonical = CanonicalPrediction::factory()->create([
-        'sport' => $sport, 'sport_event_id' => $event->id, 'calculation_run_id' => $run->id,
+        'sport' => $sport, 'sport_event_id' => $event->id, 'calculation_run_id' => $run->id, 'output_hash' => $run->output_hash, 'generated_at' => $run->inputSnapshot->captured_at,
         'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null,
         'detail_source' => null, 'detail_sport' => null, 'detail_id' => null,
     ]);

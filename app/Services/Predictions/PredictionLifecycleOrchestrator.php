@@ -136,6 +136,15 @@ class PredictionLifecycleOrchestrator
                 || $snapshot->latestSourceAvailableAt?->isAfter($snapshot->cutoffAt)) {
                 throw new PredictionLifecycleException('Pregame snapshot timing exceeds its prediction cutoff.');
             }
+
+            if ($snapshot->latestSourceAvailableAt?->greaterThan($snapshot->capturedAt)) {
+                throw new PredictionLifecycleException('Pregame source availability cannot exceed snapshot capture time.');
+            }
+
+            if ($event->starts_at === null || $snapshot->cutoffAt->greaterThan($event->starts_at)
+                || $snapshot->capturedAt->isFuture()) {
+                throw new PredictionLifecycleException('Pregame snapshot cutoff must not exceed kickoff and capture cannot be in the future.');
+            }
         }
     }
 

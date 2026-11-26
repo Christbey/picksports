@@ -178,3 +178,8 @@ Regression coverage: `tests/Feature/NFL/ResearchUncertaintyPolicyTest.php`.
 The required enum schema follows OpenAI's
 [Structured Outputs guidance](https://developers.openai.com/api/docs/guides/structured-outputs);
 the existing model, search budget and API timeout are unchanged.
+
+
+## Decision quote integrity
+
+`NflCandidateDecisionPolicy` requires both sides of a candidate quote to share the same immutable odds snapshot, sport, game table/id, bookmaker and market, with compatible lines. Both quotes must be pregame and captured within the permitted window before the decision and kickoff. Provider observation timestamps are checked separately; malformed supplied timestamps are rejected rather than replaced by a newer ingestion time. This check can hold a malformed candidate but never strengthens a recommendation or changes a published forecast.

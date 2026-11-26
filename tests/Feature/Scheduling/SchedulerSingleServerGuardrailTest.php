@@ -281,13 +281,13 @@ it('adds hourly nfl passes near kickoff while retaining bounded core passes on q
 
 it('runs incremental epa and stale ai reconciliation in bounded foreground passes', function () {
     $events = collect(app(Schedule::class)->events())->keyBy('description');
-    $nflEpa = $events->get('NFL: Calculate Incremental Play EPA');
+    $nflEpa = $events->get('NBA: Calculate Incremental Play EPA');
     $aiReconciliation = $events->get('Maintenance: Reconcile Stale AI Generations');
 
     expect((string) $nflEpa?->command)
-        ->toContain('nfl:calculate-play-epa')
+        ->toContain('nba:calculate-play-epa')
         ->toContain('--limit=4')
-        ->and($nflEpa?->expression)->toBe('28,58 * * * *')
+        ->and($nflEpa?->expression)->toBe('7,37 * * * *')
         ->and($nflEpa?->expiresAt)->toBe(20)
         ->and($nflEpa?->runInBackground)->toBeFalse()
         ->and((string) $aiReconciliation?->command)->toContain('--minutes=15')
@@ -321,10 +321,10 @@ it('keeps queue reservations longer than the longest configured sync job', funct
 
 it('runs immutable epa baseline rebuilds weekly and bounds the nfl readiness audit', function () {
     $events = collect(app(Schedule::class)->events())->keyBy('description');
-    $baseline = $events->get('NFL: Build EPA State Baseline');
+    $baseline = $events->get('NBA: Build EPA State Baseline');
     $readiness = $events->get('NFL: Weekly Readiness Pass');
 
-    expect($baseline?->expression)->toBe('20 1 * * 1')
+    expect($baseline?->expression)->toBe('20 0 * * 1')
         ->and((string) $readiness?->command)
         ->toContain('--from-season=2021')
         ->toContain('--spread-backtest-limit=2500')
@@ -340,4 +340,11 @@ it('does not record a successful CFB dispatch as worker completion or ping exter
     $event->callAfterCallbacks(app());
     expect(CommandHeartbeat::where('source', 'schedule')->where('command', 'like', 'cfb:run-pregame-pipeline%')->count())->toBe(0);
     Http::assertNothingSent();
+});
+
+it('keeps quarantined NFL custom EPA off the schedule without disabling independent evidence', function () {
+    expect(config('nfl.predictions.true_epa.custom_epa_quarantined'))->toBeTrue();
+    $commands = collect(app(Schedule::class)->events())->pluck('command')->filter()->implode("\n");
+    expect($commands)->not->toContain('nfl:calculate-play-epa', 'sports:build-epa-state-baseline nfl', 'sports:report-epa-blend-calibration nfl')
+        ->and($commands)->toContain('nfl:sync-nflverse-pbp', 'nfl:prop-probability-experiment capture', 'nfl:prop-probability-experiment grade');
 });

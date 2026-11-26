@@ -14,6 +14,7 @@ it('keeps identical basketball refreshes read-only and applies genuine correctio
     $game = $gameClass::factory()->create([
         'home_team_id' => $teamClass::factory(),
         'away_team_id' => $teamClass::factory(),
+        'status' => 'STATUS_IN_PROGRESS', 'home_score' => 2, 'away_score' => 0,
     ]);
     $payload = [['id' => '1001', 'text' => 'Made basket', 'homeScore' => 2, 'scoringPlay' => true]];
     $service = Mockery::mock($serviceClass);

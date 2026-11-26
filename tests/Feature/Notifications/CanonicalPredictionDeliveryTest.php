@@ -57,9 +57,11 @@ function predictionDeliveryFixture(string $sport = 'nba', ?float $probability = 
     $run = CalculationRun::factory()->create([
         'sport_event_id' => $event->id, 'event_input_snapshot_id' => $snapshot->id,
         'calculation_release_id' => $release->id, 'status' => 'succeeded',
+        'output_hash' => hash('sha256', json_encode([$probability, -8.5, 224.5])),
     ]);
     $prediction = CanonicalPrediction::factory()->create([
         'sport' => $sport, 'sport_event_id' => $event->id, 'calculation_run_id' => $run->id,
+        'output_hash' => $run->output_hash,
         'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null,
         'detail_source' => null, 'detail_sport' => null, 'detail_id' => null,
     ]);

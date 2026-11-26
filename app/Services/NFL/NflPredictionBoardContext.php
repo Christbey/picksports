@@ -102,10 +102,17 @@ class NflPredictionBoardContext
                 ->first(fn ($q) => $q['bookmaker'] === $home['bookmaker'] && $q['side'] === 'over') : null;
             $forecast = ! $final && $revision && ! $changed && ! $comparisonMissing && ! $expired && ! $unlinked ? $revision->revised : null;
 
+            $scenario = $forecast ? array_intersect_key($forecast, array_flip(['predicted_spread', 'predicted_total', 'win_probability'])) : null;
+            // A research preview is a scenario, never the published canonical forecast.
+            $primaryForecast = $prediction instanceof CanonicalPrediction ? null : $scenario;
+
             return [$prediction->id => [
-                'forecast' => $forecast ? array_intersect_key($forecast, array_flip(['predicted_spread', 'predicted_total', 'win_probability'])) : null,
-                'forecast_source' => $forecast ? 'Research forecast' : 'Model forecast',
-                'forecast_at' => ($forecast ? $revision->created_at : $savedAt)?->toIso8601String(),
+                'research_scenario' => $scenario,
+                'research_scenario_at' => $scenario ? $revision->created_at?->toIso8601String() : null,
+                'research_scenario_source' => 'Deterministic model preview with verified research availability; not AI-generated probabilities',
+                'forecast' => $primaryForecast,
+                'forecast_source' => $primaryForecast ? 'Research-adjusted model scenario' : 'Published model forecast',
+                'forecast_at' => ($primaryForecast ? $revision->created_at : $savedAt)?->toIso8601String(),
                 'research' => [
                     'status' => $status,
                     'assessed_at' => $revision?->created_at?->toIso8601String(),

@@ -5,7 +5,8 @@ The default board prioritizes matchups, projected winners, spread leans, and the
 ## Presentation contract
 
 - `win_probability` is the probability of a **home** win. The winning side is determined from that probability, never from a market/value `pick_side`. An away winner displays `1 - home_probability`; 50% is an even matchup, and missing probability is unavailable.
-- `nfl_board.forecast` contains the latest saved research revision's numeric forecast for an upcoming game, unless the base prediction was updated after that revision. It is labelled Research forecast in details. Final cards retain the base prediction used for grading.
+- Published canonical numbers are the main forecast on upcoming, live and final cards. `nfl_board.forecast` is null for canonical records so presentation falls back to the published prediction. A fresh research-adjusted deterministic preview is retained separately in `nfl_board.research_scenario`, with its timestamp and source. It does not overwrite the forecast used for grading. Legacy transport retains its scenario override for compatibility and labels it Research-adjusted model scenario. Neither path treats AI prose as numerical inference.
+
 - Fresh paired sportsbook lines are explicitly home-sided in `nfl_board.market.home_spread`. Spread lean is home when `predicted_home_margin + home_spread > 0`, away when negative, and no edge when zero. No fresh quote means Line unavailable; never reuse an ambiguously sided legacy market field.
 - Final/live games use recorded research quotes, not mutable live/postgame odds, for pregame comparisons.
 - Research checked means the last linked report is ready, unexpired, and its assessment is data-complete. It does **not** mean wager approved or certify that inputs have not changed since the assessment. Missing, expired, newer/unlinked reports, newer base predictions, and data holds remain visible. The drawer shows assessment and forecast timestamps.

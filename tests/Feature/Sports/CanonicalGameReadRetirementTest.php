@@ -39,9 +39,9 @@ function gameReadRetirementFixture(string $sport, string $variant = 'valid'): ar
     $release = CalculationRelease::factory()->approved()->create(['sport' => $sport, 'phase' => 'pregame']);
     $input = EventInputSnapshot::factory()->create(['sport' => $sport, 'inputs' => ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]], 'sport_event_id' => $event->id,
         'pregame_safety_status' => $variant === 'unsafe' ? 'unverified' : 'verified']);
-    $run = CalculationRun::factory()->create(['sport_event_id' => $event->id,
+    $run = CalculationRun::factory()->create(['output_hash' => str_repeat('a', 64), 'sport_event_id' => $event->id,
         'calculation_release_id' => $release->id, 'event_input_snapshot_id' => $input->id, 'status' => 'succeeded']);
-    $native = CanonicalPrediction::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id,
+    $native = CanonicalPrediction::factory()->create(['output_hash' => str_repeat('a', 64), 'sport' => $sport, 'sport_event_id' => $event->id,
         'calculation_run_id' => $run->id, 'phase' => 'pregame', 'publication_state' => 'draft',
         'published_at' => null, 'detail_source' => null, 'detail_sport' => null, 'detail_id' => null]);
     foreach ([['moneyline', 'home', null, 0.7], ['spread', 'home', -4.5, null], ['total', 'combined', 40.0, null]] as [$type, $side, $line, $probability]) {

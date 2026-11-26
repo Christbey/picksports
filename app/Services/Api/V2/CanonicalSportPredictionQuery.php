@@ -3,6 +3,7 @@
 namespace App\Services\Api\V2;
 
 use App\Models\CanonicalPrediction;
+use App\Services\NFL\Predictions\NflCanonicalPregameEvidenceBoundary;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -145,6 +146,7 @@ class CanonicalSportPredictionQuery
             ->whereNotNull('predictions.published_at')
             ->whereColumn('predictions.published_at', '<=', 'sport_events.starts_at')
             ->whereNotNull('predictions.calculation_run_id')
+            ->when($sport === 'nfl', fn ($query) => app(NflCanonicalPregameEvidenceBoundary::class)->apply($query))
             ->whereHas('calculationRun', function (Builder $query): void {
                 $query->where('status', 'succeeded')
                     ->whereHas('inputSnapshot', fn (Builder $query): Builder => $query

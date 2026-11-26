@@ -18,6 +18,6 @@ class NflModelVersion
         $adaptationSuffix = config('nfl.predictions.preseason_signal.season_adaptation.enabled', true) ? '-season-adaptive-v1' : '';
 
         return (string) config('nfl.predictions.model_version', 'nfl-historical-elo-v2')
-            .'-career-regular-v2-ats-v3'.$adaptationSuffix.'-integrity-v4'.$suffix;
+            .'-career-regular-v2-ats-v3'.$adaptationSuffix.'-integrity-v5'.$suffix;
     }
 }

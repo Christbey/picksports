@@ -1,7 +1,6 @@
 <?php
 
 use App\Models\BetDecision;
-use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\LivePredictionSnapshot;
 use App\Models\EventInputSnapshot;
@@ -23,6 +22,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\Support\CanonicalReadFixture;
 
 function vueCanonicalFixture(string $sport, float $homeLine = 4.5, float $homeProbability = 0.65, array $metadata = []): CanonicalPrediction
 {
@@ -36,12 +36,9 @@ function vueCanonicalFixture(string $sport, float $homeLine = 4.5, float $homePr
         'home_team_id' => $teamClass::factory(), 'away_team_id' => $teamClass::factory(),
         'status' => 'STATUS_SCHEDULED',
     ]);
-    $snapshot = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id, 'inputs' => ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]]]);
-    $run = CalculationRun::factory()->create([
-        'sport_event_id' => $event->id, 'event_input_snapshot_id' => $snapshot->id, 'status' => 'succeeded',
-    ]);
+    $run = CanonicalReadFixture::run($event, ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]]);
     $prediction = CanonicalPrediction::factory()->create([
-        'sport' => $sport, 'sport_event_id' => $event->id, 'calculation_run_id' => $run->id,
+        'sport' => $sport, 'sport_event_id' => $event->id, 'calculation_run_id' => $run->id, 'output_hash' => $run->output_hash, 'generated_at' => $run->inputSnapshot->captured_at,
         'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null,
         'detail_source' => null, 'detail_sport' => null, 'detail_id' => null, 'output_metadata' => $metadata,
     ]);

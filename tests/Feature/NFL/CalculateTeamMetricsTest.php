@@ -837,6 +837,7 @@ it('infers nfl division matchups from abbreviation when conference and division 
 });
 
 it('calculates true epa per play team metrics from nfl plays', function () {
+    config(['nfl.predictions.true_epa.custom_epa_quarantined' => false]);
     $game1 = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,

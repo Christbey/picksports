@@ -101,6 +101,7 @@ it('reuses matching research until the 36-hour boundary', function () {
     $game = costControlGame();
     $policy = app(ResearchRefreshPolicy::class);
     $report = new SportsGameContextReport([
+        'sport' => 'nfl', 'game_id' => $game->id,
         'status' => 'ready',
         'researched_at' => now()->subHours(35),
         'expires_at' => now()->addHour(),

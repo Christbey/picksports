@@ -511,7 +511,7 @@ export const wcbbTeamMetricsConfig = createSportTeamMetricsConfig({
 export const nflTeamMetricsConfig = createSportTeamMetricsConfig({
     sport: 'nfl',
     title: 'NFL Team Metrics',
-    subtitle: 'Season performance, scoring and play-by-play efficiency',
+    subtitle: 'Season performance, scoring and schedule context',
     defaultSeasonType: '2',
     seasonTypeOptions: [
         { value: '1', label: 'Preseason' },
@@ -519,24 +519,8 @@ export const nflTeamMetricsConfig = createSportTeamMetricsConfig({
         { value: '3', label: 'Postseason' },
     ],
     teamLink: (id: number) => NFLTeamController.url(id),
-    defaultSort: 'net_true_epa_per_play',
+    defaultSort: 'net_rating',
     sortOptions: [
-        {
-            key: 'net_true_epa_per_play',
-            label: 'Net EPA/Play',
-            getValue: (m: any) => m.net_true_epa_per_play,
-        },
-        {
-            key: 'offensive_true_epa_per_play',
-            label: 'Off EPA/Play',
-            getValue: (m: any) => m.offensive_true_epa_per_play,
-        },
-        {
-            key: 'defensive_true_epa_per_play',
-            label: 'Def EPA/Play',
-            getValue: (m: any) => m.defensive_true_epa_per_play,
-            lowerIsBetter: true,
-        },
         {
             key: 'predictive_rating',
             label: 'Predictive',
@@ -620,26 +604,6 @@ export const nflTeamMetricsConfig = createSportTeamMetricsConfig({
             label: 'Predict',
             value: (m: any) => formatNumber(m.predictive_rating, 2),
             class: (m: any) => ratingClass(m.predictive_rating, 4),
-        },
-        {
-            label: 'Net EPA',
-            value: (m: any) => formatNumber(m.net_true_epa_per_play, 3),
-            class: (m: any) => ratingClass(m.net_true_epa_per_play, 0.15),
-        },
-        {
-            label: 'Off EPA',
-            value: (m: any) => formatNumber(m.offensive_true_epa_per_play, 3),
-            class: (m: any) => ratingClass(m.offensive_true_epa_per_play, 0.15),
-        },
-        {
-            label: 'Def EPA',
-            value: (m: any) => formatNumber(m.defensive_true_epa_per_play, 3),
-            class: (m: any) =>
-                m.defensive_true_epa_per_play == null
-                    ? 'text-muted-foreground'
-                    : Number(m.defensive_true_epa_per_play) <= 0
-                      ? 'text-green-600 dark:text-green-400'
-                      : 'text-red-600 dark:text-red-400',
         },
         {
             label: 'Home',

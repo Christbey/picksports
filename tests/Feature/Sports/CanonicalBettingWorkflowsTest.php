@@ -71,11 +71,11 @@ function nativeBettingWorkflowFixture(string $sport = 'mlb', bool $pitching = tr
             'pregame_market' => ['available' => true, 'consensus' => ['spread' => ['line' => -1.5], 'total' => ['line' => 8.5]]],
             ...($pitching ? ['pitching' => ['home' => ['elo' => 1600], 'away' => ['elo' => 1450]]] : [])],
     ]);
-    $run = CalculationRun::factory()->create([
+    $run = CalculationRun::factory()->create(['output_hash' => str_repeat('a', 64),
         'sport_event_id' => $event->id, 'event_input_snapshot_id' => $snapshot->id,
         'calculation_release_id' => $release->id, 'status' => 'succeeded',
     ]);
-    $prediction = CanonicalPrediction::factory()->create([
+    $prediction = CanonicalPrediction::factory()->create(['output_hash' => str_repeat('a', 64),
         'sport' => $sport, 'sport_event_id' => $event->id, 'calculation_run_id' => $run->id,
         'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null,
         'detail_source' => null, 'detail_sport' => null, 'detail_id' => null,

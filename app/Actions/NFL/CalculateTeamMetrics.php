@@ -132,13 +132,17 @@ class CalculateTeamMetrics
 
         $firstHalfRating = $this->averageFromContexts($gameContexts, 'first_half_margin');
         $secondHalfRating = $this->averageFromContexts($gameContexts, 'second_half_margin');
-        $trueEpaMetrics = $this->calculateTeamTrueEpaMetrics(Play::class, (int) $team->id, $games, true);
-        $epaCounts = Play::query()->whereIn('game_id', $games->pluck('id'))
-            ->where('is_epa_eligible', true)->whereNotNull('true_epa')
-            ->whereIn('possession_team_id', $games->flatMap(fn ($game) => [$game->home_team_id, $game->away_team_id])->unique())
-            ->selectRaw('possession_team_id, count(*) as plays')->groupBy('possession_team_id')->get();
-        $sampleSizes['offensive_epa_plays'] = (int) $epaCounts->where('possession_team_id', $team->id)->sum('plays');
-        $sampleSizes['defensive_epa_plays'] = (int) $epaCounts->where('possession_team_id', '!=', $team->id)->sum('plays');
+        // Quarantined custom EP is not production matchup evidence. Avoid scanning
+        // plays. Preserve stored research values without refreshing or exposing them.
+        if (! config('nfl.predictions.true_epa.custom_epa_quarantined', true)) {
+            $trueEpaMetrics = $this->calculateTeamTrueEpaMetrics(Play::class, (int) $team->id, $games, true);
+            $epaCounts = Play::query()->whereIn('game_id', $games->pluck('id'))
+                ->where('is_epa_eligible', true)->whereNotNull('true_epa')
+                ->whereIn('possession_team_id', $games->flatMap(fn ($game) => [$game->home_team_id, $game->away_team_id])->unique())
+                ->selectRaw('possession_team_id, count(*) as plays')->groupBy('possession_team_id')->get();
+            $sampleSizes['offensive_epa_plays'] = (int) $epaCounts->where('possession_team_id', $team->id)->sum('plays');
+            $sampleSizes['defensive_epa_plays'] = (int) $epaCounts->where('possession_team_id', '!=', $team->id)->sum('plays');
+        }
 
         $leagueAverageElo = (float) (Team::query()->avg('elo_rating') ?? 1500.0);
         $predictiveRating = $turnoverDifferential === null ? null : $this->calculatePredictiveRating(
@@ -226,9 +230,11 @@ class CalculateTeamMetrics
                 'vs_23_to_32_rating' => $this->roundOrNull($vs23To32Rating, 3),
                 'first_half_rating' => $this->roundOrNull($firstHalfRating, 3),
                 'second_half_rating' => $this->roundOrNull($secondHalfRating, 3),
-                'offensive_true_epa_per_play' => $this->roundOrNull($trueEpaMetrics['offensive_true_epa_per_play'], 3),
-                'defensive_true_epa_per_play' => $this->roundOrNull($trueEpaMetrics['defensive_true_epa_per_play'], 3),
-                'net_true_epa_per_play' => $this->roundOrNull($trueEpaMetrics['net_true_epa_per_play'], 3),
+                ...(! config('nfl.predictions.true_epa.custom_epa_quarantined', true) ? [
+                    'offensive_true_epa_per_play' => $this->roundOrNull($trueEpaMetrics['offensive_true_epa_per_play'], 3),
+                    'defensive_true_epa_per_play' => $this->roundOrNull($trueEpaMetrics['defensive_true_epa_per_play'], 3),
+                    'net_true_epa_per_play' => $this->roundOrNull($trueEpaMetrics['net_true_epa_per_play'], 3),
+                ] : []),
                 'calculation_date' => now()->toDateString(),
             ]
         );

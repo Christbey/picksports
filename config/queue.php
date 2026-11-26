@@ -36,6 +36,17 @@ return [
             'max_time' => 3600,
             'memory' => 384,
         ],
+        'nba-sources' => [
+            'purpose' => 'Isolated NBA overnight source acquisition and assessment; provision before bridge activation',
+            'connection' => 'redis',
+            'requires_provisioning' => true,
+            'timeout' => 600,
+            'tries' => 1,
+            'backoff' => 0,
+            'max_jobs' => 100,
+            'max_time' => 3600,
+            'memory' => 384,
+        ],
         'sync' => [
             'purpose' => 'Serialized scheduled commands, bulk ESPN teams, rosters, schedules, depth charts, and historical backfills',
             'timeout' => 1800,

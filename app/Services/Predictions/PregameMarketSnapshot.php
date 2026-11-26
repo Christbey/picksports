@@ -22,7 +22,7 @@ abstract class PregameMarketSnapshot
             ->with(['marketQuotes' => fn ($query) => $query
                 ->whereIn('market_key', ['h2h', 'spreads', 'totals'])
                 ->where('is_pregame', true)
-                ->when($this->sport() === 'cbb', fn ($query) => $query->where('created_at', '<=', $capturedAt))
+                ->when(in_array($this->sport(), ['cbb', 'nfl'], true), fn ($query) => $query->where('created_at', '<=', $capturedAt))
                 ->where('captured_at', '>=', $freshAfter)
                 ->where('captured_at', '<=', $capturedAt)
                 ->where('captured_at', '<', $cutoffAt)
@@ -31,7 +31,7 @@ abstract class PregameMarketSnapshot
                 ->orderBy('side')
                 ->orderBy('id')])
             ->where('sport', $this->sport())
-            ->when($this->sport() === 'cbb', fn ($query) => $query
+            ->when(in_array($this->sport(), ['cbb', 'nfl'], true), fn ($query) => $query
                 ->where('created_at', '<=', $capturedAt)
                 ->where('commence_time', $cutoffAt->setTimezone(config('app.timezone'))))
             ->where('game_table', $game->getTable())
@@ -42,7 +42,7 @@ abstract class PregameMarketSnapshot
             ->whereHas('marketQuotes', fn ($query) => $query
                 ->whereIn('market_key', ['h2h', 'spreads', 'totals'])
                 ->where('is_pregame', true)
-                ->when($this->sport() === 'cbb', fn ($query) => $query->where('created_at', '<=', $capturedAt))
+                ->when(in_array($this->sport(), ['cbb', 'nfl'], true), fn ($query) => $query->where('created_at', '<=', $capturedAt))
                 ->where('captured_at', '>=', $freshAfter)
                 ->where('captured_at', '<=', $capturedAt)
                 ->where('captured_at', '<', $cutoffAt))
@@ -50,11 +50,20 @@ abstract class PregameMarketSnapshot
             ->latest('id')
             ->first();
         $marketQuotes = $snapshot?->marketQuotes
-            ->filter(function (MarketQuote $quote) use ($freshAfter, $capturedAt, $cutoffAt): bool {
+            ->filter(function (MarketQuote $quote) use ($snapshot, $game, $freshAfter, $capturedAt, $cutoffAt): bool {
+                if ($this->sport() === 'nfl' && (! $snapshot
+                    || $quote->sport !== 'nfl' || $quote->game_table !== $game->getTable()
+                    || (int) $quote->game_id !== (int) $game->getKey()
+                    || (int) $quote->game_odds_snapshot_id !== (int) $snapshot->getKey()
+                    || $quote->commence_time === null || ! $quote->commence_time->eq($cutoffAt)
+                    || $quote->captured_at === null || ! $quote->captured_at->eq($snapshot->captured_at))) {
+                    return false;
+                }
                 $observedAt = $this->quoteObservedAt($quote);
 
-                return $observedAt->betweenIncluded($freshAfter, $capturedAt)
-                    && $observedAt->lt($cutoffAt);
+                return $observedAt !== null && $observedAt->betweenIncluded($freshAfter, $capturedAt)
+                    && $observedAt->lt($cutoffAt)
+                    && ($this->sport() !== 'nfl' || $observedAt->lte($quote->captured_at));
             })
             ->values() ?? collect();
 
@@ -102,6 +111,8 @@ abstract class PregameMarketSnapshot
             'reason' => $available ? null : 'required_pregame_market_coverage_missing',
             'game_odds_snapshot_id' => $snapshot->getKey(),
             'payload_hash' => $snapshot->payload_hash,
+            // Compare decoded content: MySQL JSON storage may reorder object keys.
+            'model_input_payload_hash' => $this->sport() === 'nfl' ? app(CanonicalPayloadHasher::class)->hash($snapshot->odds_data) : null,
             'captured_at' => $snapshot->captured_at?->toIso8601String(),
             'commence_time' => $snapshot->commence_time?->toIso8601String(),
             'maximum_quote_age_minutes' => $maximumQuoteAgeMinutes,
@@ -217,18 +228,25 @@ abstract class PregameMarketSnapshot
                 : null,
             'captured_at' => $quote->captured_at?->toIso8601String(),
             'provider_observed_at' => data_get($quote->metadata, 'provider_observed_at'),
-            'freshness_observed_at' => $this->quoteObservedAt($quote)->toIso8601String(),
+            'freshness_observed_at' => $this->quoteObservedAt($quote)?->toIso8601String(),
             'is_pregame' => (bool) $quote->is_pregame,
         ];
     }
 
-    private function quoteObservedAt(MarketQuote $quote): CarbonImmutable
+    private function quoteObservedAt(MarketQuote $quote): ?CarbonImmutable
     {
         $providerObservedAt = data_get($quote->metadata, 'provider_observed_at');
+        if ($this->sport() === 'nfl' && $providerObservedAt !== null
+            && (! is_string($providerObservedAt) || trim($providerObservedAt) === '')) {
+            return null;
+        }
         if (is_string($providerObservedAt) && $providerObservedAt !== '') {
             try {
                 return CarbonImmutable::parse($providerObservedAt);
             } catch (Throwable) {
+                if ($this->sport() === 'nfl') {
+                    return null;
+                }
                 // Fall through to the persisted ingestion timestamp.
             }
         }

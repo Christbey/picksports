@@ -24,7 +24,7 @@ function toggleTeam(id: number): void {
 const groups = [
     {
         title: 'Offense & defense',
-        labels: ['Off EPA', 'Def EPA', 'Net', 'YPG', 'YA/G', 'TO+/-'],
+        labels: ['Net', 'YPG', 'YA/G', 'TO+/-'],
     },
     {
         title: 'Situational performance',
@@ -90,8 +90,6 @@ const sampleKeys: Record<string, string> = {
     Away: 'away',
     L5: 'last_5',
     L10: 'last_10',
-    'Off EPA': 'offensive_epa_plays',
-    'Def EPA': 'defensive_epa_plays',
 };
 function sample(metric: any, label: string): string {
     const count = metric.sample_sizes?.[sampleKeys[label]];
@@ -112,9 +110,7 @@ function updated(metric: any): string {
 <template>
     <section aria-label="NFL team rankings" class="min-w-0 space-y-3">
         <p class="text-xs text-muted-foreground">
-            Ordered by {{ sortLabel }}. EPA is expected points added per
-            eligible play; lower defensive EPA is better. Early-season rankings
-            use small samples.
+            Ordered by {{ sortLabel }}. Early-season rankings use small samples.
         </p>
         <p
             v-if="!metrics.length"
@@ -158,16 +154,6 @@ function updated(metric: any): string {
                     <p class="text-xs text-muted-foreground">Games</p>
                     <p class="font-semibold tabular-nums">
                         {{ metric.games_played ?? '—' }}
-                    </p>
-                </div>
-                <div>
-                    <p class="text-xs text-muted-foreground">Net EPA / play</p>
-                    <p class="font-semibold tabular-nums">
-                        {{
-                            metric.sample_sizes
-                                ? formatNumber(metric.net_true_epa_per_play, 3)
-                                : '—'
-                        }}
                     </p>
                 </div>
                 <div>

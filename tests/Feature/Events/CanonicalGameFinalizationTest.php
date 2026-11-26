@@ -5,7 +5,9 @@ use App\Events\GameFinalized;
 use App\Listeners\TriggerGameFinalizationGrading;
 use App\Models\BetDecision;
 use App\Models\CalculationRelease;
+use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
+use App\Models\EventInputSnapshot;
 use App\Models\NBA\Prediction;
 use App\Models\PredictionEvaluation;
 use App\Models\PredictionMarket;
@@ -33,8 +35,30 @@ function canonicalFinalizationFixture(string $sport = 'nba'): array
         'home_score' => 108, 'away_score' => 100,
         ...($sport !== 'mlb' ? ['game_clock' => '0:00'] : []),
     ]);
+    // Native finalization fixtures must contain the same frozen identity and
+    // completed calculation evidence as a real published forecast.
+    $generatedAt = $start->copy()->subMinutes(10);
+    $input = EventInputSnapshot::factory()->create([
+        'sport' => $sport, 'sport_event_id' => $event->id,
+        'captured_at' => $generatedAt->copy()->subMinute(),
+        'cutoff_at' => $generatedAt->copy()->subMinute(),
+        'latest_source_available_at' => $generatedAt->copy()->subMinutes(2),
+        'inputs' => ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]],
+    ]);
+    $release = CalculationRelease::factory()->approved()->create([
+        'sport' => $sport, 'phase' => 'pregame',
+        'approved_at' => $generatedAt->copy()->subMinutes(2),
+        'effective_at' => $generatedAt->copy()->subMinutes(2),
+    ]);
+    $outputHash = hash('sha256', json_encode(['home_probability' => 0.65, 'home_line' => -6.5, 'total' => 210.5]));
+    $run = CalculationRun::factory()->create([
+        'sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
+        'calculation_release_id' => $release->id, 'phase' => 'pregame',
+        'status' => 'succeeded', 'output_hash' => $outputHash,
+    ]);
     $prediction = CanonicalPrediction::factory()->create([
         'sport' => $sport, 'sport_event_id' => $event->id,
+        'calculation_run_id' => $run->id, 'output_hash' => $outputHash,
         'phase' => 'pregame', 'publication_state' => 'draft',
         'detail_source' => null, 'detail_sport' => null, 'detail_id' => null,
         'generated_at' => $start->copy()->subMinutes(10),
@@ -141,7 +165,7 @@ it('respects the canonical pipeline switch while preserving legacy grading', fun
 it('does not discover withdrawn forecasts as canonical finalization work', function (string $state) {
     Event::fake([GameFinalized::class]);
     [$game, $prediction] = canonicalFinalizationFixture();
-    $prediction->update(['publication_state' => $state]);
+    $prediction->update(['publication_state' => $state, 'withdrawn_at' => now()]);
     app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game, 'STATUS_FINAL');
     Event::assertNotDispatched(GameFinalized::class);
     handleCanonicalFinalization($game);

@@ -24,6 +24,10 @@ class NflCalculator extends CanonicalFootballCalculator
             throw new PredictionLifecycleException('NFL full-model release requires matching frozen NFL model inputs.');
         }
         $context = (array) data_get($snapshot->inputs, 'recommendation_context', []);
+        if (($context['numeric_contract'] ?? null) === NflRecommendationInputBuilder::NUMERIC_CONTRACT
+            && version_compare($release->semanticVersion, NflFullModelReleaseDefinition::SEMANTIC_VERSION, '<')) {
+            throw new PredictionLifecycleException('Corrected NFL numeric inputs require calculation release 1.3.1 or later.');
+        }
         $outputs = (array) ($context['outputs'] ?? []);
         foreach (['predicted_spread', 'predicted_total', 'win_probability'] as $field) {
             if (! is_numeric($outputs[$field] ?? null) || ! is_finite((float) $outputs[$field])) {

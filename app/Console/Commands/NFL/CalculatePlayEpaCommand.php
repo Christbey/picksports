@@ -20,6 +20,12 @@ class CalculatePlayEpaCommand extends Command
 
     public function handle(TrueEpaCalculator $calculator): int
     {
+        if (config('nfl.predictions.true_epa.custom_epa_quarantined', true)) {
+            $this->info('Custom NFL EPA is quarantined; no plays were read or updated.');
+
+            return self::SUCCESS;
+        }
+
         $season = $this->option('season');
         $gameId = $this->option('game_id');
         $limit = max(0, (int) $this->option('limit'));

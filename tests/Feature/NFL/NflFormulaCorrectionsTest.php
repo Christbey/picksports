@@ -78,7 +78,7 @@ it('keeps raw outputs but uses published margins for analysis and a new model ve
         ->and($result['outputs']['predicted_total'])->toBe(45.6)
         ->and($result['model_metadata']['published_outputs_unrounded']['predicted_spread'])->toBe(3.549)
         ->and($result['model_metadata']['published_outputs_unrounded']['predicted_total'])->toBe(45.551)
-        ->and($result['model_version'])->toEndWith('-integrity-v4')
+        ->and($result['model_version'])->toEndWith('-integrity-v5')
         ->and($result['model_metadata']['numeric_policy']['selection_basis'])->toBe('published_one_decimal_margin_and_total');
 });
 

@@ -46,6 +46,11 @@ const breadcrumbs: BreadcrumbItem[] = [
     <AppLayout :breadcrumbs="breadcrumbs">
         <SettingsLayout full-width>
             <div class="space-y-6">
+                <a
+                    href="/admin/nfl-experimental-ratings"
+                    class="text-sm underline"
+                    >Experimental custom EP ratings (quarantined research)</a
+                >
                 <header
                     class="flex flex-col gap-4 border-b pb-5 lg:flex-row lg:items-end lg:justify-between"
                 >

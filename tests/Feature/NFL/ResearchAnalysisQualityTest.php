@@ -128,7 +128,8 @@ it('reports grounding quality separately from prediction performance without tre
 
 it('reuses grounded unchanged conditional research without clearing its readiness hold', function () {
     $game = new Game(['game_date' => now()->addDay()->toDateString(), 'game_time' => '20:00:00']);
-    $report = new SportsGameContextReport(['status' => 'partial', 'researched_at' => now(), 'expires_at' => now()->addHour(),
+    $game->id = 42;
+    $report = new SportsGameContextReport(['sport' => 'nfl', 'game_id' => $game->id, 'status' => 'partial', 'researched_at' => now(), 'expires_at' => now()->addHour(),
         'raw_payload' => ['research_fingerprint' => 'evidence', 'candidate_hash' => 'forecast',
             'analysis_quality' => ['version' => 1, 'rejected_claims' => 0, 'unverified_questions' => 0],
             'decision_research' => ['supporting' => [['claim' => 'Support']], 'opposing' => [['claim' => 'Oppose']],

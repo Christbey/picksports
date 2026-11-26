@@ -174,9 +174,9 @@ function reasonCodeCanonicalFixture(string $variant = 'valid', int $season = 202
             ]]]);
     $release = CalculationRelease::factory()->approved()->create(['sport' => 'nfl', 'phase' => 'pregame']);
     $run = CalculationRun::factory()->create(['sport_event_id' => $event->id,
-        'event_input_snapshot_id' => $input->id, 'calculation_release_id' => $release->id, 'status' => 'succeeded']);
+        'event_input_snapshot_id' => $input->id, 'calculation_release_id' => $release->id, 'status' => 'succeeded', 'output_hash' => str_repeat('a', 64)]);
     $native = CanonicalPrediction::factory()->create(['sport' => 'nfl', 'sport_event_id' => $event->id,
-        'calculation_run_id' => $run->id, 'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null,
+        'calculation_run_id' => $run->id, 'output_hash' => $run->output_hash, 'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null,
         'generated_at' => $generated, 'detail_source' => null, 'detail_sport' => null, 'detail_id' => null]);
     // Primary markets deliberately disagree with the frozen recommendation being audited.
     PredictionMarket::factory()->create(['prediction_id' => $native->id, 'market_type' => 'moneyline', 'selection' => 'home', 'probability' => 0.2]);

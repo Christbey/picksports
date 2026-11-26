@@ -43,9 +43,9 @@ function mlbMonitoringRetirementFixture(string $variant = 'valid'): array
         'latest_source_available_at' => now()->subHours(4), 'pregame_safety_status' => $variant === 'unsafe' ? 'unverified' : 'verified',
         'inputs' => ['home' => ['elo' => 1500], 'unused_diagnostics' => str_repeat('large', 1000)]]);
     $release = CalculationRelease::factory()->approved()->create(['sport' => 'mlb', 'phase' => 'pregame']);
-    $calculation = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
+    $calculation = CalculationRun::factory()->create(['output_hash' => str_repeat('a', 64), 'sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
         'calculation_release_id' => $release->id, 'status' => 'succeeded']);
-    $native = CanonicalPrediction::factory()->create(['sport' => 'mlb', 'sport_event_id' => $event->id,
+    $native = CanonicalPrediction::factory()->create(['output_hash' => str_repeat('a', 64), 'sport' => 'mlb', 'sport_event_id' => $event->id,
         'calculation_run_id' => $calculation->id, 'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null,
         'generated_at' => now()->subHours(2), 'detail_source' => null, 'detail_sport' => null, 'detail_id' => null]);
     foreach ([['moneyline', 'home', null, 0.65], ['spread', 'home', -2.0, null], ['total', 'combined', 8.0, null]] as [$type, $selection, $line, $probability]) {

@@ -30,9 +30,7 @@ class ResearchRefreshPolicy
 
     public function current(?SportsGameContextReport $report, Game $game, string $fingerprint, ?string $candidateHash = null): bool
     {
-        return $report && $report->status === 'ready'
-            && $report->expires_at?->isFuture()
-            && $report->researched_at?->gt(now()->subMinutes($this->freshnessMinutes($game)))
+        return $this->freshReport($report, $game, 'ready')
             && data_get($report->raw_payload, 'research_fingerprint') === $fingerprint
             && ($candidateHash === null || data_get($report->raw_payload, 'candidate_hash') === $candidateHash);
     }
@@ -44,9 +42,7 @@ class ResearchRefreshPolicy
             return true;
         }
 
-        return $report && $report->status === 'partial'
-            && $report->expires_at?->isFuture()
-            && $report->researched_at?->gt(now()->subMinutes($this->freshnessMinutes($game)))
+        return $this->freshReport($report, $game, 'partial')
             && data_get($report->raw_payload, 'research_fingerprint') === $fingerprint
             && data_get($report->raw_payload, 'candidate_hash') === $candidateHash
             && data_get($report->raw_payload, 'analysis_quality.version') === 1
@@ -56,6 +52,20 @@ class ResearchRefreshPolicy
             && ! empty(data_get($report->raw_payload, 'decision_research.opposing'))
             && collect(data_get($report->raw_payload, 'decision_research.unresolved', []))
                 ->contains(fn ($item) => ($item['blocking'] ?? false) && ($item['evidence_status'] ?? null) === 'reference_verified');
+    }
+
+    /** A matching fingerprint cannot make wrong-game or future evidence current. */
+    private function freshReport(?SportsGameContextReport $report, Game $game, string $status): bool
+    {
+        $now = now();
+
+        return $report !== null && $report->sport === 'nfl'
+            && (int) $report->game_id === (int) $game->getKey()
+            && $report->status === $status
+            && $report->expires_at?->gt($now)
+            && $report->researched_at !== null
+            && $report->researched_at->lte($now)
+            && $report->researched_at->gt($now->copy()->subMinutes($this->freshnessMinutes($game)));
     }
 
     public function fingerprint(Game $game, array $packet): string

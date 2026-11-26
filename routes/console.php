@@ -1204,8 +1204,10 @@ $scheduleOddsSyncWindow(
     $nflInSeason,
     'NFL: Sync Futures Odds'
 );
-$scheduleEpaLifecycle('nfl', 'NFL', fn () => $fallSeasonYear, $nflInSeason);
-$scheduleIncrementalPlayEpa('nfl', 'NFL', $fallSeasonYear, $nflInSeason, 28);
+if (! config('nfl.predictions.true_epa.custom_epa_quarantined', true)) {
+    $scheduleEpaLifecycle('nfl', 'NFL', fn () => $fallSeasonYear, $nflInSeason);
+    $scheduleIncrementalPlayEpa('nfl', 'NFL', $fallSeasonYear, $nflInSeason, 28);
+}
 $scheduleDailySeasonJob(
     'sports:settle-bet-decisions --sport=nfl',
     '08:45',

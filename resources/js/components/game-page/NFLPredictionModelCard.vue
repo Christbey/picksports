@@ -74,6 +74,11 @@ const ratingEdge = computed(() => {
             </p>
         </CardHeader>
         <CardContent class="space-y-4 px-5">
+            <p class="text-xs text-muted-foreground">
+                Statistical model estimates; AI research provides context, not
+                these numbers. Sportsbook lines may be blended into the
+                forecast. A model lean is not an approved bet.
+            </p>
             <div
                 class="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-muted/30 px-4 py-3"
                 aria-label="Model pick"

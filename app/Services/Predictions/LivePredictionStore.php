@@ -8,8 +8,10 @@ use App\Models\CFB\Game as CfbGame;
 use App\Models\LivePredictionSnapshot;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\CFB\Live\LiveSnapshotRecorder;
+use App\Services\NFL\Predictions\NflCanonicalPregameEvidenceBoundary;
 use Carbon\CarbonInterface;
 use Illuminate\Container\Attributes\Scoped;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
@@ -42,7 +44,7 @@ class LivePredictionStore
         $sport = $this->sport($game);
         $snapshot = $this->latest($game);
         $baseline = $snapshot?->baseline;
-        if (is_array($baseline) && ($baseline['pinned'] ?? false) && $this->selected($baseline, $sport, $snapshot)) {
+        if (is_array($baseline) && ($baseline['pinned'] ?? false) && $this->selected($game, $baseline, $sport, $snapshot)) {
             return LivePregameForecast::fromArray($baseline);
         }
         $context = $this->predictions->forGame($game, $sport);
@@ -59,19 +61,35 @@ class LivePredictionStore
         ]);
     }
 
-    private function selected(array $baseline, string $sport, ?LivePredictionSnapshot $snapshot = null): bool
+    private function selected(Model $game, array $baseline, string $sport, ?LivePredictionSnapshot $snapshot = null): bool
     {
         $canonical = $this->predictions->usesCanonical($sport);
         if (($baseline['prediction_source'] ?? null) !== ($canonical ? 'canonical' : 'legacy')) {
             return false;
         }
 
-        if ($snapshot !== null && isset($this->baselineValidity[$snapshot])) {
+        if ($canonical && (! is_numeric($baseline['canonical_prediction_id'] ?? null)
+            || ($snapshot !== null && (int) $snapshot->canonical_prediction_id !== (int) $baseline['canonical_prediction_id']))) {
+            return false;
+        }
+
+        if ($canonical && $snapshot !== null && isset($this->baselineValidity[$snapshot])) {
             return $this->baselineValidity[$snapshot];
         }
 
-        return ! $canonical || CanonicalPrediction::query()->whereKey($baseline['canonical_prediction_id'] ?? null)
-            ->where('sport', $sport)->whereIn('publication_state', ['published', 'superseded'])->exists();
+        return ! $canonical || $this->validCanonicalBaselines($sport)
+            ->whereKey($baseline['canonical_prediction_id'])->where('predictions.sport_event_id', $game->sport_event_id)->exists();
+    }
+
+    /** A pinned baseline must still belong to this event and have existed before kickoff. */
+    private function validCanonicalBaselines(string $sport): Builder
+    {
+        return CanonicalPrediction::query()->join('sport_events', 'sport_events.id', '=', 'predictions.sport_event_id')
+            ->where('predictions.sport', $sport)->where('predictions.phase', 'pregame')
+            ->whereIn('predictions.publication_state', ['published', 'superseded'])
+            ->whereColumn('predictions.generated_at', '<', 'sport_events.starts_at')
+            ->whereColumn('predictions.published_at', '<', 'sport_events.starts_at')
+            ->when($sport === 'nfl', fn ($query) => app(NflCanonicalPregameEvidenceBoundary::class)->apply($query));
     }
 
     public function latest(Model $game): ?LivePredictionSnapshot
@@ -109,10 +127,12 @@ class LivePredictionStore
                 ->where('recent.observed_at', '<=', now())->orderByDesc('recent.observed_at')->orderByDesc('recent.id')->limit(1))
             ->get()->keyBy('game_id');
         $canonicalIds = $snapshots->pluck('canonical_prediction_id')->filter()->unique();
-        $validIds = $canonicalIds->isNotEmpty() ? CanonicalPrediction::query()->whereIn('id', $canonicalIds)
-            ->where('sport', $this->sport($first))->whereIn('publication_state', ['published', 'superseded'])->pluck('id')->all() : [];
+        $validEvents = $canonicalIds->isNotEmpty() ? $this->validCanonicalBaselines($this->sport($first))
+            ->whereIn('predictions.id', $canonicalIds)->pluck('predictions.sport_event_id', 'predictions.id') : collect();
+        $eventsByGame = $games->pluck('sport_event_id', 'id');
         foreach ($snapshots as $snapshot) {
-            $this->baselineValidity[$snapshot] = $snapshot->canonical_prediction_id === null || in_array($snapshot->canonical_prediction_id, $validIds, true);
+            $this->baselineValidity[$snapshot] = $snapshot->canonical_prediction_id !== null
+                && $validEvents->get($snapshot->canonical_prediction_id) === $eventsByGame->get($snapshot->game_id);
         }
         foreach ($games as $game) {
             $game->setRelation('livePredictionSnapshot', $snapshots->get($game->getKey()));
@@ -153,7 +173,7 @@ class LivePredictionStore
                 'live_seconds_remaining' => $projection['seconds_remaining'] ?? null, 'live_updated_at' => $snapshot->observed_at]);
         }
         $snapshot = $this->latest($game);
-        if ($snapshot?->status !== 'live' || ! $this->selected((array) $snapshot->baseline, $this->sport($game), $snapshot)) {
+        if ($snapshot?->status !== 'live' || ! $this->selected($game, (array) $snapshot->baseline, $this->sport($game), $snapshot)) {
             return self::EMPTY_FIELDS;
         }
 

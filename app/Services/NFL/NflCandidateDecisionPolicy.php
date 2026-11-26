@@ -145,7 +145,7 @@ class NflCandidateDecisionPolicy
             ->latest('captured_at')
             ->latest('id')
             ->get()
-            ->first(fn (MarketQuote $quote): bool => $this->quoteObservedAt($quote)->betweenIncluded($freshAfter, $decidedAt)
+            ->first(fn (MarketQuote $quote): bool => $this->quoteObservedAt($quote)?->betweenIncluded($freshAfter, $decidedAt)
                 && $this->hasPairedQuote($quote, $freshAfter, $decidedAt, $gameStartAt));
     }
 
@@ -163,12 +163,19 @@ class NflCandidateDecisionPolicy
             default => null,
         };
 
-        if ($oppositeSide === null) {
+        if ($oppositeSide === null || $quote->game_odds_snapshot_id === null) {
             return false;
         }
 
         return MarketQuote::query()
             ->where('game_odds_snapshot_id', $quote->game_odds_snapshot_id)
+            ->where('sport', $quote->sport)
+            ->where('game_table', $quote->game_table)
+            ->where('game_id', $quote->game_id)
+            ->where('is_pregame', true)
+            ->where('captured_at', '>=', $freshAfter)
+            ->where('captured_at', '<=', $decidedAt)
+            ->where('captured_at', '<', $gameStartAt)
             ->where('market_key', $quote->market_key)
             ->where('side', $oppositeSide)
             ->where('bookmaker_key', $quote->bookmaker_key)
@@ -176,8 +183,8 @@ class NflCandidateDecisionPolicy
             ->whereNotNull('price')
             ->get()
             ->contains(fn (MarketQuote $opposite): bool => $this->pairedLinesMatch($quote, $opposite)
-                && $this->quoteObservedAt($opposite)->betweenIncluded($freshAfter, $decidedAt)
-                && $this->quoteObservedAt($opposite)->lt($gameStartAt));
+                && $this->quoteObservedAt($opposite)?->betweenIncluded($freshAfter, $decidedAt)
+                && $this->quoteObservedAt($opposite)?->lt($gameStartAt));
     }
 
     private function pairedLinesMatch(MarketQuote $quote, MarketQuote $opposite): bool
@@ -200,14 +207,15 @@ class NflCandidateDecisionPolicy
         return max(1, (int) config('nfl_research.market_freshness_minutes', 2160));
     }
 
-    private function quoteObservedAt(MarketQuote $quote): CarbonImmutable
+    private function quoteObservedAt(MarketQuote $quote): ?CarbonImmutable
     {
         $providerObservedAt = data_get($quote->metadata, 'provider_observed_at');
         if (is_string($providerObservedAt) && $providerObservedAt !== '') {
             try {
                 return CarbonImmutable::parse($providerObservedAt);
             } catch (Throwable) {
-                // Fall through to the persisted ingestion timestamp.
+                // A malformed supplied observation is not proof of fresh odds.
+                return null;
             }
         }
 

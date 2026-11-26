@@ -59,8 +59,8 @@ function nflMarketBacktestFixture(string $variant = 'valid', int $season = 2026,
             'pregame_market' => ['available' => $variant !== 'missing_market', 'consensus' => ['moneyline' => ['market_key' => 'h2h', 'side' => 'home', 'price' => $moneyline['home_price'] ?? -110, 'opposite_quote' => ['market_key' => 'h2h', 'side' => $moneyline['opposite_side'] ?? 'away', 'price' => $moneyline['away_price'] ?? -110]], 'spread' => ['line' => $variant === 'missing_spread_line' ? null : -3.0],
                 'total' => ['line' => $variant === 'missing_total_line' ? null : 44.5]]]]]);
     $release = CalculationRelease::factory()->approved()->create(['sport' => 'nfl', 'phase' => 'pregame']);
-    $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id, 'calculation_release_id' => $release->id, 'status' => 'succeeded']);
-    $native = CanonicalPrediction::factory()->create(['sport' => 'nfl', 'sport_event_id' => $event->id, 'calculation_run_id' => $run->id, 'phase' => 'pregame',
+    $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id, 'calculation_release_id' => $release->id, 'status' => 'succeeded', 'output_hash' => str_repeat('a', 64)]);
+    $native = CanonicalPrediction::factory()->create(['sport' => 'nfl', 'sport_event_id' => $event->id, 'calculation_run_id' => $run->id, 'output_hash' => $run->output_hash, 'phase' => 'pregame',
         'generated_at' => $generated, 'published_at' => null, 'publication_state' => 'draft', 'output_metadata' => ['analysis_layer' => ['reason_codes' => ['wrong_primary_rule']]]]);
     PredictionMarket::factory()->create(['prediction_id' => $native->id, 'market_type' => 'spread', 'selection' => 'home', 'projected_line' => -17, 'confidence_score' => 95]);
     PredictionMarket::factory()->create(['prediction_id' => $native->id, 'market_type' => 'total', 'selection' => 'combined', 'projected_line' => 77]);

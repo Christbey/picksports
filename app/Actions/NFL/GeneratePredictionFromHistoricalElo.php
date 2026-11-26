@@ -30,6 +30,7 @@ use App\Services\NFL\NflSeasonEvidenceWeight;
 use App\Services\NFL\NflSpreadAssessmentService;
 use App\Services\NFL\NflTeamHistory;
 use App\Services\NFL\PlayerPositionGradeService;
+use App\Services\NFL\Predictions\NflMarketQuoteLines;
 use App\Services\NFL\QuarterbackAvailability;
 use App\Services\NFL\Research\RecommendationEligibility;
 use App\Services\Predictions\PredictionDeliverySource;
@@ -2132,15 +2133,20 @@ class GeneratePredictionFromHistoricalElo
             );
         }
 
-        $blendedWinProbability = $this->winProbabilityFromSpread($blendedSpread);
+        // A total quote has no authority over the winner estimate. Likewise a
+        // model-only spread weight must retain prior QB/injury probability work.
+        $usesMarketSpread = $marketSpread !== null && $spreadModelWeight < 1.0;
+        $blendedWinProbability = $usesMarketSpread
+            ? $this->winProbabilityFromSpread($blendedSpread) : $winProbability;
 
         $this->lastModelMetadata['market_blend'] = [
             'enabled' => true,
-            'applied' => true,
+            'applied' => $usesMarketSpread || ($marketTotal !== null && $totalModelWeight < 1.0),
             'spread_model_weight' => round($spreadModelWeight, 4),
             'total_model_weight' => round($totalModelWeight, 4),
             'market_spread' => $marketSpread !== null ? round($marketSpread, 2) : null,
             'market_total' => $marketTotal !== null ? round($marketTotal, 2) : null,
+            'win_probability_source' => $usesMarketSpread ? 'market_blended_spread' : 'retained_model_probability',
             'blended_spread' => round($blendedSpread, 2),
             'blended_total' => round($blendedTotal, 2),
         ];
@@ -2643,39 +2649,7 @@ class GeneratePredictionFromHistoricalElo
      */
     protected function extractMarketSpreadAndTotal(array $oddsData): array
     {
-        $homeTeamName = $oddsData['home_team'] ?? null;
-        $marketSpread = null;
-        $marketTotal = null;
-
-        foreach ($oddsData['bookmakers'] ?? [] as $bookmaker) {
-            foreach ($bookmaker['markets'] ?? [] as $market) {
-                if ($market['key'] === 'spreads' && $homeTeamName !== null && $marketSpread === null) {
-                    foreach ($market['outcomes'] ?? [] as $outcome) {
-                        if (($outcome['name'] ?? null) === $homeTeamName && isset($outcome['point'])) {
-                            // Bookmaker's "home -3.5" means home favored by 3.5;
-                            // we represent home margin as positive when home is favored.
-                            $marketSpread = MarketSpread::bookmakerHomeLineToHomeMargin((float) $outcome['point']);
-                            break;
-                        }
-                    }
-                }
-
-                if ($market['key'] === 'totals' && $marketTotal === null) {
-                    foreach ($market['outcomes'] ?? [] as $outcome) {
-                        if (isset($outcome['point'])) {
-                            $marketTotal = (float) $outcome['point'];
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if ($marketSpread !== null && $marketTotal !== null) {
-                break;
-            }
-        }
-
-        return [$marketSpread, $marketTotal];
+        return app(NflMarketQuoteLines::class)->extract($oddsData);
     }
 
     /**

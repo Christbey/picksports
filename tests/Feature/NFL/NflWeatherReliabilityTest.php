@@ -98,7 +98,9 @@ it('fails a weather command when the provider returns no usable forecast', funct
     $game = reliabilityWeatherGame();
     $this->mock(GameWeatherService::class, fn ($mock) => $mock->shouldReceive('fetch')->once()->andReturnNull());
 
-    $this->artisan('nfl:sync-game-weather', ['--game-id' => $game->id])->assertFailed();
+    $this->artisan('nfl:sync-game-weather', ['--game-id' => $game->id])
+        ->expectsOutputToContain('"failed_games"')
+        ->assertFailed();
     $this->assertDatabaseMissing('nfl_game_weather', ['game_id' => $game->id]);
 });
 

@@ -7,6 +7,7 @@ use App\Models\NFL\GameWeather;
 use App\Services\NFL\GameWeatherService;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class SyncGameWeatherCommand extends Command
@@ -52,6 +53,7 @@ class SyncGameWeatherCommand extends Command
             return Command::SUCCESS;
         }
 
+        $failures = [];
         $created = 0;
         $updated = 0;
         $skipped = 0;
@@ -69,12 +71,14 @@ class SyncGameWeatherCommand extends Command
                 $weather = $weatherService->fetch($game);
                 if ($weather === null) {
                     $failed++;
+                    $failures[] = ['game_id' => $game->id, 'reason' => 'no_usable_kickoff_forecast'];
                     $this->warn("Game {$game->id}: no usable kickoff weather returned; existing data preserved.");
 
                     continue;
                 }
             } catch (Throwable $exception) {
                 $failed++;
+                $failures[] = ['game_id' => $game->id, 'reason' => $exception->getMessage()];
                 report($exception);
                 $this->warn("Game {$game->id}: weather refresh failed (".class_basename($exception).'); existing data preserved.');
 
@@ -100,6 +104,8 @@ class SyncGameWeatherCommand extends Command
         $this->info("NFL weather sync complete. Created {$created}, updated {$updated}, skipped {$skipped}.");
         if ($failed > 0) {
             $this->error("Failed to refresh {$failed} NFL weather record(s).");
+            Log::warning('NFL weather sync partial failure', ['failures' => $failures]);
+            $this->line(json_encode(['failed_games' => $failures], JSON_THROW_ON_ERROR));
         }
 
         return $failed > 0 ? Command::FAILURE : Command::SUCCESS;

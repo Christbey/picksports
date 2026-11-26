@@ -135,6 +135,7 @@ class CanonicalSportPredictionQuery
                 'latestEvaluation.eventResult',
                 'calculationRun.release',
                 'calculationRun.inputSnapshot',
+                ...($sport === 'nfl' ? ['sportEvent.nflGame.weather'] : []),
             ])
             ->when($sport === 'cfb', fn (Builder $query) => $query->with(
                 ['sportEvent.cfbGame.latestLiveSnapshot:cfb_live_prediction_snapshots.id,cfb_live_prediction_snapshots.game_id,status,projection,observed_at', 'sportEvent.cfbGame.weather']

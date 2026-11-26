@@ -3,6 +3,7 @@
 use App\Models\NFL\Game;
 use App\Models\NFL\Team;
 use App\Services\NFL\GameWeatherService;
+use Carbon\Carbon;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
@@ -53,7 +54,7 @@ it('geocodes the venue city and requests the venue-local forecast date', functio
 
     expect($weather)->not->toBeNull()
         ->and($weather['location_source'])->toBe('geocoded_venue_city')
-        ->and($weather['observed_at'])->toBe('2026-09-10 00:00:00')
+        ->and($weather['observed_at'])->toBe(Carbon::parse('2026-09-10T00:00:00Z')->setTimezone(config('app.timezone'))->toDateTimeString())
         ->and($weather['temperature_f'])->toEqual(67.0);
 
     Http::assertSent(fn (Request $request): bool => str_contains($request->url(), 'geocoding-api.open-meteo.com')

@@ -4,12 +4,14 @@ namespace App\Services\Api\V2;
 
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game;
+use App\Models\NFL\Game as NflGame;
 
 class PredictionWeatherContext
 {
-    public function forPrediction(CanonicalPrediction $prediction, ?Game $game): array
+    public function forPrediction(CanonicalPrediction $prediction, Game|NflGame|null $game): array
     {
-        $signal = data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'signal_context', []);
+        $signal = $game instanceof Game
+            ? data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'signal_context', []) : [];
         $evidence = $signal['weather_evidence'] ?? null;
         if ($evidence) {
             return ['available' => true, 'source' => 'model_snapshot',

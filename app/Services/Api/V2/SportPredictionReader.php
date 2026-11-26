@@ -64,6 +64,7 @@ class SportPredictionReader
                 'latestEvaluation.eventResult',
                 'calculationRun.release',
                 'calculationRun.inputSnapshot',
+                ...($context->slug === 'nfl' ? ['sportEvent.nflGame.weather'] : []),
                 'sportEvent.'.$context->slug.'Game.homeTeam',
                 'sportEvent.'.$context->slug.'Game.awayTeam',
                 ...($context->slug === 'cfb' ? ['sportEvent.cfbGame.weather', 'sportEvent.cfbGame.latestLiveSnapshot'] : []),

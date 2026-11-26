@@ -5,6 +5,7 @@ namespace App\Services\Api\V2;
 use App\Application\Sports\ReadModels\BettingForecast;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game as CfbGame;
+use App\Models\NFL\Game as NflGame;
 use App\Services\BettingRecommendations\GameBettingRecommendationService;
 use App\Services\CFB\Live\LiveBoardPresentation;
 use App\Services\CFB\Predictions\CfbCanonicalSpreadValueSignalService;
@@ -66,7 +67,7 @@ class CanonicalPredictionPresentationService
             confidenceContext: $this->confidenceContext($prediction, $confidence),
             valueSignal: $game instanceof CfbGame ? $this->cfbValueSignals->forPrediction($prediction, $game) : null,
             modelBetContext: app(PredictionModelBetContext::class)->forPrediction($prediction, $game),
-            weatherForecast: $game instanceof CfbGame ? app(PredictionWeatherContext::class)->forPrediction($prediction, $game) : null,
+            weatherForecast: $game instanceof CfbGame || $game instanceof NflGame ? app(PredictionWeatherContext::class)->forPrediction($prediction, $game) : null,
         );
     }
 
@@ -82,7 +83,7 @@ class CanonicalPredictionPresentationService
             valueSignal: null,
             recommendation: $prediction->sport === 'mlb'
                 ? $this->mlbRecommendation(app(BettingForecastSource::class)->fromModel($prediction, 'mlb')) : null,
-            weatherForecast: $game instanceof CfbGame ? app(PredictionWeatherContext::class)->forPrediction($prediction, $game) : null,
+            weatherForecast: $game instanceof CfbGame || $game instanceof NflGame ? app(PredictionWeatherContext::class)->forPrediction($prediction, $game) : null,
             liveFields: app(LivePredictionStore::class)->forPrediction($prediction, $prediction->sport),
             liveBoard: $game instanceof CfbGame ? app(LiveBoardPresentation::class)->forGame($game) : [],
         );

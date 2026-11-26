@@ -24,7 +24,7 @@ class GameWeatherService
                 'provider' => 'venue_metadata',
                 'is_indoor' => true,
                 'location_source' => 'indoor_venue',
-                'observed_at' => $this->gameDateTime($game)?->toDateTimeString(),
+                'observed_at' => $this->gameDateTime($game)?->setTimezone(config('app.timezone'))->toDateTimeString(),
                 ...array_fill_keys(['latitude', 'longitude', 'temperature_f', 'feels_like_f', 'wind_speed_mph', 'wind_gust_mph', 'wind_direction_degrees', 'precipitation_probability', 'precipitation_inches', 'humidity_percent', 'condition_code'], null),
                 'raw_payload' => ['roof_status' => 'closed_or_fixed', 'venue_name' => $game->venue_name, 'retrieved_at' => now()->toIso8601String()],
             ];
@@ -65,7 +65,7 @@ class GameWeatherService
         ]);
 
         if (! $response->successful()) {
-            return null;
+            throw new \RuntimeException('Weather provider HTTP '.$response->status());
         }
 
         $payload = $response->json();
@@ -99,7 +99,7 @@ class GameWeatherService
             'longitude' => $location['longitude'],
             'location_source' => $location['source'],
             'observed_at' => isset(data_get($payload, 'hourly.time', [])[$hourIndex])
-                ? Carbon::parse(data_get($payload, "hourly.time.{$hourIndex}"), $payloadTimezone)->utc()->toDateTimeString()
+                ? Carbon::parse(data_get($payload, "hourly.time.{$hourIndex}"), $payloadTimezone)->setTimezone(config('app.timezone'))->toDateTimeString()
                 : $dateTime->toDateTimeString(),
             'temperature_f' => $this->hourlyValue($payload, 'temperature_2m', $hourIndex),
             'feels_like_f' => $this->hourlyValue($payload, 'apparent_temperature', $hourIndex),
@@ -158,7 +158,7 @@ class GameWeatherService
         ]);
 
         if (! $response->successful()) {
-            return null;
+            throw new \RuntimeException('Weather provider HTTP '.$response->status());
         }
 
         $result = data_get($response->json(), 'results.0');
@@ -183,6 +183,11 @@ class GameWeatherService
     {
         if (! $game->game_date) {
             return null;
+        }
+
+        $canonical = $game->sportEvent?->starts_at;
+        if ($canonical !== null) {
+            return $canonical->toMutable()->utc();
         }
 
         return $this->dateWindows

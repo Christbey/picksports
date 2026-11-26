@@ -1,10 +1,15 @@
 <?php
 
 use App\Actions\NFL\GeneratePredictionFromHistoricalElo;
+use App\Models\CanonicalPrediction;
 use App\Models\NFL\Game;
 use App\Models\NFL\GameWeather;
 use App\Models\NFL\Team;
+use App\Models\SportEvent;
+use App\Services\Api\V2\PredictionWeatherContext;
 use App\Services\NFL\GameWeatherService;
+use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -52,7 +57,7 @@ it('uses actual neutral venue coordinates before a designated home team', functi
 
     $weather = app(GameWeatherService::class)->fetch($game->load('homeTeam'));
 
-    expect($weather['latitude'])->toBe(51.556)->and($weather['observed_at'])->toBe('2026-09-18 00:00:00');
+    expect($weather['latitude'])->toBe(51.556)->and($weather['observed_at'])->toBe(Carbon::parse('2026-09-18T00:00:00Z')->setTimezone(config('app.timezone'))->toDateTimeString());
     Http::assertSent(fn (Request $request): bool => $request['latitude'] === 51.556 && $request['timezone'] === 'Europe/London');
 });
 
@@ -93,7 +98,9 @@ it('fails a weather command when the provider returns no usable forecast', funct
     $game = reliabilityWeatherGame();
     $this->mock(GameWeatherService::class, fn ($mock) => $mock->shouldReceive('fetch')->once()->andReturnNull());
 
-    $this->artisan('nfl:sync-game-weather', ['--game-id' => $game->id])->assertFailed();
+    $this->artisan('nfl:sync-game-weather', ['--game-id' => $game->id])
+        ->expectsOutputToContain('"failed_games"')
+        ->assertFailed();
     $this->assertDatabaseMissing('nfl_game_weather', ['game_id' => $game->id]);
 });
 
@@ -127,3 +134,23 @@ it('does not substitute a state climate proxy for unknown field exposure', funct
     expect($context['total_adjustment'])->toBe(0.0)
         ->and($context['reason'])->toBe('unconfirmed_outdoor_exposure');
 })->with(['AT&T Stadium', 'SoFi Stadium']);
+
+it('persists the canonical kickoff forecast instant without a database timezone shift', function () {
+    config(['app.timezone' => 'America/Chicago']);
+    $event = SportEvent::factory()->create(['sport' => 'nfl', 'season' => 2026,
+        'starts_at' => CarbonImmutable::parse('2026-11-27T01:20:00Z')->setTimezone('America/Chicago')]);
+    $game = reliabilityWeatherGame(['sport_event_id' => $event->id, 'game_date' => '2026-11-26', 'game_time' => '20:20:00']);
+    Http::fake(['*' => Http::response(['timezone' => 'America/New_York', 'hourly' => [
+        'time' => ['2026-11-26T20:00', '2026-11-27T02:00'], 'temperature_2m' => [35, 99],
+        'wind_speed_10m' => [10, 99], 'precipitation' => [0.1, 9],
+    ]])]);
+    $values = app(GameWeatherService::class)->fetch($game);
+    $stored = GameWeather::create(['game_id' => $game->id, ...$values])->fresh();
+    expect($stored->observed_at->utc()->toIso8601String())->toBe('2026-11-27T01:00:00+00:00')
+        ->and((float) $stored->temperature_f)->toBe(35.0);
+    $prediction = (new CanonicalPrediction)->setRelation('calculationRun', null);
+    $game->setRelation('weather', $stored);
+    $context = app(PredictionWeatherContext::class)->forPrediction($prediction, $game);
+    expect($context['available'])->toBeTrue()->and($context['source'])->toBe('latest_forecast')
+        ->and($context['forecast_valid_at'])->toBe($stored->observed_at->toIso8601String());
+});

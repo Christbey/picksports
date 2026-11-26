@@ -110,6 +110,7 @@ class DashboardController extends Controller
                     ...match ($context->slug) {
                         'cfb' => ['calculationRun:id,event_input_snapshot_id', 'calculationRun.inputSnapshot:id,inputs', 'sportEvent.cfbGame.weather', 'sportEvent.cfbGame.latestLiveSnapshot:cfb_live_prediction_snapshots.id,cfb_live_prediction_snapshots.game_id,status,projection,observed_at'],
                         'mlb' => ['calculationRun.release', 'calculationRun.inputSnapshot'],
+                        'nfl' => ['sportEvent.nflGame.weather'],
                         default => [],
                     },
                 ]);

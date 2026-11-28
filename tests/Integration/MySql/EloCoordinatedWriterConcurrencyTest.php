@@ -204,9 +204,9 @@ it('fences newly discovered historical pitcher participation using the season ga
         }
     });
     $teams = collect(range(1, 4))->map(fn () => App\Models\MLB\Team::factory()->create(['elo_rating' => 1500]));
-    $first = App\Models\MLB\Game::factory()->create(['home_team_id' => $teams[0]->id, 'away_team_id' => $teams[1]->id,
+    $first = App\Models\MLB\Game::factory()->withSyntheticWallStart('UTC')->create(['home_team_id' => $teams[0]->id, 'away_team_id' => $teams[1]->id,
         'season' => 2026, 'season_type' => 2, 'status' => 'STATUS_FINAL', 'game_date' => '2026-10-01', 'game_time' => '18:00:00', 'home_score' => 1, 'away_score' => 0]);
-    $other = App\Models\MLB\Game::factory()->create(['home_team_id' => $teams[2]->id, 'away_team_id' => $teams[3]->id,
+    $other = App\Models\MLB\Game::factory()->withSyntheticWallStart('UTC')->create(['home_team_id' => $teams[2]->id, 'away_team_id' => $teams[3]->id,
         'season' => 2026, 'season_type' => 2, 'status' => 'STATUS_FINAL', 'game_date' => '2026-09-01', 'game_time' => '18:00:00', 'home_score' => 1, 'away_score' => 0]);
     $pitcher = Player::factory()->pitcher()->create(['team_id' => $teams[0]->id]);
     $definition = app(EloSportRegistry::class)->resolve('mlb', 'team');

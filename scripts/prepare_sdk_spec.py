@@ -39,6 +39,21 @@ def convert(value):
             value["x-json-schema-const"] = constant
         else:
             value["enum"] = [constant]
+    # OpenAPI 3.0 has no standalone null type. A nullable object excludes
+    # nonobjects by type; excluding objects with `not` leaves only null.
+    # Preserve any original negative constraint as well. Generator 7.14 emits
+    # nullable generic JSON for this schema, not an undefined Null model.
+    # Generated language types do not enforce `not`; the published 3.1
+    # contract and this 3.0 schema retain the null-only wire restriction.
+    if value.get("type") == "null":
+        value["type"] = "object"
+        value["nullable"] = True
+        excluded_object = {"type": "object"}
+        value["not"] = (
+            {"anyOf": [value["not"], excluded_object]}
+            if "not" in value
+            else excluded_object
+        )
     types = value.get("type")
     if isinstance(types, list):
         value.pop("type")

@@ -38,9 +38,50 @@ jobs:
       - run: python3 scripts/test_ml_runtime_contract.py
 
   mysql-integration:
-    name: MySQL 8.4 integrity and concurrency
+    name: MySQL 8.4 integrity and concurrency lane ${{ matrix.lane }}/12
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - lane: 1
+            selection: >-
+              --testsuite="MySQL integration" tests/Integration/MySql/PredictionGeneratorSnapshotBoundaryTest.php tests/Integration/MySql/MlbArtifactCohortSerializationTest.php tests/Integration/MySql/CalculationRecoveryConcurrencyTest.php tests/Integration/MySql/MlbPeriodCaptureInstanceGuardTest.php tests/Integration/MySql/MlbObservedStartIntegrityTest.php tests/Integration/MySql/SettlementSnapshotTest.php tests/Integration/MySql/RestoredProductionMigrationUpgradeTest.php
+          - lane: 2
+            selection: >-
+              --testsuite="MySQL integration" tests/Integration/MySql/EloSqlSessionClockAdmissionTest.php tests/Integration/MySql/FpiSeasonAcquisitionConcurrencyTest.php tests/Integration/MySql/GenericShadowPersistenceNativeTest.php tests/Integration/MySql/NflUnknownKickoffSchemaTest.php tests/Integration/MySql/NativeCredentialEpochCurrentStateTest.php tests/Integration/MySql/MlbPeriodMaterializationLockOrderTest.php tests/Integration/MySql/SportEventIdentitySnapshotTest.php tests/Integration/MySql/TeamSeasonPhaseIntegrityTest.php
+          - lane: 3
+            selection: >-
+              --testsuite="MySQL integration" tests/Integration/MySql/EloTransitiveDependencySnapshotTest.php tests/Integration/MySql/FuturesSnapshotIndexRepairTest.php tests/Integration/MySql/ImmutableCoreCurrentStateTest.php tests/Integration/MySql/PasskeyCredentialSchemaTest.php tests/Integration/MySql/PlayIdentityConcurrencyTest.php tests/Integration/MySql/NativePushRegistrationSnapshotTest.php tests/Integration/MySql/StartingPitcherForecastCurrentStateTest.php tests/Feature/CBB/RosterObservationImmutabilityBoundaryTest.php
+          - lane: 4
+            selection: >-
+              --testsuite="MySQL integration" tests/Integration/MySql/MlbExistingArtifactStorageTest.php tests/Integration/MySql/CbbCurrentEpaSourceTest.php tests/Integration/MySql/DatasetP2NativeBoundaryTest.php tests/Integration/MySql/AiDailyCommandAcknowledgementNativeTest.php tests/Integration/MySql/CfbSourceAssessmentSnapshotTest.php tests/Integration/MySql/PublicationEffectCurrentStateTest.php tests/Integration/MySql/SubmissionPageUrlCapacityTest.php tests/Integration/MySql/IndexAuditMetadataTest.php
+          - lane: 5
+            selection: >-
+              --testsuite="MySQL integration" tests/Integration/MySql/BillingAdmissionIdentityTest.php tests/Integration/MySql/CfbKickoffObservationTest.php tests/Integration/MySql/EloBaselineAdmissionSnapshotTest.php tests/Integration/MySql/BillingFinancialConcurrencyTest.php tests/Integration/MySql/FiniteTokenEpochTest.php tests/Integration/MySql/StripeWebhookSnapshotTest.php tests/Integration/MySql/WnbaEloPublicationSnapshotTest.php
+          - lane: 6
+            selection: >-
+              --testsuite="MySQL integration" tests/Integration/MySql/GroupMembershipAdmissionConcurrencyTest.php tests/Integration/MySql/DeveloperMeterPersistenceBoundaryTest.php tests/Integration/MySql/MlbTrainingCompletionConcurrencyTest.php tests/Integration/MySql/BillingRecoveryConcurrencyTest.php tests/Integration/MySql/GenericShadowCurrentClassificationTest.php tests/Integration/MySql/ApiIdempotencyConcurrencyTest.php tests/Integration/MySql/PlayerPropGradeSnapshotTest.php tests/Integration/MySql/BasketballLeaderboardPhaseIntegrityTest.php
+          - lane: 7
+            selection: >-
+              --testsuite="MySQL integration" tests/Integration/MySql/MlbExistingArtifactSelectionTest.php tests/Integration/MySql/CfbPipelineStageGenerationBoundaryTest.php tests/Integration/MySql/CfbClosingEvidenceCurrentStateTest.php tests/Integration/MySql/MlbCompactMetadataCurrentStateTest.php tests/Integration/MySql/LegacyProbabilityPrecisionTest.php tests/Integration/MySql/BillingEffectiveEntitlementCurrentStateTest.php tests/Integration/MySql/PublicationSnapshotConcurrencyTest.php tests/Integration/MySql/CandidateCorrectionMigrationUpgradeTest.php
+          - lane: 8
+            selection: >-
+              --testsuite="MySQL integration" tests/Integration/MySql/ProviderRefreshConcurrencyTest.php tests/Integration/MySql/EloCoordinatedWriterConcurrencyTest.php tests/Integration/MySql/CfbGenericWindowRecoveryTest.php tests/Integration/MySql/MlbInferenceOutputCommitTest.php tests/Integration/MySql/MatchupPublicationSnapshotTest.php tests/Integration/MySql/MlbCandidateSettlementSnapshotTest.php tests/Integration/MySql/ResultCorrectionSnapshotTest.php tests/Integration/MySql/PublicationEffectUpgradeTest.php
+          - lane: 9
+            selection: >-
+              --testsuite="MySQL contracts" --shard=1/4
+          - lane: 10
+            selection: >-
+              --testsuite="MySQL contracts" --shard=2/4
+          - lane: 11
+            selection: >-
+              --testsuite="MySQL contracts" --shard=3/4
+          - lane: 12
+            selection: >-
+              --testsuite="MySQL contracts" --shard=4/4
     services:
       mysql:
         image: mysql:8.4
@@ -91,10 +132,72 @@ jobs:
           GRANT SELECT ON performance_schema.threads TO 'picksports_test'@'%';
           UPDATE performance_schema.setup_instruments SET ENABLED='YES', TIMED='YES' WHERE NAME='transaction';
           UPDATE performance_schema.setup_consumers SET ENABLED='YES' WHERE NAME='events_transactions_current';"
-      - name: Fail fast on native migration installation
-        run: php -d memory_limit=1536M vendor/bin/pest --configuration=phpunit.mysql.xml tests/Integration/MySql/SchemaInstallPreflightTest.php --stop-on-error --stop-on-failure --fail-on-empty-test-suite --compact
-      - name: Disposable MySQL migration, contract and process-race tests
-        run: php -d memory_limit=1536M vendor/bin/pest --configuration=phpunit.mysql.xml --exclude-group=mysql-schema-preflight --compact
+      - name: Record complete native discovery
+        if: matrix.lane == 1
+        run: |
+          mkdir -p storage/framework/testing/mysql-results
+          php -d memory_limit=1536M vendor/bin/pest --configuration=phpunit.mysql.xml --list-tests-xml=storage/framework/testing/mysql-results/full.xml --do-not-cache-result
+      - name: Record native partition discovery
+        run: |
+          mkdir -p storage/framework/testing/mysql-results storage/framework/testing/mysql-preflight
+          php -d memory_limit=1536M vendor/bin/pest --configuration=phpunit.mysql.xml ${{ matrix.selection }} --exclude-group=mysql-schema-preflight --list-tests-xml=storage/framework/testing/mysql-results/planned-${{ matrix.lane }}.xml --do-not-cache-result
+          php -d memory_limit=1536M vendor/bin/pest --configuration=phpunit.mysql.xml --group=mysql-schema-preflight --list-tests-xml=storage/framework/testing/mysql-preflight/full.xml --do-not-cache-result
+          cp storage/framework/testing/mysql-preflight/full.xml storage/framework/testing/mysql-preflight/planned-1.xml
+      - name: Fail fast on native migration installation with strict safety proof
+        env:
+          PICKSPORTS_PHP_CI_EVENTS: storage/framework/testing/mysql-preflight/events-1.jsonl
+        run: |
+          php -d memory_limit=1536M vendor/bin/pest --configuration=phpunit.mysql.xml --group=mysql-schema-preflight --bootstrap=scripts/php-ci-bootstrap.php --log-junit=storage/framework/testing/mysql-preflight/junit-1.xml --stop-on-error --stop-on-failure --fail-on-empty-test-suite --do-not-cache-result --compact
+          python3 scripts/verify-php-ci-results.py storage/framework/testing/mysql-preflight --shards=1
+      - name: Credit the repeated schema safety contract once in the global catalog
+        if: matrix.lane == 1
+        run: |
+          cp storage/framework/testing/mysql-preflight/planned-1.xml storage/framework/testing/mysql-results/planned-13.xml
+          cp storage/framework/testing/mysql-preflight/events-1.jsonl storage/framework/testing/mysql-results/events-13.jsonl
+          cp storage/framework/testing/mysql-preflight/junit-1.xml storage/framework/testing/mysql-results/junit-13.xml
+      - name: Disposable MySQL partition with incremental canonical evidence
+        env:
+          PICKSPORTS_PHP_CI_EVENTS: storage/framework/testing/mysql-results/events-${{ matrix.lane }}.jsonl
+        run: php -d memory_limit=1536M vendor/bin/pest --configuration=phpunit.mysql.xml ${{ matrix.selection }} --exclude-group=mysql-schema-preflight --bootstrap=scripts/php-ci-bootstrap.php --log-junit=storage/framework/testing/mysql-results/junit-${{ matrix.lane }}.xml --do-not-cache-result --profile --display-skipped
+      - name: Upload native canonical results even after failure or timeout
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mysql-ci-results-${{ matrix.lane }}
+          path: storage/framework/testing/mysql-results/*
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain repeated schema-safety observations without extra unique credit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mysql-preflight-${{ matrix.lane }}
+          path: storage/framework/testing/mysql-preflight/*
+          if-no-files-found: error
+          retention-days: 7
+
+  mysql-ci:
+    name: MySQL integrity completeness
+    needs: [mysql-integration]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mysql-ci-results-*
+          path: mysql-ci-results
+          merge-multiple: true
+      - name: Verify all native contracts with one unique schema-preflight credit
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/verify-php-ci-results.py mysql-ci-results --shards=13 | tee -a "$GITHUB_STEP_SUMMARY"
+          test '${{ needs.mysql-integration.result }}' = 'success'
 
   redis-pruning:
     name: Redis queue pruning contracts
@@ -165,13 +268,34 @@ jobs:
 
   standalone-frontend:
     runs-on: ubuntu-latest
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ':memory:'
+      DB_URL: ''
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      MAIL_MAILER: array
     steps:
       - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
           cache: npm
+      - run: composer install --no-interaction --no-scripts --prefer-dist --optimize-autoloader
       - run: npm ci
+      - name: Generate Laravel route helpers for root component tests
+        run: |
+          cp .env.example .env
+          mkdir -p bootstrap/cache storage/framework/{cache,sessions,testing,views} storage/logs
+          php artisan key:generate --no-interaction
+          php artisan package:discover --ansi
+          php artisan wayfinder:generate --with-form
       - run: npm run frontend:typecheck
       - run: npm run frontend:build
       - run: node --experimental-strip-types --test tests/frontend/*.test.mjs
@@ -247,12 +371,12 @@ jobs:
         run: php vendor/bin/pest --list-tests-xml=storage/framework/testing/full.xml
 
       - name: Record shard test discovery
-        run: php vendor/bin/pest --exclude-group=ci-isolated-interop --shard=${{ matrix.shard }}/4 --list-tests-xml=storage/framework/testing/planned-${{ matrix.shard }}.xml
+        run: php vendor/bin/pest --testsuite=Architecture,Unit,Feature --exclude-group=ci-isolated-interop --shard=${{ matrix.shard }}/4 --list-tests-xml=storage/framework/testing/planned-${{ matrix.shard }}.xml
 
       - name: Tests
         env:
           PICKSPORTS_PHP_CI_EVENTS: storage/framework/testing/events-${{ matrix.shard }}.jsonl
-        run: composer test:ci -- --bootstrap=scripts/php-ci-bootstrap.php --exclude-group=ci-isolated-interop --shard=${{ matrix.shard }}/4 --log-junit=storage/framework/testing/junit-${{ matrix.shard }}.xml --profile
+        run: composer test:ci -- --bootstrap=scripts/php-ci-bootstrap.php --testsuite=Architecture,Unit,Feature --exclude-group=ci-isolated-interop --shard=${{ matrix.shard }}/4 --log-junit=storage/framework/testing/junit-${{ matrix.shard }}.xml --profile
 
       - name: Upload PHP test results
         if: always()
@@ -271,8 +395,97 @@ jobs:
           php artisan api:v2-openapi-generate --output=/tmp/openapi-v2.json
           diff --unified docs/openapi-v2.json /tmp/openapi-v2.json
 
+  php-sqlite:
+    name: PHP 8.5 SQLite integration lane ${{ matrix.lane }}/7
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: 1
+            lane: 5
+          - shard: 2
+            lane: 6
+    env:
+      XDEBUG_MODE: 'off'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+          ini-values: memory_limit=1536M, post_max_size=16M
+
+      - name: Locate Composer cache
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-php85-${{ hashFiles('composer.lock') }}
+
+      - name: Verify Xdebug is disabled
+        run: php -r 'if (extension_loaded("xdebug")) { fwrite(STDERR, "Xdebug must be disabled in the PHP test shards.\n"); exit(1); }'
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install Node Dependencies
+        run: npm ci
+
+      - name: Install Dependencies
+        run: composer install --no-interaction --no-scripts --prefer-dist --optimize-autoloader
+
+      - name: Copy Environment File
+        run: cp .env.example .env
+
+      - name: Prepare Laravel Runtime Directories
+        run: mkdir -p bootstrap/cache storage/framework/{cache,sessions,testing,views} storage/logs
+
+      - name: Generate Application Key
+        run: php artisan key:generate
+
+      - name: Discover Laravel Packages
+        run: php artisan package:discover --ansi
+
+      - name: Generate Wayfinder Types
+        run: php artisan wayfinder:generate --with-form
+
+      - name: Build Assets
+        run: npm run build
+
+      - name: Record shard test discovery
+        run: php vendor/bin/pest --testsuite=SQLiteIntegration --exclude-group=ci-isolated-interop --shard=${{ matrix.shard }}/2 --list-tests-xml=storage/framework/testing/planned-${{ matrix.lane }}.xml
+
+      - name: Tests
+        env:
+          PICKSPORTS_PHP_CI_EVENTS: storage/framework/testing/events-${{ matrix.lane }}.jsonl
+        run: composer test:ci -- --bootstrap=scripts/php-ci-bootstrap.php --testsuite=SQLiteIntegration --exclude-group=ci-isolated-interop --shard=${{ matrix.shard }}/2 --log-junit=storage/framework/testing/junit-${{ matrix.lane }}.xml --profile
+
+      - name: Upload PHP test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: php-ci-results-${{ matrix.lane }}
+          path: |
+            storage/framework/testing/*.xml
+            storage/framework/testing/events-*.jsonl
+          if-no-files-found: error
+          retention-days: 7
+
   php-isolated:
-    name: PHP 8.5 isolated interoperability lane 5
+    name: PHP 8.5 isolated interoperability lane 7
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 20
     env:
@@ -329,30 +542,30 @@ jobs:
         run: >-
           php -d memory_limit=128M vendor/bin/pest
           tests/Feature/CFB/CfbSignalArtifactRecoveryTest.php tests/Feature/NFL/NflNumericBundleTest.php
-          --group=ci-isolated-interop --list-tests-xml=storage/framework/testing/planned-5.xml
+          --group=ci-isolated-interop --list-tests-xml=storage/framework/testing/planned-7.xml
       - name: Execute only the four isolated contracts
         env:
-          PICKSPORTS_PHP_CI_EVENTS: storage/framework/testing/events-5.jsonl
+          PICKSPORTS_PHP_CI_EVENTS: storage/framework/testing/events-7.jsonl
         run: >-
           php -d memory_limit=128M vendor/bin/pest
           tests/Feature/CFB/CfbSignalArtifactRecoveryTest.php tests/Feature/NFL/NflNumericBundleTest.php
           --group=ci-isolated-interop --bootstrap=scripts/php-ci-bootstrap.php
-          --log-junit=storage/framework/testing/junit-5.xml --compact --display-skipped
+          --log-junit=storage/framework/testing/junit-7.xml --compact --display-skipped
       - name: Upload isolated PHP test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: php-ci-results-5
+          name: php-ci-results-7
           path: |
-            storage/framework/testing/planned-5.xml
-            storage/framework/testing/junit-5.xml
-            storage/framework/testing/events-5.jsonl
+            storage/framework/testing/planned-7.xml
+            storage/framework/testing/junit-7.xml
+            storage/framework/testing/events-7.jsonl
           if-no-files-found: error
           retention-days: 7
 
   ci:
     name: ci (8.5)
-    needs: [php, php-isolated]
+    needs: [php, php-sqlite, php-isolated]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -372,8 +585,9 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python scripts/verify-php-ci-results.py php-ci-results --shards=5 | tee -a "$GITHUB_STEP_SUMMARY"
+          python scripts/verify-php-ci-results.py php-ci-results --shards=7 | tee -a "$GITHUB_STEP_SUMMARY"
           test '${{ needs.php.result }}' = 'success'
+          test '${{ needs.php-sqlite.result }}' = 'success'
           test '${{ needs.php-isolated.result }}' = 'success'
 
   ml:

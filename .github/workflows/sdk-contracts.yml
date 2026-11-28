@@ -9,6 +9,8 @@ on:
       - .github/workflows/sdk-contracts.yml
       - scripts/prepare_sdk_spec.py
       - scripts/test_prepare_sdk_spec.py
+      - scripts/prepare_sdk_typescript_template.py
+      - scripts/test_generated_sdk_dates.mjs
   push:
     branches: [main]
     paths:
@@ -18,6 +20,8 @@ on:
       - .github/workflows/sdk-contracts.yml
       - scripts/prepare_sdk_spec.py
       - scripts/test_prepare_sdk_spec.py
+      - scripts/prepare_sdk_typescript_template.py
+      - scripts/test_generated_sdk_dates.mjs
 
 permissions:
   contents: read
@@ -35,12 +39,20 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts -p test_prepare_sdk_spec.py
           python3 scripts/prepare_sdk_spec.py docs/openapi-v2.json build/sdk/openapi-v2.json
+      - name: Prepare pinned null-safe TypeScript date template
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -v "$PWD:/local" openapitools/openapi-generator-cli:v7.14.0 author template \
+            -g typescript-fetch \
+            -o /local/build/sdk/typescript-templates
+          python3 scripts/prepare_sdk_typescript_template.py build/sdk/typescript-templates/modelGeneric.mustache
       - name: Generate TypeScript Fetch SDK
         run: |
           docker run --rm --user "$(id -u):$(id -g)" \
             -v "$PWD:/local" openapitools/openapi-generator-cli:v7.14.0 generate \
             -i /local/build/sdk/openapi-v2.json \
             -g typescript-fetch \
+            -t /local/build/sdk/typescript-templates \
             -o /local/build/sdk/typescript \
             --additional-properties=npmName=@picksports/api-v2,supportsES6=true,typescriptThreePlus=true
       - name: Compile TypeScript SDK
@@ -48,6 +60,7 @@ jobs:
         run: |
           npm install --ignore-scripts
           npm run build
+          node ../../../scripts/test_generated_sdk_dates.mjs . ../../../docs/openapi-v2.json
 
   swift:
     runs-on: macos-latest

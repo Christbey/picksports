@@ -15,6 +15,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Tests\Support\ObservedCfbGameFixture;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -49,6 +50,7 @@ function mysqlCfbClosingFixture(): array
     $game = Game::factory()->create(['season' => 2026, 'week' => 1, 'season_type' => 'regular',
         'home_team_id' => $home->id, 'away_team_id' => $away->id, 'status' => 'STATUS_SCHEDULED',
         'game_date' => '2026-09-05', 'game_time' => '19:00:00', 'home_score' => null, 'away_score' => null]);
+    $game = ObservedCfbGameFixture::observe($game, '2026-09-05T19:00:00Z');
     $prediction = Prediction::create(['game_id' => $game->id, 'home_elo' => 1500, 'away_elo' => 1500,
         'predicted_spread' => 8.5, 'predicted_total' => 50, 'win_probability' => .6, 'confidence_score' => 55,
         'model_version' => 'synthetic-v1', 'feature_version' => 'synthetic-v1', 'blend_version' => 'baseline-v1']);

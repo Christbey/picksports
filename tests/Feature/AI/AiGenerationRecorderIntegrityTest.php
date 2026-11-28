@@ -25,7 +25,8 @@ it('updates the supplied generation on its named connection without changing the
         DB::purge('ai_recorder_aux');
     }
 })->with(['complete', 'fail'])
-    ->skip(fn () => config('database.default') !== 'sqlite', 'Explicit SQLite alternate-connection contract.');
+    ->skip(fn () => config('database.default') !== 'sqlite', 'Explicit SQLite alternate-connection contract.')
+    ->group('sqlite-engine-only-contract');
 
 it('refuses invalid measured usage without fabricating zero or completing the generation', function (array $tokens, ?string $cost, int $latency) {
     $generation = AiGeneration::factory()->create(['status' => 'running']);

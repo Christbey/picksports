@@ -85,7 +85,8 @@ it('does not treat invalid historical metadata as an empty valid record', functi
     DB::table('ai_generations')->where('id', $generation->id)->update(['metadata' => '{']);
     expect(fn () => app(ReviewSpendAdmission::class)->reserve(syntheticSpendWork()))
         ->toThrow(ReviewDeferred::class, 'invalid_usage_telemetry');
-})->skip(fn () => config('database.default') !== 'sqlite', 'SQLite-only malformed JSON storage; native JSON rejects the fixture.');
+})->skip(fn () => config('database.default') !== 'sqlite', 'SQLite-only malformed JSON storage; native JSON rejects the fixture.')
+    ->group('sqlite-engine-only-contract');
 
 it('refuses a metadata row that grows beyond its limit after scalar preflight', function () {
     $generation = AiGeneration::factory()->create(['cost_usd' => '0', 'metadata' => []]);
@@ -117,7 +118,8 @@ it('bounds an invalid stored cost scalar before transferring a usage document', 
     expect(fn () => app(ReviewSpendAdmission::class)->reserve(syntheticSpendWork()))
         ->toThrow(ReviewDeferred::class, 'invalid_usage_telemetry');
     expect($bodyRead)->toBeFalse();
-})->skip(fn () => config('database.default') !== 'sqlite', 'SQLite-only invalid decimal storage; native DECIMAL rejects the fixture.');
+})->skip(fn () => config('database.default') !== 'sqlite', 'SQLite-only invalid decimal storage; native DECIMAL rejects the fixture.')
+    ->group('sqlite-engine-only-contract');
 
 it('rejects exponent notation before expanding a stored reservation amount', function () {
     AiGeneration::factory()->create(['cost_usd' => null, 'metadata' => ['reserved_cost_usd' => '1e2']]);

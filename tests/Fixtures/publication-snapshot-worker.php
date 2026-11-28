@@ -5,7 +5,6 @@ use App\Models\CanonicalPrediction;
 use App\Models\SportEvent;
 use App\Services\Predictions\PredictionPublisher;
 use Illuminate\Contracts\Console\Kernel;
-use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Bootstrap\LoadConfiguration;
 use Illuminate\Support\Env;
@@ -36,18 +35,19 @@ DB::statement('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
 $prediction = CanonicalPrediction::query()->findOrFail($predictionId);
 
 if ($mode === 'older') {
-    DB::listen(function (QueryExecuted $query) use ($directory): void {
-        if (preg_match('/^select [`"]?sport_event_id[`"]? from [`"]?predictions[`"]?/i', $query->sql) === 1) {
-            // This ordinary lookup occurs inside publication's transaction and
-            // pins its consistent-read snapshot before the event lock can pass.
-            file_put_contents($directory.'/snapshot-ready', json_encode(['transaction_level' => $query->connection->transactionLevel()], JSON_THROW_ON_ERROR));
-        }
-    });
+    DB::beginTransaction();
     try {
+        // Prime the inherited consistent snapshot before publication's admission locks.
+        CanonicalPrediction::query()->whereKey($prediction->getKey())->value('sport_event_id');
+        file_put_contents($directory.'/snapshot-ready', json_encode(['transaction_level' => DB::connection()->transactionLevel()], JSON_THROW_ON_ERROR));
         app(PredictionPublisher::class)->publish($prediction);
         $status = 'published';
     } catch (PredictionLifecycleException $exception) {
         $status = 'refused';
+    } finally {
+        while (DB::connection()->transactionLevel() > 0) {
+            DB::rollBack();
+        }
     }
     echo json_encode(['status' => $status], JSON_THROW_ON_ERROR);
     exit(0);

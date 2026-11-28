@@ -381,7 +381,7 @@ it('batches canonical grading and removes per-game stats and play existence quer
         DB::flushQueryLog();
     }
     expect($queries->filter(fn ($sql) => str_contains($sql, 'nba_predictions')))->toBeEmpty()
-        ->and($queries->filter(fn ($sql) => str_contains($sql, 'from "prediction_evaluations"')))->toHaveCount(2)
+        ->and($queries->filter(fn ($sql) => str_contains($sql, 'from '.DB::connection()->getQueryGrammar()->wrapTable('prediction_evaluations'))))->toHaveCount(2)
         ->and($queries->filter(fn ($sql) => str_starts_with($sql, 'select exists(') && (str_contains($sql, 'nba_plays') || str_contains($sql, 'nba_player_stats'))))->toBeEmpty();
 });
 

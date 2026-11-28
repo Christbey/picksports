@@ -79,7 +79,17 @@ class SyncPlays extends AbstractSyncPlays
                 $same = $stored->count() === count($rows);
                 foreach ($rows as $id => $attrs) {
                     $prior = $stored->get($id);
-                    if (! $prior || (clone $prior)->fill($attrs)->isDirty()) {
+                    if (! $prior) {
+                        $same = false;
+                        break;
+                    }
+                    $dirty = (clone $prior)->fill($attrs)->getDirty();
+                    // MySQL JSON may reorder object keys; preserve scalar types and list order.
+                    if (array_key_exists('source_state', $dirty)
+                        && $this->canonicalPlaySourceState($prior->source_state) === $this->canonicalPlaySourceState($attrs['source_state'])) {
+                        unset($dirty['source_state']);
+                    }
+                    if ($dirty !== []) {
                         $same = false;
                         break;
                     }
@@ -126,5 +136,17 @@ class SyncPlays extends AbstractSyncPlays
                 $this->clearPlayTeams();
             }
         }, 3);
+    }
+
+    private function canonicalPlaySourceState(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+        if (! array_is_list($value)) {
+            ksort($value, SORT_STRING);
+        }
+
+        return array_map($this->canonicalPlaySourceState(...), $value);
     }
 }

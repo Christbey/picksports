@@ -11,7 +11,7 @@ function matchupPublicationFixture(): array
 {
     $home = Team::factory()->create();
     $away = Team::factory()->create();
-    $game = Game::factory()->create(['season' => 2026, 'home_team_id' => $home->id, 'away_team_id' => $away->id]);
+    $game = Game::factory()->create(['season' => 2026, 'season_type' => '2', 'home_team_id' => $home->id, 'away_team_id' => $away->id]);
     DB::table('nflverse_pbp_plays')->insert(['nflverse_play_key' => 'publication-fixture', 'nflverse_game_id' => '2026_01_A_B',
         'nfl_game_id' => $game->id, 'season' => 2026, 'week' => 1, 'possession_team' => 'A', 'possession_team_id' => $home->id,
         'defense_team' => 'B', 'defense_team_id' => $away->id]);
@@ -76,5 +76,5 @@ it('refuses changed canonical provider or schedule identity before sample public
     expect($connection->table('nfl_matchup_tracking_samples')->orderBy('id')->get()->toJson())->toBe($before);
 })->with([
     ['espn_event_id', 'changed-provider-id'], ['nflverse_game_id', 'changed-nflverse-id'], ['week', 99],
-    ['game_date', '2026-11-01'], ['game_time', '23:59:00'], ['season_type', 'corrected-season-type'],
+    ['game_date', '2026-11-01'], ['game_time', '23:59:00'], ['season_type', '3'],
 ]);

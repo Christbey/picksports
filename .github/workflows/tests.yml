@@ -43,7 +43,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 8
       matrix:
         include:
           - lane: 1
@@ -57,7 +57,7 @@ jobs:
               --testsuite="MySQL integration" tests/Integration/MySql/EloTransitiveDependencySnapshotTest.php tests/Integration/MySql/FuturesSnapshotIndexRepairTest.php tests/Integration/MySql/ImmutableCoreCurrentStateTest.php tests/Integration/MySql/PasskeyCredentialSchemaTest.php tests/Integration/MySql/PlayIdentityConcurrencyTest.php tests/Integration/MySql/NativePushRegistrationSnapshotTest.php tests/Integration/MySql/StartingPitcherForecastCurrentStateTest.php tests/Feature/CBB/RosterObservationImmutabilityBoundaryTest.php
           - lane: 4
             selection: >-
-              --testsuite="MySQL integration" tests/Integration/MySql/MlbExistingArtifactStorageTest.php tests/Integration/MySql/CbbCurrentEpaSourceTest.php tests/Integration/MySql/DatasetP2NativeBoundaryTest.php tests/Integration/MySql/AiDailyCommandAcknowledgementNativeTest.php tests/Integration/MySql/CfbSourceAssessmentSnapshotTest.php tests/Integration/MySql/PublicationEffectCurrentStateTest.php tests/Integration/MySql/SubmissionPageUrlCapacityTest.php tests/Integration/MySql/IndexAuditMetadataTest.php
+              --testsuite="MySQL integration" tests/Integration/MySql/MlbExistingArtifactStorageTest.php tests/Integration/MySql/CbbCurrentEpaSourceTest.php tests/Integration/MySql/DatasetP2NativeBoundaryTest.php tests/Integration/MySql/AiDailyCommandAcknowledgementNativeTest.php tests/Integration/MySql/CfbSourceAssessmentSnapshotTest.php tests/Integration/MySql/PublicationEffectCurrentStateTest.php tests/Integration/MySql/SubmissionPageUrlCapacityTest.php tests/Integration/MySql/IndexAuditMetadataTest.php tests/Integration/MySql/AiTelemetryEngineBoundaryTest.php
           - lane: 5
             selection: >-
               --testsuite="MySQL integration" tests/Integration/MySql/BillingAdmissionIdentityTest.php tests/Integration/MySql/CfbKickoffObservationTest.php tests/Integration/MySql/EloBaselineAdmissionSnapshotTest.php tests/Integration/MySql/BillingFinancialConcurrencyTest.php tests/Integration/MySql/FiniteTokenEpochTest.php tests/Integration/MySql/StripeWebhookSnapshotTest.php tests/Integration/MySql/WnbaEloPublicationSnapshotTest.php
@@ -108,6 +108,7 @@ jobs:
       DB_USERNAME: picksports_test
       DB_PASSWORD: testing-disposable
       PICKSPORTS_TEST_MYSQL_DATABASE: picksports_test_readiness
+      PICKSPORTS_TEST_MYSQL_AUX_SCHEMA: picksports_test_readiness_ai_aux
       CACHE_STORE: array
       SESSION_DRIVER: array
       QUEUE_CONNECTION: sync
@@ -119,28 +120,81 @@ jobs:
           php-version: '8.5'
           extensions: pdo_mysql
           tools: composer:v2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
       - run: composer install --no-interaction --no-scripts --prefer-dist --optimize-autoloader
-      - run: cp .env.example .env
+      - run: npm ci
+      - run: cp .env.example .env.testing
       - run: mkdir -p bootstrap/cache storage/framework/{cache,sessions,testing,views} storage/logs
-      - run: php artisan key:generate --no-interaction
+      - run: php artisan key:generate --env=testing --no-interaction
       - run: php artisan package:discover --ansi
-      - name: Prepare disposable transaction-observation capability
-        run: >-
-          docker exec -e MYSQL_PWD=testing-root '${{ job.services.mysql.id }}'
-          mysql --user=root --execute="
-          GRANT SELECT ON performance_schema.events_transactions_current TO 'picksports_test'@'%';
-          GRANT SELECT ON performance_schema.threads TO 'picksports_test'@'%';
-          UPDATE performance_schema.setup_instruments SET ENABLED='YES', TIMED='YES' WHERE NAME='transaction';
-          UPDATE performance_schema.setup_consumers SET ENABLED='YES' WHERE NAME='events_transactions_current';"
+      - name: Prepare disposable transaction observation and explicit UTC defaults
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Scope: the per-job disposable MySQL service only.
+          docker exec -e MYSQL_PWD=testing-root '${{ job.services.mysql.id }}' \
+            mysql --user=root --batch --execute="
+            SELECT @@GLOBAL.time_zone AS fixture_previous_global_time_zone;
+            SET GLOBAL time_zone = '+00:00';
+            SELECT @@GLOBAL.time_zone AS fixture_required_global_time_zone;
+            GRANT SELECT ON performance_schema.events_transactions_current TO 'picksports_test'@'%';
+            GRANT SELECT ON performance_schema.threads TO 'picksports_test'@'%';
+            UPDATE performance_schema.setup_instruments SET ENABLED='YES', TIMED='YES' WHERE NAME='transaction';
+            UPDATE performance_schema.setup_consumers SET ENABLED='YES' WHERE NAME='events_transactions_current';"
+          fixture_session_timezone="$(docker exec -e MYSQL_PWD=testing-disposable '${{ job.services.mysql.id }}' \
+            mysql --user=picksports_test --batch --skip-column-names --execute='SELECT @@SESSION.time_zone')"
+          test "$fixture_session_timezone" = '+00:00'
+          printf 'Fresh disposable app connection uses explicit %s\n' "$fixture_session_timezone"
+      - name: Provision only the declared lane-four auxiliary routing schema
+        if: matrix.lane == 4
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$APP_ENV" = testing
+          test "$DB_DATABASE" = picksports_test_readiness
+          test "$DB_USERNAME" = picksports_test
+          test "$PICKSPORTS_TEST_MYSQL_DATABASE" = picksports_test_readiness
+          test "$PICKSPORTS_TEST_MYSQL_AUX_SCHEMA" = picksports_test_readiness_ai_aux
+          # A fresh per-job owned service is mandatory; never reuse or drop an existing schema.
+          auxiliary_count="$(docker exec -e MYSQL_PWD=testing-root '${{ job.services.mysql.id }}' \
+            mysql --user=root --batch --skip-column-names --execute="SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = 'picksports_test_readiness_ai_aux'")"
+          test "$auxiliary_count" = 0
+          docker exec -e MYSQL_PWD=testing-root '${{ job.services.mysql.id }}' \
+            mysql --user=root --batch --execute="
+            CREATE DATABASE picksports_test_readiness_ai_aux;
+            GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP ON picksports_test_readiness_ai_aux.* TO 'picksports_test'@'%';"
+      - name: Build real main assets for native HTML response contracts
+        run: npm run build
       - name: Record complete native discovery
         if: matrix.lane == 1
         run: |
           mkdir -p storage/framework/testing/mysql-results
-          php -d memory_limit=1536M vendor/bin/pest --configuration=phpunit.mysql.xml --list-tests-xml=storage/framework/testing/mysql-results/full.xml --do-not-cache-result
+          # Four existing SQLite-only storage/auxiliary fixtures remain in the default PHP suite.
+          # Save BOTH the original native catalog and the explicit engine-applicable profile.
+          php -d memory_limit=1536M vendor/bin/pest --configuration=phpunit.mysql.xml --list-tests-xml=storage/framework/testing/mysql-results/full-unfiltered.xml --do-not-cache-result
+          php -d memory_limit=1536M vendor/bin/pest --configuration=phpunit.mysql.xml --exclude-group=sqlite-engine-only-contract --list-tests-xml=storage/framework/testing/mysql-results/full.xml --do-not-cache-result
+          php -d memory_limit=1536M vendor/bin/pest --configuration=phpunit.mysql.xml --group=sqlite-engine-only-contract --list-tests-xml=storage/framework/testing/mysql-results/sqlite-only-contracts.xml --do-not-cache-result
+          python3 - <<'PYPROFILE'
+          import xml.etree.ElementTree as E
+          from pathlib import Path
+          d = Path('storage/framework/testing/mysql-results')
+          def ids(name):
+              values = [n.attrib['id'] for n in E.parse(d / name).getroot().iter() if n.tag.rsplit('}', 1)[-1] == 'testMethod']
+              assert len(values) == len(set(values))
+              return set(values)
+          whole, native, sqlite = ids('full-unfiltered.xml'), ids('full.xml'), ids('sqlite-only-contracts.xml')
+          expected = {"P\\Tests\\Feature\\AI\\AiGenerationRecorderIntegrityTest::__pest_evaluable_it_updates_the_supplied_generation_on_its_named_connection_without_changing_the_default_row#('complete')", 'P\\Tests\\Feature\\Predictions\\ReviewSpendAdmissionIntegrityTest::__pest_evaluable_it_bounds_an_invalid_stored_cost_scalar_before_transferring_a_usage_document', "P\\Tests\\Feature\\AI\\AiGenerationRecorderIntegrityTest::__pest_evaluable_it_updates_the_supplied_generation_on_its_named_connection_without_changing_the_default_row#('fail')", 'P\\Tests\\Feature\\Predictions\\ReviewSpendAdmissionIntegrityTest::__pest_evaluable_it_does_not_treat_invalid_historical_metadata_as_an_empty_valid_record'}
+          assert sqlite == expected and native == whole - expected
+          assert len(whole) == len(native) + len(expected)
+          print(f'Explicit engine profile: {len(native)} native-applicable; {len(expected)} SQLite-only contracts retained in default PHP full suite; unfiltered {len(whole)}.')
+          PYPROFILE
       - name: Record native partition discovery
         run: |
           mkdir -p storage/framework/testing/mysql-results storage/framework/testing/mysql-preflight
-          php -d memory_limit=1536M vendor/bin/pest --configuration=phpunit.mysql.xml ${{ matrix.selection }} --exclude-group=mysql-schema-preflight --list-tests-xml=storage/framework/testing/mysql-results/planned-${{ matrix.lane }}.xml --do-not-cache-result
+          php -d memory_limit=1536M vendor/bin/pest --configuration=phpunit.mysql.xml ${{ matrix.selection }} --exclude-group=mysql-schema-preflight --exclude-group=sqlite-engine-only-contract --list-tests-xml=storage/framework/testing/mysql-results/planned-${{ matrix.lane }}.xml --do-not-cache-result
           php -d memory_limit=1536M vendor/bin/pest --configuration=phpunit.mysql.xml --group=mysql-schema-preflight --list-tests-xml=storage/framework/testing/mysql-preflight/full.xml --do-not-cache-result
           cp storage/framework/testing/mysql-preflight/full.xml storage/framework/testing/mysql-preflight/planned-1.xml
       - name: Fail fast on native migration installation with strict safety proof
@@ -158,7 +212,7 @@ jobs:
       - name: Disposable MySQL partition with incremental canonical evidence
         env:
           PICKSPORTS_PHP_CI_EVENTS: storage/framework/testing/mysql-results/events-${{ matrix.lane }}.jsonl
-        run: php -d memory_limit=1536M vendor/bin/pest --configuration=phpunit.mysql.xml ${{ matrix.selection }} --exclude-group=mysql-schema-preflight --bootstrap=scripts/php-ci-bootstrap.php --log-junit=storage/framework/testing/mysql-results/junit-${{ matrix.lane }}.xml --do-not-cache-result --profile --display-skipped
+        run: php -d memory_limit=1536M vendor/bin/pest --configuration=phpunit.mysql.xml ${{ matrix.selection }} --exclude-group=mysql-schema-preflight --exclude-group=sqlite-engine-only-contract --bootstrap=scripts/php-ci-bootstrap.php --log-junit=storage/framework/testing/mysql-results/junit-${{ matrix.lane }}.xml --do-not-cache-result --profile --display-skipped
       - name: Upload native canonical results even after failure or timeout
         if: always()
         uses: actions/upload-artifact@v4

@@ -100,47 +100,63 @@ class OffensiveEfficiencyTrendCollector extends TrendCollector
 
         $efficiencyValues = $gamesWithStats->map(function ($game) {
             $stats = $this->teamStats($game);
-            $points = (float) ($stats->points ?? 0);
-            $possessions = (float) ($stats->possessions ?? 0);
+            $points = $stats->points;
+            $possessions = $stats->possessions;
+
+            if (! $this->isRecordedCount($points) || ! $this->isRecordedCount($possessions)) {
+                return null;
+            }
 
             if ($possessions <= 0) {
                 return null;
             }
 
-            return ($points / $possessions) * 100;
+            $rating = ($points / $possessions) * 100;
+
+            return is_finite($rating) ? $rating : null;
         })->filter(fn ($value) => $value !== null);
 
-        if ($efficiencyValues->isNotEmpty()) {
+        if ($efficiencyValues->isNotEmpty() && is_finite($efficiencyValues->avg())) {
             $avgOffEff = $efficiencyValues->avg();
             $messages[] = "The {$this->teamAbbr} average ".number_format($avgOffEff, 1).' offensive rating (points per 100 possessions)';
         }
 
-        $turnoversLow = $gamesWithStats->filter(function ($game) {
+        $turnoverGames = $gamesWithStats->filter(fn ($game) => $this->isRecordedCount($this->teamStats($game)->turnovers));
+        $turnoversLow = $turnoverGames->filter(function ($game) {
             $stats = $this->teamStats($game);
-            $turnovers = (int) ($stats->turnovers ?? 0);
+            $turnovers = (float) $stats->turnovers;
 
-            return $turnovers > 0 && $turnovers <= 12;
+            return $turnovers <= 12;
         })->count();
 
-        if ($this->isSignificant($turnoversLow, $gamesWithStats->count())) {
-            $messages[] = "The {$this->teamAbbr} have committed 12 or fewer turnovers in {$turnoversLow} of their last {$gamesWithStats->count()} games";
+        if ($turnoverGames->isNotEmpty() && $this->isSignificant($turnoversLow, $turnoverGames->count())) {
+            $sample = $turnoverGames->count() === $gamesWithStats->count()
+                ? "their last {$turnoverGames->count()} games"
+                : "{$turnoverGames->count()} games with recorded turnover stats";
+            $messages[] = "The {$this->teamAbbr} have committed 12 or fewer turnovers in {$turnoversLow} of {$sample}";
         }
 
         $assistTurnoverRatios = $gamesWithStats->map(function ($game) {
             $stats = $this->teamStats($game);
-            $assists = (float) ($stats->assists ?? 0);
-            $turnovers = (float) ($stats->turnovers ?? 0);
+            $assists = $stats->assists;
+            $turnovers = $stats->turnovers;
+
+            if (! $this->isRecordedCount($assists) || ! $this->isRecordedCount($turnovers)) {
+                return null;
+            }
 
             if ($turnovers <= 0) {
                 return null;
             }
 
-            return $assists / $turnovers;
+            $ratio = $assists / $turnovers;
+
+            return is_finite($ratio) ? $ratio : null;
         })->filter(fn ($ratio) => $ratio !== null);
 
         if ($assistTurnoverRatios->isNotEmpty()) {
             $avgAstTo = $assistTurnoverRatios->avg();
-            if ($avgAstTo >= 1.4) {
+            if (is_finite($avgAstTo) && $avgAstTo >= 1.4) {
                 $messages[] = "The {$this->teamAbbr} are taking care of the ball with a ".number_format($avgAstTo, 2).' assist-to-turnover ratio';
             }
         }
@@ -160,16 +176,23 @@ class OffensiveEfficiencyTrendCollector extends TrendCollector
             return $messages;
         }
 
-        $avgRuns = $gamesWithStats->avg(fn ($g) => $this->teamStats($g)->runs ?? 0);
-        if ($avgRuns > 0) {
+        $avgRuns = $gamesWithStats->map(fn ($g) => $this->teamStats($g)->runs)
+            ->filter(fn ($value) => $this->isRecordedCount($value))->avg();
+        if ($avgRuns !== null && is_finite($avgRuns) && $avgRuns > 0) {
             $messages[] = "The {$this->teamAbbr} average ".number_format($avgRuns, 1).' runs per game';
         }
 
-        $avgHits = $gamesWithStats->avg(fn ($g) => $this->teamStats($g)->hits ?? 0);
-        if ($avgHits >= 8) {
+        $avgHits = $gamesWithStats->map(fn ($g) => $this->teamStats($g)->hits)
+            ->filter(fn ($value) => $this->isRecordedCount($value))->avg();
+        if ($avgHits !== null && is_finite($avgHits) && $avgHits >= 8) {
             $messages[] = "The {$this->teamAbbr} average ".number_format($avgHits, 1).' hits per game';
         }
 
         return $messages;
+    }
+
+    private function isRecordedCount(mixed $value): bool
+    {
+        return is_numeric($value) && is_finite((float) $value) && (float) $value >= 0;
     }
 }

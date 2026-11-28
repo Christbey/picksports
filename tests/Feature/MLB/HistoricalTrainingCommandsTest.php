@@ -29,7 +29,7 @@ it('backfills historical mlb predictions and snapshots for completed regular-sea
         'abbreviation' => 'STL',
     ]);
 
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2025,
         'season_type' => (string) config('mlb.season.types.regular', 2),
         'status' => 'STATUS_FINAL',
@@ -77,7 +77,7 @@ it('creates verified trusted-core reconstruction snapshots with matching evaluat
         'espn_id' => 'trusted-away-pitcher',
     ]);
 
-    Game::factory()->create([
+    Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2025,
         'season_type' => '2',
         'status' => 'STATUS_FINAL',
@@ -118,7 +118,7 @@ it('creates verified trusted-core reconstruction snapshots with matching evaluat
         'games_started' => 6,
     ]);
 
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2025,
         'season_type' => '2',
         'status' => 'STATUS_FINAL',
@@ -172,11 +172,11 @@ it('creates verified trusted-core reconstruction snapshots with matching evaluat
 
     expect($prediction->model_version)->toBe(TrustedHistoricalPredictionReconstructor::MODEL_VERSION)
         ->and($prediction->feature_version)->toBe(TrustedHistoricalFeatureBuilder::FEATURE_VERSION)
-        ->and($snapshot->pregame_safe)->toBeTrue()
-        ->and($snapshot->availability_status)->toBe('verified_reconstruction')
-        ->and($snapshot->features_available_at?->lte($snapshot->game_start_at))->toBeTrue()
+        ->and($snapshot->pregame_safe)->toBeFalse()
+        ->and($snapshot->availability_status)->toBe('market_time_unverified')
+        ->and($snapshot->features_available_at?->gt($snapshot->game_start_at))->toBeTrue()
         ->and(data_get($snapshot->lineage_metadata, 'run_type'))->toBe('historical_reconstruction')
-        ->and(data_get($snapshot->lineage_metadata, 'point_in_time_verified'))->toBeTrue()
+        ->and(data_get($snapshot->lineage_metadata, 'point_in_time_verified'))->toBeFalse()
         ->and(data_get($snapshot->features, 'home_prior_games'))->toBe(1)
         ->and(data_get($snapshot->features, 'home_team_elo'))->toBe(1535)
         ->and(data_get($snapshot->features, 'home_pitcher_elo'))->toBe(1500)
@@ -222,7 +222,7 @@ it('creates verified trusted-core reconstruction snapshots with matching evaluat
 it('never mutates an existing 2026 baseline while recording trusted snapshot and evaluation lineage', function () {
     $home = Team::factory()->create(['location' => 'Los Angeles', 'name' => 'Dodgers']);
     $away = Team::factory()->create(['location' => 'San Diego', 'name' => 'Padres']);
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2026,
         'season_type' => '2',
         'status' => 'STATUS_FINAL',
@@ -295,7 +295,7 @@ it('never mutates an existing 2026 baseline while recording trusted snapshot and
         ->and($after->feature_version)->toBe('core-v3')
         ->and(data_get($after->model_metadata, 'public_source'))->toBe('baseline')
         ->and($snapshot->prediction_id)->toBe($baseline->id)
-        ->and($snapshot->availability_status)->toBe('verified_reconstruction')
+        ->and($snapshot->availability_status)->toBe('reconstructed_now')
         ->and($snapshot->model_version)->toBe(TrustedHistoricalPredictionReconstructor::MODEL_VERSION)
         ->and($evaluation->blend_version)->toBe(TrustedHistoricalPredictionReconstructor::BLEND_VERSION)
         ->and((float) data_get($evaluation->errors, 'active_win_probability'))
@@ -315,7 +315,7 @@ it('keeps future results ratings and post-start odds out of trusted reconstructe
         'espn_id' => 'future-safe-away',
     ]);
 
-    Game::factory()->create([
+    Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2025,
         'season_type' => '2',
         'status' => 'STATUS_FINAL',
@@ -327,7 +327,7 @@ it('keeps future results ratings and post-start odds out of trusted reconstructe
         'away_score' => 2,
     ]);
 
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2025,
         'season_type' => '2',
         'status' => 'STATUS_FINAL',
@@ -401,7 +401,7 @@ it('keeps future results ratings and post-start odds out of trusted reconstructe
         ->latest('id')
         ->firstOrFail();
 
-    Game::factory()->create([
+    Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2025,
         'season_type' => '2',
         'status' => 'STATUS_FINAL',
@@ -471,7 +471,7 @@ it('keeps future results ratings and post-start odds out of trusted reconstructe
 it('keeps default research reconstruction outside standardized strict export predicates', function () {
     $home = Team::factory()->create();
     $away = Team::factory()->create();
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2025,
         'season_type' => '2',
         'status' => 'STATUS_FINAL',
@@ -513,16 +513,16 @@ it('keeps default research reconstruction outside standardized strict export pre
         ->whereIn('availability_status', ['observed_pregame', 'verified_reconstruction'])
         ->get();
 
-    expect($strictSnapshots)->toHaveCount(1)
-        ->and($strictSnapshots->sole()->id)->not->toBe($researchSnapshot->id)
-        ->and(data_get($strictSnapshots->sole()->lineage_metadata, 'historical_profile'))
-        ->toBe(TrustedHistoricalFeatureBuilder::PROFILE);
+    expect($strictSnapshots)->toHaveCount(0);
+    $retrospective = PredictionFeatureSnapshot::query()->where('game_id', $game->id)->where('availability_status', 'reconstructed_now')->get();
+    expect($retrospective)->toHaveCount(2)
+        ->and($retrospective->filter(fn ($row) => data_get($row->lineage_metadata, 'historical_profile') === TrustedHistoricalFeatureBuilder::PROFILE))->toHaveCount(1);
 });
 
 it('processes trusted historical games by scheduled start and id', function () {
     $home = Team::factory()->create();
     $away = Team::factory()->create();
-    $later = Game::factory()->create([
+    $later = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2025,
         'season_type' => '2',
         'status' => 'STATUS_FINAL',
@@ -533,7 +533,7 @@ it('processes trusted historical games by scheduled start and id', function () {
         'home_score' => 2,
         'away_score' => 1,
     ]);
-    $earlier = Game::factory()->create([
+    $earlier = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2025,
         'season_type' => '2',
         'status' => 'STATUS_FINAL',
@@ -544,7 +544,7 @@ it('processes trusted historical games by scheduled start and id', function () {
         'home_score' => 4,
         'away_score' => 3,
     ]);
-    $sameStartHigherId = Game::factory()->create([
+    $sameStartHigherId = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2025,
         'season_type' => '2',
         'status' => 'STATUS_FINAL',
@@ -571,7 +571,7 @@ it('exports mlb training data from snapshots and evaluations', function () {
     $home = Team::factory()->create();
     $away = Team::factory()->create();
 
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,
         'season' => 2025,
@@ -694,9 +694,12 @@ it('exports mlb training data from snapshots and evaluations', function () {
     Artisan::call('mlb:export-training-data', [
         '--path' => $path,
         '--season' => [2025],
+        '--include-unsafe' => true,
     ]);
 
     expect(file_exists($path))->toBeTrue();
+    $proof = json_decode(file_get_contents($path.'.manifest.json'), true, 32, JSON_THROW_ON_ERROR);
+    expect($proof['research_only'])->toBeTrue()->and(Artisan::output())->toContain('no (research override)');
 
     $contents = file_get_contents($path);
 

@@ -35,7 +35,6 @@ defineProps<{ errors: Record<string, string> }>();
                 ]"
             >
                 <Checkbox
-                    :name="`notification_types[${type.value}]`"
                     :value="type.value"
                     :id="`notification-${type.value}`"
                     :model-value="isNotificationTypeSelected(type.value)"

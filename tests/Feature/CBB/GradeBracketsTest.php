@@ -229,3 +229,24 @@ it('grades only tournament results without forecast reads across rollout modes',
     app(GradeBrackets::class)->execute(2026, $bracket);
     expect($bracket->fresh()->only(array_keys($before)))->toBe($before);
 })->with([[false, false], [true, false], [false, true], [true, true]]);
+test('bracket grading requires an observed valid score pair and distinct owned participants', function (?int $home, ?int $away, bool $sameTeam, string $status, bool $graded) {
+    $team = Team::factory()->create();
+    $opponent = $sameTeam ? $team : Team::factory()->create();
+    $game = Game::factory()->create(['season' => 2026, 'season_type' => 3, 'is_ncaa_tournament' => true,
+        'tournament_round' => 'round_of_64', 'tournament_region' => 'East', 'home_seed' => 1, 'away_seed' => 16,
+        'home_team_id' => $team->id, 'away_team_id' => $opponent->id, 'status' => $status,
+        'home_score' => $home, 'away_score' => $away]);
+    $bracket = CbbBracket::create(['user_id' => User::factory()->create()->id, 'season' => 2026,
+        'picks' => ["game:{$game->id}" => "team:{$team->id}"]]);
+    app(GradeBrackets::class)->execute(2026, $bracket);
+    $result = $bracket->fresh()->results["game:{$game->id}"];
+    expect($result['status'])->toBe($graded ? 'correct' : 'pending')
+        ->and($result['winning_id'])->toBe($graded ? "team:{$team->id}" : null);
+})->with([
+    'negative stored score' => [-1, -2, false, 'STATUS_FINAL', false],
+    'same participant both sides' => [1, 0, true, 'STATUS_FINAL', false],
+    'missing score' => [1, null, false, 'STATUS_FINAL', false],
+    'observed tie' => [0, 0, false, 'STATUS_FINAL', false],
+    'genuine zero opponent' => [1, 0, false, 'STATUS_FINAL', true],
+    'unfinished score pair' => [1, 0, false, 'STATUS_IN_PROGRESS', false],
+]);

@@ -9,7 +9,7 @@ export type GameOption = {
     id: number;
     label: string;
     date: string;
-    time: string;
+    time: string | null;
 };
 
 export type MarketOption = {

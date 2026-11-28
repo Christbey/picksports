@@ -50,6 +50,7 @@ class Game extends Model
         'home_seed',
         'away_seed',
         'play_in_target_seed',
+        'neutral_site',
         'venue_name',
         'venue_city',
         'venue_state',

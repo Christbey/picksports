@@ -42,6 +42,9 @@ export function useHealthchecks(props: HealthchecksProps) {
     const selectedView = ref(props.filters.view || 'heartbeat');
     const isRunning = ref(false);
     const syncingCheck = ref<string | null>(null);
+    const pendingSyncKeys = ref(new Set<string>());
+    const isSyncing = (sport: string, checkType: string) =>
+        pendingSyncKeys.value.has(`${sport}-${checkType}`);
     function filterBySport() {
         router.get(
             '/admin/healthchecks',
@@ -93,8 +96,9 @@ export function useHealthchecks(props: HealthchecksProps) {
     }
     function syncData(sport: string, checkType: string) {
         const syncKey = `${sport}-${checkType}`;
-        if (syncingCheck.value === syncKey) return;
+        if (pendingSyncKeys.value.has(syncKey)) return;
 
+        pendingSyncKeys.value.add(syncKey);
         syncingCheck.value = syncKey;
         router.post(
             '/admin/healthchecks/sync',
@@ -104,7 +108,10 @@ export function useHealthchecks(props: HealthchecksProps) {
             },
             {
                 onFinish: () => {
-                    syncingCheck.value = null;
+                    pendingSyncKeys.value.delete(syncKey);
+                    if (syncingCheck.value === syncKey)
+                        syncingCheck.value =
+                            pendingSyncKeys.value.values().next().value ?? null;
                 },
                 preserveScroll: true,
             },
@@ -114,7 +121,7 @@ export function useHealthchecks(props: HealthchecksProps) {
     const overallStatus = computed(() => {
         if ((props.status_counts.failing || 0) > 0) return 'failing';
         if ((props.status_counts.warning || 0) > 0) return 'warning';
-        return 'passing';
+        return (props.status_counts.passing || 0) > 0 ? 'passing' : 'Unknown';
     });
 
     return {
@@ -125,6 +132,7 @@ export function useHealthchecks(props: HealthchecksProps) {
         selectedView,
         isRunning,
         syncingCheck,
+        isSyncing,
         filterBySport,
         selectValidationRun,
         runHealthChecks,

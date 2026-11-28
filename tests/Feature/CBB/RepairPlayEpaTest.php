@@ -22,10 +22,10 @@ beforeEach(function () {
     Http::preventStrayRequests();
     $this->home = Team::factory()->create(['espn_id' => '130']);
     $this->away = Team::factory()->create(['espn_id' => '41']);
-    $this->game = Game::factory()->create(['espn_event_id' => 'repair-event', 'season' => 2027, 'season_type' => 2, 'status' => 'STATUS_FINAL', 'home_team_id' => $this->home->id, 'away_team_id' => $this->away->id, 'home_score' => 2, 'away_score' => 2]);
+    $this->game = Game::factory()->create(['espn_event_id' => 'repair-event', 'season' => 2027, 'season_type' => 2, 'status' => 'STATUS_FINAL', 'home_team_id' => $this->home->id, 'away_team_id' => $this->away->id, 'home_score' => 3, 'away_score' => 2, 'period' => 2, 'game_clock' => '0:00']);
     $this->oldPlay = Play::factory()->create(['game_id' => $this->game->id, 'possession_team_id' => null, 'true_epa' => null]);
     foreach ([$this->home, $this->away] as $team) {
-        TeamStat::factory()->create(['game_id' => $this->game->id, 'team_id' => $team->id, 'points' => 2, 'field_goals_made' => 1, 'field_goals_attempted' => 3, 'three_point_made' => 0, 'three_point_attempted' => 0, 'free_throws_made' => 0, 'free_throws_attempted' => 0, 'possessions' => 10]);
+        TeamStat::factory()->create(['game_id' => $this->game->id, 'team_id' => $team->id, 'points' => $team->id === $this->home->id ? 3 : 2, 'field_goals_made' => 1, 'field_goals_attempted' => 3, 'three_point_made' => $team->id === $this->home->id ? 1 : 0, 'three_point_attempted' => 1, 'free_throws_made' => 0, 'free_throws_attempted' => 0, 'possessions' => 10]);
         TeamMetric::factory()->create(['team_id' => $team->id, 'season' => 2027, 'games_played' => 1, 'net_true_epa_per_play' => null]);
     }
 });
@@ -41,7 +41,9 @@ function fakeCbbRepairFeed(bool $failSecond = false, bool $badFinal = false): vo
             return Http::response([], 503);
         }
 
-        return Http::response(['count' => 2, 'pageCount' => 2, 'pageIndex' => $second ? 2 : 1, 'items' => [$second ? cbbRepairPlay('p2', '41', 2, $badFinal ? 0 : 2) : cbbRepairPlay('p1', '130', 2, 0)]]);
+        return Http::response(['count' => 4, 'pageCount' => 2, 'pageIndex' => $second ? 2 : 1, 'items' => $second
+            ? [array_replace(cbbRepairPlay('p2', '41', 3, 2), ['scoreValue' => $badFinal ? null : 2]), array_replace(cbbRepairPlay('p3', '41', 3, $badFinal ? 0 : 2), ['type' => ['text' => 'End Game'], 'text' => 'End of Game', 'clock' => ['displayValue' => '0:00'], 'scoringPlay' => false, 'shootingPlay' => false])]
+            : [array_replace(cbbRepairPlay('p0', '130', 0, 0), ['type' => ['text' => 'Jumpball'], 'text' => 'Start game', 'period' => ['number' => 1], 'clock' => ['displayValue' => '20:00'], 'scoringPlay' => false, 'shootingPlay' => false]), array_replace(cbbRepairPlay('p1', '130', 3, 0), ['scoreValue' => 3])]]);
     });
 }
 
@@ -49,8 +51,9 @@ test('repair fetches every page, attributes offense, calculates EPA and updates 
     fakeCbbRepairFeed();
     $before = TeamMetric::query()->first()->offensive_efficiency;
     $this->artisan('cbb:repair-play-epa', ['--season' => 2027, '--limit' => 1, '--apply' => true])->assertSuccessful();
-    expect(Play::query()->count())->toBe(2)
+    expect(Play::query()->count())->toBe(4)
         ->and(Play::query()->whereNotNull('true_epa')->count())->toBe(2)
+        ->and(Play::query()->whereIn('espn_play_id', ['p0', 'p3'])->whereNull('true_epa')->whereNotNull('epa_calculated_at')->count())->toBe(2)
         ->and(Play::query()->where('espn_play_id', 'p1')->value('possession_team_id'))->toBe($this->home->id)
         ->and(Play::query()->where('espn_play_id', 'p2')->value('possession_team_id'))->toBe($this->away->id)
         ->and(TeamMetric::query()->whereNotNull('net_true_epa_per_play')->count())->toBe(2)
@@ -158,7 +161,7 @@ test('final CBB play ingestion scores derived EPA before returning', function ()
     fakeCbbRepairFeed();
     app(SyncPlays::class)->execute('repair-event');
     expect(Play::query()->whereNotNull('true_epa')->count())->toBe(2)
-        ->and(Play::query()->whereNull('epa_calculated_at')->count())->toBe(0);
+        ->and(Play::query()->whereIn('espn_play_id', ['p0', 'p3'])->whereNotNull('epa_calculated_at')->count())->toBe(2);
 });
 
 test('CBB can reconcile an erroneous scoreboard only from a complete explicit scoring sequence', function () {
@@ -167,15 +170,15 @@ test('CBB can reconcile an erroneous scoreboard only from a complete explicit sc
             return Http::response(['header' => ['competitions' => [['id' => 'repair-event']]]]);
         }
         $start = ['id' => 'start', 'type' => ['text' => 'Jumpball'], 'text' => 'Start game', 'homeScore' => 0, 'awayScore' => 0, 'period' => ['number' => 1], 'clock' => ['displayValue' => '20:00']];
-        $home = cbbRepairPlay('p1', '130', 0, 2);
-        $away = cbbRepairPlay('p2', '41', 3, 2);
-        $end = ['id' => 'end', 'type' => ['text' => 'End Game'], 'text' => 'End of Game', 'homeScore' => 3, 'awayScore' => 2, 'period' => ['number' => 2], 'clock' => ['displayValue' => '0:00']];
+        $home = array_replace(cbbRepairPlay('p1', '130', 0, 3), ['scoreValue' => 3]);
+        $away = cbbRepairPlay('p2', '41', 4, 3);
+        $end = ['id' => 'end', 'type' => ['text' => 'End Game'], 'text' => 'End of Game', 'homeScore' => 4, 'awayScore' => 3, 'period' => ['number' => 2], 'clock' => ['displayValue' => '0:00']];
 
         return Http::response(['count' => 4, 'pageCount' => 1, 'items' => [$start, $home, $away, $end]]);
     });
     app(SyncPlays::class)->execute('repair-event');
-    expect(Play::query()->where('espn_play_id', 'p1')->first())->home_score->toBe(2)->away_score->toBe(0);
-    expect(Play::query()->where('espn_play_id', 'end')->first())->home_score->toBe(2)->away_score->toBe(2);
+    expect(Play::query()->where('espn_play_id', 'p1')->first())->home_score->toBe(3)->away_score->toBe(0);
+    expect(Play::query()->where('espn_play_id', 'end')->first())->home_score->toBe(3)->away_score->toBe(2);
     expect(Play::query()->whereNotNull('true_epa')->count())->toBe(2);
 });
 
@@ -192,7 +195,8 @@ test('score reconstruction rejects missing scoring points and unknown scorers', 
 test('CBB EPA stays held while an attributed play is still unscored', function () {
     fakeCbbRepairFeed();
     app(SyncPlays::class)->execute('repair-event');
-    Play::factory()->create(['game_id' => $this->game->id, 'possession_team_id' => $this->home->id, 'espn_play_id' => 'pending', 'sequence_number' => 3, 'period' => 2, 'clock' => '0:01', 'home_score' => 2, 'away_score' => 2, 'play_type' => 'Lost Ball Turnover', 'play_text' => 'Home turnover', 'true_epa' => null, 'epa_calculated_at' => null]);
+    Play::where('game_id', $this->game->id)->where('espn_play_id', 'p3')->update(['sequence_number' => 5]);
+    Play::factory()->create(['game_id' => $this->game->id, 'possession_team_id' => $this->home->id, 'espn_play_id' => 'pending', 'sequence_number' => 4, 'period' => 2, 'clock' => '0:01', 'home_score' => 3, 'away_score' => 2, 'play_type' => 'Lost Ball Turnover', 'play_text' => 'Home turnover', 'true_epa' => null, 'epa_calculated_at' => null]);
     $metric = app(CalculateTeamMetrics::class)->execute($this->home, 2027);
     expect($metric->net_true_epa_per_play)->toBeNull();
     app(CalculateGamePlayEpa::class)->execute($this->game);

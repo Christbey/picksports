@@ -1,84 +1,58 @@
-# Laravel Cloud Queue Workers
+# Laravel Cloud queue workers
 
-## Queue contract
+Source reconciliation: November 27, 2026. This guide describes the reviewed source contract and the retained one-live/one-bulk worker baseline. It does not verify the current hosting fleet, process liveness, Redis configuration, enabled alarms or workload capacity. Confirm the active target and dated evidence through [production access](production-access.md) and the connection register (private verification record retained separately) before any release mutation.
 
-Production uses two Redis queues with independent workers. Do not combine them
-in a single `--queue=default,sync` process: a long bulk import would consume the
-only process and delay live score, detail, grading, and notification work.
+## Worker contracts and provisioning
 
-| Queue | Workload | Job timeout | Process recycling |
-| --- | --- | ---: | --- |
-| `default` | Live scoreboards, game details, plays, grading, narratives, notifications | 120 seconds | 500 jobs or 3,600 seconds |
-| `sync` | Serialized scheduled commands, ESPN teams, players, schedules, depth charts, backfills | 1,800 seconds | 100 jobs or 3,600 seconds |
+`config/queue.php` declares the following worker contracts. The managed process commands below consume Redis, but the `default` and `sync` contract entries do not force a connection on every job. Ordinary jobs without an explicit connection follow the effective `QUEUE_CONNECTION`; verify that setting and each job's overrides before assuming these consumers receive its work. The scheduled-command wrapper and NBA source queue explicitly select Redis. A queue named `sync` is not Laravel's synchronous `sync` connection. Do not combine live and bulk queues in one worker process.
 
-The executable contract is mirrored in `queue.worker_contracts`. The Redis
-reservation lease must remain greater than the longest job timeout. The current
-2,100-second lease leaves a five-minute recovery margin above the 1,800-second
-bulk timeout.
+| Queue | Worker fallback timeout | Tries / backoff | Recycling | Memory flag |
+| --- | ---: | --- | --- | ---: |
+| `default` | 120 seconds | 3 / 15 seconds | 500 jobs or 3,600 seconds | 384 MiB |
+| `sync` | 1,800 seconds | 3 / 30 seconds | 100 jobs or 3,600 seconds | 768 MiB |
+| `nba-sources` | 600 seconds | 1 / 0 seconds | 100 jobs or 3,600 seconds | 384 MiB |
 
-Bulk ESPN jobs retry no more than three times and use 30-, 120-, and 300-second
-backoff delays. This keeps a provider outage from becoming a tight retry loop.
+The `nba-sources` contract explicitly requires provisioning before bridge activation; its declaration does not provision or activate it. The default/sync retained deployment baseline is one process each, historically described on the existing Flex 1 GiB worker cluster, with no queue worker on web compute. This source review does not reverify that platform sizing or actual worker counts. Keep that baseline until a separately reviewed capacity/concurrency change is justified. Worker memory flags are recycling limits, not a proof that both processes fit the cluster under every workload.
 
-## Laravel Cloud processes
+The database/Redis reservation defaults are 2,100 seconds, above the 1,800-second worker fallback. Verify effective environment overrides and each job's explicit timeout; an explicit job timeout can override the worker fallback. ESPN-specific retry policies are owned by those jobs, not universally established by the process flags.
 
-Configure two independent background processes using the Redis connection.
-
-Production runs one live worker and one bulk worker as separate processes on the existing Flex 1 GiB worker cluster. The web instance has no queue worker. Keep both worker counts at one; heavy scheduled commands share the bulk consumer, so scheduled calculations cannot overlap one another.
+The following commands configure managed processes; they are mutations, not read-only health checks. Use only through the authorized release workflow after verifying the target:
 
 ```bash
 php artisan queue:work redis --queue=default --sleep=1 --tries=3 --backoff=15 --timeout=120 --max-jobs=500 --max-time=3600 --memory=384
-```
-
-Bulk worker, one process on the same existing worker cluster:
-
-```bash
 php artisan queue:work redis --queue=sync --sleep=1 --tries=3 --backoff=30 --timeout=1800 --max-jobs=100 --max-time=3600 --memory=768
 ```
 
-Keep only the scheduler dispatcher on the web application process. Scheduled
-commands are wrapped by `ops:dispatch-scheduled` and execute through
-`RunScheduledCommand` on the existing Redis workers. Live scoreboard/detail
-dispatchers and CFB live betting use `default`; other scheduled work uses `sync`.
-CFB `--queued` commands also run off web compute and retain their existing bounded batch jobs and completion heartbeats.
+## Scheduler dispatch and completion
 
-Dispatchers run in the foreground and do not spawn concurrent calculation
-processes on web compute. A unique lock coalesces the same pending/running
-command for up to 24 hours; it is released on completion or terminal failure.
-After each scheduled bulk command, the worker exits cleanly and Cloud restarts it, releasing command instances and cached graphs before the next command. Scheduled commands have one attempt and a 1,700-second bulk timeout (110 seconds
-for live dispatch), below worker timeouts and the Redis lease. Nonzero exit codes
-fail the job. Worker completion records success/failure, duration and peak PHP
-memory; dispatch alone never records successful completion. Command output goes
-to worker logs rather than accumulating in a scheduler child or output buffer.
+The reviewed `$attachCommandHeartbeat` adapter in `routes/console.php` rewrites its attached scheduled commands to `ops:dispatch-scheduled`, shell-quotes the inner command/name/optional heartbeat URL, disables background execution for that dispatcher and records dispatch failure separately. This is a scoped adapter contract, not a statement that every scheduled event uses it: the NBA source job is scheduled directly and has its own activation/worker boundary.
 
-Do not run a second scheduler or legacy Forge worker. Do not increase replicas,
-PHP memory limits or instance RAM to compensate for oversized reads. Monitor
-queue age after rollout because serialized work can expose slow commands.
+`DispatchScheduledCommand` refuses a recursive dispatcher prefix, queues `RunScheduledCommand` and returns dispatch success. Dispatch success does not establish successful business work. The job explicitly uses Redis. ESPN commands without `--sync` whose scheduled names identify Live Scoreboard or Sync Game Details, and the exact `cfb:sync-live-betting` command, select `default`; other wrapped commands select `sync`. Scheduled job timeouts are 110 seconds/default and 1,700 seconds/sync, below the fallback worker timeouts and reservation defaults. The base job has one attempt; newly dispatched jobs in the explicitly named execution groups below instead carry a bounded retry deadline for lock contention and a one-exception limit.
 
-## Deployment order
+`RunScheduledCommand` implements `ShouldBeUnique`. Its identity includes the scheduled name and exact command line; the maximum uniqueness lease is 86,400 seconds. Laravel acquires the lock through the configured cache repository and releases it on normal completion or terminal failure. This coalesces identical name/command dispatches while the lease holds; it is not a global lock over different commands, different names or separately queued child jobs. Shared atomic cache/lock configuration and expiry behavior remain deployment prerequisites. Scheduler `onOneServer` and `withoutOverlapping` guards do not replace that job-level boundary.
 
-1. Deploy the application code before enabling the `sync` process so all bulk
-   jobs carry their queue assignment and retry policy.
-2. Start the `sync` worker and confirm it can reserve and complete one bulk job.
-3. Replace the shared `default` worker with the dedicated live worker.
-4. Run `php artisan queue:restart` after deployments that change job code.
-5. Confirm both queues have consumers before dispatching any historical
-   backfill.
+The job calls Artisan with a `ConsoleOutput`, so command output is streamed rather than accumulated in an Artisan output buffer. A nonzero exit throws. The worker records exit code, duration and process peak PHP memory on the ordinary success path; `failed()` records terminal failure. For command lines containing `--queued`, the wrapper returns without marking pipeline completion: bounded child jobs own completion/heartbeat evidence. Optional external success-heartbeat HTTP failures are reported separately. This review did not execute a command or contact a heartbeat endpoint.
 
-Never run an unbounded historical backfill during a live game window. Queued
-historical scoreboards and details route to `sync`, but they can still delay
-other bulk work if thousands are dispatched at once.
+In `finally`, a `sync` job sets the worker's `shouldQuit` flag, so that worker exits after the wrapped command; the hosting supervisor must restart it. The single bulk-consumer baseline serializes wrapped jobs consumed by that process, not all database work or every child job system-wide. No second scheduler or legacy-host duplicate consumer should be introduced as recovery. Do not raise replicas, PHP memory or cluster RAM to conceal oversized reads.
 
-## Operational checks
+## Deployment and recovery gates
 
-Alert on these conditions:
+Verify code/queue assignments, managed process configuration, supervisor restart behavior, shared cache locks and effective reservation/job timeouts before enabling or changing consumers. Confirm both active queues have consumers before any separately authorized bounded backfill. Never dispatch unbounded historical work during a live window; separate queues do not eliminate bulk delays.
 
-- oldest `default` job older than five minutes;
-- oldest `sync` job older than thirty minutes;
-- any failed job or repeated worker restart;
-- `default` ready depth above 200;
-- `sync` ready depth growing across two consecutive scheduler cycles;
-- Redis eviction or memory above 70 percent.
+Use authorized release procedures for process replacement/recycling and `queue:restart`. A documented command or source contract is not proof of a deployed release, completed job, fresh source observation or healthy queue.
 
-Scale the `default` worker horizontally first when live latency rises. Scale the
-`sync` worker only when its oldest-job age grows while Redis and ESPN provider
-limits remain healthy. Do not solve provider throttling by adding workers.
+## Monitoring and conditional future scaling
+
+The historical suggestions—default age above 5 minutes/depth above 200, sync age above 30 minutes or growing across two cycles, failures/restarts, Redis memory above 70 percent or evictions—are unvalidated proposed thresholds. They are not measured SLOs or enabled alerts. Establish workload/headroom measurements, operator ownership and alert-delivery rehearsal under the readiness scope (private verification record retained separately) before adopting them.
+
+If measured live queue latency eventually warrants additional capacity, propose a separate reviewed change: establish memory/database/provider headroom, shared locks, per-command and child-job concurrency safety, rollback and comparison evidence first. A possible future live-worker increase is conditional, not current operational advice or permission. Bulk scaling additionally invalidates the one-consumer serialization assumption and requires a replacement concurrency policy before approval. Provider throttling is not resolved by adding workers. No scaling or production configuration change was performed for this documentation reconciliation.
+
+## Execution-group retry qualification — November 28, 2026
+
+This dated source correction qualifies the earlier one-attempt description. `RunScheduledCommand` retains name-plus-exact-command pending uniqueness, and separately locks execution for two narrowly defined groups: the NFL pregame pipeline and canonical-cutover readiness verbs share `nfl-canonical-generation-readiness`; MLB `mlb:generate-predictions` jobs share a group only when their complete command strings are identical, even when scheduled names differ. The current daily and post-odds MLB generation entries use the same command string. These locks do not serialize all commands, source refreshes or child jobs.
+
+For newly constructed grouped jobs, the deadline is fixed at construction to the existing 86,400-second uniqueness window, and `maxExceptions=1`. The pinned Laravel worker admits released contention attempts while that deadline is valid, despite the base `tries=1`; a normal command exception remains terminal under the one-exception limit. Busy execution releases the queued job for 30 seconds before running its command. Direct invocation without a queued job refuses when busy. Old serialized payloads default to no new deadline and retain their original attempt policy; this correction does not certify an in-flight payload migration.
+
+An acquired execution lock uses the job timeout plus 60 seconds (normally 170 or 1,760 seconds), and refuses a lease that is not below the effective Redis reservation interval. The lock is released in `finally` on success or exception through its acquired owner token. Cache-lock ownership, expiry, queue reservations and supervisor operation remain deployment prerequisites; abrupt process death relies on lease expiry rather than executing `finally`. No actual production lock, heartbeat, worker topology or recovery latency was exercised by this documentation correction.
+
+The retained one-live/one-bulk baseline and conditional future scaling guidance above remain unchanged. The new groups close only the named worker-execution overlap boundary; they do not authorize more replicas or establish capacity for every other job, provider request, database writer or child process. Scaling still requires a separately reviewed measured concurrency/capacity plan. Scheduler dispatch mutexes and pending-job uniqueness are separate from worker execution locks; neither dispatch acknowledgement nor a group lock proves completed business work.

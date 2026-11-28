@@ -1,10 +1,10 @@
 <script setup lang="ts">
+import FuturesQuote from '@/components/predictions/FuturesQuote.vue';
 import { Card, CardContent } from '@/components/ui/card';
 
 import { useCbbForecastContext } from '@/composables/useCbbForecast';
 const {
     formatPct,
-    formatAmericanOdds,
     formatTeam,
     actualFieldForecasts,
     regionalField,
@@ -85,11 +85,7 @@ const {
                 </p>
                 <p class="mt-1 text-xs text-muted-foreground">
                     Market
-                    {{
-                        favorite
-                            ? formatAmericanOdds(favorite.market_odds?.price)
-                            : '-'
-                    }}
+                    <FuturesQuote :quote="favorite?.market_odds" />
                 </p>
             </CardContent>
         </Card>

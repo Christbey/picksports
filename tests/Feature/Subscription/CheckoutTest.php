@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\SubscriptionTier;
 use App\Models\User;
 use App\Services\SubscriptionCheckoutService;
 
@@ -76,4 +77,20 @@ it('creates a checkout session for new subscription', function () {
             'billing_period' => 'monthly',
         ])
         ->assertRedirect('https://checkout.stripe.com/test-session');
+});
+
+it('rejects a retired database tier even when its configured fallback price remains', function () {
+    SubscriptionTier::factory()->create([
+        'name' => 'Retired Basic',
+        'slug' => 'basic',
+        'is_active' => false,
+        'stripe_price_id_monthly' => 'price_retired_basic',
+    ]);
+    $this->mock(SubscriptionCheckoutService::class)
+        ->shouldNotReceive('createCheckoutUrl');
+
+    actingAs(User::factory()->create())
+        ->postJson('/subscription/checkout', ['tier' => 'basic', 'billing_period' => 'monthly'])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('tier');
 });

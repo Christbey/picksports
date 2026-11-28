@@ -20,6 +20,10 @@ export interface NflLiveSnapshot {
         live_seconds_remaining: number;
     } | null;
     source_updated_at: string | null;
+    record_updated_at?: string | null;
+    record_updated_at_raw?: string | null;
+    record_clock_status?: 'unverified_storage_clock';
+    source_clock_status?: 'observation_unavailable';
     generated_at: string;
     warning: string;
 }
@@ -32,12 +36,11 @@ export function liveSnapshotWarning(
     if (failed)
         return 'Refresh failed — showing the last received snapshot, which may be stale.';
     if (!snapshot) return 'Waiting for a consistent game-state snapshot.';
-    const timestamp = Date.parse(snapshot.source_updated_at ?? '');
-    if (!Number.isFinite(timestamp) || timestamp > now + 30000)
-        return 'Source update time unavailable or invalid; freshness cannot be verified.';
-    if (now - timestamp > 180000)
-        return 'Stale game data — the source has not updated in over 3 minutes.';
+    const unknown = 'Provider observation freshness is unavailable.';
     if (!snapshot.projection && NFL_LIVE_STATUSES.has(snapshot.game.status))
-        return 'Projection unavailable: valid game state and a pregame prediction are required.';
-    return null;
+        return `Projection unavailable: valid game state and a pregame prediction are required. ${unknown}`;
+    // Neither legacy local record text nor the old source_updated_at alias
+    // qualifies an observation instant. Do not parse it or invent an age.
+    void now;
+    return unknown;
 }

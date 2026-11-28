@@ -105,7 +105,9 @@ class SportPlayerQuery
         int|string $player,
         ?Authenticatable $user = null,
     ): Model {
-        return $this->query($context, [], $user)->findOrFail($player);
+        return $this->query($context, [], $user)
+            ->with($this->availableRelations($this->playerModel($context), ['activeInjuries']))
+            ->findOrFail($player);
     }
 
     /**
@@ -122,7 +124,7 @@ class SportPlayerQuery
 
         return $playerModel::query()
             ->with($this->relationsFor($playerModel))
-            ->when(($filters['team_id'] ?? null) && $this->hasColumn($table, 'team_id'), fn (Builder $query): Builder => $query->where('team_id', $filters['team_id']))
+            ->when(isset($filters['team_id']) && $this->hasColumn($table, 'team_id'), fn (Builder $query): Builder => $query->where('team_id', $filters['team_id']))
             ->when(($filters['position'] ?? null) && $this->hasColumn($table, 'position'), fn (Builder $query): Builder => $query->where('position', $filters['position']))
             ->when(($filters['status'] ?? null) && $this->hasColumn($table, 'status'), fn (Builder $query): Builder => $query->where('status', $filters['status']))
             ->when($filters['search'] ?? null, fn (Builder $query, string $search): Builder => $this->search($query, $table, $search))

@@ -1,3 +1,4 @@
+import { isFinalGameStatus } from '@/lib/gameStatus';
 import { computed } from 'vue';
 import { useGameDepthCharts } from '@/composables/useGameDepthCharts';
 import { formatNumber, getBetterValue } from '@/composables/useFormatters';
@@ -58,10 +59,20 @@ export function useNflDetailedGamePage(gameId: number) {
     const awayLabel = computed(() => awayTeam.value?.abbreviation || null);
     const homeLabel = computed(() => homeTeam.value?.abbreviation || null);
     const awayRecord = computed(() =>
-        getNumericRecord(awayRecentGames.value, currentGame.value.away_team_id),
+        currentGame.value.starts_at
+            ? getNumericRecord(
+                  awayRecentGames.value,
+                  currentGame.value.away_team_id,
+              )
+            : 'Recent record unavailable: kickoff timing unverified',
     );
     const homeRecord = computed(() =>
-        getNumericRecord(homeRecentGames.value, currentGame.value.home_team_id),
+        currentGame.value.starts_at
+            ? getNumericRecord(
+                  homeRecentGames.value,
+                  currentGame.value.home_team_id,
+              )
+            : 'Recent record unavailable: kickoff timing unverified',
     );
     const predictionSectionProps = computed(() => ({
         section: 'prediction' as const,
@@ -140,6 +151,7 @@ export function useNflDetailedGamePage(gameId: number) {
             ),
             showScoreStatuses: [
                 'STATUS_FINAL',
+                'STATUS_FULL_TIME',
                 'STATUS_IN_PROGRESS',
                 'STATUS_HALFTIME',
             ],
@@ -149,7 +161,7 @@ export function useNflDetailedGamePage(gameId: number) {
                 () =>
                     homeLinescores.value.length > 0 &&
                     awayLinescores.value.length > 0 &&
-                    currentGame.value.status === 'STATUS_FINAL',
+                    isFinalGameStatus(currentGame.value.status),
             ),
             awayLinescores,
             homeLinescores,

@@ -10,8 +10,8 @@ trait SerializesEspnPlayFields
      *   sequence_number:int,
      *   play_type:?string,
      *   play_text:string,
-     *   home_score:int,
-     *   away_score:int
+     *   home_score:?int,
+     *   away_score:?int
      * }
      */
     protected function serializeCommonPlayFields(): array

@@ -25,11 +25,19 @@ class AuditGameDataCommand extends Command
             $rows[] = ['game_id' => $game->id, ...$readiness->forGame($game)];
         }
         $report = ['games' => $rows, 'ready' => count(array_filter($rows, fn ($r) => $r['ready'])), 'total' => count($rows)];
+        $report['status'] = $report['total'] === 0 ? 'no_data'
+            : ($report['ready'] === $report['total'] ? 'ready' : 'incomplete');
         $json = json_encode($report, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
         if ($this->option('report')) {
             file_put_contents($this->option('report'), $json);
         }
         $this->line($json);
+
+        if ($report['total'] === 0) {
+            $this->error('No matching final games were found; readiness was not assessed.');
+
+            return self::FAILURE;
+        }
 
         return $report['ready'] === $report['total'] ? self::SUCCESS : 2;
     }

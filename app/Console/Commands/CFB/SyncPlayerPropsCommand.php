@@ -31,8 +31,8 @@ class SyncPlayerPropsCommand extends Command
                 Game::where('status', 'STATUS_SCHEDULED')->whereNotNull('odds_api_event_id'), $date,
             )->when($input['game'], fn ($query, $id) => $query->whereKey($id))
                 ->orderBy('game_date')->orderBy('game_time')->orderBy('id')
-                ->get(['id', 'game_date', 'game_time'])
-                ->filter(fn (Game $game): bool => CfbPropEligibility::kickoff($game)->isFuture());
+                ->get(['id', 'espn_event_id', 'game_date', 'game_time', 'kickoff_observation'])
+                ->filter(fn (Game $game): bool => CfbPropEligibility::kickoff($game)?->isFuture() === true);
             $flags = ($this->option('prepare') ? ' --prepare' : '').($this->option('no-analyze') ? ' --no-analyze' : '');
             foreach ($games as $game) {
                 RunScheduledCommand::dispatch(

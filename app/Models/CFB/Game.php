@@ -35,6 +35,7 @@ class Game extends Model
         'postseason_round',
         'game_date',
         'game_time',
+        'kickoff_observation',
         'name',
         'short_name',
         'venue',
@@ -64,6 +65,7 @@ class Game extends Model
     {
         return [
             'game_date' => 'datetime',
+            'kickoff_observation' => 'array',
             'completed_at' => 'datetime',
             'odds_updated_at' => 'datetime',
             'postseason_round' => 'integer',

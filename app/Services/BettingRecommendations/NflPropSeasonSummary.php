@@ -47,14 +47,23 @@ class NflPropSeasonSummary
             ])
             ->get()->groupBy('player_id');
         $dates = app(SportsDateWindowService::class);
+        $kickoffByGame = $props->pluck('game')->filter()->unique('id')->mapWithKeys(fn ($game) => [
+            $game->id => $dates->gameDateTimeUtc($game->game_date, $game->game_time),
+        ]);
         $participation = app(NflPropParticipation::class)->forProps($props, $rows);
 
-        return $props->mapWithKeys(function (PlayerProp $prop) use ($rows, $dates, $teams, $participation): array {
+        $playedAtByGame = $rows->flatten(1)->unique('game_id')->mapWithKeys(fn ($row) => [
+            $row->game_id => $dates->gameDateTimeUtc($row->game_date, $row->game_time),
+        ]);
+        $historyCache = [];
+
+        return $props->mapWithKeys(function (PlayerProp $prop) use ($rows, $teams, $participation, $playedAtByGame, $kickoffByGame, &$historyCache): array {
             $game = $prop->game;
-            $kickoff = $game ? $dates->gameDateTimeUtc($game->game_date, $game->game_time) : null;
+            $kickoff = $kickoffByGame->get($prop->game_id);
             $fields = self::FIELDS[$prop->market] ?? [];
-            $history = collect($rows->get($prop->player_id, []))->filter(function ($row) use ($game, $kickoff, $dates): bool {
-                $playedAt = $dates->gameDateTimeUtc($row->game_date, $row->game_time);
+            $historyKey = $prop->player_id.':'.$prop->game_id;
+            $history = $historyCache[$historyKey] ??= collect($rows->get($prop->player_id, []))->filter(function ($row) use ($game, $kickoff, $playedAtByGame): bool {
+                $playedAt = $playedAtByGame->get($row->game_id);
 
                 return $game && $kickoff && $playedAt
                     && (int) $row->season <= (int) $game->season

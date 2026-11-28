@@ -41,7 +41,7 @@ const {
                                 {{ ' Make Probability ' }}
                             </th>
                             <th class="p-2 text-right font-medium">
-                                {{ ' Edge ' }}
+                                {{ ' Title model difference ' }}
                             </th>
                         </tr>
                     </thead>
@@ -146,8 +146,11 @@ const {
                                                 row.market_edge?.has_edge ??
                                                 false
                                             )
-                                                ? 'No Edge'
-                                                : `${(row.market_edge?.edge_probability ?? 0) > 0 ? '+EV' : '-EV'} ${formatEdgePoints(row.market_edge?.edge_percent_points)}`
+                                                ? 'Unavailable'
+                                                : formatEdgePoints(
+                                                      row.market_edge
+                                                          ?.edge_percent_points,
+                                                  )
                                         }}
                                     </span>
                                 </div>

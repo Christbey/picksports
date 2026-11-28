@@ -41,6 +41,7 @@ export function useSportTeamRequests(
     const statRankings = ref<Record<string, number>>({}),
         metricRankings = ref<Record<string, number>>({}),
         metricRankingTotalTeams = ref(0),
+        metricRankingSamples = ref<Record<string, number>>({}),
         rosterPlayers = ref<any[]>([]),
         depthChart = ref<GameDepthChartTeam | null>(null);
     const trendsData = ref<Record<string, string[]> | null>(null),
@@ -64,6 +65,7 @@ export function useSportTeamRequests(
         statRankings.value = {};
         metricRankings.value = {};
         metricRankingTotalTeams.value = 0;
+        metricRankingSamples.value = {};
         rosterPlayers.value = [];
         depthChart.value = null;
         trendsData.value = null;
@@ -160,8 +162,18 @@ export function useSportTeamRequests(
             }
             loading.value = false;
             const validSeason = finiteValue(teamMetrics.value?.season);
-            const seasonQuery =
-                validSeason !== null ? { season: validSeason } : {};
+            const rawPhase = teamMetrics.value?.season_type;
+            const phase =
+                typeof rawPhase === 'string' && rawPhase.trim() !== ''
+                    ? rawPhase.trim()
+                    : typeof rawPhase === 'number' &&
+                        Number.isSafeInteger(rawPhase)
+                      ? String(rawPhase)
+                      : undefined;
+            const seasonQuery = {
+                ...(validSeason !== null ? { season: validSeason } : {}),
+                ...(phase !== undefined ? { season_type: phase } : {}),
+            };
             const supplemental = [
                 task(
                     'games',
@@ -178,11 +190,10 @@ export function useSportTeamRequests(
                     task(
                         'seasonStats',
                         () =>
-                            api.teams.statSeasonAverages(
-                                sport,
-                                fetchId,
-                                options,
-                            ),
+                            api.teams.statSeasonAverages(sport, fetchId, {
+                                query: seasonQuery,
+                                init: { signal },
+                            }),
                         (response) => {
                             seasonStats.value = response.data ?? null;
                         },
@@ -204,7 +215,11 @@ export function useSportTeamRequests(
                 supplemental.push(
                     task(
                         'statRankings',
-                        () => api.stats.teamSeasonAverages(sport, options),
+                        () =>
+                            api.stats.teamSeasonAverages(sport, {
+                                query: seasonQuery,
+                                init: { signal },
+                            }),
                         (response) => apply.statRankings(response.data ?? []),
                     ),
                 );
@@ -290,6 +305,7 @@ export function useSportTeamRequests(
         statRankings,
         metricRankings,
         metricRankingTotalTeams,
+        metricRankingSamples,
         rosterPlayers,
         depthChart,
         trendsData,

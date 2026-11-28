@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\PersistsMirroredAssetPaths;
 use App\Models\CBB\Player as CbbPlayer;
 use App\Models\CBB\Team as CbbTeam;
 use App\Models\CFB\Player as CfbPlayer;
@@ -22,15 +23,18 @@ use Illuminate\Database\Eloquent\Model;
 
 class SyncSportsAssetsCommand extends Command
 {
+    use PersistsMirroredAssetPaths;
+
     protected $signature = 'sports-assets:sync {sport? : Optional sport key (nba, nfl, cfb, cbb, mlb, wnba, wcbb)} {--type=all : Asset type to sync (all, teams, players)}';
 
     protected $description = 'Mirror team logos and player headshots into configured object storage and rewrite stored asset paths.';
 
     public function handle(SportsAssetStorage $sportsAssetStorage): int
     {
+        $sportProvided = $this->argument('sport') !== null;
         $requestedSport = strtolower(trim((string) $this->argument('sport')));
         $type = strtolower(trim((string) $this->option('type')));
-        $sports = $requestedSport !== ''
+        $sports = $sportProvided
             ? collect($this->sportMap())->only([$requestedSport])->all()
             : $this->sportMap();
 
@@ -72,21 +76,19 @@ class SyncSportsAssetsCommand extends Command
             ->chunkById(100, function ($teams) use ($sport, $config, $sportsAssetStorage, &$updated): void {
                 foreach ($teams as $team) {
                     $teamIdentifier = $this->teamAssetIdentifier($team);
-                    $dirty = false;
+                    $changes = [];
 
                     foreach ($config['columns'] as $column) {
                         $current = $team->getRawOriginal($column);
                         $mirrored = $sportsAssetStorage->mirrorTeamLogo($current, $sport, $teamIdentifier);
 
                         if ($mirrored !== null && $mirrored !== $current) {
-                            $team->{$column} = $mirrored;
-                            $dirty = true;
+                            $changes[$column] = $mirrored;
                         }
                     }
 
-                    if ($dirty) {
-                        $team->save();
-                        $updated++;
+                    if ($changes !== []) {
+                        $updated += (int) $this->persistMirroredAssetPaths($team, $changes);
                     }
                 }
             });
@@ -113,9 +115,7 @@ class SyncSportsAssetsCommand extends Command
                     $mirrored = $sportsAssetStorage->mirrorPlayerHeadshot($current, $sport, $teamIdentifier, $playerIdentifier);
 
                     if ($mirrored !== null && $mirrored !== $current) {
-                        $player->{$config['column']} = $mirrored;
-                        $player->save();
-                        $updated++;
+                        $updated += (int) $this->persistMirroredAssetPaths($player, [$config['column'] => $mirrored]);
                     }
                 }
             });

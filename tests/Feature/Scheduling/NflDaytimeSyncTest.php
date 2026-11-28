@@ -3,18 +3,28 @@
 use Carbon\Carbon;
 use Illuminate\Console\Scheduling\Schedule;
 
-it('allows NFL scoreboard and details sync during international and noon games', function (string $time) {
+it('admits NFL scoreboard and details sync only inside its configured daytime window', function (string $time, bool $admitted) {
     Carbon::setTestNow(Carbon::parse('2026-09-13 '.$time, 'America/Chicago'));
     try {
+        // Laravel captures between() at registration, as a fresh schedule:run process does.
+        Illuminate\Support\Facades\Schedule::swap(new Schedule('America/Chicago'));
+        require base_path('routes/console.php');
         $events = collect(app(Schedule::class)->events())->keyBy('description');
         foreach (['NFL: Live Scoreboard Sync', 'NFL: Sync Game Details'] as $name) {
             $event = $events->get($name);
-            expect($event)->not->toBeNull()->and($event->filtersPass(app()))->toBeTrue();
+            expect($event)->not->toBeNull()->and($event->filtersPass(app()))->toBe($admitted);
         }
     } finally {
         Carbon::setTestNow();
     }
-})->with(['06:30:00', '12:05:00', '15:30:00', '20:00:00']);
+})->with([
+    ['06:30:00', true],
+    ['12:05:00', true],
+    ['15:30:00', true],
+    ['20:00:00', true],
+    ['02:01:00', false],
+    ['05:59:00', false],
+]);
 
 it('refreshes confirmed game quarterbacks before the daily NFL model pipeline', function () {
     Carbon::setTestNow(Carbon::parse('2026-09-30 08:15:00', 'America/Chicago'));

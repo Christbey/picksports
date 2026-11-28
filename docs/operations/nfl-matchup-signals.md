@@ -172,3 +172,7 @@ features and multiple testing; historical descriptive records alone do not
 establish predictive value. Charting-dependent metrics require validated feeds
 and explicit definitions. Do not substitute sack rate for blitz frequency or
 generic grades for observed man/zone matchups.
+
+## Evidence leaderboard interpretation
+
+The admin evidence leaderboard is descriptive. Keep model/feature/blend/configuration/definition versions and direction separate; repeated forecasts are not independent games. Report outcome-grade coverage separately from exact line/price settlement coverage. Reconstructed or post-kickoff evidence cannot become prospective observations. A favorable historical subgroup or rank does not establish validated contribution, calibrated cover probability, or wager approval; confirmation requires later held-out games and a matched baseline.

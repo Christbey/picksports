@@ -34,15 +34,17 @@ class RecordShadowBetDecisionsCommand extends Command
             ->when($this->option('artifact'), fn ($builder) => $builder->where('model_artifact_id', $this->option('artifact')))
             ->orderBy('id');
 
-        if ((int) $this->option('limit') > 0) {
-            $query->limit((int) $this->option('limit'));
-        }
-
         $created = 0;
+        $processed = 0;
+        $maximum = (int) $this->option('limit');
         $throughId = (int) (clone $query)->reorder()->max('id');
-        $query->where('id', '<=', $throughId)->chunkById(100, function (Collection $outputs) use ($inputs, $sport, &$created): void {
+        $query->where('id', '<=', $throughId)->chunkById(100, function (Collection $outputs) use ($inputs, $sport, &$created, &$processed, $maximum) {
             $inputs->preload($outputs, $sport);
             foreach ($outputs as $shadow) {
+                if ($maximum > 0 && $processed >= $maximum) {
+                    return false;
+                }
+                $processed++;
                 $snapshot = $inputs->fromOutput($shadow, $sport);
                 $artifact = $shadow->artifact;
                 if ($artifact?->model_type === NflEvidenceTrialService::TYPE) {

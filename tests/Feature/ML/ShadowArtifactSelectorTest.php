@@ -19,32 +19,32 @@ afterEach(function () {
 
 it('selects one active challenger alongside the latest promoted champion', function () {
     Carbon::setTestNow('2026-08-03 06:40:00');
-    $first = shadowSelectorArtifact('mlb', 'mlb_tabular_bundle', 'challenger');
-    $second = shadowSelectorArtifact('mlb', 'mlb_tabular_bundle', 'promotion_eligible');
-    $champion = shadowSelectorArtifact('mlb', 'mlb_tabular_bundle', 'promoted');
+    $first = shadowSelectorArtifact('nfl', 'nfl_tabular_bundle', 'challenger');
+    $second = shadowSelectorArtifact('nfl', 'nfl_tabular_bundle', 'promotion_eligible');
+    $champion = shadowSelectorArtifact('nfl', 'nfl_tabular_bundle', 'promoted');
     $selector = app(ShadowArtifactSelector::class);
 
     $selector->activateChallenger($first, ['source' => 'weekly_training']);
-    expect($selector->activeChallenger('mlb', 'mlb_tabular_bundle')?->is($first))->toBeTrue()
+    expect($selector->activeChallenger('nfl', 'nfl_tabular_bundle')?->is($first))->toBeTrue()
         ->and(data_get($first->metrics, 'shadow_selection.metadata.source'))->toBe('weekly_training');
 
     $selector->activateChallenger($second, ['lifecycle_run_id' => 'run-2']);
-    $cohort = $selector->inferenceCohort('mlb', 'mlb_tabular_bundle');
+    $cohort = $selector->inferenceCohort('nfl', 'nfl_tabular_bundle');
 
-    expect($selector->activeChallenger('mlb', 'mlb_tabular_bundle')?->is($second))->toBeTrue()
+    expect($selector->activeChallenger('nfl', 'nfl_tabular_bundle')?->is($second))->toBeTrue()
         ->and(data_get($first->refresh()->metrics, 'shadow_selection.active'))->toBeFalse()
         ->and(data_get($first->metrics, 'shadow_selection.deactivation_reason'))
         ->toBe('superseded_by_'.$second->id)
         ->and($cohort->pluck('id')->all())->toBe([$second->id, $champion->id])
-        ->and($selector->inferenceCohort('mlb', 'mlb_tabular_bundle', $first->id)
+        ->and($selector->inferenceCohort('nfl', 'nfl_tabular_bundle', $first->id)
             ->pluck('id')->all())->toBe([$first->id]);
 
     $selector->deactivateChallenger($second, 'evidence_window_complete');
 
-    expect($selector->activeChallenger('mlb', 'mlb_tabular_bundle'))->toBeNull()
+    expect($selector->activeChallenger('nfl', 'nfl_tabular_bundle'))->toBeNull()
         ->and(data_get($second->metrics, 'shadow_selection.deactivation_reason'))
         ->toBe('evidence_window_complete')
-        ->and($selector->inferenceCohort('mlb', 'mlb_tabular_bundle')->pluck('id')->all())
+        ->and($selector->inferenceCohort('nfl', 'nfl_tabular_bundle')->pluck('id')->all())
         ->toBe([$champion->id]);
 });
 

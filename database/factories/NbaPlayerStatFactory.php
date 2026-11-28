@@ -16,8 +16,8 @@ class NbaPlayerStatFactory extends Factory
     {
         $fgMade = $this->faker->numberBetween(0, 15);
         $fgAttempted = $fgMade + $this->faker->numberBetween(0, 10);
-        $threeMade = $this->faker->numberBetween(0, 5);
-        $threeAttempted = $threeMade + $this->faker->numberBetween(0, 5);
+        $threeMade = $this->faker->numberBetween(0, min(5, $fgMade));
+        $threeAttempted = $threeMade + $this->faker->numberBetween(0, min(5, $fgAttempted - $threeMade));
         $ftMade = $this->faker->numberBetween(0, 10);
         $ftAttempted = $ftMade + $this->faker->numberBetween(0, 3);
 
@@ -40,7 +40,7 @@ class NbaPlayerStatFactory extends Factory
             'steals' => $this->faker->numberBetween(0, 5),
             'blocks' => $this->faker->numberBetween(0, 5),
             'fouls' => $this->faker->numberBetween(0, 6),
-            'points' => ($fgMade * 2) + ($threeMade * 3) + $ftMade,
+            'points' => ($fgMade * 2) + $threeMade + $ftMade,
         ];
     }
 }

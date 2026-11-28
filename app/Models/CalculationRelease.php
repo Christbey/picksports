@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\HasPublicUlid;
+use App\Support\Models\GuardsCoreEvidenceMutations;
 use App\Support\SportCatalog;
 use Database\Factories\CalculationReleaseFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -13,6 +14,8 @@ use LogicException;
 
 class CalculationRelease extends Model
 {
+    use GuardsCoreEvidenceMutations;
+
     /** @use HasFactory<CalculationReleaseFactory> */
     use HasFactory, HasPublicUlid;
 
@@ -94,7 +97,7 @@ class CalculationRelease extends Model
         });
 
         static::deleting(function (self $release): void {
-            if ($release->status !== 'draft') {
+            if ($release->getOriginal('status') !== 'draft') {
                 throw new LogicException('Approved calculation releases cannot be deleted.');
             }
         });

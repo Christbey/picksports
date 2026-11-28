@@ -9,6 +9,7 @@ use App\Models\OddsApiTeamMapping;
 use App\Models\PredictionEvaluation;
 use App\Models\PredictionMarket;
 use App\Models\SportEvent;
+use App\Models\SportEventResult;
 use App\Models\SubscriptionTier;
 use App\Models\User;
 use App\Models\UserBet;
@@ -23,6 +24,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Support\CanonicalReadFixture;
+use Tests\Support\ObservedMlbGameFixture;
 
 function vueCanonicalFixture(string $sport, float $homeLine = 4.5, float $homeProbability = 0.65, array $metadata = []): CanonicalPrediction
 {
@@ -32,11 +34,15 @@ function vueCanonicalFixture(string $sport, float $homeLine = 4.5, float $homePr
     $teamClass = "App\\Models\\{$namespace}\\Team";
     $game = $gameClass::factory()->create([
         'sport_event_id' => $event->id, 'season' => 2026,
-        'game_date' => now()->utc()->toDateString(), 'game_time' => now()->addHour()->utc()->toTimeString(),
+        'game_date' => now()->addHour()->utc()->toDateString(), 'game_time' => now()->addHour()->utc()->toTimeString(),
         'home_team_id' => $teamClass::factory(), 'away_team_id' => $teamClass::factory(),
         'status' => 'STATUS_SCHEDULED',
     ]);
-    $run = CanonicalReadFixture::run($event, ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]]);
+    if ($sport === 'mlb') {
+        $game = ObservedMlbGameFixture::observe($game, now()->addHour());
+    }
+    $inputs = ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]];
+    $run = CanonicalReadFixture::run($event->fresh(), $inputs, $sport === 'mlb' ? ObservedMlbGameFixture::snapshotAttributes($game, $inputs) : []);
     $prediction = CanonicalPrediction::factory()->create([
         'sport' => $sport, 'sport_event_id' => $event->id, 'calculation_run_id' => $run->id, 'output_hash' => $run->output_hash, 'generated_at' => $run->inputSnapshot->captured_at,
         'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null,
@@ -100,9 +106,13 @@ it('uses latest canonical evaluations for performance without counting revisions
     config()->set('prediction_lifecycle.canonical_reads.nba', true);
     $prediction = vueCanonicalFixture('nba');
     foreach ([1 => false, 2 => true] as $revision => $correct) {
+        $result = SportEventResult::factory()->create([
+            'sport_event_id' => $prediction->sport_event_id, 'revision' => $revision,
+        ]);
         PredictionEvaluation::query()->create([
             'canonical_prediction_id' => $prediction->id, 'sport_event_id' => $prediction->sport_event_id,
             'sport' => 'nba', 'prediction_phase' => 'pregame', 'evaluation_revision' => $revision,
+            'sport_event_result_id' => $result->id,
             'scoring_version' => 'test', 'evaluation_hash' => hash('sha256', (string) $revision),
             'actuals' => [], 'errors' => ['winner_correct' => $correct, 'spread_absolute_error' => 2.0, 'total_absolute_error' => 3.0],
             'evaluated_at' => now(),
@@ -209,6 +219,12 @@ it('paginates canonical forecasts with ordered IDs before hydrating large JSON r
     $outside = vueCanonicalFixture($sport);
     $outside->sportEvent->{$sport.'Game'}->update(['game_date' => '2026-10-11']);
     $user = User::factory()->create();
+    $hydrated = [];
+    CanonicalPrediction::retrieved(function (CanonicalPrediction $prediction) use (&$hydrated): void {
+        if (array_key_exists('output_metadata', $prediction->getAttributes())) {
+            $hydrated[] = $prediction->public_id;
+        }
+    });
     DB::enableQueryLog();
     try {
         foreach ([1 => [3, 2], 2 => [1, 0], 3 => []] as $page => $indices) {
@@ -225,7 +241,9 @@ it('paginates canonical forecasts with ordered IDs before hydrating large JSON r
             }
         }
         $queries = collect(DB::getQueryLog())->pluck('query');
-        $hydration = $queries->filter(fn ($sql) => preg_match('/select ["`]predictions["`]\.\*/i', $sql) === 1 && str_contains($sql, 'game_date'));
+        $hydration = $queries->filter(fn ($sql) => preg_match('/^select ["`]predictions["`]\.\*/i', $sql) === 1 && str_contains($sql, 'game_date'));
+        // SELECT EXISTS may contain a predictions.* subquery but does not hydrate JSON models.
+        expect($hydrated)->toEqualCanonicalizing($rows->pluck('public_id')->all());
         expect($hydration)->toHaveCount(2);
         foreach ($hydration as $sql) {
             expect(strtolower($sql))->not->toContain('order by')

@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\Sports\SettleBetDecisionsCommand;
 use App\Models\BetDecision;
 use App\Models\BetSettlement;
 use App\Models\CFB\Game;
@@ -80,4 +81,28 @@ it('repairs invented missing-price returns to null while retaining the previous 
 it('requires an explicit CFB scope for settlement repair', function () {
     $this->artisan('sports:settle-bet-decisions', ['--regrade-cfb' => true])->assertFailed();
     $this->artisan('sports:settle-bet-decisions', ['--sport' => 'nfl', '--regrade-cfb' => true])->assertFailed();
+});
+
+it('compares shadow returns at settlement precision while preserving original audit evidence', function () {
+    [, , $settlement] = cfbRegradeFixture();
+    $metadata = $settlement->metadata;
+    $metadata['shadow_profit_units'] = 0.9090909090909092;
+    $settlement->update(['metadata' => $metadata]);
+    $settlement = $settlement->fresh();
+    $originalShadow = $settlement->metadata['shadow_profit_units'];
+    $values = $settlement->toArray();
+    $values['metadata']['shadow_profit_units'] = 0.9090909090909091;
+    $command = app(SettleBetDecisionsCommand::class);
+    $method = new ReflectionMethod($command, 'regradeCfb');
+    $method->invoke($command, $settlement, $values);
+    expect(data_get($settlement->fresh()->metadata, 'cfb_regrades', []))->toHaveCount(0);
+
+    $values['metadata']['shadow_profit_units'] = 0.9093;
+    $method->invoke($command, $settlement->fresh(), $values);
+    $updated = $settlement->fresh();
+    expect($updated->metadata['cfb_regrades'])->toHaveCount(1)
+        ->and($updated->metadata['cfb_regrades'][0]['previous_settlement']['metadata']['shadow_profit_units'])->toBe($originalShadow)
+        ->and($updated->metadata['shadow_profit_units'])->toBe(0.9093);
+    $method->invoke($command, $updated, $values);
+    expect($settlement->fresh()->metadata['cfb_regrades'])->toHaveCount(1);
 });

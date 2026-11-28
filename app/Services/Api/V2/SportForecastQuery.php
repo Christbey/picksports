@@ -2,7 +2,6 @@
 
 namespace App\Services\Api\V2;
 
-use App\Actions\WCBB\GenerateTournamentForecast;
 use App\Http\Resources\CBB\TournamentForecastResource as CbbTournamentForecastResource;
 use App\Http\Resources\MLB\PlayoffForecastResource as MlbPlayoffForecastResource;
 use App\Http\Resources\NBA\PlayoffForecastResource as NbaPlayoffForecastResource;
@@ -15,14 +14,12 @@ use App\Models\CBB\TournamentStateSnapshot;
 use App\Models\MLB\PlayoffForecast as MlbPlayoffForecast;
 use App\Models\MLB\TeamMetric as MlbTeamMetric;
 use App\Models\NBA\PlayoffForecast as NbaPlayoffForecast;
-use App\Models\WCBB\TeamMetric as WcbbTeamMetric;
 use App\Models\WCBB\TournamentForecast as WcbbTournamentForecast;
 use App\Services\NFL\TeamPlayoffForecastService;
 use App\Services\Sports\FuturesEdgeService;
 use App\Services\Sports\FuturesOddsLookupService;
 use App\Support\BasketballSeason;
 use App\Support\SportsViewCache;
-use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -34,7 +31,6 @@ class SportForecastQuery
         private readonly FuturesEdgeService $futuresEdgeService,
         private readonly SportsViewCache $sportsViewCache,
         private readonly TeamPlayoffForecastService $nflForecastService,
-        private readonly GenerateTournamentForecast $generateWcbbTournamentForecast,
     ) {}
 
     /**
@@ -43,7 +39,7 @@ class SportForecastQuery
      */
     public function get(SportContext $context, array $filters = []): array
     {
-        return match ($context->slug) {
+        $payload = match ($context->slug) {
             'nba' => $this->nba($context, $filters),
             'mlb' => $this->mlb($context, $filters),
             'nfl' => $this->nfl($context, $filters),
@@ -51,6 +47,11 @@ class SportForecastQuery
             'wcbb' => $this->wcbb($context, $filters),
             default => abort(404, "Forecasts are not available for {$context->slug}."),
         };
+
+        // Re-evaluate at read time: cached differences must not outlive their source quote.
+        $payload['data'] = $this->withQuoteFreshness($payload['data']);
+
+        return $payload;
     }
 
     /**
@@ -354,8 +355,6 @@ class SportForecastQuery
         $direction = $this->direction($filters);
 
         return $this->remember($context, $filters, function () use ($season, $sortBy, $direction): array {
-            $this->refreshWcbbForecastIfNeeded($season);
-
             $forecasts = WcbbTournamentForecast::query()
                 ->with('team')
                 ->where('season', $season)
@@ -403,7 +402,7 @@ class SportForecastQuery
     private function remember(SportContext $context, array $filters, callable $resolver): array
     {
         $cacheKey = $this->sportsViewCache->contextHash([
-            'contract' => $context->slug === 'nfl' ? 'sports.forecasts.index.bracket-status.'.TeamPlayoffForecastService::MODEL_VERSION : 'sports.forecasts.index',
+            'contract' => $context->slug === 'nfl' ? 'sports.forecasts.index.bracket-status.quote-evidence-v2.'.TeamPlayoffForecastService::MODEL_VERSION : 'sports.forecasts.index.quote-evidence-v2',
             'sport' => $context->slug,
             'filters' => $filters,
         ]);
@@ -442,6 +441,42 @@ class SportForecastQuery
             ->orderByDesc('season')
             ->pluck('season')
             ->values();
+    }
+
+    /** Stored prices remain visible; unavailable comparisons are never betting approvals. */
+    private function withQuoteFreshness(array $rows): array
+    {
+        $now = now();
+
+        return array_map(function (array $row) use ($now): array {
+            $quote = $row['market_odds'] ?? null;
+            $stale = ! is_array($quote);
+            if (is_array($quote)) {
+                foreach (['fetched_at', 'market_last_update'] as $key) {
+                    $value = $quote[$key] ?? null;
+                    if ($key === 'market_last_update' && $value === null) {
+                        continue;
+                    }
+                    try {
+                        $observed = $value ? Carbon::parse($value) : null;
+                    } catch (\Throwable) {
+                        $observed = null;
+                    }
+                    if ($observed === null || $observed->gt($now) || $observed->lt($now->copy()->subRealHours(36))) {
+                        $stale = true;
+                    }
+                }
+                $row['market_odds']['stale'] = $stale;
+            }
+            if ($stale) {
+                $row['market_edge']['edge_probability'] = null;
+                $row['market_edge']['edge_percent_points'] = null;
+                $row['market_edge']['has_edge'] = false;
+            }
+            $row['market_edge']['actionable'] = false;
+
+            return $row;
+        }, $rows);
     }
 
     /**
@@ -533,6 +568,8 @@ class SportForecastQuery
             ->where('season_type', (int) config('cbb.season.types.postseason'))
             ->where('is_ncaa_tournament', true)
             ->where('status', config('cbb.statuses.final'))
+            ->whereNotNull('home_score')
+            ->whereNotNull('away_score')
             ->get()
             ->reduce(function (array $eliminated, CbbGame $game): array {
                 $homeTeamId = (int) ($game->home_team_id ?? 0);
@@ -571,24 +608,25 @@ class SportForecastQuery
             'is_eliminated' => false,
             'reached_round' => null,
             'eliminated_round' => null,
-            'selection_score' => 0.0,
+            'selection_score' => null,
             'projected_seed' => null,
             'auto_bid' => false,
-            'auto_bid_probability' => 0.0,
-            'at_large_probability' => 0.0,
-            'tournament_make_probability' => 0.0,
-            'first_four_probability' => 0.0,
-            'first_four_auto_probability' => 0.0,
-            'first_four_at_large_probability' => 0.0,
-            'bid_thief_probability' => 0.0,
-            'champion_probability' => 0.0,
-            'final_four_probability' => 0.0,
-            'title_game_probability' => 0.0,
+            'auto_bid_probability' => null,
+            'at_large_probability' => null,
+            'tournament_make_probability' => null,
+            'first_four_probability' => null,
+            'first_four_auto_probability' => null,
+            'first_four_at_large_probability' => null,
+            'bid_thief_probability' => null,
+            'champion_probability' => null,
+            'final_four_probability' => null,
+            'title_game_probability' => null,
             'games_final_count' => 0,
-            'round_of_32_probability' => 0.0,
-            'sweet_16_probability' => 0.0,
-            'elite_8_probability' => 0.0,
+            'round_of_32_probability' => null,
+            'sweet_16_probability' => null,
+            'elite_8_probability' => null,
             'simulation_runs' => 0,
+            'forecast_available' => false,
             'team' => [
                 'id' => $team->id,
                 'espn_id' => $team->espn_id,
@@ -608,38 +646,5 @@ class SportForecastQuery
             'created_at' => null,
             'updated_at' => null,
         ];
-    }
-
-    private function refreshWcbbForecastIfNeeded(int $season): void
-    {
-        $refreshConfig = (array) config('wcbb.tournament_forecast.refresh', []);
-        if (($refreshConfig['enabled'] ?? true) !== true) {
-            return;
-        }
-
-        $eligibleTeamCount = WcbbTeamMetric::query()
-            ->where('season', $season)
-            ->where('meets_minimum', true)
-            ->count();
-
-        if ($eligibleTeamCount === 0) {
-            return;
-        }
-
-        $forecastSummary = WcbbTournamentForecast::query()
-            ->where('season', $season)
-            ->selectRaw('COUNT(*) as row_count, MAX(updated_at) as newest_updated_at')
-            ->first();
-        $newestUpdatedAt = $forecastSummary?->newest_updated_at;
-        $rowCount = (int) ($forecastSummary?->row_count ?? 0);
-        $coverageRatio = $eligibleTeamCount > 0 ? $rowCount / $eligibleTeamCount : 1.0;
-        $minimumCoverageRatio = max(0.0, min(1.0, (float) ($refreshConfig['minimum_coverage_ratio'] ?? 0.95)));
-        $staleAfterHours = max(1, (int) ($refreshConfig['stale_after_hours'] ?? 6));
-        $isStale = ! $newestUpdatedAt instanceof CarbonInterface
-            || $newestUpdatedAt->lt(now()->subHours($staleAfterHours));
-
-        if ($rowCount === 0 || $coverageRatio < $minimumCoverageRatio || $isStale) {
-            $this->generateWcbbTournamentForecast->execute($season);
-        }
     }
 }

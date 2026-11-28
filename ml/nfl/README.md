@@ -59,9 +59,14 @@ The loader:
 - computes SHA-256 before and after reading;
 - optionally requires a caller-supplied SHA-256;
 - requires stable feature and target hashes;
+- rejects missing, empty, or `NaT` game-start and feature-observation timestamps;
 - requires `features_available_at <= game_start_at`;
 - requires every row to be marked pregame safe;
 - requires one stable row per game.
+
+Timestamp ordering compares UTC instants, preserving explicit timezone offsets
+across daylight saving transitions. A feature observed exactly at kickoff is
+accepted; unknown observation time cannot establish pregame safety.
 
 ## Local Commands
 
@@ -122,12 +127,12 @@ picksports-nfl-ml train \
 ## Docker
 
 ```bash
-docker build --tag picksports-nfl-ml:0.2.0 ml/nfl
+docker build --tag picksports-nfl-ml:0.3.0 ml/nfl
 
 docker run --rm \
   --volume "$PWD/storage/app/ml:/data:ro" \
   --volume "$PWD/ml/nfl/artifacts:/artifacts" \
-  picksports-nfl-ml:0.2.0 \
+  picksports-nfl-ml:0.3.0 \
   train \
   --input /data/nfl_full_historical_training_data.csv \
   --output-dir /artifacts
@@ -145,18 +150,24 @@ artifacts/<model-run-id>/
   manifest.json
   evaluation.json
   prediction_example.json
-  feature_schema.yaml
-  preprocessor.joblib
+  feature_schema.json
+  preprocessor.json
   models/
-    logistic_classifier.joblib
-    xgboost_classifier.ubj
-    xgboost_home_margin.ubj
-    xgboost_total_points.ubj
+    logistic_classifier.json
+    xgboost_classifier.json
+    xgboost_home_margin.json
+    xgboost_total_points.json
   calibrators/
-    logistic_regression_platt.joblib
-    logistic_regression_isotonic.joblib
-    xgboost_platt.joblib
-    xgboost_isotonic.joblib
+    logistic_regression_platt.json
+    logistic_regression_isotonic.json
+    xgboost_platt.json
+    xgboost_isotonic.json
+  tuning/
+    optuna_provenance.json
+  explanations/
+    global_shap_importance.json
+    shap_values.parquet
+    xgboost_feature_importance.json
 ```
 
 The manifest records the model run, artifact ID, code/config/dataset/schema
@@ -190,3 +201,13 @@ betting probability.
 
 `uncertainty` combines calibrated probability entropy and disagreement between
 the logistic and XGBoost classifiers. It is a monitoring signal, not a bet.
+
+### Artifact trust boundary
+
+NFL tabular inference accepts only `picksports-nfl-tabular-numeric-v1`: fixed numeric preprocessing/logistic/calibration state and role-validated native XGBoost JSON. It does not load Python object serialization. Legacy joblib/UBJ runs have no fallback or automatic conversion; regenerate them under the reviewed numeric producer and repeat the normal challenger/shadow review. Training still uses the pinned scientific libraries; their transitive joblib dependency is not an artifact loader.
+
+The run has exactly the 16 supported inventory members shown above, including the three explanation files and tuning provenance; SHAP Parquet is retained as nonexecuted evidence. Required components are at most 8 MiB, metadata/schema JSON at most 2 MiB, SHAP Parquet at most 64 MiB, and the whole run at most 128 MiB. JSON has fixed depth, structural and numeric-token limits, rejects duplicate keys/nonfinite literals, and is checked against the exact bytes/size consumed. Feature order is explicit and hashed separately; the schema JSON retains insertion order. Numeric shapes/roles, calibrator methods, residual-total semantics and manifest selection policy are checked before any native model constructor.
+
+These are refusal boundaries, not maximum-volume or latency certification. Large/custom models outside the fixed formats require an explicit reviewed extension. Prediction JSON accepts one to 1000 feature objects under the metadata JSON limits; CSV/Parquet input remains an operator-side data-capacity concern. Neither format markers nor matching hashes authenticate a producer or establish calibration. Publish immutable directories and restrict writers. The PHP archive must pass the clean inner runtime directory; wrapper metadata and an optional exact dataset stay outside that directory.
+
+Reported chronological evaluation metrics describe the pre-refit evaluation models. The saved deployment estimators are refit on later eligible settled rows; those historical holdout metrics do not validate the refit score distribution. Promotion requires separately reviewed shadow evidence and does not gain calibration or approval status from this integrity check. Requirements files pin listed distributions but do not constitute a fully hashed platform-specific transitive lock; do not describe the current container build as bit reproducible.

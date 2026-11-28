@@ -2,9 +2,12 @@
 
 namespace App\Actions\OddsApi;
 
+use App\Models\MLB\Game;
 use App\Services\OddsApi\GameOddsSnapshotRecorder;
 use App\Services\OddsApi\OddsApiService;
 use App\Services\Sports\SportsDateWindowService;
+use App\Support\MLB\MlbGameStart;
+use App\Support\Sports\SeasonTypeCandidates;
 use App\Support\SportsViewCache;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
@@ -268,7 +271,7 @@ abstract class AbstractSyncOddsForGames
         $gameTime = $this->gameScheduledTime($game);
 
         if ($gameTime === null) {
-            return true;
+            return ! $game instanceof Game;
         }
 
         return abs($gameTime->diffInMinutes($eventTime, false)) <= $this->maxEventTimeDifferenceMinutes();
@@ -276,6 +279,9 @@ abstract class AbstractSyncOddsForGames
 
     protected function gameScheduledTime(Model $game): ?CarbonInterface
     {
+        if ($game instanceof Game) {
+            return MlbGameStart::for($game);
+        }
         $gameDate = $game->game_date;
         $gameTime = $game->game_time;
 
@@ -373,36 +379,7 @@ abstract class AbstractSyncOddsForGames
      */
     protected function resolveSeasonTypeCandidates(int|string $seasonType): array
     {
-        $sportSlug = $this->sportKey();
-        $typeNames = config("{$sportSlug}.season.type_names", []);
-        $typesByKey = config("{$sportSlug}.season.types", []);
-        $candidates = [$seasonType, (string) $seasonType];
-
-        if (is_string($seasonType) && isset($typeNames[$seasonType])) {
-            $candidates[] = $typeNames[$seasonType];
-        }
-
-        if (is_string($seasonType) && isset($typesByKey[$seasonType])) {
-            $resolved = $typesByKey[$seasonType];
-            $candidates[] = $resolved;
-            $candidates[] = (string) $resolved;
-        }
-
-        if (is_numeric($seasonType)) {
-            $code = (int) $seasonType;
-            $matchedKey = array_search($code, $typesByKey, true);
-            if ($matchedKey !== false) {
-                $candidates[] = (string) $matchedKey;
-                if (isset($typeNames[$matchedKey])) {
-                    $candidates[] = $typeNames[$matchedKey];
-                }
-            }
-        }
-
-        return array_values(array_unique(array_filter(
-            $candidates,
-            fn ($value) => $value !== null && $value !== ''
-        )));
+        return SeasonTypeCandidates::resolve($this->sportKey(), $seasonType);
     }
 
     protected function sportKey(): string

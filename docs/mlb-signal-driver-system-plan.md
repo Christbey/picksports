@@ -1,3 +1,7 @@
+> Historical proposal/worklog retained on November 27, 2026. The original text below records dated proposals, implementation assertions and measurements; it is not current operating instructions, evidence of completion, or approval to change business/scientific policy. Do not run its historical commands as an operational checklist. Current references: [docs/codebase-reference.md](codebase-reference.md).
+>
+> Carried obligations: Driver data, UX and scoring/enrichment phases need explicit acceptance mapping; implemented driver class is insufficient completion proof.
+
 # MLB Signal Driver System Implementation Plan
 
 Last updated: 2026-06-21

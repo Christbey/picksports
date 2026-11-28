@@ -32,7 +32,9 @@ const { selectedSeason, sortMode, onlyPlusEv, availableSeasonOptions } =
                         class="ui-select mt-1 min-h-11 sm:min-h-0"
                     >
                         <option value="model">Model Probability</option>
-                        <option value="edge">Best Edge</option>
+                        <option value="edge">
+                            Largest title model difference
+                        </option>
                     </select>
                 </div>
                 <label
@@ -43,7 +45,7 @@ const { selectedSeason, sortMode, onlyPlusEv, availableSeasonOptions } =
                         type="checkbox"
                         class="h-4 w-4 rounded border-input"
                     />
-                    Only +EV
+                    Positive title model differences
                 </label>
             </div>
         </CardContent>

@@ -5,6 +5,10 @@ use App\Models\GameOddsSnapshot;
 use App\Models\MLB\Game;
 use App\Models\MLB\Prediction;
 use App\Models\MLB\Team;
+use App\Services\OddsApi\GameOddsSnapshotRecorder;
+use App\Support\MLB\MlbGameStart;
+use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 
@@ -103,7 +107,7 @@ it('reports mlb market-aware shadow research without promoting or mutating predi
         ->and($report['shadow_model_version'])->toBe('mlb_market_aware_shadow_v1')
         ->and($report['summary']['rows'])->toBe(4)
         ->and($report['summary']['market_rows'])->toBe(4)
-        ->and($report['summary']['strict_market_rows'])->toBe(3)
+        ->and($report['summary']['strict_market_rows'])->toBe(3, json_encode($report['market_blend_exclusions']))
         ->and($report['summary']['analysis_rows'])->toBe(4)
         ->and($report['summary']['analysis_mode'])->toBe('all_market_rows_flagged')
         ->and($report['summary']['analysis_pregame_safe'])->toBeFalse()
@@ -174,7 +178,7 @@ it('can restrict mlb market blend research to strict pregame market rows', funct
     $report = json_decode(Artisan::output(), true);
 
     expect($report['summary']['market_rows'])->toBe(2)
-        ->and($report['summary']['strict_market_rows'])->toBe(1)
+        ->and($report['summary']['strict_market_rows'])->toBe(1, json_encode($report['market_blend_exclusions']))
         ->and($report['summary']['analysis_rows'])->toBe(1)
         ->and($report['summary']['analysis_mode'])->toBe('strict_pregame_market_rows')
         ->and($report['summary']['analysis_pregame_safe'])->toBeTrue()
@@ -203,30 +207,17 @@ it('uses pregame odds snapshots before mutable game odds for strict mlb market r
     );
     $game = $prediction->game;
 
-    GameOddsSnapshot::query()->create([
-        'sport' => 'mlb',
-        'game_table' => 'mlb_games',
-        'game_id' => $game->id,
-        'odds_api_event_id' => 'snapshot-event-'.$game->id,
-        'bookmaker_key' => 'draftkings',
-        'bookmaker_title' => 'DraftKings',
-        'source' => 'odds_api',
-        'commence_time' => '2026-06-16 19:10:00',
-        'captured_at' => '2026-06-16 12:00:00',
-        'payload_hash' => 'snapshot-hash-'.$game->id,
-        'odds_data' => [
-            'bookmakers' => [[
-                'markets' => [[
-                    'key' => 'h2h',
-                    'outcomes' => [
-                        ['name' => 'New York Mets', 'price' => -120],
-                        ['name' => 'Atlanta Braves', 'price' => 110],
-                    ],
-                ]],
+    researchMarketReceipt($game, [
+        'bookmakers' => [[
+            'markets' => [[
+                'key' => 'h2h',
+                'outcomes' => [
+                    ['name' => 'New York Mets', 'price' => -120],
+                    ['name' => 'Atlanta Braves', 'price' => 110],
+                ],
             ]],
-        ],
-        'market_context' => ['has_h2h' => true],
-    ]);
+        ]],
+    ], '2026-06-16 12:00:00');
 
     Artisan::call('mlb:research-market-blends', [
         '--season' => 2026,
@@ -238,7 +229,7 @@ it('uses pregame odds snapshots before mutable game odds for strict mlb market r
     $report = json_decode(Artisan::output(), true);
 
     expect($report['summary']['market_rows'])->toBe(1)
-        ->and($report['summary']['strict_market_rows'])->toBe(1)
+        ->and($report['summary']['strict_market_rows'])->toBe(1, json_encode($report['market_blend_exclusions']))
         ->and($report['summary']['analysis_pregame_safe'])->toBeTrue()
         ->and(collect($report['market_blend_exclusions'])->firstWhere(0, 'odds_after_first_pitch')[1])->toBe(0)
         ->and(collect($report['market_aware_blend_grid'])->first()[2])->toBe('1');
@@ -270,16 +261,16 @@ function researchMarketBlendPrediction(
         'abbreviation' => 'AT'.substr(str_replace('-', '', $date), -1),
     ]);
 
-    $game = Game::factory()->create([
+    $game = researchMarketClock(Carbon::parse($date.' 08:00:00', config('app.timezone'))->subDay(), fn () => Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2026,
         'season_type' => (string) config('mlb.season.types.regular', 2),
-        'status' => $status,
+        'status' => 'STATUS_SCHEDULED',
         'game_date' => $date,
         'game_time' => '19:10:00',
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
-        'home_score' => $homeScore,
-        'away_score' => $awayScore,
+        'home_score' => null,
+        'away_score' => null,
         'odds_data' => [
             'bookmakers' => [[
                 'markets' => [
@@ -301,12 +292,16 @@ function researchMarketBlendPrediction(
             ]],
         ],
         'odds_updated_at' => $oddsUpdatedAt,
-    ]);
+    ]));
+    if ($oddsUpdatedAt !== null) {
+        researchMarketReceipt($game, $game->odds_data, $oddsUpdatedAt);
+    }
+    $game->update(['status' => $status, 'home_score' => $homeScore, 'away_score' => $awayScore]);
 
     $actualSpread = $homeScore - $awayScore;
     $actualTotal = $homeScore + $awayScore;
 
-    return Prediction::query()->create([
+    return researchMarketClock(Carbon::parse($date.' 10:00:00', config('app.timezone')), fn () => Prediction::query()->create([
         'game_id' => $game->id,
         'season' => 2026,
         'season_type' => (string) config('mlb.season.types.regular', 2),
@@ -340,5 +335,30 @@ function researchMarketBlendPrediction(
         'winner_correct' => ($homeProbability >= 0.5) === ($homeScore > $awayScore),
         'graded_at' => Carbon::parse($date.' 23:30:00'),
         'created_at' => Carbon::parse($date.' 10:00:00'),
-    ]);
+    ]));
+}
+
+/** A new synthetic observation, never a production historical-marker backfill. */
+function researchMarketClock(CarbonInterface $clock, callable $callback): mixed
+{
+    $mutable = Carbon::getTestNow();
+    $immutable = CarbonImmutable::getTestNow();
+    try {
+        Carbon::setTestNow($clock);
+        CarbonImmutable::setTestNow($clock);
+
+        return $callback();
+    } finally {
+        Carbon::setTestNow($mutable);
+        CarbonImmutable::setTestNow($immutable);
+    }
+}
+
+function researchMarketReceipt(Game $game, array $data, string $clock): ?GameOddsSnapshot
+{
+    $instant = Carbon::parse($clock, config('app.timezone'));
+
+    return researchMarketClock($instant, fn () => app(GameOddsSnapshotRecorder::class)->record('mlb', $game,
+        ['id' => 'synthetic-research-'.$game->id, 'commence_time' => MlbGameStart::for($game)->toIso8601String()],
+        $data, $instant, 'test'));
 }

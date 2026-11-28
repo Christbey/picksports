@@ -24,13 +24,17 @@ class MlbPickMarketService
                 continue;
             }
 
-            if ($this->teamMatchesOutcome($game->homeTeam, (string) ($outcome['name'] ?? ''))) {
-                $outcomes['home'] = $this->normalizeOutcome($outcome, $market);
+            $name = $outcome['name'] ?? null;
+            if (! is_string($name)) {
+                continue;
             }
-
-            if ($this->teamMatchesOutcome($game->awayTeam, (string) ($outcome['name'] ?? ''))) {
-                $outcomes['away'] = $this->normalizeOutcome($outcome, $market);
+            $home = $this->teamMatchesOutcome($game->homeTeam, $name);
+            $away = $this->teamMatchesOutcome($game->awayTeam, $name);
+            // An outcome must identify exactly one current participant.
+            if ($home === $away) {
+                continue;
             }
+            $outcomes[$home ? 'home' : 'away'] = $this->normalizeOutcome($outcome, $market);
         }
 
         return $outcomes;
@@ -145,6 +149,9 @@ class MlbPickMarketService
         }
 
         $normalized = $this->normalize($outcomeName);
+        if ($normalized === '') {
+            return false;
+        }
         foreach ([
             (string) ($team->display_name ?? ''),
             trim(((string) ($team->location ?? '')).' '.((string) ($team->name ?? ''))),
@@ -152,7 +159,7 @@ class MlbPickMarketService
             (string) ($team->abbreviation ?? ''),
         ] as $candidate) {
             $candidate = $this->normalize($candidate);
-            if ($candidate !== '' && ($candidate === $normalized || str_contains($candidate, $normalized) || str_contains($normalized, $candidate))) {
+            if ($candidate !== '' && $candidate === $normalized) {
                 return true;
             }
         }

@@ -39,6 +39,8 @@ const breadcrumbs: BreadcrumbItem[] = [
                     <h1 class="text-2xl font-bold">Admin Exports</h1>
                     <p class="mt-1 text-sm text-muted-foreground">
                         {{ activeTabMeta.description }}
+                        Relative signal scores rank the shown rows; they are not
+                        win probabilities.
                     </p>
                     <div class="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                         <Button

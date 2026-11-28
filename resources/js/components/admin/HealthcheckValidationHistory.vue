@@ -3,7 +3,7 @@ import { useHealthchecksContext } from '@/composables/useHealthchecks';
 import { validationExecutionLabel } from '@/lib/healthcheckPresentation';
 const {
     selectedView,
-    syncingCheck,
+    isSyncing,
     selectValidationRun,
     syncData,
     getSyncLabel,
@@ -152,18 +152,31 @@ const {
                                 {{ finding.message }}
                             </p>
                         </div>
-                        <button
+                        <div
                             v-if="finding.recommended_action"
+                            class="max-w-md text-xs text-muted-foreground"
+                        >
+                            <p class="whitespace-pre-wrap">
+                                Recommendation: {{ finding.recommended_action }}
+                            </p>
+                            <p>
+                                {{ finding.remediation?.effects }}
+                                {{
+                                    finding.remediation?.reason ??
+                                    'Unsupported action: use the explicit operator workflow.'
+                                }}
+                            </p>
+                        </div>
+                        <button
+                            v-if="finding.remediation?.supported"
                             @click="syncData(finding.sport, finding.check_type)"
                             :disabled="
-                                syncingCheck ===
-                                `${finding.sport}-${finding.check_type}`
+                                isSyncing(finding.sport, finding.check_type)
                             "
                             class="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             {{
-                                syncingCheck ===
-                                `${finding.sport}-${finding.check_type}`
+                                isSyncing(finding.sport, finding.check_type)
                                     ? 'Running...'
                                     : getSyncLabel(finding.check_type)
                             }}

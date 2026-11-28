@@ -11,6 +11,7 @@ use App\Services\BettingRecommendations\GameBettingRecommendationService;
 use App\Services\Predictions\PredictionDeliverySource;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use RuntimeException;
 
 class AlertService
 {
@@ -123,23 +124,54 @@ class AlertService
 
                 continue;
             }
-            $reserved = $user->getConnection()->transaction(function () use ($user, $sport, $expectedValue, $prediction, $identity): bool {
+            $connection = $user->getConnection();
+            if ($connection !== (new User)->getConnection() || $connection !== (new UserAlertSent)->getConnection()) {
+                throw new RuntimeException('Alert reservation requires one current user and reservation connection.');
+            }
+            $reserved = $connection->transaction(function () use ($connection, $user, $sport, $expectedValue, $prediction, $identity): bool {
                 $lockedUser = User::query()->lockForUpdate()->find($user->id);
                 $key = hash('sha256', $user->id.':'.$identity);
                 if ($lockedUser === null || $lockedUser->hasReachedDailyAlertLimit()
-                    || UserAlertSent::query()->where('deduplication_key', $key)->exists()) {
+                    || UserAlertSent::query()->useWritePdo()->where('deduplication_key', $key)->exists()) {
                     return false;
                 }
-                UserAlertSent::query()->create([
+                $attributes = [
                     'user_id' => $user->id,
                     'sport' => strtolower($sport),
                     'alert_type' => 'betting_value',
                     'prediction_id' => $prediction->source->getKey(),
                     'prediction_type' => $prediction->source::class,
                     'expected_value' => $expectedValue,
-                    'sent_at' => now(),
+                    'sent_at' => now()->format('Y-m-d H:i:s'),
                     'deduplication_key' => $key,
-                ]);
+                ];
+                $expected = new UserAlertSent($attributes);
+                $expectedDecimal = $expected->expected_value;
+                $reservation = UserAlertSent::query()->create($attributes);
+                if (! $reservation->exists || ! $reservation->wasRecentlyCreated
+                    || $reservation->getConnection() !== $connection || $reservation->getTable() !== 'user_alerts_sent') {
+                    throw new RuntimeException('Alert reservation was not persisted.');
+                }
+                $headerQuery = $connection->table('user_alerts_sent')->useWritePdo()
+                    ->where('id', $reservation->getKey())->lockForUpdate()->select('id');
+                foreach ($attributes as $field => $value) {
+                    $column = $connection->getQueryGrammar()->wrap($field);
+                    $maximum = in_array($field, ['user_id', 'prediction_id', 'expected_value'], true)
+                        ? 32 : strlen((string) $value) + 1;
+                    $headerQuery->selectRaw("CASE WHEN LENGTH({$column}) <= ? THEN {$column} ELSE NULL END AS {$column}", [$maximum]);
+                }
+                $header = $headerQuery->first();
+                if ($header === null) {
+                    throw new RuntimeException('Alert reservation disappeared before dispatch.');
+                }
+                $persisted = (new UserAlertSent)->setRawAttributes((array) $header);
+                foreach ($attributes as $field => $value) {
+                    $actual = $field === 'expected_value' ? $persisted->expected_value : (string) $header->{$field};
+                    $desired = $field === 'expected_value' ? $expectedDecimal : (string) $value;
+                    if ($actual !== $desired) {
+                        throw new RuntimeException('Alert reservation differs from its requested owner or identity.');
+                    }
+                }
 
                 return true;
             });

@@ -57,7 +57,6 @@ NFL spread and totals backtests select frozen recommendation forecasts and same-
 
 The scheduler is organized around shared helpers in `routes/console.php`:
 - `scheduleSportPipeline()`
-- `schedulePredictionPipeline()`
 - `scheduleDailySeasonJob()`
 - `scheduleWeeklySeasonJob()`
 - `scheduleHalfHourlyWindowJob()`
@@ -71,7 +70,7 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 
 - Basketball season arguments use the ending year: October 2026 through June 2027 is season `2027`.
 - Check NBA, CBB, and WCBB missing pregame prediction coverage every five minutes for today plus eight days, covering the rolling canonical-readiness horizon. At minute 17 of every hour, run inline (away from the five-minute coverage tick and without a detached child) to update ending-year Elo ratings without reapplying already processed games, rebuild regular-season and postseason team metrics, then refresh eligible upcoming forecasts using stored inputs. A failed metric rebuild prevents forecast refresh and fails the recovery heartbeat. Pipeline checks recognize successful recovery and allow 75 minutes for the next hourly refresh; overdue dependencies still fail. Futures validation uses the basketball ending-year season. NBA canonical generation defaults to a bounded eight-day rolling horizon (`--days-forward`); explicit `--game` and `--date` requests retain their targeted scope. CBB coverage remains missing-only with its widened eight-day horizon and reports known placeholder teams as holds without failing the command; WCBB coverage also spans eight days, matching its canonical generator horizon while retaining explicit metric holds; its two-day manual command default is unchanged. The wider repair window does not make held metric inputs usable or permit publication. NBA hourly refresh retains its existing seven-day scope. CBB and WCBB log each missed tipoff once during the coverage window. Their scheduled checks continue retrying upcoming games with recoverable input gaps, including WCBB metric holds. Batch deferrals are reported separately. Unexpected generation errors still fail coverage, and NBA retains its existing failure behavior for started games without forecasts. No retrospective pregame predictions are created. Checks use existing stored inputs and do not fetch odds or props.
-- Daily scoreboard imports run inline before the morning prediction pipeline, so generation does not depend on queued imports finishing first.
+- Daily scoreboard commands use synchronous import mode inside their worker job. Scheduler dispatch order alone does not establish completed imports before generation.
 
 - Daily scoreboard sync at `01:00`
 - Live scoreboard sync every 5 minutes between `18:00` and `03:00`
@@ -89,18 +88,18 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 - Sync futures odds every 4 hours between `08:00` and `23:00`
 - Run NBA EPA lifecycle jobs via `scheduleEpaLifecycle()`
 
-NBA daytime injury dispatch remains **:02/:32**, last **22:32**, next **08:02**. The candidate adds a separately disabled source-only supplement: `NBA_OVERNIGHT_SOURCE_BRIDGE_ENABLED=false` gates **:12/:42, 23:00–07:59 Central**, via a unique Redis **`nba-sources`** job. It acquires admitted team observations and assesses at most one approved game within eight hours, without invoking paid analysis. It needs a dedicated worker and an explicit unexpired team scope. Both shared analysis automation flags remain false. The prior live audit found the 9.5-hour gap; a real overnight cycle is still unverified. See [the bridge release candidate and activation gates](docs/operations/nba-overnight-source-bridge-rc-2026-11-21.md). NFL and existing daytime schedules are unchanged.
+NBA daytime injury dispatch remains **:02/:32**, last **22:32**, next **08:02**. A separately disabled source-only supplement is available: `NBA_OVERNIGHT_SOURCE_BRIDGE_ENABLED=false` gates **:12/:42, 23:00–07:59 Central**, via a unique Redis **`nba-sources`** job. It acquires admitted team observations and assesses at most one approved game within eight hours, without invoking paid analysis. It needs a dedicated worker and an explicit unexpired team scope. The bridge does not enable analysis automation. Verify effective automation settings separately. See [the overnight source bridge operating contract](docs/operations/nba-research-rollout.md#overnight-source-bridge). NFL and existing daytime schedules are unchanged.
 
 ### CBB
 
 - Active October–April, including schedule preparation before opening day. Uses the ending-year season and the five-minute pregame coverage check described above.
-- Daily current-week scoreboard import runs inline before prediction generation.
+- Daily current-week scoreboard import is dispatched to the worker; command completion and current-input admission must precede dependent generation.
 
-- Sync tournament structure daily at `01:00`
+- Sync tournament structure daily at `01:00`; completeness audits begin March 1 of the ending season year. Manual audits remain strict year-round.
 - Sync teams weekly on Sunday at `01:15`
 - Sync all team schedules weekly on Sunday at `01:30`
 - Sync season-specific CBB rosters daily at `02:15`, with the explicit ending-year season and `--include-prior` to seed a missing previous-season observation once. The scheduled refresh runs inline (`--sync`) ahead of the `06:30` pregame pipeline; manually dispatched jobs still use the `sync` queue. Immutable observations exclude athletes absent from the latest verified roster without deleting player identities or historical stats. Failed/empty/partial provider responses retain the previous observation; model evidence marks stale or missing rosters. Expected provider rejections and missing historical rosters are counted as coverage warnings, separately from verified current refreshes. Unexpected write failures, or an inline batch with no verified current roster, still fail the job.
-- Backfill stale games daily at `03:00`
+- Backfill stale games synchronously daily at `03:00` with `--sync --limit=100`
 - Daily current-week sync at `02:00`
 - Live scoreboard sync every 5 minutes between `12:00` and `01:00`
 - Game details sync every 30 minutes between `14:00` and `02:00`; only real active/final games in the requested date window qualify. Unattempted games precede retries, with a 30-minute retry cooldown and persisted attempt/completion status.
@@ -112,12 +111,13 @@ NBA daytime injury dispatch remains **:02/:32**, last **22:32**, next **08:02**.
 - Sync odds every 4 hours between `08:00` and `23:00`
 - Sync player props twice daily at `12:00` and `17:00`
 - Sync injuries every 30 minutes between `08:00` and `23:00`
+- CBB injury refreshes fan out to unique per-team jobs on the existing default queue. Each team has a 110-second timeout and up to three attempts with backoff; hard worker timeouts fail immediately. Unavailable, malformed, unresolved, or explicitly paginated/truncated source data preserves current injuries and records a failure; incomplete collections are never treated as complete reports. Logs identify the team, duration, attempt, and outcome; dispatch completion does not mean all team refreshes finished.
 - Sync futures odds every 4 hours between `08:00` and `23:00`
 - Run CBB EPA lifecycle jobs via `scheduleEpaLifecycle()`
 
 ### WCBB
 
-- Active October–April, with ending-year seasons, inline daily scoreboard imports, and the same five-minute pregame coverage check.
+- Active October–April, with ending-year seasons, worker-dispatched daily scoreboard imports, and the same five-minute pregame coverage check.
 
 - Sync all team schedules weekly on Sunday at `01:45`
 - Sync teams daily at `02:45`
@@ -163,7 +163,7 @@ The shared MLB scheduler guard runs March through October. In November it requir
 - Run the initial private F3/F5 shadow pass at `06:12`
 - Record initial private shadow decisions at `06:15`
 - Train and register a weekly challenger Monday at `06:40` Central Time
-- Train and register the weekly F3/F5 challenger Monday at `07:20` Central Time
+- No weekly F3/F5 training job is registered. New period registration remains unavailable; retained period inference/reporting follows its separate admission contract.
 - Grade pick candidates at `04:40` and settle model decisions at `04:50`
 - Generate playoff forecast at `08:35`
 - Sync odds every 4 hours between `08:00` and `23:00`
@@ -194,6 +194,7 @@ The shared MLB scheduler guard runs March through October. In November it requir
 - Optional frozen prop experiment (`NFL_PROP_SHADOW_ENABLED=true`): snapshot stored quotes at `:15` and `:45` between `08:00` and `23:00` Central, grade at `08:45` daily, and report at `08:55` Monday. Ships with the frozen, hash-pinned seven-market bundle from October 23; `NFL_PROP_SHADOW_BUNDLE_PATH` and `NFL_PROP_SHADOW_BUNDLE_SHA256` can override it together. Captures the first eligible observation within 24 hours of kickoff per player/game/market/bundle; stale, future and in-play observations are excluded. Uses existing snapshot/evaluation tables, never refreshes providers, never retrains or promotes models, and never changes production picks. Missing actuals remain pending; grading preserves the frozen quote and first recorded result.
 
 - Baseline NFL forecasts and their feature snapshots publish in one transaction. Optional `EvaluateShadowPrediction` jobs dispatch after commit on the application queue, with one attempt and a 120-second timeout. A shadow failure cannot roll back the baseline; late shadow jobs cannot overwrite newer forecasts or refresh the baseline timestamp. Shadow observations retain their own records without modifying frozen snapshot inputs or outputs.
+- New NFL prop shadow captures freeze numeric values to eight decimal places with versioned, typed fingerprints. Grading reports invalid snapshot IDs and continues with valid records, but invalid records keep the command failing. Existing snapshots and their hashes are never rewritten.
 
 - At `07:45` Central during the depth-chart season, `espn:sync-nfl-depth-charts --season=<current> --sync` refreshes all teams daily and waits for completion before reporting success. Each fetch preserves a timestamped observation, allowing recent QB-change comparisons and fresh personnel inputs for the later prediction pipeline. Game links remain tied to the prediction revision that selected the chart.
 
@@ -207,8 +208,8 @@ The shared MLB scheduler guard runs March through October. In November it requir
 - At `08:12` Central in season, `nfl:sync-matchup-schedule --season=<current>` verifies completed regular-season games from the current and prior three seasons against public schedule identities and scores. It appends separate retrospective rest, division, overtime, official international-schedule, validated roof/venue and closing-line evidence for matchup records; it never rewrites games, odds snapshots or predictions.
 - At `08:15` Central in season, `nfl:sync-game-quarterbacks --season=<current> --apply` fills missing final-game starter identities from the public nflverse schedule. It validates event/team/date/score identity, preserves existing conflicting values and all forecasts, records source provenance, and fails its heartbeat when source coverage is incomplete. Without `--apply`, the command is read-only; `--file` accepts a reviewed source archive.
 
-- Daily current-week sync at `08:00`
-- Live scoreboard sync every 5 minutes between `17:00` and `02:00`
+- Daily current-calendar-window dispatch at `08:00`: the retained `espn:sync-nfl-current --skip-teams` name now requests the existing unique scoreboard job for each application-calendar date from 7 days back through 7 days forward (15 dates), rather than guessing a season/week from September 1. Explicit `--days-back`/`--days-forward` must be nonnegative integers with at most 31 inclusive dates; invalid windows dispatch nothing. Without `--skip-teams`, one team refresh is queued. The command heartbeat records dispatch completion, not completed ingestion; queue workers must finish these jobs before downstream inputs can be considered current. Existing season guard, schedule identity, overlap and provider/worker policies are unchanged.
+- Live scoreboard sync every 5 minutes between `06:00` and `02:00`
 - Game details sync every 30 minutes between `06:00` and `02:00`, checking a 14-day lookback for missing details or plays that have not reached the final score.
 - The NFL pregame pipeline and registry predict/full stage generate canonical forecasts from stored inputs. The pipeline fails on generation errors or missing fresh, pregame-safe published forecasts for its eight-day slate. The daily `10:50` canonical cutover sentinel independently verifies frozen quotes, candidate decisions, and EPA coverage, including quarantine and promotion blockers. Research ingestion, four-game revision batches, and research readiness retain their own scheduled runs. Native snapshot capture keeps the stored-data true-EPA preflight and deterministic recommendation evidence. Unchanged fresh inputs may reuse immutable revisions. Research market expiry remains 36 hours by default.
 - Grade predictions at `08:30`
@@ -216,20 +217,22 @@ The shared MLB scheduler guard runs March through October. In November it requir
 - Audit frozen NFL spread history at `08:50` with `nfl:validate-spread-models`; record per-version sample shortages and observed performance in `nfl-spread-validation.log`. Successful execution means the audit ran, not that the model is approved. No odds fetch or automatic promotion occurs.
 - Calculate Elo at `09:00`
 - Calculate team metrics at `09:30`
-- Generate predictions at `10:00`
-- NFL season-evidence weighting is recalculated inside every historical-Elo forecast (including the pregame pipeline), using completed current-season regular games and covered metric samples. No separate tuning job is required; byes do not advance the evidence weight.
-- Generate canonical predictions at `10:05` when `PREDICTION_LIFECYCLE_NFL_CANONICAL_PIPELINE=true`
+- The ordered `nfl:run-pregame-pipeline` is considered at `:20` from `06:00` through `23:00` in the configured season. It is admitted at hours `10`, `12`, `16`, and `20`, and at other considered hours when a stored eligible scheduled/delayed game has a linked kickoff within the next day. Its own readiness/source gates and worker completion remain necessary; the `08:00` dispatch heartbeat alone does not prove those inputs ready.
 - Settle model decisions at `08:45`
 - Record private shadow decisions at `10:15`
 - Train and register a weekly challenger Tuesday at `12:40` Central Time,
   after the `11:35` readiness pass
 - Sync game odds only at `06:10`, `10:10`, `14:10`, `18:10`, and `22:10` Central. NFL responses are reused for four hours, with a per-request lock to coalesce concurrent callers. Confirmed provider credit exhaustion pauses uncached requests across the account for 24 hours; cached data remains usable.
-- Sync player props twice daily at `10:00` and `15:00`
+- Sync player props daily at `10:10` Central.
 - Sync injuries every 30 minutes between `08:00` and `23:00`
 - Sync futures odds every 4 hours between `08:00` and `23:00`
 - Run NFL EPA lifecycle jobs via `scheduleEpaLifecycle()`
 
 ### CFB
+
+- Incremental play EPA batches wait for `STATUS_FINAL`, because the verified scoring ledger requires a matching final event. Explicit single-game requests still validate and reject unsafe inputs.
+- Odds sync checks matching against provider-offered events inside the requested horizon; it reports the local-game count separately. Empty provider coverage with actionable local games still fails, and readiness validation continues to report missing or stale local markets.
+- Football signal audits stream prediction relations in batches of 100. Shadow decision recording skips outputs that already have immutable decisions and streams pending outputs in batches of 100; `--limit` applies to pending outputs.
 
 - Daily at `03:40`, after canonical evaluation: `cfb:review-model-candidates` writes the read-only, release-separated paired candidate report to `storage/logs/cfb-model-candidates.log`. It compares only timestamp-safe quotes/history; reports missing paired coverage; preserves source prediction and grading revisions; and never promotes candidates. Release `1.8.0` freezes opponent-adjusted scoring, result-rating, and fixed 50/50 market-blend comparisons alongside the unchanged independent markets for prospective tracking.
 
@@ -242,7 +245,7 @@ The shared MLB scheduler guard runs March through October. In November it requir
 - Failed historical repair and normalization stages with unchanged input revisions wait six hours before another attempt; changed revisions are eligible immediately. A failed team-metric batch is retried per team so only affected matchups remain held. Worker hard failures enter queue failure monitoring while exit-code-2 partial outcomes retain their published forecasts and cached partial status.
 - Completed history normalization is reused for unchanged accepted source revisions and the same prior-season EPA baseline revision. A newly trained EPA baseline invalidates normalization reuse before metrics and forecast generation. EPA updates write only existing accepted play rows in bounded batches. Historical game and Elo reads omit large odds payloads.
 - CFBD weighted EPA is optional enrichment. An explicit paid-subscription denial records WEPA as unavailable with null values; supported metric refreshes continue. Invalid credentials and exhausted transient provider failures still preserve prior metrics and fail the affected refresh. CFBD GETs make at most three attempts (250 ms and 1,000 ms backoff) for connection failures, 429, and 500/502/503/504; authentication and other permanent errors are not retried. An exhausted source is cached as failed within a metrics process to avoid repeating its request budget for every team in that batch.
-- Daily/hourly CFB pregame refreshes dispatch with `--queued` to the existing bulk `sync` worker. A unique season lock prevents duplicate queued refreshes. Dispatch does not record a success heartbeat or external success ping. Optional weather refreshes are limited to the validated future game selection, including scoped `--games` recovery. Terminal worker outcomes persist in `command_heartbeats` with source `worker`, a run UUID, exit state, per-game results, selected/pending/held/failed counts, actual publication counts, and separate reused counts. Partial/failed workers are marked failed in the queue and record a failure heartbeat; external scheduled heartbeat pings occur only on full worker completion. `cfb:pregame:worker-status` retains the latest running/complete/partial/failed outcome. Per-run progress caches preserve completed publications if a worker is interrupted. The queue still has one attempt; bounded transient HTTP retries do not replay the entire job. Sequential isolated forecast processes retain their 192 MB cap and have a 300-second generation budget (below the 600-second evidence lock and 1,700-second worker limit), so a cold evidence build is not killed at the former 120-second cutoff. Resume hashes include failed input cohorts so cached completed stages cannot bypass new holds. Football-signal evidence reads only required prediction columns and pages by `(generated_at, id)` instead of offsets; older revisions are skipped only after existing frozen-evidence checks accept a game, preserving fallback for rejected revisions.
+- Daily/hourly CFB pregame refreshes dispatch with `--queued` to the existing bulk `sync` worker. A unique season lock prevents duplicate queued refreshes. Dispatch does not record a success heartbeat or external success ping. Optional weather refreshes are limited to the validated future game selection, including scoped `--games` recovery. Terminal worker outcomes persist in `command_heartbeats` with source `worker`, a run UUID, exit state, per-game results, selected/pending/held/failed counts, actual publication counts, and separate reused counts. Partial/failed workers are marked failed in the queue and record a failure heartbeat; external scheduled heartbeat pings occur only on full worker completion. `cfb:pregame:worker-status` retains the latest running/complete/partial/failed outcome. Per-run progress caches preserve completed publications if a worker is interrupted. The worker allows two attempts for Redis reservation redelivery; a terminal run heartbeat suppresses duplicate completed work. Bounded HTTP retries do not by themselves replay the entire job. Sequential isolated forecast processes retain their 192 MB cap and have a 300-second generation budget (below the 600-second evidence lock and 1,700-second worker limit), so a cold evidence build is not killed at the former 120-second cutoff. Resume hashes include failed input cohorts so cached completed stages cannot bypass new holds. Football-signal evidence reads only required prediction columns and pages by `(generated_at, id)` instead of offsets; older revisions are skipped only after existing frozen-evidence checks accept a game, preserving fallback for rejected revisions.
 - Daily at `04:50`: the CFB operations sentinel validates health. Every hour at `:55`, `healthcheck:validate-data --sport=cfb --if-stale=120 --skip-ai-summary --skip-alerts --report-only` retries when no audit has completed in two hours. Each finding is saved as its check finishes; abandoned runs older than two hours are marked interrupted on retry.
 - Sync odds every four hours and injuries every thirty minutes between `08:00` and `23:00`.
 - CFB injury workers and the pregame pipeline also run `cfb:sync-official-availability`. Public SEC, Big Ten and ACC conference widgets feed immutable game/team report revisions with source publication and observation times. Matching uses both opponents and the conference-time kickoff date, with game-specific injury scope in the application timezone; unlinked absences and exemptions remain partial coverage. Reports older than 36 hours remain stale, not healthy. Official absences and source-verified corrections are preserved across empty ESPN refreshes. Forecasts retain unknown/stale/partial coverage and QB-conflict flags rather than interpreting zero ESPN rows as a healthy roster. Unavailable conferences (including the Pac-12 public page until a working feed is published) and nonconference games without a report remain explicitly unknown; known source-linked corrections still apply.
@@ -259,11 +262,11 @@ The shared MLB scheduler guard runs March through October. In November it requir
 
 - Every scheduled event is named and uses `onOneServer()` so Laravel Cloud's
   shared scheduler lock prevents duplicate execution across replicas
-- Every scheduled event also uses `withoutOverlapping()` and `runInBackground()`
+- Command events use scheduler overlap protection; the heartbeat wrapper replaces heavy execution with queued dispatch and disables detached scheduler children. Worker execution requires its own admission and serialization.
 - Scheduler lock coordination requires all replicas to use the same shared cache;
   Laravel Cloud should use the shared Valkey store for cache and scheduler locks
 - Heartbeat success and failure tracking is attached to scheduled jobs through `CommandHeartbeatService`
-- Live scoreboard jobs resolve command arguments dynamically for the current date
+- Live scoreboard date arguments and season values are constructed at schedule registration. Verify registration lifetime and timezone at day/season boundaries.
 - Queue workers are still required for queued work kicked off by scheduled commands
 
 ## How To Inspect Current Schedule
@@ -285,7 +288,7 @@ The CFB pregame pipeline refreshes returning production, transfers, talent, and 
 
 ### NFL prospective prop probability evaluation
 
-`nfl:prop-probability-experiment capture --season=YEAR` runs at :25 and :55 from 08:00–23:59 in the existing scheduler timezone, after the :20 pregame pipeline when it runs. It captures only scheduled kickoffs within 24 hours using fresh stored quotes, without provider refreshes or publishing recommendations. The first forecast for each code-version/player/game/market is immutable. `NFL_PROP_PROBABILITY_EXPERIMENT_ENABLED` defaults true and controls these scheduled jobs. Capture uses a single-server overlap lock and heartbeat. Grading runs at 09:05 after ingest; missing actuals stay pending. The daily 09:15 report writes per-market, per-code-version Brier/log-loss and pending counts to `storage/logs/nfl-prop-probabilities.log`. No queue worker or paid AI call is needed. Deployment and future completed outcomes are required for prospective evidence.
+`nfl:prop-probability-experiment capture --season=YEAR` runs at :25 and :55 from 08:00–23:59 in the existing scheduler timezone, after the :20 pregame pipeline when it runs. It captures only scheduled kickoffs within 24 hours using fresh stored quotes, without provider refreshes or publishing recommendations. The first forecast for each code-version/player/game/market is immutable. `NFL_PROP_PROBABILITY_EXPERIMENT_ENABLED` defaults true and controls these scheduled jobs. Capture uses a single-server overlap lock and heartbeat. Grading runs at 09:05 after ingest; missing actuals stay pending. The daily 09:15 report writes per-market, per-code-version Brier/log-loss and pending counts to `storage/logs/nfl-prop-probabilities.log`. The scheduled command runs through the existing worker dispatch wrapper; no paid AI call is needed. Deployment and future completed outcomes are required for prospective evidence.
 
 ### NFL prospective matchup evidence
 
@@ -347,3 +350,32 @@ All new schedules require `GAME_ANALYSIS_SCHEDULE_ENABLED=true` (default false),
 ## NFL custom EP quarantine
 
 When `nfl.predictions.true_epa.custom_epa_quarantined` is true, the NFL custom EP baseline, blend-calibration and incremental play-calculation tasks are not registered. Manual `nfl:calculate-play-epa` exits without reading/writing plays. This affects only custom internal EP, not nflverse matchup EPA, prop capture/grade/report, research ingestion, canonical forecasts, live updates or final-result grading. The admin experimental rating page reads retained aggregates only and never dispatches these jobs.
+
+### Durable publication reconciliation
+
+`routes/console.php` schedules dispatch of `sports:reconcile-publication-effects --limit=100` every minute, with single-server execution, five-minute overlap protection and the existing queued heartbeat wrapper. The dispatcher is not a detached scheduler child; worker completion is separate. It runs independently of `GAME_ANALYSIS_SCHEDULE_ENABLED`: it recovers only transactionally admitted publication receipts and does not enable research/reviews or manufacture previously disabled work. `--limit` is capped at 500; `--dry-run` lists a bounded due batch without claiming it.
+
+`prediction_publication_effects` stores immutable admission and expiring ownership for cache, analysis and canonical narrative delivery. The after-commit callback is best effort. Reconciliation retries failed handoffs and abandoned leases, including conversion of a final expired attempt to terminal `exhausted`. Defaults are 8 attempts, 300-second lease and 60-second initial retry with capped exponential backoff. The command reports selected-batch failures; operators need exhausted-receipt monitoring and verified scheduler/default-worker liveness. Dispatch and completed handler receipts are distinct from analysis approval.
+
+Cache invalidation executes inline; analysis/narrative wrappers use the existing default queue with a 90-second job timeout. Handler work occurs outside database transactions and remains at least once after crash; existing handler deduplication/budget controls remain necessary. Current feature/selection admission is rechecked before execution. No new outbound feature flag is enabled by this schedule.
+
+Deploy `2026_11_25_030000_create_prediction_publication_effects.php` before activating its publisher/worker code, drain old workers, and retain receipts during forward-only repair/rollback. Historical migration counts do not establish current deployed schema. Verify the exact current ledger and release prerequisites privately; see [publication effect recovery](docs/contracts/publication-effects.md).
+
+### Finite API credential cleanup
+
+`auth:prune-policy-tokens --hours=24 --limit=1000 --apply` is dispatched hourly only after `API_TOKEN_FINITE_ISSUANCE_ENABLED=true`, with single-server execution, ten-minute overlap protection and the existing queued command heartbeat wrapper. Dispatch does not prove completion. Each run removes at most 1,000 eligible epoch-marked expired tokens and excludes actual native-session-linked rows. Issuance is disabled by default. This cleanup does not enforce authentication expiry; the policy guard always checks marked tokens, including while issuance is off. Manual dry-run/cursor cleanup and fleet/rollback/legacy-client gates are described in [API token policy](docs/operations/api-token-policy.md). No live schedule execution or production token deletion was used as verification.
+
+### Activation and evidence boundaries
+
+Finite-token issuance and shared research/review scheduling are disabled by default and have separate explicit gates. Durable publication reconciliation does not turn either feature on. These defaults do not mean supported MLB/NFL model training, shadow inference, or existing automatic promotion is globally disabled: model schedules retain their configured production policy and must pass their own current-source, artifact and approval admission. Published NFL prop analysis retains the production v4 opportunity-neutral policy; positional v5 stays in its explicitly labeled shadow experiment, and retained v5 history is history only. Quarantined custom EP remains excluded under its existing policy.
+
+Source registration, a passing local test, or a scheduled dispatch is not proof of scheduler/worker liveness, successful external delivery, production deployment, or a fleet latency guarantee. Dated private native and functional receipts apply only to their recorded source and fixture scopes.
+
+
+### November 27 private worker execution contract
+
+The NFL pregame pipeline and canonical-readiness commands now share a worker execution lock. Exact identical MLB generation command lines share a lock across different schedule names; different command bytes remain separate. Pending-job uniqueness is preserved. Lock contention releases the queued job for 30 seconds without calling the command or recording success. New grouped jobs carry a fixed dispatch-time deadline using the existing 86,400-second uniqueness window; the first ordinary command exception remains terminal through `maxExceptions=1`. Old serialized payloads retain their original one-attempt retry policy.
+
+Locks use owner-aware release in `finally`. The lease is the job timeout plus 60 seconds and must be shorter than the Redis queue reservation (currently configured fallback 2,100 seconds); the intended sync lease is 1,760 seconds. All workers must use the same shared lock-capable cache and enforce the job hard timeout. A process that outlives its lease is outside this guarantee. Scheduler mutexes protect dispatch and cannot alone establish completed-worker ordering.
+
+Controlled local checks exercise contention retries, terminal exceptions, deadline expiry and successor-owner protection using a deterministic local transport/cache. They do not certify actual Redis or fleet concurrency, deployed worker liveness, effective configuration or recovery latency. Verify those operating conditions on the approved target before relying on the execution boundary.

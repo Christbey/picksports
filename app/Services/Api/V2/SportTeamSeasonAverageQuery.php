@@ -3,106 +3,80 @@
 namespace App\Services\Api\V2;
 
 use App\Services\TeamStats\BasketballTeamSeasonAveragesService;
+use App\Services\TeamStats\CompletedTeamStatScope;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\DB;
 
 class SportTeamSeasonAverageQuery
 {
-    /**
-     * @return array<int, mixed>
-     */
-    public function allAverages(SportContext $context, BasketballTeamSeasonAveragesService $basketballAverages): array
-    {
-        $teamStatModel = $this->teamStatModel($context);
+    private const MLB_FIELDS = ['runs' => 'runs_per_game', 'hits' => 'hits_per_game', 'home_runs' => 'home_runs_per_game',
+        'rbis' => 'rbis_per_game', 'walks' => 'walks_per_game', 'strikeouts' => 'strikeouts_per_game',
+        'stolen_bases' => 'stolen_bases_per_game', 'batting_average' => 'batting_average', 'doubles' => 'doubles_per_game',
+        'triples' => 'triples_per_game', 'errors' => 'errors_per_game', 'earned_runs' => 'earned_runs_per_game', 'era' => 'era'];
 
-        if ($context->slug === 'mlb') {
-            return $this->mlbAllAverages($teamStatModel);
+    public function allAverages(SportContext $context, BasketballTeamSeasonAveragesService $averages, array $filters = []): array
+    {
+        return $this->allWithScope($context, $averages, $filters)['data'];
+    }
+
+    public function teamAverages(SportContext $context, BasketballTeamSeasonAveragesService $averages, int $teamId, array $filters = []): ?array
+    {
+        return $this->teamWithScope($context, $averages, $teamId, $filters)['data'];
+    }
+
+    public function allWithScope(SportContext $context, BasketballTeamSeasonAveragesService $averages, array $filters = []): array
+    {
+        return $this->aggregate($context, $averages, $filters);
+    }
+
+    public function teamWithScope(SportContext $context, BasketballTeamSeasonAveragesService $averages, int $teamId, array $filters = []): array
+    {
+        $result = $this->aggregate($context, $averages, $filters, $teamId);
+        $result['data'] = $result['data'][0] ?? null;
+
+        return $result;
+    }
+
+    private function aggregate(SportContext $context, BasketballTeamSeasonAveragesService $averages, array $filters, ?int $teamId = null): array
+    {
+        $model = $this->teamStatModel($context);
+        if ($context->slug !== 'mlb') {
+            $result = $averages->aggregate($model, $filters, $teamId, $context->slug === 'nba' && $teamId !== null);
+            $result['data'] = $result['data']->all();
+
+            return $result;
         }
-
-        return $basketballAverages->allTeams($teamStatModel)->values()->all();
-    }
-
-    /**
-     * @return array<string, mixed>|object|null
-     */
-    public function teamAverages(
-        SportContext $context,
-        BasketballTeamSeasonAveragesService $basketballAverages,
-        int $teamId,
-    ): array|object|null {
-        $teamStatModel = $this->teamStatModel($context);
-
-        if ($context->slug === 'mlb') {
-            return $this->mlbTeamAverages($teamId);
+        $scope = app(CompletedTeamStatScope::class)->resolve($model, $filters, $teamId);
+        $table = $scope['table'];
+        $grammar = $scope['query']->getQuery()->getGrammar();
+        $select = [$grammar->wrap("{$table}.team_id").' as team_id', 'COUNT(*) as games_played'];
+        foreach (self::MLB_FIELDS as $column => $alias) {
+            $select[] = 'AVG('.$grammar->wrap("{$table}.{$column}").") as {$alias}";
+            $select[] = 'COUNT('.$grammar->wrap("{$table}.{$column}").") as samples_{$alias}";
         }
+        $rows = $scope['query']->selectRaw(implode(', ', $select))->groupBy("{$table}.team_id")->orderBy("{$table}.team_id")->get();
+        $data = $rows->map(function (object $row) use ($scope): array {
+            $result = ['team_id' => (int) $row->team_id, 'games_played' => (int) $row->games_played,
+                'season' => $scope['metadata']['season'], 'season_type' => $scope['metadata']['season_type'], 'sample_sizes' => []];
+            foreach (self::MLB_FIELDS as $alias) {
+                $value = $row->{$alias};
+                $result[$alias] = is_numeric($value) && is_finite((float) $value) ? (float) $value : null;
+                $result['sample_sizes'][$alias] = (int) $row->{'samples_'.$alias};
+            }
 
-        return $basketballAverages->forTeam(
-            $teamStatModel,
-            $teamId,
-            includeTeamId: true,
-            includeFouls: $context->slug === 'nba',
-        );
+            return $result;
+        })->all();
+
+        return ['data' => $data, 'scope' => $scope['metadata']];
     }
 
-    /**
-     * @param  class-string<Model>  $teamStatModel
-     * @return array<int, object>
-     */
-    public function mlbAllAverages(string $teamStatModel): array
-    {
-        $table = (new $teamStatModel)->getTable();
-
-        return DB::table($table)
-            ->join('mlb_games', "{$table}.game_id", '=', 'mlb_games.id')
-            ->where('mlb_games.season', (int) date('Y'))
-            ->where('mlb_games.status', 'STATUS_FINAL')
-            ->groupBy("{$table}.team_id")
-            ->selectRaw($this->mlbSelect("{$table}.team_id"))
-            ->get()
-            ->all();
-    }
-
-    public function mlbTeamAverages(int $teamId): ?object
-    {
-        return DB::table('mlb_team_stats')
-            ->join('mlb_games', 'mlb_team_stats.game_id', '=', 'mlb_games.id')
-            ->where('mlb_team_stats.team_id', $teamId)
-            ->where('mlb_games.season', (int) date('Y'))
-            ->where('mlb_games.status', 'STATUS_FINAL')
-            ->selectRaw($this->mlbSelect('mlb_team_stats.team_id'))
-            ->first();
-    }
-
-    public function mlbSelect(string $teamIdExpression): string
-    {
-        return "{$teamIdExpression} as team_id,
-            COUNT(*) as games_played,
-            AVG(runs) as runs_per_game,
-            AVG(hits) as hits_per_game,
-            AVG(home_runs) as home_runs_per_game,
-            AVG(rbis) as rbis_per_game,
-            AVG(walks) as walks_per_game,
-            AVG(strikeouts) as strikeouts_per_game,
-            AVG(stolen_bases) as stolen_bases_per_game,
-            AVG(batting_average) as batting_average,
-            AVG(doubles) as doubles_per_game,
-            AVG(triples) as triples_per_game,
-            AVG(errors) as errors_per_game,
-            AVG(earned_runs) as earned_runs_per_game,
-            AVG(era) as era";
-    }
-
-    /**
-     * @return class-string<Model>
-     */
+    /** @return class-string<Model> */
     public function teamStatModel(SportContext $context): string
     {
-        $teamStatModel = $context->models['team_stat'] ?? null;
-
-        if (! is_string($teamStatModel) || ! is_subclass_of($teamStatModel, Model::class)) {
+        $model = $context->models['team_stat'] ?? null;
+        if (! is_string($model) || ! is_subclass_of($model, Model::class)) {
             abort(404, "Team stat season averages are not available for {$context->slug}.");
         }
 
-        return $teamStatModel;
+        return $model;
     }
 }

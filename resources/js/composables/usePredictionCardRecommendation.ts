@@ -59,9 +59,10 @@ export function usePredictionCardRecommendation(
     });
 
     function preGameTeamLabel(): string {
-        return preGameWinProbability() >= 0.5
-            ? homeTeamLabel()
-            : awayTeamLabel();
+        const probability = preGameWinProbability();
+        if (probability === null) return 'Model winner unavailable';
+        if (probability === 0.5) return 'Even matchup';
+        return probability > 0.5 ? homeTeamLabel() : awayTeamLabel();
     }
 
     function asRecord(value: unknown): Record<string, unknown> {
@@ -436,7 +437,10 @@ export function usePredictionCardRecommendation(
     }
 
     function dashboardPrimaryPickLabel(): string {
-        return `Moneyline pick: ${preGameTeamLabel()}`;
+        const label = preGameTeamLabel();
+        return label === 'Model winner unavailable' || label === 'Even matchup'
+            ? label
+            : `Moneyline pick: ${label}`;
     }
 
     function dashboardSignalLabel(): string | null {

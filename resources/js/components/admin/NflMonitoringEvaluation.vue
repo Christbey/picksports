@@ -80,7 +80,8 @@ const {
                     {{ formatSigned(summary.brier_delta, 4) }}
                 </div>
                 <div class="mt-1 text-xs text-muted-foreground">
-                    {{ summary.calibration_games }} games
+                    {{ summary.calibration_games }} home-win probability
+                    observations
                 </div>
             </div>
         </section>

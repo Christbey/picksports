@@ -25,7 +25,7 @@ type Prop = {
     player_id: number;
     player: string;
     market: string;
-    pregame_line: number;
+    pregame_line: number | null;
     pregame_mean: number | null;
     actual: number | null;
     projected: number | null;

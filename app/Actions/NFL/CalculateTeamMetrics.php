@@ -112,7 +112,7 @@ class CalculateTeamMetrics
 
         $seasonSos = $strengthOfSchedule;
         $futureSos = $this->calculateFutureStrengthOfSchedule($team, $season);
-        $sosBasic = $this->calculateBasicStrengthOfSchedule($gameContexts, $season);
+        $sosBasic = $this->calculateBasicStrengthOfSchedule($gameContexts, $season, $resolvedSeasonType);
         $inDivSos = $this->averageFromContexts($gameContexts->where('is_division_game', true), 'opponent_elo');
         $nonDivSos = $this->averageFromContexts($gameContexts->where('is_division_game', false), 'opponent_elo');
 
@@ -487,7 +487,7 @@ class CalculateTeamMetrics
         return $opponentElos->avg();
     }
 
-    protected function calculateBasicStrengthOfSchedule(Collection $gameContexts, int $season): ?float
+    protected function calculateBasicStrengthOfSchedule(Collection $gameContexts, int $season, int|string $seasonType): ?float
     {
         $opponentIds = $gameContexts
             ->pluck('opponent_id')
@@ -500,7 +500,7 @@ class CalculateTeamMetrics
             return null;
         }
 
-        $winPctByTeam = $this->winPctForTeams($opponentIds->all(), $season);
+        $winPctByTeam = $this->winPctForTeams($opponentIds->all(), $season, $seasonType);
 
         if ($winPctByTeam === []) {
             return null;
@@ -522,12 +522,15 @@ class CalculateTeamMetrics
      * @param  array<int,int>  $teamIds
      * @return array<int,float>
      */
-    protected function winPctForTeams(array $teamIds, int $season): array
+    protected function winPctForTeams(array $teamIds, int $season, int|string $seasonType): array
     {
         $rows = Game::query()
             ->select(['home_team_id', 'away_team_id', 'home_score', 'away_score'])
             ->where('season', $season)
             ->where('status', config('nfl.statuses.final'))
+            ->whereIn('season_type', $this->resolveSeasonTypeCandidates('nfl', $seasonType))
+            ->whereNotNull('home_score')
+            ->whereNotNull('away_score')
             ->where(function ($query) use ($teamIds) {
                 $query->whereIn('home_team_id', $teamIds)
                     ->orWhereIn('away_team_id', $teamIds);

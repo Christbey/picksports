@@ -3,6 +3,7 @@
 namespace App\Http\Resources\NBA;
 
 use App\Services\Api\V2\PreparedInjuryImpacts;
+use App\Support\Injuries\StoredInjuryClock;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -32,7 +33,7 @@ class PlayerInjuryResource extends JsonResource
             'impact_multiplier' => $impact['multiplier'],
             'injury_date' => $this->injury_date?->toDateString(),
             'return_date' => $this->return_date?->toDateString(),
-            'source_updated_at' => $this->source_updated_at?->toIso8601String(),
+            ...StoredInjuryClock::fields($this->resource),
             'is_active' => (bool) $this->is_active,
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

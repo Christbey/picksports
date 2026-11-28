@@ -5,6 +5,7 @@ namespace App\Http\Resources\Api\V2;
 use App\Models\MLB\PickCandidate;
 use App\Services\MLB\MlbPeriodModelContextService;
 use App\Services\MLB\Picks\MlbPickExplanationService;
+use App\Support\MLB\MlbGameStart;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -52,6 +53,7 @@ class MlbPickCandidateResource extends JsonResource
                 'id' => $candidate->game->id,
                 'short_name' => $candidate->game->short_name,
                 'game_date' => $candidate->game->game_date?->toISOString(),
+                'starts_at' => MlbGameStart::for($candidate->game)?->toIso8601String(),
                 'status' => $candidate->game->status,
                 'home_team' => $candidate->game->homeTeam?->abbreviation,
                 'away_team' => $candidate->game->awayTeam?->abbreviation,

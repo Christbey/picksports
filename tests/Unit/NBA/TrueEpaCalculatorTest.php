@@ -36,5 +36,7 @@ it('derives distinct expected points states for college-style 20-minute clocks',
     expect($results[1]['eligible'])->toBeTrue()
         ->and($results[2]['eligible'])->toBeTrue()
         ->and($results[1]['ep_before'])->toBe(2.0)
-        ->and($results[2]['ep_before'])->toBe(0.0);
+        ->and($results[1]['epa'])->toBeNull()
+        ->and($results[2]['ep_before'])->toBeNull()
+        ->and($results[2]['epa'])->toBeNull();
 });

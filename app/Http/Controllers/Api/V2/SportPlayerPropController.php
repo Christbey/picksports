@@ -44,6 +44,8 @@ class SportPlayerPropController extends Controller
             SportsViewCache::SEGMENT_PLAYER_PROPS_PAGE,
             $cache->contextHash([
                 'sport' => $context->slug,
+                'read_policy' => 'complete_line_and_current_clock_v1',
+                'nfl_published_model_version' => $context->slug === 'nfl' ? PlayerPropAnalyzer::nflModelVersion() : null,
                 'date' => $validated['date'] ?? null,
                 'game' => $gameFilter,
                 'market' => $marketFilter,
@@ -136,7 +138,7 @@ class SportPlayerPropController extends Controller
         SportPlayerPropQuery $props,
     ): JsonResponse {
         $context = $sports->resolve($sport);
-        $filters = $request->validatedFilters() + ['player_id' => (int) $player];
+        $filters = array_replace($request->validatedFilters(), ['player_id' => (int) $player]);
         $paginator = $props->paginate($context, $filters, $request->user());
 
         $paginator->setCollection(
@@ -162,7 +164,7 @@ class SportPlayerPropController extends Controller
         SportPlayerPropQuery $props,
     ): JsonResponse {
         $context = $sports->resolve($sport);
-        $filters = $request->validatedFilters() + ['game_id' => (int) $game];
+        $filters = array_replace($request->validatedFilters(), ['game_id' => (int) $game]);
         $paginator = $props->paginate($context, $filters, $request->user());
 
         $paginator->setCollection(

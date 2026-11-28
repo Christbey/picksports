@@ -17,13 +17,17 @@ class Play extends Model
     protected $fillable = [
         'game_id',
         'possession_team_id',
-        'espn_id',
+        'espn_play_id',
         'sequence_number',
         'period',
         'clock',
         'play_type',
         'play_text',
-        'scoring_play',
+        'shooting_play',
+        'made_shot',
+        'assist',
+        'is_turnover',
+        'is_foul',
         'score_value',
         'home_score',
         'away_score',
@@ -32,7 +36,11 @@ class Play extends Model
     protected function casts(): array
     {
         return [
-            'scoring_play' => 'boolean',
+            'shooting_play' => 'boolean',
+            'made_shot' => 'boolean',
+            'assist' => 'boolean',
+            'is_turnover' => 'boolean',
+            'is_foul' => 'boolean',
         ];
     }
 

@@ -7,7 +7,7 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { usePublicSportContext } from '@/composables/usePublicSport';
-const { formatGameDate, injuries } = usePublicSportContext();
+const { injuries } = usePublicSportContext();
 </script>
 <template>
     <Card
@@ -15,14 +15,15 @@ const { formatGameDate, injuries } = usePublicSportContext();
     >
         <CardHeader>
             <CardTitle class="flex items-center justify-between gap-3">
-                <span>Recent Injury Updates</span>
+                <span>Recently Stored Injuries</span>
                 <span
                     class="rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-xs font-semibold tracking-[0.18em] text-sky-200 uppercase"
-                    >Fresh Feed</span
+                    >Stored Records</span
                 >
             </CardTitle>
             <CardDescription class="text-slate-400"
-                >Newest active injury reports and refreshes.</CardDescription
+                >Active stored records by local update time; provider
+                observation freshness is unavailable.</CardDescription
             >
         </CardHeader>
         <CardContent class="space-y-3">
@@ -50,11 +51,19 @@ const { formatGameDate, injuries } = usePublicSportContext();
                         </div>
                     </div>
                     <div class="text-xs text-slate-400">
-                        {{
-                            formatGameDate(
-                                injury.source_updated_at || injury.updated_at,
-                            )
-                        }}
+                        <div>
+                            Last stored:
+                            {{
+                                injury.last_stored_at ??
+                                injury.updated_at ??
+                                'Unavailable'
+                            }}
+                        </div>
+                        <div>Source observation: Unverified</div>
+                        <div v-if="injury.source_updated_at_raw">
+                            Stored source text:
+                            {{ injury.source_updated_at_raw }}
+                        </div>
                     </div>
                 </div>
                 <div v-if="injury.detail" class="mt-3 text-sm text-slate-300">

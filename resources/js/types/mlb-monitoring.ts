@@ -1,3 +1,4 @@
+import type { TrainingOperations } from '@/types/training-operations';
 export type ArtifactOption = {
     id: string;
     model_version: string;
@@ -133,6 +134,7 @@ export type InferenceFailure = {
     error: string;
 };
 export type MlbMonitoringProps = {
+    training_operations?: TrainingOperations;
     artifacts: ArtifactOption[];
     artifact: Artifact | null;
     lineage: {

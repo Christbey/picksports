@@ -11,6 +11,7 @@ test('sports assets sync command mirrors player headshots under sport and team d
     config()->set('sports_assets.disk', 'public');
     config()->set('sports_assets.directory', 'sports');
     config()->set('sports_assets.mirror', true);
+    config()->set('sports_assets.allowed_hosts', ['example.com']);
 
     Storage::fake('public');
 
@@ -29,7 +30,7 @@ test('sports assets sync command mirrors player headshots under sport and team d
     ]);
 
     Http::fake([
-        'https://example.com/player-23.png' => Http::response('fake-headshot', 200, ['Content-Type' => 'image/png']),
+        'https://example.com/player-23.png' => Http::response(base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlAAAAABJRU5ErkJggg=='), 200, ['Content-Type' => 'image/png']),
     ]);
 
     artisan('sports-assets:sync nba --type=players')->assertSuccessful();

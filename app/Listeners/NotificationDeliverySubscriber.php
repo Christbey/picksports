@@ -49,7 +49,7 @@ class NotificationDeliverySubscriber
 
     public function failed(NotificationFailed $event): void
     {
-        $this->deliveries->markFailed($this->record($event), 'transport_failed');
+        $this->deliveries->markFailed($this->record($event), 'transport_outcome_unknown');
     }
 
     private function record(NotificationSending|NotificationSent|NotificationFailed $event): NotificationDelivery

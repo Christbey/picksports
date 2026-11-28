@@ -37,6 +37,7 @@ const {
     statRankings,
     metricRankings,
     metricRankingTotalTeams,
+    metricRankingSamples,
     rosterPlayers,
     depthChart,
     trendsData,
@@ -250,6 +251,9 @@ const sportsTeamSchema = computed(() =>
                                     :tiles="config.metricTiles"
                                     :metrics="teamMetrics"
                                     :metric-rankings="metricRankings"
+                                    :ranking-sample-counts="
+                                        metricRankingSamples
+                                    "
                                     :ranking-total-teams="
                                         metricRankingTotalTeams
                                     "
@@ -349,7 +353,7 @@ const sportsTeamSchema = computed(() =>
                                 />
 
                                 <TeamGamesCard
-                                    title="Upcoming Schedule"
+                                    title="Scheduled and live games"
                                     :games="upcomingGames"
                                     :team-id="teamId"
                                     :game-link="config.gameLink"
@@ -367,6 +371,7 @@ const sportsTeamSchema = computed(() =>
                         :tiles="config.metricTiles"
                         :metrics="teamMetrics"
                         :metric-rankings="metricRankings"
+                        :ranking-sample-counts="metricRankingSamples"
                         :ranking-total-teams="metricRankingTotalTeams"
                         :grid-class="config.metricsGridCols || 'md:grid-cols-5'"
                     />
@@ -406,7 +411,7 @@ const sportsTeamSchema = computed(() =>
                         />
 
                         <TeamGamesCard
-                            title="Upcoming Games"
+                            title="Scheduled and live games"
                             :games="displayUpcomingGames"
                             :team-id="teamId"
                             :game-link="config.gameLink"

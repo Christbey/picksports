@@ -6,6 +6,7 @@ use App\Models\SportsAiPredictionAnalysis;
 use App\Models\ValidationFinding;
 use App\Models\ValidationRun;
 use App\Services\Sports\SeasonStage\SeasonStageService;
+use App\Services\Validation\ValidationRunRecorder;
 use App\Support\SportCatalog;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
@@ -132,8 +133,13 @@ class OperationsAiReviewCommand extends Command
             fn (ValidationFinding $finding): bool => $finding->check_type === 'validation_live_prediction_freshness'
                 && in_array($finding->status, ['failing', 'warning'], true)
         );
+        $checksCompleted = app(ValidationRunRecorder::class)->checksCompleted($run);
+        if (! $checksCompleted) {
+            array_unshift($requiredActions, "Complete healthcheck:validate-data --sport={$sport} before relying on publishing readiness.");
+        }
 
         $status = match (true) {
+            ! $checksCompleted => 'blocked',
             $failing->isNotEmpty() => 'blocked',
             $warnings->isNotEmpty() && ! $lowVolumeExpected => 'degraded',
             $warnings->isNotEmpty() => 'watch',
@@ -146,10 +152,13 @@ class OperationsAiReviewCommand extends Command
             'sport' => $sport,
             'status' => $status,
             'safe_to_publish' => $status !== 'blocked',
-            'trust_score' => (int) data_get($aiSummary, 'trust_score', $this->fallbackTrustScore($failing->count(), $warnings->count(), $lowVolumeExpected)),
+            'trust_score' => $checksCompleted
+                ? (int) data_get($aiSummary, 'trust_score', $this->fallbackTrustScore($failing->count(), $warnings->count(), $lowVolumeExpected))
+                : 0,
             'latest_validation' => [
                 'run_id' => $run->id,
                 'status' => $run->status,
+                'checks_completed' => $checksCompleted,
                 'completed_at' => $run->completed_at?->toIso8601String(),
                 'summary' => $run->summary ?? [],
                 'headline' => data_get($aiSummary, 'headline'),
@@ -170,7 +179,7 @@ class OperationsAiReviewCommand extends Command
             'recommended_actions' => $requiredActions === []
                 ? ['No operational action required. Continue scheduled sentinel monitoring.']
                 : $requiredActions,
-            'operator_notes' => $this->operatorNotes($status, $stage, $lowVolumeExpected, $hasLiveFreshnessFinding, $analyses),
+            'operator_notes' => $this->operatorNotes($status, $stage, $lowVolumeExpected, $hasLiveFreshnessFinding, $analyses, $checksCompleted),
             'generated_by' => data_get($aiSummary, 'generated_by', 'operations-ai-review-v1'),
         ];
     }
@@ -268,7 +277,7 @@ class OperationsAiReviewCommand extends Command
      * @param  Collection<int, SportsAiPredictionAnalysis>  $analyses
      * @return array<int, string>
      */
-    private function operatorNotes(string $status, array $stage, bool $lowVolumeExpected, bool $hasLiveFreshnessFinding, Collection $analyses): array
+    private function operatorNotes(string $status, array $stage, bool $lowVolumeExpected, bool $hasLiveFreshnessFinding, Collection $analyses, bool $checksCompleted): array
     {
         $notes = [
             'Stage context: '.strtoupper((string) data_get($stage, 'sport')).' is in '.(string) data_get($stage, 'stage').' / '.(string) data_get($stage, 'stage_group').'.',
@@ -286,7 +295,9 @@ class OperationsAiReviewCommand extends Command
             $notes[] = 'Live prediction freshness findings should be treated as scoreboard heartbeat issues, not model-generation issues.';
         }
 
-        if ($status === 'clear') {
+        if (! $checksCompleted) {
+            $notes[] = 'Validation checks did not complete successfully; publishing readiness is unavailable until a completed check run is available.';
+        } elseif ($status === 'clear') {
             $notes[] = 'Validation and AI guardrail context do not require blocking user-facing outputs.';
         } elseif ($status === 'blocked') {
             $notes[] = 'One or more failing validation findings should block official publishing until repaired.';

@@ -10,6 +10,7 @@ export interface MetricTile {
 }
 
 export interface StatTile {
+    sampleKey?: string;
     label: string;
     value: (stats: any) => string;
     class?: (stats: any) => string;

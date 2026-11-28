@@ -210,6 +210,8 @@ export function usePredictionCardGame(props: PredictionCardProps) {
     }
 
     function gameDateTimeLabel(): string | null {
+        if (dashboardType.value && !dashboardType.value.game_time)
+            return 'Game time unavailable';
         if (dashboardType.value?.game_time) {
             const date = new Date(dashboardType.value.game_time);
 
@@ -226,24 +228,19 @@ export function usePredictionCardGame(props: PredictionCardProps) {
         }
 
         const game = predictionType.value?.game;
-        if (!game?.game_date) {
-            return null;
+        if (game?.starts_at && /(?:Z|[+-]\d{2}:\d{2})$/i.test(game.starts_at)) {
+            const start = new Date(game.starts_at);
+            if (Number.isFinite(start.getTime()))
+                return start.toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    timeZoneName: 'short',
+                });
         }
-
-        const rawDateTime = game.game_time
-            ? `${game.game_date}T${game.game_time}`
-            : `${game.game_date}T00:00:00`;
-        const date = new Date(rawDateTime);
-        if (Number.isNaN(date.getTime())) {
-            return game.game_time || game.game_date;
-        }
-
-        return date.toLocaleString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            hour: game.game_time ? 'numeric' : undefined,
-            minute: game.game_time ? '2-digit' : undefined,
-        });
+        // Legacy wall clocks (especially MLB venue-local history) cannot prove an instant.
+        return 'Game time unavailable';
     }
 
     function predictionFreshnessLabel(): string | null {
@@ -287,8 +284,14 @@ export function usePredictionCardGame(props: PredictionCardProps) {
         return dashboardChipClass();
     }
 
-    function preGameWinProbability(): number {
-        return props.prediction.win_probability ?? 0;
+    function preGameWinProbability(): number | null {
+        const value = props.prediction.win_probability;
+        return typeof value === 'number' &&
+            Number.isFinite(value) &&
+            value >= 0 &&
+            value <= 1
+            ? value
+            : null;
     }
 
     function liveWinProbability(): number | null {
@@ -477,9 +480,13 @@ export function usePredictionCardGame(props: PredictionCardProps) {
         const status = liveForecastStatus();
         if (status) return status;
         const live = normalizedLiveState.value.livePredictedTotal;
-        const pregame = normalizedLiveState.value.preGamePredictedTotal;
+        const pregame = props.prediction.predicted_total;
 
-        if (live === null || !Number.isFinite(pregame)) {
+        if (
+            live === null ||
+            typeof pregame !== 'number' ||
+            !Number.isFinite(pregame)
+        ) {
             return 'Updated total pending';
         }
 

@@ -29,6 +29,9 @@ class MlbTotalCandidateBuilder
         $correctedTotal = (float) $prediction->predictedTotal - (float) config('mlb.picks.total_bias_correction', 1.0);
         $weather = GameWeather::query()->where('game_id', $game->id)->latest('observed_at')->first();
         $rows = [];
+        $samePredictionGame = $prediction->isCanonical()
+            ? ($game->sport_event_id !== null && (int) $prediction->source->getAttribute('sport_event_id') === (int) $game->sport_event_id)
+            : ((int) $prediction->source->getAttribute('game_id') > 0 && (int) $prediction->source->getAttribute('game_id') === (int) $game->id);
 
         foreach (['over', 'under'] as $side) {
             $outcome = $outcomes[$side];
@@ -44,10 +47,16 @@ class MlbTotalCandidateBuilder
             $riskFlags = ['total_model_over_bias'];
 
             if ($weather) {
-                $reasonCodes[] = $side === 'over' ? 'weather_supports_over' : 'weather_supports_under';
-                $reasonCodes[] = 'park_support';
+                $reasonCodes[] = 'weather_context_available';
             } else {
                 $riskFlags[] = 'weather_missing';
+            }
+            if ($samePredictionGame && data_get($prediction->modelMetadata, 'actual_weather.applied') === true
+                && $this->supportsSide(data_get($prediction->modelMetadata, 'actual_weather.total_adjustment'), $side)) {
+                $reasonCodes[] = $side === 'over' ? 'weather_supports_over' : 'weather_supports_under';
+            }
+            if ($samePredictionGame && $this->supportsSide(data_get($prediction->modelMetadata, 'park_context.total_adjustment'), $side)) {
+                $reasonCodes[] = 'park_support';
             }
             if ($this->markets->stale($game)) {
                 $riskFlags[] = 'stale_price';
@@ -88,5 +97,14 @@ class MlbTotalCandidateBuilder
         }
 
         return $rows;
+    }
+
+    private function supportsSide(mixed $adjustment, string $side): bool
+    {
+        if (! is_numeric($adjustment) || ! is_finite((float) $adjustment)) {
+            return false;
+        }
+
+        return $side === 'over' ? (float) $adjustment > 0 : (float) $adjustment < 0;
     }
 }

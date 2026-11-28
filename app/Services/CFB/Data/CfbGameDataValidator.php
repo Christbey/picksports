@@ -3,13 +3,19 @@
 namespace App\Services\CFB\Data;
 
 use App\Models\CFB\Game;
-use App\Models\CFB\GameDataCheck;
 use App\Models\CFB\Play;
+use App\Services\ESPN\FootballPlayerStatParser;
+use App\Services\ESPN\FootballTeamStatParser;
+use App\Support\ESPN\ObservedStatValue;
+use App\Support\ESPN\PlayIdentity;
+use App\Support\ESPN\PlayTeamReferences;
+use App\Support\ScoreObservation;
+use DomainException;
 
 /** Validates source completeness independently of the existence of imported rows. */
 class CfbGameDataValidator
 {
-    public const VERSION = '2';
+    public const VERSION = '3';
 
     public const RECONCILED_PLAYS_VERSION = '3-ledger';
 
@@ -33,9 +39,72 @@ class CfbGameDataValidator
                 }
             }
         }
+        $observed = [];
+        $owners = [];
+        foreach ($players as $team) {
+            $categoryNames = [];
+            foreach ($team['statistics'] ?? [] as $category) {
+                $categoryName = strtolower(trim((string) ($category['name'] ?? '')));
+                if ($categoryName === '' || isset($categoryNames[$categoryName])) {
+                    $errors[] = 'duplicate_or_missing_player_category';
+                }
+                $categoryNames[$categoryName] = true;
+                $athleteIds = [];
+                if (! is_array($category)) {
+                    $errors[] = 'invalid_player_category';
+
+                    continue;
+                }
+                if (! is_array($category['athletes'] ?? null)) {
+                    if (in_array(strtolower((string) ($category['name'] ?? '')), ['passing', 'rushing', 'receiving'], true)) {
+                        $errors[] = 'invalid_player_category';
+                    }
+
+                    continue;
+                }
+                foreach ($category['athletes'] as $athlete) {
+                    try {
+                        if (! is_array($category['labels'] ?? null) || ! is_array($athlete['stats'] ?? null)) {
+                            throw new DomainException('Missing player source labels.');
+                        }
+                        $updates = app(FootballPlayerStatParser::class)->parse((string) ($category['name'] ?? ''), $category['labels'], $athlete['stats']);
+                        $athleteId = (string) data_get($athlete, 'athlete.id');
+                        if (isset($athleteIds[$athleteId])) {
+                            throw new DomainException('Duplicate category athlete coverage.');
+                        }
+                        $athleteIds[$athleteId] = true;
+                        $teamId = (string) data_get($team, 'team.id');
+                        if ((int) $athleteId > 0 && isset($owners[$athleteId]) && $owners[$athleteId] !== $teamId) {
+                            throw new DomainException('Cross-team athlete identity.');
+                        }
+                        if ((int) $athleteId > 0) {
+                            $owners[$athleteId] = $teamId;
+                        }
+                        $key = $teamId.':'.$athleteId;
+                        foreach ($updates as $field => $value) {
+                            if (isset($observed[$key][$field]) && $observed[$key][$field] !== $value) {
+                                throw new DomainException('Conflicting athlete observations.');
+                            }
+                            $observed[$key][$field] = $value;
+                        }
+                        $id = (string) data_get($athlete, 'athlete.id');
+                        if (! preg_match('/\A-?[0-9]+\z/', $id) || ! (data_get($athlete, 'athlete.displayName') ?? data_get($athlete, 'athlete.fullName'))) {
+                            throw new DomainException('Missing source athlete identity.');
+                        }
+                    } catch (DomainException) {
+                        $errors[] = 'invalid_labeled_player_observation';
+                    }
+                }
+            }
+        }
         $teamBuckets = [];
         foreach ($teams as $team) {
             $id = (string) data_get($team, 'team.id');
+            try {
+                app(FootballTeamStatParser::class)->parse($team['statistics'] ?? []);
+            } catch (DomainException) {
+                $errors[] = $id.':invalid_team_observation';
+            }
             $stats = collect($team['statistics'] ?? [])->pluck('displayValue', 'name');
             foreach (['totalYards', 'netPassingYards', 'rushingYards'] as $key) {
                 if (! is_numeric($stats[$key] ?? null)) {
@@ -63,13 +132,26 @@ class CfbGameDataValidator
 
                         continue;
                     }
-                    $mapped = array_combine($labels, $athlete['stats']);
+                    try {
+                        $mapped = ObservedStatValue::labeled($labels, $athlete['stats']);
+                    } catch (DomainException) {
+                        $errors[] = $id.':invalid_player_labels';
+
+                        continue;
+                    }
                     if (! is_numeric($mapped['YDS'] ?? null)) {
                         $errors[] = $id.':missing_player_yards';
 
                         continue;
                     }
-                    $sum += (int) $mapped['YDS'];
+                    try {
+                        $yards = ObservedStatValue::integer($mapped['YDS'], true);
+                    } catch (DomainException) {
+                        $errors[] = $id.':invalid_player_yards';
+
+                        continue;
+                    }
+                    $sum += $yards;
                     $athleteId = (string) data_get($athlete, 'athlete.id');
                     $nameValue = data_get($athlete, 'athlete.displayName') ?? data_get($athlete, 'athlete.fullName');
                     if (! preg_match('/^-?\d+$/', $athleteId) || ! $nameValue) {
@@ -96,7 +178,38 @@ class CfbGameDataValidator
         if (! $items) {
             $errors[] = 'empty_plays';
         }
-        $ids = array_map(fn ($p) => (string) ($p['id'] ?? ''), $items);
+        $ownedTeams = [(string) $game->homeTeam?->espn_id, (string) $game->awayTeam?->espn_id];
+        foreach ($items as $play) {
+            if (! is_array($play)) {
+                $errors[] = 'invalid_play_shape';
+
+                continue;
+            }
+            try {
+                foreach (PlayTeamReferences::fromPlay($play) as $id) {
+                    if (! in_array($id, $ownedTeams, true)) {
+                        throw new \RuntimeException('Play team outside matchup.');
+                    }
+                }
+            } catch (\RuntimeException) {
+                $errors[] = 'invalid_play_team_reference';
+            }
+            try {
+                ScoreObservation::from($play['homeScore'] ?? null);
+                ScoreObservation::from($play['awayScore'] ?? null);
+            } catch (\InvalidArgumentException) {
+                $errors[] = 'invalid_score_observation';
+            }
+        }
+        $ids = [];
+        foreach ($items as $play) {
+            try {
+                $ids[] = PlayIdentity::from(is_array($play) ? ($play['id'] ?? null) : null) ?? '';
+            } catch (\InvalidArgumentException) {
+                $errors[] = 'invalid_play_identity';
+                $ids[] = '';
+            }
+        }
         if (in_array('', $ids, true) || count(array_unique($ids)) !== count($ids)) {
             $errors[] = 'invalid_or_duplicate_play_ids';
         }
@@ -115,11 +228,10 @@ class CfbGameDataValidator
             }
         }
 
-        $evidence = ['plays' => count($items), 'declared_count' => $payload['count'] ?? null];
+        $evidence = ['plays' => count($items), 'declared_count' => $payload['count'] ?? null, 'score_observation_policy' => 'nullable-whole-score-v1'];
         if ($errors === ['final_score_mismatch']) {
             try {
-                $source = GameDataCheck::where('game_id', $game->id)->where('component', 'boxscore')
-                    ->where('state', 'complete')->whereNotNull('accepted_at')->latest('accepted_at')->latest('id')->first();
+                $source = app(CfbDataReadiness::class)->acceptedCheck($game, 'boxscore');
                 if ($source) {
                     $plays = collect($items)->map(fn ($play) => new Play([
                         'espn_play_id' => (string) $play['id'], 'home_score' => $play['homeScore'] ?? null,

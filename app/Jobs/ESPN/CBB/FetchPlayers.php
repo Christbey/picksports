@@ -54,12 +54,17 @@ class FetchPlayers extends BulkEspnJob
             }
             Log::info("CBB: Synced {$count} players for team {$this->teamEspnId} from ESPN");
         } else {
-            // Dispatch individual jobs for each team to avoid timeouts
-            $teams = Team::all();
-            foreach ($teams as $team) {
-                FetchPlayers::dispatch($team->espn_id, $this->season, $this->includePrior);
-            }
-            Log::info("CBB: Dispatched player sync jobs for {$teams->count()} teams");
+            $dispatched = 0;
+            Team::query()->select(['id', 'espn_id'])->chunkById(100, function ($teams) use (&$dispatched): void {
+                foreach ($teams as $team) {
+                    if (preg_match('/\A[1-9][0-9]*\z/', (string) $team->espn_id) !== 1) {
+                        continue;
+                    }
+                    self::dispatch((string) $team->espn_id, $this->season, $this->includePrior)->onConnection($this->connection)->onQueue($this->queue ?? 'sync');
+                    $dispatched++;
+                }
+            });
+            Log::info("CBB: Dispatched player sync jobs for {$dispatched} teams");
         }
     }
 }

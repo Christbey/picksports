@@ -1,3 +1,7 @@
+> Historical proposal/worklog retained on November 27, 2026. The original text below records dated proposals, implementation assertions and measurements; it is not current operating instructions, evidence of completion, or approval to change business/scientific policy. Do not run its historical commands as an operational checklist. Current references: [docs/model-lifecycle.md](model-lifecycle.md).
+>
+> Carried obligations: Correlation/enrichment acceptance criteria require per-item delivered/deferred/retired mapping; scientific improvement is not established by service existence.
+
 # MLB Correlation Research And Data Enrichment Plan
 
 ## Summary

@@ -1,3 +1,4 @@
+import { usePage } from '@inertiajs/vue3';
 import { predictionHomeMargin } from '@/lib/predictionSpread';
 import { computed, onScopeDispose, ref, watch, type Ref } from 'vue';
 import { useApiV2Client } from '@/composables/useApiV2Client';
@@ -15,6 +16,10 @@ export function usePredictionTracking(
     game: ReturnType<typeof usePredictionCardGame>,
     expanded: Ref<boolean>,
 ) {
+    const page = usePage();
+    const accountKey = computed(() =>
+        String(page.props?.auth?.user?.id ?? 'guest'),
+    );
     const trackingCache = new Map<string, TrackingSummary>();
     const api = useApiV2Client();
     let latestRequest = 0;
@@ -36,10 +41,27 @@ export function usePredictionTracking(
             predictionSport() !== null,
     );
 
+    // Clear protected state synchronously; keep ordinary card reads batched to avoid duplicate fetches.
     watch(
-        [trackingKey, () => expanded.value, () => props.compact],
-        ([key], previous) => {
-            if (key !== previous?.[0]) {
+        accountKey,
+        () => {
+            trackingCache.clear();
+            latestRequest++;
+            controller?.abort();
+            controller = null;
+            trackingSummary.value = null;
+            isLoadingTracking.value = false;
+            isSaveDialogOpen.value = false;
+            activeSaveOption.value = null;
+        },
+        { flush: 'sync' },
+    );
+
+    watch(
+        [trackingKey, () => expanded.value, () => props.compact, accountKey],
+        ([key, , , account], previous) => {
+            if (account !== previous?.[3]) trackingCache.clear();
+            if (key !== previous?.[0] || account !== previous?.[3]) {
                 latestRequest++;
                 controller?.abort();
                 controller = null;

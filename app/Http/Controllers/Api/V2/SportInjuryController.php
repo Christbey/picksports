@@ -22,8 +22,10 @@ class SportInjuryController extends Controller
         $summary = $injuries->summary($rows);
         $freshness = $injuries->freshness($context, $rows);
         $warnings = [];
-        if ($freshness['is_stale']) {
+        if ($freshness['is_stale'] === true) {
             $warnings[] = 'Injury data is stale and should not be used for a new betting decision.';
+        } elseif ($freshness['is_stale'] === null) {
+            $warnings[] = 'Provider observation freshness and complete coverage are unavailable; stored record updates do not prove a successful provider sync.';
         }
 
         return response()->json([
@@ -32,10 +34,10 @@ class SportInjuryController extends Controller
                 'version' => 'v2',
                 'sport' => $context->slug,
                 'contract' => 'sports.injuries.index',
-                'filters' => $filters,
+                'filters' => (object) $filters,
                 'total' => $summary['total'],
                 'teams' => $summary['teams'],
-                'tier' => [],
+                'tier' => (object) [],
                 'freshness' => $freshness,
                 'warnings' => $warnings,
             ],

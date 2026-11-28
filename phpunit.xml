@@ -5,11 +5,17 @@
          colors="true"
 >
     <testsuites>
+        <testsuite name="Architecture">
+            <directory>tests/Architecture</directory>
+        </testsuite>
         <testsuite name="Unit">
             <directory>tests/Unit</directory>
         </testsuite>
         <testsuite name="Feature">
             <directory>tests/Feature</directory>
+        </testsuite>
+        <testsuite name="SQLiteIntegration">
+            <directory>tests/Integration/SQLite</directory>
         </testsuite>
     </testsuites>
     <source>

@@ -32,7 +32,7 @@ it('grades only the selected historical backfill scope', function () {
         'calculation_date' => '2025-05-01',
     ]);
 
-    $firstGame = Game::factory()->create([
+    $firstGame = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2025,
         'season_type' => '2',
         'game_date' => '2025-05-02',
@@ -43,7 +43,7 @@ it('grades only the selected historical backfill scope', function () {
         'away_score' => 3,
     ]);
 
-    $secondGame = Game::factory()->create([
+    $secondGame = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2025,
         'season_type' => '2',
         'game_date' => '2025-05-03',

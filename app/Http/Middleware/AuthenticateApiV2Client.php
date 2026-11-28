@@ -9,6 +9,7 @@ use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Laravel\Passport\Token;
+use Laravel\Sanctum\PersonalAccessToken;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
@@ -45,6 +46,19 @@ class AuthenticateApiV2Client
                     status: 403,
                     code: 'insufficient_oauth_scope',
                     message: "The {$requiredScope} OAuth scope is required for this operation.",
+                );
+            }
+        }
+
+        $sanctumToken = $user->currentAccessToken();
+        if (filled($request->bearerToken()) && $sanctumToken instanceof PersonalAccessToken) {
+            $requiredAbility = $request->isMethodSafe() ? 'mobile:read' : 'mobile:write';
+            if (! $sanctumToken->can($requiredAbility)) {
+                return app(ApiV2ErrorResponse::class)->make(
+                    request: $request,
+                    status: 403,
+                    code: 'insufficient_token_scope',
+                    message: "The {$requiredAbility} token ability is required for this operation.",
                 );
             }
         }

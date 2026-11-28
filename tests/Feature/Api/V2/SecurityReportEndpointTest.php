@@ -20,6 +20,20 @@ test('browser security headers advertise only v2 reporting endpoints', function 
     expect($response->headers->get('Reporting-Endpoints'))->toBe('csp="/api/v2/security/reports/csp", integrity="/api/v2/security/reports/integrity"');
 });
 
+test('browser font policy recognizes the Instrument Sans assets referenced by Bunny Fonts', function () {
+    $response = app(AddSecurityHeaders::class)->handle(Request::create('/'), fn () => response('ok'));
+    $fontDirective = collect(explode('; ', $response->headers->get('Content-Security-Policy-Report-Only')))
+        ->sole(fn (string $directive) => str_starts_with($directive, 'font-src '));
+
+    expect(explode(' ', $fontDirective))->toBe([
+        'font-src',
+        "'self'",
+        'data:',
+        'https://fonts.bunny.net',
+        'https://cdn.jsdelivr.net/fontsource/fonts/instrument-sans@5.3.0/',
+    ]);
+});
+
 test('browser security policy reports form and frame destinations outside the Meta Pixel endpoint', function () {
     $response = app(AddSecurityHeaders::class)->handle(Request::create('/'), fn () => response('ok'));
     $directives = collect(explode('; ', $response->headers->get('Content-Security-Policy-Report-Only')))

@@ -18,12 +18,16 @@ class NflLiveSnapshotController extends Controller
         $context = $sports->resolve($sport);
         $data = DB::transaction(function () use ($context, $game, $request, $games, $calculator): array {
             $resolved = $games->find($context, $game, $request->user(), 'identity');
-            $resolved->load('prediction');
 
             return [
                 'game' => $resolved->only(['id', 'status', 'home_score', 'away_score', 'period', 'game_clock', 'home_linescores', 'away_linescores']),
                 'projection' => $calculator->preview($resolved),
-                'source_updated_at' => $resolved->updated_at?->toIso8601String(),
+                // Local mutation does not establish a provider observation.
+                'source_updated_at' => null,
+                'record_updated_at' => null,
+                'record_updated_at_raw' => is_string($resolved->getRawOriginal('updated_at')) ? $resolved->getRawOriginal('updated_at') : null,
+                'record_clock_status' => 'unverified_storage_clock',
+                'source_clock_status' => 'observation_unavailable',
                 'generated_at' => now()->toIso8601String(),
                 'provisional' => true,
                 'model_kind' => 'score_clock_heuristic',

@@ -1,23 +1,24 @@
 export interface BasketballTeamStats {
-    field_goals_made: number;
-    field_goals_attempted: number;
-    three_point_made: number;
-    three_point_attempted: number;
-    free_throws_made: number;
-    free_throws_attempted: number;
-    rebounds: number;
-    assists: number;
-    turnovers: number;
-    steals: number;
-    blocks: number;
+    team_type?: string;
+    field_goals_made: number | null;
+    field_goals_attempted: number | null;
+    three_point_made: number | null;
+    three_point_attempted: number | null;
+    free_throws_made: number | null;
+    free_throws_attempted: number | null;
+    rebounds: number | null;
+    assists: number | null;
+    turnovers: number | null;
+    steals: number | null;
+    blocks: number | null;
     points_in_paint?: number | null;
     fast_break_points?: number | null;
 }
 export type BasketballStatRow = {
-    key: keyof BasketballTeamStats;
+    key: Exclude<keyof BasketballTeamStats, 'team_type'>;
     label: string;
     compactLabel?: string;
-    attempted?: keyof BasketballTeamStats;
+    attempted?: Exclude<keyof BasketballTeamStats, 'team_type'>;
     lowerIsBetter?: boolean;
     optional?: boolean;
 };
@@ -48,14 +49,29 @@ export const basketballStatRows: BasketballStatRow[] = [
     { key: 'points_in_paint', label: 'Points in Paint', optional: true },
     { key: 'fast_break_points', label: 'Fast Break Points', optional: true },
 ];
-export const shootingPercentage = (made: number, attempted: number) =>
-    !attempted ? '0.0' : ((made / attempted) * 100).toFixed(1);
+export const shootingPercentage = (
+    made: number | null,
+    attempted: number | null,
+): string => {
+    if (
+        made === null ||
+        attempted === null ||
+        !Number.isFinite(made) ||
+        !Number.isFinite(attempted) ||
+        made < 0 ||
+        attempted < made
+    )
+        return 'Unavailable';
+    return attempted === 0 ? '0.0' : ((made / attempted) * 100).toFixed(1);
+};
 export function basketballStatValue(
     stats: BasketballTeamStats,
     row: BasketballStatRow,
     grid = false,
 ): string | number {
     const value = stats[row.key];
-    if (row.attempted) return `${value}-${stats[row.attempted]}`;
-    return grid && row.optional ? value || '-' : (value ?? '-');
+    if (row.attempted)
+        return `${value ?? 'Unavailable'}-${stats[row.attempted] ?? 'Unavailable'}`;
+    void grid;
+    return value ?? 'Unavailable';
 }

@@ -9,17 +9,18 @@ import type {
 } from '@/lib/predictionRecommendation';
 
 export interface DashboardPrediction {
+    spread_convention?: 'home_margin' | 'home_handicap';
     id: number | string;
     sport: string;
     game_id: number;
     season_type?: string | number | null;
     game: string;
-    game_time: string;
+    game_time: string | null;
     home_team: string;
     away_team: string;
-    win_probability: number;
-    predicted_spread: number;
-    predicted_total: number;
+    win_probability: number | null;
+    predicted_spread: number | null;
+    predicted_total: number | null;
     actual_total?: number | null;
     winner_correct?: boolean | null;
     dashboard_signal?: 'Model Bet' | null;
@@ -39,22 +40,22 @@ export interface DashboardPrediction {
     // Live game data
     is_live?: boolean;
     is_final?: boolean;
-    home_score?: number;
-    away_score?: number;
-    period?: number;
-    inning?: number;
-    game_clock?: string;
-    inning_state?: string;
+    home_score?: number | null;
+    away_score?: number | null;
+    period?: number | null;
+    inning?: number | null;
+    game_clock?: string | null;
+    inning_state?: string | null;
     balls?: number | null;
     strikes?: number | null;
     outs?: number | null;
     status?: string;
     // Live prediction data
-    live_win_probability?: number;
-    live_predicted_spread?: number;
-    live_predicted_total?: number;
-    live_seconds_remaining?: number;
-    live_outs_remaining?: number;
+    live_win_probability?: number | null;
+    live_predicted_spread?: number | null;
+    live_predicted_total?: number | null;
+    live_seconds_remaining?: number | null;
+    live_outs_remaining?: number | null;
 }
 
 export interface DashboardSport {

@@ -7,6 +7,7 @@ use App\Models\NFL\PlayerInjurySnapshotEntry;
 use App\Models\NFL\PlayerProp;
 use App\Models\NFL\PlayerStat;
 use App\Models\NFL\Team;
+use App\Services\BettingRecommendations\NflPropParticipation;
 use App\Services\BettingRecommendations\NflPropSeasonSummary;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Str;
@@ -76,4 +77,29 @@ it('rejects injury source evidence published after the historical kickoff', func
     $summary = ($this->summary)();
     expect($summary['participation']['confirmed_unavailable_games'])->toBe(0)
         ->and($summary['participation']['unexplained_absence_games'])->toBe(1);
+});
+
+it('reuses participation across markets without sharing players or retaining reports between batches', function () {
+    ($this->past)('2026-09-20');
+    ($this->report)('2026-09-19 10:00:00');
+    $otherMarket = $this->prop->replicate();
+    $otherMarket->market = 'player_pass_attempts';
+    $otherMarket->save();
+    $otherPlayer = Player::factory()->create(['team_id' => $this->team->id, 'position' => 'WR']);
+    $otherProp = $this->prop->replicate();
+    $otherProp->player_id = $otherPlayer->id;
+    $otherProp->player_name = $otherPlayer->full_name;
+    $otherProp->save();
+    $props = new Collection([$this->prop, $otherMarket, $otherProp]);
+    $props->load(['player', 'game']);
+    $service = app(NflPropParticipation::class);
+    $batch = $service->forProps($props, collect());
+
+    expect($batch[$this->prop->id])->toBe($batch[$otherMarket->id])
+        ->and($batch[$this->prop->id]['confirmed_unavailable_games'])->toBe(1)
+        ->and($batch[$otherProp->id]['confirmed_unavailable_games'])->toBe(0)
+        ->and($batch[$otherProp->id]['unexplained_absence_games'])->toBe(1);
+
+    ($this->report)('2026-09-19 11:00:00', null);
+    expect($service->forProps($props, collect())[$this->prop->id]['confirmed_unavailable_games'])->toBe(0);
 });

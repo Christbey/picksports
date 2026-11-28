@@ -69,8 +69,12 @@ it('preserves WNBA holds when summary identity or final evidence is invalid', fu
         'status' => $data['header']['competitions'][0]['status']['type']['name'] = null,
         'unknown' => $data['header']['competitions'][0]['status']['type']['name'] = 'STATUS_UNKNOWN',
     };
-    expect(fn () => wnbaSummaryAction($data, false)->execute('12345'))->toThrow(RuntimeException::class)
-        ->and($game->fresh()->getAttributes())->toBe($before);
+    if ($variant === 'event') {
+        expect(wnbaSummaryAction($data, false)->execute('12345'))->toBe(['plays' => 0, 'player_stats' => 0, 'team_stats' => 0, 'game_updated' => false]);
+    } else {
+        expect(fn () => wnbaSummaryAction($data, false)->execute('12345'))->toThrow(RuntimeException::class);
+    }
+    expect($game->fresh()->getAttributes())->toBe($before);
     Event::assertNotDispatched(GameFinalized::class);
 })->with(['event', 'team', 'missing', 'negative', 'fractional', 'tie', 'incomplete', 'status', 'unknown']);
 

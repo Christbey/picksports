@@ -36,7 +36,7 @@ export function formatRecord(
 export function formatHitRate(
     record?: MlbDailyPerformanceRecord | null,
 ): string {
-    if (!record?.hit_rate) return 'Unlocking';
+    if (record?.hit_rate == null) return 'Unlocking';
 
     return `${(record.hit_rate * 100).toFixed(1)}%`;
 }

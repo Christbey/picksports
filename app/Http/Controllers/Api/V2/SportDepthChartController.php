@@ -3,22 +3,23 @@
 namespace App\Http\Controllers\Api\V2;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V2\SportDepthChartRequest;
 use App\Services\Api\V2\SportContext;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Sports\DepthChartDataService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 
 class SportDepthChartController extends Controller
 {
     public function teamShow(
         string $sport,
         string $team,
-        Request $request,
+        SportDepthChartRequest $request,
         SportContextResolver $sports,
         DepthChartDataService $depthCharts,
     ): JsonResponse {
         $context = $sports->resolve($sport);
+        $filters = $request->validatedFilters();
         $payload = $depthCharts->forTeam(
             sport: $context->slug,
             teamModel: $this->model($context, 'team'),
@@ -26,20 +27,16 @@ class SportDepthChartController extends Controller
             playerStatModel: $this->model($context, 'player_stat'),
             gameModel: $this->model($context, 'game'),
             teamId: (int) $team,
-            season: $request->integer('season') ?: null,
-            seasonType: $request->query('season_type'),
-            beforeDate: $request->string('before_date')->toString() ?: null,
+            season: $filters['season'] ?? null,
+            seasonType: $filters['season_type'] ?? null,
+            beforeDate: $filters['before_date'] ?? null,
         );
 
         return response()->json([
             'data' => $payload,
             'meta' => $this->meta($context, 'sports.teams.depth-charts.show', [
                 'team_id' => (int) $team,
-                'filters' => [
-                    'season' => $request->integer('season') ?: null,
-                    'season_type' => $request->query('season_type'),
-                    'before_date' => $request->string('before_date')->toString() ?: null,
-                ],
+                'filters' => $filters,
             ]),
         ]);
     }

@@ -38,6 +38,11 @@ class ReportPlayerFuturesBacktestCommand extends Command
         $summary = $report['summary'];
 
         $this->info("NFL player futures backtest for season {$season}");
+        if (($summary['inferred_schedule_rows'] ?? 0) + ($summary['unexpected_schedule_rows'] ?? 0) + ($summary['unknown_schedule_rows'] ?? 0) > 0) {
+            $this->warn('Schedule coverage: '.($summary['inferred_schedule_rows'] ?? 0).' inferred, '
+                .($summary['unexpected_schedule_rows'] ?? 0).' unexpected, '.($summary['unknown_schedule_rows'] ?? 0)
+                .' unknown rows. Inferred season length is not an observed complete schedule.');
+        }
         $this->table(
             ['Settled', 'Pending', 'MAE', 'RMSE', 'Bias', 'Line Rows', 'Over Acc', 'Over Brier'],
             [[

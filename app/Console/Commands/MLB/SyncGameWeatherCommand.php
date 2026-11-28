@@ -5,6 +5,8 @@ namespace App\Console\Commands\MLB;
 use App\Models\MLB\Game;
 use App\Models\MLB\GameWeather;
 use App\Services\MLB\GameWeatherService;
+use App\Support\MLB\MlbGameStart;
+use App\Support\MLB\MlbWeatherTime;
 use Illuminate\Console\Command;
 
 class SyncGameWeatherCommand extends Command
@@ -62,8 +64,25 @@ class SyncGameWeatherCommand extends Command
                 continue;
             }
 
-            $row = GameWeather::query()->updateOrCreate(['game_id' => $game->id], $weather);
-            $row->touch();
+            if ((new GameWeather)->getConnection()->getName() !== $game->getConnection()->getName()) {
+                throw new \RuntimeException('MLB weather projection requires one coherent database connection.');
+            }
+            $row = $game->getConnection()->transaction(function () use ($game, $weather): ?GameWeather {
+                $current = $game->newQuery()->lockForUpdate()->find($game->id);
+                if ($current === null || MlbGameStart::context($current) !== MlbGameStart::context($game)) {
+                    return null;
+                }
+                if (MlbGameStart::for($current) !== null && MlbWeatherTime::marker($current, new GameWeather($weather + ['game_id' => $game->id])) === null) {
+                    return null;
+                }
+
+                return GameWeather::query()->updateOrCreate(['game_id' => $game->id], $weather);
+            });
+            if ($row === null) {
+                $skipped++;
+
+                continue;
+            }
             $row->wasRecentlyCreated ? $created++ : $updated++;
         }
 

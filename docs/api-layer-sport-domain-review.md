@@ -1,3 +1,7 @@
+> Historical proposal/worklog retained on November 27, 2026. The original text below records dated proposals, implementation assertions and measurements; it is not current operating instructions, evidence of completion, or approval to change business/scientific policy. Do not run its historical commands as an operational checklist. Current references: [docs/api-v2-reference.md](api-v2-reference.md), [docs/codebase-reference.md](codebase-reference.md).
+>
+> Carried obligations: Carry remaining switchboard, capability/normalization and serializer architecture findings; extracted queries alone do not close them.
+
 # API Layer Sport-Domain Review
 
 API transport and route inventory updated: 2026-09-25. Other domain findings retain their 2026-08-03 review scope.
@@ -107,7 +111,7 @@ removed; shared sport resources and domain services remain in use.
   matchup signals. A test compares the checked-in artifact to generated output.
 
 V1 was removed on 2026-09-25 after the owner confirmed it had only application
-callers. No compatibility window is needed. See [the retirement record](api-v2-contracts-and-retirement.md).
+callers. No compatibility window is needed. See the historical retirement record (`api-v2-contracts-and-retirement.md`; unavailable in the current candidate). See [the current API reference](api-v2-reference.md) for supported contracts.
 
 ## Findings And Actions
 

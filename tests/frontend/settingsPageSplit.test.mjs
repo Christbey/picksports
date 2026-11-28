@@ -308,3 +308,46 @@ test('notification labels normalize stored channel names and existing subscripti
     await s.enableWebPush();
     assert.equal(env.calls.filter((c) => c.subscribe).length, 1);
 });
+
+test('push registration displays ownership reset and endpoint validation guidance without claiming success', async (t) => {
+    browser(t);
+    const s = mount(useAlertPreferences, alertProps('phone'), t);
+    for (const [status, body, expected] of [
+        [
+            409,
+            {
+                message:
+                    'Reset browser push permissions and create a new subscription.',
+            },
+            /Reset browser push permissions/,
+        ],
+        [
+            422,
+            {
+                message: 'Validation failed.',
+                errors: {
+                    endpoint: [
+                        'This browser subscription exceeds the server storage limit.',
+                    ],
+                },
+            },
+            /storage limit/,
+        ],
+        [
+            500,
+            { message: 'private SQL diagnostic must stay hidden' },
+            /Could not save push subscription/,
+        ],
+    ]) {
+        globalThis.fetch = async () => ({
+            ok: false,
+            status,
+            json: async () => body,
+        });
+        await s.enableWebPush();
+        assert.match(s.webPushError.value, expected);
+        assert.equal(s.webPushHasSubscription.value, false);
+        assert.equal(s.selectedNotificationTypes.value.includes('push'), false);
+        assert.equal(s.webPushBusy.value, false);
+    }
+});

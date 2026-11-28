@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Api\V2;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V2\SportTeamSeasonAverageRequest;
 use App\Services\Api\V2\SportContext;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportTeamSeasonAverageQuery;
 use App\Services\TeamStats\BasketballTeamSeasonAveragesService;
+use App\Support\Api\ApiV2ErrorResponse;
 use Illuminate\Http\JsonResponse;
 
 class SportTeamStatAverageController extends Controller
@@ -15,22 +17,25 @@ class SportTeamStatAverageController extends Controller
 
     public function index(
         string $sport,
+        SportTeamSeasonAverageRequest $request,
         SportContextResolver $sports,
         BasketballTeamSeasonAveragesService $basketballAverages,
         SportTeamSeasonAverageQuery $averages,
     ): JsonResponse {
         $context = $sports->resolve($sport);
         $this->ensureSupported($context);
+        $result = $averages->allWithScope($context, $basketballAverages, $request->validatedFilters());
 
         return response()->json([
-            'data' => $averages->allAverages($context, $basketballAverages),
-            'meta' => $this->meta($context, 'sports.stats.team.season-averages.index'),
+            'data' => $result['data'],
+            'meta' => $this->meta($context, 'sports.stats.team.season-averages.index') + ['scope' => $result['scope']],
         ]);
     }
 
     public function teamShow(
         string $sport,
         string $team,
+        SportTeamSeasonAverageRequest $request,
         SportContextResolver $sports,
         BasketballTeamSeasonAveragesService $basketballAverages,
         SportTeamSeasonAverageQuery $averages,
@@ -38,21 +43,22 @@ class SportTeamStatAverageController extends Controller
         $context = $sports->resolve($sport);
         $this->ensureSupported($context);
         $teamId = (int) $team;
-        $payload = $averages->teamAverages($context, $basketballAverages, $teamId);
+        $result = $averages->teamWithScope($context, $basketballAverages, $teamId, $request->validatedFilters());
+        $payload = $result['data'];
 
         if (! $payload) {
-            return response()->json([
-                'message' => 'Team stat season averages are not available.',
-                'meta' => $this->meta($context, 'sports.teams.stats.season-averages.show') + [
-                    'team_id' => $teamId,
-                ],
-            ], 404);
+            $response = app(ApiV2ErrorResponse::class)->make($request, 404, 'not_found', 'Team stat season averages are not available.');
+            $response->setData([...$response->getData(true),
+                'meta' => ['version' => 'v2', 'sport' => $context->slug, 'contract' => 'sports.teams.stats.season-averages.show', 'team_id' => $teamId, 'scope' => $result['scope']],
+            ]);
+
+            return $response;
         }
 
         return response()->json([
             'data' => $payload,
             'meta' => $this->meta($context, 'sports.teams.stats.season-averages.show') + [
-                'team_id' => $teamId,
+                'team_id' => $teamId, 'scope' => $result['scope'],
             ],
         ]);
     }
@@ -78,7 +84,7 @@ class SportTeamStatAverageController extends Controller
                 'allowed_field_groups' => ['identity', 'season_average_stats', 'freshness'],
                 'withheld_field_groups' => ['raw_data', 'narrative', 'ai_analysis'],
             ],
-            'freshness' => [],
+            'freshness' => (object) [],
             'warnings' => [],
         ];
     }

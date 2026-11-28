@@ -139,6 +139,8 @@ export type MlbDailyPick = {
         id: number;
         short_name?: string | null;
         game_date?: string | null;
+        /** Observed current-game kickoff; unknown legacy clocks remain unavailable. */
+        starts_at?: string | null;
         status?: string | null;
         home_team?: string | null;
         away_team?: string | null;
@@ -191,6 +193,7 @@ export type MlbDailyBoardSummary = {
     public_promoted_count: number;
     avg_top_score?: number | null;
     top_candidate_score?: number | null;
+    /** Historical stored assessment only; null includes unknown records, not current revalidation. */
     pregame_safe_rate?: number | null;
     market_agreement_rate?: number | null;
 };
@@ -215,6 +218,7 @@ export type MlbDailyBoardHealth = {
         | string;
     score?: number | null;
     slate_coverage?: number | null;
+    /** Historical stored assessment only; null includes unknown records, not current revalidation. */
     pregame_safe_rate?: number | null;
     market_agreement_rate?: number | null;
     message?: string | null;

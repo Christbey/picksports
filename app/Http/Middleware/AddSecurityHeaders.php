@@ -2,19 +2,27 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\Privacy\SensitiveDocument;
 use Closure;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\Response;
 
 class AddSecurityHeaders
 {
     public function handle(Request $request, Closure $next): Response
     {
+        $sensitive = ! $request->is('api/*') && SensitiveDocument::matches($request);
         /** @var Response $response */
-        $response = $next($request);
+        $response = $sensitive && $request->isMethod('GET') && $request->header('X-Inertia')
+            ? Inertia::location($request->fullUrl())
+            : $next($request);
 
         $response->headers->set('X-Content-Type-Options', 'nosniff');
-        $response->headers->set('Referrer-Policy', 'strict-origin-when-cross-origin');
+        $response->headers->set('Referrer-Policy', $sensitive ? 'no-referrer' : 'strict-origin-when-cross-origin');
+        if ($sensitive) {
+            $response->headers->set('Cache-Control', 'private, no-store');
+        }
         $response->headers->set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
 
         $reportingEndpoints = 'csp="/api/v2/security/reports/csp", integrity="/api/v2/security/reports/integrity"';
@@ -33,7 +41,7 @@ class AddSecurityHeaders
             "script-src-elem 'self' 'unsafe-inline' https://www.googletagmanager.com https://static.cloudflareinsights.com https://connect.facebook.net https://pagead2.googlesyndication.com https://ep2.adtrafficquality.google",
             "style-src 'self' 'unsafe-inline' https://fonts.bunny.net",
             "style-src-elem 'self' 'unsafe-inline' https://fonts.bunny.net",
-            "font-src 'self' data: https://fonts.bunny.net",
+            "font-src 'self' data: https://fonts.bunny.net https://cdn.jsdelivr.net/fontsource/fonts/instrument-sans@5.3.0/",
             "img-src 'self' data: https:",
             "connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com https://*.cloudflareinsights.com https://www.facebook.com https://connect.facebook.net https://ep1.adtrafficquality.google https://googleads.g.doubleclick.net",
             "manifest-src 'self'",

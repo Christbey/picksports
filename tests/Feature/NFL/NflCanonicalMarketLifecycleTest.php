@@ -503,6 +503,24 @@ it('prefers provider market observation time over a fresh ingestion timestamp', 
         ->toThrow(PredictionLifecycleException::class, 'fresh two-sided spread and total quotes');
 });
 
+it('selects the median among complete same-book quote pairs instead of an unpaired bookmaker', function () {
+    $fixture = nflCanonicalMarketFixture();
+    recordNflMarketSnapshot($fixture);
+    foreach (['spreads' => ['home', -2.0], 'totals' => ['over', 45.5]] as $market => [$side, $line]) {
+        $unpaired = MarketQuote::query()->where('game_id', $fixture['game']->id)
+            ->where('market_key', $market)->where('side', $side)->firstOrFail()->replicate();
+        $unpaired->forceFill(['bookmaker_key' => 'one-sided', 'bookmaker_title' => 'One Sided Book',
+            'line' => $line, 'quote_hash' => hash('sha256', $market.'one-sided')])->save();
+    }
+
+    $market = app(NflPregameMarketSnapshot::class)->capture($fixture['game'], now()->toImmutable(), $fixture['event']->starts_at->toImmutable());
+    expect($market['available'])->toBeTrue()
+        ->and($market['consensus']['spread']['bookmaker_key'])->toBe('testbook')
+        ->and($market['consensus']['total']['bookmaker_key'])->toBe('testbook')
+        ->and($market['consensus']['spread']['opposite_quote']['bookmaker_key'])->toBe('testbook')
+        ->and($market['consensus']['total']['opposite_quote']['bookmaker_key'])->toBe('testbook');
+});
+
 it('fails canonical generation and released decisions for stale or one-sided market coverage', function () {
     config()->set('nfl_research.market_freshness_minutes', 30);
     $fixture = nflCanonicalMarketFixture();
@@ -1419,24 +1437,6 @@ it('preserves canonical board research evidence without promoting held research 
     $revision->update(['brief' => [...$revision->brief, 'stored_prediction_hash' => str_repeat('f', 64)]]);
     $changed = app(NflPredictionBoardContext::class)->forPredictions(collect([$prediction]))->get($prediction->id);
     expect($changed['research']['status'])->toBe('prediction_changed')->and($changed['forecast'])->toBeNull();
-});
-
-it('selects the median among complete same-book quote pairs instead of an unpaired bookmaker', function () {
-    $fixture = nflCanonicalMarketFixture();
-    recordNflMarketSnapshot($fixture);
-    foreach (['spreads' => ['home', -2.0], 'totals' => ['over', 45.5]] as $market => [$side, $line]) {
-        $unpaired = MarketQuote::query()->where('game_id', $fixture['game']->id)
-            ->where('market_key', $market)->where('side', $side)->firstOrFail()->replicate();
-        $unpaired->forceFill(['bookmaker_key' => 'one-sided', 'bookmaker_title' => 'One Sided Book',
-            'line' => $line, 'quote_hash' => hash('sha256', $market.'one-sided')])->save();
-    }
-
-    $market = app(NflPregameMarketSnapshot::class)->capture($fixture['game'], now()->toImmutable(), $fixture['event']->starts_at->toImmutable());
-    expect($market['available'])->toBeTrue()
-        ->and($market['consensus']['spread']['bookmaker_key'])->toBe('testbook')
-        ->and($market['consensus']['total']['bookmaker_key'])->toBe('testbook')
-        ->and($market['consensus']['spread']['opposite_quote']['bookmaker_key'])->toBe('testbook')
-        ->and($market['consensus']['total']['opposite_quote']['bookmaker_key'])->toBe('testbook');
 });
 
 it('rejects a model market payload that differs from its frozen quote authority', function () {

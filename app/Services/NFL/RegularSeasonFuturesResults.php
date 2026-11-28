@@ -2,6 +2,7 @@
 
 namespace App\Services\NFL;
 
+use App\DataTransferObjects\ESPN\GameData;
 use App\Models\NFL\Game;
 use Carbon\CarbonInterface;
 
@@ -20,7 +21,7 @@ class RegularSeasonFuturesResults
         $games = Game::query()
             ->where('season', $season)
             ->where('season_type', config('nfl.season.types.regular', 2))
-            ->where('status', config('nfl.statuses.final', 'STATUS_FINAL'))
+            ->whereIn('status', GameData::finalStatuses())
             ->where('game_date', '<=', $cutoff)
             ->where('result_updated_at', '<=', $cutoff)
             ->whereNotNull('home_score')

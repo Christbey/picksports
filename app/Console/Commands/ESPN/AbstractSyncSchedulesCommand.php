@@ -23,8 +23,6 @@ abstract class AbstractSyncSchedulesCommand extends Command
 
     protected const SCHEDULE_SYNC_ACTION_CLASS = '';
 
-    protected const DEFAULT_SEASON = '2025';
-
     public function __construct()
     {
         $this->signature = $this->buildSignature();
@@ -35,7 +33,7 @@ abstract class AbstractSyncSchedulesCommand extends Command
 
     public function handle(): int
     {
-        $season = (int) $this->option('season');
+        $season = $this->resolveSeason($this->option('season') ?? $this->defaultSeason());
         $teamEspnId = $this->option('team');
 
         if ($teamEspnId) {
@@ -81,9 +79,8 @@ abstract class AbstractSyncSchedulesCommand extends Command
     protected function buildSignature(): string
     {
         return sprintf(
-            "%s\n {--season=%s : The season year}\n {--team= : Specific team ESPN ID (optional, syncs all teams if not provided)}",
-            $this->commandName(),
-            $this->defaultSeason()
+            "%s\n {--season= : Season year (defaults to the configured sport season)}\n {--team= : Specific team ESPN ID (optional, syncs all teams if not provided)}",
+            $this->commandName()
         );
     }
 
@@ -94,7 +91,17 @@ abstract class AbstractSyncSchedulesCommand extends Command
 
     protected function defaultSeason(): string
     {
-        return static::DEFAULT_SEASON;
+        return (string) $this->resolveSeason(config(strtolower($this->sportCode()).'.season.default'));
+    }
+
+    protected function resolveSeason(mixed $season): int
+    {
+        if ((! is_int($season) && (! is_string($season) || preg_match('/\A[1-9][0-9]{0,3}\z/', $season) !== 1))
+            || (int) $season < 1 || (int) $season > 9999) {
+            throw new \LogicException('A valid explicit or configured season is required for schedule synchronization.');
+        }
+
+        return (int) $season;
     }
 
     /**

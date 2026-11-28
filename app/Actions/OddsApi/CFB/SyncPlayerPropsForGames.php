@@ -22,7 +22,7 @@ class SyncPlayerPropsForGames
         $games = $query->when($gameId, fn ($q) => $q->whereKey($gameId))->get();
         $counts = ['games' => 0, 'stored' => 0, 'empty' => 0, 'failed' => 0, 'recommendations' => 0];
         foreach ($games as $game) {
-            if (CfbPropEligibility::kickoff($game)->isPast()) {
+            if (! ($kickoff = CfbPropEligibility::kickoff($game)) || $kickoff->isPast()) {
                 continue;
             }
             $counts['games']++;
@@ -41,12 +41,17 @@ class SyncPlayerPropsForGames
 
                 continue;
             }
-            if (CarbonImmutable::parse($response['commence_time'])->isPast() || $game->fresh()->status !== 'STATUS_SCHEDULED' || CfbPropEligibility::kickoff($game)->isPast()) {
+            $current = $game->fresh();
+            if (CarbonImmutable::parse($response['commence_time'])->isPast() || $current->status !== 'STATUS_SCHEDULED'
+                || ! ($currentKickoff = CfbPropEligibility::kickoff($current)) || $currentKickoff->isPast()) {
                 continue;
             }
             $stored = DB::transaction(function () use ($response, $game) {
                 // Serialize concurrent refreshes, and retain old lines and their grades.
-                Game::whereKey($game->id)->lockForUpdate()->first();
+                $locked = Game::whereKey($game->id)->lockForUpdate()->firstOrFail();
+                if ($locked->status !== 'STATUS_SCHEDULED' || ! ($kickoff = CfbPropEligibility::kickoff($locked)) || $kickoff->isPast()) {
+                    return 0;
+                }
                 PlayerProp::where('game_id', $game->id)->whereNull('graded_at')->update(['is_current' => false]);
                 $stored = 0;
                 foreach ($response['bookmakers'] as $book) {
@@ -70,7 +75,7 @@ class SyncPlayerPropsForGames
                         }
                         foreach ($lines as $key => $line) {
                             $prop = PlayerProp::where('quote_key', $key)->first() ?? new PlayerProp;
-                            if ($prop->graded_at) {
+                            if ($prop->graded_at || ($prop->exists && $prop->gradeRevisions()->lockForUpdate()->first() !== null)) {
                                 continue;
                             }
                             $player = CfbPropEligibility::matchPlayer($game, $line['player_name']);

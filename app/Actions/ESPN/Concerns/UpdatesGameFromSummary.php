@@ -10,6 +10,11 @@ use Illuminate\Database\Eloquent\Model;
 
 trait UpdatesGameFromSummary
 {
+    protected function dispatchSummaryFinalization(): bool
+    {
+        return true;
+    }
+
     protected function updateGameFromSummary(array $gameData, Model $game): bool
     {
         $previousStatus = (string) ($game->status ?? '');
@@ -53,7 +58,10 @@ trait UpdatesGameFromSummary
         $updates['status'] = $resolvedStatus;
         $game->update($updates);
 
-        app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game->fresh(), $previousStatus);
+        if ($this->dispatchSummaryFinalization()) {
+            $fresh = $game->fresh();
+            $game->getConnection()->afterCommit(fn () => app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($fresh, $previousStatus));
+        }
 
         return true;
     }

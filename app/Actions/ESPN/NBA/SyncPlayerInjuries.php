@@ -55,6 +55,12 @@ class SyncPlayerInjuries extends AbstractSyncPlayerInjuries
 
             return parent::execute($teamEspnId);
         }
+        // Structured capture's state/recorder services are currently default-connection bound.
+        // Refuse unsupported remapping before sequence allocation or provider acquisition.
+        if ($team->getConnection()->getName() !== DB::connection()->getName()
+            || (new Player)->getConnection()->getName() !== DB::connection()->getName()) {
+            throw new \RuntimeException('NBA structured injury capture requires coherent default-connection models.');
+        }
         foreach (['nba_player_injury_snapshots', 'nba_player_injury_snapshot_entries', 'nba_player_injury_observations', 'nba_injury_team_states'] as $table) {
             if (! Schema::hasTable($table)) {
                 throw new \RuntimeException('Install NBA injury observation storage before activation.');

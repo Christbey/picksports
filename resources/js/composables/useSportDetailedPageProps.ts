@@ -126,7 +126,10 @@ export function useSportDetailedPageProps(
             badgePulseStatuses: options.badgePulseStatuses
                 ? toValue(options.badgePulseStatuses)
                 : [],
-            linkTeams: options.linkTeams ? toValue(options.linkTeams) : true,
+            linkTeams:
+                options.linkTeams !== undefined
+                    ? toValue(options.linkTeams)
+                    : true,
             useTeamColorGlow: options.useTeamColorGlow
                 ? toValue(options.useTeamColorGlow)
                 : false,
@@ -151,8 +154,14 @@ export function useSportDetailedPageProps(
             homeLinescores: options.homeLinescores
                 ? toValue(options.homeLinescores)
                 : [],
-            awayScore: options.awayScore ? toValue(options.awayScore) : null,
-            homeScore: options.homeScore ? toValue(options.homeScore) : null,
+            awayScore:
+                options.awayScore !== undefined
+                    ? toValue(options.awayScore)
+                    : null,
+            homeScore:
+                options.homeScore !== undefined
+                    ? toValue(options.homeScore)
+                    : null,
             usePeriodNumbers:
                 options.usePeriodNumbers !== undefined
                     ? toValue(options.usePeriodNumbers)
@@ -213,24 +222,28 @@ export function useSportDetailedPageProps(
             homeStarterName: options.homeStarterName
                 ? toValue(options.homeStarterName)
                 : null,
-            awayStarterRating: options.awayStarterRating
-                ? toValue(options.awayStarterRating)
-                : null,
-            homeStarterRating: options.homeStarterRating
-                ? toValue(options.homeStarterRating)
-                : null,
+            awayStarterRating:
+                options.awayStarterRating !== undefined
+                    ? toValue(options.awayStarterRating)
+                    : null,
+            homeStarterRating:
+                options.homeStarterRating !== undefined
+                    ? toValue(options.homeStarterRating)
+                    : null,
             awayStarterSource: options.awayStarterSource
                 ? toValue(options.awayStarterSource)
                 : null,
             homeStarterSource: options.homeStarterSource
                 ? toValue(options.homeStarterSource)
                 : null,
-            awayStarterConfidence: options.awayStarterConfidence
-                ? toValue(options.awayStarterConfidence)
-                : null,
-            homeStarterConfidence: options.homeStarterConfidence
-                ? toValue(options.homeStarterConfidence)
-                : null,
+            awayStarterConfidence:
+                options.awayStarterConfidence !== undefined
+                    ? toValue(options.awayStarterConfidence)
+                    : null,
+            homeStarterConfidence:
+                options.homeStarterConfidence !== undefined
+                    ? toValue(options.homeStarterConfidence)
+                    : null,
             awayStarterForecast: options.awayStarterForecast
                 ? toValue(options.awayStarterForecast)
                 : null,

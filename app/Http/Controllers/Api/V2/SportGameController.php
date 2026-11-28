@@ -77,6 +77,8 @@ class SportGameController extends Controller
         SportGameQuery $games,
     ): JsonResponse {
         $context = $sports->resolve($sport);
+        abort_unless(ctype_digit($team) && (int) $team > 0
+            && (string) (int) $team === ltrim($team, '0'), 404);
         $filters = array_merge($request->validatedFilters(), [
             'team_id' => (int) $team,
         ]);

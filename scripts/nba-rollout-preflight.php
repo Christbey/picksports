@@ -1,9 +1,13 @@
 <?php
 
+use App\Support\Database\NbaRolloutPreflightSupport;
+
 /**
  * Read-only deployment evidence. No Laravel bootstrap, HTTP, queues or DDL.
  * Run from the deployed application root, never print cached configuration.
  */
+require dirname(__DIR__).'/vendor/autoload.php';
+
 $root = getcwd();
 $report = ['schema_version' => 'nba_rollout_preflight_v1', 'observed_at_utc' => gmdate('c'), 'application_root' => $root];
 $pdo = null;
@@ -26,7 +30,7 @@ try {
         return $value;
     };
     $report['app_environment'] = $get('app.env');
-    $report['app_url'] = $get('app.url');
+    $report['app_url'] = NbaRolloutPreflightSupport::applicationOrigin($get('app.url'));
     $report['app_timezone'] = $get('app.timezone');
     if ($get('app.env') !== 'production' || parse_url((string) $get('app.url'), PHP_URL_HOST) !== 'picksports.app') {
         throw new RuntimeException('production_identity_not_verified');
@@ -65,23 +69,7 @@ try {
     if (! is_array($connection) || ($connection['driver'] ?? null) !== 'mysql') {
         throw new RuntimeException('mysql_configuration_required');
     }
-    if (! empty($connection['url'])) {
-        $url = parse_url($connection['url']);
-        if (! is_array($url)) {
-            throw new RuntimeException('database_url_invalid');
-        }
-        foreach (['host' => 'host', 'port' => 'port', 'user' => 'username', 'pass' => 'password'] as $from => $to) {
-            if (isset($url[$from])) {
-                $connection[$to] = rawurldecode((string) $url[$from]);
-            }
-        }
-        $connection['database'] = rawurldecode(ltrim($url['path'] ?? '', '/'));
-    }
-    $dsn = ! empty($connection['unix_socket'])
-        ? 'mysql:unix_socket='.$connection['unix_socket'].';dbname='.$connection['database']
-        : 'mysql:host='.$connection['host'].';port='.($connection['port'] ?? 3306).';dbname='.$connection['database'];
-    $pdo = new PDO($dsn.';charset=utf8mb4', $connection['username'], $connection['password'],
-        ($connection['options'] ?? []) + [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 10]);
+    $pdo = new PDO(...NbaRolloutPreflightSupport::parameters($connection));
     $pdo->exec('START TRANSACTION READ ONLY');
     $report['database'] = ['driver' => 'mysql', 'server_version' => $pdo->query('SELECT VERSION()')->fetchColumn(),
         'innodb_page_size' => $pdo->query('SELECT @@innodb_page_size')->fetchColumn(), 'transaction' => 'read_only'];
@@ -112,7 +100,7 @@ try {
     $columns = $statement->fetchAll(PDO::FETCH_ASSOC);
     $report['shared_schema_columns'] = array_values(array_filter($columns, static fn ($row) => $row['table_name'] !== 'nba_teams'));
     if (isset($found['research_sources'])) {
-        $report['nba_sources'] = $pdo->query("SELECT id, source_key, team_id, kind, url, allowed_hosts, enabled, checked_at, succeeded_at, last_error FROM research_sources WHERE sport = 'nba' ORDER BY id LIMIT 100")->fetchAll(PDO::FETCH_ASSOC);
+        $report['nba_sources'] = array_map(NbaRolloutPreflightSupport::sourceMetadata(...), $pdo->query("SELECT id, source_key, team_id, kind, url, allowed_hosts, enabled, checked_at, succeeded_at, last_error FROM research_sources WHERE sport = 'nba' ORDER BY id LIMIT 100")->fetchAll(PDO::FETCH_ASSOC));
     } else {
         $report['nba_sources'] = null;
     }

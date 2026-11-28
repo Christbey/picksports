@@ -197,7 +197,7 @@ export function useWcbbForecast() {
 
     const statusTag = (row: TournamentForecast) => {
         const make = row.tournament_make_probability;
-        if (make >= 0.85) return 'Lock';
+        if (make >= 0.85) return 'High Probability';
         if (make >= 0.55) return 'Likely In';
         if (make >= 0.35) return 'Bubble';
         if (make >= 0.12) return 'Outside';

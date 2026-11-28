@@ -12,9 +12,8 @@ after(() => env.server.close());
 const response = (id = 1) => ({
     bets: {
         data: [{ id, result: 'pending', profit_loss: 0 }],
-        links: [],
-        current_page: 1,
-        last_page: 1,
+        links: { first: null, last: null, prev: null, next: null },
+        meta: { current_page: 1, last_page: 1, per_page: 20, total: 1 },
     },
     statistics: {
         total_bets: 1,
@@ -246,4 +245,49 @@ test('My Bets prevents a duplicate delete while preserving server rows and amoun
     assert.equal(state.bets.value.data[0].id, 1);
     assert.equal(state.statistics.value.total_wagered, 10);
     assert.equal(state.mutationError.value, 'Delete unavailable');
+});
+
+test('deleting the last bet on the last page returns to the remaining numeric page', async (t) => {
+    const { state, reads, deletes } = await mount(t);
+    const first = response(1);
+    first.bets.meta = {
+        current_page: 1,
+        last_page: 2,
+        per_page: 20,
+        total: 21,
+    };
+    reads.calls[0].resolve(first);
+    await flush();
+    const next = state.changePage(2);
+    const last = response(21);
+    last.bets.meta = { current_page: 2, last_page: 2, per_page: 20, total: 21 };
+    reads.calls[1].resolve(last);
+    await next;
+    await flush();
+    const previousConfirm = globalThis.confirm;
+    globalThis.confirm = () => true;
+    try {
+        const removing = state.deleteBet(21);
+        deletes.calls[0].resolve({});
+        await flush();
+        const empty = response();
+        empty.bets.data = [];
+        empty.bets.meta = {
+            current_page: 2,
+            last_page: 1,
+            per_page: 20,
+            total: 20,
+        };
+        reads.calls[2].resolve(empty);
+        await flush();
+        assert.equal(reads.calls[3].args[0].query.page, 1);
+        reads.calls[3].resolve(response(1));
+        await removing;
+        await flush();
+        assert.equal(state.bets.value.meta.current_page, 1);
+        assert.equal(state.bets.value.data[0].id, 1);
+    } finally {
+        if (previousConfirm === undefined) delete globalThis.confirm;
+        else globalThis.confirm = previousConfirm;
+    }
 });

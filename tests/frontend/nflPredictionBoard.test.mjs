@@ -411,17 +411,27 @@ test('canonical board preserves published home handicaps while legacy retains ma
     assert.equal(nflBoardPresentation({ predicted_spread: 6.5 }).margin, 6.5);
 });
 
-
 test('canonical cards preserve published numbers even when cached research has a different forecast', () => {
-    const v = nflBoardPresentation(prediction(0.72, -4.8, -2.5, {
-        phase: 'pregame', revision: 3, predicted_total: 45,
-        nfl_board: {
-            forecast: { win_probability: 0.2, predicted_spread: -10, predicted_total: 60 },
-            research_scenario: { win_probability: 0.2, predicted_spread: -10 },
-            research: { status: 'hold' },
-            market: { home_spread: -2.5 },
-        },
-    }));
+    const v = nflBoardPresentation(
+        prediction(0.72, -4.8, -2.5, {
+            phase: 'pregame',
+            revision: 3,
+            predicted_total: 45,
+            nfl_board: {
+                forecast: {
+                    win_probability: 0.2,
+                    predicted_spread: -10,
+                    predicted_total: 60,
+                },
+                research_scenario: {
+                    win_probability: 0.2,
+                    predicted_spread: -10,
+                },
+                research: { status: 'hold' },
+                market: { home_spread: -2.5 },
+            },
+        }),
+    );
     assert.equal(v.winner, 'HOME');
     assert.equal(v.winnerProbability, 0.72);
     assert.equal(v.researchLabel, 'Research hold');

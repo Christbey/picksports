@@ -17,8 +17,8 @@ class BasketballPlayData extends AbstractPlayData
         public bool $assist,
         public bool $isTurnover,
         public bool $isFoul,
-        public int $homeScore,
-        public int $awayScore,
+        public ?int $homeScore,
+        public ?int $awayScore,
         public ?string $possessionTeamEspnId,
     ) {}
 

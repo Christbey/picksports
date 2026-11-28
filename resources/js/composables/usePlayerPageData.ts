@@ -1,4 +1,4 @@
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import {
     normalizePlayer,
@@ -29,6 +29,8 @@ export function usePlayerPageData(props: PlayerPageProps) {
     const supplementalError = ref<string | null>(null);
     let supplementalScheduled = false;
     let disposed = false;
+    let primaryStarted = false;
+    let primaryIdentity = '';
     const isActive = () => !disposed && !controller.signal.aborted;
     let supplementalIdleHandle: number | null = null;
     let supplementalTimeoutHandle: number | null = null;
@@ -120,8 +122,32 @@ export function usePlayerPageData(props: PlayerPageProps) {
     };
 
     const loadPlayer = async () => {
-        if (disposed || (loading.value && primaryStarted)) return;
+        const identity = JSON.stringify([props.config.sport, props.playerId]);
+        if (
+            disposed ||
+            (loading.value && primaryStarted && primaryIdentity === identity)
+        )
+            return;
         primaryStarted = true;
+        primaryIdentity = identity;
+        supplementalController.abort();
+        supplementalLoading.value = false;
+        supplementalScheduled = false;
+        if (
+            supplementalIdleHandle !== null &&
+            typeof window !== 'undefined' &&
+            'cancelIdleCallback' in window
+        )
+            window.cancelIdleCallback(supplementalIdleHandle);
+        if (supplementalTimeoutHandle !== null)
+            globalThis.clearTimeout(supplementalTimeoutHandle);
+        supplementalIdleHandle = supplementalTimeoutHandle = null;
+        playerData.value = null;
+        gameLogs.value = [];
+        playerProps.value = [];
+        leaderboardRows.value = [];
+        leaderboardRanks.value = {};
+        supplementalError.value = null;
         controller.abort();
         const current = new AbortController();
         controller = current;
@@ -179,7 +205,10 @@ export function usePlayerPageData(props: PlayerPageProps) {
             }
         }
     };
-    let primaryStarted = false;
+    watch(
+        () => [props.playerId, props.config.sport],
+        () => void loadPlayer(),
+    );
     onMounted(() => void loadPlayer());
 
     onBeforeUnmount(() => {

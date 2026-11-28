@@ -6,6 +6,7 @@ use App\Models\GameOddsSnapshot;
 use App\Models\MLB\EloRating;
 use App\Models\MLB\Game;
 use App\Support\MLB\MlbGamePhase;
+use App\Support\MLB\MlbGameStart;
 use App\Support\Odds\MarketSpread;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
@@ -15,7 +16,7 @@ class TrustedHistoricalFeatureBuilder
 {
     public const PROFILE = 'trusted-core-v1';
 
-    public const FEATURE_VERSION = 'mlb-trusted-core-v1';
+    public const FEATURE_VERSION = 'mlb-trusted-core-v2-observed-start';
 
     private const ROLLING_GAMES = 20;
 
@@ -77,6 +78,7 @@ class TrustedHistoricalFeatureBuilder
         ];
 
         $sourceTimestamps = array_filter([
+            'scheduled_start_observed_at_utc' => $game->start_observed_at,
             'history_cutoff_at' => $gameStartAt->copy()->startOfDay()->subSecond()->toIso8601String(),
             'home_latest_prior_game_at' => $homeForm['latest_game_at'],
             'away_latest_prior_game_at' => $awayForm['latest_game_at'],
@@ -86,14 +88,14 @@ class TrustedHistoricalFeatureBuilder
         ], fn (mixed $value): bool => $value !== null);
 
         $featuresAvailableAt = collect($sourceTimestamps)
-            ->map(fn (string $timestamp): Carbon => Carbon::parse($timestamp))
+            ->map(fn (string $timestamp, string $key): Carbon => Carbon::parse($timestamp, $key === 'scheduled_start_observed_at_utc' ? 'UTC' : null))
             ->push($gameStartAt->copy()->subSecond())
             ->max();
 
         return [
             'features' => $features,
             'market_context' => [
-                'source' => $market['snapshot_id'] === null ? 'unavailable' : 'pregame_odds_snapshot',
+                'source' => $market['snapshot_id'] === null ? 'unavailable' : 'legacy_time_unverified_snapshot',
                 'snapshot_id' => $market['snapshot_id'],
                 'bookmaker' => $market['bookmaker'],
                 'captured_at' => $market['captured_at'],
@@ -106,7 +108,7 @@ class TrustedHistoricalFeatureBuilder
                     : MarketSpread::bookmakerHomeLineToHomeMargin($market['home_spread']),
                 'vegas_spread' => $market['home_spread'],
                 'market_total' => $market['total'],
-                'pregame_safe' => $market['snapshot_id'] !== null,
+                'pregame_safe' => false,
             ],
             'source_timestamps' => [
                 ...$sourceTimestamps,
@@ -153,13 +155,12 @@ class TrustedHistoricalFeatureBuilder
             ->where('status', 'STATUS_FINAL')
             ->whereNotNull('home_score')
             ->whereNotNull('away_score')
-            ->whereDate('game_date', '<', $game->game_date->toDateString())
+            ->tap(fn ($query) => MlbGameStart::before($query, MlbGameStart::for($game)))
             ->where(function ($query) use ($teamId): void {
                 $query->where('home_team_id', $teamId)
                     ->orWhere('away_team_id', $teamId);
             })
-            ->orderByDesc('game_date')
-            ->orderByDesc('game_time')
+            ->orderByDesc('start_epoch')
             ->orderByDesc('id')
             ->limit(self::ROLLING_GAMES)
             ->get();
@@ -277,12 +278,16 @@ class TrustedHistoricalFeatureBuilder
      */
     private function pregameMarket(Game $game, CarbonInterface $gameStartAt): array
     {
+        $legacyBoundary = MlbGameStart::canonical($game);
+        if ($legacyBoundary === null) {
+            return $this->emptyMarket();
+        }
         $snapshot = GameOddsSnapshot::query()
             ->where('sport', 'mlb')
             ->where('game_table', $game->getTable())
             ->where('game_id', (int) $game->id)
             ->whereNotNull('captured_at')
-            ->where('captured_at', '<', $gameStartAt)
+            ->where('captured_at', '<', $legacyBoundary)
             ->orderByDesc('captured_at')
             ->orderByDesc('id')
             ->first();

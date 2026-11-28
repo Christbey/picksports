@@ -6,6 +6,7 @@ use App\DataTransferObjects\ESPN\FootballPlayData;
 use App\Models\CFB\Game;
 use App\Models\CFB\GameDataCheck;
 use App\Models\CFB\Play;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -134,10 +135,9 @@ class CfbOfficialPlayTailRepair
         });
     }
 
-    public function currentProof(Game $game, ?GameDataCheck $primary): ?GameDataCheck
+    public function currentProof(Game $game, ?GameDataCheck $primary, ?CarbonInterface $asOf = null): ?GameDataCheck
     {
-        $check = GameDataCheck::where('game_id', $game->id)->where('component', 'plays')->where('validator_version', self::VERSION)
-            ->where('state', 'complete')->whereNotNull('accepted_at')->latest('accepted_at')->latest('id')->first();
+        $check = app(CfbSourceAssessmentRecorder::class)->acceptedForGame($game, 'plays', [self::VERSION], asOf: $asOf);
         $spec = config('cfb_official_sources.play_tails.'.$game->espn_event_id);
         if ($game->status !== 'STATUS_FINAL' || ! is_array($spec) || ! $check
             || data_get($check->evidence, 'official_source_hash') !== $spec['sha256']

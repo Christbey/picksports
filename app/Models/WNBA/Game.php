@@ -36,6 +36,7 @@ class Game extends Model
         'game_time',
         'name',
         'short_name',
+        'neutral_site',
         'venue_name',
         'venue_city',
         'venue_state',
@@ -59,6 +60,7 @@ class Game extends Model
     protected function casts(): array
     {
         return [
+            'neutral_site' => 'boolean',
             'game_date' => 'datetime',
             'completed_at' => 'datetime',
             'odds_updated_at' => 'datetime',

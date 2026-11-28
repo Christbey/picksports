@@ -3,8 +3,9 @@
 namespace App\Services\ML;
 
 use App\Models\ModelArtifact;
+use App\Services\MLB\MlbExistingArtifactMutation;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class ShadowArtifactSelector
 {
@@ -36,61 +37,102 @@ class ShadowArtifactSelector
      */
     public function activateChallenger(ModelArtifact $artifact, array $metadata = []): void
     {
-        if (! in_array($artifact->status, ['challenger', 'promotion_eligible'], true)) {
-            throw new \InvalidArgumentException('Only challenger artifacts may be activated for shadow inference.');
+        $identity = $this->currentIdentity($artifact);
+        if ($identity['_mlb_cohort'] || strtolower(trim($identity['sport'])) === 'mlb') {
+            app(MlbExistingArtifactMutation::class)->activate($artifact, $metadata);
+
+            return;
         }
-
-        DB::transaction(function () use ($artifact, $metadata): void {
-            $candidates = ModelArtifact::query()
-                ->where('sport', $artifact->sport)
-                ->where('model_type', $artifact->model_type)
-                ->whereIn('status', ['challenger', 'promotion_eligible'])
-                ->lockForUpdate()
-                ->get();
-
-            foreach ($candidates as $candidate) {
-                if ($candidate->is($artifact)
-                    || data_get($candidate->metrics, 'shadow_selection.active') !== true) {
-                    continue;
-                }
-
-                $this->writeSelection($candidate, [
-                    'active' => false,
-                    'deactivated_at' => now()->toIso8601String(),
-                    'deactivation_reason' => 'superseded_by_'.$artifact->id,
-                ]);
-            }
-
-            $selected = $candidates->firstWhere($artifact->getKeyName(), $artifact->getKey())
-                ?? $artifact->newQuery()->lockForUpdate()->findOrFail($artifact->getKey());
-
-            $this->writeSelection($selected, [
-                'active' => true,
-                'activated_at' => now()->toIso8601String(),
-                'deactivated_at' => null,
-                'deactivation_reason' => null,
-                'metadata' => $metadata,
-            ]);
-        });
-
-        $artifact->refresh();
+        $this->genericSelection($artifact, $identity, true, $metadata, '');
     }
 
     public function deactivateChallenger(ModelArtifact $artifact, string $reason): void
     {
-        DB::transaction(function () use ($artifact, $reason): void {
-            $selected = $artifact->newQuery()
-                ->lockForUpdate()
-                ->findOrFail($artifact->getKey());
+        $identity = $this->currentIdentity($artifact);
+        if ($identity['_mlb_cohort'] || strtolower(trim($identity['sport'])) === 'mlb') {
+            app(MlbExistingArtifactMutation::class)->deactivate($artifact, $reason);
 
-            $this->writeSelection($selected, [
-                'active' => false,
-                'deactivated_at' => now()->toIso8601String(),
-                'deactivation_reason' => trim($reason) !== '' ? trim($reason) : 'deactivated',
-            ]);
+            return;
+        }
+        $this->genericSelection($artifact, $identity, false, [], $reason);
+    }
+
+    /** Only bounded persisted identity decides the mutation path, never a caller's edited fields. */
+    private function currentIdentity(ModelArtifact $artifact): array
+    {
+        if (! $artifact->exists || $artifact->isDirty() || ! Str::isUuid((string) $artifact->getRawOriginal($artifact->getKeyName()))) {
+            throw new \RuntimeException('Shadow selection requires a clean persisted identity.');
+        }
+        $connection = $artifact->getConnection();
+        $grammar = $connection->getQueryGrammar();
+        $mysql = $connection->getDriverName() === 'mysql';
+        if (! $mysql && $connection->getDriverName() !== 'sqlite') {
+            throw new \RuntimeException('Shadow selection identity projection is unsupported.');
+        }
+        $length = $mysql ? 'OCTET_LENGTH' : 'length';
+        $cast = $mysql ? 'BINARY' : 'BLOB';
+        $select = [];
+        foreach (['id' => 36, 'sport' => 32, 'model_type' => 96, 'training_run_id' => 36, 'status' => 32] as $field => $maximum) {
+            $column = $grammar->wrap($field);
+            $select[] = "CASE WHEN $length(CAST($column AS $cast)) <= $maximum THEN $column ELSE NULL END AS $column";
+        }
+        $row = $connection->table('model_artifacts')->useWritePdo()->where('id', $artifact->getRawOriginal($artifact->getKeyName()))->selectRaw(implode(', ', $select).', CASE WHEN sport = ? THEN 1 ELSE 0 END AS _mlb_cohort', ['mlb'])->first();
+        if ($row === null) {
+            throw new \RuntimeException('Shadow selection target no longer exists.');
+        }
+        $inMlbCohort = $row->_mlb_cohort;
+        unset($row->_mlb_cohort);
+        if (! in_array($inMlbCohort, [0, 1, '0', '1'], true)) {
+            throw new \RuntimeException('Shadow selection cohort classification is unavailable.');
+        }
+        foreach ((array) $row as $value) {
+            if (! is_string($value) || $value === '') {
+                throw new \RuntimeException('Shadow selection current identity is unavailable.');
+            }
+        }
+
+        return [...(array) $row, '_mlb_cohort' => (int) $inMlbCohort === 1];
+    }
+
+    private function genericSelection(ModelArtifact $input, array $identity, bool $activate, array $metadata, string $reason): void
+    {
+        $connection = $input->getConnection();
+        $connection->transaction(function () use ($input, $identity, $activate, $metadata, $reason, $connection): void {
+            $query = $input->newModelQuery()->useWritePdo();
+            if ($query->getQuery()->getConnection() !== $connection) {
+                throw new \RuntimeException('Shadow selection connection changed.');
+            }
+            $candidates = $query->where('sport', $identity['sport'])->where('model_type', $identity['model_type'])
+                ->lockForUpdate()->get();
+            $selected = $candidates->firstWhere('id', $identity['id']);
+            if ($selected === null) {
+                throw new \RuntimeException('Shadow selection target left its prepared cohort.');
+            }
+            foreach (array_diff_key($identity, ['_mlb_cohort' => true]) as $field => $value) {
+                if ($selected->getRawOriginal($field) !== $value) {
+                    throw new \RuntimeException('Shadow selection current target identity changed.');
+                }
+            }
+            if ($activate && ! in_array($selected->status, ['challenger', 'promotion_eligible'], true)) {
+                throw new \RuntimeException('Only current challengers may be activated for shadow inference.');
+            }
+            if ($activate) {
+                foreach ($candidates as $candidate) {
+                    if ($candidate->is($selected) || ! in_array($candidate->status, ['challenger', 'promotion_eligible'], true)
+                        || data_get($candidate->metrics, 'shadow_selection.active') !== true) {
+                        continue;
+                    }
+                    $this->writeSelection($candidate, ['active' => false, 'deactivated_at' => now()->toIso8601String(),
+                        'deactivation_reason' => 'superseded_by_'.$selected->id]);
+                }
+            }
+            $this->writeSelection($selected, $activate
+                ? ['active' => true, 'activated_at' => now()->toIso8601String(), 'deactivated_at' => null,
+                    'deactivation_reason' => null, 'metadata' => $metadata]
+                : ['active' => false, 'deactivated_at' => now()->toIso8601String(),
+                    'deactivation_reason' => trim($reason) !== '' ? trim($reason) : 'deactivated']);
         });
-
-        $artifact->refresh();
+        $input->refresh();
     }
 
     /**
@@ -148,6 +190,8 @@ class ShadowArtifactSelector
             ...$selection,
         ];
 
-        $artifact->forceFill(['metrics' => $metrics])->save();
+        if ($artifact->forceFill(['metrics' => $metrics])->save() !== true) {
+            throw new \RuntimeException('Shadow selection persistence was cancelled.');
+        }
     }
 }

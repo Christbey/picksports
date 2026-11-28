@@ -19,6 +19,7 @@ use App\Services\CFB\Live\LivePropProjector;
 use App\Services\CFB\Live\LiveSnapshotRecorder;
 use App\Services\ESPN\CFB\EspnService;
 use App\Services\OddsApi\OddsApiService;
+use App\Support\CFB\CfbGameStart;
 use App\Support\NflGameStateGuard;
 use App\Support\PredictionFieldAccess;
 use Carbon\Carbon;
@@ -32,7 +33,8 @@ beforeEach(function () {
     $this->game = Game::factory()->create(['home_team_id' => $this->home->id, 'away_team_id' => $this->away->id,
         'season' => 2026, 'season_type' => 2, 'game_date' => '2026-09-12', 'game_time' => '17:00:00',
         'status' => 'STATUS_IN_PROGRESS', 'period' => 2, 'game_clock' => '00:00', 'home_score' => 14, 'away_score' => 7,
-        'odds_api_event_id' => 'live-event']);
+        'espn_event_id' => 'synthetic-live-event', 'odds_api_event_id' => 'live-event',
+        ...CfbGameStart::attributes('2026-09-12T17:00:00Z', [], 'espn_scoreboard', 'synthetic-live-event')]);
     $this->prediction = Prediction::create(['game_id' => $this->game->id, 'predicted_spread' => 10, 'predicted_total' => 50, 'win_probability' => .7, 'confidence_score' => 65, 'created_at' => now()->subHours(2), 'updated_at' => now()->subHours(2)]);
     $this->prediction->forceFill(['created_at' => now()->subHours(2), 'updated_at' => now()->subHours(2)])->saveQuietly();
     $this->market = fn ($time = '2026-09-12T17:59:30Z') => ['id' => 'live-event', 'commence_time' => '2026-09-12T17:00:00Z', 'home_team' => 'Home', 'away_team' => 'Away',
@@ -320,4 +322,74 @@ test('batches live prop histories and skips them once frozen baselines are compl
         ->and($rows[0]['pregame_mean'])->toBe(100)
         ->and($rows[0]['sample'])->toBe(5)
         ->and($queries->filter(fn ($query) => str_contains($query['query'], 'from "cfb_player_stats"')))->toHaveCount(0);
+});
+
+it('recovers unknown kickoff history into a known frozen baseline and reuses only that known identity', function () {
+    $this->game->forceFill(['kickoff_observation' => CfbGameStart::observation('2026-09-12T17:00:00Z', ['timeValid' => false], 'espn_scoreboard', (string) $this->game->espn_event_id)])->saveQuietly();
+    expect(app(UpdateLivePrediction::class)->execute($this->game->fresh()))->toBeNull();
+    $first = LivePredictionSnapshot::firstOrFail()->getRawOriginal();
+    $this->game->fill(CfbGameStart::attributes('2026-09-12T17:00:00Z', [], 'espn_scoreboard', (string) $this->game->espn_event_id))->saveQuietly();
+    $this->travel(1)->minutes();
+    expect(app(UpdateLivePrediction::class)->execute($this->game->fresh()))->not->toBeNull();
+    $known = LivePredictionSnapshot::latest('id')->firstOrFail()->pregame;
+    expect($known['source'])->toBe('legacy_pregame')->and((float) $known['total'])->toBe(50.0);
+    $this->travel(1)->minutes();
+    expect(app(UpdateLivePrediction::class)->execute($this->game->fresh()))->not->toBeNull()
+        ->and(LivePredictionSnapshot::latest('id')->firstOrFail()->pregame)->toBe($known)
+        ->and(LivePredictionSnapshot::count())->toBe(3)->and(LivePredictionSnapshot::first()->getRawOriginal())->toBe($first);
+});
+
+it('requalifies a changed known cutoff instead of reusing a forecast that was captured after that cutoff', function () {
+    expect(app(UpdateLivePrediction::class)->execute($this->game))->not->toBeNull();
+    $first = LivePredictionSnapshot::firstOrFail()->getRawOriginal();
+    $this->game->fill(CfbGameStart::attributes('2026-09-12T15:00:00Z', [], 'espn_scoreboard', (string) $this->game->espn_event_id))->saveQuietly();
+    $this->travel(1)->minutes();
+    expect(app(UpdateLivePrediction::class)->execute($this->game->fresh()))->toBeNull()
+        ->and(LivePredictionSnapshot::latest('id')->firstOrFail()->pregame['source'])->toBe('unavailable')
+        ->and(LivePredictionSnapshot::first()->getRawOriginal())->toBe($first);
+});
+
+it('requalifies a cached canonical baseline when its event link changes or detaches', function (bool $detach) {
+    $event = SportEvent::factory()->create(['sport' => 'cfb', 'starts_at' => Carbon::parse('2026-09-12T17:00:00Z')->setTimezone(config('app.timezone'))]);
+    $this->game->update(['sport_event_id' => $event->id]);
+    $prediction = CanonicalPrediction::factory()->create(['sport' => 'cfb', 'sport_event_id' => $event->id, 'phase' => 'pregame',
+        'publication_state' => 'published', 'generated_at' => now()->subHours(2), 'published_at' => now()->subHours(2), 'created_at' => now()->subHours(2),
+        'output_metadata' => ['input_quality' => ['qualified' => true]], 'model_version' => '1.6.2']);
+    $prediction->markets()->create(['market_type' => 'spread', 'selection' => 'home', 'projected_line' => -20]);
+    $prediction->markets()->create(['market_type' => 'total', 'selection' => 'combined', 'projected_line' => 60]);
+    $prediction->markets()->create(['market_type' => 'moneyline', 'selection' => 'home', 'probability' => .96]);
+    expect(app(UpdateLivePrediction::class)->execute($this->game->fresh()))->not->toBeNull();
+    $first = LivePredictionSnapshot::firstOrFail()->getRawOriginal();
+    $next = $detach ? null : SportEvent::factory()->create(['sport' => 'cfb', 'starts_at' => $event->starts_at])->id;
+    $this->game->update(['sport_event_id' => $next]);
+    $this->travel(1)->minutes();
+    app(UpdateLivePrediction::class)->execute($this->game->fresh());
+    $baseline = LivePredictionSnapshot::latest('id')->firstOrFail()->pregame;
+    expect($baseline['source'])->toBe($detach ? 'legacy_pregame' : 'unavailable')
+        ->and($baseline['canonical_prediction_id'])->toBeNull()
+        ->and(LivePredictionSnapshot::first()->getRawOriginal())->toBe($first);
+})->with([false, true]);
+
+it('retains observed final zero prop stats and settles captured quotes despite unknown current kickoff', function () {
+    $player = Player::factory()->create(['espn_id' => 'final-zero-player', 'full_name' => 'Final zero player', 'team_id' => $this->home->id]);
+    PlayerProp::create(['game_id' => $this->game->id, 'player_id' => $player->id, 'player_name' => $player->full_name,
+        'market' => 'player_pass_yds', 'line' => 0, 'fetched_at' => now()->subHours(2)]);
+    $recorder = app(LiveSnapshotRecorder::class);
+    $baseline = ['prediction_id' => null, 'source' => 'unavailable', 'spread' => null, 'total' => null, 'home_win_probability' => null];
+    $quote = ['line' => 0, 'lean' => 'Over', 'difference' => 5, 'updated_at' => '2026-09-12T17:59:30Z', 'fresh' => true, 'bookmaker' => 'synthetic'];
+    $capture = $recorder->record($this->game, $baseline, null, 'live', 'live_feed', [], [['player_id' => $player->id,
+        'market' => 'player_pass_yds', 'actual' => null, 'status' => 'experimental_projection', 'quotes' => [$quote]]]);
+    $captured = $capture->fresh()->getRawOriginal();
+    $this->game->update(['status' => 'STATUS_FINAL', 'kickoff_observation' => CfbGameStart::observation('2026-09-12T17:00:00Z', ['timeValid' => false], 'espn_scoreboard', (string) $this->game->espn_event_id)]);
+    PlayerStat::factory()->create(['game_id' => $this->game->id, 'player_id' => $player->id, 'team_id' => $this->home->id, 'passing_yards' => 0]);
+    $rows = app(LivePropProjector::class)->project($this->game->fresh(), null, null, true);
+    expect($rows[0]['actual'])->toBe(0.0)->and($rows[0]['projected'])->toBe(0.0)->and($rows[0]['status'])->toBe('final')
+        ->and($rows[0]['pregame_line'])->toBeNull()->and($rows[0]['quotes'])->toBe([]);
+    $recorder->record($this->game, $baseline, null, 'final', 'live_feed', [], $rows);
+    Sanctum::actingAs(User::factory()->create());
+    $response = $this->getJson('/api/v2/sports/cfb/games/'.$this->game->id.'/live-betting')->assertOk();
+    $history = collect($response->json('history'))->firstWhere('id', $capture->id);
+    expect($history['props'][0]['settled_actual'])->toBe(0)->and($history['props'][0]['quotes'][0]['result'])->toBe('push')
+        ->and($history['props'][0]['quotes'][0]['fresh'])->toBeFalse()->and($history['props'][0]['quotes'][0]['lean_at_capture'])->toBe('Over')
+        ->and($capture->fresh()->getRawOriginal())->toBe($captured);
 });

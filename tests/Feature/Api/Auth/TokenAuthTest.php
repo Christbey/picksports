@@ -18,6 +18,7 @@ it('issues a sanctum token for valid api login credentials', function () {
 
     $response
         ->assertOk()
+        ->assertHeader('Cache-Control', 'no-store, private')
         ->assertJsonStructure([
             'token_type',
             'access_token',

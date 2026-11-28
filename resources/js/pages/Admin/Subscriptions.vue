@@ -3,7 +3,7 @@ import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
-import { type AppPageProps, type BreadcrumbItem } from '@/types';
+import { type AuthenticatedAppPageProps, type BreadcrumbItem } from '@/types';
 
 interface Subscription {
     stripe_id: string;
@@ -61,7 +61,7 @@ const syncingUserId = ref<number | null>(null);
 const assigningTierUserId = ref<number | null>(null);
 const impersonatingUserId = ref<number | null>(null);
 
-const page = usePage<AppPageProps>();
+const page = usePage<AuthenticatedAppPageProps>();
 const currentUserId = computed(() => page.props.auth.user.id);
 
 watch(search, (value) => {
@@ -88,10 +88,12 @@ function syncUser(userId: number) {
     );
 }
 
+const batchCursor = ref('0');
+
 function syncAll() {
     if (
         !confirm(
-            'Are you sure you want to sync all subscriptions with Stripe? This may take a while.',
+            'Queue reconciliation for the next 20 billing customers? No provider calls run in this request.',
         )
     ) {
         return;
@@ -100,7 +102,7 @@ function syncAll() {
     isSyncing.value = true;
     router.post(
         '/admin/subscriptions/sync-all',
-        {},
+        { after_user_id: Number(batchCursor.value) || 0, limit: 20 },
         {
             onFinish: () => {
                 isSyncing.value = false;
@@ -198,13 +200,29 @@ function impersonateUser(user: User) {
                             View and manage all user subscriptions
                         </p>
                     </div>
-                    <button
-                        @click="syncAll"
-                        :disabled="isSyncing"
-                        class="rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                        {{ isSyncing ? 'Syncing...' : 'Sync All with Stripe' }}
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm" for="billing-batch-cursor"
+                            >After user ID</label
+                        >
+                        <input
+                            id="billing-batch-cursor"
+                            v-model="batchCursor"
+                            type="number"
+                            min="0"
+                            class="rounded border p-2"
+                        />
+                        <button
+                            @click="syncAll"
+                            :disabled="isSyncing"
+                            class="rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            {{
+                                isSyncing
+                                    ? 'Requesting...'
+                                    : 'Queue Billing Batch'
+                            }}
+                        </button>
+                    </div>
                 </div>
 
                 <div class="flex gap-4">

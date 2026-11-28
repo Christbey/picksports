@@ -2,6 +2,7 @@
 
 namespace App\Models\CFB;
 
+use App\Services\CFB\Data\CfbSourceAssessmentRecorder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -11,10 +12,19 @@ class GameDataCheck extends Model
 
     protected $guarded = ['id'];
 
+    public function save(array $options = []): bool
+    {
+        if (! $this->exists) {
+            return parent::save($options);
+        }
+
+        return app(CfbSourceAssessmentRecorder::class)
+            ->saveProjection($this, fn (): bool => parent::save($options));
+    }
+
     public function isCurrentAccepted(): bool
     {
-        return $this->accepted_at !== null && self::where('game_id', $this->game_id)->where('component', $this->component)
-            ->whereNotNull('accepted_at')->latest('accepted_at')->latest('id')->value('id') === $this->id;
+        return app(CfbSourceAssessmentRecorder::class)->isAccepted($this);
     }
 
     protected function casts(): array

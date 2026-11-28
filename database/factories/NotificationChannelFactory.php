@@ -18,7 +18,10 @@ class NotificationChannelFactory extends Factory
     public function definition(): array
     {
         return [
-            //
+            'name' => fake()->unique()->slug(3),
+            'type' => 'email',
+            'is_active' => false,
+            'config' => null,
         ];
     }
 }

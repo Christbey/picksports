@@ -2,9 +2,10 @@
 
 use App\Models\NFL\Team;
 use App\Models\NFL\TeamMetric;
-use App\Models\NFL\TeamMetricSnapshot;
 use App\Models\Sports\FuturesOddsSnapshot;
 use App\Services\NFL\TeamFuturesProjectionService;
+
+require_once __DIR__.'/../../Support/NflFutures.php';
 
 it('prefers historical team metric snapshots for as-of team futures projections', function () {
     $team = Team::factory()->create([
@@ -13,20 +14,7 @@ it('prefers historical team metric snapshots for as-of team futures projections'
         'abbreviation' => 'KC',
     ]);
 
-    TeamMetric::query()->create([
-        'team_id' => $team->id,
-        'season' => 2025,
-        'wins' => 12,
-        'losses' => 5,
-        'predictive_rating' => 1560,
-        'future_strength_of_schedule' => 1490,
-        'recent_form_rating' => 0.4,
-        'injury_total_adjustment' => 0.1,
-        'calculation_date' => '2026-01-10',
-    ]);
-
-    TeamMetricSnapshot::query()->create([
-        'snapshot_key' => sha1('metric-snapshot'),
+    captureObservedNflMetricFixture([
         'team_id' => $team->id,
         'season' => 2025,
         'wins' => 6,
@@ -36,7 +24,19 @@ it('prefers historical team metric snapshots for as-of team futures projections'
         'recent_form_rating' => 0.2,
         'injury_total_adjustment' => 0.0,
         'calculation_date' => '2025-10-15',
-        'captured_at' => '2025-10-15T12:00:00Z',
+    ], '2025-10-15T12:00:00Z');
+
+    // A genuinely later mutable current correction must not replace the earlier observed snapshot.
+    TeamMetric::query()->updateOrCreate(['team_id' => $team->id, 'season' => 2025, 'season_type' => '2'], [
+        'team_id' => $team->id,
+        'season' => 2025,
+        'wins' => 12,
+        'losses' => 5,
+        'predictive_rating' => 1560,
+        'future_strength_of_schedule' => 1490,
+        'recent_form_rating' => 0.4,
+        'injury_total_adjustment' => 0.1,
+        'calculation_date' => '2026-01-10',
     ]);
 
     FuturesOddsSnapshot::query()->create([
@@ -166,8 +166,7 @@ it('produces different preseason win projections for teams with different histor
         [$strongTeam->id, 11.0, 4.0, 1498.0],
         [$weakTeam->id, -9.0, -3.0, 1502.0],
     ] as [$teamId, $predictive, $recent, $futureSos]) {
-        TeamMetricSnapshot::query()->create([
-            'snapshot_key' => sha1('preseason-metric-'.$teamId),
+        captureObservedNflMetricFixture([
             'team_id' => $teamId,
             'season' => 2025,
             'wins' => 0,
@@ -177,8 +176,7 @@ it('produces different preseason win projections for teams with different histor
             'recent_form_rating' => $recent,
             'injury_total_adjustment' => 0.0,
             'calculation_date' => '2025-08-01',
-            'captured_at' => '2025-08-01T12:00:00Z',
-        ]);
+        ], '2025-08-01T12:00:00Z');
 
         FuturesOddsSnapshot::query()->create([
             'snapshot_key' => sha1('preseason-over-'.$teamId),

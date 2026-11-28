@@ -21,7 +21,148 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+permissions:
+  contents: read
+
 jobs:
+  inventory-provenance:
+    name: Review inventory provenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m unittest discover -s tests/scripts -p 'test_*.py'
+      - run: python3 scripts/test_ml_runtime_contract.py
+
+  mysql-integration:
+    name: MySQL 8.4 integrity and concurrency
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: picksports_test_readiness
+          MYSQL_USER: picksports_test
+          MYSQL_PASSWORD: testing-disposable
+          MYSQL_ROOT_PASSWORD: testing-root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: mysql
+      DB_URL: ''
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_SOCKET: ''
+      DB_DATABASE: picksports_test_readiness
+      DB_USERNAME: picksports_test
+      DB_PASSWORD: testing-disposable
+      PICKSPORTS_TEST_MYSQL_DATABASE: picksports_test_readiness
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      MAIL_MAILER: array
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: pdo_mysql
+          tools: composer:v2
+      - run: composer install --no-interaction --no-scripts --prefer-dist --optimize-autoloader
+      - run: cp .env.example .env
+      - run: mkdir -p bootstrap/cache storage/framework/{cache,sessions,testing,views} storage/logs
+      - run: php artisan key:generate --no-interaction
+      - run: php artisan package:discover --ansi
+      - name: Prepare disposable transaction-observation capability
+        run: >-
+          docker exec -e MYSQL_PWD=testing-root '${{ job.services.mysql.id }}'
+          mysql --user=root --execute="
+          GRANT SELECT ON performance_schema.events_transactions_current TO 'picksports_test'@'%';
+          GRANT SELECT ON performance_schema.threads TO 'picksports_test'@'%';
+          UPDATE performance_schema.setup_instruments SET ENABLED='YES', TIMED='YES' WHERE NAME='transaction';
+          UPDATE performance_schema.setup_consumers SET ENABLED='YES' WHERE NAME='events_transactions_current';"
+      - name: Fail fast on native migration installation
+        run: php -d memory_limit=1536M vendor/bin/pest --configuration=phpunit.mysql.xml tests/Integration/MySql/SchemaInstallPreflightTest.php --stop-on-error --stop-on-failure --fail-on-empty-test-suite --compact
+      - name: Disposable MySQL migration, contract and process-race tests
+        run: php -d memory_limit=1536M vendor/bin/pest --configuration=phpunit.mysql.xml --exclude-group=mysql-schema-preflight --compact
+
+  redis-pruning:
+    name: Redis queue pruning contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ':memory:'
+      DB_URL: ''
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      MAIL_MAILER: array
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: redis, pdo_sqlite
+          tools: composer:v2
+      - name: Install isolated fixture binaries
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y redis-server
+          redis-server --version
+      - run: composer install --no-interaction --no-scripts --prefer-dist --optimize-autoloader
+      - run: cp .env.example .env
+      - run: mkdir -p bootstrap/cache storage/framework/{cache,sessions,testing,views} storage/logs
+      - run: php artisan key:generate --no-interaction
+      - run: php artisan package:discover --ansi
+      - name: Owned socket-only Redis fixture and real Lua contracts
+        run: python3 scripts/test-redis-pruning.py
+
+  browser-fixtures:
+    name: Chromium synthetic user flows
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ':memory:'
+      DB_URL: ''
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      MAIL_MAILER: array
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+      - run: composer install --no-interaction --no-scripts --prefer-dist --optimize-autoloader
+      - run: npm ci
+      - run: cp .env.example .env
+      - run: mkdir -p bootstrap/cache storage/framework/{cache,sessions,testing,views} storage/logs
+      - run: php artisan key:generate --no-interaction
+      - run: php artisan package:discover --ansi
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - name: Populated slate parity and settings interactions
+        run: npm run test:browser:ci
+
   standalone-frontend:
     runs-on: ubuntu-latest
     steps:
@@ -56,6 +197,7 @@ jobs:
           php-version: '8.5'
           tools: composer:v2
           coverage: none
+          ini-values: memory_limit=1536M, post_max_size=16M
 
       - name: Locate Composer cache
         id: composer-cache
@@ -105,17 +247,21 @@ jobs:
         run: php vendor/bin/pest --list-tests-xml=storage/framework/testing/full.xml
 
       - name: Record shard test discovery
-        run: php vendor/bin/pest --shard=${{ matrix.shard }}/4 --list-tests-xml=storage/framework/testing/planned-${{ matrix.shard }}.xml
+        run: php vendor/bin/pest --exclude-group=ci-isolated-interop --shard=${{ matrix.shard }}/4 --list-tests-xml=storage/framework/testing/planned-${{ matrix.shard }}.xml
 
       - name: Tests
-        run: composer test:ci -- --shard=${{ matrix.shard }}/4 --log-junit=storage/framework/testing/junit-${{ matrix.shard }}.xml --profile
+        env:
+          PICKSPORTS_PHP_CI_EVENTS: storage/framework/testing/events-${{ matrix.shard }}.jsonl
+        run: composer test:ci -- --bootstrap=scripts/php-ci-bootstrap.php --exclude-group=ci-isolated-interop --shard=${{ matrix.shard }}/4 --log-junit=storage/framework/testing/junit-${{ matrix.shard }}.xml --profile
 
       - name: Upload PHP test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: php-ci-results-${{ matrix.shard }}
-          path: storage/framework/testing/*.xml
+          path: |
+            storage/framework/testing/*.xml
+            storage/framework/testing/events-*.jsonl
           if-no-files-found: error
           retention-days: 7
 
@@ -125,9 +271,88 @@ jobs:
           php artisan api:v2-openapi-generate --output=/tmp/openapi-v2.json
           diff --unified docs/openapi-v2.json /tmp/openapi-v2.json
 
+  php-isolated:
+    name: PHP 8.5 isolated interoperability lane 5
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    env:
+      XDEBUG_MODE: 'off'
+      APP_ENV: testing
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ':memory:'
+      DB_URL: ''
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      MAIL_MAILER: array
+      PYTHONNOUSERSITE: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: pdo_sqlite, zip
+          tools: composer:v2
+          coverage: none
+          ini-values: memory_limit=128M, post_max_size=16M
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.16'
+          architecture: arm64
+      - name: Bind owned interoperability paths
+        run: |
+          printf 'PICKSPORTS_NFL_NUMERIC_FIXTURE_ROOT=%s\n' "$RUNNER_TEMP/nfl-ci-interop" >> "$GITHUB_ENV"
+          printf 'PICKSPORTS_NFL_NUMERIC_PYTHON=%s\n' "$RUNNER_TEMP/nfl-ci-venv/bin/python" >> "$GITHUB_ENV"
+      - name: Verify isolated PHP platform contract
+        run: |
+          php -r 'exit(PHP_MAJOR_VERSION === 8 && PHP_MINOR_VERSION === 5 && extension_loaded("pdo_sqlite") && extension_loaded("zip") ? 0 : 1);'
+      - run: composer install --no-interaction --no-scripts --prefer-dist --optimize-autoloader
+      - run: cp .env.example .env
+      - run: mkdir -p bootstrap/cache storage/framework/{cache,sessions,testing,views} storage/logs
+      - run: php artisan key:generate --no-interaction
+      - run: php artisan package:discover --ansi
+      - name: Test portable fixture admission without scientific imports
+        run: python -m unittest discover -s scripts -p test_prepare_nfl_ci_interop.py
+      - name: Prepare tiny synthetic numeric interoperability fixture
+        run: |
+          test ! -e "$RUNNER_TEMP/nfl-ci-venv"
+          python -m venv "$RUNNER_TEMP/nfl-ci-venv"
+          "$PICKSPORTS_NFL_NUMERIC_PYTHON" -m pip --isolated install --only-binary=:all: --require-hashes --no-deps --requirement ml/runtime/requirements-linux-aarch64-cp312.lock
+          "$PICKSPORTS_NFL_NUMERIC_PYTHON" -m pip --isolated install --no-deps --no-build-isolation --editable ml/nfl
+          "$PICKSPORTS_NFL_NUMERIC_PYTHON" -m pip check
+          "$PICKSPORTS_NFL_NUMERIC_PYTHON" scripts/prepare_nfl_ci_interop.py --output "$PICKSPORTS_NFL_NUMERIC_FIXTURE_ROOT"
+      - name: Record isolated lane discovery at the actual caller limit
+        run: >-
+          php -d memory_limit=128M vendor/bin/pest
+          tests/Feature/CFB/CfbSignalArtifactRecoveryTest.php tests/Feature/NFL/NflNumericBundleTest.php
+          --group=ci-isolated-interop --list-tests-xml=storage/framework/testing/planned-5.xml
+      - name: Execute only the four isolated contracts
+        env:
+          PICKSPORTS_PHP_CI_EVENTS: storage/framework/testing/events-5.jsonl
+        run: >-
+          php -d memory_limit=128M vendor/bin/pest
+          tests/Feature/CFB/CfbSignalArtifactRecoveryTest.php tests/Feature/NFL/NflNumericBundleTest.php
+          --group=ci-isolated-interop --bootstrap=scripts/php-ci-bootstrap.php
+          --log-junit=storage/framework/testing/junit-5.xml --compact --display-skipped
+      - name: Upload isolated PHP test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: php-ci-results-5
+          path: |
+            storage/framework/testing/planned-5.xml
+            storage/framework/testing/junit-5.xml
+            storage/framework/testing/events-5.jsonl
+          if-no-files-found: error
+          retention-days: 7
+
   ci:
     name: ci (8.5)
-    needs: php
+    needs: [php, php-isolated]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -144,13 +369,16 @@ jobs:
       - name: Test suite-completeness guard
         run: python -m unittest discover -s scripts -p 'test_verify_php_ci_results.py'
       - name: Verify complete PHP execution
+        shell: bash
         run: |
-          python scripts/verify-php-ci-results.py php-ci-results --shards=4 | tee -a "$GITHUB_STEP_SUMMARY"
+          set -o pipefail
+          python scripts/verify-php-ci-results.py php-ci-results --shards=5 | tee -a "$GITHUB_STEP_SUMMARY"
           test '${{ needs.php.result }}' = 'success'
+          test '${{ needs.php-isolated.result }}' = 'success'
 
   ml:
     name: ${{ matrix.package }} ML tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     strategy:
       fail-fast: false
       matrix:
@@ -163,14 +391,16 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-          cache: pip
-          cache-dependency-path: ml/${{ matrix.package }}/requirements.lock.txt
+          python-version: '3.12.16'
+          architecture: arm64
 
       - name: Install ML dependencies
         run: |
-          python -m pip install --requirement ml/${{ matrix.package }}/requirements.lock.txt
-          python -m pip install --no-deps --editable ml/${{ matrix.package }}
+          test ! -e "$RUNNER_TEMP/ml-ci-${{ matrix.package }}"
+          python -m venv "$RUNNER_TEMP/ml-ci-${{ matrix.package }}"
+          "$RUNNER_TEMP/ml-ci-${{ matrix.package }}/bin/python" -m pip --isolated install --only-binary=:all: --require-hashes --no-deps --requirement ml/runtime/requirements-linux-aarch64-cp312.lock
+          "$RUNNER_TEMP/ml-ci-${{ matrix.package }}/bin/python" -m pip --isolated install --no-deps --no-build-isolation --editable ml/${{ matrix.package }}
+          "$RUNNER_TEMP/ml-ci-${{ matrix.package }}/bin/python" -m pip check
 
       - name: Run ML tests
-        run: python -m pytest ml/${{ matrix.package }}/tests
+        run: '"$RUNNER_TEMP/ml-ci-${{ matrix.package }}/bin/python" -m pytest ml/${{ matrix.package }}/tests'

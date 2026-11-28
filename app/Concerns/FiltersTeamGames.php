@@ -6,6 +6,7 @@ use App\Models\MLB\Game as MlbGame;
 use App\Services\PlayerStats\NbaPlayerEpaCalculator;
 use App\Support\MLB\MlbGameScoreResolver;
 use App\Support\MlbRegularSeasonWindow;
+use App\Support\Sports\SeasonTypeCandidates;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -76,46 +77,7 @@ trait FiltersTeamGames
      */
     protected function resolveSeasonTypeCandidates(string $sportSlug, int|string $seasonType): array
     {
-        $configuredType = $seasonType;
-
-        $typeNames = config("{$sportSlug}.season.type_names", []);
-        $typesByKey = config("{$sportSlug}.season.types", []);
-        $candidates = [];
-
-        if ($configuredType === null || $configuredType === '') {
-            return [];
-        }
-
-        $candidates[] = $configuredType;
-        $candidates[] = (string) $configuredType;
-
-        if (is_string($configuredType) && isset($typeNames[$configuredType])) {
-            $candidates[] = $typeNames[$configuredType];
-        }
-
-        if (is_string($configuredType) && isset($typesByKey[$configuredType])) {
-            $resolved = $typesByKey[$configuredType];
-            $candidates[] = $resolved;
-            $candidates[] = (string) $resolved;
-        }
-
-        if (is_numeric($configuredType)) {
-            $code = (int) $configuredType;
-            $matchedKey = array_search($code, $typesByKey, true);
-            if ($matchedKey !== false) {
-                $candidates[] = (string) $matchedKey;
-                if (isset($typeNames[$matchedKey])) {
-                    $candidates[] = $typeNames[$matchedKey];
-                }
-            }
-        }
-
-        $normalized = array_values(array_unique(array_filter(
-            $candidates,
-            fn ($value) => $value !== null && $value !== ''
-        )));
-
-        return $normalized;
+        return SeasonTypeCandidates::resolve($sportSlug, $seasonType);
     }
 
     /**

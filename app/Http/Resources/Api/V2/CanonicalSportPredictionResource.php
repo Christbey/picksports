@@ -10,6 +10,7 @@ use App\Services\Api\V2\SportContext;
 use App\Services\MLB\MlbRecommendationPresentation;
 use App\Services\Predictions\LivePredictionStore;
 use App\Support\Sports\GameDateTimePresenter;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -53,7 +54,9 @@ class CanonicalSportPredictionResource extends JsonResource
         $confidence = $prediction->sport === 'cfb' ? null : $this->number($homeMoneyline?->confidence_score);
         $evaluation = $prediction->latestEvaluation;
         $confidenceContext = $presentation->confidenceContext;
-        $valueSignal = $presentation->valueSignal;
+        $valueSignal = $prediction->sport === 'wcbb' && ! $request->user()?->can('view-prediction-spread')
+            ? null
+            : $presentation->valueSignal;
         $live = $presentation->liveFields + LivePredictionStore::EMPTY_FIELDS;
         if (! in_array($game?->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD', 'STATUS_SUSPENDED', 'STATUS_DELAYED'], true)) {
             $live = LivePredictionStore::EMPTY_FIELDS;
@@ -62,6 +65,7 @@ class CanonicalSportPredictionResource extends JsonResource
         return [
             'id' => $prediction->public_id,
             'sport' => $prediction->sport,
+            'spread_convention' => 'home_handicap',
             'game_id' => $game?->getKey(),
             'sport_event_id' => $prediction->sportEvent?->public_id,
             'revision' => $prediction->revision,
@@ -111,7 +115,7 @@ class CanonicalSportPredictionResource extends JsonResource
                 ...$presentation->nflBoard,
                 'can_retry_research' => (bool) $request->user()?->isAdmin()
                     && in_array($game?->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true)
-                    && $prediction->sportEvent?->starts_at?->isFuture(),
+                    && ($this->nflKickoff($game)?->isFuture() ?? false),
             ],
             'period_insights' => [],
             'cfb_signal_context' => null,
@@ -194,7 +198,7 @@ class CanonicalSportPredictionResource extends JsonResource
             return null;
         }
 
-        $dateTime = GameDateTimePresenter::forSport($this->context->slug, $game->game_date, $game->game_time);
+        $dateTime = GameDateTimePresenter::forGame($this->context->slug, $game);
 
         return [
             'id' => $game->getKey(),
@@ -206,6 +210,10 @@ class CanonicalSportPredictionResource extends JsonResource
             'short_name' => $game->short_name,
             'game_date' => $dateTime['game_date'],
             'game_time' => $dateTime['game_time'],
+            'starts_at' => GameDateTimePresenter::startsAtForGame($this->context->slug, $game),
+            'kickoff_at' => $this->context->slug === 'nfl'
+                ? GameDateTimePresenter::startsAtForGame('nfl', $game)
+                : null,
             'status' => $game->status,
             'home_score' => $game->home_score,
             'away_score' => $game->away_score,
@@ -280,6 +288,16 @@ class CanonicalSportPredictionResource extends JsonResource
     private function number(mixed $value): ?float
     {
         return is_numeric($value) ? (float) $value : null;
+    }
+
+    private function nflKickoff(?Model $game): ?CarbonImmutable
+    {
+        if ($game === null) {
+            return null;
+        }
+        $start = GameDateTimePresenter::startsAtForGame('nfl', $game);
+
+        return $start === null ? null : CarbonImmutable::parse($start);
     }
 
     private function gameModel(CanonicalPrediction $prediction): ?Model

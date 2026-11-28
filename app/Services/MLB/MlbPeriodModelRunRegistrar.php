@@ -3,12 +3,10 @@
 namespace App\Services\MLB;
 
 use App\Models\ModelArtifact;
-use App\Models\ModelRun;
 use App\Services\ML\ModelArtifactRegistry;
 use App\Services\ML\ShadowArtifactSelector;
-use App\Services\Predictions\ModelRunRecorder;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
+use App\Support\Json\JsonAllocationBudget;
+use App\Support\MLB\MlbGameStart;
 use RuntimeException;
 
 class MlbPeriodModelRunRegistrar
@@ -25,102 +23,95 @@ class MlbPeriodModelRunRegistrar
         string $datasetPath,
     ): ModelArtifact {
         $manifest = $this->json($manifestPath);
-        $evaluation = $this->json($evaluationPath);
-        $artifactId = (string) data_get($manifest, 'artifact_id');
-        $pythonRunId = (string) data_get($manifest, 'model_run_id');
-        if (! Str::isUuid($artifactId) || ! Str::isUuid($pythonRunId)) {
-            throw new RuntimeException('MLB period manifest IDs must be UUIDs.');
+        if (($manifest['execution_format'] ?? null) !== MlbPeriodModelInferenceService::EXECUTION_FORMAT) {
+            throw new RuntimeException('MLB period registration requires the current numeric execution format.');
         }
-        if (! hash_equals((string) $manifest['dataset_hash'], hash_file('sha256', $datasetPath))) {
-            throw new RuntimeException('MLB period dataset hash does not match its manifest.');
+        if (($manifest['timing_policy'] ?? null) !== MlbGameStart::TIMING_POLICY || ($manifest['source_availability_verified'] ?? null) !== true) {
+            throw new RuntimeException('MLB period registration requires explicit observed-start and source-availability policy evidence.');
         }
-        if (! hash_equals((string) $manifest['artifact_hash'], hash_file('sha256', $bundlePath))) {
-            throw new RuntimeException('MLB period artifact hash does not match its manifest.');
-        }
-        if (ModelArtifact::query()->whereKey($artifactId)->exists()
-            || ModelRun::query()->whereKey($pythonRunId)->exists()) {
-            throw new RuntimeException('This MLB period model run is already registered.');
-        }
+        $this->rejectUnsafeSourcePrefix($datasetPath);
 
-        $artifact = DB::transaction(function () use (
-            $artifactId,
-            $bundlePath,
-            $datasetPath,
-            $evaluation,
-            $evaluationPath,
-            $manifest,
-            $pythonRunId,
-        ): ModelArtifact {
-            $run = ModelRun::query()->create([
-                'id' => $pythonRunId,
-                'sport' => 'mlb',
-                'run_type' => 'training',
-                'model_version' => (string) $manifest['model_version'],
-                'feature_version' => (string) $manifest['feature_schema_version'],
-                'blend_version' => 'mlb-period-multiclass-v1',
-                'config_hash' => (string) $manifest['config_hash'],
-                'code_version' => app(ModelRunRecorder::class)->codeVersion(),
-                'parameters' => [
-                    'seed' => $manifest['seed'],
-                    'training_seasons' => $manifest['training_seasons'],
-                    'markets' => $manifest['markets'],
-                ],
-                'status' => 'running',
-                'started_at' => now(),
-                'metadata' => [
-                    'python_model_run_id' => $pythonRunId,
-                    'python_manifest' => $manifest,
-                ],
-            ]);
-
-            $artifact = $this->artifacts->register(
-                id: $artifactId,
-                trainingRun: $run,
-                marketType: 'multi_market',
-                modelType: 'mlb_period_bundle',
-                modelVersion: (string) $manifest['model_version'],
-                featureVersion: (string) $manifest['feature_schema_version'],
-                datasetHash: (string) $manifest['dataset_hash'],
-                artifactPath: $bundlePath,
-                metrics: [
-                    'markets' => $evaluation['markets'] ?? [],
-                    'promotion_summary' => $evaluation['promotion_summary'] ?? [],
-                ],
-                datasetPath: $datasetPath,
-                evaluationReportPath: $evaluationPath,
-            );
-            $artifact->forceFill([
-                'promotion_criteria' => [
-                    'chronological_windows_required' => true,
-                    'live_shadow_required' => true,
-                    'positive_quote_roi_required' => true,
-                ],
-                'promotion_decision' => [
-                    ...(array) ($evaluation['promotion_summary'] ?? []),
-                    'promoted_markets' => [],
-                ],
-            ])->save();
-
-            return $artifact->refresh();
-        });
-
-        $this->selection->activateChallenger($artifact, [
-            'reason' => 'latest_registered_mlb_period_challenger',
-        ]);
-
-        return $artifact->refresh();
+        // A worker declaration or apparently available CSV is not a period-source
+        // proof. The current selector supports qualified TABULAR artifacts only.
+        // Reject this known unsupported composition before SQL or object storage,
+        // rather than committing an orphan training run/artifact before it refuses.
+        throw new RuntimeException('MLB period registration is unavailable until a reviewed period source-proof and selection protocol exists.');
     }
 
-    /**
-     * @return array<string, mixed>
-     */
+    /** Negative admission only: passing this bounded probe never certifies training input. */
+    private function rejectUnsafeSourcePrefix(string $path): void
+    {
+        $bytes = $this->readBounded($path, 65536);
+        $stream = fopen('php://temp', 'w+b');
+        if ($stream === false) {
+            throw new RuntimeException('Unable to inspect unsupported period source availability.');
+        }
+        try {
+            if (fwrite($stream, $bytes) !== strlen($bytes) || ! rewind($stream)) {
+                throw new RuntimeException('Unable to inspect unsupported period source availability.');
+            }
+            $headers = fgetcsv($stream, 65537, ',', '"', '');
+            if (! is_array($headers) || count($headers) > 128
+                || count(array_filter($headers, fn ($header) => is_string($header) && $header !== '' && strlen($header) <= 256)) !== count($headers)
+                || count(array_unique($headers)) !== count($headers)) {
+                throw new RuntimeException('Period source availability is missing or malformed.');
+            }
+            $indexes = array_flip($headers);
+            if (! isset($indexes['pregame_safe'], $indexes['availability_status'])) {
+                throw new RuntimeException('Period source availability is unknown; worker declarations cannot supply it.');
+            }
+            $count = 0;
+            while ($count < 128 && ($row = fgetcsv($stream, 65537, ',', '"', '')) !== false) {
+                $count++;
+                if (count($row) !== count($headers)
+                    || ! in_array($row[$indexes['pregame_safe']], ['1', 'true'], true)
+                    || ! in_array($row[$indexes['availability_status']], ['observed_pregame', 'verified_reconstruction'], true)) {
+                    throw new RuntimeException('Retrospective or unknown-availability period rows cannot enter registration.');
+                }
+            }
+            if ($count === 0) {
+                throw new RuntimeException('Period source availability is empty.');
+            }
+        } finally {
+            fclose($stream);
+        }
+    }
+
     private function json(string $path): array
     {
-        $decoded = json_decode((string) file_get_contents($path), true);
+        $bytes = $this->readBounded($path, 2097152);
+        JsonAllocationBudget::inspect($bytes, 2097152, 50000, 24, 'MLB unsupported period manifest');
+        $decoded = json_decode($bytes, true, 24, JSON_THROW_ON_ERROR);
         if (! is_array($decoded)) {
-            throw new RuntimeException("Invalid JSON file: {$path}");
+            throw new RuntimeException('Invalid MLB period manifest.');
         }
 
         return $decoded;
+    }
+
+    /** This bounds only refusal preflight IO, not a supported period dataset capacity policy. */
+    private function readBounded(string $path, int $maximum): string
+    {
+        if (str_contains($path, '://') || ! is_file($path) || is_link($path)) {
+            throw new RuntimeException('Period registration preflight requires a regular local file.');
+        }
+        $stream = fopen($path, 'rb');
+        if ($stream === false) {
+            throw new RuntimeException('Unable to read period registration preflight.');
+        }
+        try {
+            $stat = fstat($stream);
+            if ($stat === false || ($stat['mode'] & 0170000) !== 0100000) {
+                throw new RuntimeException('Period registration preflight file type changed.');
+            }
+            $bytes = stream_get_contents($stream, $maximum + 1);
+            if ($bytes === false || strlen($bytes) > $maximum || ! feof($stream)) {
+                throw new RuntimeException('Unsupported period registration exceeds its bounded refusal preflight.');
+            }
+
+            return $bytes;
+        } finally {
+            fclose($stream);
+        }
     }
 }

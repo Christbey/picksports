@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V2;
 
 use App\Http\Controllers\Controller;
+use App\Models\MLB\Game;
 use App\Services\Api\V2\GameAnalysisAccess;
 use App\Services\Api\V2\GameResearchPresentation;
 use App\Services\Api\V2\SportContextResolver;
@@ -35,7 +36,7 @@ class GameResearchController extends Controller
         $access->authorize($request->user(), $context->slug);
         $resolved = $games->find($context, $game, $request->user(), 'identity');
         $data = $presentation->present($research->forGame($resolved, $context->slug), $reviews->forGame($resolved, $context->slug));
-        $start = $resolved->sportEvent?->starts_at ?? $dates->gameDateTimeUtc($resolved->game_date, $resolved->game_time);
+        $start = $resolved instanceof Game ? $dates->gameStart($resolved) : $resolved->sportEvent?->starts_at ?? $dates->gameStart($resolved);
         $data['capabilities'] = ['can_retry' => in_array($resolved->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true)
             && ($start?->isFuture() ?? false)
             && ($research->enabled($context->slug) || $coordinator->enabled($context->slug))];

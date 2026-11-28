@@ -2,6 +2,7 @@
 
 use App\Actions\CFB\CalculateElo;
 use App\Actions\CFB\GenerateCanonicalPrediction;
+use App\Actions\ESPN\CFB\SyncGameMetadata;
 use App\Models\CFB\EloRating;
 use App\Models\CFB\Game;
 use App\Models\CFB\Team;
@@ -12,6 +13,7 @@ use App\Models\ShadowModelOutput;
 use App\Models\SportEvent;
 use App\Services\CFB\Predictions\CfbCalculationReleaseRegistrar;
 use App\Services\CFB\Predictions\CfbMoneylineCalibrationDataset;
+use App\Services\ESPN\CFB\EspnService;
 use App\Services\ML\ModelArtifactRegistry;
 use App\Services\Predictions\ModelRunRecorder;
 use Illuminate\Support\Facades\Artisan;
@@ -162,6 +164,20 @@ it('records an observed canonical shadow without changing the published probabil
         'home_score' => null,
         'away_score' => null,
     ]);
+    // Observe this intended synthetic fixture through the real verified-summary boundary.
+    // Event wall time alone does not certify the current provider clock.
+    $summary = Mockery::mock(EspnService::class);
+    $summary->shouldReceive('getGame')->once()->with((string) $game->espn_event_id)->andReturn([
+        'header' => ['id' => (string) $game->espn_event_id, 'season' => ['year' => 2026], 'competitions' => [[
+            'date' => $startsAt->toIso8601String(), 'dateValid' => true, 'timeValid' => true,
+            'status' => ['type' => ['name' => 'STATUS_SCHEDULED']], 'competitors' => [
+                ['homeAway' => 'home', 'team' => ['id' => (string) $home->espn_id]],
+                ['homeAway' => 'away', 'team' => ['id' => (string) $away->espn_id]],
+            ],
+        ]]],
+    ]);
+    expect((new SyncGameMetadata($summary))->execute($game))->toBeTrue();
+    $game->refresh();
     app(CfbCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
     $prediction = app(GenerateCanonicalPrediction::class)->execute($game);
     $publishedProbability = (float) $prediction->markets

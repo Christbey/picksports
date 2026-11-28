@@ -5,7 +5,8 @@ const {
     signalForTournament,
     getConfidenceColor,
     getSignalBand,
-    formatStatNumber,
+    formatRelativeSignal,
+    formatExportPercent,
     buildTournamentRows,
     exportTournamentRow,
     props,
@@ -45,7 +46,7 @@ const {
                     <th
                         class="w-[170px] px-4 py-3 text-left text-xs font-bold tracking-wide text-muted-foreground uppercase"
                     >
-                        Signal
+                        Relative score
                     </th>
                     <th
                         class="min-w-[360px] px-4 py-3 text-left text-xs font-bold tracking-wide text-muted-foreground uppercase"
@@ -85,14 +86,14 @@ const {
                         <p class="text-sm font-semibold text-foreground">
                             Make
                             {{
-                                formatStatNumber(
+                                formatExportPercent(
                                     row.tournament_make_probability,
                                 )
-                            }}%
+                            }}
                         </p>
                         <p class="text-xs text-muted-foreground">
                             Title
-                            {{ formatStatNumber(row.champion_probability) }}%
+                            {{ formatExportPercent(row.champion_probability) }}
                         </p>
                     </td>
                     <td class="px-4 py-4">
@@ -100,10 +101,12 @@ const {
                             <div
                                 class="flex items-center justify-between text-xs text-muted-foreground"
                             >
-                                <span>Signal</span>
-                                <span class="font-semibold text-foreground"
-                                    >{{ signalForTournament(row) }}%</span
-                                >
+                                <span>Relative score</span>
+                                <span class="font-semibold text-foreground">{{
+                                    formatRelativeSignal(
+                                        signalForTournament(row),
+                                    )
+                                }}</span>
                             </div>
                             <div
                                 class="h-2.5 overflow-hidden rounded-full bg-muted"
@@ -116,7 +119,7 @@ const {
                                         )
                                     "
                                     :style="{
-                                        width: `${signalForTournament(row)}%`,
+                                        width: `${signalForTournament(row) ?? 0}%`,
                                     }"
                                 />
                             </div>

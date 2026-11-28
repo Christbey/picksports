@@ -16,6 +16,12 @@ import {
 import { useNflMonitoringContext } from '@/composables/useNflModelMonitoring';
 const { artifact, summary, observations, no_bet_reasons, maximumReasonCount } =
     useNflMonitoringContext();
+const deltaUnits = (market: string): string =>
+    market === 'win_probability'
+        ? 'probability units'
+        : ['spread', 'total'].includes(market)
+          ? 'points'
+          : 'recorded units';
 </script>
 
 <template>
@@ -112,14 +118,22 @@ const { artifact, summary, observations, no_bet_reasons, maximumReasonCount } =
                                     class="flex items-baseline gap-2 tabular-nums"
                                 >
                                     <span>
-                                        {{ formatPercent(row.baseline_output) }}
+                                        {{
+                                            formatPercent(
+                                                row.baseline_outputs
+                                                    ?.win_probability ?? null,
+                                            )
+                                        }}
                                     </span>
                                     <span class="text-muted-foreground">
                                         →
                                     </span>
                                     <span class="font-semibold">
                                         {{
-                                            formatPercent(row.challenger_output)
+                                            formatPercent(
+                                                row.challenger_outputs
+                                                    ?.win_probability ?? null,
+                                            )
                                         }}
                                     </span>
                                 </div>
@@ -132,7 +146,9 @@ const { artifact, summary, observations, no_bet_reasons, maximumReasonCount } =
                                     "
                                 >
                                     {{ formatSigned(row.output_delta, 3) }}
-                                    delta
+                                    {{ labelize(row.market_type) }} delta ({{
+                                        deltaUnits(row.market_type)
+                                    }})
                                 </div>
                             </td>
                             <td class="px-4 py-4">

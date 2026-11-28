@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\CFB;
 
+use App\Support\CFB\CfbGameStart;
 use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -15,7 +16,7 @@ class GameResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $dateTime = GameDateTimePresenter::forSport('cfb', $this->game_date, $this->game_time);
+        $dateTime = GameDateTimePresenter::forGame('cfb', $this->resource);
 
         return [
             'id' => $this->id,
@@ -28,6 +29,8 @@ class GameResource extends JsonResource
             'postseason_round' => $this->postseason_round,
             'game_date' => $dateTime['game_date'],
             'game_time' => $dateTime['game_time'],
+            'kickoff_status' => CfbGameStart::status($this->resource),
+            'starts_at' => GameDateTimePresenter::startsAtForGame('cfb', $this->resource),
             'venue' => $this->venue_name ?? $this->venue,
             'venue_name' => $this->venue_name ?? $this->venue,
             'attendance' => $this->attendance,

@@ -6,6 +6,7 @@ use App\Models\NFL\PlayerProp;
 use App\Models\NFL\PlayerStat;
 use App\Models\NFL\Team;
 use App\Services\BettingRecommendations\NflPropSeasonSummary;
+use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -129,4 +130,54 @@ test('NFL conference records reuse the existing alignment map when provider conf
     $summary = app(NflPropSeasonSummary::class)->forProps(new Collection([$prop]))[$prop->id];
     expect($summary['opponent_conference'])->toBe('NFC')
         ->and($summary['records']['vs_conference']['recommendation_record'])->toBe('1-0');
+});
+
+test('batched histories preserve each target cutoff and market and refresh between calls', function () {
+    [$prop, $game, $player] = seasonSummaryFixture();
+    seasonSummaryStat($game, $player, '2026-09-13', 8);
+    seasonSummaryStat($game, $player, '2026-09-21', 20);
+    $later = Game::factory()->create([
+        'home_team_id' => $game->home_team_id, 'away_team_id' => $game->away_team_id,
+        'season' => 2026, 'season_type' => 2, 'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-09-27', 'game_time' => '17:00:00',
+    ]);
+    $laterProp = $prop->replicate();
+    $laterProp->game_id = $later->id;
+    $laterProp->save();
+    $otherMarket = $prop->replicate();
+    $otherMarket->market = 'player_rush_yds';
+    $otherMarket->save();
+    PlayerStat::query()->update(['rushing_yards' => 50]);
+    $props = new Collection([$prop, $otherMarket, $laterProp]);
+    $service = app(NflPropSeasonSummary::class);
+    $batch = $service->forProps($props);
+
+    foreach ($props as $quote) {
+        expect($batch[$quote->id])->toBe($service->forProps(new Collection([$quote]))[$quote->id]);
+    }
+    expect($batch[$prop->id]['average'])->toBe(8.0)
+        ->and($batch[$otherMarket->id]['average'])->toBe(50.0)
+        ->and($batch[$laterProp->id]['average'])->toBe(14.0)
+        ->and($batch[$prop->id]['participation']['team_games'])->toBe(1)
+        ->and($batch[$laterProp->id]['participation']['team_games'])->toBe(2);
+
+    PlayerStat::query()->update(['rushing_attempts' => 4]);
+    expect($service->forProps($props)[$prop->id]['average'])->toBe(4.0);
+});
+
+test('NFL board date parsing scales with games rather than quotes', function () {
+    [$prop, $game, $player] = seasonSummaryFixture();
+    seasonSummaryStat($game, $player, '2026-09-13', 8);
+    $props = new Collection([$prop]);
+    foreach (['player_rush_yds', 'player_anytime_td'] as $market) {
+        $quote = $prop->replicate();
+        $quote->market = $market;
+        $quote->save();
+        $props->push($quote);
+    }
+    $this->partialMock(SportsDateWindowService::class, function ($mock) {
+        $mock->shouldReceive('gameDateTimeUtc')->passthru()->times(4);
+    });
+
+    expect(app(NflPropSeasonSummary::class)->forProps($props))->toHaveCount(3);
 });

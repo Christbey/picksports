@@ -1,54 +1,24 @@
-# NFL historical game context (2023 onward)
+# NFL historical game-context evidence
 
-`nfl_game_context_facts` stores sourced facts linked to the actual game and team: head coach, named injury report, and separately documented participation. `Game::contextFacts()` exposes them; `nfl:game-context-coverage --game=ID` prints the evidence. The importer appends evidence and does not update predictions, current injuries, player rosters, scores, or existing coach fields.
+`nfl_game_context_facts` appends sourced game/team facts without updating predictions, current injuries, rosters, scores or coach fields. This is an explicitly authorized historical ingestion workflow, not an ordinary sports-analysis request. Resolve actual game/team identities and review the intended season scope before any provider acquisition or database write.
 
-Every record retains its source URL, source row, publication/source-update time when available, import time, and content hash. Reimporting the same evidence does not duplicate it or move its import timestamp. Corrections create new evidence instead of erasing the old report. Conflicting sources remain visible; a consumer must resolve them explicitly.
+Each fact retains source identity, original publication/update time when known, import time and content hash. Reimporting identical evidence neither duplicates it nor moves the original import clock. Corrections append evidence; conflicting sources remain visible. Injury designation, participation and current roster health are distinct. Missing designation/position/relevance stays null or unknown; a missing box-score row cannot manufacture inactivity.
 
-Injury designation is not participation: Questionable can precede an inactive announcement. A blank report designation stays null, and absence from these records means **unknown**, never healthy. Archived practice-only reports are retained. All reported positions are included; `key_reason` is an explicitly sourced relevance annotation, not a guessed depth-chart ranking. A null key reason means unclassified, not unimportant. Missing box-score rows never manufacture inactive facts.
+Historical consumers must use the existing `knownAt` admission, including both recorded and publication clocks. A later retrospective import was not known to this system at the old prediction instant. A coach CSV without publication time cannot establish that availability. This workflow does not activate historical model features or alter prop predictions.
 
-Historical model consumers must use `GameContextFact::knownAt($predictionTime)` (both recorded and published timestamps must qualify). Retrospective backfills are available for explaining past games but were not known to our system at historical prediction time. Coach CSVs have no publication timestamp and are excluded from this scope. This change does not activate new historical model features or change the existing prop model.
+## Reviewed-input operations
 
-## Import
+Prepare source files privately with their actual URLs, hashes, season and scope. Inspect command help and a dry run before apply. Schedule matching requires season, both teams and an unambiguous date; it never creates games. Injury matching follows the source archive's season/round/week/team through that schedule, not an assumed ESPN postseason week number.
 
-Download public source CSVs to the execution environment, preserving the URLs below. Use `--dry-run` before imports. Schedule matching requires season, both teams, and an unambiguous game date (US game date or next-day UTC date); it never creates games. Injury matching uses the archive's season/round/week/team through that schedule, avoiding ESPN postseason week-number differences.
-
-```sh
-curl -fL https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv -o /tmp/nfl-context-games.csv
-php artisan nfl:import-game-context schedules /tmp/nfl-context-games.csv --from-season=2023 --source-url=https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv
-
-curl -fL https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2023.csv -o /tmp/nfl-context-injuries-2023.csv
-php artisan nfl:import-game-context injuries /tmp/nfl-context-injuries-2023.csv --schedules=/tmp/nfl-context-games.csv --source-url=https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2023.csv --from-season=2023 --to-season=2023
-
-curl -fL https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2024.csv -o /tmp/nfl-context-injuries-2024.csv
-php artisan nfl:import-game-context injuries /tmp/nfl-context-injuries-2024.csv --schedules=/tmp/nfl-context-games.csv --source-url=https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2024.csv --from-season=2024 --to-season=2024
-
-php artisan nfl:import-game-context evidence database/data/nfl/2025-sf-lar-context.json --schedules=/tmp/nfl-context-games.csv
-php artisan nfl:prepare-injury-archive database/data/nfl/nfl-com-injury-manifest.json /tmp/nfl-official-context.json
-php artisan nfl:import-game-context evidence /tmp/nfl-official-context.json --schedules=/tmp/nfl-context-games.csv --from-season=2023 --to-season=2025
-php artisan nfl:game-context-coverage --from-season=2023
-```
-
-Curated JSON uses `season`, `game_type` (`REG`, `WC`, `DIV`, `CON`, `SB`), archive `week`, `team`, `kind`, `subject`, `source_url`, optional `published_at` with explicit timezone, and relevant `position`, `injury`, `designation`, `participation`, `key_reason`. See the checked-in SF–LAR example. A participation fact needs an explicit participation value and its own source. Dates without a timezone are interpreted as UTC. Import validates all matched facts before one transaction writes them.
-
-## Source limitations and outstanding coverage
-
-[nflverse documents that its injury provider stopped after 2024](https://nflreadr.nflverse.com/articles/nflverse_data_schedule.html). The downloaded 2023 file contains regular season and Wild Card reports; the 2024 file includes all postseason rounds. Neither implies every injury or IR absence was reported. Preseason is absent from the schedule source. The reviewed NFL.com manifest supplements this with all 18 weeks and all four playoff rounds of 2025, plus the 2023 Divisional, Championship, and Super Bowl reports. Do not backfill historical games from today's injury API.
-
-`database/data/nfl/2025-sf-lar-context.json` supplies the verified October 2 and November 9, 2025 Purdy cases plus selected reported injuries. Purdy's October report says Out (toe). November's report says Questionable (toe), followed by an official inactive announcement. Each assertion has its own source URL and original timestamp. These selected facts supplement the league-wide archive and preserve the separate inactive announcements.
-
-Coverage counts are team-games with at least one fact, not completeness claims. The report separately counts team-games with no injury evidence, including preseason and missing seasons. Ongoing ingestion of these historical facts is manual; current injury snapshots continue through the existing ingestion jobs.
-
-## Official NFL archive validation
-
-`nfl:prepare-injury-archive` fetches only the reviewed official URLs in the manifest. It validates the article season, week/round, team headings, and player-list format, then checks a SHA-256 of the extracted evidence against the reviewed manifest. A changed report fails preparation before replacing the output file. HTML widgets may change without invalidating the extracted content. Each record retains the full HTML hash and original injury-list text. The latest article update time is used, since the first publication may predate subsequent report changes.
-
-The parser tolerates whitespace, dual positions, missing positions (kept null), inconsistent separators, and two reviewed missing-parenthesis typos (Sauce Gardner/calf and Skyy Moore/knee); the original text stays available. It never infers a participation result or a missing injury reason. The manifest contains 25 reports and 2,802 designation facts: 2,744 for 2025 and 58 for the missing 2023 postseason rounds.
-
-The initial production import covers completed 2023–2025 seasons. The completed September 9, 2026 Patriots–Seahawks opener is also documented in the checked-in `2026-ne-sea` files: two coaches, five pregame injury entries, and Darnold's hip injury with `evidence.phase=in_game`. Its article update time is after kickoff, so it cannot enter a pregame cutoff query. Preseason and other ongoing 2026 games remain outside this historical import; their current-injury/snapshot jobs remain separate. A team with no designation list in an archived article still has unknown completeness, not a certified healthy roster.
-
-To reproduce the 2026 opener addition:
+The following paths are placeholders for reviewed inputs, not bundled evidence or commands to run automatically:
 
 ```sh
-php artisan nfl:import-game-context schedules database/data/nfl/2026-ne-sea-schedule.csv --from-season=2026 --to-season=2026 --source-url=https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv
-php artisan nfl:import-game-context evidence database/data/nfl/2026-ne-sea-context.json --schedules=database/data/nfl/2026-ne-sea-schedule.csv --from-season=2026 --to-season=2026
+php artisan nfl:import-game-context evidence '/path/to/reviewed-context.json' --schedules='/path/to/reviewed-schedules.csv' --dry-run
+php artisan nfl:prepare-injury-archive '/path/to/reviewed-official-manifest.json' '/path/to/prepared-context.json'
 ```
+
+The archive preparation command can fetch the reviewed URLs. It validates report identity and extracted-evidence hashes before replacing its output. Original HTML hashes and injury-list text remain retained; a parser result does not infer participation or a missing injury reason. Review the actual supported flags and output before a separately authorized import.
+
+Curated records use season, game type (`REG`, `WC`, `DIV`, `CON`, `SB`), archive week, team, kind, subject and source URL, plus relevant position, injury, designation, participation and explicit relevance. Known publication instants require an explicit timezone. Participation requires its own explicit evidence; an article's later update cannot become a pregame observation.
+
+Historical example packets and private validation manifests are retained outside the public source distribution. They are not a current source feed, default model input or license to publish provider material. Create and review a new scoped packet rather than copying old game IDs or facts. Coverage counts mean team-games with at least one fact, not complete injury coverage. Manual historical imports remain separate from current injury-snapshot jobs.

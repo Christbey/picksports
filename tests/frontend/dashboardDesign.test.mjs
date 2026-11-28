@@ -137,8 +137,8 @@ test('league sections preserve payload order, game counts, and spring-training c
         );
     }
     assert.equal((html.match(/>1.5 pts off</g) ?? []).length, 4);
-    assert.doesNotMatch(html, /<th[^>]*>\s*Signal\s*<\/th>/);
-    assert.equal((html.match(/>Model Bet</g) ?? []).length, 1);
+    assert.match(html, /<th[^>]*>\s*Signal\s*<\/th>/);
+    assert.equal((html.match(/>Model Bet</g) ?? []).length, 2);
     assert.match(html, /1 game/);
     assert.match(html, /2 games/);
     assert.equal((html.match(/Spring Training/g) ?? []).length, 1);

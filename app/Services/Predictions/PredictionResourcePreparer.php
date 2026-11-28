@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\Api\V2\PreparedInjuryImpacts;
 use App\Services\MLB\MlbMarketAwareProjectionService;
 use App\Services\Predictions\Review\PredictionReviewCoordinator;
+use App\Support\NflValidatedSignalCombos;
 use App\Support\PredictionDataPermissions;
 use App\Support\PredictionFieldAccess;
 use Illuminate\Database\Eloquent\Collection;
@@ -234,7 +235,7 @@ final class PredictionResourcePreparer
         }
 
         $sources = collect((array) ($context['sources'] ?? []))
-            ->filter(fn ($source): bool => is_array($source) && filter_var($source['url'] ?? null, FILTER_VALIDATE_URL) !== false)
+            ->filter(fn ($source): bool => is_array($source) && $this->safeExternalSourceUrl($source['url'] ?? null))
             ->map(fn (array $source): array => [
                 'url' => (string) $source['url'],
                 'title' => (string) ($source['title'] ?? 'Source'),
@@ -258,6 +259,17 @@ final class PredictionResourcePreparer
             'deterministic_adjustment' => $context['deterministic_adjustment'] ?? null,
             'context_adjusted_model' => $context['context_adjusted_model'] ?? null,
         ];
+    }
+
+    private function safeExternalSourceUrl(mixed $url): bool
+    {
+        if (! is_string($url) || preg_match('/[\x00-\x20\x7f]/', $url) === 1 || filter_var($url, FILTER_VALIDATE_URL) === false) {
+            return false;
+        }
+        $parts = parse_url($url);
+
+        return is_array($parts) && strtolower((string) ($parts['scheme'] ?? '')) === 'https'
+            && ! empty($parts['host']) && ! array_key_exists('user', $parts) && ! array_key_exists('pass', $parts);
     }
 
     /**
@@ -298,6 +310,8 @@ final class PredictionResourcePreparer
         if (! is_array($analysis) || ($analysis['applied'] ?? false) !== true) {
             return null;
         }
+
+        $analysis = NflValidatedSignalCombos::publicAnalysis($analysis);
 
         return [
             'trust_score' => isset($analysis['trust_score']) ? (float) $analysis['trust_score'] : null,

@@ -128,7 +128,7 @@ export function usePredictionBoardView(
 
     const emptyStateDescription = computed(() => {
         if (betViewMode.value === 'recommended') {
-            return 'The model does not currently have a playable edge on this slate. Switch to All games to review every prediction.';
+            return 'No recommended bets match this page and its current filters. Switch to All games or adjust the search and filters.';
         }
 
         if (normalizedSearchQuery.value) {

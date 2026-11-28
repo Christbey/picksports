@@ -2,6 +2,7 @@
 
 namespace App\Models\CBB;
 
+use App\Models\Concerns\RejectsPersistedModelMutation;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Database\Factories\CbbRosterSnapshotFactory;
@@ -9,11 +10,10 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use LogicException;
 
 class RosterSnapshot extends Model
 {
-    use HasFactory;
+    use HasFactory, RejectsPersistedModelMutation;
 
     protected static function newFactory(): CbbRosterSnapshotFactory
     {
@@ -29,10 +29,9 @@ class RosterSnapshot extends Model
         return ['season' => 'integer', 'observed_at' => 'immutable_datetime', 'provider_metadata' => 'array'];
     }
 
-    protected static function booted(): void
+    protected function immutableMutationMessage(): string
     {
-        static::updating(fn (): never => throw new LogicException('Roster observations are immutable.'));
-        static::deleting(fn (): never => throw new LogicException('Roster observations are immutable.'));
+        return 'Roster observations are immutable.';
     }
 
     public static function knownAt(int $teamId, int $season, CarbonInterface $asOf): ?self

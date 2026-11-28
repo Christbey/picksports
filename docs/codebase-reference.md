@@ -32,7 +32,7 @@ Core backend layers:
 - `resources/js/composables`: shared and sport-specific game-page/prediction-page data hooks
 - `resources/js/components/game-page`: shared game-page UI
 
-Shared route registration lives in [routes/api-v2.php](/Users/bey/Herd/github/picksports/routes/api-v2.php).
+Shared route registration lives in [routes/api-v2.php](../routes/api-v2.php).
 
 ## Shared API Patterns
 
@@ -63,7 +63,8 @@ removing the sport prediction tables.
 | Native canonical generation | All seven typed sport actions delegate linked-event validation and draft/publication dispatch to `PredictionLifecycleOrchestrator::generateForGame`. Sport calculators and snapshot builders remain distinct. CFB retains published bet-decision recording. |
 | Legacy generation and snapshots | `AbstractPredictionGenerator`, `NflPredictionPublisher`, and `PredictionFeatureSnapshotRecorder` still produce mutable forecasts and training/research inputs. Their calculations are not interchangeable with the native canonical calculators. |
 | Evaluation | `AbstractGradePredictions` and `PredictionEvaluationRecorder` grade mutable sport rows. `CanonicalTeamGameEvaluator`, `SportEventResultRecorder`, and `CanonicalPredictionEvaluator` append immutable result/evaluation revisions. Finalization now discovers canonical-only work, delayed final scores, score corrections, and missing/current-scoring-version evaluations independently of public read switches. The queued listener reloads current scores and retains legacy/prop grading. Repeated identical results are idempotent; a correction back to an earlier score appends a new result and evaluation revision. Scoring conventions and persistence guarantees differ. |
-| Evaluation recovery command | Migrated: `sports:rebuild-prediction-evaluations` selects canonical recovery per sport from `canonical_pipeline` ownership and delegates to `CanonicalTeamGameEvaluator`. Public read flags do not select grading ownership. The shared sport context registry replaces a duplicate prediction-model map; the existing default sport order remains unchanged. | Explicit `--forecast-source=legacy` retains historical mutable evaluation rebuilds; `canonical` supports deliberate native recovery. Canonical scans are bounded, use final scored games and retain evaluator age/clock/publication guards, result correction revisions and idempotency. Missing native forecasts are skipped without fallback. Season scope and the global successful-row limit span mixed ownership. No approval, generation, schema, rollout or schedule change. |
+
+| Evaluation recovery command | `sports:rebuild-prediction-evaluations` requires one sport and one to100 explicit `--game` IDs; default source remains legacy, and `--forecast-source=canonical` selects the existing canonical evaluator. | Dry run is the default; `--apply` is explicit. All selected IDs and any season assertion are checked before canonical writes. No default-all or history scan is supported. Existing current-evidence, age/clock, revision and idempotency gates remain authoritative; no generation or approval occurs. |
 
 | Notifications and shared betting workflows | `PredictionDeliverySource` supplies source-neutral forecasts to `AlertService` and `DailyDigestService`, using the same per-sport read switch and verified canonical query as the API. `BettingValueAlertFormatter` normalizes both queued legacy models and native canonical models. `GameBettingRecommendationService` reads public, non-tracking, pregame-safe approved decisions tied to the exact selected canonical revision; it never derives a new approval or falls back to legacy decisions. Canonical forecasts without an approved public decision can remain digest watchlist leans. Stored spread/total lines retain their sign conventions and point-edge units; moneyline edges remain percentage points. Quote observation timestamps are used for the 36-hour freshness check when available. Queued canonical alerts recheck their exact decision and current forecast before delivery. The dashboard uses the shared recommendation service instead of a duplicate calculator map. |
 | Sport-specific signal panels and MLB pick generation | NBA/NFL/MLB signal services and all MLB game-pick builders consume `BettingForecast` through `BettingForecastSource`. Legacy models are normalized only at that source boundary. Canonical mode reads verified published forecasts and frozen input context, with no legacy fallback. Descriptive signal scoring cannot create canonical approval: public signal bets come from exact-revision approved public decisions. Native MLB candidate generation retains its existing formulas but remains tracking-only pending validation of that source. Missing frozen pitcher context is not filled from mutable ratings. Native pregame forecasts do not supply legacy live projections; MLB reports that live coverage as unavailable. Historical forecast reads are batched, preserving NFL's bounded history query count. |
@@ -72,6 +73,9 @@ removing the sport prediction tables.
 | Remaining specialized writers and live consumers | Legacy-mode pregame calculators, legacy generation/decision recorders, and historical analysis still retain legacy identities. Live writers now persist separate snapshots using source-selected pregame baselines. `GameFinalizationDispatcher` discovers pending canonical evaluations when the sport canonical pipeline is enabled, alongside outstanding legacy grading and prop work. These writers are not retired by migrating recommendation/narrative readers. |
 | Historical identity and backfills | `CanonicalPredictionSyncService`, `CanonicalPredictionLineageResolver`, training exports, historical reconstruction, and legacy backtests retain the legacy record identity and snapshot linkage. User bet references also preserve legacy sport/model IDs. |
 | Scheduling and operations | `routes/console.php` schedules legacy and gated canonical work. The NFL pregame command now runs canonical generation/readiness and bounded research without legacy generation; completeness checks use fresh verified canonical input evidence and permit idempotent reuse. `SportsPipelineRegistry` still exposes legacy generation/grading stages. |
+
+Legacy forecast grading uses the shared final-status list (`STATUS_FINAL`, `STATUS_FULL_TIME`) and requires both scores. It locks and reloads the game before the prediction, rechecks pending/final admission, then commits the grade and evaluation receipt together. WNBA additionally retains its final-clock and 90-minute minimum-age guard. Recorder failure rolls back the pair so ordinary ungraded retries remain eligible. Single-game finalization now rechecks already graded legacy rows against current results and append-only correction receipts. Season-wide and existing historical bulk grading remain ungraded-only. Explicit bounded historical repair uses `sports:repair-legacy-prediction-grades` with one sport and explicit game IDs, defaults to dry run, and requires `--apply`; pre-existing grades are preserved as imported baselines with unknown original observation provenance. This does not reconstruct lost historical evidence. See [atomicity evidence](contracts/legacy-grade-atomicity.md) and [correction/repair evidence and rollout](contracts/legacy-forecast-correction-recovery.md).
+
 
 Safe retirement must proceed per consumer and sport: migrate live/narrative,
 notification/betting, operational, and historical consumers; preserve historical
@@ -237,17 +241,17 @@ Finalization did not disable legacy writers. The subsequent NFL snapshot/readine
 
 The primary Vue-facing internal API is the Laravel JSON API mounted under
 `/api/v2`. V1 was removed on 2026-09-25 after the owner confirmed it was used
-only by the application. Former V1 URLs return 404. See
-[the retirement record](api-v2-contracts-and-retirement.md).
+only by the application. Former V1 URLs return 404. Current API lifecycle
+policy is documented in [the deprecation policy](api/v2/deprecation-policy.md).
 The current v2 route matrix, filters, frontend owners, and contract-test
 coverage are documented in
-[api-v2-reference.md](/Users/bey/Herd/github/picksports/docs/api-v2-reference.md).
+[api-v2-reference.md](api-v2-reference.md).
 The generated route-level OpenAPI artifact is
-[openapi-v2.json](/Users/bey/Herd/github/picksports/docs/openapi-v2.json).
+[openapi-v2.json](openapi-v2.json).
 
 Route bootstrap:
-- [routes/api.php](/Users/bey/Herd/github/picksports/routes/api.php)
-- [routes/api-v2.php](/Users/bey/Herd/github/picksports/routes/api-v2.php)
+- [routes/api.php](../routes/api.php)
+- [routes/api-v2.php](../routes/api-v2.php)
 
 Important pattern:
 - `routes/api-v2.php` defines the current sport contract under `/api/v2/sports/{sport}`
@@ -324,20 +328,20 @@ Capability-specific additions:
 
 ### Internal API Filtering Rules
 
-Prediction index filtering in [SportPredictionQuery.php](/Users/bey/Herd/github/picksports/app/Services/Api/V2/SportPredictionQuery.php):
+Prediction index filtering in [SportPredictionQuery.php](../app/Services/Api/V2/SportPredictionQuery.php):
 - `season`
 - `season_type`
 - `week`
 - `from_date`
 - `to_date`
 
-Team trends filtering in [SportTeamTrendQuery.php](/Users/bey/Herd/github/picksports/app/Services/Api/V2/SportTeamTrendQuery.php):
+Team trends filtering in [SportTeamTrendQuery.php](../app/Services/Api/V2/SportTeamTrendQuery.php):
 - `games`
 - `season`
 - `season_type`
 - `before_date`
 
-Team metrics filtering in [SportTeamMetricQuery.php](/Users/bey/Herd/github/picksports/app/Services/Api/V2/SportTeamMetricQuery.php):
+Team metrics filtering in [SportTeamMetricQuery.php](../app/Services/Api/V2/SportTeamMetricQuery.php):
 - `season`
 - `season_type`
 - sport-specific query preparation in the shared query service
@@ -348,11 +352,11 @@ Controllers generally return Eloquent models loaded with relations.
 Resources shape the actual API contract.
 
 Important examples:
-- [app/Http/Resources/MLB/GameResource.php](/Users/bey/Herd/github/picksports/app/Http/Resources/MLB/GameResource.php)
-- [app/Http/Resources/NFL/GameResource.php](/Users/bey/Herd/github/picksports/app/Http/Resources/NFL/GameResource.php)
-- [app/Http/Resources/MLB/PredictionResource.php](/Users/bey/Herd/github/picksports/app/Http/Resources/MLB/PredictionResource.php)
-- [app/Http/Resources/NFL/PredictionResource.php](/Users/bey/Herd/github/picksports/app/Http/Resources/NFL/PredictionResource.php)
-- shared prediction helpers in [AbstractPredictionResource.php](/Users/bey/Herd/github/picksports/app/Http/Resources/Sports/AbstractPredictionResource.php)
+- [app/Http/Resources/MLB/GameResource.php](../app/Http/Resources/MLB/GameResource.php)
+- [app/Http/Resources/NFL/GameResource.php](../app/Http/Resources/NFL/GameResource.php)
+- [app/Http/Resources/MLB/PredictionResource.php](../app/Http/Resources/MLB/PredictionResource.php)
+- [app/Http/Resources/NFL/PredictionResource.php](../app/Http/Resources/NFL/PredictionResource.php)
+- shared prediction helpers in [AbstractPredictionResource.php](../app/Http/Resources/Sports/AbstractPredictionResource.php)
 
 Important contract note:
 - `games/{game}` returns the base game payload plus loaded relations and any computed attributes attached by the controller
@@ -376,31 +380,28 @@ Examples:
   - `away_elo`
   - `betting_value`
 
-### byGame Prediction Contract Caveat
+### Game prediction contract
 
-The `games/{game}/prediction` endpoint deserves special care.
-
-The shared controller supports both collection-style and single-object responses.
-Some sports override this behavior.
-
-Example:
-- [app/Http/Controllers/Api/MLB/PredictionController.php](/Users/bey/Herd/github/picksports/app/Http/Controllers/Api/MLB/PredictionController.php)
-  forces `returnFirstPredictionOnly()` to `true`
-- NFL currently uses shared behavior without that override
-
-Before changing any game-page prediction fetch path, confirm whether the endpoint returns:
-- a single prediction object
-- a list containing one prediction
+`GET /api/v2/sports/{sport}/games/{game}/prediction` is registered in
+[routes/api-v2.php](../routes/api-v2.php) and handled by
+[SportPredictionController::gamePrediction](../app/Http/Controllers/Api/V2/SportPredictionController.php).
+The controller delegates to
+[SportPredictionReader](../app/Services/Api/V2/SportPredictionReader.php)
+and returns its prepared `data` and source metadata. Inspect that reader and
+its presentation services before changing the game-page fetch path. The retired
+V1 MLB controller and its `returnFirstPredictionOnly()` override do not define
+the V2 contract. Confirm the response shape against the endpoint contract tests
+and the active reader configuration.
 
 ### Frontend Consumers of the Internal API
 
 The frontend talks to product data through
-[useApiV2Client.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useApiV2Client.ts),
+[useApiV2Client.ts](../resources/js/composables/useApiV2Client.ts),
 which wraps `fetchJson` from
-[useApiClient.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useApiClient.ts).
+[useApiClient.ts](../resources/js/composables/useApiClient.ts).
 
 Main game-page consumers:
-- [useDetailedGameData.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useDetailedGameData.ts)
+- [useDetailedGameData.ts](../resources/js/composables/useDetailedGameData.ts)
   Uses:
   - `api.games.show()`
   - `api.predictions.forGame()`
@@ -410,24 +411,24 @@ Main game-page consumers:
   - `api.teams.games()`
   - `api.teams.trends()`
 
-- [useMlbGamePage.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useMlbGamePage.ts)
+- [useMlbGamePage.ts](../resources/js/composables/useMlbGamePage.ts)
   Does a more bespoke MLB flow on top of `useApiV2Client()`.
 
-- [useNflGamePage.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useNflGamePage.ts)
+- [useNflGamePage.ts](../resources/js/composables/useNflGamePage.ts)
   Does a bespoke NFL flow on top of `useApiV2Client()`.
 
-- [useCfbDetailedGamePage.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useCfbDetailedGamePage.ts)
+- [useCfbDetailedGamePage.ts](../resources/js/composables/useCfbDetailedGamePage.ts)
   Does a bespoke CFB flow similar to NFL on top of `useApiV2Client()`.
 
 Predictions list pages:
-- [SportPredictions.vue](/Users/bey/Herd/github/picksports/resources/js/components/SportPredictions.vue)
+- [SportPredictions.vue](../resources/js/components/SportPredictions.vue)
   Uses:
   - `api.predictions.index()`
   - `api.predictions.availableDates()`
   - `api.predictions.availableSeasons()`
 
 Team metrics pages:
-- built from config in [sport-team-metrics-configs.ts](/Users/bey/Herd/github/picksports/resources/js/config/sport-team-metrics-configs.ts)
+- built from config in [sport-team-metrics-configs.ts](../resources/js/config/sport-team-metrics-configs.ts)
   and call `api.metrics.teams()`
 
 ### Internal API Data Flow
@@ -455,7 +456,7 @@ The normal flow is:
 
 3. API assembly
    - controller loads model and relations
-   - shared abstract controller applies filtering and caching
+   - V2 request validation and shared query/services apply filtering and caching before prepared resource serialization
    - resource serializes the public/internal JSON contract
    - field-level gating may hide premium prediction fields
 
@@ -466,7 +467,7 @@ The normal flow is:
 
 ### Caching in the Internal API
 
-Shared API controllers use [SportsViewCache.php](/Users/bey/Herd/github/picksports/app/Support/SportsViewCache.php).
+Shared API controllers use [SportsViewCache.php](../app/Support/SportsViewCache.php).
 
 Important cache segments include:
 - `predictions_index`
@@ -505,37 +506,37 @@ When something looks wrong on a page:
 The main game page UI is shared.
 
 Key files:
-- [useDetailedGameData.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useDetailedGameData.ts)
+- [useDetailedGameData.ts](../resources/js/composables/useDetailedGameData.ts)
   Shared loader for game detail, prediction, team stats, player stats, recent games, and team trends.
 
-- [useSportDetailedPageProps.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useSportDetailedPageProps.ts)
+- [useSportDetailedPageProps.ts](../resources/js/composables/useSportDetailedPageProps.ts)
   Shared prop assembler for detailed game pages.
 
-- [useSportGameLayout.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useSportGameLayout.ts)
+- [useSportGameLayout.ts](../resources/js/composables/useSportGameLayout.ts)
   Shared layout/breadcrumb config.
 
-- [SportDetailedGamePage.vue](/Users/bey/Herd/github/picksports/resources/js/components/game-page/SportDetailedGamePage.vue)
+- [SportDetailedGamePage.vue](../resources/js/components/game-page/SportDetailedGamePage.vue)
   Shared shell for matchup hero, linescore, prediction summary, trends, and now matchup context.
 
 Sport-specific wrappers:
-- [useMlbDetailedGamePage.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useMlbDetailedGamePage.ts)
-- [useNflDetailedGamePage.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useNflDetailedGamePage.ts)
-- [useBasketballDetailedGamePage.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useBasketballDetailedGamePage.ts)
-- [useCfbDetailedGamePage.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useCfbDetailedGamePage.ts)
+- [useMlbDetailedGamePage.ts](../resources/js/composables/useMlbDetailedGamePage.ts)
+- [useNflDetailedGamePage.ts](../resources/js/composables/useNflDetailedGamePage.ts)
+- [useBasketballDetailedGamePage.ts](../resources/js/composables/useBasketballDetailedGamePage.ts)
+- [useCfbDetailedGamePage.ts](../resources/js/composables/useCfbDetailedGamePage.ts)
 
 ## Per-Sport Model Surface
 
 ### MLB
 
 Primary models:
-- [Team.php](/Users/bey/Herd/github/picksports/app/Models/MLB/Team.php)
-- [Game.php](/Users/bey/Herd/github/picksports/app/Models/MLB/Game.php)
-- [Prediction.php](/Users/bey/Herd/github/picksports/app/Models/MLB/Prediction.php)
-- [TeamMetric.php](/Users/bey/Herd/github/picksports/app/Models/MLB/TeamMetric.php)
-- [EloRating.php](/Users/bey/Herd/github/picksports/app/Models/MLB/EloRating.php)
-- [PitcherEloRating.php](/Users/bey/Herd/github/picksports/app/Models/MLB/PitcherEloRating.php)
-- [Player.php](/Users/bey/Herd/github/picksports/app/Models/MLB/Player.php)
-- [PlayerStat.php](/Users/bey/Herd/github/picksports/app/Models/MLB/PlayerStat.php)
+- [Team.php](../app/Models/MLB/Team.php)
+- [Game.php](../app/Models/MLB/Game.php)
+- [Prediction.php](../app/Models/MLB/Prediction.php)
+- [TeamMetric.php](../app/Models/MLB/TeamMetric.php)
+- [EloRating.php](../app/Models/MLB/EloRating.php)
+- [PitcherEloRating.php](../app/Models/MLB/PitcherEloRating.php)
+- [Player.php](../app/Models/MLB/Player.php)
+- [PlayerStat.php](../app/Models/MLB/PlayerStat.php)
 
 Important field semantics:
 - `teams.league` and `teams.division` are the alignment fields, not `conference`
@@ -549,28 +550,28 @@ Important operational note:
 ### NFL
 
 Primary models:
-- [Team.php](/Users/bey/Herd/github/picksports/app/Models/NFL/Team.php)
-- [Game.php](/Users/bey/Herd/github/picksports/app/Models/NFL/Game.php)
-- [Prediction.php](/Users/bey/Herd/github/picksports/app/Models/NFL/Prediction.php)
-- [TeamMetric.php](/Users/bey/Herd/github/picksports/app/Models/NFL/TeamMetric.php)
-- [Player.php](/Users/bey/Herd/github/picksports/app/Models/NFL/Player.php)
-- [PlayerStat.php](/Users/bey/Herd/github/picksports/app/Models/NFL/PlayerStat.php)
+- [Team.php](../app/Models/NFL/Team.php)
+- [Game.php](../app/Models/NFL/Game.php)
+- [Prediction.php](../app/Models/NFL/Prediction.php)
+- [TeamMetric.php](../app/Models/NFL/TeamMetric.php)
+- [Player.php](../app/Models/NFL/Player.php)
+- [PlayerStat.php](../app/Models/NFL/PlayerStat.php)
 
 Important field semantics:
 - `teams.conference` and `teams.division` are meaningful NFL alignment fields
-- there is no dedicated pregame `starting_qb` field on `nfl_games`
-- QB inference currently has to come from player stats / recent games if needed
+- `nfl_games` stores `home_qb_id`, `away_qb_id`, the corresponding names, and `quarterback_identity_evidence`; a stored identity may describe historical/reconstructed context and does not alone prove that a starter was observed before kickoff
+- use the consumer's qualified identity/depth observations where supported; prior weekly/player form has a separate observation-provenance contract and must not acquire pregame verification from an identity field alone
 - `games.neutral_site` exists and matters for context splits
 
 ### CFB
 
 Primary models:
-- [Team.php](/Users/bey/Herd/github/picksports/app/Models/CFB/Team.php)
-- [TeamSeasonAffiliation.php](/Users/bey/Herd/github/picksports/app/Models/CFB/TeamSeasonAffiliation.php)
-- [Game.php](/Users/bey/Herd/github/picksports/app/Models/CFB/Game.php)
-- [Prediction.php](/Users/bey/Herd/github/picksports/app/Models/CFB/Prediction.php)
-- [TeamMetric.php](/Users/bey/Herd/github/picksports/app/Models/CFB/TeamMetric.php)
-- [FpiRating.php](/Users/bey/Herd/github/picksports/app/Models/CFB/FpiRating.php)
+- [Team.php](../app/Models/CFB/Team.php)
+- [TeamSeasonAffiliation.php](../app/Models/CFB/TeamSeasonAffiliation.php)
+- [Game.php](../app/Models/CFB/Game.php)
+- [Prediction.php](../app/Models/CFB/Prediction.php)
+- [TeamMetric.php](../app/Models/CFB/TeamMetric.php)
+- [FpiRating.php](../app/Models/CFB/FpiRating.php)
 
 Important field semantics:
 - `teams.conference` / `teams.division` are not enough by themselves across seasons
@@ -581,12 +582,12 @@ Important field semantics:
 ### NBA / WNBA
 
 Primary models:
-- [app/Models/NBA/Team.php](/Users/bey/Herd/github/picksports/app/Models/NBA/Team.php)
-- [app/Models/NBA/Game.php](/Users/bey/Herd/github/picksports/app/Models/NBA/Game.php)
-- [app/Models/NBA/Prediction.php](/Users/bey/Herd/github/picksports/app/Models/NBA/Prediction.php)
-- [app/Models/NBA/TeamMetric.php](/Users/bey/Herd/github/picksports/app/Models/NBA/TeamMetric.php)
-- [app/Models/WNBA/Team.php](/Users/bey/Herd/github/picksports/app/Models/WNBA/Team.php)
-- [app/Models/WNBA/Game.php](/Users/bey/Herd/github/picksports/app/Models/WNBA/Game.php)
+- [app/Models/NBA/Team.php](../app/Models/NBA/Team.php)
+- [app/Models/NBA/Game.php](../app/Models/NBA/Game.php)
+- [app/Models/NBA/Prediction.php](../app/Models/NBA/Prediction.php)
+- [app/Models/NBA/TeamMetric.php](../app/Models/NBA/TeamMetric.php)
+- [app/Models/WNBA/Team.php](../app/Models/WNBA/Team.php)
+- [app/Models/WNBA/Game.php](../app/Models/WNBA/Game.php)
 
 Important field semantics:
 - `conference` and `division` are real alignment fields
@@ -597,12 +598,12 @@ Important field semantics:
 CBB season roster membership is stored in `cbb_roster_snapshots` and `cbb_roster_entries`, separately from the mutable player directory. Team-player API reads use the selected ending-year season and report snapshot provenance/coverage. Historical roster reads use the observed season profile and team, even for players who later transferred. Roster sync never deletes identities or box-score history. CBB forecast roster evidence is descriptive/experimental until separately validated; the incumbent spread calculation remains active.
 
 Primary models:
-- [app/Models/CBB/Team.php](/Users/bey/Herd/github/picksports/app/Models/CBB/Team.php)
-- [app/Models/CBB/Game.php](/Users/bey/Herd/github/picksports/app/Models/CBB/Game.php)
-- [app/Models/CBB/Prediction.php](/Users/bey/Herd/github/picksports/app/Models/CBB/Prediction.php)
-- [app/Models/CBB/TeamMetric.php](/Users/bey/Herd/github/picksports/app/Models/CBB/TeamMetric.php)
-- [app/Models/WCBB/Team.php](/Users/bey/Herd/github/picksports/app/Models/WCBB/Team.php)
-- [app/Models/WCBB/Game.php](/Users/bey/Herd/github/picksports/app/Models/WCBB/Game.php)
+- [app/Models/CBB/Team.php](../app/Models/CBB/Team.php)
+- [app/Models/CBB/Game.php](../app/Models/CBB/Game.php)
+- [app/Models/CBB/Prediction.php](../app/Models/CBB/Prediction.php)
+- [app/Models/CBB/TeamMetric.php](../app/Models/CBB/TeamMetric.php)
+- [app/Models/WCBB/Team.php](../app/Models/WCBB/Team.php)
+- [app/Models/WCBB/Game.php](../app/Models/WCBB/Game.php)
 
 Important field semantics:
 - `conference` is usually meaningful
@@ -638,7 +639,7 @@ Important note:
 
 Sport actions:
 - `app/Actions/{Sport}/CalculateTeamTrends.php`
-- shared base: [AbstractCalculateTeamTrends.php](/Users/bey/Herd/github/picksports/app/Actions/Trends/AbstractCalculateTeamTrends.php)
+- shared base: [AbstractCalculateTeamTrends.php](../app/Actions/Trends/AbstractCalculateTeamTrends.php)
 
 Important note:
 - trends are calculated from prior games and should use `season`, `season_type`, and `before_date` where relevant
@@ -738,8 +739,8 @@ Verified payload shape:
 
 Codebase note:
 - the current MLB ESPN ingest already uses this data in:
-  - [SyncGames.php](/Users/bey/Herd/github/picksports/app/Actions/ESPN/MLB/SyncGames.php)
-  - [SyncGameDetails.php](/Users/bey/Herd/github/picksports/app/Actions/ESPN/MLB/SyncGameDetails.php)
+  - [SyncGames.php](../app/Actions/ESPN/MLB/SyncGames.php)
+  - [SyncGameDetails.php](../app/Actions/ESPN/MLB/SyncGameDetails.php)
 - `games.probable_home_pitcher_espn_id` / `probable_away_pitcher_espn_id` are therefore grounded in real ESPN payloads, not a heuristic
 
 ### Recommended ESPN Ingestion Plan By Sport
@@ -862,13 +863,13 @@ Operational rule:
 ## Sport Config Files
 
 Primary sport config lives in:
-- [config/mlb.php](/Users/bey/Herd/github/picksports/config/mlb.php)
-- [config/nfl.php](/Users/bey/Herd/github/picksports/config/nfl.php)
-- [config/cfb.php](/Users/bey/Herd/github/picksports/config/cfb.php)
-- [config/nba.php](/Users/bey/Herd/github/picksports/config/nba.php)
-- [config/wnba.php](/Users/bey/Herd/github/picksports/config/wnba.php)
-- [config/cbb.php](/Users/bey/Herd/github/picksports/config/cbb.php)
-- [config/wcbb.php](/Users/bey/Herd/github/picksports/config/wcbb.php)
+- [config/mlb.php](../config/mlb.php)
+- [config/nfl.php](../config/nfl.php)
+- [config/cfb.php](../config/cfb.php)
+- [config/nba.php](../config/nba.php)
+- [config/wnba.php](../config/wnba.php)
+- [config/cbb.php](../config/cbb.php)
+- [config/wcbb.php](../config/wcbb.php)
 
 Use config as source of truth for:
 - statuses
@@ -899,8 +900,8 @@ You may need to consider:
 ### 3. Starter identity is asymmetric by sport
 
 - MLB: probable starters are explicit on the game row
-- NFL/CFB: there is currently no dedicated pregame starting-QB field on the game model
-- Any “record vs QB” logic in football is inferred unless a dedicated starter field is added later
+- NFL exposes stored side-specific QB identities and identity evidence; do not infer the same field contract for CFB
+- Any “record vs QB” calculation must distinguish observed pregame identity, historical result identity, and inference; identity alone does not establish observed pregame form
 
 ### 4. `season_type` is operationally important
 
@@ -937,53 +938,53 @@ The new matchup-context work should be treated with these rules:
 - MLB alignment should be league/division, not conference/division
 - CBB/WCBB division record should not be shown unless the underlying field is confirmed product-valid
 - CFB alignment should prefer season affiliation and/or explicit `conference_game` data
-- football `record vs QB` is currently inferred, not explicitly modeled
+- football `record vs QB` context must disclose its actual identity and observation basis; historical/reconstructed identity is not proof of a known pregame starter or observed form
 
 ## Recommended Workflow Before Cross-Sport Feature Work
 
 1. Check this document.
 2. Read the actual model(s) for the target sport.
-3. Read the shared abstract controller/resource involved.
+3. Read the current V2 request, query/service, and prepared resource involved.
 4. Confirm field semantics in config and tests.
 5. Only then generalize across sports.
 
 ## Files To Re-Read First For Sports-Domain Changes
 
 Shared:
-- [routes/api-v2.php](/Users/bey/Herd/github/picksports/routes/api-v2.php)
-- [useApiV2Client.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useApiV2Client.ts)
-- [SportGameQuery.php](/Users/bey/Herd/github/picksports/app/Services/Api/V2/SportGameQuery.php)
-- [SportPredictionQuery.php](/Users/bey/Herd/github/picksports/app/Services/Api/V2/SportPredictionQuery.php)
-- [SportTeamTrendQuery.php](/Users/bey/Herd/github/picksports/app/Services/Api/V2/SportTeamTrendQuery.php)
-- [SportTeamMetricQuery.php](/Users/bey/Herd/github/picksports/app/Services/Api/V2/SportTeamMetricQuery.php)
-- [useDetailedGameData.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useDetailedGameData.ts)
-- [SportDetailedGamePage.vue](/Users/bey/Herd/github/picksports/resources/js/components/game-page/SportDetailedGamePage.vue)
+- [routes/api-v2.php](../routes/api-v2.php)
+- [useApiV2Client.ts](../resources/js/composables/useApiV2Client.ts)
+- [SportGameQuery.php](../app/Services/Api/V2/SportGameQuery.php)
+- [SportPredictionQuery.php](../app/Services/Api/V2/SportPredictionQuery.php)
+- [SportTeamTrendQuery.php](../app/Services/Api/V2/SportTeamTrendQuery.php)
+- [SportTeamMetricQuery.php](../app/Services/Api/V2/SportTeamMetricQuery.php)
+- [useDetailedGameData.ts](../resources/js/composables/useDetailedGameData.ts)
+- [SportDetailedGamePage.vue](../resources/js/components/game-page/SportDetailedGamePage.vue)
 
 Sport-specific first reads:
 - MLB:
-  [app/Models/MLB/Game.php](/Users/bey/Herd/github/picksports/app/Models/MLB/Game.php)
-  [app/Models/MLB/Team.php](/Users/bey/Herd/github/picksports/app/Models/MLB/Team.php)
-  [app/Actions/MLB/GeneratePrediction.php](/Users/bey/Herd/github/picksports/app/Actions/MLB/GeneratePrediction.php)
-  [app/Actions/MLB/CalculateTeamMetrics.php](/Users/bey/Herd/github/picksports/app/Actions/MLB/CalculateTeamMetrics.php)
+  [app/Models/MLB/Game.php](../app/Models/MLB/Game.php)
+  [app/Models/MLB/Team.php](../app/Models/MLB/Team.php)
+  [app/Actions/MLB/GeneratePrediction.php](../app/Actions/MLB/GeneratePrediction.php)
+  [app/Actions/MLB/CalculateTeamMetrics.php](../app/Actions/MLB/CalculateTeamMetrics.php)
 
 - NFL:
-  [app/Models/NFL/Game.php](/Users/bey/Herd/github/picksports/app/Models/NFL/Game.php)
-  [app/Models/NFL/Team.php](/Users/bey/Herd/github/picksports/app/Models/NFL/Team.php)
-  [app/Actions/NFL/GeneratePrediction.php](/Users/bey/Herd/github/picksports/app/Actions/NFL/GeneratePrediction.php)
-  [app/Actions/NFL/CalculateTeamMetrics.php](/Users/bey/Herd/github/picksports/app/Actions/NFL/CalculateTeamMetrics.php)
+  [app/Models/NFL/Game.php](../app/Models/NFL/Game.php)
+  [app/Models/NFL/Team.php](../app/Models/NFL/Team.php)
+  [app/Actions/NFL/GeneratePrediction.php](../app/Actions/NFL/GeneratePredictionFromHistoricalElo.php)
+  [app/Actions/NFL/CalculateTeamMetrics.php](../app/Actions/NFL/CalculateTeamMetrics.php)
 
 - CFB:
-  [app/Models/CFB/Game.php](/Users/bey/Herd/github/picksports/app/Models/CFB/Game.php)
-  [app/Models/CFB/Team.php](/Users/bey/Herd/github/picksports/app/Models/CFB/Team.php)
-  [app/Models/CFB/TeamSeasonAffiliation.php](/Users/bey/Herd/github/picksports/app/Models/CFB/TeamSeasonAffiliation.php)
+  [app/Models/CFB/Game.php](../app/Models/CFB/Game.php)
+  [app/Models/CFB/Team.php](../app/Models/CFB/Team.php)
+  [app/Models/CFB/TeamSeasonAffiliation.php](../app/Models/CFB/TeamSeasonAffiliation.php)
 
 - NBA / WNBA:
-  [app/Models/NBA/Team.php](/Users/bey/Herd/github/picksports/app/Models/NBA/Team.php)
-  [app/Models/WNBA/Team.php](/Users/bey/Herd/github/picksports/app/Models/WNBA/Team.php)
+  [app/Models/NBA/Team.php](../app/Models/NBA/Team.php)
+  [app/Models/WNBA/Team.php](../app/Models/WNBA/Team.php)
 
 - CBB / WCBB:
-  [app/Models/CBB/Team.php](/Users/bey/Herd/github/picksports/app/Models/CBB/Team.php)
-  [app/Models/WCBB/Team.php](/Users/bey/Herd/github/picksports/app/Models/WCBB/Team.php)
+  [app/Models/CBB/Team.php](../app/Models/CBB/Team.php)
+  [app/Models/WCBB/Team.php](../app/Models/WCBB/Team.php)
 
 ## Maintenance Note
 
@@ -1087,19 +1088,17 @@ NFL read-display readiness now reports `read_display_ready` independently of `re
 
 Completed NFL games before the first approved/retired canonical release may expose `historical_prediction` on the game-page contract only when no native pregame revision exists in any state. The archive requires an observed, verified pregame snapshot matching kickoff and retains its original legacy prediction/snapshot IDs. Draft, withdrawn, superseded, post-cutover, reconstructed or unsafe records cannot use this route. The normal `prediction` remains null; only the final-result review card consumes the archive, explicitly labeling it historical and without betting approval. Existing authentication and subscription gates apply. NFL page normalization converts canonical home handicaps to the established home-margin display convention and leaves legacy/archive margins unchanged.
 
-The November 2, 2026 production read-only review of the current 1.2.1 release covered 13 matched completed games. Primary forecasts had margin MAE 10.4615 and Brier 0.187720, versus 9.6231 and 0.166486 for observed legacy forecasts. Frozen recommendation context had margin MAE 9.4615 and Brier 0.157769; it remains a separate forecast role. These stored observations do not establish improved primary-model performance or calibrated betting probabilities, and the small replacement-release cohort does not pass a promotion review. No formulas, model weights, approvals or production switches were changed to obtain these results.
-
 An explicit NFL `1.3.0` rules release uses `forecast.source=frozen_nfl_model_v1` to publish the established model's already-frozen margin, total and win probability as primary markets. This changes the transport, without introducing fitted coefficients or recalculating evidence at read time. Earlier releases without this source marker retain their original calculator and replay behavior. Missing/incompatible full-model context fails publication rather than falling back to the simpler primary rules; missing confidence remains unavailable. Registration is explicit (`--release-version=1.3.0`), uses the existing approval/atomic replacement workflow and must not backdate activation. No release is registered by reading this report.
 
 `read_transport_ready` additionally requires an approved full-model release and full-model publication for every scheduled slate game; coverage from the earlier primary-rules model does not satisfy that check. Existing recommendation readiness and custom-EPA/betting holds remain independent, and the report retains the requirement for a separate performance review.
 
-A November 2 read-only replay on the same 13 completed games confirmed exact `1.3.0` transport parity with frozen full-model outputs and unchanged `1.2.1` replay (margin MAE 9.4615, total MAE 12.3769, Brier 0.157769). This validates transport parity, not new calibration or betting approval. Canonical NFL board responses retain batched research status and frozen-baseline hash comparisons, convert native home handicaps into display margins, and force the research decision to hold without an exact public canonical recommendation. Historical/archive values never feed those approval checks.
+Canonical NFL board responses retain batched research status and frozen-baseline hash comparisons, convert native home handicaps into display margins, and force the research decision to hold without an exact public canonical recommendation. Historical/archive values never feed those approval checks.
 
 ### NBA established-model read cutover preparation
 
-The November 2, 2026 read-only production audit found NBA pipeline/read switches disabled, no native release or forecasts, 57 upcoming linked games in an eight-day horizon, and 56 legacy forecasts. Season 2027 contained 158 completed games, with stored legacy forecasts and observed-pregame snapshots for 90. The other 68 had no stored forecast and remain unavailable; they are not regenerated retrospectively. Five sampled comparisons confirmed that the earlier native rules model differed from the established ensemble; raw forecasts are not interchangeable merely because both are labeled NBA.
+Raw NBA forecasts are not interchangeable merely because both sources are labeled NBA; use the supported established-model transport and source boundary.
 
-Explicit release `1.1.0` freezes NBA's established model configuration and captures its non-persisting preview under schema `nba-pregame-v2`. Its calculator transports frozen margin, total, probability, confidence and model metadata into native markets without read-time recalculation. Original releases retain their original replay path. Missing projections, incompatible evidence, post-tipoff capture and future source timestamps fail publication. A read-only production preview across all 57 upcoming games matched the established model exactly for spread, total and probability. This establishes transport parity, not new calibration or public approval.
+Explicit release `1.1.0` freezes NBA's established model configuration and captures its non-persisting preview under schema `nba-pregame-v2`. Its calculator transports frozen margin, total, probability, confidence and model metadata into native markets without read-time recalculation. Original releases retain their original replay path. Missing projections, incompatible evidence, post-tipoff capture and future source timestamps fail publication. Transport parity does not establish new calibration or public approval.
 
 Readiness selects generation's effective release, requires full-model forecasts from that exact release, identifies missing/unlinked slate games, and uses an eight-day horizon. Historical evaluation counts remain available independently. Future, invalidated, ambiguous or incompatible releases and an empty slate fail readiness. The pipeline switch and separate model-performance review remain explicit rollout gates. Default canonical generation is bounded to the same eight-day horizon; targeted game/date requests preserve their scope.
 
@@ -1113,13 +1112,13 @@ The shared detailed-game loader treats only a prediction endpoint's explicit 404
 
 ### CBB established-model cutover preparation
 
-The November 3, 2026 production read-only audit found 431 upcoming linked CBB games, 429 legacy forecasts, no native release/coverage and no placeholder matchups in that horizon. The smaller native rules model differed materially from the established CBB ensemble (for example, a 30.1-point versus 13.1-point home margin). Explicit release `1.1.0` / `cbb-pregame-v2` freezes the established model configuration and non-persisting preview outputs. The prior-season fallback setting is frozen consistently for both primary input evidence and the established preview; original release replay and WCBB behavior remain intact. Neutral-site and kickoff identity must match the linked game. Placeholder teams remain held and cannot produce a forecast or betting approval.
+Explicit release `1.1.0` / `cbb-pregame-v2` freezes the established model configuration and non-persisting preview outputs. The prior-season fallback setting is frozen consistently for both primary input evidence and the established preview; original release replay and WCBB behavior remain intact. Neutral-site and kickoff identity must match the linked game. Placeholder teams remain held and cannot produce a forecast or betting approval.
 
 NBA/CBB share `EstablishedModelTransport`, `EstablishedModelCutoverReadiness` and `HistoricalForecastArchive`, replacing duplicate capture, validation, replay, coverage and archive policies. Readiness selects generation's approved effective release, requires exact-release full-model coverage in the next eight days, reports placeholder holds separately, rejects identity/unlinked/unsafe/missing forecasts and blocks reader activation when in-flight legacy baselines would be lost. Scalar readiness reads avoid sorting frozen JSON payloads. The CBB command has the same bounded default horizon; explicit game/date targets retain their scope and intentional placeholder holds are reported without fabricating predictions. No schedule cadence changes.
 
-The hypothetical current-time archive preview preserved all 182 existing forecasts among 184 completed CBB games: 44 verified observed archives, 138 clearly labeled unverified stored forecasts, and two genuine gaps. After-game or mismatched snapshots never acquire safe pregame provenance. Native revisions in any state prevent historical fallback. CBB game details expose a separate `historical_prediction` review field behind existing access gates; archived data never populate the active prediction reference or supply grading/betting evidence. The NBA archive extraction matched all 173 completed NBA game responses exactly. Production switches, releases, forecasts, approvals and provider state are unchanged by this preparation stage.
+After-game or mismatched snapshots never acquire safe pregame provenance. Native revisions in any state prevent historical fallback. CBB game details expose a separate `historical_prediction` review field behind existing access gates; archived data never populate the active prediction reference or supply grading/betting evidence.
 
-Final CBB read-only transport comparison under the frozen fallback policy matched all 431 audited matchups for spread, total, probability and confidence, with no input holds in those batches. This proves transport parity only; it is not new model calibration or betting approval. Local verification passed 434 backend tests (3,199 assertions), 54 frontend tests, TypeScript, targeted lint, Pint and whitespace checks. Production activation remains a separate operation after deployment and explicit non-backdated release registration, complete current-slate publication and verification of historical/live compatibility and approval holds.
+Production activation remains a separate operation after deployment and explicit non-backdated release registration, complete current-slate publication and verification of historical/live compatibility and approval holds.
 
 
 ### MLB offseason canonical cutover
@@ -1157,7 +1156,7 @@ WNBA game-details sync now updates summary state through the existing summary up
 
 ### Seven-sport retirement audit after canonical cutover
 
-The November 3, 2026 read-only production audit confirmed both canonical switches enabled for NFL, CFB, NBA, CBB, WCBB, MLB and WNBA. Canonical builders still depend on established model calculations; a legacy class name alone does not mean its calculation or historical path is unused.
+Canonical builders still depend on established model calculations; a legacy class name alone does not mean its calculation or historical path is unused.
 
 | Sport | Dependencies retained deliberately |
 | --- | --- |
@@ -1171,11 +1170,11 @@ The November 3, 2026 read-only production audit confirmed both canonical switche
 
 All consumers now use `EstablishedModelTransport`, `EstablishedModelCutoverReadiness`, `HistoricalForecastArchive`, `CanonicalRulesReleaseRegistrar` and `CanonicalTeamGameEvaluator` directly. Empty basketball compatibility subclasses and the unused NBA archive forwarding wrapper are removed. Algorithms, frozen outputs, archive provenance, release identities and approval rules are unchanged.
 
-WCBB games 1711–1717 were all final and zero games used the temporary bridge at the production audit. Readers and live stores now reject every mismatched legacy baseline in canonical mode. Existing missing-native holds remain fail closed, including later WCBB input-held game 1740; legacy rows are never substituted to clear those holds. The audit also found 38 NFL elapsed/nonfinal legacy records without safe native coverage. These remain data/evidence holds, not authorization to revive legacy generation or remove history.
+Readers and live stores reject mismatched legacy baselines in canonical mode. Existing missing-native and unusable-input holds remain fail closed; legacy rows are never substituted to clear those holds. Elapsed/nonfinal legacy records without safe native coverage remain data/evidence holds, not authorization to revive legacy generation or remove history.
 
 Legacy command names remain supported canonical entry points after both switches select canonical. Explicit historical reconstruction and partial-switch compatibility remain exercised by regression tests; they are active contracts and are not deleted as dead code. No prediction tables, historical samples, approvals, switches, schedules or production records are changed by this cleanup.
 
-The NBA/CBB rolling-horizon coverage recovery aligns their five-minute missing-only schedules with the eight-day canonical readiness window (`--days-forward=8`). Previously NBA scanned seven business days and CBB used the two-day command default, leaving newly entering eighth-day games uncovered until the next daily generation. Explicit narrower manual windows and the seven-day NBA rating/metric refresh retain their scope. Coverage repair uses existing stored inputs and does not overwrite covered forecasts or bypass release/approval checks. WCBB game 1740 finished while held because its selected away-team metric row had zero efficiency and tempo; its final status cannot authorize retrospective pregame publication or replacement statistics.
+The NBA/CBB rolling-horizon coverage recovery aligns their five-minute missing-only schedules with the eight-day canonical readiness window (`--days-forward=8`). Previously NBA scanned seven business days and CBB used the two-day command default, leaving newly entering eighth-day games uncovered until the next daily generation. Explicit narrower manual windows and the seven-day NBA rating/metric refresh retain their scope. Coverage repair uses existing stored inputs and does not overwrite covered forecasts or bypass release/approval checks. A final status for an input-held game cannot authorize retrospective pregame publication or replacement statistics.
 
 ### Shared canonical command retirement
 

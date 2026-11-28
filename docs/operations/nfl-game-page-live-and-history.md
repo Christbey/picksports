@@ -17,3 +17,8 @@
 ## Verification
 
 Run the NFL action/feature suites, V2 endpoint contracts, cross-sport matchup tests, and `node --experimental-strip-types --test tests/frontend/*.test.mjs`. Follow with frontend type checking, lint and build. Check game 1722 on production after deployment for its 2024 meeting, separate regular-season sample counts, Night record, and live snapshot refresh/warnings. Do not rewrite historical forecasts or grades to verify presentation changes.
+
+
+## Nullable pregame display boundary (private scoped repair)
+
+The live-page adapter passes missing or empty pregame probability, spread and total as null to the existing pregame-unavailable display. Genuine observed zero and complete observed values remain unchanged. This preserves nullable presentation; it does not alter live projections, probability formulas, model/default/approval rules or normalizer source authority. Qualification uses producer-shaped saved API fixtures with the real mounted composable and compiled consumer, plus scoped compatibility and672/static builds. A paired real PHP producer lifecycle, browser/SSR-server runtime and production reachability are not certified by these fixtures. The original failed after-verifier receipt is preserved with a separate offline reconciliation; standalone dist outputs are proof only.

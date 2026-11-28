@@ -25,6 +25,7 @@ use Illuminate\Support\Str;
 beforeEach(function () {
     $this->travelTo('2026-10-25 08:00:00');
 });
+afterEach(fn () => $this->travelBack());
 
 function nflIntegrityGame(array $attributes = []): Game
 {

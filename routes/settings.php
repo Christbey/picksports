@@ -11,6 +11,7 @@ use App\Http\Controllers\Settings\PasswordController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\TwoFactorAuthenticationController;
 use App\Http\Controllers\Settings\WebPushSubscriptionController;
+use App\Services\Billing\BillingSubscriptionPresentation;
 use App\Support\TierAccessBypass;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -43,7 +44,7 @@ Route::middleware(['auth', 'onboarded', 'verified'])->group(function () {
         $user = request()->user();
         $tier = $user->subscriptionTier();
 
-        if ($user->hasFoundingAccess()) {
+        if ($user->hasFoundingAccess() && $user->subscriptions->isEmpty()) {
             return Inertia::render('settings/Subscription', [
                 'subscription' => [
                     'tier' => $tier?->name,
@@ -54,7 +55,7 @@ Route::middleware(['auth', 'onboarded', 'verified'])->group(function () {
             ]);
         }
 
-        if (! $user->subscribed()) {
+        if ($user->subscriptions->isEmpty()) {
             if (app(TierAccessBypass::class)->userIsBypassed($user)) {
                 return Inertia::render('settings/Subscription', [
                     'subscription' => [
@@ -83,12 +84,7 @@ Route::middleware(['auth', 'onboarded', 'verified'])->group(function () {
         $subscription = $user->subscription();
 
         return Inertia::render('settings/Subscription', [
-            'subscription' => [
-                'tier' => $tier?->name,
-                'status' => $subscription->stripe_status,
-                'current_period_end' => $subscription->ends_at,
-                'cancel_at_period_end' => $subscription->ends_at !== null,
-            ],
+            'subscription' => $subscription !== null ? app(BillingSubscriptionPresentation::class)->present($subscription, $tier?->name) : app(BillingSubscriptionPresentation::class)->unresolved($tier?->name),
         ]);
     })->name('subscription.settings');
 

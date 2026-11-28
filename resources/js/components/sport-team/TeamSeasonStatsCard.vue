@@ -14,10 +14,12 @@ defineProps<{
     <Card v-if="seasonStats">
         <CardHeader>
             <CardTitle
-                >Season Averages ({{
-                    seasonStats.games_played
-                }}
-                games)</CardTitle
+                >Season Averages ·
+                {{ seasonStats.season ?? 'Scope unavailable' }}
+                <span v-if="seasonStats.season_type !== undefined">
+                    · phase {{ seasonStats.season_type }}</span
+                >
+                ({{ seasonStats.games_played }} completed games)</CardTitle
             >
         </CardHeader>
         <CardContent>
@@ -47,6 +49,17 @@ defineProps<{
                             class="text-xs font-normal text-muted-foreground"
                             >#{{ statRankings[tile.rankingKey] }}</span
                         >
+                    </div>
+                    <div
+                        v-if="
+                            tile.sampleKey &&
+                            seasonStats.sample_sizes?.[tile.sampleKey] !==
+                                undefined
+                        "
+                        class="mt-1 text-xs text-muted-foreground"
+                    >
+                        {{ seasonStats.sample_sizes[tile.sampleKey] }} observed
+                        games
                     </div>
                 </div>
             </div>

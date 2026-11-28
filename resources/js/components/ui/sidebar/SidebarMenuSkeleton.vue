@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from "vue"
-import { computed } from "vue"
 import { cn } from "@/lib/utils"
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -9,9 +8,8 @@ const props = defineProps<{
   class?: HTMLAttributes["class"]
 }>()
 
-const width = computed(() => {
-  return `${Math.floor(Math.random() * 40) + 50}%`
-})
+// Keep server markup and client hydration identical.
+const width = "70%"
 </script>
 
 <template>

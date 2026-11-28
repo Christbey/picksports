@@ -11,20 +11,27 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Models\Permission;
 use Tests\Support\CanonicalReadFixture;
+use Tests\Support\ObservedCfbGameFixture;
+use Tests\Support\ObservedMlbGameFixture;
 
 beforeEach(function () {
     $this->withoutVite();
-    config(['sports.business_timezone' => 'America/Chicago', 'app.timezone' => 'UTC', 'subscriptions.enforce_tiers' => false]);
+    config(['sports.business_timezone' => 'America/Chicago', 'app.timezone' => 'UTC', 'subscriptions.enforce_tiers' => false, 'inertia.ssr.enabled' => false]);
 });
 
 /** Create the same stored schedule shape used by sport boards. */
-function selectionGame(string $sport, string $date, ?string $time, bool $canonical, bool $published = true): Model
+function selectionGame(string $sport, string $date, ?string $time, bool $canonical, bool $published = true, bool $observeCfbClock = false): Model
 {
     $namespace = strtoupper($sport);
     $gameClass = "App\\Models\\{$namespace}\\Game";
     $teamClass = "App\\Models\\{$namespace}\\Team";
     $predictionClass = "App\\Models\\{$namespace}\\Prediction";
     $startsAt = Carbon::parse($date.' '.($time ?? '18:00:00'), 'UTC');
+    $originalClock = Carbon::getTestNow();
+    if ($sport === 'mlb' && $time !== null) {
+        // Admit this synthetic source before kickoff, not at the later dashboard query time.
+        Carbon::setTestNow($startsAt->copy()->subDay());
+    }
     $event = $canonical ? SportEvent::factory()->create(['sport' => $sport, 'season' => 2026, 'starts_at' => $startsAt]) : null;
     $game = $gameClass::factory()->create([
         'sport_event_id' => $event?->id,
@@ -39,8 +46,17 @@ function selectionGame(string $sport, string $date, ?string $time, bool $canonic
     // Preserve split UTC date/time rather than a model's datetime serialization.
     DB::table($game->getTable())->where('id', $game->id)->update(['game_date' => $date, 'game_time' => $time]);
 
+    if ($sport === 'mlb' && $time !== null) {
+        $game = ObservedMlbGameFixture::observe($game, $startsAt);
+    }
+
+    if ($sport === 'cfb' && $observeCfbClock) {
+        $game = ObservedCfbGameFixture::observe($game, $startsAt);
+    }
+
     if ($canonical) {
-        $run = CanonicalReadFixture::run($event, ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]]);
+        $inputs = ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]];
+        $run = CanonicalReadFixture::run($event->fresh(), $inputs, $sport === 'mlb' && $time !== null ? ObservedMlbGameFixture::snapshotAttributes($game, $inputs) : []);
         CanonicalPrediction::factory()->create([
             'sport' => $sport, 'sport_event_id' => $event->id, 'calculation_run_id' => $run->id, 'output_hash' => $run->output_hash, 'generated_at' => $run->inputSnapshot->captured_at,
             'phase' => 'pregame', 'publication_state' => $published ? 'published' : 'draft',
@@ -56,6 +72,8 @@ function selectionGame(string $sport, string $date, ?string $time, bool $canonic
         $predictionClass::query()->create(array_intersect_key($attributes, array_flip(Schema::getColumnListing((new $predictionClass)->getTable()))));
     }
 
+    Carbon::setTestNow($originalClock);
+
     return $game;
 }
 
@@ -66,7 +84,7 @@ it('selects identical dashboard and board games across local midnight and DST', 
     $window = app(SportsDateWindowService::class)->forDate($date);
     $expected = [];
     foreach ([$window->utcStart->subSecond(), $window->utcStart, $window->utcStart->addHours(12), $window->utcEnd->startOfSecond(), $window->utcEnd->addSecond()->startOfSecond()] as $index => $start) {
-        $game = selectionGame($sport, $start->toDateString(), $start->toTimeString(), $canonical);
+        $game = selectionGame($sport, $start->toDateString(), $start->toTimeString(), $canonical, observeCfbClock: $sport === 'cfb');
         if (in_array($index, [0, 3], true)) {
             DB::table($game->getTable())->where('id', $game->id)->update(['game_date' => $start->toDateTimeString()]);
         }

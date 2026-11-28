@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands\WNBA;
 
-use App\Models\WNBA\EloRating;
 use App\Models\WNBA\Game;
+use App\Services\WNBA\HistoricalEloReplay;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
 
@@ -22,12 +22,18 @@ class BackfillHistoricalDataCommand extends Command
         {--skip-metrics : Skip Elo and team metrics recalculation}
         {--skip-predictions : Skip historical prediction generation/grading}
         {--hydrate-current-odds : Copy historical odds onto games.odds_data when empty}
-        {--regrade : Clear existing prediction grades before regrading selected historical predictions}';
+        {--regrade : Retired; use bounded audited legacy prediction grade repair}';
 
     protected $description = 'Backfill WNBA historical games, odds, metrics, predictions, and reports across seasons';
 
     public function handle(): int
     {
+        if ($this->option('regrade')) {
+            $this->error('The --regrade flag is retired. Use the bounded audited sports:repair-legacy-prediction-grades workflow.');
+
+            return self::FAILURE;
+        }
+
         $stage = strtolower((string) $this->option('stage'));
         if (! in_array($stage, ['full', 'espn', 'odds', 'metrics', 'predictions', 'reports'], true)) {
             $this->error('The --stage option must be one of: full, espn, odds, metrics, predictions, reports.');
@@ -35,10 +41,11 @@ class BackfillHistoricalDataCommand extends Command
             return self::FAILURE;
         }
 
-        $fromSeason = (int) $this->option('from-season');
-        $toSeason = (int) $this->option('to-season');
-        if ($fromSeason > $toSeason) {
-            $this->error('--from-season must be less than or equal to --to-season.');
+        $fromSeason = filter_var($this->option('from-season'), FILTER_VALIDATE_INT);
+        $toSeason = filter_var($this->option('to-season'), FILTER_VALIDATE_INT);
+        if ($fromSeason === false || $toSeason === false || $fromSeason < 1900 || $toSeason > (int) now()->year
+            || $fromSeason > $toSeason || $toSeason - $fromSeason >= 10) {
+            $this->error('Provide a valid ordered season range within 1900-current year and at most 10 seasons.');
 
             return self::FAILURE;
         }
@@ -70,7 +77,14 @@ class BackfillHistoricalDataCommand extends Command
             }
 
             if ($this->shouldRun($stage, 'metrics') && ! (bool) $this->option('skip-metrics')) {
-                $this->rebuildHistoricalElo($fromSeason, $season);
+                try {
+                    $count = app(HistoricalEloReplay::class)->replay($fromSeason, $season);
+                    $this->info("Historical Elo replay completed for {$count} games without changing current team ratings.");
+                } catch (\RuntimeException|\DomainException $exception) {
+                    $this->error('Historical Elo replay refused or failed; prior history was retained.');
+
+                    return self::FAILURE;
+                }
 
                 $this->runArtisan('wnba:calculate-team-metrics', [
                     '--season' => $season,
@@ -96,154 +110,6 @@ class BackfillHistoricalDataCommand extends Command
         $this->info('WNBA historical backfill finished.');
 
         return self::SUCCESS;
-    }
-
-    private function rebuildHistoricalElo(int $fromSeason, int $toSeason): void
-    {
-        $games = Game::query()
-            ->whereBetween('season', [$fromSeason, $toSeason])
-            ->where('status', 'STATUS_FINAL')
-            ->whereNotNull('home_team_id')
-            ->whereNotNull('away_team_id')
-            ->whereNotNull('home_score')
-            ->whereNotNull('away_score')
-            ->with(['homeTeam', 'awayTeam'])
-            ->orderBy('game_date')
-            ->orderBy('game_time')
-            ->orderBy('id')
-            ->get();
-
-        if ($games->isEmpty()) {
-            $this->warn('No completed WNBA games found for historical Elo replay.');
-
-            return;
-        }
-
-        $this->line("Replaying scoped historical Elo for {$games->count()} WNBA game(s) without mutating current team ratings.");
-
-        $defaultElo = (int) config('wnba.elo.default', 1500);
-        $teamElos = [];
-
-        EloRating::query()
-            ->whereBetween('season', [$fromSeason, $toSeason])
-            ->delete();
-
-        $bar = $this->output->createProgressBar($games->count());
-        $bar->start();
-
-        foreach ($games as $game) {
-            $homeTeamId = (int) $game->home_team_id;
-            $awayTeamId = (int) $game->away_team_id;
-            $homeElo = $teamElos[$homeTeamId] ?? $defaultElo;
-            $awayElo = $teamElos[$awayTeamId] ?? $defaultElo;
-
-            [$homeChange, $awayChange] = $this->eloChanges($game, $homeElo, $awayElo);
-            $newHomeElo = (int) round($homeElo + $homeChange);
-            $newAwayElo = (int) round($awayElo + $awayChange);
-
-            $teamElos[$homeTeamId] = $newHomeElo;
-            $teamElos[$awayTeamId] = $newAwayElo;
-
-            $this->saveHistoricalElo($homeTeamId, $game, $newHomeElo, $homeChange);
-            $this->saveHistoricalElo($awayTeamId, $game, $newAwayElo, $awayChange);
-
-            $bar->advance();
-        }
-
-        $bar->finish();
-        $this->newLine(2);
-
-        $this->info('Historical Elo replay completed.');
-    }
-
-    /**
-     * @return array{0:float,1:float}
-     */
-    private function eloChanges(Game $game, int $homeElo, int $awayElo): array
-    {
-        $homeAdvantage = (float) config('wnba.elo.home_court_advantage', 80);
-        $homeExpected = 1 / (1 + pow(10, ($awayElo - ($homeElo + $homeAdvantage)) / 400));
-        $awayExpected = 1 - $homeExpected;
-        $homeActual = (float) $game->home_score > (float) $game->away_score ? 1.0 : 0.0;
-        $awayActual = 1 - $homeActual;
-        $kFactor = $this->historicalKFactor($game);
-
-        return [
-            round($kFactor * ($homeActual - $homeExpected), 1),
-            round($kFactor * ($awayActual - $awayExpected), 1),
-        ];
-    }
-
-    private function historicalKFactor(Game $game): float
-    {
-        $kFactor = (float) config('wnba.elo.base_k_factor', 25);
-        $kFactor *= $this->marginMultiplier(abs((int) $game->home_score - (int) $game->away_score));
-
-        if (in_array((string) $game->season_type, $this->seasonTypeCandidates(config('wnba.season.types.postseason', 3)), true)) {
-            $kFactor *= (float) config('wnba.elo.playoff_multiplier', 1.0);
-        }
-
-        return $kFactor;
-    }
-
-    private function marginMultiplier(int $margin): float
-    {
-        foreach (config('wnba.elo.margin_multipliers', []) as $tier) {
-            if (($tier['max_margin'] ?? null) === null || $margin <= (int) $tier['max_margin']) {
-                return (float) ($tier['multiplier'] ?? 1.0);
-            }
-        }
-
-        return 1.0;
-    }
-
-    private function saveHistoricalElo(int $teamId, Game $game, int $newElo, float $eloChange): void
-    {
-        EloRating::query()->updateOrCreate(
-            [
-                'team_id' => $teamId,
-                'game_id' => $game->id,
-            ],
-            [
-                'season' => $game->season,
-                'week' => $game->week ?? null,
-                'date' => $game->game_date,
-                'elo_rating' => $newElo,
-                'elo_change' => $eloChange,
-            ]
-        );
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function seasonTypeCandidates(mixed $seasonType): array
-    {
-        if ($seasonType === null || $seasonType === '') {
-            return [];
-        }
-
-        $typeNames = config('wnba.season.type_names', []);
-        $typesByKey = config('wnba.season.types', []);
-        $candidates = [(string) $seasonType];
-
-        if (is_string($seasonType) && isset($typeNames[$seasonType])) {
-            $candidates[] = (string) $typeNames[$seasonType];
-        }
-
-        if (is_string($seasonType) && isset($typesByKey[$seasonType])) {
-            $candidates[] = (string) $typesByKey[$seasonType];
-        }
-
-        if (is_numeric($seasonType)) {
-            $matchedKey = array_search((int) $seasonType, $typesByKey, true);
-            if ($matchedKey !== false) {
-                $candidates[] = (string) $matchedKey;
-                $candidates[] = (string) ($typeNames[$matchedKey] ?? '');
-            }
-        }
-
-        return array_values(array_unique(array_filter($candidates, fn (string $value): bool => $value !== '')));
     }
 
     private function shouldRun(string $stage, string $target): bool

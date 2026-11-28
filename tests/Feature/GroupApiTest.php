@@ -2,6 +2,41 @@
 
 use App\Models\Group;
 use App\Models\User;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
+
+test('group creation rolls back when owner membership fails and the same request can safely retry', function () {
+    $user = User::factory()->create();
+    $connection = DB::connection();
+    $originalDispatcher = $connection->getEventDispatcher();
+    $faultDispatcher = clone $originalDispatcher;
+    $faultDispatcher->listen(QueryExecuted::class, function (QueryExecuted $query): void {
+        if (preg_match('/insert into ["`]?group_users/i', $query->sql) === 1) {
+            throw new RuntimeException('Injected membership failure');
+        }
+    });
+    $connection->setEventDispatcher($faultDispatcher);
+    $payload = ['name' => 'Atomic pool', 'sport' => 'cbb', 'season' => 2026];
+
+    try {
+        $this->actingAs($user)
+            ->withHeader('Idempotency-Key', 'group-owner-failure')
+            ->postJson('/api/v2/groups', $payload)
+            ->assertStatus(500);
+    } finally {
+        $connection->setEventDispatcher($originalDispatcher);
+    }
+
+    expect(Group::query()->count())->toBe(0)
+        ->and(DB::table('group_users')->count())->toBe(0);
+
+    $this->postJson('/api/v2/groups', $payload)->assertCreated();
+
+    $group = Group::query()->sole();
+    expect($group->owner_id)->toBe($user->id)
+        ->and($group->users()->whereKey($user->id)->sole()->pivot->role)->toBe('owner')
+        ->and(DB::table('group_users')->count())->toBe(1);
+});
 
 test('authenticated user can create and list cbb bracket groups', function () {
     $user = User::factory()->create();

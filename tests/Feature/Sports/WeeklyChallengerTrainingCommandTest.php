@@ -47,3 +47,27 @@ it('reports the immutable lineage returned by a completed weekly cycle', functio
         ->expectsOutputToContain('Active shadow challenger: shadow-id')
         ->assertSuccessful();
 });
+
+it('routes explicit recovery to resume without starting a new training cycle', function () {
+    $service = Mockery::mock(WeeklyChallengerTrainingService::class);
+    $service->shouldNotReceive('run');
+    $service->shouldReceive('resume')->once()->with('nfl', 'cycle-id', true)
+        ->andReturn(['status' => 'completed', 'cycle_run_id' => 'cycle-id']);
+    app()->instance(WeeklyChallengerTrainingService::class, $service);
+
+    $this->artisan('sports:train-weekly-model-challenger', [
+        'sport' => 'NFL', '--resume' => 'cycle-id', '--retain-workdir' => true,
+    ])->expectsOutputToContain('Cycle run: cycle-id')->assertSuccessful();
+});
+
+it('prepares an explicitly assigned remote cycle without changing ordinary command dispatch', function () {
+    $service = Mockery::mock(WeeklyChallengerTrainingService::class);
+    $service->shouldReceive('run')->once()->with('nfl', false, false, false, 'worker-id')
+        ->andReturn(['status' => 'prepared', 'cycle_run_id' => 'cycle-id']);
+    $service->shouldNotReceive('resume');
+    app()->instance(WeeklyChallengerTrainingService::class, $service);
+
+    $this->artisan('sports:train-weekly-model-challenger', [
+        'sport' => 'nfl', '--worker' => 'worker-id', '--no-promote' => true,
+    ])->expectsOutputToContain('Status: prepared')->assertSuccessful();
+});

@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\CBB;
 
+use App\Support\Injuries\StoredInjuryClock;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -44,7 +45,7 @@ class PlayerResource extends JsonResource
                     'type' => $injury->type,
                     'injury_date' => $injury->injury_date?->toDateString(),
                     'return_date' => $injury->return_date?->toDateString(),
-                    'source_updated_at' => $injury->source_updated_at?->toIso8601String(),
+                    ...StoredInjuryClock::fields($injury),
                     'is_active' => (bool) $injury->is_active,
                     'updated_at' => $injury->updated_at?->toIso8601String(),
                 ])->values()

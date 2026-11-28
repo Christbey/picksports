@@ -73,6 +73,8 @@ class SportPlayerController extends Controller
         SportPlayerQuery $players,
     ): JsonResponse {
         $context = $sports->resolve($sport);
+        abort_unless(ctype_digit($team) && (int) $team > 0
+            && (string) (int) $team === ltrim($team, '0'), 404);
         $filters = $request->validatedFilters();
         $paginator = $players->paginateForTeam($context, $team, $filters, $request->user());
 

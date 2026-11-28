@@ -82,6 +82,7 @@ it('issues sanctum token from passkey verification via api auth endpoints', func
     ]);
 
     $verify->assertOk()
+        ->assertHeader('Cache-Control', 'no-store, private')
         ->assertJsonPath('token_type', 'Bearer')
         ->assertJsonPath('user.id', $user->id)
         ->assertJsonStructure([

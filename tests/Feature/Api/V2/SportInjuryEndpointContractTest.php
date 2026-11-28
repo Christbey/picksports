@@ -17,6 +17,7 @@ use App\Models\WCBB\Team as WcbbTeam;
 use App\Models\WNBA\Player as WnbaPlayer;
 use App\Models\WNBA\Team as WnbaTeam;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
@@ -78,7 +79,8 @@ it('returns only actionable nfl injuries with depth and impact context', functio
         ->assertJsonPath('data.0.is_starter', true)
         ->assertJsonPath('data.0.availability_probability', 0)
         ->assertJsonPath('data.0.impact_level', 'critical')
-        ->assertJsonPath('meta.freshness.is_stale', false);
+        ->assertJsonPath('meta.freshness.is_stale', null)
+        ->assertJsonPath('meta.freshness.source_clock_status', 'unverified_storage_clock');
 });
 
 it('returns a clean json 404 for unsupported v2 injury endpoints', function () {
@@ -218,3 +220,38 @@ function createV2InjuryContractRow(string $slug, Model $team, Model $player, arr
         array_flip($columns),
     ));
 }
+
+it('does not invent observation freshness from unqualified injury clocks or fresh local mutations', function (?string $sourceClock) {
+    $this->travelTo(Carbon::parse('2026-10-10T18:00:00Z'));
+    actAsV2InjuryContractUser();
+    $team = NbaTeam::factory()->create();
+    $player = NbaPlayer::factory()->create(['team_id' => $team->id]);
+    createV2InjuryContractRow('nba', $team, $player, ['source_updated_at' => $sourceClock, 'updated_at' => now()]);
+    $otherTeam = NbaTeam::factory()->create();
+    $otherPlayer = NbaPlayer::factory()->create(['team_id' => $otherTeam->id]);
+    createV2InjuryContractRow('nba', $otherTeam, $otherPlayer, ['source_updated_at' => now(), 'updated_at' => now()->addDays(2), 'injury_key' => 'different-team']);
+
+    $response = $this->getJson("/api/v2/sports/nba/injuries?team_id={$team->id}")->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.source_updated_at', $sourceClock)
+        ->assertJsonPath('meta.freshness.is_stale', null)
+        ->assertJsonPath('meta.freshness.age_hours', null)
+        ->assertJsonPath('meta.freshness.stale_rows', null)
+        ->assertJsonPath('meta.freshness.latest_source_updated_at', null)
+        ->assertJsonPath('meta.freshness.coverage_status', 'unverified')
+        ->assertJsonPath('meta.freshness.last_observed_at', null)
+        ->assertJsonPath('meta.freshness.source_clock_status', 'unverified_storage_clock')
+        ->assertJsonPath('meta.freshness.unverified_rows', 1)
+        ->assertJsonPath('meta.freshness.max_age_hours', 48);
+    expect($response->json('meta.warnings'))->not->toBeEmpty()
+        ->and($response->json('meta.freshness.last_stored_at'))->toBe($response->json('data.0.updated_at'));
+})->with(['old stored source' => ['2026-10-01 12:00:00'], 'missing source' => [null], 'apparently recent but unqualified source' => ['2026-10-10 12:00:00']]);
+
+it('distinguishes no matching injury observations from verified fresh complete coverage', function () {
+    actAsV2InjuryContractUser();
+    $this->getJson('/api/v2/sports/nba/injuries')->assertOk()->assertJsonCount(0, 'data')
+        ->assertJsonPath('meta.freshness.source_clock_status', 'no_matching_observations')
+        ->assertJsonPath('meta.freshness.is_stale', null)
+        ->assertJsonPath('meta.freshness.unverified_rows', 0)
+        ->assertJsonPath('meta.freshness.last_observed_at', null);
+});

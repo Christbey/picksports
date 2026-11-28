@@ -14,10 +14,10 @@ onErrorCaptured((error) => {
 </script>
 
 <template>
-    <Alert v-if="capturedError" variant="destructive">
+    <Alert v-if="capturedError !== null" variant="destructive">
         <AlertTitle>Page Rendering Error</AlertTitle>
         <AlertDescription>
-            {{ capturedError }}
+            {{ capturedError || 'An unexpected rendering error occurred.' }}
         </AlertDescription>
     </Alert>
 

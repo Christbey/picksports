@@ -201,7 +201,7 @@ test('loading, failure, stale-data and empty-search states remain distinct', asy
     assert.doesNotMatch(search, /id="prop-7"/);
 });
 
-test('expanded generic research retains public statistics and admin-only quote diagnostics', async () => {
+test('expanded generic research retains public statistics and public quote freshness', async () => {
     const { default: Card } = await server.ssrLoadModule(
         '/resources/js/components/player-props/PlayerPropCard.vue',
     );
@@ -224,7 +224,7 @@ test('expanded generic research retains public statistics and admin-only quote d
     assert.match(publicHtml, /Historical Avg/);
     assert.match(publicHtml, /Probability edge/);
     assert.match(publicHtml, /52.0%/);
-    assert.doesNotMatch(publicHtml, /Within 36-hour quote window/);
+    assert.match(publicHtml, /Within 36-hour quote window/);
     const adminHtml = await renderToString(
         createSSRApp(Card, {
             rec,

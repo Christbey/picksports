@@ -3,6 +3,7 @@
 namespace App\Services\Predictions\Review;
 
 use App\Models\AnalysisWorkItem;
+use App\Models\MLB\Game;
 use App\Services\Predictions\PredictionReviewInputBuilder;
 use App\Services\Sports\SportsDateWindowService;
 use Carbon\CarbonImmutable;
@@ -27,9 +28,9 @@ class PredictionReviewCoordinator
         }
         $input = $this->inputs->forGame($game, $sport);
         $key = hash('sha256', $sport.'|'.$game->getTable().'|'.$game->getKey().'|prediction_review');
-        $deadline = data_get($input?->identity, 'starts_at') !== null
+        $deadline = $game instanceof Game ? app(SportsDateWindowService::class)->gameStart($game) : (data_get($input?->identity, 'starts_at') !== null
             ? CarbonImmutable::parse($input->identity['starts_at'])
-            : app(SportsDateWindowService::class)->gameDateTimeUtc($game->game_date, $game->game_time);
+            : app(SportsDateWindowService::class)->gameStart($game));
         // SQL timestamps follow the application timezone, while input identities use UTC.
         $deadline = $deadline?->setTimezone((string) config('app.timezone', 'UTC'));
         if ($input === null || ! $deadline?->isFuture() || ! in_array($game->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true)) {

@@ -19,7 +19,8 @@ function replacementFixture(string $sport): array
     $away = $teamClass::factory()->create(['espn_id' => '102']);
     $game = $gameClass::factory()->create(['home_team_id' => $home->id, 'away_team_id' => $away->id, 'status' => 'STATUS_SCHEDULED']);
     $players = collect([$home, $away])->map(fn ($team, $index) => $playerClass::factory()->create(['team_id' => $team->id, 'espn_id' => (string) (201 + $index)]));
-    $old = $statClass::factory()->create(['game_id' => $game->id, 'team_id' => $home->id, 'player_id' => $players[0]->id, ...($sport === 'mlb' ? ['stat_type' => 'batting'] : [])]);
+    $identity = ['game_id' => $game->id, 'team_id' => $home->id, 'player_id' => $players[0]->id];
+    $old = $sport === 'mlb' ? $statClass::create([...$identity, 'stat_type' => 'batting', 'at_bats' => 3, 'hits' => 1]) : $statClass::factory()->create($identity);
     $sections = collect([$home, $away])->map(function ($team, $index) use ($sport, $players) {
         $category = match ($sport) {
             'nfl' => ['name' => 'passing', 'labels' => ['C/ATT', 'YDS'], 'stats' => ['2/3', '20']],
@@ -69,7 +70,7 @@ it('loads athlete identities in a batch and still emits model creation events', 
     $events = 0;
     $table = (new $playerClass)->getTable();
     DB::listen(function ($query) use (&$reads, $table) {
-        if (str_starts_with(strtolower($query->sql), 'select') && str_contains($query->sql, '"'.$table.'"')) {
+        if (str_starts_with(strtolower($query->sql), 'select') && str_contains($query->sql, $query->connection->getQueryGrammar()->wrapTable($table))) {
             $reads++;
         }
     });
@@ -168,15 +169,16 @@ it('batches MLB play team identities across the entire payload', function () {
     $plays = collect(range(1, 12))->map(fn ($i) => ['id' => (string) $i, 'text' => 'Pitch', 'team' => ['id' => '501'], 'pitchingTeam' => ['id' => '502']])->all();
     $service = Mockery::mock(EspnService::class);
     $service->shouldReceive('getGame')->once()->andReturn(['plays' => $plays]);
-    $reads = 0;
+    $reads = [];
     DB::listen(function ($query) use (&$reads) {
-        if (str_starts_with(strtolower($query->sql), 'select') && str_contains($query->sql, '"mlb_teams"')) {
-            $reads++;
+        if (str_starts_with(strtolower($query->sql), 'select') && str_contains($query->sql, $query->connection->getQueryGrammar()->wrapTable('mlb_teams'))) {
+            $reads[] = $query->sql;
         }
     });
 
     expect((new SyncPlays($service))->execute($game->espn_event_id))->toBe(12)
-        ->and($reads)->toBe(1)
+        ->and($reads)->toHaveCount(2)
+        ->and(collect($reads)->every(fn ($sql) => preg_match('/["`]id["`] in \('.$home->id.', '.$away->id.'\)/', $sql) === 1))->toBeTrue()
         ->and(Play::where('game_id', $game->id)->where('batting_team_id', $home->id)->where('pitching_team_id', $away->id)->count())->toBe(12);
 });
 
@@ -196,7 +198,8 @@ function teamStatReplacementFixture(string $sport): array
     $namespace = strtoupper($sport);
     $statClass = "App\\Models\\{$namespace}\\TeamStat";
     $actionClass = "App\\Actions\\ESPN\\{$namespace}\\SyncTeamStats";
-    $old = $statClass::factory()->create(['game_id' => $game->id, 'team_id' => $game->home_team_id, 'team_type' => 'home']);
+    $identity = ['game_id' => $game->id, 'team_id' => $game->home_team_id, 'team_type' => 'home'];
+    $old = in_array($sport, ['mlb', 'nfl'], true) ? $statClass::create([...$identity, ...($sport === 'mlb' ? ['runs' => 4] : ['total_yards' => 350])]) : $statClass::factory()->create($identity);
     $statistics = match ($sport) {
         'mlb' => [['name' => 'batting', 'stats' => [['name' => 'runs', 'displayValue' => '4']]]],
         'nfl' => [['name' => 'totalYards', 'displayValue' => '350']],
@@ -241,7 +244,7 @@ it('replaces valid team observations with model events and bounded identity read
     $reads = 0;
     $events = 0;
     DB::listen(function ($query) use (&$reads, $table) {
-        if (str_starts_with(strtolower($query->sql), 'select') && str_contains($query->sql, '"'.$table.'"')) {
+        if (str_starts_with(strtolower($query->sql), 'select') && str_contains($query->sql, $query->connection->getQueryGrammar()->wrapTable($table))) {
             $reads++;
         }
     });

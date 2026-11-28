@@ -1,8 +1,13 @@
+import {
+    isSensitiveDocument,
+    isSensitiveLocation,
+    telemetryLocation,
+} from './sensitiveNavigation';
 type AnalyticsValue = string | number | boolean | null;
 type AnalyticsParams = Record<string, AnalyticsValue | undefined>;
 
 type PendingEvent = {
-    event: 'login_complete' | 'sign_up_complete' | 'purchase';
+    event: 'login_complete' | 'sign_up_complete';
     params?: AnalyticsParams;
     createdAt: number;
 };
@@ -29,7 +34,15 @@ function normalizeParams(
     return Object.entries(params).reduce<Record<string, AnalyticsValue>>(
         (acc, [key, value]) => {
             if (value !== undefined) {
-                acc[key] = value;
+                if (
+                    typeof value === 'string' &&
+                    /(?:url|path|location|referrer)/i.test(key)
+                ) {
+                    const safe = telemetryLocation(value);
+                    if (safe !== null) acc[key] = safe;
+                } else {
+                    acc[key] = value;
+                }
             }
 
             return acc;
@@ -46,6 +59,8 @@ export function pushAnalyticsEvent(
         return;
     }
 
+    if (isSensitiveDocument() || isSensitiveLocation(window.location.href))
+        return;
     window.dataLayer = window.dataLayer || [];
     window.dataLayer.push({
         event,
@@ -106,7 +121,7 @@ function readPendingAnalyticsEvent(): PendingEvent | null {
         if (
             !parsed ||
             typeof parsed !== 'object' ||
-            typeof parsed.event !== 'string' ||
+            !['login_complete', 'sign_up_complete'].includes(parsed.event) ||
             typeof parsed.createdAt !== 'number'
         ) {
             clearPendingAnalyticsEvent();
@@ -184,7 +199,10 @@ export function trackPageView(page: InertiaPageLike): void {
         return;
     }
 
-    const url = window.location.href;
+    if (isSensitiveDocument() || isSensitiveLocation(window.location.href))
+        return;
+    const url = telemetryLocation(window.location.href);
+    if (url === null) return;
 
     if (url === lastTrackedUrl) {
         return;
@@ -203,6 +221,12 @@ export function trackPageView(page: InertiaPageLike): void {
 }
 
 export function flushPendingAnalyticsEvent(page: InertiaPageLike): void {
+    if (
+        typeof window === 'undefined' ||
+        isSensitiveDocument() ||
+        isSensitiveLocation(window.location.href)
+    )
+        return;
     const pending = readPendingAnalyticsEvent();
 
     if (!pending) {
@@ -225,14 +249,6 @@ export function flushPendingAnalyticsEvent(page: InertiaPageLike): void {
 
         if (pending.event === 'sign_up_complete') {
             return authenticated && !isAuthRoute(path);
-        }
-
-        if (pending.event === 'purchase') {
-            return (
-                authenticated &&
-                (path.startsWith('/dashboard') ||
-                    path.startsWith('/subscription'))
-            );
         }
 
         return false;

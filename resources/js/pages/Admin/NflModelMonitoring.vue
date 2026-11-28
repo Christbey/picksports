@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TrainingOperationsPanel from '@/components/admin/TrainingOperationsPanel.vue';
 import { Head, router } from '@inertiajs/vue3';
 import { provide } from 'vue';
 import { Activity, Database, RefreshCw } from 'lucide-vue-next';
@@ -51,6 +52,11 @@ const breadcrumbs: BreadcrumbItem[] = [
                     class="text-sm underline"
                     >Experimental custom EP ratings (quarantined research)</a
                 >
+                <TrainingOperationsPanel
+                    v-if="training_operations"
+                    sport="nfl"
+                    :initial="training_operations"
+                />
                 <header
                     class="flex flex-col gap-4 border-b pb-5 lg:flex-row lg:items-end lg:justify-between"
                 >

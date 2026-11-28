@@ -6,6 +6,7 @@ use App\Exceptions\Predictions\PredictionLifecycleException;
 use App\Models\CanonicalPrediction;
 use App\Models\PredictionEvaluation;
 use App\Models\PredictionMarket;
+use App\Models\SportEvent;
 use App\Models\SportEventResult;
 use App\Services\CBB\Predictions\CbbForecastResultIdentity;
 use App\Services\CBB\Predictions\CbbPregameMarketSnapshot;
@@ -39,23 +40,42 @@ class CanonicalPredictionEvaluator
             throw new PredictionLifecycleException('Only published canonical prediction revisions can be evaluated.');
         }
 
-        $prediction->loadMissing('markets', 'calculationRun.inputSnapshot');
-        $metrics = $this->score($prediction, $result);
-        $scoringVersion = $this->scoringVersion($prediction);
-        $evaluationHash = $this->hasher->hash([
-            'prediction' => $prediction->public_id,
-            'prediction_output' => $prediction->output_hash,
-            'result' => $result->result_hash,
-            'scoring_version' => $scoringVersion,
-            ...($prediction->sport === 'cfb' ? ['cfb_comparison' => $metrics['market_comparison']['cfb_comparison']] : []),
-        ]);
+        return DB::transaction(function () use ($prediction, $result): PredictionEvaluation {
+            // Serialize with result correction and publication, using current reads
+            // even when the caller already opened a REPEATABLE READ snapshot.
+            SportEvent::query()->lockForUpdate()->findOrFail($prediction->sport_event_id);
+            $prediction = CanonicalPrediction::query()->lockForUpdate()->findOrFail($prediction->getKey());
+            $result = SportEventResult::query()->lockForUpdate()->findOrFail($result->getKey());
+            $latestResult = SportEventResult::query()
+                ->where('sport_event_id', $prediction->sport_event_id)
+                ->orderByDesc('revision')->lockForUpdate()->first();
 
-        return DB::transaction(function () use ($prediction, $result, $metrics, $evaluationHash, $scoringVersion): PredictionEvaluation {
-            CanonicalPrediction::query()->lockForUpdate()->findOrFail($prediction->getKey());
+            if ($result->sport_event_id !== $prediction->sport_event_id
+                || $latestResult === null || ! $latestResult->is($result)) {
+                throw new PredictionLifecycleException('Cannot evaluate a superseded result as the current result.');
+            }
+            if ($result->status !== 'official') {
+                throw new PredictionLifecycleException('Canonical evaluation requires an official result.');
+            }
+            if (! in_array($prediction->publication_state, ['published', 'superseded'], true)
+                || $prediction->published_at === null) {
+                throw new PredictionLifecycleException('Only published canonical prediction revisions can be evaluated.');
+            }
+
+            $prediction->loadMissing('markets', 'calculationRun.inputSnapshot');
+            $metrics = $this->score($prediction, $result);
+            $scoringVersion = $this->scoringVersion($prediction);
+            $evaluationHash = $this->hasher->hash([
+                'prediction' => $prediction->public_id,
+                'prediction_output' => $prediction->output_hash,
+                'result' => $result->result_hash,
+                'scoring_version' => $scoringVersion,
+                ...($prediction->sport === 'cfb' ? ['cfb_comparison' => $metrics['market_comparison']['cfb_comparison']] : []),
+            ]);
 
             $existing = PredictionEvaluation::query()
                 ->where('evaluation_hash', $evaluationHash)
-                ->first();
+                ->lockForUpdate()->first();
 
             if ($existing !== null) {
                 return $existing;
@@ -64,7 +84,7 @@ class CanonicalPredictionEvaluator
             $latest = PredictionEvaluation::query()
                 ->where('canonical_prediction_id', $prediction->getKey())
                 ->orderByDesc('evaluation_revision')
-                ->first();
+                ->lockForUpdate()->first();
 
             return PredictionEvaluation::query()->create([
                 'canonical_prediction_id' => $prediction->getKey(),

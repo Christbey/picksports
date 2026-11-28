@@ -25,7 +25,7 @@ it('matches configured venue coordinates case-insensitively for mlb weather', fu
         'name' => 'Yankees',
     ]);
 
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2026,
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
@@ -38,12 +38,13 @@ it('matches configured venue coordinates case-insensitively for mlb weather', fu
     ]);
 
     Http::fake(function (Request $request) {
+        expect($request['timezone'])->toBe('UTC');
         expect((float) $request['latitude'])->toBe(39.0517)
             ->and((float) $request['longitude'])->toBe(-94.4803);
 
         return Http::response([
             'hourly' => [
-                'time' => ['2026-05-25T14:00', '2026-05-25T15:00'],
+                'time' => ['2026-05-25T19:00', '2026-05-25T20:00'],
                 'temperature_2m' => [78, 80],
                 'apparent_temperature' => [79, 81],
                 'relative_humidity_2m' => [55, 57],
@@ -82,7 +83,7 @@ it('fetches weather for retractable roof parks while preserving unknown roof con
         'name' => 'Diamondbacks',
     ]);
 
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2026,
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
@@ -96,7 +97,7 @@ it('fetches weather for retractable roof parks while preserving unknown roof con
 
     Http::fake(fn (Request $request) => Http::response([
         'hourly' => [
-            'time' => ['2026-06-09T18:00', '2026-06-09T19:00'],
+            'time' => ['2026-06-09T23:00', '2026-06-10T00:00'],
             'temperature_2m' => [84, 83],
             'apparent_temperature' => [88, 87],
             'relative_humidity_2m' => [70, 72],
@@ -130,7 +131,7 @@ it('uses configured Las Vegas Ballpark coordinates for mlb weather', function ()
         'name' => 'Brewers',
     ]);
 
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2026,
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
@@ -148,7 +149,7 @@ it('uses configured Las Vegas Ballpark coordinates for mlb weather', function ()
 
         return Http::response([
             'hourly' => [
-                'time' => ['2026-06-09T21:00'],
+                'time' => ['2026-06-10T02:00'],
                 'temperature_2m' => [94],
                 'apparent_temperature' => [92],
                 'relative_humidity_2m' => [18],

@@ -28,7 +28,7 @@ class NflTotalRuleSupport
         $matchedRules = collect((array) data_get($analysis, 'bet_rule_evaluation.matched_rules', []))
             ->filter(fn (mixed $rule): bool => is_array($rule) && ($rule['market'] ?? null) === 'total')
             ->filter(fn (array $rule): bool => in_array((string) ($rule['action'] ?? ''), ['play', 'lean'], true))
-            ->filter(fn (array $rule): bool => $this->ruleMatchesDirection($rule, $reasonCodes, $direction))
+            ->filter(fn (array $rule): bool => $this->ruleMatchesDirection($rule, $direction))
             ->values();
 
         if ($matchedRules->isEmpty()) {
@@ -47,12 +47,14 @@ class NflTotalRuleSupport
 
     /**
      * @param  array<string, mixed>  $rule
-     * @param  array<int, string>  $reasonCodes
      */
-    private function ruleMatchesDirection(array $rule, array $reasonCodes, string $direction): bool
+    private function ruleMatchesDirection(array $rule, string $direction): bool
     {
-        $haystack = strtolower((string) ($rule['name'] ?? '').' '.(string) ($rule['label'] ?? '').' '.implode(' ', $reasonCodes));
+        // The global matching market edge admits neutral rules, but cannot
+        // override an explicit direction in this rule's own name or label.
+        $haystack = strtolower((string) ($rule['name'] ?? '').' '.(string) ($rule['label'] ?? ''));
+        $opposite = $direction === 'over' ? 'under' : 'over';
 
-        return str_contains($haystack, $direction);
+        return preg_match('/(?:^|[^a-z0-9])'.$opposite.'(?:$|[^a-z0-9])/', $haystack) !== 1;
     }
 }

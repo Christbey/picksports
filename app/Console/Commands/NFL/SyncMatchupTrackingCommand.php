@@ -2,10 +2,10 @@
 
 namespace App\Console\Commands\NFL;
 
+use App\Services\NFL\MatchupSamplePublication;
 use App\Services\ProviderData\ProviderSourceStorage;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 class SyncMatchupTrackingCommand extends Command
@@ -14,7 +14,7 @@ class SyncMatchupTrackingCommand extends Command
 
     protected $description = 'Import free NGS release times and PFR rushing contact yards and missed tackles via nflverse for independent matchup analysis';
 
-    public function handle(ProviderSourceStorage $sources): int
+    public function handle(ProviderSourceStorage $sources, MatchupSamplePublication $publication): int
     {
         $season = filter_var($this->option('season'), FILTER_VALIDATE_INT);
         if (! $season || $season < 2018 || $season > (int) now()->year) {
@@ -22,10 +22,11 @@ class SyncMatchupTrackingCommand extends Command
 
             return self::FAILURE;
         }
+        $connection = DB::connection();
         $paths = [];
         try {
-            $games = DB::table('nflverse_pbp_plays')->where('season', $season)->whereNotNull('nfl_game_id')->whereNotNull('possession_team_id')
-                ->select(['nflverse_game_id', 'nfl_game_id', 'week', 'possession_team', 'possession_team_id', 'defense_team'])->distinct()->get();
+            $snapshot = $publication->snapshot($connection, $season, false);
+            $games = $snapshot['plays']->filter(fn ($row) => $row->possession_team_id !== null);
             $byGame = $games->groupBy(fn ($r) => $r->nflverse_game_id.'|'.$r->possession_team);
             $byWeek = $games->groupBy(fn ($r) => $r->week.'|'.$r->possession_team);
             $updates = [];
@@ -36,11 +37,9 @@ class SyncMatchupTrackingCommand extends Command
                 'rushing_contact' => "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rush_{$season}.csv"] as $metric => $url) {
                 $path = tempnam(sys_get_temp_dir(), 'nfl-tracking-');
                 $paths[] = $path;
-                $body = Http::connectTimeout(15)->timeout(120)->retry(2, 1000)->get($url)->throw()->body();
-                file_put_contents($path, $body);
-                $csv = $metric === 'release_time' ? gzdecode($body) : $body;
-                if (! is_string($csv)) {
-                    throw new RuntimeException('Invalid compressed tracking source; no samples updated.');
+                [$body, $csv] = $publication->download($url, $metric === 'release_time');
+                if (file_put_contents($path, $body) !== strlen($body)) {
+                    throw new RuntimeException('Unable to stage tracking source.');
                 }
                 $stream = fopen('php://temp', 'r+');
                 fwrite($stream, $csv);
@@ -53,7 +52,9 @@ class SyncMatchupTrackingCommand extends Command
                     throw new RuntimeException('Invalid tracking header; no samples updated.');
                 }
                 $sourceCount = 0;
+                $rowsRead = 0;
                 while (($values = fgetcsv($stream, escape: '')) !== false) {
+                    $publication->assertRowBudget(++$rowsRead);
                     if (count($values) !== count($header)) {
                         throw new RuntimeException('Malformed tracking row; no samples updated.');
                     }
@@ -113,6 +114,7 @@ class SyncMatchupTrackingCommand extends Command
                         $updates[] = ['game_id' => $game->nfl_game_id, 'team_id' => $game->possession_team_id, 'season' => $season,
                             'metric' => 'rush_yac', 'player_id' => $player, 'value' => $afterContact, 'sample_size' => $size, 'observed_at' => now()->toDateTimeString()];
                     }
+                    $publication->assertSampleBudget(count($updates));
                     $sourceCount++;
                 }
                 fclose($stream);
@@ -124,12 +126,10 @@ class SyncMatchupTrackingCommand extends Command
                 }, $path, ['source_url' => $url, 'season' => $season]);
                 $this->line($metric.': '.$sourceCount.' verified samples.');
             }
-            DB::transaction(function () use ($season, $updates): void {
-                DB::table('nfl_matchup_tracking_samples')->where('season', $season)->delete();
-                foreach (array_chunk($updates, 500) as $chunk) {
-                    DB::table('nfl_matchup_tracking_samples')->insert($chunk);
-                }
-            });
+            if ($skipped > 0) {
+                throw new RuntimeException('Unresolved tracking source identities; no samples updated.');
+            }
+            $publication->publish($connection, 'nfl_matchup_tracking_samples', $season, $updates, $snapshot);
             $this->info('Unresolved source game rows: '.$skipped.'.');
 
             return $skipped > 0 ? self::FAILURE : self::SUCCESS;

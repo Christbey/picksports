@@ -2,6 +2,8 @@
 
 namespace App\Actions\Sports;
 
+use App\DataTransferObjects\ESPN\GameData;
+use App\Services\Predictions\LegacyPredictionGradeRecorder;
 use App\Services\Predictions\PredictionEvaluationRecorder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
@@ -27,7 +29,7 @@ abstract class AbstractGradePredictions
 
     public function executeForGame(int $gameId): array
     {
-        $predictions = $this->baseUngradedFinalPredictionsQuery()
+        $predictions = $this->baseUngradedFinalPredictionsQuery(true)
             ->where($this->predictionTable().'.game_id', $gameId)
             ->get();
 
@@ -55,19 +57,31 @@ abstract class AbstractGradePredictions
         return $this->gradePredictionsCollection($predictions);
     }
 
-    protected function baseUngradedFinalPredictionsQuery()
+    /** Explicit bounded operator repair; callers must validate scope before invoking. */
+    public function repairForGameIds(array $gameIds): array
+    {
+        if ($gameIds === [] || count($gameIds) > 100 || array_filter($gameIds, fn ($id) => ! is_int($id) || $id < 1) !== []) {
+            throw new \InvalidArgumentException('Repair requires one to 100 positive game IDs.');
+        }
+        $predictions = $this->baseUngradedFinalPredictionsQuery(true)
+            ->whereIn($this->predictionTable().'.game_id', array_unique($gameIds))->get();
+
+        return $this->gradePredictionsCollection($predictions, true);
+    }
+
+    protected function baseUngradedFinalPredictionsQuery(bool $includeGraded = false)
     {
         return $this->newPredictionQuery()
             ->with('game')
             ->join($this->gamesTable(), $this->predictionTable().'.game_id', '=', $this->gamesTable().'.id')
-            ->where($this->gamesTable().'.status', 'STATUS_FINAL')
+            ->whereIn($this->gamesTable().'.status', GameData::finalStatuses())
             ->whereNotNull($this->gamesTable().'.home_score')
             ->whereNotNull($this->gamesTable().'.away_score')
-            ->whereNull($this->predictionTable().'.graded_at')
+            ->when(! $includeGraded, fn ($query) => $query->whereNull($this->predictionTable().'.graded_at'))
             ->select($this->predictionTable().'.*', $this->gamesTable().'.home_score', $this->gamesTable().'.away_score');
     }
 
-    protected function gradePredictionsCollection(Collection $predictions): array
+    protected function gradePredictionsCollection(Collection $predictions, bool $repair = false): array
     {
         $predictions = $predictions
             ->filter(fn (Model $prediction): bool => $this->shouldGradePrediction($prediction))
@@ -84,38 +98,72 @@ abstract class AbstractGradePredictions
         $totalErrors = [];
 
         foreach ($predictions as $prediction) {
-            $actualSpread = $prediction->home_score - $prediction->away_score;
-            $actualTotal = $prediction->home_score + $prediction->away_score;
+            $outcome = $prediction->getConnection()->transaction(function () use ($prediction, $repair): ?array {
+                // Serialize against score updates before locking the prediction.
+                $game = $prediction->game()->getRelated()->newQuery()
+                    ->lockForUpdate()->find($prediction->game_id);
+                $prediction = $prediction->newQuery()->lockForUpdate()->find($prediction->getKey());
+                if ($game === null || $prediction === null
+                    || $prediction->game_id !== $game->getKey()
+                    || ! in_array($game->status, GameData::finalStatuses(), true)
+                    || $game->home_score === null || $game->away_score === null) {
+                    return null;
+                }
+                $prediction->setRelation('game', $game);
+                // WNBA's additional clock/age admission consumes these game aliases.
+                $prediction->setAttribute('game_game_date', $game->game_date);
+                $prediction->setAttribute('game_game_time', $game->game_time);
+                $prediction->setAttribute('game_game_clock', $game->game_clock);
+                if (! $this->shouldGradePrediction($prediction)) {
+                    return null;
+                }
+                $prediction->offsetUnset('game_game_date');
+                $prediction->offsetUnset('game_game_time');
+                $prediction->offsetUnset('game_game_clock');
+                $receipts = app(LegacyPredictionGradeRecorder::class);
+                $receipts->assertUnambiguousEvaluation($prediction);
+                if (! $receipts->needsGrading($prediction, $game, $repair)) {
+                    return null;
+                }
+                $receipts->preserveBaseline($prediction, $game);
 
-            $spreadError = abs($actualSpread - $prediction->predicted_spread);
-            $totalError = abs($actualTotal - $prediction->predicted_total);
+                $actualSpread = $game->home_score - $game->away_score;
+                $actualTotal = $game->home_score + $game->away_score;
 
-            $isWinnerCorrect = $actualSpread === 0
-                ? null
-                : (($actualSpread > 0 && $prediction->predicted_spread > 0)
-                    || ($actualSpread < 0 && $prediction->predicted_spread < 0));
+                $spreadError = abs($actualSpread - $prediction->predicted_spread);
+                $totalError = abs($actualTotal - $prediction->predicted_total);
 
-            $updates = [
-                'actual_spread' => round($actualSpread, 1),
-                'actual_total' => round($actualTotal, 1),
-                'spread_error' => round($spreadError, 1),
-                'total_error' => round($totalError, 1),
-                'winner_correct' => $isWinnerCorrect,
-                'graded_at' => now(),
-            ];
+                $isWinnerCorrect = $actualSpread === 0
+                    ? null
+                    : (($actualSpread > 0 && $prediction->predicted_spread > 0)
+                        || ($actualSpread < 0 && $prediction->predicted_spread < 0));
 
-            $prediction->update([
-                ...$updates,
-                ...$this->additionalGradingUpdates($prediction, $actualSpread, $actualTotal),
-            ]);
+                $updates = [
+                    'actual_spread' => round($actualSpread, 1),
+                    'actual_total' => round($actualTotal, 1),
+                    'spread_error' => round($spreadError, 1),
+                    'total_error' => round($totalError, 1),
+                    'winner_correct' => $isWinnerCorrect,
+                    'graded_at' => now(),
+                ];
 
-            app(PredictionEvaluationRecorder::class)->record(
-                $prediction->fresh(),
-                $prediction->game,
-                $this->inferSportFromPrediction($prediction),
-                (float) $actualSpread,
-                (float) $actualTotal
-            );
+                $prediction->update([
+                    ...$updates,
+                    ...$this->additionalGradingUpdates($prediction, $actualSpread, $actualTotal),
+                ]);
+
+                app(PredictionEvaluationRecorder::class)->record(
+                    $prediction->fresh(), $game, $this->inferSportFromPrediction($prediction),
+                    (float) $actualSpread, (float) $actualTotal,
+                );
+                $receipts->record($prediction->fresh(), $game);
+
+                return [$isWinnerCorrect, $spreadError, $totalError];
+            });
+            if ($outcome === null) {
+                continue;
+            }
+            [$isWinnerCorrect, $spreadError, $totalError] = $outcome;
 
             if ($isWinnerCorrect !== null) {
                 $winnerDecisions++;
@@ -127,6 +175,10 @@ abstract class AbstractGradePredictions
             $spreadErrors[] = $spreadError;
             $totalErrors[] = $totalError;
             $graded++;
+        }
+
+        if ($graded === 0) {
+            return $this->emptyResults();
         }
 
         return [

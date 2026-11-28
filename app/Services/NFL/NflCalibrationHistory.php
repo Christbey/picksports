@@ -7,6 +7,7 @@ use App\Models\NFL\Game;
 use App\Models\PredictionFeatureSnapshot;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Predictions\SnapshotProvenanceResolver;
+use App\Support\ScoreObservation;
 use Illuminate\Support\Collection;
 
 /** A bounded, slate-scoped corpus; mutable prediction rows are never evidence. */
@@ -33,7 +34,7 @@ class NflCalibrationHistory
         $start = null;
         $key = $forecastSource.'|'.$modelVersion.'|'.$date.'|'.$capacity;
         if ($canonical) {
-            $start = $target->sportEvent?->starts_at;
+            $start = app(SnapshotProvenanceResolver::class)->gameStartAt($target);
             if ($start === null) {
                 return collect();
             }
@@ -97,7 +98,7 @@ class NflCalibrationHistory
         return $snapshots->map(function (PredictionFeatureSnapshot $snapshot) use ($games): ?NflCalibrationSample {
             $game = $games->get($snapshot->game_id);
             $kickoff = $game ? app(SnapshotProvenanceResolver::class)->gameStartAt($game) : null;
-            if ($kickoff === null || $snapshot->generated_at->gte($kickoff)
+            if ($kickoff === null || ! $this->knownScores($game) || $snapshot->generated_at->gte($kickoff)
                 || $snapshot->features_available_at->gte($kickoff)) {
                 return null;
             }
@@ -108,7 +109,11 @@ class NflCalibrationHistory
 
     private function native(Game $target, string $modelVersion, int $capacity): Collection
     {
-        $cutoff = $target->sportEvent->starts_at->toImmutable()->min(now());
+        $targetStart = app(SnapshotProvenanceResolver::class)->gameStartAt($target);
+        if ($targetStart === null) {
+            return collect();
+        }
+        $cutoff = $targetStart->min(now());
         $ids = app(CanonicalSportPredictionQuery::class)->queryForSport('nfl')
             ->where('nfl_games.status', 'STATUS_FINAL')->whereIn('nfl_games.season_type', ['2', 'regular'])
             ->whereDate('nfl_games.game_date', '<', $target->game_date->toDateString())
@@ -124,13 +129,22 @@ class NflCalibrationHistory
             ->get(['id', 'sport_event_id', 'game_date', 'game_time', 'home_score', 'away_score', 'result_updated_at'])->keyBy('id');
         $sources = app(NflEvidenceForecastSource::class)->forGames($games, $modelVersion);
 
-        return $games->map(function (Game $game) use ($sources): ?NflCalibrationSample {
+        return $games->map(function (Game $game) use ($sources, $cutoff): ?NflCalibrationSample {
             $source = $sources->get($game->id);
-            if ($source === null || ! $source->game_start_at->eq($game->sportEvent->starts_at)) {
+            $kickoff = app(SnapshotProvenanceResolver::class)->gameStartAt($game);
+            if ($source === null || $kickoff === null || ! $this->knownScores($game)
+                || ! $source->game_start_at->eq($kickoff) || $game->result_updated_at === null
+                || ! $game->result_updated_at->gt($kickoff) || ! $game->result_updated_at->lt($cutoff)) {
                 return null;
             }
 
             return NflCalibrationSample::fromOutputs($source->outputs, $game, $source->lineage);
         })->filter()->values();
+    }
+
+    private function knownScores(Game $game): bool
+    {
+        return ScoreObservation::known($game->getRawOriginal('home_score')) !== null
+            && ScoreObservation::known($game->getRawOriginal('away_score')) !== null;
     }
 }

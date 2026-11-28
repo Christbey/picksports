@@ -10,6 +10,7 @@ test('team logo sync command mirrors existing remote logos into configured stora
     config()->set('sports_assets.disk', 'public');
     config()->set('sports_assets.directory', 'sports');
     config()->set('sports_assets.mirror', true);
+    config()->set('sports_assets.allowed_hosts', ['example.com']);
 
     Storage::fake('public');
 
@@ -21,7 +22,7 @@ test('team logo sync command mirrors existing remote logos into configured stora
     ]);
 
     Http::fake([
-        'https://example.com/atl.png' => Http::response('fake-image-bytes', 200, ['Content-Type' => 'image/png']),
+        'https://example.com/atl.png' => Http::response(base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlAAAAABJRU5ErkJggg=='), 200, ['Content-Type' => 'image/png']),
     ]);
 
     artisan('team-logos:sync nba')->assertSuccessful();

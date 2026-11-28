@@ -7,10 +7,12 @@ use App\Http\Requests\Api\V2\NativeDeviceSessionRefreshRequest;
 use App\Http\Requests\Api\V2\NativeDeviceSessionStorePushRegistrationRequest;
 use App\Http\Requests\Api\V2\NativeDeviceSessionStoreRequest;
 use App\Models\DeviceSession;
+use App\Models\User;
 use App\Services\Auth\Native\DevicePushRegistrationService;
 use App\Services\Auth\Native\DeviceSessionTokenService;
 use App\Services\Auth\Native\DeviceTokenPair;
 use App\Services\Auth\Native\InvalidRefreshToken;
+use App\Services\Auth\Native\NativeDeviceBootstrapAdmission;
 use App\Support\Api\ApiV2ErrorResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,14 +23,15 @@ class NativeDeviceSessionController extends Controller
     {
         $validated = $request->validated();
 
-        $pair = $tokens->issue(
-            $request->user(),
-            $validated['device_name'],
-            $validated['platform'],
-            $validated['device_identifier'] ?? null,
-        );
+        $pair = app(NativeDeviceBootstrapAdmission::class)->issue($request,
+            fn (User $current) => $tokens->issue(
+                $current,
+                $validated['device_name'],
+                $validated['platform'],
+                $validated['device_identifier'] ?? null,
+            ));
 
-        return response()->json($this->tokenPayload($pair), 201);
+        return response()->json($this->tokenPayload($pair), 201)->header('Cache-Control', 'private, no-store');
     }
 
     public function refresh(
@@ -49,7 +52,7 @@ class NativeDeviceSessionController extends Controller
             );
         }
 
-        return response()->json($this->tokenPayload($pair));
+        return response()->json($this->tokenPayload($pair))->header('Cache-Control', 'private, no-store');
     }
 
     public function destroy(

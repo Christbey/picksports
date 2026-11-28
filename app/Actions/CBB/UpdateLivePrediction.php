@@ -35,6 +35,17 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
 
             return null;
         }
+        $attributes = $game->getAttributes();
+        $period = $this->storedNonnegativeInteger($attributes['period'] ?? null);
+        $homeScore = $this->storedNonnegativeInteger($attributes['home_score'] ?? null);
+        $awayScore = $this->storedNonnegativeInteger($attributes['away_score'] ?? null);
+        $clock = $attributes['game_clock'] ?? null;
+        if ($period === null || $homeScore === null || $awayScore === null || ! is_string($clock)
+            || ! $this->hasValidState($period, $clock, $homeScore, $awayScore)) {
+            $store->clear($game, static::class);
+
+            return null;
+        }
         $prediction = $store->baseline($game);
         if ($prediction === null) {
             $store->record($game, null, null, 'missing_pregame', static::class);
@@ -45,10 +56,10 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
         $state = $this->previewState(
             $game,
             $prediction,
-            (int) $game->period,
-            $game->game_clock,
-            (int) ($game->home_score ?? 0),
-            (int) ($game->away_score ?? 0)
+            $period,
+            $clock,
+            $homeScore,
+            $awayScore
         );
 
         if ($state === null) {
@@ -65,6 +76,9 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
      */
     public function previewState(object $game, object $prediction, int $period, ?string $gameClock, int $homeScore, int $awayScore): ?array
     {
+        if (! $this->hasValidState($period, $gameClock, $homeScore, $awayScore)) {
+            return null;
+        }
         $secondsRemaining = $this->calculateSecondsRemaining($period, $gameClock);
         $actualSecondsElapsed = $this->calculateActualSecondsElapsed($period, $gameClock);
         $effectiveGameLength = $this->calculateEffectiveGameLength($period);
@@ -109,6 +123,32 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
             'live_predicted_total' => round($livePredictedTotal, 1),
             'live_seconds_remaining' => $secondsRemaining,
         ];
+    }
+
+    private function storedNonnegativeInteger(mixed $value): ?int
+    {
+        if (! is_int($value) && ! is_string($value)) {
+            return null;
+        }
+        $integer = filter_var($value, FILTER_VALIDATE_INT);
+
+        return $integer !== false && $integer >= 0 ? $integer : null;
+    }
+
+    private function hasValidState(int $period, ?string $clock, int $homeScore, int $awayScore): bool
+    {
+        if ($period < 1 || $homeScore < 0 || $awayScore < 0 || $homeScore > PHP_INT_MAX - $awayScore
+            || ($period > static::REGULATION_PERIODS
+                && $period - static::REGULATION_PERIODS > intdiv(PHP_INT_MAX - static::TOTAL_GAME_SECONDS, static::SECONDS_PER_OT))) {
+            return false;
+        }
+        if ($clock === null || strlen($clock) > 20 || ! preg_match('/^\d{1,2}:[0-5]\d(?:\.\d+)?$/D', $clock)) {
+            return false;
+        }
+        [$minutes, $seconds] = explode(':', $clock);
+        $periodSeconds = $period <= static::REGULATION_PERIODS ? static::SECONDS_PER_PERIOD : static::SECONDS_PER_OT;
+
+        return (int) $minutes * 60 + (float) $seconds <= $periodSeconds;
     }
 
     protected function calculateLiveWinProbability(int $margin, int $secondsRemaining, float $timeElapsedFraction, float $preGameProbability): float

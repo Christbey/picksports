@@ -57,7 +57,11 @@ const snapshot = (overrides = {}) => ({
         live_predicted_total: 48,
         live_seconds_remaining: 1620,
     },
-    source_updated_at: new Date().toISOString(),
+    source_updated_at: null,
+    record_updated_at: null,
+    record_updated_at_raw: '2026-11-27 06:00:00',
+    record_clock_status: 'unverified_storage_clock',
+    source_clock_status: 'observation_unavailable',
     generated_at: new Date().toISOString(),
     warning: 'Experimental score-and-clock estimate.',
 });
@@ -332,7 +336,10 @@ test('a failed refresh preserves the last snapshot and exposes a stale-data warn
     snapshotResult = async () => ({ data: snapshot({ home_score: 24 }) });
     await tickRefresh();
     assert.equal(state.game.value.home_score, 24);
-    assert.equal(state.livePredictionData.value.freshnessWarning, null);
+    assert.match(
+        state.livePredictionData.value.freshnessWarning,
+        /Provider observation freshness is unavailable/,
+    );
 });
 
 test('final snapshots stop polling, hide the live estimate and fetch final statistics', async () => {

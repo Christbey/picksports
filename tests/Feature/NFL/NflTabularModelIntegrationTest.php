@@ -68,22 +68,22 @@ it('registers a verified completed Python run as one immutable bundle with the e
     expect($zip->open($bundlePath, ZipArchive::RDONLY))->toBeTrue()
         ->and($zip->locateName('manifest.json'))->not->toBeFalse()
         ->and($zip->locateName('evaluation.json'))->not->toBeFalse()
-        ->and($zip->locateName('preprocessor.joblib'))->not->toBeFalse()
-        ->and($zip->locateName('models/xgboost_classifier.ubj'))->not->toBeFalse()
-        ->and($zip->locateName('calibrators/xgboost_platt.joblib'))->not->toBeFalse()
+        ->and($zip->locateName('preprocessor.json'))->not->toBeFalse()
+        ->and($zip->locateName('models/xgboost_classifier.json'))->not->toBeFalse()
+        ->and($zip->locateName('calibrators/xgboost_platt.json'))->not->toBeFalse()
         ->and($zip->locateName('dataset/training-data.csv'))->not->toBeFalse();
     $zip->close();
 });
 
 it('refuses to register a run whose declared artifact bytes were changed', function () {
     $fixture = nflTabularRunFixture($this->nflMlTestRoot.'/tampered-run');
-    File::append($fixture['run_directory'].'/preprocessor.joblib', '-changed');
+    File::append($fixture['run_directory'].'/preprocessor.json', '-changed');
 
     $this->artisan('nfl:register-tabular-model-run', [
         'run-directory' => $fixture['run_directory'],
         '--dataset' => $fixture['dataset_path'],
     ])
-        ->expectsOutputToContain('failed hash verification')
+        ->expectsOutputToContain('failed size verification')
         ->assertFailed();
 
     expect(ModelRun::query()->count())->toBe(0)
@@ -130,15 +130,51 @@ it('materializes and verifies a registered bundle before invoking the predict CL
 
     $extractedRun = config('nfl_ml.bundle.extraction_directory')
         .'/'.$artifact->id.'/'.$artifact->artifact_hash;
-    expect(File::exists($extractedRun.'/manifest.json'))->toBeTrue()
-        ->and(File::exists($extractedRun.'/models/xgboost_classifier.ubj'))->toBeTrue()
+    expect(File::exists($extractedRun.'/run/manifest.json'))->toBeTrue()
+        ->and(File::exists($extractedRun.'/run/models/xgboost_classifier.json'))->toBeTrue()
         ->and(File::exists($extractedRun.'/dataset/training-data.csv'))->toBeTrue()
         ->and(File::glob(config('nfl_ml.bundle.input_directory').'/*.json'))->toBe([]);
 
-    File::append($extractedRun.'/preprocessor.joblib', '-tampered');
+    File::append($extractedRun.'/run/preprocessor.json', '-tampered');
     expect(fn () => app(NflTabularModelInferenceService::class)->predict($artifact, [
         'feature_home_elo' => 1532,
-    ]))->toThrow(RuntimeException::class, 'failed hash verification');
+    ]))->toThrow(RuntimeException::class, 'failed size verification');
+});
+
+it('isolates a registered NFL fake inference child from ambient environment and Python paths', function () {
+    $fixture = nflTabularRunFixture($this->nflMlTestRoot.'/environment-run');
+    $artifact = app(NflTabularModelRunRegistrar::class)->register($fixture['run_directory'], $fixture['dataset_path']);
+    $cli = nflTabularFakeCli($this->nflMlTestRoot.'/environment-cli.php');
+    config()->set('nfl_ml.process.command', [PHP_BINARY, $cli]);
+    $prior = [];
+    foreach (['PICKSPORTS_TEST_NFL_ENV_SENTINEL' => 'synthetic-private-sentinel', 'PYTHONPATH' => '/synthetic-poison-not-a-package'] as $name => $value) {
+        $prior[$name] = ['process' => getenv($name), 'env_exists' => array_key_exists($name, $_ENV), 'env' => $_ENV[$name] ?? null,
+            'server_exists' => array_key_exists($name, $_SERVER), 'server' => $_SERVER[$name] ?? null];
+        putenv($name.'='.$value);
+        $_ENV[$name] = $value;
+        $_SERVER[$name] = $value;
+    }
+    try {
+        $output = app(NflTabularModelInferenceService::class)->predict($artifact, ['feature_home_elo' => 1532]);
+        expect($output['home_win_probability'])->toBe(0.614)
+            ->and($output['artifact_id'])->toBe($artifact->id)
+            ->and($output['dataset_hash'])->toBe($fixture['dataset_hash'])
+            ->and(File::glob(config('nfl_ml.bundle.input_directory').'/*.json'))->toBe([]);
+    } finally {
+        foreach ($prior as $name => $saved) {
+            putenv($saved['process'] === false ? $name : $name.'='.$saved['process']);
+            if ($saved['env_exists']) {
+                $_ENV[$name] = $saved['env'];
+            } else {
+                unset($_ENV[$name]);
+            }
+            if ($saved['server_exists']) {
+                $_SERVER[$name] = $saved['server'];
+            } else {
+                unset($_SERVER[$name]);
+            }
+        }
+    }
 });
 
 it('rejects a subprocess response whose artifact lineage does not match Laravel', function () {
@@ -306,19 +342,25 @@ function nflTabularRunFixture(string $runDirectory, ?string $modelRunId = null):
 {
     File::ensureDirectoryExists($runDirectory.'/models');
     File::ensureDirectoryExists($runDirectory.'/calibrators');
+    File::ensureDirectoryExists($runDirectory.'/explanations');
+    File::ensureDirectoryExists($runDirectory.'/tuning');
 
     $files = [
-        'calibrators/logistic_regression_isotonic.joblib' => 'logistic-isotonic',
-        'calibrators/logistic_regression_platt.joblib' => 'logistic-platt',
-        'calibrators/xgboost_isotonic.joblib' => 'xgboost-isotonic',
-        'calibrators/xgboost_platt.joblib' => 'xgboost-platt',
-        'feature_schema.yaml' => "schema_version: nfl-pregame-ml-v1\n",
-        'models/logistic_classifier.joblib' => 'logistic-model',
-        'models/xgboost_classifier.ubj' => 'xgboost-classifier',
-        'models/xgboost_home_margin.ubj' => 'xgboost-margin',
-        'models/xgboost_total_points.ubj' => 'xgboost-total',
+        'calibrators/logistic_regression_isotonic.json' => 'logistic-isotonic',
+        'calibrators/logistic_regression_platt.json' => 'logistic-platt',
+        'calibrators/xgboost_isotonic.json' => 'xgboost-isotonic',
+        'calibrators/xgboost_platt.json' => 'xgboost-platt',
+        'feature_schema.json' => "schema_version: nfl-pregame-ml-v1\n",
+        'models/logistic_classifier.json' => 'logistic-model',
+        'models/xgboost_classifier.json' => 'xgboost-classifier',
+        'models/xgboost_home_margin.json' => 'xgboost-margin',
+        'models/xgboost_total_points.json' => 'xgboost-total',
+        'tuning/optuna_provenance.json' => '{}',
+        'explanations/global_shap_importance.json' => '{}',
+        'explanations/xgboost_feature_importance.json' => '{}',
+        'explanations/shap_values.parquet' => 'synthetic-non-executable-evidence',
         'prediction_example.json' => "{}\n",
-        'preprocessor.joblib' => 'preprocessor',
+        'preprocessor.json' => 'preprocessor',
     ];
     $modelRunId ??= (string) Str::uuid();
     $artifactId = (string) Str::uuid();
@@ -360,8 +402,11 @@ function nflTabularRunFixture(string $runDirectory, ?string $modelRunId = null):
     ksort($inventory);
 
     $manifest = [
-        'manifest_version' => 1,
-        'model_version' => 'nfl-tabular-v1',
+        'manifest_version' => 2,
+        'execution_format' => 'picksports-nfl-tabular-numeric-v1',
+        'model_type' => 'nfl_tabular_bundle',
+        'blend_version' => 'baseline-anchored-v2',
+        'model_version' => 'nfl-tabular-v3',
         'model_run_id' => $modelRunId,
         'artifact_id' => $artifactId,
         'generated_at' => '2026-07-26T12:00:00+00:00',
@@ -406,6 +451,14 @@ function nflTabularFakeCli(string $path, array $overrides = []): string
     File::put($path, <<<'PHP'
 <?php
 
+if (getenv('PICKSPORTS_TEST_NFL_ENV_SENTINEL') !== false) {
+    fwrite(STDERR, 'Unexpected synthetic inherited environment sentinel.');
+    exit(23);
+}
+if (getenv('PYTHONPATH') !== __EXPECTED_NFL_SOURCE_PATH__) {
+    fwrite(STDERR, 'Controlled NFL source path was not preserved.');
+    exit(24);
+}
 $arguments = array_slice($argv, 1);
 if (($arguments[0] ?? null) !== 'predict') {
     fwrite(STDERR, "expected predict command\n");
@@ -430,7 +483,8 @@ $output = [
 $output = array_replace($output, __OVERRIDES__);
 echo json_encode([$output], JSON_THROW_ON_ERROR);
 PHP);
-    File::put($path, str_replace('__OVERRIDES__', $overrideCode, File::get($path)));
+    File::put($path, str_replace(['__OVERRIDES__', '__EXPECTED_NFL_SOURCE_PATH__'],
+        [$overrideCode, var_export(rtrim((string) config('nfl_ml.process.package_directory', base_path('ml/nfl')), '/').'/src', true)], File::get($path)));
 
     return $path;
 }

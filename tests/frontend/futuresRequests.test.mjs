@@ -28,6 +28,11 @@ before(async () => {
         },
     });
     factories = {
+        cbb: (
+            await server.ssrLoadModule(
+                '/resources/js/composables/useCbbForecast.ts',
+            )
+        ).useCbbForecast,
         nba: (
             await server.ssrLoadModule(
                 '/resources/js/composables/useNbaFutures.ts',
@@ -217,3 +222,45 @@ for (const sport of ['nba', 'mlb']) {
         assert.deepEqual(s.forecasts.value, []);
     });
 }
+
+test('CBB field identity survives missing forecasts without ranking invented zero title odds', async (t) => {
+    const { state, calls } = mount('cbb', t);
+    await flush();
+    calls[0].resolve({
+        data: [
+            {
+                id: null,
+                team_id: 1,
+                team: null,
+                is_actual_field: true,
+                actual_region: 'East',
+                champion_probability: null,
+                final_four_probability: null,
+                title_game_probability: null,
+            },
+            {
+                id: 2,
+                team_id: 2,
+                team: null,
+                is_actual_field: true,
+                actual_region: 'East',
+                champion_probability: 0,
+                final_four_probability: 0,
+                title_game_probability: 0,
+            },
+        ],
+        meta: { actual_field_size: 2 },
+    });
+    await flush();
+    assert.equal(state.actualFieldForecasts.value.length, 2);
+    assert.deepEqual(
+        state.titleContenders.value.map((row) => row.team_id),
+        [2],
+    );
+    assert.equal(state.favorite.value.team_id, 2);
+    assert.equal(state.favorite.value.champion_probability, 0);
+    assert.deepEqual(
+        state.deepRunContenders.value.map((row) => row.team_id),
+        [2],
+    );
+});

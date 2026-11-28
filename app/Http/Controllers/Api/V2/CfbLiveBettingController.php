@@ -5,10 +5,10 @@ namespace App\Http\Controllers\Api\V2;
 use App\Http\Controllers\Controller;
 use App\Models\CFB\Game;
 use App\Models\CFB\LivePredictionSnapshot;
-use App\Services\BettingRecommendations\CfbPropEligibility;
 use App\Services\CFB\Live\LiveMarketComparison;
 use App\Services\CFB\Live\LiveScoreProjector;
 use App\Support\PredictionFieldAccess;
+use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -24,7 +24,7 @@ class CfbLiveBettingController extends Controller
         $latest = $history->first();
         $final = LivePredictionSnapshot::where('game_id', $model->id)->where('source', 'live_feed')->where('status', 'final')->latest('id')->first();
         $stats = collect($final?->props ?? [])->filter(fn ($p) => $p['status'] === 'final')->keyBy(fn ($p) => $p['player_id'].':'.$p['market']);
-        $commenceTime = CfbPropEligibility::kickoff($model)->toIso8601String();
+        $commenceTime = GameDateTimePresenter::currentStoredStartsAt($model);
         $serialize = function (LivePredictionSnapshot $snapshot) use ($canSpread, $canProbability, $stats, $model, $commenceTime) {
             $baseline = $snapshot->pregame;
             $projection = $snapshot->projection;
@@ -47,7 +47,7 @@ class CfbLiveBettingController extends Controller
                 $allowed = $market['market'] === 'h2h' ? $canProbability : $canSpread;
                 $market['lean_at_capture'] = $allowed ? $market['lean'] : null;
                 $market['difference_at_capture'] = $allowed ? $market['difference'] : null;
-                $market['fresh'] = ! $stale && $market['fresh'] && app(LiveMarketComparison::class)->fresh($market['updated_at'], $commenceTime);
+                $market['fresh'] = $commenceTime !== null && ! $stale && $market['fresh'] && app(LiveMarketComparison::class)->fresh($market['updated_at'], $commenceTime);
                 $market['result'] = null;
                 if ($allowed && $model->status === 'STATUS_FINAL' && $model->home_score !== null && $model->away_score !== null && $market['lean']) {
                     $outcomes = collect($market['outcomes']);
@@ -86,7 +86,7 @@ class CfbLiveBettingController extends Controller
                         $quote['result'] = (float) $actual === (float) $quote['line'] ? 'push'
                             : (((float) $actual > (float) $quote['line']) === ($quote['lean'] === 'Over') ? 'win' : 'loss');
                     }
-                    $quote['fresh'] = ! $stale && $quote['fresh'] && app(LiveMarketComparison::class)->fresh($quote['updated_at'], $commenceTime);
+                    $quote['fresh'] = $commenceTime !== null && ! $stale && $quote['fresh'] && app(LiveMarketComparison::class)->fresh($quote['updated_at'], $commenceTime);
                     if (! $quote['fresh']) {
                         $quote['fresh'] = false;
                         $quote['lean'] = null;

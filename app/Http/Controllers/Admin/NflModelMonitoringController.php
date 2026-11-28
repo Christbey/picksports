@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\NflModelMonitoringRequest;
+use App\Services\ML\TrainingMonitoringService;
 use App\Services\NFL\NflModelMonitoringService;
 use App\Services\NFL\NflMonitorReportCache;
 use Inertia\Inertia;
@@ -23,6 +24,7 @@ class NflModelMonitoringController extends Controller
         $saved = $reports->read($filters['artifact'] ?? null, $evidence);
         $payload = $saved['payload'] ?? $monitoring->emptyDashboard();
         $payload['report_status'] = $saved['status'];
+        $payload['training_operations'] = app(TrainingMonitoringService::class)->dashboard('nfl');
         $payload['signal_grades'] = fn () => $request->boolean('signals') || in_array('signal_grades', explode(',', (string) $request->header('X-Inertia-Partial-Data')), true)
             ? $reports->legacy()['grades'] : [];
         $payload['signal_report_generated_at'] = fn () => $reports->legacy()['generated_at'];

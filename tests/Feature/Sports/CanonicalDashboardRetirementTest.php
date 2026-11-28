@@ -4,6 +4,7 @@ use App\Models\CalculationRelease;
 use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
 use App\Models\EventInputSnapshot;
+use App\Models\MLB\Game;
 use App\Models\PredictionMarket;
 use App\Models\SportEvent;
 use App\Models\User;
@@ -17,11 +18,14 @@ use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Support\ObservedMlbGameFixture;
 
 beforeEach(function () {
     $this->travelTo('2026-10-29 12:00:00');
     $this->withoutVite();
     Http::preventStrayRequests();
+    // These tests assert Inertia props, not a live SSR renderer.
+    config(['inertia.ssr.enabled' => false]);
     Cache::flush();
 });
 afterEach(fn () => $this->travelBack());
@@ -38,7 +42,16 @@ function dashboardRetirementFixture(string $sport, int $daysForward = 0): array
         'game_date' => $start->toDateString(), 'game_time' => $start->toTimeString(), 'status' => 'STATUS_SCHEDULED',
         'home_team_id' => $teamClass::factory(), 'away_team_id' => $teamClass::factory()]);
     $release = CalculationRelease::factory()->approved()->create(['sport' => $sport, 'phase' => 'pregame']);
-    $input = EventInputSnapshot::factory()->create(['sport' => $sport, 'inputs' => ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]], 'sport_event_id' => $event->id]);
+    if ($game instanceof Game) {
+        $game = ObservedMlbGameFixture::observe($game, $event->starts_at);
+    }
+    $inputAttributes = ['sport' => $sport, 'inputs' => ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]], 'sport_event_id' => $event->id];
+    if ($game instanceof Game) {
+        $qualified = ObservedMlbGameFixture::snapshotAttributes($game, $inputAttributes['inputs'], $inputAttributes['captured_at'] ?? now());
+        $inputAttributes = [...$inputAttributes, ...$qualified, 'pregame_safety_status' => $inputAttributes['pregame_safety_status'] ?? 'verified'];
+    }
+    $input = EventInputSnapshot::factory()->create($inputAttributes);
+
     $run = CalculationRun::factory()->create(['output_hash' => str_repeat('a', 64), 'sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
         'calculation_release_id' => $release->id, 'status' => 'succeeded']);
     $native = CanonicalPrediction::factory()->create(['output_hash' => str_repeat('a', 64), 'sport' => $sport, 'sport_event_id' => $event->id,

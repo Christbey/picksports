@@ -2,11 +2,10 @@
 
 namespace App\Actions\ESPN\CFB;
 
-use App\DataTransferObjects\ESPN\GameData;
 use App\Models\CFB\Game;
 use App\Services\ESPN\CFB\EspnService;
 use App\Services\Sports\SportEventIdentitySynchronizer;
-use Illuminate\Support\Facades\DB;
+use App\Support\CFB\CfbGameStart;
 use RuntimeException;
 
 class SyncGameMetadata
@@ -23,26 +22,23 @@ class SyncGameMetadata
         }
         $date = $competition['date'] ?? null;
         $status = (string) data_get($competition, 'status.type.name');
-        if (! $date || ($competition['dateValid'] ?? true) === false || ($competition['timeValid'] ?? true) === false
-            || preg_match('/\b(?:TBD|TBA)\b/i', (string) data_get($competition, 'status.type.detail').' '.(string) data_get($competition, 'status.type.shortDetail'))
-            || ! in_array($status, ['STATUS_SCHEDULED', 'STATUS_PRE_GAME', 'STATUS_DELAYED'], true)) {
-            throw new RuntimeException('CFB pregame kickoff is unconfirmed or the game has already started.');
+        if (! in_array($status, ['STATUS_SCHEDULED', 'STATUS_PRE_GAME', 'STATUS_DELAYED'], true)) {
+            throw new RuntimeException('CFB game has already started.');
         }
-        $parts = GameData::extractDateParts($date);
+        $updates = CfbGameStart::attributes($date, $competition, 'espn_verified_summary', (string) $game->espn_event_id);
+        $confirmed = $updates['kickoff_observation']['status'] === 'known';
         $venue = data_get($payload, 'gameInfo.venue', $competition['venue'] ?? []);
-        $updates = [...$parts];
         foreach (['venue_name' => $venue['fullName'] ?? null, 'venue_city' => data_get($venue, 'address.city'),
             'venue_state' => data_get($venue, 'address.state')] as $key => $value) {
-            if (filled($value)) {
+            if ($confirmed && filled($value)) {
                 $updates[$key] = $value;
             }
         }
-        if (array_key_exists('neutralSite', $competition)) {
+        if ($confirmed && array_key_exists('neutralSite', $competition)) {
             $updates['neutral_site'] = (bool) $competition['neutralSite'];
         }
 
-        return DB::transaction(function () use ($game, $updates, $payload, $competition): bool {
-            $locked = Game::query()->lockForUpdate()->findOrFail($game->id);
+        app(SportEventIdentitySynchronizer::class)->mutateAndSync('cfb', $game, function (Game $locked) use ($updates, $payload, $competition): void {
             if ((string) $locked->espn_event_id !== (string) data_get($payload, 'header.id')
                 || (int) $locked->season !== (int) data_get($payload, 'header.season.year')
                 || ! in_array($locked->status, ['STATUS_SCHEDULED', 'STATUS_PRE_GAME', 'STATUS_DELAYED'], true)) {
@@ -59,12 +55,17 @@ class SyncGameMetadata
                     throw new RuntimeException('CFB summary team identity disagrees with the stored matchup.');
                 }
             }
-            $locked->fill($updates)->saveQuietly();
+            if (! $locked->fill($updates)->saveQuietly()) {
+                throw new RuntimeException('CFB current kickoff observation could not be persisted.');
+            }
             // A successful provider verification must refresh source age even when values are unchanged.
             $locked->touchQuietly();
-            app(SportEventIdentitySynchronizer::class)->sync('cfb', $locked);
-
-            return true;
         });
+
+        if (! $confirmed) {
+            throw new RuntimeException('CFB pregame kickoff is unconfirmed; current observation was recorded without changing its stored carriers.');
+        }
+
+        return true;
     }
 }

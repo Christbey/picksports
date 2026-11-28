@@ -4,11 +4,13 @@ namespace App\Services\DeveloperPlatform;
 
 use App\Models\DeveloperApiUsageRecord;
 use App\Models\DeveloperMeterBatch;
+use App\Models\DeveloperMeterBatchItem;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
+use RuntimeException;
 
 class DeveloperMeterBatchBuilder
 {
@@ -53,7 +55,7 @@ class DeveloperMeterBatchBuilder
                     ->orderBy('developer_product_id')
                     ->get();
 
-                $batch = DeveloperMeterBatch::query()->create([
+                $batchValues = [
                     'meter_code' => $meterCode,
                     'period_start' => $start,
                     'period_end' => $end,
@@ -62,20 +64,53 @@ class DeveloperMeterBatchBuilder
                     'usage_record_count' => (int) $groups->sum('usage_record_count'),
                     'total_units' => (int) $groups->sum('total_units'),
                     'generated_at' => now(),
-                ]);
-
+                ];
+                $preparedItems = [];
                 foreach ($groups as $group) {
                     $organizationId = (int) $group->developer_organization_id;
                     $productId = $group->developer_product_id === null ? null : (int) $group->developer_product_id;
 
-                    $batch->items()->create([
+                    $preparedItems[] = [
                         'developer_organization_id' => $organizationId,
                         'developer_product_id' => $productId,
                         'idempotency_key' => hash('sha256', implode('|', [$key, $organizationId, $productId ?? 'none'])),
                         'usage_record_count' => (int) $group->usage_record_count,
                         'units' => (int) $group->total_units,
                         'dimensions' => ['meter_version' => 1],
-                    ]);
+                    ];
+                }
+                $connection = (new DeveloperMeterBatch)->getConnection();
+                $batchExpected = (new DeveloperMeterBatch)->forceFill($batchValues)->getAttributes();
+                $batch = DeveloperMeterBatch::query()->create($batchValues);
+                if (! $batch->exists || ! is_int($batch->getKey())) {
+                    throw new RuntimeException('Meter batch persistence was refused.');
+                }
+                $batchId = $batch->getKey();
+                $itemPlans = [];
+
+                foreach ($preparedItems as $values) {
+                    $values['developer_meter_batch_id'] = $batchId;
+                    $expected = (new DeveloperMeterBatchItem)->forceFill($values)->getAttributes();
+                    $item = $batch->items()->create($values);
+                    if (! $item->exists || ! is_int($item->getKey())) {
+                        throw new RuntimeException('Meter item persistence was refused.');
+                    }
+                    $itemPlans[$item->getKey()] = $expected;
+                }
+
+                $current = $connection->table('developer_meter_batches')->where('id', $batchId)->first();
+                if ($current === null || ! $this->matches((array) $current, $batchExpected)) {
+                    throw new RuntimeException('Meter batch persisted values changed.');
+                }
+                $items = $connection->table('developer_meter_batch_items')->where('developer_meter_batch_id', $batchId)->orderBy('id')->get();
+                if ($items->count() !== count($itemPlans)) {
+                    throw new RuntimeException('Meter item membership changed.');
+                }
+                foreach ($items as $row) {
+                    $expected = $itemPlans[$row->id] ?? null;
+                    if ($expected === null || ! $this->matches((array) $row, $expected)) {
+                        throw new RuntimeException('Meter item persisted values changed.');
+                    }
                 }
 
                 return $batch->load('items');
@@ -91,5 +126,27 @@ class DeveloperMeterBatchBuilder
 
             throw $exception;
         }
+    }
+
+    private function matches(array $actual, array $expected): bool
+    {
+        foreach ($expected as $field => $value) {
+            if (! array_key_exists($field, $actual)) {
+                return false;
+            }
+            if ($field === 'dimensions') {
+                if (json_decode((string) $actual[$field], true, flags: JSON_THROW_ON_ERROR) !== json_decode((string) $value, true, flags: JSON_THROW_ON_ERROR)) {
+                    return false;
+                }
+            } elseif ($actual[$field] === null || $value === null) {
+                if ($actual[$field] !== $value) {
+                    return false;
+                }
+            } elseif ((string) $actual[$field] !== (string) $value) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

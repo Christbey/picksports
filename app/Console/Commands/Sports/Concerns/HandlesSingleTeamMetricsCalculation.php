@@ -17,8 +17,13 @@ trait HandlesSingleTeamMetricsCalculation
         callable $teamLabel
     ): ?int {
         $teamId = $this->option('team');
-        if (! $teamId) {
+        if ($teamId === null) {
             return null;
+        }
+        if (filter_var($teamId, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false) {
+            $this->error('The --team option must be a positive integer.');
+
+            return Command::FAILURE;
         }
 
         $teamModelClass = $this->teamModelClass();

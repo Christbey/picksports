@@ -60,10 +60,7 @@ function formatRecord(metric: any, fallback = '-'): string {
         return metric.record_label;
     }
 
-    if (
-        metric.record?.wins !== undefined &&
-        metric.record?.losses !== undefined
-    ) {
+    if (metric.record?.wins != null && metric.record?.losses != null) {
         return `${metric.record.wins}-${metric.record.losses}`;
     }
 
@@ -77,6 +74,24 @@ function formatRecord(metric: any, fallback = '-'): string {
     }
 
     return fallback;
+}
+
+function formatSplitEfficiency(offense: unknown, defense: unknown): string {
+    const observedNumber = (value: unknown): number | null => {
+        if (
+            (typeof value !== 'number' && typeof value !== 'string') ||
+            value === '' ||
+            (typeof value === 'string' && value.trim() === '')
+        )
+            return null;
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric : null;
+    };
+    const offensive = observedNumber(offense);
+    const defensive = observedNumber(defense);
+    return offensive === null || defensive === null
+        ? '-'
+        : formatNumber(offensive - defensive);
 }
 
 function createProBasketballTeamMetricsConfig(
@@ -324,13 +339,10 @@ export const cbbTeamMetricsConfig = createSportTeamMetricsConfig({
         {
             label: 'Home',
             value: (m: any) => {
-                const net =
-                    m.home_offensive_efficiency && m.home_defensive_efficiency
-                        ? formatNumber(
-                              m.home_offensive_efficiency -
-                                  m.home_defensive_efficiency,
-                          )
-                        : '-';
+                const net = formatSplitEfficiency(
+                    m.home_offensive_efficiency,
+                    m.home_defensive_efficiency,
+                );
                 const count = m.home_games ? ` (${m.home_games})` : '';
                 return `${net}${count}`;
             },
@@ -338,13 +350,10 @@ export const cbbTeamMetricsConfig = createSportTeamMetricsConfig({
         {
             label: 'Away',
             value: (m: any) => {
-                const net =
-                    m.away_offensive_efficiency && m.away_defensive_efficiency
-                        ? formatNumber(
-                              m.away_offensive_efficiency -
-                                  m.away_defensive_efficiency,
-                          )
-                        : '-';
+                const net = formatSplitEfficiency(
+                    m.away_offensive_efficiency,
+                    m.away_defensive_efficiency,
+                );
                 const count = m.away_games ? ` (${m.away_games})` : '';
                 return `${net}${count}`;
             },
@@ -460,13 +469,10 @@ export const wcbbTeamMetricsConfig = createSportTeamMetricsConfig({
         {
             label: 'Home',
             value: (m: any) => {
-                const net =
-                    m.home_offensive_efficiency && m.home_defensive_efficiency
-                        ? formatNumber(
-                              m.home_offensive_efficiency -
-                                  m.home_defensive_efficiency,
-                          )
-                        : '-';
+                const net = formatSplitEfficiency(
+                    m.home_offensive_efficiency,
+                    m.home_defensive_efficiency,
+                );
                 const count = m.home_games ? ` (${m.home_games})` : '';
                 return `${net}${count}`;
             },
@@ -474,13 +480,10 @@ export const wcbbTeamMetricsConfig = createSportTeamMetricsConfig({
         {
             label: 'Away',
             value: (m: any) => {
-                const net =
-                    m.away_offensive_efficiency && m.away_defensive_efficiency
-                        ? formatNumber(
-                              m.away_offensive_efficiency -
-                                  m.away_defensive_efficiency,
-                          )
-                        : '-';
+                const net = formatSplitEfficiency(
+                    m.away_offensive_efficiency,
+                    m.away_defensive_efficiency,
+                );
                 const count = m.away_games ? ` (${m.away_games})` : '';
                 return `${net}${count}`;
             },

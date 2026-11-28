@@ -7,14 +7,16 @@ use App\Http\Resources\Admin\HealthcheckSummaryResource;
 use App\Models\Healthcheck;
 use App\Models\SportsAiPredictionAnalysis;
 use App\Models\ValidationRun;
+use App\Services\Admin\HealthcheckRemediationCatalog;
 use App\Services\CommandHeartbeatService;
-use App\Services\Sports\SportsPipelineRegistry;
 use App\Services\Validation\ValidationRunRecorder;
 use App\Support\SportCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -40,7 +42,8 @@ class HealthcheckController extends Controller
             ->orderBy('sport')
             ->orderBy('check_type')
             ->get();
-        $latestChecks = collect($this->resourcePayload(HealthcheckSummaryResource::collection($latestChecks)));
+        $latestChecks = collect($this->resourcePayload(HealthcheckSummaryResource::collection($latestChecks)))
+            ->map(fn (array $check) => [...$check, 'remediation' => $this->remediations->describe($check['sport'], $check['check_type'], data_get($check, 'metadata.recommended_action'))]);
 
         // Group checks by sport
         $checksBySport = $latestChecks->groupBy('sport');
@@ -74,15 +77,15 @@ class HealthcheckController extends Controller
                 'status' => $latestValidationRun->status,
                 'summary' => $latestValidationRun->summary,
                 'ai_summary' => $latestValidationRun->ai_summary,
-                'ai_generated_at' => $latestValidationRun->ai_generated_at?->toDateTimeString(),
-                'completed_at' => $latestValidationRun->completed_at?->toDateTimeString(),
+                'ai_generated_at' => $latestValidationRun->ai_generated_at?->toIso8601String(),
+                'completed_at' => $latestValidationRun->completed_at?->toIso8601String(),
             ] : null,
             'recent_validation_runs' => $recentValidationRuns->map(fn (ValidationRun $run) => [
                 'id' => $run->id,
                 'scope' => $run->scope,
                 'status' => $run->status,
                 'summary' => $run->summary,
-                'completed_at' => $run->completed_at?->toDateTimeString(),
+                'completed_at' => $run->completed_at?->toIso8601String(),
             ])->values(),
             'selected_validation_run' => $selectedValidationRun ? [
                 'id' => $selectedValidationRun->id,
@@ -90,8 +93,8 @@ class HealthcheckController extends Controller
                 'status' => $selectedValidationRun->status,
                 'summary' => $selectedValidationRun->summary,
                 'ai_summary' => $selectedValidationRun->ai_summary,
-                'ai_generated_at' => $selectedValidationRun->ai_generated_at?->toDateTimeString(),
-                'completed_at' => $selectedValidationRun->completed_at?->toDateTimeString(),
+                'ai_generated_at' => $selectedValidationRun->ai_generated_at?->toIso8601String(),
+                'completed_at' => $selectedValidationRun->completed_at?->toIso8601String(),
                 'findings' => $selectedValidationRun->findings
                     ->sortByDesc(fn ($finding) => match ($finding->status) {
                         'failing' => 3,
@@ -108,7 +111,8 @@ class HealthcheckController extends Controller
                         'message' => $finding->message,
                         'facts' => $finding->facts,
                         'recommended_action' => $finding->recommended_action,
-                        'detected_at' => $finding->detected_at?->toDateTimeString(),
+                        'remediation' => $this->remediations->describe($finding->sport, $finding->check_type, $finding->recommended_action),
+                        'detected_at' => $finding->detected_at?->toIso8601String(),
                     ]),
             ] : null,
             'validation_trend' => $validationTrend,
@@ -124,6 +128,7 @@ class HealthcheckController extends Controller
 
     public function run(Request $request): RedirectResponse
     {
+        $request->validate(['sport' => ['nullable', Rule::in(SportCatalog::ALL)], 'mode' => ['sometimes', Rule::in(['heartbeat', 'validation'])]]);
         $sport = $request->input('sport');
         $mode = $request->input('mode', 'heartbeat');
         $command = $mode === 'validation' ? 'healthcheck:validate-data' : 'healthcheck:run';
@@ -138,18 +143,21 @@ class HealthcheckController extends Controller
             }
 
             return $this->backWarning(ucfirst($mode).' checks completed with warnings or failures. Check the results below.');
-        } catch (\Exception $e) {
-            return $this->backError("Failed to run {$mode} checks: ".$e->getMessage());
+        } catch (\Throwable $e) {
+            Log::warning('Manual health check command failed.', ['exception_class' => $e::class]);
+
+            return $this->backError('Failed to run checks. Review the operational logs or contact an administrator.');
         }
     }
 
     public function __construct(
         private readonly CommandHeartbeatService $commandHeartbeatService,
-        private readonly SportsPipelineRegistry $sportsPipelineRegistry,
+        private readonly HealthcheckRemediationCatalog $remediations,
     ) {}
 
     public function sync(Request $request): RedirectResponse
     {
+        $request->validate(['sport' => ['required', Rule::in(SportCatalog::ALL)], 'check_type' => ['required', 'string', 'max:100', 'regex:/^[a-z][a-z0-9_]*$/D']]);
         $sport = $request->input('sport');
         $checkType = $request->input('check_type');
 
@@ -161,10 +169,15 @@ class HealthcheckController extends Controller
             $resolved = $this->getCommandForCheck($sport, $checkType);
 
             if (! $resolved) {
-                return $this->backError("No sync command available for {$sport} {$checkType}.");
+                return $this->backError("No reviewed sync action is available for {$sport} {$checkType}. Review the displayed recommendation using the explicit operator workflow.");
             }
 
-            Artisan::call($resolved['command'], $resolved['arguments']);
+            $exitCode = Artisan::call($resolved['command'], $resolved['arguments']);
+            if ($exitCode !== 0) {
+                $this->commandHeartbeatService->recordFailure($this->renderCommand($resolved['command'], $resolved['arguments']), $sport, 'manual', 'manual_command_nonzero_exit', ['exit_code' => $exitCode]);
+
+                return $this->backError('The command did not complete successfully. No successful heartbeat was recorded.');
+            }
             $this->commandHeartbeatService->recordSuccess(
                 $this->renderCommand($resolved['command'], $resolved['arguments']),
                 $sport,
@@ -172,12 +185,11 @@ class HealthcheckController extends Controller
             );
 
             return $this->backSuccess('Successfully ran '.$this->renderCommand($resolved['command'], $resolved['arguments']).'. Re-run health checks to see updated status.');
-        } catch (\Exception $e) {
-            if ($sport) {
-                $this->commandHeartbeatService->recordFailure('manual:'.$checkType, $sport, 'manual', $e->getMessage());
-            }
+        } catch (\Throwable $e) {
+            $this->commandHeartbeatService->recordFailure('manual:'.$checkType, $sport, 'manual', 'manual_command_exception');
+            Log::warning('Manual health remediation failed.', ['exception_class' => $e::class, 'sport' => $sport, 'check_type' => $checkType]);
 
-            return $this->backError('Failed to sync data: '.$e->getMessage());
+            return $this->backError('Failed to sync data. Review the operational logs or contact an administrator.');
         }
     }
 
@@ -186,27 +198,9 @@ class HealthcheckController extends Controller
      */
     protected function getCommandForCheck(string $sport, string $checkType): ?array
     {
-        $registryCommand = $this->sportsPipelineRegistry->healthcheckCommand($sport, $checkType);
-        if ($registryCommand) {
-            return $registryCommand;
-        }
+        $latestCheck = Healthcheck::query()->where('sport', $sport)->where('check_type', $checkType)->latest('id')->first();
 
-        $latestCheck = Healthcheck::query()
-            ->where('sport', $sport)
-            ->where('check_type', $checkType)
-            ->latest('id')
-            ->first();
-
-        $recommendedAction = trim((string) data_get($latestCheck?->metadata, 'recommended_action', ''));
-
-        if ($recommendedAction === '') {
-            return null;
-        }
-
-        return [
-            'command' => $recommendedAction,
-            'arguments' => [],
-        ];
+        return $this->remediations->resolve($sport, $checkType, data_get($latestCheck?->metadata, 'recommended_action'));
     }
 
     /**
@@ -320,7 +314,7 @@ class HealthcheckController extends Controller
                 'failing' => $previousFailing,
                 'warning' => $previousWarning,
                 'passing' => $previousPassing,
-                'completed_at' => $previousRun->completed_at?->toDateTimeString(),
+                'completed_at' => $previousRun->completed_at?->toIso8601String(),
             ] : null,
             'delta' => [
                 'failing' => $currentFailing - $previousFailing,
@@ -344,7 +338,7 @@ class HealthcheckController extends Controller
                     'failing' => (int) (($run->summary ?? [])['failing'] ?? 0),
                     'warning' => (int) (($run->summary ?? [])['warning'] ?? 0),
                     'passing' => (int) (($run->summary ?? [])['passing'] ?? 0),
-                    'completed_at' => $run->completed_at?->toDateTimeString(),
+                    'completed_at' => $run->completed_at?->toIso8601String(),
                 ]),
         ];
     }

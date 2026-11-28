@@ -1,3 +1,4 @@
+import type { TrainingOperations } from '@/types/training-operations';
 import type { EvidenceLeaderboard } from '@/lib/nflEvidenceLeaderboard';
 export type ArtifactOption = {
     id: string;
@@ -58,6 +59,7 @@ export type MonitoringSummary = {
     counterfactual_profit_units: number;
     counterfactual_roi: number | null;
     average_clv: number | null;
+    /** Legacy field name: eligible settled home-win probability observations, not distinct games. */
     calibration_games: number;
     baseline_brier: number | null;
     challenger_brier: number | null;
@@ -186,6 +188,7 @@ export type SignalGradeCategory = {
 };
 
 export type NflModelMonitoringProps = {
+    training_operations?: TrainingOperations;
     artifacts: ArtifactOption[];
     artifact: Artifact | null;
     summary: MonitoringSummary;

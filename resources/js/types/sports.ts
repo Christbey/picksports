@@ -139,6 +139,8 @@ export interface PredictionAnalysisSummary {
         market: string;
         tier: string;
         sample_size: number;
+        validation_status?: 'historical_unverified';
+        evidence_source?: 'historical_configuration';
         winner_hit_rate?: number | null;
         spread_mae?: number | null;
         codes: string[];
@@ -150,6 +152,8 @@ export interface PredictionAnalysisSummary {
         market: string;
         tier: string;
         sample_size: number;
+        validation_status?: 'historical_unverified';
+        evidence_source?: 'historical_configuration';
         winner_hit_rate?: number | null;
         spread_mae?: number | null;
         codes: string[];
@@ -246,6 +250,10 @@ export interface LivePredictionData {
     awayLabel?: string | null;
     provisional?: boolean;
     sourceUpdatedAt?: string | null;
+    recordUpdatedAt?: string | null;
+    recordUpdatedAtRaw?: string | null;
+    recordClockStatus?: 'unverified_storage_clock';
+    sourceClockStatus?: 'observation_unavailable';
     freshnessWarning?: string | null;
     modelWarning?: string | null;
     isLive: boolean;
@@ -264,9 +272,9 @@ export interface LivePredictionData {
     livePredictedTotal?: number | null;
     liveSecondsRemaining?: number | null;
     liveOutsRemaining?: number | null;
-    preGameWinProbability: number;
-    preGamePredictedSpread: number;
-    preGamePredictedTotal: number;
+    preGameWinProbability: number | null;
+    preGamePredictedSpread: number | null;
+    preGamePredictedTotal: number | null;
 }
 
 export interface PredictionListGameTeam {
@@ -280,6 +288,7 @@ export interface PredictionListGameTeam {
 }
 
 export interface PredictionListGame {
+    starts_at?: string | null;
     id: number;
     game_date: string;
     game_time?: string;
@@ -308,6 +317,7 @@ export interface PredictionListGame {
 }
 
 export interface PredictionListItem {
+    spread_convention?: string | null;
     comparison_forecasts?: CfbComparisonForecasts | null;
     forecast_coordination?: Record<string, unknown> | null;
     id: number | string;
@@ -440,11 +450,12 @@ export interface GamePageGame {
 }
 
 export interface PredictionSummary {
+    spread_convention?: 'home_margin' | 'home_handicap';
     sport?: string;
-    away_win_probability: number;
-    home_win_probability: number;
-    predicted_spread: number;
-    predicted_total: number;
+    away_win_probability: number | null;
+    home_win_probability: number | null;
+    predicted_spread: number | null;
+    predicted_total: number | null;
     confidence_level: string;
     confidence_context?: {
         label?: string | null;
@@ -551,14 +562,15 @@ export interface TeamStatsEntry extends Record<string, unknown> {
 export interface TopPerformer extends Record<string, unknown> {
     id: number;
     team_id?: number;
-    points?: number;
-    rebounds?: number;
-    rebounds_total?: number;
-    assists?: number;
-    field_goals_made?: number;
-    field_goals_attempted?: number;
+    points?: number | null;
+    rebounds?: number | null;
+    rebounds_total?: number | null;
+    assists?: number | null;
+    field_goals_made?: number | null;
+    field_goals_attempted?: number | null;
     player_id?: number;
     player?: {
+        display_name?: string | null;
         name?: string;
     } | null;
     team?: {

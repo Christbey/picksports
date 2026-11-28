@@ -109,6 +109,6 @@ also changes Cowboys at Giants from a loss to a win (Giants +3, margin -2.7),
 and selects Raiders +6.5 with margin 5.5. Rounding alone changes no selections.
 These small retrospective results do not establish predictive improvement.
 
-The saved [comparison report](../../outputs/nfl-formula-shadow-comparison-2026-09-21.json)
+The saved comparison report (`outputs/nfl-formula-shadow-comparison-2026-09-21.json`; unavailable in the current candidate)
 retains weekly matched records, exclusions and changed picks. Neither historical
 forecasts nor production application code were modified by this audit.

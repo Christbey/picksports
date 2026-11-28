@@ -14,9 +14,8 @@ $queueNames = array_values(array_filter(array_map(
 return [
     'health' => [
         'database_connection' => env('INFRASTRUCTURE_HEALTH_DATABASE_CONNECTION'),
-        // Laravel Cloud currently provisions the production database with a
-        // 20 GiB volume. Override this whenever the service tier changes.
-        'database_storage_capacity_gb' => $nullableFloat('INFRASTRUCTURE_HEALTH_DATABASE_STORAGE_CAPACITY_GB', 20),
+        // Supply the current authoritative capacity; a dated platform observation is not a default.
+        'database_storage_capacity_gb' => $nullableFloat('INFRASTRUCTURE_HEALTH_DATABASE_STORAGE_CAPACITY_GB'),
         'queue_connection' => env('INFRASTRUCTURE_HEALTH_QUEUE_CONNECTION'),
         'queue_names' => $queueNames === [] ? ['default'] : $queueNames,
         'redis_connection' => env('INFRASTRUCTURE_HEALTH_REDIS_CONNECTION'),

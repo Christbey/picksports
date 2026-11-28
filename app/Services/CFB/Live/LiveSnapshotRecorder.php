@@ -8,27 +8,53 @@ use App\Models\CFB\LivePredictionSnapshot;
 use App\Services\BettingRecommendations\CfbPropEligibility;
 use App\Services\CFB\Predictions\CfbStoredPregameQuote;
 use App\Services\Predictions\PredictionDeliverySource;
+use App\Support\CFB\CfbGameStart;
 use Carbon\CarbonInterface;
 
 class LiveSnapshotRecorder
 {
     public function baseline(Game $game): ?array
     {
-        // Start a new baseline contract without changing any earlier snapshot.
-        $existing = LivePredictionSnapshot::where('game_id', $game->id)
-            ->where('pregame->baseline_contract', 'canonical-or-closing-v2')->oldest('id')->first();
-        if ($existing) {
-            return $existing->pregame;
+        $kickoff = CfbPropEligibility::kickoff($game)?->setTimezone(config('app.timezone'));
+        $identity = $kickoff === null ? null : ['game_id' => (int) $game->id,
+            'espn_event_id' => (string) $game->espn_event_id, 'starts_at_utc' => $kickoff->utc()->toIso8601String()];
+        if ($identity !== null) {
+            $identity['sport_event_id'] = $game->sport_event_id === null ? null : (string) $game->sport_event_id;
+            $identity['binding_sha256'] = hash('sha256', json_encode($identity, JSON_THROW_ON_ERROR));
         }
-        $kickoff = ($game->sportEvent?->starts_at ?? CfbPropEligibility::kickoff($game))->copy()->setTimezone(config('app.timezone'));
+        // Reuse only a qualified baseline for this exact current cutoff. Older
+        // unavailable captures and earlier schedule identities remain history.
+        $existing = $identity === null ? null : LivePredictionSnapshot::where('game_id', $game->id)
+            ->where('pregame->baseline_contract', 'canonical-or-closing-v2')
+            ->where('pregame->kickoff_identity->binding_sha256', $identity['binding_sha256'])
+            ->where('pregame->kickoff_identity->game_id', $identity['game_id'])
+            ->where('pregame->kickoff_identity->espn_event_id', $identity['espn_event_id'])
+            ->where('pregame->kickoff_identity->starts_at_utc', $identity['starts_at_utc'])
+            ->whereIn('pregame->source', ['canonical_pregame', 'stored_closing_market', 'legacy_pregame'])
+            ->select(['id', 'pregame'])->oldest('id')->first();
+        $cached = $existing?->pregame;
+        if (is_array($cached) && is_array($cached['kickoff_identity'] ?? null)
+            && array_key_exists('sport_event_id', $cached['kickoff_identity'])
+            && in_array($cached['source'] ?? null, ['canonical_pregame', 'stored_closing_market', 'legacy_pregame'], true)
+            && data_get($cached, 'kickoff_identity.sport_event_id') === $identity['sport_event_id']
+            && data_get($cached, 'kickoff_identity.binding_sha256') === $identity['binding_sha256']
+            && data_get($cached, 'kickoff_identity.game_id') === $identity['game_id']
+            && data_get($cached, 'kickoff_identity.espn_event_id') === $identity['espn_event_id']
+            && data_get($cached, 'kickoff_identity.starts_at_utc') === $identity['starts_at_utc']) {
+            return $cached;
+        }
+        $base = ['baseline_contract' => 'canonical-or-closing-v2', 'kickoff_identity' => $identity, 'prediction_id' => null,
+            'canonical_prediction_id' => null, 'spread' => null, 'total' => null,
+            'home_win_probability' => null, 'model_version' => null, 'source' => 'unavailable',
+            'captured_at' => now()->toIso8601String()];
+        if ($kickoff === null) {
+            return [...$base, 'kickoff_status' => CfbGameStart::status($game)];
+        }
         $prediction = CanonicalPrediction::where('sport', 'cfb')->where('sport_event_id', $game->sport_event_id)
             ->where('phase', 'pregame')->where('publication_state', 'published')
             ->where('generated_at', '<', $kickoff)->where('published_at', '<', $kickoff)
             ->where('created_at', '<', $kickoff)->with('markets')->latest('generated_at')->first();
-        $base = ['baseline_contract' => 'canonical-or-closing-v2', 'prediction_id' => null,
-            'canonical_prediction_id' => $prediction?->id, 'spread' => null, 'total' => null,
-            'home_win_probability' => null, 'model_version' => null, 'source' => 'unavailable',
-            'captured_at' => now()->toIso8601String()];
+        $base['canonical_prediction_id'] = $prediction?->id;
         if ($prediction && data_get($prediction->output_metadata, 'input_quality.qualified') === true) {
             $spread = $prediction->markets->first(fn ($m) => $m->market_type === 'spread' && $m->selection === 'home')?->projected_line;
             $total = $prediction->markets->first(fn ($m) => $m->market_type === 'total' && $m->selection === 'combined')?->projected_line;

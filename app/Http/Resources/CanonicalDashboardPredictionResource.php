@@ -9,6 +9,7 @@ use App\Services\Api\V2\PredictionModelBetContext;
 use App\Services\Api\V2\SportContext;
 use App\Services\MLB\MlbRecommendationPresentation;
 use App\Services\Predictions\LivePredictionStore;
+use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -49,10 +50,11 @@ class CanonicalDashboardPredictionResource extends JsonResource
 
         return array_merge($payload, [
             'sport' => strtoupper($sport),
+            'spread_convention' => 'home_margin',
             'predicted_spread' => $payload['predicted_spread'] === null ? null : -$payload['predicted_spread'],
             'season_type' => $game->season_type,
             'game' => $game->name,
-            'game_time' => $prediction->sportEvent->starts_at?->toIso8601String(),
+            'game_time' => GameDateTimePresenter::startsAtForGame($this->context->slug, $game),
             'home_team' => $game->homeTeam?->abbreviation,
             'away_team' => $game->awayTeam?->abbreviation,
             'home_logo' => $game->homeTeam?->logo_url,

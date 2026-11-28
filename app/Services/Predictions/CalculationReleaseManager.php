@@ -7,7 +7,6 @@ use App\Models\CalculationRelease;
 use App\Models\DatasetExportManifest;
 use App\Models\FeatureSchema;
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\DB;
 
 class CalculationReleaseManager
 {
@@ -27,8 +26,8 @@ class CalculationReleaseManager
         // Normalize explicit instants before Eloquent drops their timezone on write.
         $effectiveAt = ($effectiveAt ?? now()->toImmutable())->setTimezone((string) config('app.timezone', 'UTC'));
 
-        return DB::transaction(function () use ($release, $actor, $reason, $effectiveAt): CalculationRelease {
-            $release = CalculationRelease::query()->lockForUpdate()->findOrFail($release->getKey());
+        return $release->getConnection()->transaction(function () use ($release, $actor, $reason, $effectiveAt): CalculationRelease {
+            $release = $this->lockedRelease($release);
 
             if ($release->status !== 'draft') {
                 throw new PredictionLifecycleException('Only draft calculation releases can be approved.');
@@ -46,7 +45,7 @@ class CalculationReleaseManager
                 $this->assertMachineLearningEvidence($release);
             }
 
-            $release->update([
+            $this->persistTransition($release, [
                 'status' => 'approved',
                 'effective_at' => $effectiveAt,
                 'approved_at' => now(),
@@ -62,14 +61,14 @@ class CalculationReleaseManager
     {
         $retiredAt = ($retiredAt ?? now()->toImmutable())->setTimezone((string) config('app.timezone', 'UTC'));
 
-        return DB::transaction(function () use ($release, $retiredAt): CalculationRelease {
-            $release = CalculationRelease::query()->lockForUpdate()->findOrFail($release->getKey());
+        return $release->getConnection()->transaction(function () use ($release, $retiredAt): CalculationRelease {
+            $release = $this->lockedRelease($release);
 
             if ($release->status !== 'approved') {
                 throw new PredictionLifecycleException('Only approved calculation releases can be retired.');
             }
 
-            $release->update([
+            $this->persistTransition($release, [
                 'status' => 'retired',
                 'retired_at' => $retiredAt,
             ]);
@@ -84,14 +83,14 @@ class CalculationReleaseManager
             throw new PredictionLifecycleException('Calculation release invalidation requires a reason.');
         }
 
-        return DB::transaction(function () use ($release, $reason): CalculationRelease {
-            $release = CalculationRelease::query()->lockForUpdate()->findOrFail($release->getKey());
+        return $release->getConnection()->transaction(function () use ($release, $reason): CalculationRelease {
+            $release = $this->lockedRelease($release);
 
             if (! in_array($release->status, ['approved', 'retired'], true)) {
                 throw new PredictionLifecycleException('Only approved or retired calculation releases can be invalidated.');
             }
 
-            $release->update([
+            $this->persistTransition($release, [
                 'status' => 'invalidated',
                 'invalidated_at' => now(),
                 'invalidation_reason' => trim($reason),
@@ -99,6 +98,35 @@ class CalculationReleaseManager
 
             return $release->fresh();
         });
+    }
+
+    private function lockedRelease(CalculationRelease $input): CalculationRelease
+    {
+        $model = new CalculationRelease;
+        if (! $input->exists || $input->getTable() !== $model->getTable() || $input->getKeyName() !== $model->getKeyName()) {
+            throw new PredictionLifecycleException('Calculation release store identity is invalid.');
+        }
+        $connection = $input->getConnection();
+        $model->setConnection($connection->getName());
+        if ($model->getConnection() !== $connection) {
+            throw new PredictionLifecycleException('Calculation release connection changed.');
+        }
+
+        return $model->newQuery()->useWritePdo()->lockForUpdate()->findOrFail($input->getKey());
+    }
+
+    /** @param array<string, mixed> $attributes */
+    private function persistTransition(CalculationRelease $release, array $attributes): void
+    {
+        $release->fill($attributes);
+        $expected = array_intersect_key($release->getAttributes(), $attributes);
+        if ($release->save() !== true) {
+            throw new PredictionLifecycleException('Calculation release transition was not persisted.');
+        }
+        $stored = $release->newModelQuery()->useWritePdo()->findOrFail($release->getKey());
+        if (array_intersect_key($stored->getAttributes(), $expected) !== $expected) {
+            throw new PredictionLifecycleException('Calculation release transition changed during persistence.');
+        }
     }
 
     private function assertMachineLearningEvidence(CalculationRelease $release): void
@@ -122,11 +150,11 @@ class CalculationReleaseManager
                 throw new PredictionLifecycleException('Every ML release component requires a promoted artifact with training, dataset, artifact, and evaluation evidence.');
             }
 
-            $hasFeatureSchema = FeatureSchema::query()
+            $hasFeatureSchema = FeatureSchema::on($release->getConnectionName())
                 ->where('sport', $release->sport)
                 ->where('version', $artifact->feature_version)
                 ->exists();
-            $hasDataset = DatasetExportManifest::query()
+            $hasDataset = DatasetExportManifest::on($release->getConnectionName())
                 ->where('sport', $release->sport)
                 ->where('sha256', $artifact->dataset_hash)
                 ->exists();

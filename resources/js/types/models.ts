@@ -18,6 +18,8 @@ export interface Team {
 }
 
 export interface DepthChartMetric {
+    sample_size?: number;
+    unit?: 'decimal_innings';
     key: string;
     label: string;
     value: string;
@@ -51,7 +53,7 @@ export interface GameDepthChartTeam {
         abbreviation: string | null;
         display_name: string | null;
         logo: string | null;
-    };
+    } | null;
     season: number;
     season_type: number | string | null;
     before_date: string | null;
@@ -88,6 +90,7 @@ export interface PlayerInjury {
 }
 
 export interface Game {
+    starts_at?: string | null;
     id: number;
     espn_id: string | null;
     home_team_id: number;

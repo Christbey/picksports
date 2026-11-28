@@ -5,9 +5,10 @@ use App\Models\NFL\Player;
 use App\Models\NFL\PlayerInjury;
 use App\Models\NFL\PlayerStat;
 use App\Models\NFL\Team;
-use App\Models\NFL\TeamMetricSnapshot;
 use App\Models\Sports\FuturesOddsSnapshot;
 use App\Services\NFL\TeamFuturesProjectionService;
+
+require_once __DIR__.'/../../Support/NflFutures.php';
 
 it('exposes offseason signal factors on preseason team futures projections', function () {
     $team = Team::factory()->create([
@@ -56,8 +57,7 @@ it('exposes offseason signal factors on preseason team futures projections', fun
         'is_active' => true,
     ]);
 
-    TeamMetricSnapshot::query()->create([
-        'snapshot_key' => sha1('offseason-snapshot'),
+    captureObservedNflMetricFixture([
         'team_id' => $team->id,
         'season' => 2025,
         'wins' => 0,
@@ -67,8 +67,7 @@ it('exposes offseason signal factors on preseason team futures projections', fun
         'recent_form_rating' => 1.0,
         'injury_total_adjustment' => -0.35,
         'calculation_date' => '2025-08-01',
-        'captured_at' => '2025-08-01T12:00:00Z',
-    ]);
+    ], '2025-08-01T12:00:00Z');
 
     foreach (['Over', 'Under'] as $side) {
         FuturesOddsSnapshot::query()->create([

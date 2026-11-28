@@ -15,7 +15,14 @@ class RepairTournamentStructureCommand extends Command
 
     public function handle(RepairTournamentStructure $repairTournamentStructure): int
     {
-        $season = (int) ($this->option('season') ?: (config('cbb.season.default') ?? BasketballSeason::forDate()));
+        $value = $this->input->hasParameterOption('--season', true)
+            ? $this->option('season') : (config('cbb.season.default') ?? BasketballSeason::forDate());
+        $season = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($season === false) {
+            $this->error('The season option requires a positive integer.');
+
+            return self::FAILURE;
+        }
         $count = $repairTournamentStructure->execute($season);
 
         $this->info("Tournament structure repair complete for {$season}. Repaired {$count} slot(s).");

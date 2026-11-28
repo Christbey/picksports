@@ -126,6 +126,9 @@ class BuildEpaStateBaselineCommand extends Command
                     if ($sport === 'nfl') {
                         foreach ($plays as $play) {
                             $stateKey = $nflCalculator->stateKeyForPlay($play);
+                            if ($stateKey === null) {
+                                continue;
+                            }
                             $this->pushStateSample($stateBuckets, $stateKey, (float) $play->expected_points_before);
                         }
 
@@ -137,6 +140,9 @@ class BuildEpaStateBaselineCommand extends Command
                     [$halfMode, $periodDurationSeconds] = $basketballCalculator->derivePeriodContext($plays);
                     foreach ($plays as $play) {
                         $stateKey = $basketballCalculator->stateKeyForPlay($play, $halfMode, $periodDurationSeconds);
+                        if ($stateKey === null) {
+                            continue;
+                        }
                         $this->pushStateSample($stateBuckets, $stateKey, (float) $play->expected_points_before);
                     }
 

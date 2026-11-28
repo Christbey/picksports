@@ -19,8 +19,10 @@ import {
     shortMarket,
     sanitizeFilename,
     formatStatNumber,
+    formatRelativeSignal,
+    formatExportGameStart,
+    formatExportPercent,
     buildStatRows,
-    normalizePercent,
     buildPredictionRows,
     buildFuturesRows,
     buildTournamentRows,
@@ -29,10 +31,10 @@ type CardContext = {
     activePreset: Ref<ExportPreset>;
     adSafeMode: Ref<boolean>;
     selectedSport: Ref<string>;
-    signalForProp: (row: Recommendation) => number;
-    signalForPrediction: (row: PredictionExport) => number;
-    signalForFutures: (row: FuturesExport) => number;
-    signalForTournament: (row: TournamentExport) => number;
+    signalForProp: (row: Recommendation) => number | null;
+    signalForPrediction: (row: PredictionExport) => number | null;
+    signalForFutures: (row: FuturesExport) => number | null;
+    signalForTournament: (row: TournamentExport) => number | null;
 };
 
 export function createAdminExportCards({
@@ -126,7 +128,7 @@ export function createAdminExportCards({
         ctx.fill();
         drawCenteredText(
             ctx,
-            `${signal}%`,
+            formatRelativeSignal(signal),
             pctX + pctBoxW / 2,
             pctY + pctBoxH / 2,
             `800 ${40 * scale}px "Instrument Sans"`,
@@ -179,8 +181,12 @@ export function createAdminExportCards({
 
         ctx.fillStyle = '#334155';
         ctx.font = `600 ${20 * scale}px "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
-        ctx.fillText('Signal Strength', contentX + 18 * scale, y + 24 * scale);
-        const pctText = `${signal}%`;
+        ctx.fillText(
+            'Relative signal score',
+            contentX + 18 * scale,
+            y + 24 * scale,
+        );
+        const pctText = formatRelativeSignal(signal);
         const pctTextW = ctx.measureText(pctText).width;
         ctx.fillText(
             pctText,
@@ -199,12 +205,16 @@ export function createAdminExportCards({
             ctx,
             barX,
             barY,
-            barW * (Math.max(0, Math.min(signal, 100)) / 100),
+            barW * (Math.max(0, Math.min(signal ?? 0, 100)) / 100),
             barH,
             8 * scale,
         );
         ctx.fillStyle =
-            signal >= 88 ? '#22c55e' : signal >= 76 ? '#34d399' : '#eab308';
+            (signal ?? -1) >= 88
+                ? '#22c55e'
+                : (signal ?? -1) >= 76
+                  ? '#34d399'
+                  : '#eab308';
         ctx.fill();
 
         y += 76 * scale;
@@ -297,7 +307,7 @@ export function createAdminExportCards({
         ctx.fill();
         drawCenteredText(
             ctx,
-            'PICKSPORTS • DATA-DRIVEN PLAYER PROPS',
+            'PICKSPORTS • PLAYER PROPS • SCORE IS NOT A PROBABILITY',
             cardX + cardW / 2,
             footerY + footerH / 2,
             `700 ${16 * scale}px "Instrument Sans"`,
@@ -327,8 +337,8 @@ export function createAdminExportCards({
     ): Promise<void> {
         await exportGenericTableCard(
             `${prediction.away_team} @ ${prediction.home_team}`,
-            `${prediction.game.date ?? 'N/A'} • ${prediction.game.time ?? 'TBD'}`,
-            `${prediction.pick_side} • ${prediction.pick_team}`,
+            formatExportGameStart(prediction.game),
+            `${prediction.pick_side ?? 'Pick unavailable'} • ${prediction.pick_team ?? 'N/A'}`,
             `Spread ${formatStatNumber(prediction.predicted_spread)} • Total ${formatStatNumber(prediction.predicted_total)}`,
             signalForPrediction(prediction),
             buildPredictionRows(prediction),
@@ -342,7 +352,7 @@ export function createAdminExportCards({
         subtitle: string,
         headline: string,
         subheadline: string,
-        confidence: number,
+        confidence: number | null,
         rows: StatRow[],
         footer: string,
         filename: string,
@@ -358,7 +368,7 @@ export function createAdminExportCards({
             return;
         }
 
-        const confidencePct = Math.round(normalizePercent(confidence));
+        const confidencePct = confidence;
         const bg = ctx.createLinearGradient(0, 0, preset.width, preset.height);
         bg.addColorStop(0, '#020617');
         bg.addColorStop(1, '#0f172a');
@@ -411,7 +421,7 @@ export function createAdminExportCards({
         ctx.fill();
         drawCenteredText(
             ctx,
-            `${confidencePct}%`,
+            formatRelativeSignal(confidencePct),
             pctX + pctBoxW / 2,
             pctY + pctBoxH / 2,
             `800 ${40 * scale}px "Instrument Sans"`,
@@ -456,8 +466,12 @@ export function createAdminExportCards({
         ctx.fill();
         ctx.fillStyle = '#334155';
         ctx.font = `600 ${20 * scale}px "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
-        ctx.fillText('Signal Strength', contentX + 18 * scale, y + 24 * scale);
-        const pctText = `${confidencePct}%`;
+        ctx.fillText(
+            'Relative signal score',
+            contentX + 18 * scale,
+            y + 24 * scale,
+        );
+        const pctText = formatRelativeSignal(confidencePct);
         const pctTextW = ctx.measureText(pctText).width;
         ctx.fillText(
             pctText,
@@ -476,14 +490,14 @@ export function createAdminExportCards({
             ctx,
             barX,
             barY,
-            barW * (Math.max(0, Math.min(confidencePct, 100)) / 100),
+            barW * (Math.max(0, Math.min(confidencePct ?? 0, 100)) / 100),
             barH,
             8 * scale,
         );
         ctx.fillStyle =
-            confidencePct >= 80
+            (confidencePct ?? -1) >= 80
                 ? '#22c55e'
-                : confidencePct >= 70
+                : (confidencePct ?? -1) >= 70
                   ? '#34d399'
                   : '#eab308';
         ctx.fill();
@@ -575,7 +589,7 @@ export function createAdminExportCards({
         ctx.fill();
         drawCenteredText(
             ctx,
-            `${footer} • PICKSPORTS.APP`,
+            `${footer} • SCORE IS NOT A PROBABILITY`,
             cardX + cardW / 2,
             footerY + footerH / 2,
             `700 ${14 * scale}px "Instrument Sans"`,
@@ -605,7 +619,7 @@ export function createAdminExportCards({
     ): Promise<void> {
         const headline =
             `${row.team} ${row.projected_seed ? `• Seed ${row.projected_seed}` : ''}`.trim();
-        const subheadline = `Playoff ${formatStatNumber(row.playoff_make_probability)}% • Title ${formatStatNumber(row.champion_probability)}%`;
+        const subheadline = `Playoff ${formatExportPercent(row.playoff_make_probability)} • Title ${formatExportPercent(row.champion_probability)}`;
         await exportGenericTableCard(
             `${selectedSport.value} Futures`,
             `${row.conference_or_league ?? 'All'} • Season ${row.season}`,
@@ -624,7 +638,7 @@ export function createAdminExportCards({
     ): Promise<void> {
         const headline =
             `${row.team} ${row.projected_seed ? `• Seed ${row.projected_seed}` : ''}`.trim();
-        const subheadline = `Make ${formatStatNumber(row.tournament_make_probability)}% • Title ${formatStatNumber(row.champion_probability)}%`;
+        const subheadline = `Make ${formatExportPercent(row.tournament_make_probability)} • Title ${formatExportPercent(row.champion_probability)}`;
         await exportGenericTableCard(
             `${selectedSport.value} Tournament`,
             `${row.conference ?? 'All'} • Season ${row.season}`,

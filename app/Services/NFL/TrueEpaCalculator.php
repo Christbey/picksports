@@ -3,6 +3,7 @@
 namespace App\Services\NFL;
 
 use App\Services\Epa\StateBaselineService;
+use App\Support\ScoreObservation;
 use Illuminate\Support\Collection;
 
 class TrueEpaCalculator
@@ -27,7 +28,8 @@ class TrueEpaCalculator
         }
 
         $rows = $plays->values()->all();
-        $realizedFuturePoints = $this->buildRealizedFuturePoints($rows, $homeTeamId, $awayTeamId);
+        $scoringDeltas = $this->buildScoringDeltas($rows);
+        $realizedFuturePoints = $this->buildRealizedFuturePoints($rows, $homeTeamId, $awayTeamId, $scoringDeltas);
         $stateMap = $this->buildExpectedPointsStateMap($rows, $realizedFuturePoints);
         $baselineMap = $this->resolveBaselineMap($season);
 
@@ -38,7 +40,7 @@ class TrueEpaCalculator
             $play = $rows[$i];
             $playId = (int) $play->id;
 
-            if (! $this->playDataService->isEpaEligiblePlay($play) || ! is_numeric($play->possession_team_id ?? null)) {
+            if (! $this->playDataService->isEpaEligiblePlay($play) || ! is_numeric($play->possession_team_id ?? null) || ! in_array((int) ($play->possession_team_id ?? 0), [$homeTeamId, $awayTeamId], true)) {
                 $results[$playId] = [
                     'eligible' => false,
                     'ep_before' => null,
@@ -51,26 +53,26 @@ class TrueEpaCalculator
 
             $offenseTeamId = (int) $play->possession_team_id;
             $stateKey = $this->stateKeyForPlay($play);
-            $epBefore = $baselineMap[$stateKey] ?? $stateMap[$stateKey] ?? 0.0;
+            $epBefore = $baselineMap[$stateKey] ?? $stateMap[$stateKey] ?? null;
 
             $nextEligible = $this->findNextEligiblePlay($rows, $i + 1);
             if ($nextEligible === null) {
                 $epAfter = 0.0;
             } else {
                 $nextStateKey = $this->stateKeyForPlay($nextEligible);
-                $nextEp = $baselineMap[$nextStateKey] ?? $stateMap[$nextStateKey] ?? 0.0;
+                $nextEp = $baselineMap[$nextStateKey] ?? $stateMap[$nextStateKey] ?? null;
                 $nextOffenseTeamId = (int) $nextEligible->possession_team_id;
-                $epAfter = $nextOffenseTeamId === $offenseTeamId ? $nextEp : -$nextEp;
+                $epAfter = $nextEp === null ? null : ($nextOffenseTeamId === $offenseTeamId ? $nextEp : -$nextEp);
             }
 
-            $scoreDelta = $this->scoreDeltaForOffense($rows, $i, $offenseTeamId, $homeTeamId, $awayTeamId);
-            $epa = $scoreDelta + ($epAfter - $epBefore);
+            $scoreDelta = $this->scoreDeltaForOffense(array_key_exists($playId, $scoringDeltas) ? $scoringDeltas[$playId] : [0, 0], $offenseTeamId, $homeTeamId, $awayTeamId);
+            $epa = $scoreDelta === null || $epBefore === null || $epAfter === null ? null : $scoreDelta + ($epAfter - $epBefore);
 
             $results[$playId] = [
                 'eligible' => true,
-                'ep_before' => round($epBefore, 3),
-                'ep_after' => round($epAfter, 3),
-                'epa' => round($epa, 3),
+                'ep_before' => $epBefore === null ? null : round($epBefore, 3),
+                'ep_after' => $epAfter === null ? null : round($epAfter, 3),
+                'epa' => $epa === null ? null : round($epa, 3),
             ];
         }
 
@@ -81,7 +83,7 @@ class TrueEpaCalculator
      * @param  array<int,object>  $rows
      * @return array<int,float>
      */
-    private function buildRealizedFuturePoints(array $rows, int $homeTeamId, int $awayTeamId): array
+    private function buildRealizedFuturePoints(array $rows, int $homeTeamId, int $awayTeamId, array $scoringDeltas): array
     {
         $results = [];
         $count = count($rows);
@@ -90,8 +92,8 @@ class TrueEpaCalculator
             $play = $rows[$i];
             $playId = (int) $play->id;
 
-            if (! is_numeric($play->possession_team_id ?? null)) {
-                $results[$playId] = 0.0;
+            if (! is_numeric($play->possession_team_id ?? null) || ! in_array((int) $play->possession_team_id, [$homeTeamId, $awayTeamId], true)) {
+                $results[$playId] = null;
 
                 continue;
             }
@@ -99,8 +101,16 @@ class TrueEpaCalculator
             $offenseTeamId = (int) $play->possession_team_id;
             $nextScore = 0.0;
 
-            for ($j = $i + 1; $j < $count; $j++) {
-                $delta = $this->scoreDeltaBetween($rows[$j - 1], $rows[$j], $offenseTeamId, $homeTeamId, $awayTeamId);
+            for ($j = $i; $j < $count; $j++) {
+                if (! $this->sameScoringPeriod($play, $rows[$j])) {
+                    break;
+                }
+
+                $delta = $this->scoreDeltaForOffense(array_key_exists((int) $rows[$j]->id, $scoringDeltas) ? $scoringDeltas[(int) $rows[$j]->id] : [0, 0], $offenseTeamId, $homeTeamId, $awayTeamId);
+                if ($delta === null) {
+                    $nextScore = null;
+                    break;
+                }
                 if (abs($delta) > 0.0001) {
                     $nextScore = $delta;
                     break;
@@ -128,7 +138,10 @@ class TrueEpaCalculator
             }
 
             $key = $this->stateKeyForPlay($play);
-            $value = (float) ($realizedFuturePoints[(int) $play->id] ?? 0.0);
+            $value = $realizedFuturePoints[(int) $play->id] ?? null;
+            if ($value === null) {
+                continue;
+            }
             if (! isset($stateBuckets[$key])) {
                 $stateBuckets[$key] = ['sum' => 0.0, 'count' => 0];
             }
@@ -154,6 +167,9 @@ class TrueEpaCalculator
         $count = count($rows);
         for ($i = $startIndex; $i < $count; $i++) {
             $play = $rows[$i];
+            if (! $this->sameScoringPeriod($rows[$startIndex - 1], $play)) {
+                return null;
+            }
             if ($this->playDataService->isEpaEligiblePlay($play) && is_numeric($play->possession_team_id ?? null)) {
                 return $play;
             }
@@ -163,36 +179,58 @@ class TrueEpaCalculator
     }
 
     /**
+     * Attribute cumulative scoreboard changes to scoring events, never administrative rows.
+     * The feed may already show a touchdown's score on the preceding timeout.
+     *
      * @param  array<int,object>  $rows
+     * @return array<int,array{int,int}>
      */
-    private function scoreDeltaForOffense(array $rows, int $index, int $offenseTeamId, int $homeTeamId, int $awayTeamId): float
+    private function buildScoringDeltas(array $rows): array
     {
-        if ($index <= 0) {
-            return 0.0;
+        $deltas = [];
+        $home = 0;
+        $away = 0;
+
+        foreach ($rows as $play) {
+            if (! ($play->is_scoring_play ?? false)) {
+                continue;
+            }
+
+            $nextHome = ScoreObservation::known($play->home_score ?? null);
+            $nextAway = ScoreObservation::known($play->away_score ?? null);
+            $deltas[(int) $play->id] = $nextHome === null || $nextAway === null || $home === null || $away === null
+                ? null : [$nextHome - $home, $nextAway - $away];
+            $home = $nextHome;
+            $away = $nextAway;
         }
 
-        return $this->scoreDeltaBetween($rows[$index - 1], $rows[$index], $offenseTeamId, $homeTeamId, $awayTeamId);
+        return $deltas;
     }
 
-    private function scoreDeltaBetween(object $before, object $after, int $offenseTeamId, int $homeTeamId, int $awayTeamId): float
+    /** @param array{int,int} $delta */
+    private function scoreDeltaForOffense(?array $delta, int $offenseTeamId, int $homeTeamId, int $awayTeamId): ?float
     {
-        $homeBefore = (int) ($before->home_score ?? 0);
-        $awayBefore = (int) ($before->away_score ?? 0);
-        $homeAfter = (int) ($after->home_score ?? 0);
-        $awayAfter = (int) ($after->away_score ?? 0);
-
-        $homeDelta = $homeAfter - $homeBefore;
-        $awayDelta = $awayAfter - $awayBefore;
-
+        if ($delta === null) {
+            return null;
+        }
         if ($offenseTeamId === $homeTeamId) {
-            return (float) ($homeDelta - $awayDelta);
+            return (float) ($delta[0] - $delta[1]);
         }
 
         if ($offenseTeamId === $awayTeamId) {
-            return (float) ($awayDelta - $homeDelta);
+            return (float) ($delta[1] - $delta[0]);
         }
 
-        return 0.0;
+        return null;
+    }
+
+    private function sameScoringPeriod(object $before, object $after): bool
+    {
+        // Quarter breaks preserve possession value; halftime and regulation do not.
+        $period = fn (object $play): int => (int) ($play->period ?? 1);
+        $segment = fn (int $value): int => $value <= 2 ? 1 : ($value <= 4 ? 2 : 3);
+
+        return $segment($period($before)) === $segment($period($after));
     }
 
     public function stateKeyForPlay(object $play): string

@@ -3,6 +3,7 @@
 namespace App\Actions\ESPN;
 
 use App\Actions\ESPN\Concerns\ValidatesBoxscoreReplacement;
+use App\Support\ESPN\BasketballStatValue;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractBasketballSyncPlayerStats
@@ -15,12 +16,10 @@ abstract class AbstractBasketballSyncPlayerStats
 
     protected const PLAYER_STAT_MODEL_CLASS = Model::class;
 
-    protected const SKIP_DNP_OR_EMPTY_STATS = false;
-
     public function execute(array $gameData, Model $game): int
     {
         return $game->getConnection()->transaction(function () use ($gameData, $game): int {
-            $game->newQuery()->whereKey($game->getKey())->lockForUpdate()->firstOrFail();
+            $game = $game->newQuery()->whereKey($game->getKey())->lockForUpdate()->firstOrFail();
 
             return $this->replacePlayerStats($gameData, $game);
         });
@@ -40,7 +39,9 @@ abstract class AbstractBasketballSyncPlayerStats
         }
         $athletes = [];
         foreach ($sections as $section) {
-            $rows = data_get($section, 'statistics.0.athletes');
+            $category = data_get($section, 'statistics.0');
+            $labels = is_array($category) ? ($category['labels'] ?? null) : null;
+            $rows = is_array($category) ? ($category['athletes'] ?? null) : null;
             if (! is_array($rows) || $rows === []) {
                 return 0;
             }
@@ -51,7 +52,11 @@ abstract class AbstractBasketballSyncPlayerStats
                 if (! filled(data_get($athleteData, 'athlete.id')) || ! is_array($athleteData['stats'] ?? null) || $athleteData['stats'] === []) {
                     return 0;
                 }
-                $athletes[] = [$athleteData, $teams->get($section['team']['id'])];
+                $parsed = $this->parseLabeledStats($labels, $athleteData['stats']);
+                if ($parsed === null) {
+                    return 0;
+                }
+                $athletes[] = [$athleteData, $teams->get($section['team']['id']), $parsed];
             }
         }
         if ($athletes === []) {
@@ -60,36 +65,15 @@ abstract class AbstractBasketballSyncPlayerStats
         $players = $playerModel::query()->whereIn('espn_id', collect($athletes)->map(fn ($row) => $row[0]['athlete']['id']))->get()->keyBy('espn_id');
 
         $rows = [];
-        foreach ($athletes as [$athleteData, $team]) {
+        foreach ($athletes as [$athleteData, $team, $parsed]) {
             $playerEspnId = (string) $athleteData['athlete']['id'];
             $player = $this->resolvePlayer($playerModel, $playerEspnId, $athleteData, $team, $players->get($playerEspnId));
             $players->put($playerEspnId, $player);
-            $stats = $athleteData['stats'] ?? [];
-
-            [$fgMade, $fgAttempted] = $this->parseMadeAttempt($stats[2] ?? null);
-            [$threeMade, $threeAttempted] = $this->parseMadeAttempt($stats[3] ?? null);
-            [$ftMade, $ftAttempted] = $this->parseMadeAttempt($stats[4] ?? null);
-
             $rows[$player->id] = [
                 'player_id' => $player->id,
                 'game_id' => $game->id,
                 'team_id' => $team->id,
-                'minutes_played' => $stats[0] ?? null,
-                'points' => isset($stats[1]) ? (int) $stats[1] : 0,
-                'field_goals_made' => $fgMade,
-                'field_goals_attempted' => $fgAttempted,
-                'three_point_made' => $threeMade,
-                'three_point_attempted' => $threeAttempted,
-                'free_throws_made' => $ftMade,
-                'free_throws_attempted' => $ftAttempted,
-                'rebounds_total' => isset($stats[5]) ? (int) $stats[5] : 0,
-                'assists' => isset($stats[6]) ? (int) $stats[6] : 0,
-                'turnovers' => isset($stats[7]) ? (int) $stats[7] : 0,
-                'steals' => isset($stats[8]) ? (int) $stats[8] : 0,
-                'blocks' => isset($stats[9]) ? (int) $stats[9] : 0,
-                'rebounds_offensive' => isset($stats[10]) ? (int) $stats[10] : 0,
-                'rebounds_defensive' => isset($stats[11]) ? (int) $stats[11] : 0,
-                'fouls' => isset($stats[12]) ? (int) $stats[12] : 0,
+                ...$parsed,
             ];
         }
         $playerStatModel::query()->where('game_id', $game->id)->delete();
@@ -131,28 +115,56 @@ abstract class AbstractBasketballSyncPlayerStats
 
     protected function shouldSkipAthlete(array $athleteData): bool
     {
-        if (static::SKIP_DNP_OR_EMPTY_STATS) {
-            return ($athleteData['didNotPlay'] ?? false) || empty($athleteData['stats']);
-        }
-
-        return false;
+        // Only explicit provider DNP is absence of participation; an empty
+        // unmarked row is incomplete evidence and invalidates replacement.
+        return ($athleteData['didNotPlay'] ?? false) === true;
     }
 
-    /**
-     * @return array{0:int,1:int}
-     */
-    protected function parseMadeAttempt(?string $value): array
+    /** Required labels are explicit; never infer a provider layout from positions. */
+    private function parseLabeledStats(mixed $labels, array $stats): ?array
     {
-        if (! $value) {
-            return [0, 0];
+        if (! is_array($labels) || ! array_is_list($labels) || ! array_is_list($stats)
+            || count($labels) !== count($stats)) {
+            return null;
+        }
+        $values = [];
+        foreach ($labels as $index => $label) {
+            if (! is_string($label) || trim($label) === '') {
+                return null;
+            }
+            $label = strtoupper(trim($label));
+            if (array_key_exists($label, $values)) {
+                return null;
+            }
+            $values[$label] = $stats[$index];
+        }
+        $required = ['MIN', 'PTS', 'FG', '3PT', 'FT', 'REB', 'AST', 'TO', 'STL', 'BLK', 'OREB', 'DREB', 'PF'];
+        if (array_diff($required, array_keys($values)) !== []) {
+            return null;
+        }
+        $minutes = $values['MIN'];
+        if ((! is_string($minutes) && ! is_int($minutes))
+            || strlen((string) $minutes) > 10 || preg_match('/\A[0-9]+(?::[0-5][0-9])?\z/', trim((string) $minutes)) !== 1) {
+            return null;
+        }
+        $parsed = ['minutes_played' => trim((string) $minutes)];
+        foreach (['PTS' => 'points', 'REB' => 'rebounds_total', 'AST' => 'assists', 'TO' => 'turnovers',
+            'STL' => 'steals', 'BLK' => 'blocks', 'OREB' => 'rebounds_offensive', 'DREB' => 'rebounds_defensive', 'PF' => 'fouls'] as $label => $field) {
+            $value = BasketballStatValue::integer($values[$label]);
+            if ($value === null) {
+                return null;
+            }
+            $parsed[$field] = $value;
+        }
+        foreach (['FG' => 'field_goals', '3PT' => 'three_point', 'FT' => 'free_throws'] as $label => $field) {
+            $pair = BasketballStatValue::madeAttempt($values[$label]);
+            if ($pair === null) {
+                return null;
+            }
+            [$parsed[$field.'_made'], $parsed[$field.'_attempted']] = $pair;
         }
 
-        $parts = explode('-', $value);
-
-        return [
-            isset($parts[0]) ? (int) $parts[0] : 0,
-            isset($parts[1]) ? (int) $parts[1] : 0,
-        ];
+        return $parsed;
     }
 
     /**

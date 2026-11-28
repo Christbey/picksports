@@ -1,9 +1,7 @@
 # NFL spread integrity and chronological validation
 
 For the complete game-forecast sequence and equations, see the
-[prediction formula reference](nfl-prediction-formulas.md). The
-[review ledger](nfl-prediction-review-ledger.md) preserves the September 21
-diagnosis, production stage audit, open issues and next validation priorities.
+[prediction formula reference](nfl-prediction-formulas.md).
 
 ## Release behavior
 
@@ -131,3 +129,7 @@ assessment. Run the read-only command above and inspect exclusions before
 interpreting performance. Do not regenerate historical picks to make the new
 version appear to have a historical record. Profit/settlement tracking remains
 separate from model-decision W-L.
+
+## Historical correction boundaries
+
+Importer fixes do not repair previously stored rows or prove that a historical replay was originally observed before kickoff. For an authorized data correction, retain original source/hash evidence, match exact game identity and kickoff, scope affected IDs, and compare before writing. Regrade through separately versioned corrections rather than replacing original forecasts or settlements. Rebuilding Elo requires chronological seeds and offseason rules; editing one historical rating is not an equivalent repair. Keep reconstructed experiments separate from observed prospective results.

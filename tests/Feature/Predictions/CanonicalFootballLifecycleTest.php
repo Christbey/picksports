@@ -35,6 +35,7 @@ use App\Services\OddsApi\GameOddsSnapshotRecorder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
+use Tests\Support\ObservedCfbGameFixture;
 
 dataset('canonical football sports', [
     'CFB' => [[
@@ -113,6 +114,10 @@ function canonicalFootballFixture(array $definition): array
         'season' => 2026, 'season_type' => 'regular', 'week' => 1, 'status' => 'STATUS_SCHEDULED', 'game_date' => $startsAt,
         'home_score' => null, 'away_score' => null, 'neutral_site' => false,
     ]);
+
+    if ($definition['sport'] === 'cfb') {
+        $game = ObservedCfbGameFixture::observe($game, $event->starts_at);
+    }
 
     $fixture = compact('event', 'game', 'home', 'away');
     if ($definition['sport'] === 'nfl') {

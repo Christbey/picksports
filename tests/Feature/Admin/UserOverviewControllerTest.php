@@ -137,3 +137,18 @@ test('heartbeat endpoint refreshes the user last active timestamp', function () 
 
     expect($user->fresh()->last_active_at?->gt($previousLastActiveAt))->toBeTrue();
 });
+
+test('feedback page context remains raw evidence scoped to administrators', function () {
+    $this->withoutVite();
+    $user = User::factory()->create();
+    $this->actingAs($user)->post(route('submissions.store'), [
+        'message' => 'Synthetic link boundary evidence',
+        'page_url' => 'javascript:syntheticSentinel()',
+    ])->assertRedirect();
+    $this->get(route('admin.users'))->assertForbidden();
+    $admin = User::factory()->admin()->create();
+    $this->actingAs($admin)->get(route('admin.users'))->assertOk()->assertInertia(fn ($page) => $page
+        ->component('Admin/Users')
+        ->where('submissions.data.0.page_url', 'javascript:syntheticSentinel()')
+        ->where('submissions.data.0.message', 'Synthetic link boundary evidence'));
+});

@@ -5,6 +5,7 @@ namespace App\Actions\CBB;
 use App\Models\CBB\Game;
 use App\Models\CbbBracket;
 use App\Support\CbbBracketTree;
+use App\Support\ScoreObservation;
 
 class GradeBrackets
 {
@@ -29,7 +30,7 @@ class GradeBrackets
             : CbbBracket::query()->where('season', $season)->get();
 
         foreach ($brackets as $bracket) {
-            $tree = $this->bracketTree->build($games, $bracket->picks ?? [], $season);
+            $tree = $this->bracketTree->build($games, $bracket->picks ?? [], $season, includePredictions: false);
             $graded = $this->gradeTree($tree, $bracket->picks ?? []);
 
             $bracket->forceFill($graded)->save();
@@ -108,10 +109,13 @@ class GradeBrackets
             return null;
         }
 
-        $homeScore = $game['homeScore'] ?? null;
-        $awayScore = $game['awayScore'] ?? null;
+        $homeScore = ScoreObservation::known($game['homeScore'] ?? null);
+        $awayScore = ScoreObservation::known($game['awayScore'] ?? null);
+        $homeTeamId = $game['homeTeam']['id'] ?? null;
+        $awayTeamId = $game['awayTeam']['id'] ?? null;
 
-        if (! is_numeric($homeScore) || ! is_numeric($awayScore) || $homeScore === $awayScore) {
+        if ($homeScore === null || $awayScore === null || $homeScore === $awayScore
+            || ! is_int($homeTeamId) || ! is_int($awayTeamId) || $homeTeamId <= 0 || $awayTeamId <= 0 || $homeTeamId === $awayTeamId) {
             return null;
         }
 

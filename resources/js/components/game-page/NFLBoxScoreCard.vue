@@ -15,7 +15,9 @@ const rows = computed(() =>
     nflBoxScoreRows(props.awayTeamStats, props.homeTeamStats),
 );
 const populated = (side: 'away' | 'home') =>
-    rows.value.filter((row) => !row[side].includes('—')).length;
+    rows.value.filter((row) =>
+        side === 'away' ? row.awayComplete : row.homeComplete,
+    ).length;
 </script>
 
 <template>

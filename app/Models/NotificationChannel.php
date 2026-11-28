@@ -12,16 +12,18 @@ class NotificationChannel extends Model
     use HasFactory;
 
     protected $fillable = [
-        'user_id',
-        'channel',
-        'enabled',
+        'name',
+        'type',
+        'is_active',
         'config',
     ];
+
+    protected $hidden = ['config'];
 
     protected function casts(): array
     {
         return [
-            'enabled' => 'boolean',
+            'is_active' => 'boolean',
             'config' => 'array',
         ];
     }

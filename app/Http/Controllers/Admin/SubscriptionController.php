@@ -8,14 +8,14 @@ use App\Http\Resources\Admin\AdminUserSubscriptionResource;
 use App\Http\Resources\Admin\SubscriptionTierOptionResource;
 use App\Models\User;
 use App\Services\Admin\TierPermissionSyncService;
+use App\Services\Billing\BillingOperatorAdmission;
+use App\Services\Billing\BillingRoleEntitlements;
 use App\Support\SubscriptionTierCache;
-use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Laravel\Cashier\Subscription;
 
 class SubscriptionController extends Controller
 {
@@ -47,44 +47,46 @@ class SubscriptionController extends Controller
         ]);
     }
 
-    public function sync(User $user): RedirectResponse
+    public function sync(Request $request, User $user): RedirectResponse
     {
-        if (! $user->subscribed()) {
-            return $this->backError('User does not have an active subscription.');
+        if (! config('billing.durable.enabled', false)) {
+            return $this->backError('Durable billing reconciliation must be configured before requesting a subscription refresh.');
         }
-
         try {
-            $subscription = $user->subscription();
-            $this->refreshSubscriptionFromStripe($subscription);
+            $admission = app(BillingOperatorAdmission::class);
+            $plans = $admission->plan([], [(int) $user->id], []);
+            $admission->admit($plans[0], 'Admin requested subscription reconciliation', $request->user());
 
-            return $this->backSuccess("Subscription synced successfully for {$user->name}.");
-        } catch (\Exception $e) {
-            return $this->backError("Failed to sync subscription: {$e->getMessage()}");
+            return $this->backSuccess('Subscription reconciliation requested. The scheduler will process the durable request.');
+        } catch (\Throwable) {
+            return $this->backError('Subscription reconciliation could not be requested. Resolve the billing linkage or attention hold and retry.');
         }
     }
 
-    public function syncAll(): RedirectResponse
+    public function syncAll(Request $request): RedirectResponse
     {
-        $subscriptions = Subscription::whereNotNull('stripe_id')->get();
-        $synced = 0;
-        $errors = 0;
-
-        foreach ($subscriptions as $subscription) {
-            try {
-                $this->refreshSubscriptionFromStripe($subscription);
-
-                $synced++;
-            } catch (\Exception $e) {
-                $errors++;
+        $validated = $request->validate(['after_user_id' => ['nullable', 'integer', 'min:0'], 'limit' => ['nullable', 'integer', 'min:1', 'max:100']]);
+        if (! config('billing.durable.enabled', false)) {
+            return $this->backError('Durable billing reconciliation must be configured before requesting a bounded batch.');
+        }
+        $ids = User::query()->whereNotNull('stripe_id')->where('id', '>', (int) ($validated['after_user_id'] ?? 0))
+            ->orderBy('id')->limit((int) ($validated['limit'] ?? 20))->pluck('id')->map(fn ($id) => (int) $id)->all();
+        if ($ids === []) {
+            return $this->backSuccess('No billing customers remain after this cursor.');
+        }
+        $admitted = 0;
+        try {
+            $admission = app(BillingOperatorAdmission::class);
+            $plans = $admission->plan([], $ids, []); // All bindings validate before the first admission.
+            foreach ($plans as $plan) {
+                $admission->admit($plan, 'Admin requested bounded subscription reconciliation', $request->user());
+                $admitted++;
             }
-        }
 
-        $message = "Synced {$synced} subscriptions.";
-        if ($errors > 0) {
-            $message .= " {$errors} failed.";
+            return $this->backSuccess('Requested '.$admitted.' customer reconciliations. Next cursor: '.max($ids).'.');
+        } catch (\Throwable) {
+            return $this->backError('Requested '.$admitted.' customer reconciliations before the batch stopped. Resolve invalid linkage or attention holds; no provider calls were made.');
         }
-
-        return $this->backSuccess($message);
     }
 
     public function assignTier(SubscriptionAssignTierRequest $request, User $user): RedirectResponse
@@ -98,39 +100,24 @@ class SubscriptionController extends Controller
         }
 
         try {
-            $role = $this->tierPermissionSyncService->syncTierRolePermissions($tier);
-            $tierSlugs = $this->subscriptionTierCache->allSlugs();
-            $nonTierRoles = $user->getRoleNames()
-                ->reject(fn ($name) => in_array($name, $tierSlugs, true))
-                ->values()
-                ->all();
+            if (config('billing.entitlements.enabled', false)
+                || app(BillingRoleEntitlements::class)->hasRecorded($user)) {
+                app(BillingRoleEntitlements::class)->grantManualTier($user, $tier, $request->user());
+            } else {
+                $role = $this->tierPermissionSyncService->syncTierRolePermissions($tier);
+                $tierSlugs = $this->subscriptionTierCache->allSlugs();
+                $nonTierRoles = $user->getRoleNames()
+                    ->reject(fn ($name) => in_array($name, $tierSlugs, true))
+                    ->values()
+                    ->all();
 
-            $user->syncRoles(array_values(array_unique([...$nonTierRoles, $role->name])));
+                $user->syncRoles(array_values(array_unique([...$nonTierRoles, $role->name])));
+
+            }
 
             return $this->backSuccess("Successfully assigned {$tier->name} tier to {$user->name}.");
         } catch (\Exception $e) {
             return $this->backError("Failed to assign tier: {$e->getMessage()}");
-        }
-    }
-
-    private function refreshSubscriptionFromStripe(Subscription $subscription): void
-    {
-        $stripeSubscription = $subscription->asStripeSubscription();
-
-        $subscription->stripe_status = $stripeSubscription->status;
-        $subscription->stripe_price = $stripeSubscription->items->data[0]->price->id ?? null;
-        $subscription->quantity = $stripeSubscription->quantity ?? 1;
-        $subscription->trial_ends_at = $stripeSubscription->trial_end
-            ? Carbon::createFromTimestamp($stripeSubscription->trial_end)
-            : null;
-        $subscription->ends_at = $stripeSubscription->cancel_at
-            ? Carbon::createFromTimestamp($stripeSubscription->cancel_at)
-            : null;
-        $subscription->save();
-
-        $user = $subscription->owner;
-        if ($user instanceof User) {
-            $user->syncRoleFromTier();
         }
     }
 

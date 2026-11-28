@@ -91,5 +91,6 @@ final readonly class GameSummary
         public ?string $completedAt,
         public ?string $updatedAt,
         public ?string $startsAt = null,
+        public ?string $startTimeProvenance = null,
     ) {}
 }

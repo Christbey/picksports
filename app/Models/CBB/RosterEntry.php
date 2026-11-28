@@ -2,15 +2,15 @@
 
 namespace App\Models\CBB;
 
+use App\Models\Concerns\RejectsPersistedModelMutation;
 use Database\Factories\CbbRosterEntryFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use LogicException;
 
 class RosterEntry extends Model
 {
-    use HasFactory;
+    use HasFactory, RejectsPersistedModelMutation;
 
     protected static function newFactory(): CbbRosterEntryFactory
     {
@@ -28,10 +28,9 @@ class RosterEntry extends Model
         return ['attributes' => 'array'];
     }
 
-    protected static function booted(): void
+    protected function immutableMutationMessage(): string
     {
-        static::updating(fn (): never => throw new LogicException('Roster membership observations are immutable.'));
-        static::deleting(fn (): never => throw new LogicException('Roster membership observations are immutable.'));
+        return 'Roster membership observations are immutable.';
     }
 
     public function rosterSnapshot(): BelongsTo

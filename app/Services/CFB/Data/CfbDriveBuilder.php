@@ -3,7 +3,6 @@
 namespace App\Services\CFB\Data;
 
 use App\Models\CFB\Game;
-use App\Models\CFB\GameDataCheck;
 use App\Models\CFB\Play;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -14,9 +13,13 @@ class CfbDriveBuilder
 
     public function build(Game $game, bool $onlyChanged = false): array
     {
-        $check = GameDataCheck::where('game_id', $game->id)->where('component', 'plays')->whereNotNull('accepted_at')->latest('accepted_at')->latest('id')->first();
+        $check = app(CfbDataReadiness::class)->acceptedCheck($game, 'plays');
         if (! $check) {
             return ['state' => 'blocked', 'reason' => 'no_accepted_play_revision'];
+        }
+        $receiptId = app(CfbSourceAssessmentRecorder::class)->acceptanceReceipt($check)?->id;
+        if ($receiptId === null) {
+            return ['state' => 'blocked', 'reason' => 'no_current_play_assessment'];
         }
         $plays = Play::where('game_id', $game->id)->where('source_revision', $check->source_hash)->orderBy('sequence_number')->orderBy('id')->get();
         try {
@@ -25,12 +28,15 @@ class CfbDriveBuilder
             return ['state' => 'blocked', 'reason' => 'unreconciled_scoring_ledger', 'error' => $error->getMessage()];
         }
         $previous = DB::table('cfb_drives')->where('game_id', $game->id)->where('source_revision', $check->source_hash)->get();
-        $ledgerRevision = GameDataCheck::where('game_id', $game->id)->where('component', 'boxscore')
-            ->where('state', 'complete')->whereNotNull('accepted_at')->latest('accepted_at')->latest('id')->value('source_hash');
+        $box = app(CfbDataReadiness::class)->acceptedCheck($game, 'boxscore');
+        $ledgerRevision = $box?->source_hash;
+        $boxReceiptId = $box === null ? null : app(CfbSourceAssessmentRecorder::class)->acceptanceReceipt($box)?->id;
         $epaUpdated = $plays->max('epa_calculated_at');
         if ($onlyChanged && $previous->isNotEmpty() && $previous->every(fn ($d) => $d->quality === 'complete'
             && data_get(json_decode($d->data, true), 'normalizer_version') === self::VERSION
-            && data_get(json_decode($d->data, true), 'score_ledger_revision') === $ledgerRevision)
+            && data_get(json_decode($d->data, true), 'score_ledger_revision') === $ledgerRevision
+            && data_get(json_decode($d->data, true), 'play_assessment_receipt_id') === $receiptId
+            && data_get(json_decode($d->data, true), 'boxscore_assessment_receipt_id') === $boxReceiptId)
             && (! $epaUpdated || $epaUpdated->lte(CarbonImmutable::parse($previous->min('updated_at'))))) {
             return ['state' => 'complete', 'drives' => $previous->count(), 'source_revision' => $check->source_hash,
                 'normalizer_version' => self::VERSION, 'score_ledger_revision' => $ledgerRevision, 'reused' => true];
@@ -148,11 +154,21 @@ class CfbDriveBuilder
             $drive['duration_seconds'] = max(0, $this->seconds($drive['start_clock']) - $this->seconds($drive['end_clock']) + 900 * (($drive['end_period'] ?? $drive['period']) - $drive['period']));
             $drive['normalizer_version'] = self::VERSION;
             $drive['score_ledger_revision'] = $ledgerRevision;
+            $drive['play_assessment_receipt_id'] = $receiptId;
+            $drive['boxscore_assessment_receipt_id'] = $boxReceiptId;
             $rows[] = ['game_id' => $game->id, 'source_revision' => $check->source_hash, 'drive_key' => (string) $index,
                 'offense_team_id' => $drive['offense_team_id'], 'quality' => $errors ? 'partial' : 'complete', 'data' => json_encode($drive, JSON_THROW_ON_ERROR), 'created_at' => now(), 'updated_at' => now()];
         }
-        DB::transaction(function () use ($game, $check, $rows) {
-            Game::whereKey($game->id)->lockForUpdate()->firstOrFail();
+        DB::transaction(function () use ($game, $check, $rows, $receiptId, $boxReceiptId) {
+            $locked = Game::whereKey($game->id)->lockForUpdate()->firstOrFail();
+            $current = app(CfbDataReadiness::class)->acceptedCheck($locked, 'plays');
+            $currentBox = app(CfbDataReadiness::class)->acceptedCheck($locked, 'boxscore');
+            $recorder = app(CfbSourceAssessmentRecorder::class);
+            if ($current?->source_hash !== $check->source_hash
+                || ($current === null ? null : $recorder->acceptanceReceipt($current)?->id) !== $receiptId
+                || ($currentBox === null ? null : $recorder->acceptanceReceipt($currentBox)?->id) !== $boxReceiptId) {
+                throw new \DomainException('Accepted CFB assessments changed before drive write.');
+            }
             DB::table('cfb_drives')->where('game_id', $game->id)->where('source_revision', $check->source_hash)->delete();
             foreach (array_chunk($rows, 100) as $chunk) {
                 DB::table('cfb_drives')->insert($chunk);

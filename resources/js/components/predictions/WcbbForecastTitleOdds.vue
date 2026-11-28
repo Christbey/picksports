@@ -1,16 +1,10 @@
 <script setup lang="ts">
+import FuturesQuote from '@/components/predictions/FuturesQuote.vue';
 import { Card, CardContent } from '@/components/ui/card';
 
 import { useWcbbForecastContext } from '@/composables/useWcbbForecast';
-const {
-    formatPct,
-    formatAmericanOdds,
-    toPct,
-    formatTeam,
-    topByTitle,
-    statusTag,
-    statusTagClass,
-} = useWcbbForecastContext();
+const { formatPct, toPct, formatTeam, topByTitle, statusTag, statusTagClass } =
+    useWcbbForecastContext();
 </script>
 <template>
     <div class="grid gap-4 lg:grid-cols-3">
@@ -96,7 +90,7 @@ const {
                         </div>
                         <p class="mt-1 text-[11px] text-muted-foreground">
                             Market
-                            {{ formatAmericanOdds(row.market_odds?.price) }}
+                            <FuturesQuote :quote="row.market_odds" />
                         </p>
                     </div>
                 </div>

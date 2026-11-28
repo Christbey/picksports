@@ -1,6 +1,6 @@
+import { finiteValue as toOptionalNumber } from '@/lib/gameOutcome';
+import type { BasketballTeamStats } from '@/lib/basketballBoxScore';
 import {
-    predictionNumber as toNumber,
-    optionalPredictionNumber as toOptionalNumber,
     normalizePredictionConfidence,
     normalizeNarrativeContent,
     normalizeBasketballBettingPlan,
@@ -22,6 +22,7 @@ import type {
     TeamMetric,
     TeamStatsEntry,
     TopPerformer,
+    ValueSignalSummary,
 } from '@/types';
 
 interface UseBasketballGamePageOptions {
@@ -34,23 +35,6 @@ interface UseBasketballGamePageOptions {
     subtitleText?: (sampleSize: number) => string;
 }
 
-interface BasketballTeamStats {
-    team_type?: 'home' | 'away' | string;
-    field_goals_made: number;
-    field_goals_attempted: number;
-    three_point_made: number;
-    three_point_attempted: number;
-    free_throws_made: number;
-    free_throws_attempted: number;
-    rebounds: number;
-    assists: number;
-    turnovers: number;
-    steals: number;
-    blocks: number;
-    points_in_paint?: number | null;
-    fast_break_points?: number | null;
-}
-
 const normalizeBasketballStats = (
     stats: TeamStatsEntry | null,
 ): BasketballTeamStats | null => {
@@ -59,17 +43,17 @@ const normalizeBasketballStats = (
     return {
         team_type:
             typeof source.team_type === 'string' ? source.team_type : undefined,
-        field_goals_made: toNumber(source.field_goals_made),
-        field_goals_attempted: toNumber(source.field_goals_attempted),
-        three_point_made: toNumber(source.three_point_made),
-        three_point_attempted: toNumber(source.three_point_attempted),
-        free_throws_made: toNumber(source.free_throws_made),
-        free_throws_attempted: toNumber(source.free_throws_attempted),
-        rebounds: toNumber(source.rebounds),
-        assists: toNumber(source.assists),
-        turnovers: toNumber(source.turnovers),
-        steals: toNumber(source.steals),
-        blocks: toNumber(source.blocks),
+        field_goals_made: toOptionalNumber(source.field_goals_made),
+        field_goals_attempted: toOptionalNumber(source.field_goals_attempted),
+        three_point_made: toOptionalNumber(source.three_point_made),
+        three_point_attempted: toOptionalNumber(source.three_point_attempted),
+        free_throws_made: toOptionalNumber(source.free_throws_made),
+        free_throws_attempted: toOptionalNumber(source.free_throws_attempted),
+        rebounds: toOptionalNumber(source.rebounds),
+        assists: toOptionalNumber(source.assists),
+        turnovers: toOptionalNumber(source.turnovers),
+        steals: toOptionalNumber(source.steals),
+        blocks: toOptionalNumber(source.blocks),
         points_in_paint: toOptionalNumber(source.points_in_paint),
         fast_break_points: toOptionalNumber(source.fast_break_points),
     };
@@ -81,8 +65,12 @@ export const normalizePrediction = (
     if (!rawPrediction || typeof rawPrediction !== 'object') return null;
     const source = rawPrediction as Record<string, unknown>;
     if (
-        source.home_win_probability === undefined ||
-        source.away_win_probability === undefined
+        ![
+            'home_win_probability',
+            'away_win_probability',
+            'predicted_spread',
+            'predicted_total',
+        ].some((key) => key in source)
     )
         return null;
 
@@ -108,11 +96,26 @@ export const normalizePrediction = (
           }
         : null;
 
+    const valueSignal = source.value_signal as ValueSignalSummary | null;
     return {
-        home_win_probability: toNumber(source.home_win_probability),
-        away_win_probability: toNumber(source.away_win_probability),
-        predicted_spread: predictionHomeMargin(source) ?? 0,
-        predicted_total: toNumber(source.predicted_total),
+        sport: typeof source.sport === 'string' ? source.sport : undefined,
+        spread_convention: 'home_margin',
+        audit_context:
+            source.audit_context && typeof source.audit_context === 'object'
+                ? (source.audit_context as PredictionSummary['audit_context'])
+                : null,
+        evidence:
+            source.evidence && typeof source.evidence === 'object'
+                ? (source.evidence as PredictionSummary['evidence'])
+                : null,
+        value_signal:
+            valueSignal?.decision_policy_version === 'wcbb-canonical-spread-v1'
+                ? valueSignal
+                : null,
+        home_win_probability: toOptionalNumber(source.home_win_probability),
+        away_win_probability: toOptionalNumber(source.away_win_probability),
+        predicted_spread: predictionHomeMargin(source),
+        predicted_total: toOptionalNumber(source.predicted_total),
         confidence_level: confidenceLevel,
         confidence_context: confidenceContext,
         confidence_score: confidenceScore,
@@ -191,13 +194,13 @@ export function useBasketballGamePage(options: UseBasketballGamePageOptions) {
             : '',
     );
     const trendsSubtitle = computed(() => {
-        const sampleSize =
-            homeTrends.value?.sample_size ||
-            awayTrends.value?.sample_size ||
-            20;
-        return options.subtitleText
-            ? options.subtitleText(sampleSize)
-            : `Based on current season form (${sampleSize} games before this matchup)`;
+        const home = homeTrends.value?.sample_size ?? null;
+        const away = awayTrends.value?.sample_size ?? null;
+        if (home === null || away === null)
+            return `Current-season trend evidence: home ${home ?? 'unavailable'} / away ${away ?? 'unavailable'} games before this matchup`;
+        if (options.subtitleText && home === away)
+            return options.subtitleText(home);
+        return `Current-season trend evidence: home ${home} / away ${away} games before this matchup`;
     });
 
     return {

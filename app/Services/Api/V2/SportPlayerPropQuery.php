@@ -5,7 +5,7 @@ namespace App\Services\Api\V2;
 use App\Models\CFB\Game;
 use App\Services\Api\V2\Concerns\BuildsSportQueries;
 use App\Services\BettingRecommendations\CfbPropEligibility;
-use App\Services\Sports\SportsDateWindowService;
+use App\Services\BettingRecommendations\NflPropCalendarRead;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -47,8 +47,8 @@ class SportPlayerPropQuery
             ->when($context->slug === 'cfb' && ($filters['only_ungraded'] ?? false), fn ($q) => $q->where('is_current', true))
             ->with($this->relationsFor($propModel, $context))
             ->when($filters['search'] ?? null, fn (Builder $query, string $search): Builder => $query->where('player_name', 'like', '%'.$search.'%'))
-            ->when(($filters['game_id'] ?? null) && $this->hasColumn($table, 'game_id'), fn (Builder $query): Builder => $query->where('game_id', $filters['game_id']))
-            ->when(($filters['player_id'] ?? null) && $this->hasColumn($table, 'player_id'), fn (Builder $query): Builder => $query->where('player_id', $filters['player_id']))
+            ->when(isset($filters['game_id']) && $this->hasColumn($table, 'game_id'), fn (Builder $query): Builder => $query->where('game_id', $filters['game_id']))
+            ->when(isset($filters['player_id']) && $this->hasColumn($table, 'player_id'), fn (Builder $query): Builder => $query->where('player_id', $filters['player_id']))
             ->when(($filters['market'] ?? null) && $this->hasColumn($table, 'market'), fn (Builder $query): Builder => $query->where('market', $filters['market']))
             ->when(($filters['bookmaker'] ?? null) && $this->hasColumn($table, 'bookmaker'), fn (Builder $query): Builder => $query->where('bookmaker', $filters['bookmaker']))
             ->when(($filters['recommended_side'] ?? null) && $this->hasColumn($table, 'recommended_side'), fn (Builder $query): Builder => $query->where('recommended_side', $filters['recommended_side']))
@@ -99,9 +99,7 @@ class SportPlayerPropQuery
             }
 
             if ($query->getModel() instanceof \App\Models\NFL\Game && $operator === '=') {
-                $dates = app(SportsDateWindowService::class);
-
-                return $dates->applyGameDateWindow($query, $dates->forDate($date));
+                return app(NflPropCalendarRead::class)->onDate($query, $date);
             }
 
             return $query->whereDate('game_date', $operator, $date);

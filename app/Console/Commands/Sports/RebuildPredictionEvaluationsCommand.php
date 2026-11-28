@@ -4,124 +4,83 @@ namespace App\Console\Commands\Sports;
 
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Predictions\CanonicalTeamGameEvaluator;
-use App\Services\Predictions\PredictionEvaluationRecorder;
+use App\Services\Predictions\LegacyPredictionGradeRecorder;
 use Illuminate\Console\Command;
-use Illuminate\Database\Eloquent\Builder;
 
 class RebuildPredictionEvaluationsCommand extends Command
 {
     protected $signature = 'sports:rebuild-prediction-evaluations
-        {--forecast-source= : canonical or legacy (defaults per sport to its canonical pipeline ownership)}
-        {--sport=* : Sport keys to rebuild (defaults to all)}
-        {--season= : Limit the rebuild to one season}
-        {--limit=0 : Maximum predictions to rebuild across all sports}';
+        {--forecast-source=legacy : Explicit legacy or canonical source; defaults to legacy}
+        {--sport=* : Exactly one sport is required}
+        {--season= : Assert every selected game belongs to this season}
+        {--limit=0 : Optional cap on explicitly selected game IDs, not a history scan}
+        {--game=* : Explicit game IDs, maximum100}
+        {--apply : Apply reviewed bounded repair; default is dry run}';
 
-    protected $description = 'Rebuild historical or canonical prediction evaluations using their source-specific conventions';
+    protected $description = 'Compatibility alias for bounded audited legacy forecast grade/evaluation repair';
 
-    /** @var list<string> */
-    private const SPORTS = ['nba', 'nfl', 'mlb', 'cbb', 'wcbb', 'wnba', 'cfb'];
-
-    public function handle(PredictionEvaluationRecorder $recorder, CanonicalTeamGameEvaluator $canonical, SportContextResolver $contexts): int
+    public function handle(): int
     {
-        $sports = $this->selectedSports();
-        if ($sports === null) {
-            return self::INVALID;
-        }
-
-        $requestedSource = $this->option('forecast-source');
-        if ($requestedSource !== null && ! in_array($requestedSource, ['canonical', 'legacy'], true)) {
-            $this->error('Forecast source must be canonical or legacy.');
-
-            return self::INVALID;
-        }
+        $sports = array_values(array_unique(array_map(fn ($sport) => strtolower(trim((string) $sport)), (array) $this->option('sport'))));
+        $ids = (array) $this->option('game');
+        $limit = (string) $this->option('limit');
         $season = $this->option('season');
-        $limit = max(0, (int) $this->option('limit'));
-        $rebuilt = 0;
-        $canonicalRebuilt = 0;
-        $canonicalSkipped = 0;
+        $source = $this->option('forecast-source');
+        if (! in_array($source, ['legacy', 'canonical'], true) || count($sports) !== 1 || ! in_array($sports[0], LegacyPredictionGradeRecorder::SPORTS, true)
+            || $ids === [] || count($ids) > 100 || ! preg_match('/^[0-9]{1,3}$/D', $limit)
+            || ((int) $limit > 0 && count($ids) > (int) $limit)
+            || array_filter($ids, fn ($id) => ! is_scalar($id) || ! preg_match('/^[1-9][0-9]{0,17}$/D', (string) $id)) !== []
+            || ($season !== null && ! preg_match('/^[0-9]{4}$/D', (string) $season))) {
+            $this->error('Unbounded rebuilds are disabled. Supply exactly one --sport and one to100 explicit --game IDs; omit --apply for a dry run. --limit never selects history.');
 
-        foreach ($sports as $sport) {
-            $context = $contexts->resolve($sport);
-            $source = $requestedSource ?? (config('prediction_lifecycle.canonical_pipeline.'.$sport, false) ? 'canonical' : 'legacy');
-            if ($source === 'canonical') {
-                $gameClass = $context->models['game'];
-                $query = $gameClass::query()->with('sportEvent')->whereNotNull('sport_event_id')
-                    ->where('status', 'STATUS_FINAL')->whereNotNull('home_score')->whereNotNull('away_score')
-                    ->when($season !== null && $season !== '', fn (Builder $query) => $query->where('season', (int) $season));
-                foreach ($query->lazyById(250) as $game) {
-                    if ($canonical->evaluate($game, $sport) === null) {
-                        $canonicalSkipped++;
+            return self::INVALID;
+        }
+        if ($source === 'canonical') {
+            return $this->repairCanonical($sports[0], array_values(array_unique($ids)), $season);
+        }
+        if ($season !== null) {
+            $gameClass = 'App\\Models\\'.strtoupper($sports[0]).'\\Game';
+            if ($gameClass::query()->whereIn('id', $ids)->where('season', (int) $season)->count() !== count(array_unique($ids))) {
+                $this->error('Selected games do not all match the asserted season. Nothing was repaired.');
 
-                        continue;
-                    }
-                    $canonicalRebuilt++;
-                    $rebuilt++;
-                    if ($limit > 0 && $rebuilt >= $limit) {
-                        break 2;
-                    }
-                }
-
-                continue;
-            }
-            $modelClass = $context->models['prediction'];
-            $query = $modelClass::query()
-                ->with('game')
-                ->whereNotNull('graded_at')
-                ->whereHas('game', function (Builder $query) use ($season): void {
-                    $query
-                        ->whereNotNull('home_score')
-                        ->whereNotNull('away_score');
-
-                    if ($season !== null && $season !== '') {
-                        $query->where('season', (int) $season);
-                    }
-                })
-                ->orderBy('id');
-
-            foreach ($query->lazyById(250) as $prediction) {
-                $game = $prediction->game;
-                if ($game === null) {
-                    continue;
-                }
-
-                $actualSpread = (float) $game->home_score - (float) $game->away_score;
-                $actualTotal = (float) $game->home_score + (float) $game->away_score;
-
-                $recorder->record($prediction, $game, $sport, $actualSpread, $actualTotal);
-                $rebuilt++;
-
-                if ($limit > 0 && $rebuilt >= $limit) {
-                    break 2;
-                }
+                return self::INVALID;
             }
         }
 
-        $this->info("Rebuilt {$rebuilt} prediction evaluation rows.");
-        if ($canonicalRebuilt > 0 || $canonicalSkipped > 0) {
-            $this->line("Canonical evaluations: {$canonicalRebuilt}; skipped final games: {$canonicalSkipped}.");
-        }
-
-        return self::SUCCESS;
+        return $this->call('sports:repair-legacy-prediction-grades', [
+            'sport' => $sports[0], '--game' => $ids, '--apply' => (bool) $this->option('apply'),
+        ]);
     }
 
-    /**
-     * @return list<string>|null
-     */
-    private function selectedSports(): ?array
+    /** Existing canonical evidence gates remain authoritative; this selects no history. */
+    private function repairCanonical(string $sport, array $ids, mixed $season): int
     {
-        $requested = array_values(array_unique(array_map(
-            static fn (mixed $sport): string => strtolower(trim((string) $sport)),
-            (array) $this->option('sport')
-        )));
-        $sports = $requested === [] ? self::SPORTS : $requested;
-        $unsupported = array_values(array_diff($sports, self::SPORTS));
+        $context = app(SportContextResolver::class)->resolve($sport);
+        $gameClass = $context->models['game'];
+        $games = $gameClass::query()->with('sportEvent')->whereKey($ids)
+            ->when($season !== null, fn ($query) => $query->where('season', (int) $season))
+            ->orderBy('id')->get();
+        if ($games->count() !== count($ids)) {
+            $this->error('Selected canonical games do not all exist in the asserted scope. Nothing was repaired.');
 
-        if ($unsupported !== []) {
-            $this->error('Unsupported sport keys: '.implode(', ', $unsupported));
-
-            return null;
+            return self::INVALID;
         }
+        if (! $this->option('apply')) {
+            $this->line('Dry run: canonical game IDs '.implode(', ', $games->modelKeys()).'. No evaluations written.');
 
-        return $sports;
+            return self::SUCCESS;
+        }
+        $evaluated = 0;
+        $skipped = 0;
+        foreach ($games as $game) {
+            if (app(CanonicalTeamGameEvaluator::class)->evaluate($game, $sport) === null) {
+                $skipped++;
+            } else {
+                $evaluated++;
+            }
+        }
+        $this->line("Canonical evaluations: {$evaluated}; skipped selected games: {$skipped}.");
+
+        return self::SUCCESS;
     }
 }

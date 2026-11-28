@@ -14,6 +14,8 @@ export const formatColumnValue = (
 ) => {
     const value = entry[column.key as keyof PlayerLeaderboardEntry];
     const numericValue = typeof value === 'number' ? value : undefined;
+    if (numericValue === undefined || !Number.isFinite(numericValue))
+        return '—';
     if (column.format) return column.format(numericValue, entry);
     return Number(numericValue ?? 0).toFixed(1);
 };

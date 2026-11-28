@@ -2,11 +2,12 @@
 
 namespace App\Services\ESPN;
 
+use App\Services\Http\ApprovedHostGet;
+use App\Services\ProviderData\Refresh\RefreshBudget;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
-use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class BaseEspnService
 {
@@ -23,6 +24,16 @@ class BaseEspnService
     protected const PLAYS_ENABLED = true;
 
     protected const WEEKLY_EVENTS_ENABLED = true;
+
+    private ?RefreshBudget $refreshBudget = null;
+
+    public function swapRefreshBudget(?RefreshBudget $budget): ?RefreshBudget
+    {
+        $prior = $this->refreshBudget;
+        $this->refreshBudget = $budget;
+
+        return $prior;
+    }
 
     protected string $sport;
 
@@ -244,8 +255,15 @@ class BaseEspnService
         return $this->get($this->buildUrl('core', 'team_injuries', ['teamId' => $teamId]));
     }
 
+    public function assertRefreshRows(int $count): void
+    {
+        $this->refreshBudget?->rows($count);
+    }
+
     public function getByRef(string $url, bool $useCache = true): ?array
     {
+        $this->refreshBudget?->reference();
+
         return $this->get($url, $useCache);
     }
 
@@ -274,6 +292,19 @@ class BaseEspnService
         bool $useCache = true,
         ?int $maxPayloadBytes = null,
     ): ?array {
+        try {
+            $url = app(ApprovedHostGet::class)->normalize($url, (array) config('espn.transport.allowed_hosts', []), true);
+        } catch (Throwable) {
+            Log::warning('ESPN reference URL refused.', ['sport' => $this->sport]);
+
+            return null;
+        }
+
+        // Fenced acquisition is an actual new observation; legacy cache entries have no acquisition owner/time receipt.
+        if ($this->refreshBudget !== null) {
+            $this->refreshBudget->remaining();
+            $useCache = false;
+        }
         if ($useCache && $this->cacheEnabled) {
             $cacheKey = "espn.{$this->sport}.".md5($url);
             $cache = $this->cacheRepository();
@@ -300,29 +331,19 @@ class BaseEspnService
     protected function fetchFromApi(string $url): ?array
     {
         try {
-            $response = Http::retry(2, 1000, throw: false)
-                ->timeout(20)
-                ->connectTimeout(10)
-                ->get($url);
-        } catch (ConnectionException $exception) {
-            Log::warning('ESPN API connection failed.', [
-                'sport' => $this->sport,
-                'url' => $url,
-                'message' => $exception->getMessage(),
-            ]);
+            $response = app(ApprovedHostGet::class)->get($url, (array) config('espn.transport.allowed_hosts', []),
+                min((int) config('espn.transport.maximum_bytes', 20 * 1024 * 1024), $this->refreshBudget?->responseLimit() ?? PHP_INT_MAX), true, ['Accept' => 'application/json'], true,
+                $this->refreshBudget === null ? null : fn (): float => $this->refreshBudget->remaining());
+            if ($response->successful()) {
+                $this->refreshBudget?->consumeRaw($response->body());
+                $payload = $response->json();
 
-            return null;
+                return is_array($payload) ? $payload : null;
+            }
+            Log::warning('ESPN API request returned a non-success response.', ['sport' => $this->sport, 'status' => $response->status()]);
+        } catch (Throwable $exception) {
+            Log::warning('ESPN API request refused or failed.', ['sport' => $this->sport, 'exception_class' => $exception::class]);
         }
-
-        if ($response->successful()) {
-            return $response->json();
-        }
-
-        Log::warning('ESPN API request returned a non-success response.', [
-            'sport' => $this->sport,
-            'url' => $url,
-            'status' => $response->status(),
-        ]);
 
         return null;
     }

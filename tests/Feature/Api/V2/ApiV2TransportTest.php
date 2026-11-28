@@ -103,3 +103,36 @@ it('redacts server errors that were already returned in an error envelope', func
 
     expect($response->getContent())->not->toContain('sensitive');
 });
+
+it('allowlists server error bodies while retaining transport metadata', function (bool $enveloped) {
+    Route::get('/api/v2/__transport-test/diagnostic-server-error', fn () => response()->json([
+        'message' => 'private diagnostic marker',
+        'error' => $enveloped ? [
+            'code' => 'provider_failure',
+            'message' => 'private diagnostic marker',
+            'context' => ['credential' => 'private diagnostic marker'],
+        ] : 'private diagnostic marker',
+        'errors' => ['provider' => ['private diagnostic marker']],
+        'debug' => ['connection' => 'private diagnostic marker'],
+        'file' => '/private/diagnostic/source.php',
+    ], 503, ['Retry-After' => '60', 'Cache-Control' => 'no-store'])
+        ->cookie('transport_fixture', 'synthetic'));
+
+    $response = $this->withHeader('X-Request-ID', 'server-body-allowlist')
+        ->getJson('/api/v2/__transport-test/diagnostic-server-error')
+        ->assertServiceUnavailable()
+        ->assertHeader('Retry-After', '60')
+        ->assertHeader('X-Request-ID', 'server-body-allowlist')
+        ->assertCookie('transport_fixture')
+        ->assertExactJson([
+            'error' => [
+                'code' => 'service_unavailable',
+                'message' => 'An unexpected error occurred.',
+                'request_id' => 'server-body-allowlist',
+            ],
+            'message' => 'An unexpected error occurred.',
+            'request_id' => 'server-body-allowlist',
+        ]);
+
+    expect($response->headers->get('Cache-Control'))->toContain('no-store');
+})->with(['standard envelope' => true, 'legacy body' => false]);

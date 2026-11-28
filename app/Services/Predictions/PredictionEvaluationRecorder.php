@@ -34,7 +34,7 @@ class PredictionEvaluationRecorder
             ? (float) $prediction->spread_error
             : null;
 
-        PredictionEvaluation::query()->updateOrCreate(
+        PredictionEvaluation::on($prediction->getConnectionName())->updateOrCreate(
             [
                 'prediction_table' => $prediction->getTable(),
                 'prediction_id' => (int) $prediction->getKey(),

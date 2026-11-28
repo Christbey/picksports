@@ -11,6 +11,7 @@ const {
     predictions,
     meta,
     loading,
+    error,
     config,
 } = usePredictionBoardContext();
 </script>
@@ -35,8 +36,11 @@ const {
                 }}<template v-if="seasonType"> · {{ seasonType }}</template>
                 <template v-if="!loading">
                     ·
-                    {{ meta?.total ?? predictions.length }} games</template
-                >
+                    <template v-if="error">Game count unavailable</template>
+                    <template v-else
+                        >{{ meta?.total ?? predictions.length }} games</template
+                    >
+                </template>
                 <span v-if="showSpringTrainingBadge"> · Spring training</span>
             </p>
         </div>

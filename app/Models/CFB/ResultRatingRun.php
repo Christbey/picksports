@@ -2,20 +2,22 @@
 
 namespace App\Models\CFB;
 
+use App\Models\Concerns\RejectsPersistedModelMutation;
 use Illuminate\Database\Eloquent\Model;
 
 class ResultRatingRun extends Model
 {
+    use RejectsPersistedModelMutation;
+
     protected $table = 'cfb_result_rating_runs';
 
     public $timestamps = false;
 
     protected $guarded = [];
 
-    protected static function booted(): void
+    protected function immutableMutationMessage(): string
     {
-        static::updating(fn () => throw new \LogicException('Frozen CFB candidate runs are immutable.'));
-        static::deleting(fn () => throw new \LogicException('Frozen CFB candidate runs are immutable.'));
+        return 'Frozen CFB candidate runs are immutable.';
     }
 
     protected function casts(): array

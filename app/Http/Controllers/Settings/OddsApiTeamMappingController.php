@@ -16,6 +16,7 @@ use App\Services\Settings\CfbdTeamMappingIndexDataService;
 use App\Services\Settings\OddsApiTeamMappingIndexDataService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -163,7 +164,9 @@ class OddsApiTeamMappingController extends Controller
 
             return $this->backSuccess('Odds API team mappings synced successfully for all supported sports.');
         } catch (\Throwable $e) {
-            return $this->backError('Failed to sync Odds API team mappings: '.$e->getMessage());
+            Log::warning('Manual team mapping sync failed.', ['exception_class' => $e::class]);
+
+            return $this->backError('Failed to sync team mappings. Review the operational logs or contact an administrator.');
         }
     }
 }

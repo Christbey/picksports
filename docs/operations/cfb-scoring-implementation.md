@@ -1,3 +1,7 @@
+> Historical proposal/worklog retained on November 27, 2026. The original text below records dated proposals, implementation assertions and measurements; it is not current operating instructions, evidence of completion, or approval to change business/scientific policy. Do not run its historical commands as an operational checklist. Current references: [docs/operations/cfb-pregame-pipeline.md](cfb-pregame-pipeline.md).
+>
+> Carried obligations: Preserve recovery flow and historical package/scientific acceptance separately; do not imply complete historical data/model validation.
+
 # CFB scoring implementation and rollout
 
 September 25, 2026 · Branch `codex/cfb-scoring-pipeline`

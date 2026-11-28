@@ -208,15 +208,18 @@ export function useBracketTournament(
             return null;
         }
 
-        if (participant.id === `team:${game.homeTeam.id}`) {
-            return Math.round(game.prediction.homeWinProbability * 100);
-        }
-
-        if (participant.id === `team:${game.awayTeam.id}`) {
-            return Math.round(game.prediction.awayWinProbability * 100);
-        }
-
-        return null;
+        const probability =
+            participant.id === `team:${game.homeTeam.id}`
+                ? game.prediction.homeWinProbability
+                : participant.id === `team:${game.awayTeam.id}`
+                  ? game.prediction.awayWinProbability
+                  : null;
+        return typeof probability === 'number' &&
+            Number.isFinite(probability) &&
+            probability >= 0 &&
+            probability <= 1
+            ? Math.round(probability * 100)
+            : null;
     };
 
     const slotWinProbabilityClass = (

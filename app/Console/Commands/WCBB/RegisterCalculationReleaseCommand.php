@@ -10,7 +10,7 @@ use Illuminate\Console\Command;
 class RegisterCalculationReleaseCommand extends Command
 {
     protected $signature = 'wcbb:register-calculation-release
-        {--release-version=1.0.0 : Semantic version for the release}
+        {--release-version= : Semantic version for the release}
         {--draft : Register without approval}
         {--effective-at= : Approval effective timestamp}
         {--actor=artisan : Approval actor}

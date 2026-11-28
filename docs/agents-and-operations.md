@@ -18,15 +18,19 @@ Deterministic services own truth:
 
 AI should not decide whether a game is final, calculate model edge from scratch, invent injury context, infer missing odds, or override validation facts. AI can say what the facts mean, what outputs should be blocked, and what action should happen next.
 
-## Production-First Prediction Reviews
+## Production evidence for user questions
 
-When answering live questions such as "How do predictions look today?", use this evidence order:
+Follow [AGENTS.md](../AGENTS.md) for sports analysis. Read existing data through
+the authenticated production API first, using authorized read-only database
+access only when the API is unavailable or lacks required evidence. See
+[production access](operations/production-access.md) and
+[database access](operations/database-access.md).
 
-1. Inspect the repository commands, models, and sport runbook to identify the authoritative score, prediction, evaluation, and settlement paths.
-2. Run the repository's scoreboard synchronization command in the Laravel Cloud production environment before reading or reporting results.
-3. Run the production grading, canonical evaluation, and decision-settlement commands required by the sport runbook. Verify that every command finishes successfully and record its output.
-4. Query production data for the requested sports-date window. Local databases and development snapshots must not support claims about live scores, prediction performance, bet results, or ROI.
-5. Use web research only after the production record is current, and only to add sourced context that the codebase does not contain. Web results must not replace or override production scores, predictions, evaluations, or settlements.
+An ordinary analysis request does not authorize scoreboard synchronization,
+grading, settlement, research generation, or provider refreshes. Report missing,
+stale, incomplete, or inaccessible evidence as such. External research requires
+an explicit user request. Operational recovery commands below are separate
+write workflows, not prerequisites for answering a question.
 
 Report canonical evaluations as the official prediction record. Label legacy grading as a compatibility metric, never as the canonical public record. Always report the W-L-P record for the relevant set of settled predictions or model decisions, including shadow decisions where `is_bet=false`, and label the population clearly. Track profitability separately: `profit_units` represents qualified tracked-bet results, while `metadata.shadow_profit_units` preserves counterfactual profit for shadow and no-bet decisions. Do not describe either field as proof of a real-money sportsbook wager without a separate execution record.
 
@@ -127,7 +131,7 @@ For a paid product, the default posture should be conservative:
 - Missing final status/grading: block historical performance claims.
 - Missing injuries/weather/player props where relevant: block high-confidence language.
 
-`AI_PUBLISHING_GUARDRAILS_ENFORCED=false` currently keeps guardrails in shadow mode. For a paid system, move toward enabling enforcement after monitoring the guardrail report and confirming false positives are acceptable.
+When `AI_PUBLISHING_GUARDRAILS_ENFORCED=false`, guardrails operate in shadow mode. Verify the active configuration before describing enforcement; the example does not establish production state. Enabling enforcement requires its own readiness review.
 
 ## Agent Details
 
@@ -295,18 +299,6 @@ Why this exists:
 
 MLB has date and status risks because ESPN timestamps are UTC while the product needs local venue slate dates. The sentinel repairs and validates recent MLB data before AI analysis and admin reporting.
 
-## Recommended Expansion
-
-To make this system stronger as a paid product:
-
-1. Add sport-specific overrides only when the generic scoreboard/grade/validate sentinel is not enough.
-2. Keep expanding the shared `sports:operations-sentinel --sport=` wrapper instead of creating isolated repair commands.
-3. Move guardrails from shadow to enforced once reports look stable.
-4. Add an AI operations report that groups issues by severity and customer impact.
-5. Add “do not publish” checks at the API/resource layer for failing validation states.
-6. Track agent decisions over time so false positives and missed failures can be reviewed.
-7. Add a customer-facing freshness indicator for premium users.
-
 ## Tests
 
 Important tests:
@@ -314,7 +306,7 @@ Important tests:
 - `tests/Feature/Sports/AiDailyPredictionsCommandTest.php`
 - `tests/Feature/Sports/ReportAiPublishingGuardrailsCommandTest.php`
 - `tests/Feature/Validation/HealthcheckValidateDataCommandTest.php`
-- `tests/Feature/MLB/OperationsSentinelCommandTest.php`
+- `tests/Feature/Sports/OperationsSentinelCommandTest.php`
 - `tests/Feature/ESPN/MLB/FetchGamesFromScoreboardTest.php`
 - `tests/Feature/ESPN/MLB/SyncGamesTest.php`
 
@@ -326,3 +318,24 @@ When adding a new agent, add tests for:
 - no hallucinated fields
 - persistence location
 - admin/reporting visibility
+
+
+## Daily AI command completion checks
+
+The privately reviewed `sports:ai-daily-predictions` command returns nonzero if any requested analysis is unavailable or its intended database write is not confirmed, including partial-success runs. A saved message and processed count require a persisted primary row matching the independently staged request; canceled or altered writes roll back that analysis. Previously saved rows remain saved when another item fails. No-data, dry-run, unchanged-input and intentional withdrawn/changed-canonical skips retain success. Retry without `--force` to retain unchanged-input deduplication; inspect the failed items rather than treating a command start or a skipped count as successful completion. This describes private source, not verified deployment behavior.
+
+
+## NFL pregame metadata ownership
+
+The private candidate rejects malformed explicit game/season selectors before choosing work; `0` is not an omitted selector. `espn:sync-nfl-pregame-metadata` accepts positive day and limit bounds (1–16 days, 1–64 games) and reports failed or deferred work as non-success. Provider IO precedes the Event → Game → stored-team lock sequence. Returned event/season/participant references must agree with the current stored matchup, and canceled or changed writes cannot be acknowledged. Present neutral-site values must be booleans; absent/null values preserve the existing partial-summary contract. An accepted neutral-site change synchronizes the current canonical Event so subsequent input capture uses it. Frozen prior forecasts and their inputs remain unchanged; this is not a claim that every existing forecast is automatically retired or recalculated. These are privately tested behaviors, not a production deployment statement.
+
+The private post-ninth command-input repair distinguishes omitted options from explicitly present valueless options for `cfb:rebuild-elo --activate`, `cbb:repair-tournament-structure --season` and `cfb:build-drives --season/--game`. Supplied selectors require positive integers before any delegated work; malformed, zero, partial, exponent and overflow values fail. Omitted Elo build and configured tournament season remain intentional operations; drive generation still requires a season or game, with supplied scopes intersected. Historical positive seasons remain supported without a new arbitrary year range. This does not change activation/approval policy, run any real action or certify its persistence; portable32/71 mocked-delegate evidence and four-file formatting are separate from those action contracts.
+
+The private post-ninth `team-logos:sync` and `sports-assets:sync` repair treats an omitted sport as intentional all-sport work, but refuses explicit blank/whitespace selectors. After mirroring, each row commits only while its original asset source, team/provider identity and current model owner still match. A cancelled, rewritten or deleted save fails and rolls back that row before an update is counted; an already matching path is not counted twice. The existing bounded-per-request storage transport and per-row commit are separate: earlier successful rows and possible unreferenced mirrored objects remain if a later row fails. No automatic object deletion or whole-batch atomicity is claimed. Scoped40/151portable and31/125after-only MySQL tests used mocked storage, not actual object/provider writes.
+
+
+### Daily digest missing probability fallback
+
+The digest omits a fallback model lean when its stored home win probability is missing. Missing probability must not become a certain away lean. A supported observed zero remains zero, and an existing qualifying recommendation retains its current behavior. When no prediction or player-prop content remains, the public digest builder returns null. This changes neither forecast math nor approval status and performs no provider refresh.
+
+Scoped synthetic SQLite qualification: four focused cases pass (33 assertions), included in the 19-case owning compatibility run (97 assertions); these counts overlap. The recommendation-preservation companion mocks the recommendation boundary and does not certify its producer. No mail, notifications, native database, production delivery, or whole-suite release is certified by this slice.

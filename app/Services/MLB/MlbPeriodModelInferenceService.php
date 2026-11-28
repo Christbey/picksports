@@ -4,6 +4,8 @@ namespace App\Services\MLB;
 
 use App\Models\ModelArtifact;
 use App\Services\ML\ModelArtifactRegistry;
+use App\Support\MLB\MlbGameStart;
+use App\Support\Processes\InferenceProcessEnvironment;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -11,6 +13,8 @@ use Symfony\Component\Process\Process;
 
 class MlbPeriodModelInferenceService
 {
+    public const EXECUTION_FORMAT = 'picksports-period-numeric-v1';
+
     public function __construct(private readonly ModelArtifactRegistry $artifacts) {}
 
     /**
@@ -23,6 +27,12 @@ class MlbPeriodModelInferenceService
             || $artifact->model_type !== 'mlb_period_bundle'
             || ! in_array($artifact->status, ['challenger', 'promotion_eligible', 'promoted'], true)) {
             throw new RuntimeException('Inference requires an active MLB period bundle artifact.');
+        }
+        if (! MlbGameStart::artifactCompatible($artifact)) {
+            throw new RuntimeException('MLB period artifact lacks the current observed-start/source-availability policy.');
+        }
+        if (data_get($artifact->trainingRun?->metadata, 'python_manifest.execution_format') !== self::EXECUTION_FORMAT) {
+            throw new RuntimeException('MLB period inference requires the current numeric execution format.');
         }
         $rows = [];
         foreach ($featuresByMarket as $market => $features) {
@@ -40,11 +50,11 @@ class MlbPeriodModelInferenceService
                 ...$command,
                 'predict-period',
                 '--bundle',
-                $this->artifacts->materializeArtifact($artifact),
+                $this->artifacts->materializeArtifact($artifact, persistCachePath: false, maximumBytes: 33554432),
                 '--input',
                 $input,
             ], (string) config('mlb_ml.process.package_directory'));
-            $process->setEnv(['PYTHONPATH' => base_path('ml/mlb/src')]);
+            $process->setEnv(InferenceProcessEnvironment::forPython(base_path('ml/mlb/src')));
             $process->setTimeout((float) config('mlb_ml.period_models.inference_timeout_seconds', 30));
             $process->mustRun();
             $outputs = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);

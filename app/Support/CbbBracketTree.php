@@ -30,12 +30,12 @@ class CbbBracketTree
         'national_championship' => 'National Championship',
     ];
 
-    public function build(Collection $games, array $picks = [], ?int $season = null): array
+    public function build(Collection $games, array $picks = [], ?int $season = null, bool $includePredictions = true): array
     {
-        (new \Illuminate\Database\Eloquent\Collection($games->all()))->loadMissing(['homeTeam', 'awayTeam']);
+        (new \Illuminate\Database\Eloquent\Collection($games->all()))->loadMissing($includePredictions ? ['homeTeam', 'awayTeam', 'prediction'] : ['homeTeam', 'awayTeam']);
         $season ??= $this->resolveSeason($games);
         $gamePayloads = $games
-            ->map(fn (Game $game) => $this->mapGame($game))
+            ->map(fn (Game $game) => $this->mapGame($game, $includePredictions))
             ->values();
 
         $firstFour = $this->buildFirstFourMatchups($gamePayloads);
@@ -60,7 +60,7 @@ class CbbBracketTree
         return $season ?: (int) now()->year;
     }
 
-    private function mapGame(Game $game): array
+    private function mapGame(Game $game, bool $includePredictions): array
     {
         $homeTeam = $game->homeTeam;
         $awayTeam = $game->awayTeam;
@@ -78,6 +78,9 @@ class CbbBracketTree
             'status' => $game->status,
             'homeScore' => $game->home_score,
             'awayScore' => $game->away_score,
+            'prediction' => $includePredictions && $game->prediction
+                ? CbbBracketWinProbability::from($game->prediction->win_probability)
+                : null,
             'homeTeam' => [
                 'id' => $homeTeam?->id,
                 'name' => $homeName,

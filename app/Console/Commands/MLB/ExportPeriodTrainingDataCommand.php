@@ -11,7 +11,8 @@ class ExportPeriodTrainingDataCommand extends Command
     protected $signature = 'mlb:export-period-training-data
         {--from-season=2021 : First training season}
         {--to-season= : Last training season}
-        {--path=storage/app/ml/mlb_period_training_data.csv : Output CSV path}';
+        {--path=storage/app/ml/mlb_period_training_data.csv : Output CSV path}
+        {--retrospective : Explicitly export reconstructed-now descriptive rows, not point-in-time training evidence}';
 
     protected $description = 'Export point-in-time-safe MLB F3 and F5 matchup features and targets';
 
@@ -32,11 +33,17 @@ class ExportPeriodTrainingDataCommand extends Command
             return self::FAILURE;
         }
 
+        if (! $this->option('retrospective') && $rows->contains(fn (array $row): bool => ($row['pregame_safe'] ?? false) !== true)) {
+            $this->error('Unknown historical availability; use --retrospective only for descriptive exploration, not approved training.');
+
+            return self::FAILURE;
+        }
+
         $path = (string) $this->option('path');
         $absolute = str_starts_with($path, '/') ? $path : base_path($path);
         $csv->write($absolute, $rows);
 
-        $this->info('MLB period training data exported.');
+        $this->info($this->option('retrospective') ? 'Retrospective MLB period data exported; not point-in-time training evidence.' : 'MLB period training data exported.');
         $this->line('Rows: '.$rows->count());
         $this->line('Games: '.$rows->pluck('game_id')->unique()->count());
         $this->line('Dataset SHA-256: '.hash_file('sha256', $absolute));

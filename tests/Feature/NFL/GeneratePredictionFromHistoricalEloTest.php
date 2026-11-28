@@ -589,7 +589,7 @@ it('evaluates expanded nfl bet rule combinations', function () {
         ->and($passOverride['pass_rules'])->toContain('pass_conflicting_or_low_quality');
 });
 
-it('matches validated nfl signal combos from reason codes', function () {
+it('matches historical nfl configuration patterns without certifying their statistics', function () {
     $matches = app(NflValidatedSignalCombos::class)->match([
         'qb_form_signal',
         'recent_matchup_record_context',
@@ -599,8 +599,9 @@ it('matches validated nfl signal combos from reason codes', function () {
 
     expect($matches)->not->toBeEmpty()
         ->and($matches[0]['name'])->toBe('qb_form_matchup_pressure_mismatch')
-        ->and($matches[0]['winner_hit_rate'])->toBe(74.0)
-        ->and($matches[0]['sample_size'])->toBe(123);
+        ->and($matches[0]['winner_hit_rate'])->toBeNull()
+        ->and($matches[0]['sample_size'])->toBe(0)
+        ->and($matches[0]['validation_status'])->toBe('historical_unverified');
 });
 
 it('blends nfl true epa into prediction outputs when rollout is enabled', function () {

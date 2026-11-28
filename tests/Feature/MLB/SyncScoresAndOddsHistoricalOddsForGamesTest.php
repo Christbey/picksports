@@ -28,7 +28,7 @@ it('hydrates historical mlb odds from scores and odds into snapshots and game od
         'name' => 'Reds',
     ]);
 
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2025,
         'season_type' => 2,
         'game_date' => '2025-04-03',

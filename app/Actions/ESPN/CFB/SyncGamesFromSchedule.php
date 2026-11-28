@@ -6,6 +6,7 @@ use App\Actions\ESPN\AbstractSyncGamesFromSchedule;
 use App\DataTransferObjects\ESPN\GameData;
 use App\Models\CFB\Game;
 use App\Models\CFB\Team;
+use App\Support\CFB\CfbGameStart;
 use App\Support\CFB\CfbWeek;
 use Illuminate\Database\Eloquent\Model;
 
@@ -34,6 +35,7 @@ class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
         Model $existingGame
     ): array {
         return [
+            ...CfbGameStart::attributes($rawGame['date'] ?? null, array_replace_recursive(['status' => $rawGame['status'] ?? []], $rawGame['competitions'][0] ?? []), 'espn_schedule', $dto->espnEventId),
             'week' => $this->productWeek($dto, $rawGame),
             'status' => $this->effectiveStatus($dto, $rawGame),
             'home_score' => $dto->homeScore,
@@ -57,6 +59,7 @@ class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
             'season_type' => $dto->seasonType,
             'game_date' => $dateParts['game_date'],
             'game_time' => $dateParts['game_time'],
+            ...CfbGameStart::attributes($rawGame['date'] ?? null, array_replace_recursive(['status' => $rawGame['status'] ?? []], $rawGame['competitions'][0] ?? []), 'espn_schedule', $dto->espnEventId),
             'name' => $dto->name,
             'short_name' => $dto->shortName,
             'home_team_id' => $homeTeam->id,
@@ -85,6 +88,7 @@ class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
     protected function extraPartialGameAttributes(GameData $dto, array $rawGame, ?Model $homeTeam, ?Model $awayTeam): array
     {
         return [
+            ...CfbGameStart::attributes($rawGame['date'] ?? null, array_replace_recursive(['status' => $rawGame['status'] ?? []], $rawGame['competitions'][0] ?? []), 'espn_schedule', $dto->espnEventId),
             'week' => $this->productWeek($dto, $rawGame),
         ];
     }

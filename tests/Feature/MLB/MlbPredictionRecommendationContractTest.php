@@ -6,6 +6,8 @@ use App\Models\MLB\Team;
 use App\Models\User;
 use App\Services\MLB\MlbBettingSignalService;
 use App\Services\MLB\MlbPredictionRecommendationService;
+use App\Services\OddsApi\GameOddsSnapshotRecorder;
+use App\Support\MLB\MlbGameStart;
 use Illuminate\Support\Carbon;
 use Laravel\Sanctum\Sanctum;
 
@@ -294,7 +296,7 @@ function mlbRecommendationContractPrediction(array $predictionOverrides, array $
         'name' => 'Royals',
     ]);
 
-    $game = Game::factory()->create(array_replace([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create(array_replace([
         'season' => 2026,
         'season_type' => config('mlb.season.types.regular'),
         'game_date' => '2026-06-18',
@@ -320,6 +322,12 @@ function mlbRecommendationContractPrediction(array $predictionOverrides, array $
         ],
         'odds_updated_at' => now(),
     ], $gameOverrides));
+
+    if (is_array($game->odds_data) && $game->odds_updated_at !== null) {
+        app(GameOddsSnapshotRecorder::class)->record('mlb', $game,
+            ['id' => 'synthetic-recommendation-'.$game->id, 'commence_time' => MlbGameStart::for($game)->toIso8601String()],
+            $game->odds_data, Carbon::instance(now()), 'test');
+    }
 
     return Prediction::query()->create(array_replace([
         'game_id' => $game->id,

@@ -5,6 +5,7 @@ use App\Models\PredictionMarket;
 use App\Models\SportEvent;
 use App\Models\User;
 use Tests\Support\CanonicalReadFixture;
+use Tests\Support\ObservedMlbGameFixture;
 
 it('keeps every prediction endpoint on the selected source without legacy fallback', function (string $sport) {
     $namespace = strtoupper($sport);
@@ -18,6 +19,9 @@ it('keeps every prediction endpoint on the selected source without legacy fallba
         'status' => 'STATUS_SCHEDULED', 'game_date' => now()->addDay()->utc()->toDateString(),
         'game_time' => now()->addDay()->utc()->toTimeString(),
     ]);
+    if ($sport === 'mlb') {
+        $game = ObservedMlbGameFixture::observe($game, now()->addDay());
+    }
     $legacy = $sport === 'mlb'
         ? $predictionClass::query()->create(['game_id' => $game->id, 'season' => 2026])
         : $predictionClass::factory()->create(['game_id' => $game->id]);
@@ -48,7 +52,8 @@ it('keeps every prediction endpoint on the selected source without legacy fallba
         $this->getJson("{$base}/games/{$game->id}/page")->assertOk()->assertJsonPath('data.prediction', null);
     }
 
-    $run = CanonicalReadFixture::run($event, ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]]);
+    $inputs = ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]];
+    $run = CanonicalReadFixture::run($event->fresh(), $inputs, $sport === 'mlb' ? ObservedMlbGameFixture::snapshotAttributes($game, $inputs) : []);
     $canonical = CanonicalPrediction::factory()->create([
         'sport' => $sport, 'sport_event_id' => $event->id, 'calculation_run_id' => $run->id, 'output_hash' => $run->output_hash, 'generated_at' => $run->inputSnapshot->captured_at,
         'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null,

@@ -4,6 +4,7 @@ namespace App\Actions\NBA;
 
 use App\Actions\Sports\AbstractPredictionGenerator;
 use App\Actions\Sports\Concerns\AppliesTrueEpaPredictionBlend;
+use App\Actions\Sports\Concerns\UsesObservedBasketballNeutralContext;
 use App\Models\NBA\Game;
 use App\Models\NBA\PlayerInjury;
 use App\Models\NBA\Prediction;
@@ -20,6 +21,23 @@ use Illuminate\Database\Eloquent\Model;
 class GeneratePrediction extends AbstractPredictionGenerator
 {
     use AppliesTrueEpaPredictionBlend;
+    use UsesObservedBasketballNeutralContext;
+
+    protected const MODEL_VERSION = 'rules-observed-neutral-v2';
+
+    protected const FEATURE_VERSION = 'core-neutral-observation-v2';
+
+    private bool $usingHistoricalNeutralContext = false;
+
+    public function executeHistorical(Model $game, bool $dispatchNarratives = false, array $snapshotOverrides = []): ?Model
+    {
+        $this->usingHistoricalNeutralContext = true;
+        try {
+            return parent::executeHistorical($game, $dispatchNarratives, $snapshotOverrides);
+        } finally {
+            $this->usingHistoricalNeutralContext = false;
+        }
+    }
 
     /** @var array<string, mixed> Cached metadata for the current prediction */
     private array $metadata = [];
@@ -70,7 +88,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
         $config = config('nba.prediction');
         $oddsMarketAvailability = $this->oddsMarketAvailability($game);
-        $homeCourtAdvantage = $game->neutral_site ? 0 : config('nba.elo.home_court_advantage');
+        $neutralContext = $this->observedNeutralContext($game, 'nba', $this->usingHistoricalNeutralContext);
+        $neutral = $neutralContext['observed_neutral_site'] === true;
+        $homeCourtAdvantage = $neutralContext['effective_home_court_advantage'];
+        $homeCourtPoints = $neutral ? 0.0 : (float) $config['home_court_points'];
 
         // 1. ELO spread component
         $eloSpread = ($homeElo + $homeCourtAdvantage - $awayElo) / $config['elo_to_spread_divisor'];
@@ -78,10 +99,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
         // 2. Efficiency spread component
         $homeNetRating = $homeMetrics?->net_rating ?? 0;
         $awayNetRating = $awayMetrics?->net_rating ?? 0;
-        $efficiencySpread = ($homeNetRating - $awayNetRating) / 2 + ($game->neutral_site ? 0 : $config['home_court_points']);
+        $efficiencySpread = ($homeNetRating - $awayNetRating) / 2 + $homeCourtPoints;
 
         // Apply home/away split adjustment
-        $homeAwaySplitAdj = $game->neutral_site ? 0.0 : $this->calculateHomeAwaySplitAdjustment($game, $homeMetrics, $awayMetrics);
+        $homeAwaySplitAdj = $neutral ? 0.0 : $this->calculateHomeAwaySplitAdjustment($game, $homeMetrics, $awayMetrics);
         $efficiencySpread += $homeAwaySplitAdj * $config['home_away_split_weight'];
 
         // 3. Form spread component
@@ -89,7 +110,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $awayForm = $this->getRecentForm($game->awayTeam, $game->season, $game);
         $homeFormNet = $homeForm['net_rating'];
         $awayFormNet = $awayForm['net_rating'];
-        $formSpread = ($homeFormNet - $awayFormNet) / 2 + ($game->neutral_site ? 0 : $config['home_court_points']);
+        $formSpread = ($homeFormNet - $awayFormNet) / 2 + $homeCourtPoints;
 
         // 4. Situational adjustments
         $restHome = $this->getRestDays($game->homeTeam, $game);
@@ -132,6 +153,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
         // Cache metadata for buildPredictionData
         $this->metadata = [
+            'neutral_context' => $neutralContext,
             'home_recent_form' => $homeFormNet,
             'away_recent_form' => $awayFormNet,
             'rest_days_home' => $restHome,
@@ -211,11 +233,11 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $rawAwayRecentScore = ($awayForm['off_eff'] + $homeForm['def_eff']) / 2;
         $homeRecentScore = $this->sanitizeRecentScoreComponent($rawHomeRecentScore, $homeSeasonScore, $defaultEfficiency);
         $awayRecentScore = $this->sanitizeRecentScoreComponent($rawAwayRecentScore, $awaySeasonScore, $defaultEfficiency);
-        $homeVenueScore = $game->neutral_site ? null : $this->pairedVenueScore(
+        $homeVenueScore = (($this->metadata['neutral_context']['observed_neutral_site'] ?? null) === true) ? null : $this->pairedVenueScore(
             $this->getVenueEfficiency($game->homeTeam, (int) $game->season, 'home', $game),
             $this->getVenueEfficiency($game->awayTeam, (int) $game->season, 'away', $game)
         );
-        $awayVenueScore = $game->neutral_site ? null : $this->pairedVenueScore(
+        $awayVenueScore = (($this->metadata['neutral_context']['observed_neutral_site'] ?? null) === true) ? null : $this->pairedVenueScore(
             $this->getVenueEfficiency($game->awayTeam, (int) $game->season, 'away', $game),
             $this->getVenueEfficiency($game->homeTeam, (int) $game->season, 'home', $game)
         );
@@ -400,6 +422,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
                 'blend_version' => $this->blendVersion(),
                 'model_metadata' => [
                     'model' => 'nba_ensemble',
+                    'neutral_context' => $this->metadata['neutral_context'] ?? [],
                     'true_epa' => $this->trueEpaMetadata,
                     'total_model' => $this->totalMetadata,
                     'injury_model_source' => $this->metadata['injury_model_source'] ?? null,
@@ -470,6 +493,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
                     ]),
                     'model_metadata' => [
                         'model' => 'nba_ensemble',
+                        'neutral_context' => $this->metadata['neutral_context'] ?? [],
                         'true_epa' => $this->trueEpaMetadata,
                         'total_model' => $this->totalMetadata,
                         'injury_model_source' => $this->metadata['injury_model_source'] ?? null,

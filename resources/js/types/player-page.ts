@@ -23,7 +23,7 @@ export interface Player {
         type: string | null;
         return_date: string | null;
         source_updated_at?: string | null;
-    }>;
+    }> | null;
     team: {
         id: number;
         name: string;
@@ -35,9 +35,9 @@ export interface Player {
 export interface PlayerProp {
     id: number;
     market: string;
-    line: number;
-    over_price: number;
-    under_price: number;
+    line: number | null;
+    over_price: number | null;
+    under_price: number | null;
     game: {
         id: number;
         home_team: string;

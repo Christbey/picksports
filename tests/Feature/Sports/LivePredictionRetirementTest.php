@@ -8,12 +8,15 @@ use App\Models\CanonicalPrediction;
 use App\Models\CFB\Prediction;
 use App\Models\EventInputSnapshot;
 use App\Models\LivePredictionSnapshot;
+use App\Models\MLB\Game;
 use App\Models\PredictionMarket;
 use App\Models\SportEvent;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportPredictionReader;
 use App\Services\Predictions\LivePredictionStore;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\ObservedCfbGameFixture;
+use Tests\Support\ObservedMlbGameFixture;
 
 beforeEach(fn () => $this->travelTo('2026-10-28 10:00:00'));
 afterEach(fn () => $this->travelBack());
@@ -29,9 +32,19 @@ function liveRetirementFixture(string $sport = 'nba'): array
         'sport_event_id' => $event->id, 'status' => 'STATUS_SCHEDULED', 'season' => 2026,
         'game_date' => now()->toDateString(), 'game_time' => '11:00:00',
     ]);
+    if ($game instanceof Game) {
+        $game = ObservedMlbGameFixture::observe($game, $event->starts_at);
+    }
+    if ($sport === 'cfb') {
+        $game = ObservedCfbGameFixture::observe($game, $event->starts_at);
+    }
     $release = CalculationRelease::factory()->approved()->create(['sport' => $sport, 'phase' => 'pregame']);
-    $input = EventInputSnapshot::factory()->create(['sport' => $sport, 'inputs' => ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]], 'sport_event_id' => $event->id,
-        'phase' => 'pregame', 'pregame_safety_status' => 'verified', 'captured_at' => now(), 'cutoff_at' => $event->starts_at]);
+    $inputAttributes = ['inputs' => ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]], 'sport' => $sport, 'sport_event_id' => $event->id,
+        'phase' => 'pregame', 'pregame_safety_status' => 'verified', 'captured_at' => now(), 'cutoff_at' => $event->starts_at];
+    if ($game instanceof Game) {
+        $inputAttributes = ObservedMlbGameFixture::snapshotAttributes($game, $inputAttributes['inputs'] ?? []);
+    }
+    $input = EventInputSnapshot::factory()->create($inputAttributes);
     $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
         'calculation_release_id' => $release->id, 'status' => 'succeeded', 'output_hash' => str_repeat('a', 64)]);
     $native = CanonicalPrediction::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id,

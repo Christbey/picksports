@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\PermissionController as AdminPermissionController
 use App\Http\Controllers\Admin\PlayerPropCardExportController as AdminPlayerPropCardExportController;
 use App\Http\Controllers\Admin\SubscriptionController as AdminSubscriptionController;
 use App\Http\Controllers\Admin\TierController as AdminTierController;
+use App\Http\Controllers\Admin\TrainingOperationsController;
 use App\Http\Controllers\Admin\UserOverviewController as AdminUserOverviewController;
 use Illuminate\Support\Facades\Route;
 
@@ -36,6 +37,8 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     ] as [$method, $uri, $action, $name]) {
         Route::$method($uri, $action)->name($name);
     }
+
+    Route::get('/training-operations/{sport}', TrainingOperationsController::class)->whereIn('sport', ['nfl', 'mlb'])->name('training-operations');
 
     Route::resource('tiers', AdminTierController::class)->except(['show']);
 });

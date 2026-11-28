@@ -96,3 +96,11 @@ test('grades props after completed game detail ingestion', function () {
     $sync->execute($this->game->espn_event_id);
     expect($prop->fresh()->graded_at)->not->toBeNull();
 });
+
+test('reports decided over rates separately from football pushes', function () {
+    ($this->prop)('player_receptions', 2);
+    ($this->prop)('player_receptions', 1);
+    $result = app(GradePlayerProps::class)->executeForGame('americanfootball_nfl', $this->game->id);
+    expect($result['graded'])->toBe(2)->and($result['decided_props'])->toBe(1)
+        ->and($result['pushes'])->toBe(1)->and($result['hit_rate'])->toBe(100.0);
+});

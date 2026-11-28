@@ -17,17 +17,17 @@ Start with the smallest relevant source of truth:
 - `docs/codebase-reference.md` for API contracts, shared abstractions, frontend consumers, and sport-domain caveats
 - `docs/calculations-reference.md` for metrics, Elo, prediction, and rating logic
 - `SCHEDULER_REFERENCE.md` for scheduled pipelines and operational expectations
-- `routes/api/sports.php` and `routes/console.php` when the docs and code need to be reconciled
+- `routes/api-v2.php` and `routes/console.php` when the docs and code need to be reconciled
 
-If a doc and code disagree, trust the code.
+If a doc and code disagree, trust the code. These are development-review instructions; sports analysis remains governed by `AGENTS.md` and does not authorize syncs or production writes.
 
 ## When To Activate
 
 Use this skill when work touches any of these areas:
 
-- `app/Http/Controllers/Api/{Sport}` or `app/Http/Controllers/Api/Sports`
-- `app/Http/Resources/{Sport}` or `app/Http/Resources/Sports`
-- `routes/api/sports.php` or sport API route wiring
+- `app/Http/Controllers/Api/V2` or the route's delegated product controller
+- `app/Http/Resources/Api/V2`, `app/Http/Resources/{Sport}`, or `app/Http/Resources/Sports`
+- `routes/api-v2.php` or sport API route wiring
 - `resources/js/composables` or game-page/prediction-page data loading
 - prediction payload fields, permission-gated fields, or by-game prediction responses
 - team metrics filters, season filters, `season_type`, or analytics query semantics
@@ -42,16 +42,17 @@ Use this skill when work touches any of these areas:
 2. Identify shared abstractions first.
    Check whether the change passes through shared layers before editing sport-specific code.
    Priority locations:
-   - `routes/api/sports.php`
-   - `app/Http/Controllers/Api/Sports`
-   - `app/Http/Resources/Sports`
+   - `routes/api-v2.php`
+   - `app/Http/Controllers/Api/V2`
+   - `app/Services/Api/V2` for shared context, queries, reader selection, and presentation
+   - `app/Http/Resources/Api/V2` and `app/Http/Resources/Sports`
    - `app/Actions/Sports`
-   - `resources/js/composables/useDetailedGameData.ts`
+   - `resources/js/composables/useApiV2Client.ts` and the affected sport page composable
 
 3. Check sport-specific exceptions.
    Do not assume every sport behaves the same.
    Common examples:
-   - `games/{game}/prediction` can return either a single object or a one-item collection
+   - check the current by-game prediction envelope and null behavior in `SportPredictionController`, `SportPredictionReader`, and the endpoint contract tests; do not carry forward retired V1 collection assumptions
    - prediction resources are permission-gated and may omit fields
    - metrics filters can be shared in principle but applied differently in concrete controllers
    - depth-chart data is supplemental and may not be equally reliable across sports
@@ -71,7 +72,7 @@ Use this skill when work touches any of these areas:
 6. Verify with focused tests.
    Prefer the smallest tests that prove the contract still holds.
    Typical targets:
-   - `tests/Feature/Api/Sports`
+   - `tests/Feature/Api/V2`
    - sport-specific feature tests under `tests/Feature/{Sport}`
    - resource tests for payload shape
    - calculation or service tests for metric and prediction changes

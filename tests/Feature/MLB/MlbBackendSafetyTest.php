@@ -2,15 +2,16 @@
 
 use App\Actions\MLB\GeneratePrediction;
 use App\Actions\MLB\UpdateLivePrediction;
-use App\Models\GameOddsSnapshot;
 use App\Models\MLB\Game;
 use App\Models\MLB\Prediction;
 use App\Models\MLB\Team;
 use App\Models\MLB\TeamMetric;
 use App\Models\PredictionFeatureSnapshot;
 use App\Services\MLB\MlbPredictionRecommendationService;
+use App\Services\OddsApi\GameOddsSnapshotRecorder;
 use App\Services\Predictions\LivePredictionStore;
 use App\Support\MLB\MlbGamePhase;
+use App\Support\MLB\MlbGameStart;
 use App\Support\MLB\MlbMarketSpread;
 use Illuminate\Support\Carbon;
 
@@ -149,48 +150,38 @@ it('excludes future team metrics during historical prediction generation', funct
 });
 
 it('uses pregame odds snapshots instead of post-start odds for historical predictions', function () {
+    $this->travelTo(Carbon::parse('2026-04-09T12:00:00Z'));
     $home = Team::factory()->create(['location' => 'New York', 'name' => 'Yankees', 'elo_rating' => 1510]);
     $away = Team::factory()->create(['location' => 'Boston', 'name' => 'Red Sox', 'elo_rating' => 1500]);
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2026,
         'season_type' => '2',
-        'status' => 'STATUS_FINAL',
+        'status' => 'STATUS_SCHEDULED',
         'game_date' => '2026-04-10',
         'game_time' => '18:40:00',
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,
-        'home_score' => 4,
-        'away_score' => 2,
+        'home_score' => null,
+        'away_score' => null,
         'odds_data' => spreadTotalOddsData('New York Yankees', 'Boston Red Sox', -2.5, 2.5, 9.5),
     ]);
 
-    GameOddsSnapshot::query()->create([
-        'sport' => 'mlb',
-        'game_table' => 'mlb_games',
-        'game_id' => $game->id,
-        'source' => 'test',
-        'commence_time' => Carbon::parse('2026-04-10 18:40:00', config('app.timezone')),
-        'captured_at' => Carbon::parse('2026-04-10 09:00:00', config('app.timezone')),
-        'payload_hash' => 'pregame',
-        'odds_data' => spreadTotalOddsData('New York Yankees', 'Boston Red Sox', -1.5, 1.5, 8.5),
-    ]);
-
-    GameOddsSnapshot::query()->create([
-        'sport' => 'mlb',
-        'game_table' => 'mlb_games',
-        'game_id' => $game->id,
-        'source' => 'test',
-        'commence_time' => Carbon::parse('2026-04-10 18:40:00', config('app.timezone')),
-        'captured_at' => Carbon::parse('2026-04-10 18:50:00', config('app.timezone')),
-        'payload_hash' => 'post-start',
-        'odds_data' => spreadTotalOddsData('New York Yankees', 'Boston Red Sox', -3.5, 3.5, 10.5),
-    ]);
+    $this->travelTo(Carbon::parse('2026-04-10T14:00:00Z'));
+    app(GameOddsSnapshotRecorder::class)->record('mlb', $game,
+        ['id' => 'synthetic-historical-game', 'commence_time' => MlbGameStart::for($game)->toIso8601String()],
+        spreadTotalOddsData('New York Yankees', 'Boston Red Sox', -1.5, 1.5, 8.5), Carbon::parse('2026-04-10T14:00:00Z'), 'test');
+    $this->travelTo(Carbon::parse('2026-04-10T23:50:00Z'));
+    app(GameOddsSnapshotRecorder::class)->record('mlb', $game,
+        ['id' => 'synthetic-historical-game', 'commence_time' => MlbGameStart::for($game)->toIso8601String()],
+        spreadTotalOddsData('New York Yankees', 'Boston Red Sox', -3.5, 3.5, 10.5), Carbon::parse('2026-04-10T23:50:00Z'), 'test');
+    $this->travelTo(Carbon::parse('2026-04-11T12:00:00Z'));
+    $game->update(['status' => 'STATUS_FINAL', 'home_score' => 4, 'away_score' => 2]);
 
     $prediction = app(GeneratePrediction::class)->executeHistorical($game->fresh(['homeTeam', 'awayTeam']));
 
     expect((float) $prediction->vegas_spread)->toBe(-1.5)
         ->and(data_get($prediction->model_metadata, 'market_context.market_total'))->toBe(8.5)
-        ->and(data_get($prediction->model_metadata, 'market_context.safety.source'))->toBe('pregame_odds_snapshot')
+        ->and(data_get($prediction->model_metadata, 'market_context.safety.source'))->toBe('verified_epoch_odds_snapshot')
         ->and(data_get($prediction->model_metadata, 'market_context.safety.pregame_safe'))->toBeTrue();
 });
 

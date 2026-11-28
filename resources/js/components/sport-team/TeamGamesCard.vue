@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
+import { teamGameStart } from '@/lib/teamPageDates';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { Game } from '@/types';
 
@@ -168,6 +169,11 @@ const statChipsForGame = (game: Game): string[] => {
                         </span>
                         <span class="text-sm text-muted-foreground">
                             {{ formatDate(game.game_date) }}
+                            <span
+                                v-if="teamGameStart(game) === null"
+                                class="block text-xs"
+                                >Time unavailable</span
+                            >
                         </span>
                     </div>
                 </Link>

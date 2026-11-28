@@ -2,6 +2,7 @@
 
 namespace App\Services\NFL;
 
+use App\DataTransferObjects\ESPN\GameData;
 use App\Models\NFL\DepthChartEntry;
 use App\Models\NFL\Game;
 use App\Models\NFL\PlayerInjury;
@@ -52,10 +53,9 @@ class PlayerFuturesProjectionService
         foreach ($aggregates as $aggregate) {
             $position = strtoupper((string) ($aggregate['player']['position'] ?? ''));
             $teamId = (int) ($aggregate['player']['team']['id'] ?? 0);
-            $teamScheduleSummary = $teamSchedule[$teamId] ?? [
-                'games_scheduled' => (int) config('nfl.player_futures.default_regular_season_games', 18),
-                'games_completed' => (int) ($aggregate['games_played'] ?? 0),
-            ];
+            $teamScheduleSummary = $this->projectionScheduleSummary(
+                $season, $teamSchedule[$teamId] ?? null, (int) ($aggregate['games_played'] ?? 0)
+            );
             $remainingGames = max(
                 0,
                 (int) $teamScheduleSummary['games_scheduled'] - (int) $teamScheduleSummary['games_completed']
@@ -132,6 +132,9 @@ class PlayerFuturesProjectionService
                     'team_games_played' => (int) $teamScheduleSummary['games_completed'],
                     'team_games_scheduled' => (int) $teamScheduleSummary['games_scheduled'],
                     'remaining_games' => $remainingGames,
+                    'schedule_coverage' => [...$teamScheduleSummary['coverage'],
+                        'observed_remaining_opponents' => count($remainingOpponents[$teamId] ?? []),
+                    ],
                     'availability_factor' => round($availabilityFactor, 2),
                     'injury_status' => $injuryStatuses[(int) $aggregate['player_id']] ?? null,
                     'archetype' => $archetype,
@@ -215,7 +218,7 @@ class PlayerFuturesProjectionService
             ->join('nfl_games', 'nfl_games.id', '=', 'nfl_player_stats.game_id')
             ->join('nfl_players', 'nfl_players.id', '=', 'nfl_player_stats.player_id')
             ->leftJoin('nfl_teams', 'nfl_teams.id', '=', 'nfl_players.team_id')
-            ->where('nfl_games.status', config('nfl.statuses.final'))
+            ->whereIn('nfl_games.status', GameData::finalStatuses())
             ->where('nfl_games.season', $season)
             ->whereIn('nfl_games.season_type', $this->regularSeasonTypeCandidates())
             ->when($asOfWeek !== null, fn ($query) => $query->where('nfl_games.week', '<=', $asOfWeek))
@@ -256,7 +259,7 @@ class PlayerFuturesProjectionService
 
         $logs = PlayerStat::query()
             ->join('nfl_games', 'nfl_games.id', '=', 'nfl_player_stats.game_id')
-            ->where('nfl_games.status', config('nfl.statuses.final'))
+            ->whereIn('nfl_games.status', GameData::finalStatuses())
             ->where('nfl_games.season', $season)
             ->whereIn('nfl_games.season_type', $this->regularSeasonTypeCandidates())
             ->when($asOfWeek !== null, fn ($query) => $query->where('nfl_games.week', '<=', $asOfWeek))
@@ -360,7 +363,7 @@ class PlayerFuturesProjectionService
                 $summary[$teamId]['games_scheduled']++;
 
                 if (
-                    (string) $game->status === (string) config('nfl.statuses.final')
+                    in_array((string) $game->status, GameData::finalStatuses(), true)
                     && ($asOfWeek === null || (int) ($game->week ?? 0) <= $asOfWeek)
                 ) {
                     $summary[$teamId]['games_completed']++;
@@ -369,6 +372,37 @@ class PlayerFuturesProjectionService
         }
 
         return $summary;
+    }
+
+    /** Inventory cardinality is not proof of complete provider coverage or historical availability. */
+    protected function projectionScheduleSummary(int $season, ?array $observed, int $playerGames): array
+    {
+        $expected = RegularSeasonFuturesResults::gamesPerTeam($season);
+        if ($expected < 1 || $expected > 32) {
+            throw new \LogicException('The internal regular-season games rule is invalid.');
+        }
+        $count = (int) ($observed['games_scheduled'] ?? 0);
+        $completed = (int) ($observed['games_completed'] ?? 0);
+        $status = match (true) {
+            $observed === null => 'missing_inventory',
+            $count < $expected => 'incomplete_inventory',
+            $count === $expected => 'expected_count_present',
+            default => 'unexpected_inventory',
+        };
+
+        return [
+            'games_scheduled' => max($expected, $count),
+            'games_completed' => $observed === null ? $playerGames : $completed,
+            'coverage' => [
+                'status' => $status,
+                'observed_games' => $count,
+                'observed_completed_games' => $completed,
+                'expected_games' => $expected,
+                'expected_games_source' => 'internal_regular_season_rule',
+                'fallback_used' => $count < $expected,
+                'completed_games_source' => $observed === null ? 'player_logs_fallback' : 'stored_game_inventory',
+            ],
+        ];
     }
 
     /**
@@ -510,7 +544,7 @@ class PlayerFuturesProjectionService
             ->when(
                 $asOfWeek !== null,
                 fn ($query) => $query->where('week', '>', $asOfWeek),
-                fn ($query) => $query->where('status', '!=', config('nfl.statuses.final'))
+                fn ($query) => $query->whereNotIn('status', GameData::finalStatuses())
             )
             ->get(['home_team_id', 'away_team_id']);
 

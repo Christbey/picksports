@@ -21,6 +21,10 @@ import {
     buildRelativeSignalMap,
     buildStatRows,
     normalizePercent,
+    observedSignal,
+    formatRelativeSignal,
+    formatExportGameStart,
+    formatExportPercent,
     buildPredictionRows,
     buildFuturesRows,
     buildTournamentRows,
@@ -110,6 +114,12 @@ export function useAdminExports(props: AdminExportProps) {
     );
 
     const applyFilters = () => {
+        if (selectedSport.value !== props.sport) {
+            selectedDate.value = '';
+            selectedGame.value = '';
+            selectedMarket.value = '';
+            selectedSeason.value = '';
+        }
         const query: Record<string, string> = {
             sport: selectedSport.value,
             tab: activeTab.value,
@@ -169,7 +179,7 @@ export function useAdminExports(props: AdminExportProps) {
         buildRelativeSignalMap(
             props.recommendations.map((rec) => ({
                 id: rec.id,
-                value: Math.round(rec.confidence),
+                value: observedSignal(rec.confidence),
             })),
         ),
     );
@@ -178,7 +188,7 @@ export function useAdminExports(props: AdminExportProps) {
         buildRelativeSignalMap(
             props.predictions.map((prediction) => ({
                 id: prediction.id,
-                value: Math.round(normalizePercent(prediction.confidence)),
+                value: observedSignal(normalizePercent(prediction.confidence)),
             })),
         ),
     );
@@ -187,7 +197,7 @@ export function useAdminExports(props: AdminExportProps) {
         buildRelativeSignalMap(
             props.futures.map((row) => ({
                 id: row.id,
-                value: Math.round(row.playoff_make_probability),
+                value: observedSignal(row.playoff_make_probability),
             })),
         ),
     );
@@ -196,27 +206,28 @@ export function useAdminExports(props: AdminExportProps) {
         buildRelativeSignalMap(
             props.tournaments.map((row) => ({
                 id: row.id,
-                value: Math.round(row.tournament_make_probability),
+                value: observedSignal(row.tournament_make_probability),
             })),
         ),
     );
 
     const signalForProp = (rec: Recommendation) =>
-        propSignalMap.value[rec.id] ?? Math.round(rec.confidence);
+        propSignalMap.value[rec.id] ?? observedSignal(rec.confidence);
     const signalForPrediction = (prediction: PredictionExport) =>
         predictionSignalMap.value[prediction.id] ??
-        Math.round(normalizePercent(prediction.confidence));
+        observedSignal(normalizePercent(prediction.confidence));
     const signalForFutures = (row: FuturesExport) =>
         futuresSignalMap.value[row.id] ??
-        Math.round(row.playoff_make_probability);
+        observedSignal(row.playoff_make_probability);
     const signalForTournament = (row: TournamentExport) =>
         tournamentSignalMap.value[row.id] ??
-        Math.round(row.tournament_make_probability);
+        observedSignal(row.tournament_make_probability);
 
+    const receivedSport = computed(() => props.sport);
     const cards = createAdminExportCards({
         activePreset,
         adSafeMode,
-        selectedSport,
+        selectedSport: receivedSport,
         signalForProp,
         signalForPrediction,
         signalForFutures,
@@ -230,7 +241,7 @@ export function useAdminExports(props: AdminExportProps) {
     } = createAdminExportTables({
         props,
         adSafeMode,
-        selectedSport,
+        selectedSport: receivedSport,
         signalForProp,
         signalForPrediction,
         signalForFutures,
@@ -340,6 +351,9 @@ export function useAdminExports(props: AdminExportProps) {
         formatOdds,
         getInitials,
         formatStatNumber,
+        formatRelativeSignal,
+        formatExportGameStart,
+        formatExportPercent,
         buildStatRows,
         buildPredictionRows,
         buildFuturesRows,

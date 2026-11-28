@@ -63,7 +63,7 @@ test('free tier users do not receive email alerts', function () {
 
     $game = Game::factory()->create([
         'game_date' => now()->utc()->addDay()->toDateString(),
-        'game_time' => '18:00:00',
+        'game_time' => now()->utc()->addDay()->format('H:i:s'),
         'odds_updated_at' => now(),
         'status' => 'scheduled',
         'home_team_id' => $homeTeam->id,
@@ -101,6 +101,7 @@ test('free tier users do not receive email alerts', function () {
 });
 
 test('basic tier users receive email alerts for allowed sports', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-11-25 20:00:00', 'America/Chicago'));
     Notification::fake();
 
     $basicTier = SubscriptionTier::where('slug', 'basic')->firstOrFail();
@@ -124,7 +125,7 @@ test('basic tier users receive email alerts for allowed sports', function () {
 
     $game = Game::factory()->create([
         'game_date' => now()->utc()->addDay()->toDateString(),
-        'game_time' => '18:00:00',
+        'game_time' => now()->utc()->addDay()->format('H:i:s'),
         'odds_updated_at' => now(),
         'status' => 'scheduled',
         'home_team_id' => $homeTeam->id,
@@ -286,7 +287,7 @@ test('alert sent records include all required data', function () {
 
     $game = Game::factory()->create([
         'game_date' => now()->utc()->addDay()->toDateString(),
-        'game_time' => '18:00:00',
+        'game_time' => now()->utc()->addDay()->format('H:i:s'),
         'odds_updated_at' => now(),
         'status' => 'scheduled',
         'home_team_id' => $homeTeam->id,
@@ -355,7 +356,7 @@ test('moneyline alerts use win probability edge instead of confidence score', fu
 
     $game = Game::factory()->create([
         'game_date' => now()->utc()->addDay()->toDateString(),
-        'game_time' => '18:00:00',
+        'game_time' => now()->utc()->addDay()->format('H:i:s'),
         'odds_updated_at' => now(),
         'status' => 'scheduled',
         'home_team_id' => $homeTeam->id,
@@ -421,7 +422,7 @@ test('moneyline alerts are not sent on high confidence alone without enough mode
 
     $game = Game::factory()->create([
         'game_date' => now()->utc()->addDay()->toDateString(),
-        'game_time' => '18:00:00',
+        'game_time' => now()->utc()->addDay()->format('H:i:s'),
         'odds_updated_at' => now(),
         'status' => 'scheduled',
         'home_team_id' => $homeTeam->id,
@@ -482,7 +483,7 @@ test('spread alerts use calculator edge instead of confidence score gating', fun
 
     $game = Game::factory()->create([
         'game_date' => now()->utc()->addDay()->toDateString(),
-        'game_time' => '18:00:00',
+        'game_time' => now()->utc()->addDay()->format('H:i:s'),
         'odds_updated_at' => now(),
         'status' => 'scheduled',
         'home_team_id' => $homeTeam->id,

@@ -161,6 +161,9 @@
                     "404": {
                         "$ref": "#/components/responses/NotFound"
                     },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
                     "429": {
                         "$ref": "#/components/responses/RateLimited"
                     }
@@ -2375,6 +2378,9 @@
                     },
                     "422": {
                         "$ref": "#/components/responses/ValidationError"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
                     }
                 },
                 "requestBody": {
@@ -2421,6 +2427,9 @@
                     },
                     "422": {
                         "$ref": "#/components/responses/ValidationError"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
                     }
                 },
                 "requestBody": {
@@ -2716,11 +2725,29 @@
                         }
                     },
                     {
+                        "name": "completed_only",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean",
+                            "description": "Restrict to stored final or full-time games before pagination."
+                        }
+                    },
+                    {
                         "name": "season",
                         "in": "query",
                         "required": false,
                         "schema": {
                             "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "season_type",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 50
                         }
                     },
                     {
@@ -2742,13 +2769,31 @@
                         }
                     },
                     {
+                        "name": "before_game_at",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "description": "Exclusive kickoff cutoff. Use an offset-bearing ISO 8601 timestamp for an unambiguous instant."
+                        }
+                    },
+                    {
+                        "name": "exclude_game_id",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    },
+                    {
                         "name": "per_page",
                         "in": "query",
                         "required": false,
                         "schema": {
                             "type": "integer",
                             "minimum": 1,
-                            "maximum": 100
+                            "maximum": 500
                         }
                     }
                 ],
@@ -2843,50 +2888,6 @@
                                 }
                             ]
                         }
-                    },
-                    {
-                        "name": "status",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "season",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer"
-                        }
-                    },
-                    {
-                        "name": "from_date",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string",
-                            "format": "date"
-                        }
-                    },
-                    {
-                        "name": "to_date",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string",
-                            "format": "date"
-                        }
-                    },
-                    {
-                        "name": "per_page",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 100
-                        }
                     }
                 ],
                 "responses": {
@@ -2919,9 +2920,6 @@
                     },
                     "404": {
                         "$ref": "#/components/responses/NotFound"
-                    },
-                    "422": {
-                        "$ref": "#/components/responses/ValidationError"
                     }
                 },
                 "security": [
@@ -3065,50 +3063,6 @@
                                 }
                             ]
                         }
-                    },
-                    {
-                        "name": "status",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "season",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer"
-                        }
-                    },
-                    {
-                        "name": "from_date",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string",
-                            "format": "date"
-                        }
-                    },
-                    {
-                        "name": "to_date",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string",
-                            "format": "date"
-                        }
-                    },
-                    {
-                        "name": "per_page",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 100
-                        }
                     }
                 ],
                 "responses": {
@@ -3141,9 +3095,6 @@
                     },
                     "404": {
                         "$ref": "#/components/responses/NotFound"
-                    },
-                    "422": {
-                        "$ref": "#/components/responses/ValidationError"
                     }
                 },
                 "security": [
@@ -3566,50 +3517,6 @@
                                 }
                             ]
                         }
-                    },
-                    {
-                        "name": "status",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "season",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer"
-                        }
-                    },
-                    {
-                        "name": "from_date",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string",
-                            "format": "date"
-                        }
-                    },
-                    {
-                        "name": "to_date",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string",
-                            "format": "date"
-                        }
-                    },
-                    {
-                        "name": "per_page",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 100
-                        }
                     }
                 ],
                 "responses": {
@@ -3642,9 +3549,6 @@
                     },
                     "404": {
                         "$ref": "#/components/responses/NotFound"
-                    },
-                    "422": {
-                        "$ref": "#/components/responses/ValidationError"
                     }
                 },
                 "security": [
@@ -3689,14 +3593,8 @@
                         "in": "path",
                         "required": true,
                         "schema": {
-                            "oneOf": [
-                                {
-                                    "type": "integer"
-                                },
-                                {
-                                    "type": "string"
-                                }
-                            ]
+                            "type": "integer",
+                            "minimum": 1
                         }
                     },
                     {
@@ -3704,7 +3602,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 100
                         }
                     },
                     {
@@ -3748,7 +3647,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": 1
                         }
                     },
                     {
@@ -3756,7 +3656,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": 1
                         }
                     },
                     {
@@ -3764,7 +3665,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 100
                         }
                     },
                     {
@@ -3772,7 +3674,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 100
                         }
                     },
                     {
@@ -3780,7 +3683,21 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 20
+                        }
+                    },
+                    {
+                        "name": "only_ungraded",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "enum": [
+                                0,
+                                1
+                            ],
+                            "description": "Use 0 or 1; CFB additionally restricts to current prop revisions."
                         }
                     },
                     {
@@ -3880,50 +3797,6 @@
                                 }
                             ]
                         }
-                    },
-                    {
-                        "name": "status",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "season",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer"
-                        }
-                    },
-                    {
-                        "name": "from_date",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string",
-                            "format": "date"
-                        }
-                    },
-                    {
-                        "name": "to_date",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string",
-                            "format": "date"
-                        }
-                    },
-                    {
-                        "name": "per_page",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 100
-                        }
                     }
                 ],
                 "responses": {
@@ -3956,9 +3829,6 @@
                     },
                     "404": {
                         "$ref": "#/components/responses/NotFound"
-                    },
-                    "422": {
-                        "$ref": "#/components/responses/ValidationError"
                     }
                 },
                 "security": [
@@ -4103,11 +3973,12 @@
                         }
                     },
                     {
-                        "name": "status",
+                        "name": "games",
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "string"
+                            "type": "integer",
+                            "minimum": 1
                         }
                     },
                     {
@@ -4119,31 +3990,20 @@
                         }
                     },
                     {
-                        "name": "from_date",
+                        "name": "season_type",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "before_date",
                         "in": "query",
                         "required": false,
                         "schema": {
                             "type": "string",
                             "format": "date"
-                        }
-                    },
-                    {
-                        "name": "to_date",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string",
-                            "format": "date"
-                        }
-                    },
-                    {
-                        "name": "per_page",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 100
                         }
                     }
                 ],
@@ -4224,7 +4084,25 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "boolean"
+                            "type": "integer",
+                            "enum": [
+                                0,
+                                1
+                            ],
+                            "description": "Use 0 or 1 for this query-string flag."
+                        }
+                    },
+                    {
+                        "name": "actionable",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "enum": [
+                                0,
+                                1
+                            ],
+                            "description": "Use 0 or 1 for this query-string flag."
                         }
                     },
                     {
@@ -4241,6 +4119,16 @@
                         "required": false,
                         "schema": {
                             "type": "string"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 500
                         }
                     }
                 ],
@@ -4672,7 +4560,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 100
                         }
                     },
                     {
@@ -4716,7 +4605,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": 1
                         }
                     },
                     {
@@ -4724,7 +4614,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": 1
                         }
                     },
                     {
@@ -4732,7 +4623,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 100
                         }
                     },
                     {
@@ -4740,7 +4632,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 100
                         }
                     },
                     {
@@ -4748,7 +4641,21 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 20
+                        }
+                    },
+                    {
+                        "name": "only_ungraded",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "enum": [
+                                0,
+                                1
+                            ],
+                            "description": "Use 0 or 1; CFB additionally restricts to current prop revisions."
                         }
                     },
                     {
@@ -5053,7 +4960,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 100
                         }
                     },
                     {
@@ -5097,7 +5005,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": 1
                         }
                     },
                     {
@@ -5105,7 +5014,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": 1
                         }
                     },
                     {
@@ -5113,7 +5023,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 100
                         }
                     },
                     {
@@ -5121,7 +5032,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 100
                         }
                     },
                     {
@@ -5129,7 +5041,21 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 20
+                        }
+                    },
+                    {
+                        "name": "only_ungraded",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "enum": [
+                                0,
+                                1
+                            ],
+                            "description": "Use 0 or 1; CFB additionally restricts to current prop revisions."
                         }
                     },
                     {
@@ -5591,14 +5517,8 @@
                         "in": "path",
                         "required": true,
                         "schema": {
-                            "oneOf": [
-                                {
-                                    "type": "integer"
-                                },
-                                {
-                                    "type": "string"
-                                }
-                            ]
+                            "type": "integer",
+                            "minimum": 1
                         }
                     },
                     {
@@ -5606,7 +5526,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 100
                         }
                     },
                     {
@@ -5650,7 +5571,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": 1
                         }
                     },
                     {
@@ -5658,7 +5580,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": 1
                         }
                     },
                     {
@@ -5666,7 +5589,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 100
                         }
                     },
                     {
@@ -5674,7 +5598,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 100
                         }
                     },
                     {
@@ -5682,7 +5607,21 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 20
+                        }
+                    },
+                    {
+                        "name": "only_ungraded",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "enum": [
+                                0,
+                                1
+                            ],
+                            "description": "Use 0 or 1; CFB additionally restricts to current prop revisions."
                         }
                     },
                     {
@@ -5781,7 +5720,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
+                            "type": "string",
+                            "maxLength": 50
                         }
                     },
                     {
@@ -5789,7 +5729,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": 0
                         }
                     },
                     {
@@ -5823,7 +5764,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": 1
                         }
                     },
                     {
@@ -5831,7 +5773,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": 1
                         }
                     },
                     {
@@ -5858,6 +5801,43 @@
                             "type": "integer",
                             "minimum": 1,
                             "maximum": 100
+                        }
+                    },
+                    {
+                        "name": "view",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "startup",
+                                "board",
+                                "live"
+                            ],
+                            "description": "CFB only. startup excludes explicit season, season_type, week and date filters. Other sports reject this parameter."
+                        }
+                    },
+                    {
+                        "name": "board_version",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$",
+                            "description": "CFB only; accepted only with view=live. Identifies the board snapshot, not a model approval."
+                        }
+                    },
+                    {
+                        "name": "has_value",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "enum": [
+                                0,
+                                1
+                            ],
+                            "description": "Use 0 or 1 for this query-string flag."
                         }
                     }
                 ],
@@ -5946,7 +5926,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
+                            "type": "string",
+                            "maxLength": 50
                         }
                     },
                     {
@@ -5954,7 +5935,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": 0
                         }
                     },
                     {
@@ -5988,7 +5970,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": 1
                         }
                     },
                     {
@@ -5996,7 +5979,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": 1
                         }
                     },
                     {
@@ -6023,6 +6007,43 @@
                             "type": "integer",
                             "minimum": 1,
                             "maximum": 100
+                        }
+                    },
+                    {
+                        "name": "view",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "startup",
+                                "board",
+                                "live"
+                            ],
+                            "description": "CFB only. startup excludes explicit season, season_type, week and date filters. Other sports reject this parameter."
+                        }
+                    },
+                    {
+                        "name": "board_version",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$",
+                            "description": "CFB only; accepted only with view=live. Identifies the board snapshot, not a model approval."
+                        }
+                    },
+                    {
+                        "name": "has_value",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "enum": [
+                                0,
+                                1
+                            ],
+                            "description": "Use 0 or 1 for this query-string flag."
                         }
                     }
                 ],
@@ -7528,7 +7549,10 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9999,
+                            "description": "Explicit stored completed season. Omitted resolves to the latest stored completed season within the selected phase and requested team."
                         }
                     },
                     {
@@ -7536,25 +7560,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
-                        }
-                    },
-                    {
-                        "name": "team_id",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer"
-                        }
-                    },
-                    {
-                        "name": "per_page",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 100
+                            "type": "string",
+                            "description": "Configured phase code/key/name for the selected sport, or all. Omitted uses the configured team-metric phase; resolved scope is returned."
                         }
                     }
                 ],
@@ -7891,45 +7898,32 @@
                         }
                     },
                     {
-                        "name": "conference",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "division",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "league",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "search",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "per_page",
+                        "name": "season",
                         "in": "query",
                         "required": false,
                         "schema": {
                             "type": "integer",
                             "minimum": 1,
-                            "maximum": 100
+                            "maximum": 9999
+                        }
+                    },
+                    {
+                        "name": "season_type",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "description": "Configured phase code/key/name or a supported legacy phase name; canonical code is returned. all is not supported."
+                        }
+                    },
+                    {
+                        "name": "before_date",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "format": "date",
+                            "description": "Exclusive stored game calendar-date cutoff for completed stat samples, not a historical depth-chart observation instant."
                         }
                     }
                 ],
@@ -8183,11 +8177,29 @@
                         }
                     },
                     {
+                        "name": "completed_only",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean",
+                            "description": "Restrict to stored final or full-time games before pagination."
+                        }
+                    },
+                    {
                         "name": "season",
                         "in": "query",
                         "required": false,
                         "schema": {
                             "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "season_type",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 50
                         }
                     },
                     {
@@ -8209,13 +8221,31 @@
                         }
                     },
                     {
+                        "name": "before_game_at",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "description": "Exclusive kickoff cutoff. Use an offset-bearing ISO 8601 timestamp for an unambiguous instant."
+                        }
+                    },
+                    {
+                        "name": "exclude_game_id",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    },
+                    {
                         "name": "per_page",
                         "in": "query",
                         "required": false,
                         "schema": {
                             "type": "integer",
                             "minimum": 1,
-                            "maximum": 100
+                            "maximum": 500
                         }
                     }
                 ],
@@ -8564,7 +8594,10 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9999,
+                            "description": "Explicit stored completed season. Omitted resolves to the latest stored completed season within the selected phase and requested team."
                         }
                     },
                     {
@@ -8572,25 +8605,8 @@
                         "in": "query",
                         "required": false,
                         "schema": {
-                            "type": "integer"
-                        }
-                    },
-                    {
-                        "name": "team_id",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer"
-                        }
-                    },
-                    {
-                        "name": "per_page",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 100
+                            "type": "string",
+                            "description": "Configured phase code/key/name for the selected sport, or all. Omitted uses the configured team-metric phase; resolved scope is returned."
                         }
                     }
                 ],
@@ -8623,7 +8639,32 @@
                         "$ref": "#/components/responses/Forbidden"
                     },
                     "404": {
-                        "$ref": "#/components/responses/NotFound"
+                        "description": "No completed samples in the resolved scope, or unsupported sport/resource.",
+                        "headers": {
+                            "X-Request-ID": {
+                                "description": "Request correlation identifier accepted from a safe client value or generated by the server.",
+                                "schema": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128,
+                                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "oneOf": [
+                                        {
+                                            "$ref": "#/components/schemas/ApiErrorResponse"
+                                        },
+                                        {
+                                            "$ref": "#/components/schemas/TeamStatAverageNotFound"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
                     },
                     "422": {
                         "$ref": "#/components/responses/ValidationError"
@@ -9354,6 +9395,14 @@
                             "null"
                         ],
                         "maxLength": 120
+                    },
+                    "token_profile": {
+                        "type": "string",
+                        "enum": [
+                            "interactive",
+                            "read_only"
+                        ],
+                        "default": "interactive"
                     }
                 },
                 "additionalProperties": false
@@ -9407,6 +9456,14 @@
                             "null"
                         ],
                         "maxLength": 120
+                    },
+                    "token_profile": {
+                        "type": "string",
+                        "enum": [
+                            "interactive",
+                            "read_only"
+                        ],
+                        "default": "interactive"
                     }
                 },
                 "additionalProperties": false
@@ -9850,7 +9907,12 @@
                 "required": [
                     "token_type",
                     "access_token",
-                    "user"
+                    "user",
+                    "token_profile",
+                    "abilities",
+                    "expires_at",
+                    "expires_epoch",
+                    "expires_in"
                 ],
                 "properties": {
                     "token_type": {
@@ -9862,6 +9924,41 @@
                     },
                     "user": {
                         "$ref": "#/components/schemas/AuthUser"
+                    },
+                    "token_profile": {
+                        "type": "string",
+                        "enum": [
+                            "legacy_interactive",
+                            "interactive",
+                            "read_only"
+                        ]
+                    },
+                    "abilities": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "expires_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Exact UTC expiry; null while legacy issuance remains active."
+                    },
+                    "expires_epoch": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "expires_in": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 0
                     }
                 },
                 "additionalProperties": false
@@ -10524,6 +10621,7 @@
                     "throwing_hand",
                     "headshot_url",
                     "team",
+                    "active_injuries",
                     "created_at",
                     "updated_at"
                 ],
@@ -10567,6 +10665,76 @@
                             "null"
                         ],
                         "additionalProperties": true
+                    },
+                    "active_injuries": {
+                        "type": [
+                            "array",
+                            "null"
+                        ],
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "id",
+                                "status",
+                                "detail",
+                                "type",
+                                "return_date",
+                                "source_updated_at",
+                                "source_updated_at_raw",
+                                "source_clock_status"
+                            ],
+                            "properties": {
+                                "id": {
+                                    "type": [
+                                        "integer",
+                                        "null"
+                                    ]
+                                },
+                                "status": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "detail": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "type": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "return_date": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "date"
+                                },
+                                "source_updated_at": {
+                                    "type": "null",
+                                    "description": "No qualified observation instant is available for legacy injury clocks."
+                                },
+                                "source_updated_at_raw": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "source_clock_status": {
+                                    "type": "string",
+                                    "enum": [
+                                        "unverified_storage_clock"
+                                    ]
+                                }
+                            },
+                            "additionalProperties": false
+                        },
+                        "description": "Stored active injury observations for detail reads; null when coverage was not loaded. Empty does not establish complete provider coverage."
                     },
                     "created_at": {
                         "type": [
@@ -10721,6 +10889,10 @@
                             "null"
                         ],
                         "format": "date-time"
+                    },
+                    "is_current": {
+                        "type": "boolean",
+                        "description": "Present for CFB prop revisions; omitted by other sports."
                     }
                 },
                 "additionalProperties": false
@@ -10760,6 +10932,7 @@
                     "away_win_probability",
                     "win_probability",
                     "predicted_spread",
+                    "spread_convention",
                     "predicted_total",
                     "confidence_score",
                     "confidence_level",
@@ -10851,6 +11024,13 @@
                     "away_win_probability": {},
                     "win_probability": {},
                     "predicted_spread": {},
+                    "spread_convention": {
+                        "type": "string",
+                        "enum": [
+                            "home_margin",
+                            "home_handicap"
+                        ]
+                    },
                     "predicted_total": {},
                     "confidence_score": {},
                     "confidence_level": {},
@@ -10867,7 +11047,25 @@
                             "additionalProperties": true
                         }
                     },
-                    "cfb_signal_context": {},
+                    "cfb_signal_context": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "closing_market_evidence": {
+                                "oneOf": [
+                                    {
+                                        "$ref": "#/components/schemas/CfbClosingMarketEvidence"
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ]
+                            }
+                        },
+                        "additionalProperties": true
+                    },
                     "home_elo": {},
                     "away_elo": {},
                     "home_team_elo": {},
@@ -10951,6 +11149,246 @@
                             "number",
                             "null"
                         ]
+                    }
+                },
+                "additionalProperties": false
+            },
+            "CfbClosingMarketEvidence": {
+                "type": "object",
+                "required": [
+                    "type",
+                    "phase",
+                    "availability_status",
+                    "reason_codes",
+                    "source_integrity_status",
+                    "receipt_id",
+                    "revision",
+                    "entry_snapshot_id",
+                    "observed_at",
+                    "source_max_captured_at",
+                    "timestamp_policy",
+                    "output",
+                    "source_quotes"
+                ],
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "const": "closing_market_v1"
+                    },
+                    "phase": {
+                        "type": "string",
+                        "const": "postgame"
+                    },
+                    "availability_status": {
+                        "type": "string",
+                        "enum": [
+                            "available",
+                            "unavailable"
+                        ]
+                    },
+                    "reason_codes": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "source_integrity_status": {
+                        "type": "string",
+                        "enum": [
+                            "verified_capture_v2",
+                            "legacy_unverified",
+                            "mismatch"
+                        ]
+                    },
+                    "receipt_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "revision": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "entry_snapshot_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "observed_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "source_max_captured_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "timestamp_policy": {
+                        "type": "string"
+                    },
+                    "output": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "required": [
+                                    "closing_bookmaker_home_line",
+                                    "closing_home_margin",
+                                    "closing_captured_at",
+                                    "closing_line_value_points",
+                                    "closing_line_value_bucket"
+                                ],
+                                "properties": {
+                                    "closing_bookmaker_home_line": {
+                                        "type": [
+                                            "number",
+                                            "null"
+                                        ]
+                                    },
+                                    "closing_home_margin": {
+                                        "type": [
+                                            "number",
+                                            "null"
+                                        ]
+                                    },
+                                    "closing_captured_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    },
+                                    "closing_line_value_points": {
+                                        "type": [
+                                            "number",
+                                            "null"
+                                        ]
+                                    },
+                                    "closing_line_value_bucket": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    }
+                                },
+                                "additionalProperties": false
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "source_quotes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "id",
+                                "source",
+                                "bookmaker_key",
+                                "market_key",
+                                "side",
+                                "participant",
+                                "line",
+                                "bookmaker_home_line",
+                                "price",
+                                "claimed_quote_hash",
+                                "captured_at_stored",
+                                "created_at_stored",
+                                "captured_at_interpreted",
+                                "timestamp_policy"
+                            ],
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                },
+                                "source": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "bookmaker_key": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "market_key": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "side": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "participant": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "line": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "bookmaker_home_line": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "price": {
+                                    "type": [
+                                        "integer",
+                                        "null"
+                                    ]
+                                },
+                                "claimed_quote_hash": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "captured_at_stored": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "created_at_stored": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "captured_at_interpreted": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "date-time"
+                                },
+                                "timestamp_policy": {
+                                    "type": "string"
+                                }
+                            },
+                            "additionalProperties": false
+                        }
                     }
                 },
                 "additionalProperties": false
@@ -11378,7 +11816,9 @@
                     "is_active",
                     "updated_at",
                     "team_abbreviation",
-                    "player_name"
+                    "player_name",
+                    "is_stale",
+                    "source_clock_status"
                 ],
                 "properties": {
                     "id": {},
@@ -11389,7 +11829,13 @@
                     "type": {},
                     "injury_date": {},
                     "return_date": {},
-                    "source_updated_at": {},
+                    "source_updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Stored provider clock text with unverified timezone, not an observation instant."
+                    },
                     "is_active": {},
                     "updated_at": {},
                     "team_abbreviation": {},
@@ -11402,7 +11848,18 @@
                     "expected_impact": {},
                     "impact_level": {},
                     "source": {},
-                    "is_stale": {}
+                    "is_stale": {
+                        "type": [
+                            "boolean",
+                            "null"
+                        ]
+                    },
+                    "source_clock_status": {
+                        "type": "string",
+                        "enum": [
+                            "unverified_storage_clock"
+                        ]
+                    }
                 },
                 "additionalProperties": false
             },
@@ -11420,7 +11877,22 @@
                         }
                     },
                     "meta": {
-                        "$ref": "#/components/schemas/SportMeta"
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/SportMeta"
+                            },
+                            {
+                                "type": "object",
+                                "required": [
+                                    "freshness"
+                                ],
+                                "properties": {
+                                    "freshness": {
+                                        "$ref": "#/components/schemas/InjuryObservationFreshness"
+                                    }
+                                }
+                            }
+                        ]
                     }
                 },
                 "additionalProperties": false
@@ -11490,7 +11962,148 @@
                 "type": "array",
                 "items": {
                     "type": "object",
-                    "additionalProperties": true
+                    "properties": {
+                        "points_per_game": {
+                            "type": [
+                                "number",
+                                "null"
+                            ]
+                        },
+                        "rebounds_per_game": {
+                            "type": [
+                                "number",
+                                "null"
+                            ]
+                        },
+                        "assists_per_game": {
+                            "type": [
+                                "number",
+                                "null"
+                            ]
+                        },
+                        "turnovers_per_game": {
+                            "type": [
+                                "number",
+                                "null"
+                            ]
+                        },
+                        "steals_per_game": {
+                            "type": [
+                                "number",
+                                "null"
+                            ]
+                        },
+                        "blocks_per_game": {
+                            "type": [
+                                "number",
+                                "null"
+                            ]
+                        },
+                        "three_pointers_made_per_game": {
+                            "type": [
+                                "number",
+                                "null"
+                            ]
+                        },
+                        "minutes_per_game": {
+                            "type": [
+                                "number",
+                                "null"
+                            ]
+                        },
+                        "field_goals_made_per_game": {
+                            "type": [
+                                "number",
+                                "null"
+                            ]
+                        },
+                        "field_goals_attempted_per_game": {
+                            "type": [
+                                "number",
+                                "null"
+                            ]
+                        },
+                        "free_throws_made_per_game": {
+                            "type": [
+                                "number",
+                                "null"
+                            ]
+                        },
+                        "free_throws_attempted_per_game": {
+                            "type": [
+                                "number",
+                                "null"
+                            ]
+                        },
+                        "field_goal_percentage": {
+                            "type": [
+                                "number",
+                                "null"
+                            ]
+                        },
+                        "three_point_percentage": {
+                            "type": [
+                                "number",
+                                "null"
+                            ]
+                        },
+                        "free_throw_percentage": {
+                            "type": [
+                                "number",
+                                "null"
+                            ]
+                        },
+                        "estimated_epa_per_game": {
+                            "type": [
+                                "number",
+                                "null"
+                            ]
+                        },
+                        "estimated_epa_per_36": {
+                            "type": [
+                                "number",
+                                "null"
+                            ]
+                        },
+                        "field_samples": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer",
+                                "minimum": 0
+                            },
+                            "description": "Basketball non-null observation counts for each stored field."
+                        },
+                        "complete_box_score_games": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Basketball rows with all required proxy counts present and consistent. Estimated EPA is unavailable unless every included row qualifies."
+                        },
+                        "minutes_samples": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Basketball rows with a valid observed minutes value, including zero. Per36 additionally requires positive minutes and a complete matching cohort."
+                        },
+                        "shooting_samples": {
+                            "type": "object",
+                            "properties": {
+                                "field_goals": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                },
+                                "three_point": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                },
+                                "free_throws": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    },
+                    "additionalProperties": true,
+                    "description": "Sport-specific leaderboard rows. Basketball averages preserve unknown observations as null and disclose their sample counts; other sports retain their own aggregate contracts."
                 }
             },
             "SportDepthChartResponse": {
@@ -11659,9 +12272,25 @@
                                     "blocked",
                                     "failed"
                                 ]
+                            },
+                            "run_id": {
+                                "type": "string"
+                            },
+                            "message": {
+                                "type": "string"
+                            },
+                            "requested_by": {
+                                "type": "integer"
+                            },
+                            "updated_at": {
+                                "type": "string",
+                                "format": "date-time"
                             }
                         },
                         "additionalProperties": false
+                    },
+                    "message": {
+                        "type": "string"
                     }
                 },
                 "additionalProperties": false
@@ -12262,6 +12891,10 @@
                     "game",
                     "projection",
                     "source_updated_at",
+                    "record_updated_at",
+                    "record_updated_at_raw",
+                    "record_clock_status",
+                    "source_clock_status",
                     "generated_at",
                     "provisional",
                     "model_kind",
@@ -12282,11 +12915,24 @@
                         "additionalProperties": true
                     },
                     "source_updated_at": {
+                        "type": "null",
+                        "description": "No qualified provider observation instant is available."
+                    },
+                    "record_updated_at": {
+                        "type": "null",
+                        "description": "Unqualified stored record text is not an observation instant."
+                    },
+                    "record_updated_at_raw": {
                         "type": [
                             "string",
                             "null"
-                        ],
-                        "format": "date-time"
+                        ]
+                    },
+                    "record_clock_status": {
+                        "const": "unverified_storage_clock"
+                    },
+                    "source_clock_status": {
+                        "const": "observation_unavailable"
                     },
                     "generated_at": {
                         "type": "string",
@@ -12515,7 +13161,22 @@
                         "$ref": "#/components/schemas/SportTeamStatAverageRows"
                     },
                     "meta": {
-                        "$ref": "#/components/schemas/SportMeta"
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/SportMeta"
+                            },
+                            {
+                                "type": "object",
+                                "required": [
+                                    "scope"
+                                ],
+                                "properties": {
+                                    "scope": {
+                                        "$ref": "#/components/schemas/TeamStatAverageScope"
+                                    }
+                                }
+                            }
+                        ]
                     }
                 },
                 "additionalProperties": false
@@ -12523,8 +13184,7 @@
             "SportTeamStatAverageRows": {
                 "type": "array",
                 "items": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/components/schemas/SportTeamStatAverage"
                 }
             },
             "SportTeamStatAverageResponse": {
@@ -12538,14 +13198,270 @@
                         "$ref": "#/components/schemas/SportTeamStatAverage"
                     },
                     "meta": {
-                        "$ref": "#/components/schemas/SportMeta"
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/SportMeta"
+                            },
+                            {
+                                "type": "object",
+                                "required": [
+                                    "scope"
+                                ],
+                                "properties": {
+                                    "scope": {
+                                        "$ref": "#/components/schemas/TeamStatAverageScope"
+                                    }
+                                }
+                            }
+                        ]
                     }
                 },
                 "additionalProperties": false
             },
             "SportTeamStatAverage": {
                 "type": "object",
+                "required": [
+                    "team_id",
+                    "games_played",
+                    "season",
+                    "season_type",
+                    "sample_sizes"
+                ],
+                "properties": {
+                    "team_id": {
+                        "type": "integer"
+                    },
+                    "games_played": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "season": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9999
+                    },
+                    "season_type": {
+                        "type": "string"
+                    },
+                    "sample_sizes": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "integer",
+                            "minimum": 0
+                        }
+                    },
+                    "shooting_totals": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "object",
+                            "required": [
+                                "made",
+                                "attempted"
+                            ],
+                            "properties": {
+                                "made": {
+                                    "type": [
+                                        "number",
+                                        "null"
+                                    ]
+                                },
+                                "attempted": {
+                                    "type": [
+                                        "number",
+                                        "null"
+                                    ]
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    }
+                },
                 "additionalProperties": true
+            },
+            "TeamStatAverageScope": {
+                "type": "object",
+                "required": [
+                    "season",
+                    "season_type",
+                    "selection",
+                    "phase_selection",
+                    "basis"
+                ],
+                "properties": {
+                    "season": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 1,
+                        "maximum": 9999
+                    },
+                    "season_type": {
+                        "type": "string"
+                    },
+                    "selection": {
+                        "type": "string",
+                        "enum": [
+                            "explicit",
+                            "latest_stored_completed"
+                        ]
+                    },
+                    "phase_selection": {
+                        "type": "string",
+                        "enum": [
+                            "explicit",
+                            "configured_default"
+                        ]
+                    },
+                    "basis": {
+                        "type": "string",
+                        "enum": [
+                            "completed_game_team_stats"
+                        ]
+                    }
+                },
+                "additionalProperties": false
+            },
+            "TeamStatAverageNotFound": {
+                "type": "object",
+                "required": [
+                    "error",
+                    "request_id",
+                    "message",
+                    "meta"
+                ],
+                "properties": {
+                    "error": {
+                        "type": "object",
+                        "required": [
+                            "code",
+                            "message",
+                            "request_id"
+                        ],
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "enum": [
+                                    "not_found"
+                                ]
+                            },
+                            "message": {
+                                "type": "string"
+                            },
+                            "request_id": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": false
+                    },
+                    "request_id": {
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "meta": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/SportMeta"
+                            },
+                            {
+                                "type": "object",
+                                "required": [
+                                    "scope",
+                                    "team_id"
+                                ],
+                                "properties": {
+                                    "scope": {
+                                        "$ref": "#/components/schemas/TeamStatAverageScope"
+                                    },
+                                    "team_id": {
+                                        "type": "integer"
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                },
+                "additionalProperties": false
+            },
+            "InjuryObservationFreshness": {
+                "type": "object",
+                "required": [
+                    "last_observed_at",
+                    "latest_source_updated_at",
+                    "last_stored_at",
+                    "age_hours",
+                    "is_stale",
+                    "stale_rows",
+                    "unverified_rows",
+                    "source_clock_status",
+                    "coverage_status",
+                    "max_age_hours"
+                ],
+                "properties": {
+                    "last_observed_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "latest_source_updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "last_stored_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Raw local database mutation marker for included rows; timezone unverified. Not a provider sync or observation."
+                    },
+                    "age_hours": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "is_stale": {
+                        "type": [
+                            "boolean",
+                            "null"
+                        ]
+                    },
+                    "stale_rows": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "unverified_rows": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "source_clock_status": {
+                        "type": "string",
+                        "enum": [
+                            "unverified_storage_clock",
+                            "no_matching_observations"
+                        ]
+                    },
+                    "coverage_status": {
+                        "type": "string",
+                        "enum": [
+                            "unverified"
+                        ]
+                    },
+                    "max_age_hours": {
+                        "type": "integer",
+                        "enum": [
+                            48
+                        ]
+                    }
+                },
+                "additionalProperties": false
             },
             "MlbDailyPicksResponse": {
                 "type": "object",
@@ -12565,6 +13481,99 @@
             },
             "MlbDailyPicksData": {
                 "type": "object",
+                "required": [
+                    "summary",
+                    "board_health",
+                    "top_picks",
+                    "candidates"
+                ],
+                "properties": {
+                    "summary": {
+                        "$ref": "#/components/schemas/MlbDailyStoredAssessment"
+                    },
+                    "board_health": {
+                        "$ref": "#/components/schemas/MlbDailyStoredAssessment"
+                    },
+                    "top_picks": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MlbDailyPickCandidate"
+                        }
+                    },
+                    "candidates": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MlbDailyPickCandidate"
+                        }
+                    }
+                },
+                "additionalProperties": true
+            },
+            "MlbDailyStoredAssessment": {
+                "type": "object",
+                "required": [
+                    "pregame_safe_rate"
+                ],
+                "properties": {
+                    "pregame_safe_rate": {
+                        "type": [
+                            "number",
+                            "null"
+                        ],
+                        "minimum": 0,
+                        "maximum": 1,
+                        "description": "Historical stored signal assessments, not current safety revalidation. Null when no candidates or any included assessment is unknown."
+                    }
+                },
+                "additionalProperties": true
+            },
+            "MlbDailyPickCandidate": {
+                "type": "object",
+                "required": [
+                    "game"
+                ],
+                "properties": {
+                    "game": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/MlbDailyPickGame"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                },
+                "additionalProperties": true
+            },
+            "MlbDailyPickGame": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "game_date",
+                    "starts_at"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "game_date": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Serialized stored calendar date. This is not a verified kickoff instant."
+                    },
+                    "starts_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Offset-bearing observed kickoff bound to the current game. Unmarked or invalid legacy clocks remain null."
+                    }
+                },
                 "additionalProperties": true
             },
             "UserBetIndexResponse": {
@@ -13242,6 +14251,8 @@
                     "short_name",
                     "game_date",
                     "game_time",
+                    "starts_at",
+                    "start_time_provenance",
                     "venue",
                     "venue_name",
                     "venue_city",
@@ -13396,6 +14407,29 @@
                         "type": [
                             "string",
                             "null"
+                        ]
+                    },
+                    "starts_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Verified kickoff instant; null when the stored clock is unavailable or unverified."
+                    },
+                    "start_time_provenance": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "enum": [
+                            "observed_offset_timestamp_v1",
+                            "legacy_time_unverified",
+                            "observed_start_invalid",
+                            "provider_clock_known_v1",
+                            "legacy_clock_unverified",
+                            "clock_unconfirmed_or_invalid",
+                            null
                         ]
                     },
                     "venue": {

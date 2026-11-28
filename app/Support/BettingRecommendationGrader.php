@@ -10,11 +10,25 @@ class BettingRecommendationGrader
      */
     public function grade(array $recommendation, object $game, object $prediction, string $sportKey): array
     {
+        $invalidNumericInput = false;
+        $numericFields = ['edge', 'market_line', 'model_line', 'model_home_line', 'market_home_line', 'odds', 'model_probability', 'implied_probability', 'raw_implied_probability', 'no_vig_implied_probability', 'market_hold', 'fair_odds', 'expected_value_percent', 'kelly_bet_size_percent', 'confidence', 'side_confidence'];
+        foreach ($recommendation as $field => $value) {
+            if ((is_float($value) && ! is_finite($value))
+                || (in_array($field, $numericFields, true) && $value !== null
+                    && (! is_numeric($value) || ! is_finite((float) $value)))) {
+                $recommendation[$field] = null;
+                $invalidNumericInput = true;
+            }
+        }
         $type = (string) ($recommendation['type'] ?? '');
         $edge = (float) ($recommendation['edge'] ?? 0);
         $riskFlags = $this->baseRiskFlags($game, $prediction, $sportKey);
 
-        if ($type === 'spread') {
+        if ($invalidNumericInput) {
+            $riskFlags[] = 'invalid_numeric_inputs';
+            $grade = 'Pass';
+            $units = 0.0;
+        } elseif ($type === 'spread') {
             $riskFlags = array_merge($riskFlags, $this->spreadRiskFlags($recommendation, $sportKey));
             $grade = $this->spreadGrade($edge, $riskFlags, $sportKey);
             $units = $this->spreadUnits($grade, $edge, $riskFlags);
@@ -36,7 +50,7 @@ class BettingRecommendationGrader
             'grade' => $grade,
             'risk_level' => $this->riskLevel($grade, $riskFlags),
             'risk_flags' => $riskFlags,
-            'bet_units' => round(max(0.0, $units), 2),
+            'bet_units' => $grade === 'Pass' ? 0.0 : round(max(0.0, $units), 2),
             'recommendation_strength' => $this->strength($grade),
             'is_playable' => $grade !== 'Pass',
         ];

@@ -2,13 +2,13 @@
 
 namespace App\Services\Predictions;
 
-use App\Models\CBB\Game as CbbGame;
-use App\Models\NBA\Game as NbaGame;
-use App\Models\NFL\Game as NflGame;
-use App\Services\Sports\SportsDateWindowService;
+use App\Models\GameOddsSnapshot;
+use App\Models\MLB\Game;
+use App\Support\MLB\MlbGameStart;
+use App\Support\MLB\MlbQuoteTime;
+use App\Support\Sports\GameDateTimePresenter;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Carbon;
 
 class SnapshotProvenanceResolver
 {
@@ -22,7 +22,8 @@ class SnapshotProvenanceResolver
         $gameStartAt = $this->gameStartAt($game);
         $runType = (string) ($snapshot['run_type'] ?? 'prediction');
         $verifiedReconstruction = (bool) ($snapshot['point_in_time_verified'] ?? false);
-        $observedPregame = $gameStartAt !== null && $generatedAt->lt($gameStartAt);
+        $startObserved = ! $game instanceof Game || MlbGameStart::observedBy($game, $generatedAt);
+        $observedPregame = $gameStartAt !== null && $generatedAt->lt($gameStartAt) && $startObserved;
 
         $pregameSafe = array_key_exists('pregame_safe', $snapshot)
             ? (bool) $snapshot['pregame_safe']
@@ -35,6 +36,36 @@ class SnapshotProvenanceResolver
             default => 'after_game_start',
         });
 
+        if ($gameStartAt === null) {
+            $pregameSafe = false;
+            $verifiedReconstruction = false;
+            $availabilityStatus = 'game_start_unknown';
+        } elseif ($runType !== 'historical_reconstruction' && ! $observedPregame) {
+            $pregameSafe = false;
+            $verifiedReconstruction = false;
+            $availabilityStatus = 'after_game_start';
+        }
+
+        if ($game instanceof Game && ! $startObserved) {
+            $pregameSafe = false;
+            $verifiedReconstruction = false;
+            $availabilityStatus = $gameStartAt === null ? 'game_start_unknown' : 'schedule_observation_after_capture';
+        }
+
+        if ($game instanceof Game) {
+            $market = $snapshot['market_context'] ?? [];
+            $usesMarket = ! empty($market['available_markets']) || isset($market['vegas_spread']) || isset($market['market_total']);
+            if ($usesMarket) {
+                $snapshotId = data_get($market, 'safety.snapshot_id');
+                $quote = is_numeric($snapshotId) ? GameOddsSnapshot::query()->find((int) $snapshotId) : null;
+                if ($quote === null || ! MlbQuoteTime::pregame($game, $quote, $generatedAt)) {
+                    $pregameSafe = false;
+                    $verifiedReconstruction = false;
+                    $availabilityStatus = 'market_time_unverified';
+                }
+            }
+        }
+
         $featuresAvailableAt = $snapshot['features_available_at']
             ?? ($verifiedReconstruction ? $gameStartAt : $generatedAt);
 
@@ -43,7 +74,7 @@ class SnapshotProvenanceResolver
             'features_available_at' => $featuresAvailableAt,
             'pregame_safe' => $pregameSafe,
             'availability_status' => $availabilityStatus,
-            'source_timestamps' => $snapshot['source_timestamps'] ?? null,
+            'source_timestamps' => $game instanceof Game ? ['scheduled_start_observed_at_utc' => $game->start_observed_at, 'supplied' => $snapshot['source_timestamps'] ?? null] : ($snapshot['source_timestamps'] ?? null),
             'lineage_metadata' => array_filter([
                 'run_type' => $runType,
                 'historical_profile' => $snapshot['historical_profile'] ?? null,
@@ -56,32 +87,11 @@ class SnapshotProvenanceResolver
 
     public function gameStartAt(Model $game): ?CarbonImmutable
     {
-        if ($game instanceof NflGame || $game instanceof NbaGame || $game instanceof CbbGame) {
-            $canonicalStart = $game->sportEvent?->starts_at;
-            if ($canonicalStart !== null) {
-                return CarbonImmutable::instance($canonicalStart);
-            }
-
-            if (empty($game->game_date) || empty($game->game_time)) {
-                return null;
-            }
-
-            return app(SportsDateWindowService::class)->gameDateTimeUtc(
-                $game->getAttributes()['game_date'] ?? $game->game_date,
-                $game->game_time,
-            );
+        if ($game instanceof Game) {
+            return MlbGameStart::for($game)?->toImmutable();
         }
+        $start = GameDateTimePresenter::currentStoredStartsAt($game);
 
-        if (empty($game->game_date)) {
-            return null;
-        }
-
-        $timezone = (string) config('app.timezone', 'UTC');
-        $date = Carbon::parse($game->game_date, $timezone)->toDateString();
-        $time = empty($game->game_time)
-            ? '23:59:59'
-            : Carbon::parse($game->game_time, $timezone)->format('H:i:s');
-
-        return CarbonImmutable::parse("{$date} {$time}", $timezone);
+        return $start === null ? null : CarbonImmutable::parse($start, 'UTC');
     }
 }

@@ -10,6 +10,8 @@ use App\Models\CBB\Play;
 use App\Models\CBB\Team;
 use App\Services\CBB\PlayScoreReconciler;
 use App\Services\ESPN\CBB\EspnService;
+use App\Support\ScoreObservation;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
 
 class SyncPlays extends AbstractSyncPlays
@@ -79,5 +81,18 @@ class SyncPlays extends AbstractSyncPlays
         }
 
         return $plays;
+    }
+
+    protected function validatePlayBatchForGame(Model $game, array $dtos): void
+    {
+        if ($game->status !== config('cbb.statuses.final')) {
+            return;
+        }
+        $last = $dtos[array_key_last($dtos)];
+        if ($last->homeScore === null || $last->awayScore === null
+            || $last->homeScore !== ScoreObservation::known($game->home_score)
+            || $last->awayScore !== ScoreObservation::known($game->away_score)) {
+            throw new \RuntimeException('CBB play feed does not reach the stored final score; preserving stored plays.');
+        }
     }
 }

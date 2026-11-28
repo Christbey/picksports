@@ -3,6 +3,7 @@
 namespace App\Services\WNBA\Predictions;
 
 use App\Models\CalculationRelease;
+use App\Services\Predictions\Basketball\NeutralAwareBasketballCandidateRegistrar;
 use App\Services\Predictions\CanonicalRulesReleaseRegistrar;
 use Carbon\CarbonImmutable;
 
@@ -30,6 +31,13 @@ class WnbaCalculationReleaseRegistrar
             $actor,
             $reason,
             $effectiveAt,
+        );
+    }
+
+    public function registerNeutralAwareDraft(string $actor = 'artisan', string $reason = 'Opt-in neutral-aware draft candidate.'): CalculationRelease
+    {
+        return app(NeutralAwareBasketballCandidateRegistrar::class)->registerDraft(
+            $this->definition, WnbaCalculator::class, $actor, $reason,
         );
     }
 }

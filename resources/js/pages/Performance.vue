@@ -179,7 +179,11 @@ const formatUnits = (value: number | null) =>
                                         )
                                     "
                                 >
-                                    {{ overall.winner_accuracy }}%
+                                    {{
+                                        overall.winner_sample_size > 0
+                                            ? `${overall.winner_accuracy}%`
+                                            : 'No graded winner sample'
+                                    }}
                                 </div>
                             </div>
                             <div>
@@ -337,7 +341,11 @@ const formatUnits = (value: number | null) =>
                                         )
                                     "
                                 >
-                                    {{ recent.overall.winner_accuracy }}%
+                                    {{
+                                        recent.overall.winner_sample_size > 0
+                                            ? `${recent.overall.winner_accuracy}%`
+                                            : 'No graded winner sample'
+                                    }}
                                 </div>
                             </div>
                             <div>

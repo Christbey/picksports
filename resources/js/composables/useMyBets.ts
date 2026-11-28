@@ -28,9 +28,8 @@ export function useMyBets() {
 
     const bets = ref<BetsData>({
         data: [],
-        links: [],
-        current_page: 1,
-        last_page: 1,
+        links: { first: null, last: null, prev: null, next: null },
+        meta: { current_page: 1, last_page: 1, per_page: 20, total: 0 },
     });
     const statistics = ref<Statistics>({
         total_bets: 0,
@@ -56,9 +55,11 @@ export function useMyBets() {
         notes: '',
     });
 
+    const requestedPage = ref(1);
     const read = useAsyncResource(
         async (signal) => {
             const response = await api.userBets.index<UserBetsResponse>({
+                query: { page: requestedPage.value },
                 init: { signal },
             });
             if (!response)
@@ -76,7 +77,28 @@ export function useMyBets() {
             statistics.value = response.statistics;
         }
     });
-    const fetchBets = () => read.execute();
+    const fetchBets = async () => {
+        const response = await read.execute();
+        if (
+            response &&
+            response.bets.meta.current_page > response.bets.meta.last_page
+        ) {
+            requestedPage.value = Math.max(1, response.bets.meta.last_page);
+            return read.execute();
+        }
+        return response;
+    };
+    async function changePage(page: number) {
+        if (
+            !Number.isSafeInteger(page) ||
+            page < 1 ||
+            page > bets.value.meta.last_page ||
+            loading.value
+        )
+            return;
+        requestedPage.value = page;
+        await fetchBets();
+    }
     const submitting = ref(false),
         formError = ref<string | null>(null),
         mutationError = ref<string | null>(null);
@@ -223,6 +245,7 @@ export function useMyBets() {
         error,
         hasLoaded,
         fetchBets,
+        changePage,
         form,
         showAddBetForm,
         submitting,

@@ -4,6 +4,13 @@ namespace App\Support\Validation;
 
 class AlertPreferenceRules
 {
+    /** Canonical display/write list; old keyed form arrays remain readable without a historical rewrite. */
+    public static function notificationTypes(mixed $types): array
+    {
+        return is_array($types) ? array_values(array_unique(array_filter($types,
+            static fn ($type) => is_string($type) && in_array($type, ['email', 'sms', 'push', 'whatsapp'], true)))) : [];
+    }
+
     /**
      * @return array<string, mixed>
      */

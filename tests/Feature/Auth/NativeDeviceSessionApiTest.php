@@ -16,6 +16,7 @@ it('issues and rotates a native device session through the v2 api', function () 
         'platform' => 'ios',
         'device_identifier' => 'vendor-id-1',
     ])->assertCreated()
+        ->assertHeader('Cache-Control', 'no-store, private')
         ->assertJsonPath('token_type', 'Bearer')
         ->assertJsonPath('device_session.device_name', 'Bey iPhone')
         ->assertJsonPath('device_session.platform', 'ios')
@@ -36,7 +37,7 @@ it('issues and rotates a native device session through the v2 api', function () 
 
     $rotated = $this->postJson('/api/v2/auth/device-sessions/refresh', [
         'refresh_token' => $refreshToken,
-    ])->assertOk();
+    ])->assertOk()->assertHeader('Cache-Control', 'no-store, private');
 
     expect($rotated->json('refresh_token'))->not->toBe($refreshToken)
         ->and($rotated->json('device_session.id'))->toBe($sessionId);

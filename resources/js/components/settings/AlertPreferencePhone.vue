@@ -20,12 +20,16 @@ defineProps<{ errors: Record<string, string> }>();
 
         <Input
             id="phone_number"
+            :aria-invalid="Boolean(errors.phone_number)"
+            :aria-describedby="
+                errors.phone_number ? 'phone_number-error' : undefined
+            "
             name="phone_number"
             type="tel"
             :default-value="currentPreference.phone_number || ''"
             class="max-w-xs"
             placeholder="+15550000000"
         />
-        <InputError :message="errors.phone_number" />
+        <InputError id="phone_number-error" :message="errors.phone_number" />
     </div>
 </template>

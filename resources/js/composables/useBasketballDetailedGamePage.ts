@@ -1,3 +1,4 @@
+import { isFinalGameStatus } from '@/lib/gameStatus';
 import { computed } from 'vue';
 import { useBasketballGamePage } from '@/composables/useBasketballGamePage';
 import { formatNumber, getBetterValue } from '@/composables/useFormatters';
@@ -47,7 +48,7 @@ const defaultShowLinescore = (
     homeLinescores: LineScoreEntry[],
     awayLinescores: LineScoreEntry[],
 ): boolean =>
-    game.status === 'STATUS_FINAL' &&
+    isFinalGameStatus(game.status) &&
     homeLinescores.length > 0 &&
     awayLinescores.length > 0;
 

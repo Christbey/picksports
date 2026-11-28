@@ -1,7 +1,6 @@
 <?php
 
 use App\Models\NFL\Team;
-use App\Models\NFL\TeamMetricSnapshot;
 use Illuminate\Support\Facades\Artisan;
 
 require_once __DIR__.'/../../Support/NflFutures.php';
@@ -35,8 +34,7 @@ it('generates nfl playoff forecast probabilities from preseason team snapshots',
             'division' => $division,
         ]);
 
-        TeamMetricSnapshot::query()->create([
-            'snapshot_key' => sha1('playoff-'.$abbr),
+        captureObservedNflMetricFixture([
             'team_id' => $team->id,
             'season' => 2025,
             'wins' => 0,
@@ -46,8 +44,7 @@ it('generates nfl playoff forecast probabilities from preseason team snapshots',
             'recent_form_rating' => ($projectedWins - 8.5) * 0.7,
             'injury_total_adjustment' => 0.0,
             'calculation_date' => '2025-08-01',
-            'captured_at' => '2025-08-01T12:00:00Z',
-        ]);
+        ], '2025-08-01T12:00:00Z');
 
         return $team;
     });

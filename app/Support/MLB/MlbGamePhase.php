@@ -2,6 +2,7 @@
 
 namespace App\Support\MLB;
 
+use App\Models\MLB\Game;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -92,17 +93,6 @@ class MlbGamePhase
 
     public static function scheduledStartAt(Model $game): ?Carbon
     {
-        $gameDate = $game->getAttribute('game_date');
-        $gameTime = $game->getAttribute('game_time');
-
-        if ($gameDate === null || $gameTime === null) {
-            return null;
-        }
-
-        $date = $gameDate instanceof CarbonInterface
-            ? $gameDate->toDateString()
-            : Carbon::parse((string) $gameDate)->toDateString();
-
-        return Carbon::parse(sprintf('%s %s', $date, (string) $gameTime), (string) config('app.timezone', 'UTC'));
+        return $game instanceof Game ? MlbGameStart::for($game) : null;
     }
 }

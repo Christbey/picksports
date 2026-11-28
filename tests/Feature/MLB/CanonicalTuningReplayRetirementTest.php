@@ -15,10 +15,12 @@ use App\Models\SportEvent;
 use App\Services\MLB\Predictions\MlbCalculationReleaseDefinition;
 use App\Services\MLB\Predictions\MlbCalculator;
 use App\Services\Predictions\CanonicalPayloadHasher;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Tests\Support\ObservedMlbGameFixture;
 
 beforeEach(function () {
     $this->travelTo('2026-10-31 12:00:00');
@@ -29,12 +31,16 @@ afterEach(fn () => $this->travelBack());
 
 function mlbTuningFixture(string $variant = 'valid'): array
 {
+    $fixtureNow = now()->toImmutable();
     $start = now()->subDays(2)->toImmutable();
     $captured = $start->subHours(3);
+    CarbonImmutable::setTestNow($captured->copy()->subMinute());
     $event = SportEvent::factory()->create(['sport' => 'mlb', 'season' => 2026, 'starts_at' => $start]);
-    $game = Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026, 'status' => 'STATUS_FINAL',
+    $game = Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026, 'status' => 'STATUS_SCHEDULED',
         'home_team_id' => Team::factory(), 'away_team_id' => Team::factory(), 'game_date' => $start->toDateString(),
-        'game_time' => $start->toTimeString(), 'home_score' => 5, 'away_score' => 3]);
+        'game_time' => $start->toTimeString(), 'home_score' => null, 'away_score' => null]);
+    $game = ObservedMlbGameFixture::observe($game, $start);
+    CarbonImmutable::setTestNow($captured);
     Prediction::query()->create(['game_id' => $game->id, 'season' => 2026, 'feature_version' => 'core-v3', 'home_combined_elo' => 1500,
         'away_combined_elo' => 1400, 'predicted_spread' => -7, 'predicted_total' => 20, 'actual_spread' => 2, 'actual_total' => 8, 'graded_at' => now()]);
     $inputs = ['event' => ['starts_at' => $start->toIso8601String(), 'neutral_site' => $variant === 'neutral'],
@@ -52,10 +58,15 @@ function mlbTuningFixture(string $variant = 'valid'): array
     if ($variant === 'incomplete') {
         unset($inputs['pitching']);
     }
-    $input = EventInputSnapshot::factory()->create(['sport' => 'mlb', 'sport_event_id' => $event->id, 'phase' => 'pregame',
+    $inputAttributes = ['sport' => 'mlb', 'sport_event_id' => $event->id, 'phase' => 'pregame',
         'schema_version' => MlbCalculationReleaseDefinition::INPUT_SCHEMA_VERSION, 'inputs' => $inputs,
         'captured_at' => $captured, 'cutoff_at' => $start, 'latest_source_available_at' => $captured,
-        'pregame_safety_status' => $variant === 'unsafe' ? 'unknown' : 'verified']);
+        'pregame_safety_status' => $variant === 'unsafe' ? 'unknown' : 'verified'];
+    $qualified = ObservedMlbGameFixture::snapshotAttributes($game, $inputAttributes['inputs'], $inputAttributes['captured_at']);
+    $input = EventInputSnapshot::factory()->create([...$inputAttributes, ...$qualified,
+        'pregame_safety_status' => $inputAttributes['pregame_safety_status'],
+        'latest_source_available_at' => $inputAttributes['latest_source_available_at']]);
+
     $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id, 'calculation_release_id' => $release->id, 'status' => 'succeeded']);
     $native = CanonicalPrediction::factory()->create(['sport' => 'mlb', 'sport_event_id' => $event->id, 'calculation_run_id' => $run->id,
         'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null, 'generated_at' => $start->subHours(2)]);
@@ -68,6 +79,9 @@ function mlbTuningFixture(string $variant = 'valid'): array
             'probability' => $market->probability, 'confidence_score' => $market->confidenceScore]);
     }
     $native->update(['publication_state' => 'published', 'published_at' => $variant === 'late' ? $start : $start->subHours(2)]);
+
+    CarbonImmutable::setTestNow($fixtureNow);
+    $game->update(['status' => 'STATUS_FINAL', 'home_score' => 5, 'away_score' => 3]);
 
     return [$game, $native, $release, $input];
 }

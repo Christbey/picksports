@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ChevronRight } from 'lucide-vue-next';
 import { computed } from 'vue';
+import { formatTime } from '@/lib/mlbMatchupPresentation';
 import { labelizeMlbCode, tierFromScore } from '@/lib/mlbRecommendationLabels';
 import type { MlbDailyPick } from '@/types/mlb-daily-picks';
 
@@ -40,17 +41,6 @@ function formatOdds(value?: number | null): string {
 function formatPercent(value?: number | null): string {
     if (value == null) return '-';
     return `${(value * 100).toFixed(1)}%`;
-}
-
-function formatTime(value?: string | null): string {
-    if (!value) return 'Time pending';
-
-    return new Intl.DateTimeFormat(undefined, {
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-    }).format(new Date(value));
 }
 
 function scoreTone(score: number): string {
@@ -129,7 +119,7 @@ function marketTone(marketType: string): string {
                     class="mt-1 text-sm text-muted-foreground"
                 >
                     {{ candidate.game?.short_name }} ·
-                    {{ formatTime(candidate.game?.game_date) }}
+                    {{ formatTime(candidate.game?.starts_at) }}
                 </div>
                 <div class="mt-2 text-xs font-medium text-muted-foreground">
                     {{

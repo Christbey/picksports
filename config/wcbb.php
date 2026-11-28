@@ -359,6 +359,8 @@ return [
         'selection_full_confidence_games' => 20,
         'champion_conference_strength_weight' => 0.12,
         'champion_power_conference_bonus' => 0.08,
+        // Legacy read-refresh settings retained for configuration compatibility only.
+        // GET forecasts never generate; use the explicit/scheduled tournament writer.
         'refresh' => [
             'enabled' => env('WCBB_TOURNAMENT_REFRESH_ENABLED', true),
             'minimum_coverage_ratio' => env('WCBB_TOURNAMENT_REFRESH_MIN_COVERAGE_RATIO', 0.95),

@@ -11,6 +11,7 @@ type Argument = {
     reason_code?: string;
     concern_type?: string;
     evidence_kind?: string;
+    evidence_reference?: string;
     evidence_status?: string;
 };
 type RecentForm = {
@@ -53,8 +54,11 @@ const recentForm = computed(() =>
 const sections = computed(() => {
     const brief = latest.value?.brief;
     return [
-        { title: 'What supports the spread', entries: brief?.supporting ?? [] },
-        { title: 'What could go against it', entries: brief?.opposing ?? [] },
+        {
+            title: 'Evidence supporting the projection',
+            entries: brief?.supporting ?? [],
+        },
+        { title: 'Risks to the projection', entries: brief?.opposing ?? [] },
         {
             title: 'Lineup risks',
             entries: (brief?.unresolved ?? []).filter(
@@ -94,7 +98,10 @@ const references = computed(() => {
     >();
     for (const { entries } of sections.value) {
         for (const entry of entries) {
-            const url = sourceUrl(entry.source_url);
+            const url =
+                entry.evidence_kind === 'application'
+                    ? undefined
+                    : sourceUrl(entry.source_url);
             if (url && !sources.has(url.href)) {
                 sources.set(url.href, {
                     href: url.href,
@@ -107,7 +114,13 @@ const references = computed(() => {
     return sources;
 });
 const citation = (entry: Argument) =>
-    references.value.get(sourceUrl(entry.source_url)?.href ?? '');
+    entry.evidence_kind === 'application'
+        ? undefined
+        : references.value.get(sourceUrl(entry.source_url)?.href ?? '');
+const isCompletedGameEvidence = (entry: Argument) =>
+    entry.evidence_kind === 'application' &&
+    entry.evidence_status === 'reference_verified' &&
+    entry.evidence_reference?.startsWith('analysis_context.season_evidence.');
 const savedAt = (value: string) =>
     new Date(value).toLocaleString(undefined, {
         dateStyle: 'medium',
@@ -188,6 +201,12 @@ onMounted(async () => {
                             {{ citation(entry)?.site }}</a
                         >
                     </template>
+                    <span
+                        v-else-if="isCompletedGameEvidence(entry)"
+                        class="text-xs text-muted-foreground"
+                    >
+                        · PickSports completed games
+                    </span>
                 </p>
             </div>
             <p

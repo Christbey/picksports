@@ -5,6 +5,7 @@ use App\Http\Controllers\PublicSportPageController;
 use App\Models\CBB\Game as CbbGame;
 use App\Services\PerformanceStatistics;
 use App\Support\BasketballSeason;
+use App\Support\CbbBracketWinProbability;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Route;
@@ -146,10 +147,7 @@ Route::get('march-madness-bracket', function () {
                 ],
                 'name' => $game->name,
                 'prediction' => $game->prediction
-                    ? [
-                        'homeWinProbability' => (float) $game->prediction->win_probability,
-                        'awayWinProbability' => round(1 - (float) $game->prediction->win_probability, 3),
-                    ]
+                    ? CbbBracketWinProbability::from($game->prediction->win_probability)
                     : null,
             ];
         })

@@ -2,6 +2,7 @@
 
 namespace App\Services\Predictions;
 
+use App\DataTransferObjects\ESPN\GameData;
 use App\Models\CanonicalPrediction;
 use App\Models\CBB\Game as CbbGame;
 use App\Models\CFB\Game as CfbGame;
@@ -14,6 +15,7 @@ use App\Models\SportEventResult;
 use App\Models\WCBB\Game as WcbbGame;
 use App\Models\WNBA\Game as WnbaGame;
 use App\Services\NFL\Predictions\NflCanonicalPregameEvidenceBoundary;
+use App\Support\Sports\CanonicalEventStart;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
@@ -75,6 +77,11 @@ class CanonicalTeamGameEvaluator
     public function pendingGameIds(Collection $games, string $sport): Collection
     {
         $sport = strtolower(trim($sport));
+        if ($sport === 'mlb') {
+            // MLB admission needs each current observed schedule and frozen capture proof.
+            return $games->filter(fn (Model $game): bool => $this->hasPendingMlbEvaluation($game))
+                ->map(fn (Model $game): int => (int) $game->getKey())->values();
+        }
         $pending = collect();
         foreach ($games->chunk(25) as $batch) {
             (new \Illuminate\Database\Eloquent\Collection($batch->all()))->loadMissing('sportEvent');
@@ -122,17 +129,38 @@ class CanonicalTeamGameEvaluator
             return null;
         }
 
-        return CanonicalPrediction::query()
+        $start = ($event->sport === 'cfb' ? CanonicalEventStart::forCurrentCfbEvent($event, true) : CanonicalEventStart::forEvent($event, true));
+        if ($start === null) {
+            return null;
+        }
+        $candidate = CanonicalPrediction::query()
             ->where('sport_event_id', $event->getKey())
             ->where('sport', $sport)
             ->where('phase', 'pregame')
             ->whereIn('publication_state', ['published', 'superseded'])
             ->whereNotNull('published_at')
-            ->where('published_at', '<=', $event->starts_at)
+            ->where('published_at', '<=', $start)
             ->when($sport === 'nfl', fn ($query) => app(NflCanonicalPregameEvidenceBoundary::class)->apply($query))
             ->orderByDesc('revision')
             ->first();
 
+        return $candidate !== null && CanonicalEventStart::snapshot($event, $candidate->calculationRun?->inputSnapshot, true)
+            ? $candidate : null;
+    }
+
+    private function hasPendingMlbEvaluation(Model $game): bool
+    {
+        $prediction = $this->predictionForGame($game, 'mlb');
+        if ($prediction === null) {
+            return false;
+        }
+        $result = $game->getRelation('sportEvent')->results()->orderByDesc('revision')->first();
+        if ($result === null || $result->status !== 'official'
+            || $result->home_score !== (int) $game->home_score || $result->away_score !== (int) $game->away_score) {
+            return true;
+        }
+
+        return ! $this->evaluator->hasCurrentEvaluation($prediction, $result);
     }
 
     private function eligibleEvent(Model $game, string $sport): ?SportEvent
@@ -146,13 +174,14 @@ class CanonicalTeamGameEvaluator
         $game->loadMissing('sportEvent');
         $event = $game->getRelation('sportEvent');
 
-        if ($event === null
+        $start = $event === null ? null : ($event->sport === 'cfb' ? CanonicalEventStart::forCurrentCfbEvent($event, true) : CanonicalEventStart::forEvent($event, true));
+        if ($event === null || $start === null
             || $event->sport !== $sport
-            || $game->getAttribute('status') !== 'STATUS_FINAL'
+            || ! in_array($game->getAttribute('status'), GameData::finalStatuses(), true)
             || $game->getAttribute('home_score') === null
             || $game->getAttribute('away_score') === null
             || ! $this->hasFinalClock($game->getAttribute('game_clock'))
-            || CarbonImmutable::now('UTC')->lt(CarbonImmutable::parse($event->starts_at)->utc()->addMinutes(self::MINIMUM_FINAL_MINUTES_AFTER_TIP))) {
+            || CarbonImmutable::now('UTC')->lt($start->utc()->addMinutes(self::MINIMUM_FINAL_MINUTES_AFTER_TIP))) {
             return null;
         }
 

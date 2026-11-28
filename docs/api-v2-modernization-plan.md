@@ -1,9 +1,13 @@
+> Historical proposal/worklog retained on November 27, 2026. The original text below records dated proposals, implementation assertions and measurements; it is not current operating instructions, evidence of completion, or approval to change business/scientific policy. Do not run its historical commands as an operational checklist. Current references: [docs/api-v2-reference.md](api-v2-reference.md), [docs/api/v2/README.md](api/v2/README.md).
+>
+> Carried obligations: Retire obsolete coexistence instructions only; preserve unfulfilled exact schema/client generation/architecture targets as explicit acceptance work.
+
 # PickSports API V2 Modernization Plan
 
 > V1 status update (2026-09-25): V1 has been removed with owner authorization
 > after confirmation that it had only application callers. Earlier migration
 > and usage-log retirement requirements below are historical. See
-> [the retirement record](api-v2-contracts-and-retirement.md).
+> the historical retirement record (`api-v2-contracts-and-retirement.md`; unavailable in the current candidate). Current contracts are in [the API reference](api-v2-reference.md).
 
 
 ## Objective

@@ -2,10 +2,8 @@
 
 namespace App\Services\Api\V2;
 
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 class SportInjuryQuery
 {
@@ -80,9 +78,14 @@ class SportInjuryQuery
             ->limit((int) ($filters['limit'] ?? 500))
             ->get();
 
-        return $context->slug === 'nfl'
-            ? $this->enrichNflRows($rows)
-            : $rows;
+        $rows = $context->slug === 'nfl' ? $this->enrichNflRows($rows) : $rows;
+
+        return $rows->map(function (object $row): object {
+            $row->source_clock_status = 'unverified_storage_clock';
+            $row->is_stale = null;
+
+            return $row;
+        });
     }
 
     /**
@@ -98,33 +101,25 @@ class SportInjuryQuery
     }
 
     /**
-     * @return array{last_observed_at:?string,latest_source_updated_at:?string,age_hours:?int,is_stale:bool,stale_rows:int,max_age_hours:int}
+     * Legacy projection clocks have no versioned timezone/observation receipt.
+     * Local row mutations cannot prove source freshness or complete provider coverage.
+     *
+     * @return array<string,mixed>
      */
     public function freshness(SportContext $context, Collection $rows, int $maxAgeHours = 48): array
     {
-        $injuryTable = "{$context->slug}_player_injuries";
-        $latestSource = Schema::hasTable($injuryTable)
-            ? DB::table($injuryTable)->max('source_updated_at')
-            : null;
-        $lastObserved = Schema::hasTable($injuryTable)
-            ? DB::table($injuryTable)->max('updated_at')
-            : null;
-        $latestSourceAt = $latestSource ? Carbon::parse($latestSource) : null;
-        $lastObservedAt = $lastObserved ? Carbon::parse($lastObserved) : null;
-        $staleRows = $rows->filter(function (object $row) use ($maxAgeHours): bool {
-            if (! $row->source_updated_at) {
-                return true;
-            }
-
-            return Carbon::parse($row->source_updated_at)->lt(now()->subHours($maxAgeHours));
-        })->count();
+        $storedUpdates = $rows->pluck('updated_at')->filter(fn (mixed $value): bool => is_string($value) && $value !== '');
 
         return [
-            'last_observed_at' => $lastObservedAt?->toIso8601String(),
-            'latest_source_updated_at' => $latestSourceAt?->toIso8601String(),
-            'age_hours' => $lastObservedAt ? max(0, (int) $lastObservedAt->diffInHours(now())) : null,
-            'is_stale' => $lastObservedAt === null || $lastObservedAt->lt(now()->subHours($maxAgeHours)),
-            'stale_rows' => $staleRows,
+            'last_observed_at' => null,
+            'latest_source_updated_at' => null,
+            'last_stored_at' => $storedUpdates->sort()->last(),
+            'age_hours' => null,
+            'is_stale' => null,
+            'stale_rows' => null,
+            'unverified_rows' => $rows->count(),
+            'source_clock_status' => $rows->isEmpty() ? 'no_matching_observations' : 'unverified_storage_clock',
+            'coverage_status' => 'unverified',
             'max_age_hours' => $maxAgeHours,
         ];
     }
@@ -155,7 +150,6 @@ class SportInjuryQuery
             $availability = $this->nflAvailabilityProbability((string) ($row->status ?? ''));
             $impactWeight = $this->nflImpactWeight($position, $depthRank, $isStarter);
             $expectedImpact = round($impactWeight * (1.0 - $availability), 2);
-            $sourceUpdatedAt = $row->source_updated_at ? Carbon::parse($row->source_updated_at) : null;
 
             $row->position = $position !== '' ? $position : null;
             $row->depth_rank = $depthRank;
@@ -170,7 +164,6 @@ class SportInjuryQuery
                 default => 'low',
             };
             $row->source = 'espn';
-            $row->is_stale = $sourceUpdatedAt === null || $sourceUpdatedAt->lt(now()->subHours(48));
             unset($row->player_position);
 
             return $row;

@@ -154,29 +154,12 @@ Sport-specific settings in `config/{sport}.php`:
 ---
 
 ### MLB (Baseball)
-**Metrics:**
-- Offensive Rating: Weighted formula (runs/game, batting avg, home runs)
-- Pitching Rating: Inverse ERA + strikeouts - walks
-- Defensive Rating: Fielding percentage + putouts + assists - errors
-- Runs Per Game: Average runs scored
-- Runs Allowed Per Game: Average runs allowed
-- Batting Average: Hits / At Bats
-- Team ERA: (Earned Runs / Innings Pitched) * 9
 
-**Formula Approach**: Custom weighted formulas specific to baseball statistics
+The current offense and pitching ratings are configurable, 100-centered custom indices. Offense combines runs/game, OPS and home runs/game relative to configured league reference values. Pitching combines runs allowed/game, ERA, WHIP, strikeouts-minus-walks/game and home runs allowed/game; stronger run prevention increases the index. Both normally clamp to 50–180, with explicit zero sentinels for missing games/innings or nonfinite results. They are not OPS+, FIP, calibrated probabilities or a claim of forecasting improvement.
 
-**Configuration:**
-- `config/mlb.php` contains sport-specific multipliers for:
-  - `offensive_rating.runs_multiplier`
-  - `offensive_rating.batting_avg_multiplier`
-  - `offensive_rating.home_run_multiplier`
-  - `pitching_rating.era_max`
-  - `pitching_rating.era_scale`
-  - `defensive_rating.fielding_pct_multiplier`
-  - `defensive_rating.errors_multiplier`
+The defensive index retains the custom fielding/putout/assist/error proxy. See [the exact equations and missing-component limitations](calculations-reference.md#mlb-team-metrics). Rates and indices are distinct; normalized baseball innings are required for ERA/WHIP.
 
-**Files:**
-- `app/Actions/MLB/CalculateTeamMetrics.php`
+Owning source: `app/Actions/MLB/CalculateTeamMetrics.php`; coefficients: `config/mlb.php` under `metrics.offensive_rating`, `metrics.pitching_rating`, and `metrics.defensive_rating`. This source check is dated November 25, 2026, not a live configuration audit.
 
 ---
 
@@ -192,25 +175,34 @@ All sports use status configuration to identify completed games:
 ]
 ```
 
-### MLB Metric Multipliers
+### MLB metric configuration defaults
+
 ```php
-// config/mlb.php
 'metrics' => [
     'offensive_rating' => [
-        'runs_multiplier' => 20,
-        'batting_avg_multiplier' => 100,
-        'home_run_multiplier' => 10,
+        'baseline' => 100.0, 'min' => 50.0, 'max' => 180.0,
+        'league_runs_per_game' => 4.40, 'league_ops' => 0.720,
+        'league_home_runs_per_game' => 1.10,
+        'runs_per_game_weight' => 12.0, 'ops_weight' => 120.0,
+        'home_run_rate_weight' => 5.0,
     ],
     'pitching_rating' => [
-        'era_max' => 150,
-        'era_scale' => 20,
+        'baseline' => 100.0, 'min' => 50.0, 'max' => 180.0,
+        'league_runs_allowed_per_game' => 4.40, 'league_era' => 4.20,
+        'league_whip' => 1.30, 'league_k_minus_walks_per_game' => 5.20,
+        'league_home_runs_allowed_per_game' => 1.10,
+        'runs_allowed_weight' => 8.0, 'era_weight' => 7.0,
+        'whip_weight' => 35.0, 'k_minus_walk_weight' => 3.0,
+        'home_runs_allowed_weight' => 4.0,
     ],
     'defensive_rating' => [
         'fielding_pct_multiplier' => 100,
-        'errors_multiplier' => 5,
+        'errors_multiplier' => 10,
     ],
 ]
 ```
+
+These are source defaults, not verified effective production values. The configuration file owns environment override names.
 
 ### CBB/WCBB Opponent Adjustment Configuration
 ```php

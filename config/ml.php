@@ -7,6 +7,25 @@ return [
         'cache_disk' => env('ML_CACHE_DISK', 'ml-cache'),
     ],
 
+    'training' => [
+        'maximum_attempts' => (int) env('ML_TRAINING_MAXIMUM_ATTEMPTS', 3),
+    ],
+
+    'remote' => [
+        'enabled' => (bool) env('ML_REMOTE_TRAINING_ENABLED', false),
+        'maximum_file_bytes' => 268_435_456,
+        'maximum_total_bytes' => 1_073_741_824,
+        'maximum_files' => 64,
+        'maximum_manifest_bytes' => 262_144,
+        'maximum_report_bytes' => 2_097_152,
+        'upload_lease_seconds' => 600,
+        'maximum_concurrent_uploads' => 4,
+        'maximum_staging_bytes' => 536_870_912,
+        'staging_directory' => storage_path('app/private/ml-remote-staging'),
+    ],
+
+    'monitoring' => ['enabled' => (bool) env('ML_TRAINING_MONITORING_ENABLED', false)],
+
     'archive' => [
         'python_binary' => env('ML_PARQUET_PYTHON_BINARY', 'python3'),
         'parquet_writer' => base_path('scripts/export_jsonl_to_parquet.py'),

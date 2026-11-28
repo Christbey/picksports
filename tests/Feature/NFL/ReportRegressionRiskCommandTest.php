@@ -4,10 +4,11 @@ namespace Tests\Feature\NFL;
 
 use App\Models\NFL\Team;
 use App\Models\NFL\TeamMetric;
-use App\Models\NFL\TeamMetricSnapshot;
 use App\Services\NFL\TeamRegressionRiskReportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
+
+require_once __DIR__.'/../../Support/NflFutures.php';
 
 class ReportRegressionRiskCommandTest extends TestCase
 {
@@ -51,8 +52,7 @@ class ReportRegressionRiskCommandTest extends TestCase
             'calculation_date' => '2026-01-10',
         ]);
 
-        TeamMetricSnapshot::query()->create([
-            'snapshot_key' => sha1('1|2026|2026-04-02T18:00:00Z'),
+        captureObservedNflMetricFixture([
             'team_id' => $broncos->id,
             'season' => 2026,
             'wins' => 0,
@@ -62,10 +62,8 @@ class ReportRegressionRiskCommandTest extends TestCase
             'recent_form_rating' => 1.900,
             'injury_total_adjustment' => 0.000,
             'calculation_date' => '2026-04-02',
-            'captured_at' => '2026-04-02 18:00:00',
-        ]);
-        TeamMetricSnapshot::query()->create([
-            'snapshot_key' => sha1('2|2026|2026-04-02T18:00:00Z'),
+        ], '2026-04-02T18:00:00Z');
+        captureObservedNflMetricFixture([
             'team_id' => $bills->id,
             'season' => 2026,
             'wins' => 0,
@@ -75,8 +73,7 @@ class ReportRegressionRiskCommandTest extends TestCase
             'recent_form_rating' => 3.100,
             'injury_total_adjustment' => 0.000,
             'calculation_date' => '2026-04-02',
-            'captured_at' => '2026-04-02 18:00:00',
-        ]);
+        ], '2026-04-02T18:00:00Z');
 
         $this->artisan('nfl:report-regression-risk', [
             '--season' => 2026,
@@ -137,8 +134,7 @@ class ReportRegressionRiskCommandTest extends TestCase
             'calculation_date' => '2026-01-10',
         ]);
 
-        TeamMetricSnapshot::query()->create([
-            'snapshot_key' => sha1('1|2026|2026-04-02T18:00:00Z'),
+        captureObservedNflMetricFixture([
             'team_id' => $giants->id,
             'season' => 2026,
             'wins' => 0,
@@ -148,10 +144,8 @@ class ReportRegressionRiskCommandTest extends TestCase
             'recent_form_rating' => 9.000,
             'injury_total_adjustment' => 0.000,
             'calculation_date' => '2026-04-02',
-            'captured_at' => '2026-04-02 18:00:00',
-        ]);
-        TeamMetricSnapshot::query()->create([
-            'snapshot_key' => sha1('2|2026|2026-04-02T18:00:00Z'),
+        ], '2026-04-02T18:00:00Z');
+        captureObservedNflMetricFixture([
             'team_id' => $chiefs->id,
             'season' => 2026,
             'wins' => 0,
@@ -161,8 +155,7 @@ class ReportRegressionRiskCommandTest extends TestCase
             'recent_form_rating' => 5.000,
             'injury_total_adjustment' => 0.000,
             'calculation_date' => '2026-04-02',
-            'captured_at' => '2026-04-02 18:00:00',
-        ]);
+        ], '2026-04-02T18:00:00Z');
 
         $this->artisan('nfl:report-regression-risk', [
             '--season' => 2026,

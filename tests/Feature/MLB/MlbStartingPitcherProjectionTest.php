@@ -23,7 +23,7 @@ it('advances a five-pitcher rotation through the intervening team schedule', fun
     $start = CarbonImmutable::parse('2026-07-01');
     $rotationGames = collect();
     foreach ($pitchers as $index => $pitcher) {
-        $rotationGames->push(Game::factory()->regularSeason()->create([
+        $rotationGames->push(Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->regularSeason()->create([
             'season' => 2026,
             'status' => 'STATUS_FINAL',
             'game_date' => $start->addDays($index)->toDateString(),
@@ -42,7 +42,7 @@ it('advances a five-pitcher rotation through the intervening team schedule', fun
         'pitches_thrown' => 104,
     ]);
 
-    Game::factory()->regularSeason()->create([
+    Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->regularSeason()->create([
         'season' => 2026,
         'status' => 'STATUS_SCHEDULED',
         'game_date' => '2026-07-06',
@@ -50,7 +50,7 @@ it('advances a five-pitcher rotation through the intervening team schedule', fun
         'home_team_id' => $team->id,
         'away_team_id' => $opponent->id,
     ]);
-    $target = Game::factory()->regularSeason()->create([
+    $target = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->regularSeason()->create([
         'season' => 2026,
         'status' => 'STATUS_SCHEDULED',
         'game_date' => '2026-07-07',
@@ -95,7 +95,7 @@ it('keeps an unavailable rotation slot unresolved and tracks calibrated alternat
 
     $start = CarbonImmutable::parse('2026-07-01');
     foreach ($pitchers as $index => $pitcher) {
-        Game::factory()->regularSeason()->create([
+        Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->regularSeason()->create([
             'season' => 2026,
             'status' => 'STATUS_FINAL',
             'game_date' => $start->addDays($index)->toDateString(),
@@ -113,7 +113,7 @@ it('keeps an unavailable rotation slot unresolved and tracks calibrated alternat
         'status' => '15-Day IL',
         'is_active' => true,
     ]);
-    $target = Game::factory()->regularSeason()->create([
+    $target = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->regularSeason()->create([
         'season' => 2026,
         'status' => 'STATUS_SCHEDULED',
         'game_date' => '2026-07-06',
@@ -148,7 +148,7 @@ it('keeps an espn probable authoritative when it differs from the rotation proje
         'espn_id' => 'official-starter',
         'position' => 'SP',
     ]);
-    $game = Game::factory()->regularSeason()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->regularSeason()->create([
         'season' => 2026,
         'status' => 'STATUS_SCHEDULED',
         'home_team_id' => $team->id,

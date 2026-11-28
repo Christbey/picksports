@@ -8,17 +8,22 @@ use App\Application\Predictions\Data\PredictionMarketOutput;
 use App\Application\Predictions\Data\PredictionOutput;
 use App\Contracts\Predictions\EventInputSnapshotBuilder;
 use App\Contracts\Predictions\SportCalculator;
+use App\Exceptions\EloAdmissionRefused;
 use App\Exceptions\Predictions\PredictionLifecycleException;
 use App\Models\ApplicationSetting;
 use App\Models\CalculationRun;
+use App\Models\CalculationRunAttempt;
 use App\Models\CanonicalPrediction;
 use App\Models\EventInputSnapshot;
 use App\Models\SportEvent;
+use App\Services\Sports\Elo\EloAdmissionMode;
+use App\Services\Sports\Elo\EloFixedScale;
+use App\Services\Sports\Elo\EloSqlClockPolicy;
+use App\Services\Sports\Elo\EloSqlClockToken;
+use App\Services\Sports\Elo\EloWriterProtocol;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Throwable;
 
 class PredictionLifecycleOrchestrator
@@ -27,6 +32,7 @@ class PredictionLifecycleOrchestrator
         private readonly CalculationReleaseSelector $releaseSelector,
         private readonly CanonicalPayloadHasher $hasher,
         private readonly PredictionPublisher $publisher,
+        private readonly CalculationRunRecovery $recovery,
     ) {}
 
     public function generateForGame(
@@ -60,37 +66,52 @@ class PredictionLifecycleOrchestrator
             throw new PredictionLifecycleException('Prediction generation requires a persisted canonical event.');
         }
 
+        $clock = $this->captureManagedClock($event);
         $release = $this->releaseSelector->select($event, $phase, $effectiveAt);
         $releaseData = CalculationReleaseData::fromModel($release);
         $snapshotData = $snapshotBuilder->build($event, $releaseData);
         $this->validateSnapshot($event, $releaseData, $snapshotData);
 
-        $snapshot = $this->persistSnapshot($event, $phase, $snapshotData);
+        $snapshot = $this->persistSnapshot($event, $phase, $snapshotData, $clock);
+        $this->assertClock($clock, $event);
         $idempotencyKey = $this->hasher->hash([
             'event' => $event->public_id,
             'phase' => $phase,
             'release' => $release->public_id,
             'snapshot' => $snapshot->content_hash,
         ]);
-        $run = $this->claimRun($event, $snapshot, $release->getKey(), $phase, $trigger, $idempotencyKey);
+        [$run, $attempt] = $this->recovery->claim($event, $snapshot, $release->getKey(), $phase, $trigger, $idempotencyKey);
 
-        if (! $run->wasRecentlyCreated) {
+        if ($attempt === null) {
+            $this->assertClock($clock, $event);
             $prediction = $run->prediction;
-
             if ($run->status === 'succeeded' && $prediction !== null) {
-                return $prediction->loadMissing('markets', 'calculationRun.release', 'calculationRun.inputSnapshot');
+                $prediction->loadMissing('markets', 'calculationRun.release', 'calculationRun.inputSnapshot');
+                $this->assertClock($clock, $event);
+
+                return $prediction;
             }
 
-            throw new PredictionLifecycleException("Calculation run {$run->id} already exists with status {$run->status}.");
+            throw new PredictionLifecycleException("Successful calculation run {$run->id} has no prediction.");
         }
 
         try {
+            $this->assertClock($clock, $event);
             $output = $calculator->calculate($snapshotData, $releaseData);
             $outputHash = $this->hasher->hash($output->hashablePayload());
 
-            return $this->persistPrediction($event, $run, $releaseData, $phase, $output, $outputHash);
+            return $this->persistPrediction($event, $run, $attempt, $releaseData, $phase, $output, $outputHash, $clock);
         } catch (Throwable $exception) {
-            $this->markFailed($run, $exception);
+            $safeFailureConnection = true;
+            try {
+                $this->assertClock($clock, $event);
+            } catch (EloAdmissionRefused) {
+                // Do not write an audit into a drifted target/session. The durable lease recovers this attempt.
+                $safeFailureConnection = false;
+            }
+            if ($safeFailureConnection) {
+                $this->recovery->fail($run, $attempt, $exception);
+            }
 
             throw $exception;
         }
@@ -112,6 +133,66 @@ class PredictionLifecycleOrchestrator
             $trigger,
             $effectiveAt,
         ));
+    }
+
+    private function captureManagedClock(SportEvent $event): ?EloSqlClockToken
+    {
+        $connection = $event->getConnection();
+        if (! app(EloAdmissionMode::class)->managed($event->sport, $connection)) {
+            return null;
+        }
+        app(EloWriterProtocol::class)->requireCapability($event->sport);
+        if ($connection !== DB::connection()) {
+            throw new EloAdmissionRefused('sql_clock_mixed_source_connection', [], []);
+        }
+
+        return app(EloSqlClockPolicy::class)->capture($connection);
+    }
+
+    private function assertClock(?EloSqlClockToken $clock, SportEvent $event): void
+    {
+        if ($clock !== null) {
+            if ($event->getConnection() !== DB::connection()) {
+                throw new EloAdmissionRefused('sql_clock_mixed_source_connection', [], []);
+            }
+            app(EloSqlClockPolicy::class)->assertUnchanged($clock, $event->getConnection());
+        }
+    }
+
+    /** Stable actor/source evidence qualifies identity; a fresh request time never renews a snapshot. */
+    private function managedProvenance(SportEvent $event, EventInputSnapshotData $snapshot, ?EloSqlClockToken $clock): ?array
+    {
+        $evidence = data_get($snapshot->metadata, 'elo_input_admission');
+        $managed = app(EloAdmissionMode::class)->managed($event->sport, $event->getConnection());
+        if (! $managed && $evidence === null && $snapshot->sqlClockToken === null && $clock === null) {
+            return null;
+        }
+        if ($clock === null || $snapshot->sqlClockToken === null || ! $clock->checksRead() || ! $snapshot->sqlClockToken->checksRead() || ! is_array($evidence)
+            || ($evidence['sport'] ?? null) !== $event->sport
+            || (int) ($evidence['game_id'] ?? 0) !== (int) data_get($snapshot->inputs, 'event.game_id')
+            || empty($evidence['heads']) || ! is_string($evidence['configuration_hash'] ?? null)
+            || ! is_string($evidence['dependency_plan_hash'] ?? null)
+            || ! EloSqlClockPolicy::matchesPortablePolicy(data_get($snapshot->metadata, 'elo_sql_clock_policy'))) {
+            throw new EloAdmissionRefused('managed_snapshot_clock_or_provenance_missing', [], []);
+        }
+        $this->assertClock($clock, $event);
+        app(EloSqlClockPolicy::class)->assertUnchanged($snapshot->sqlClockToken, $event->getConnection());
+        if ($snapshot->cutoffAt === null
+            || ($evidence['cutoff_at_utc'] ?? null) !== $snapshot->cutoffAt->utc()->format('Y-m-d\TH:i:s.u\Z')) {
+            throw new EloAdmissionRefused('managed_snapshot_cutoff_provenance_mismatch', [], []);
+        }
+        foreach (['home', 'away'] as $side) {
+            $teamId = (int) data_get($snapshot->inputs, $side.'.team_id');
+            $head = $evidence['heads'][$teamId] ?? null;
+            if ($teamId < 1 || ! is_array($head)
+                || app(EloFixedScale::class)->rating(data_get($snapshot->inputs, $side.'.elo')) !== ($head['rating'] ?? null)) {
+                throw new EloAdmissionRefused('managed_snapshot_value_provenance_mismatch', [], []);
+            }
+        }
+        unset($evidence['admitted_at_utc']);
+
+        return ['version' => 'managed-snapshot-provenance-v1', 'elo_input_admission' => $evidence,
+            'sql_clock_policy' => EloSqlClockPolicy::policy()];
     }
 
     private function validateSnapshot(
@@ -152,7 +233,9 @@ class PredictionLifecycleOrchestrator
         SportEvent $event,
         string $phase,
         EventInputSnapshotData $snapshot,
+        ?EloSqlClockToken $clock = null,
     ): EventInputSnapshot {
+        $provenance = $this->managedProvenance($event, $snapshot, $clock);
         $contentHash = $this->hasher->hash([
             'schema_version' => $snapshot->schemaVersion,
             'phase' => $phase,
@@ -160,83 +243,77 @@ class PredictionLifecycleOrchestrator
             'source_timestamps' => $snapshot->sourceTimestamps,
             'cutoff_at' => $snapshot->cutoffAt,
             'latest_source_available_at' => $snapshot->latestSourceAvailableAt,
+            ...($provenance === null ? [] : ['managed_input_provenance' => $provenance]),
         ]);
 
-        return EventInputSnapshot::query()->firstOrCreate(
-            [
-                'sport_event_id' => $event->getKey(),
-                'phase' => $phase,
-                'schema_version' => $snapshot->schemaVersion,
-                'content_hash' => $contentHash,
-            ],
-            fn (): array => [
-                'sport' => $event->sport,
-                'captured_at' => $snapshot->capturedAt,
-                'cutoff_at' => $snapshot->cutoffAt,
-                'latest_source_available_at' => $snapshot->latestSourceAvailableAt,
-                'source_timestamps' => $snapshot->sourceTimestamps,
-                'inputs' => $event->sport === 'cfb'
-                    && ApplicationSetting::getValue(CfbSnapshotInputStorage::WRITES_SETTING, false) === true
-                    ? app(CfbSnapshotInputStorage::class)->prepare($snapshot->inputs)
-                    : $snapshot->inputs,
-                'object_uri' => $snapshot->objectUri,
-                'pregame_safety_status' => $snapshot->pregameSafetyStatus,
-                'metadata' => $snapshot->metadata,
-            ],
-        );
-    }
-
-    private function claimRun(
-        SportEvent $event,
-        EventInputSnapshot $snapshot,
-        int $releaseId,
-        string $phase,
-        string $trigger,
-        string $idempotencyKey,
-    ): CalculationRun {
-        try {
-            return CalculationRun::query()->create([
-                'id' => (string) Str::uuid(),
-                'sport_event_id' => $event->getKey(),
-                'event_input_snapshot_id' => $snapshot->getKey(),
-                'calculation_release_id' => $releaseId,
-                'phase' => $phase,
-                'trigger' => trim($trigger),
-                'idempotency_key' => $idempotencyKey,
-                'status' => 'running',
-                'started_at' => now(),
-            ]);
-        } catch (QueryException $exception) {
-            $existing = CalculationRun::query()->where('idempotency_key', $idempotencyKey)->first();
-
-            if ($existing === null) {
-                throw $exception;
+        $persist = function () use ($event, $phase, $snapshot, $contentHash, $clock, $provenance): EventInputSnapshot {
+            $this->assertClock($clock, $event);
+            if ($snapshot->sqlClockToken !== null) {
+                app(EloSqlClockPolicy::class)->assertUnchanged($snapshot->sqlClockToken, $event->getConnection());
             }
+            $stored = EventInputSnapshot::query()->firstOrCreate(
+                [
+                    'sport_event_id' => $event->getKey(),
+                    'phase' => $phase,
+                    'schema_version' => $snapshot->schemaVersion,
+                    'content_hash' => $contentHash,
+                ],
+                fn (): array => [
+                    'sport' => $event->sport,
+                    'captured_at' => $snapshot->capturedAt,
+                    'cutoff_at' => $snapshot->cutoffAt,
+                    'latest_source_available_at' => $snapshot->latestSourceAvailableAt,
+                    'source_timestamps' => $snapshot->sourceTimestamps,
+                    'inputs' => $event->sport === 'cfb'
+                        && ApplicationSetting::getValue(CfbSnapshotInputStorage::WRITES_SETTING, false) === true
+                        ? app(CfbSnapshotInputStorage::class)->prepare($snapshot->inputs)
+                        : $snapshot->inputs,
+                    'object_uri' => $snapshot->objectUri,
+                    'pregame_safety_status' => $snapshot->pregameSafetyStatus,
+                    'metadata' => $snapshot->metadata,
+                ],
+            );
+            if ($provenance !== null) {
+                $storedEvidence = data_get($stored->metadata, 'elo_input_admission');
+                if (! is_array($storedEvidence) || ! EloSqlClockPolicy::matchesPortablePolicy(data_get($stored->metadata, 'elo_sql_clock_policy'))) {
+                    throw new EloAdmissionRefused('managed_snapshot_existing_provenance_missing', [], []);
+                }
+                unset($storedEvidence['admitted_at_utc']);
+                if ($this->hasher->hash($storedEvidence) !== $this->hasher->hash($provenance['elo_input_admission'])) {
+                    throw new EloAdmissionRefused('managed_snapshot_existing_provenance_mismatch', [], []);
+                }
+            }
+            $this->assertClock($clock, $event);
 
-            return $existing;
-        }
+            return $stored;
+        };
+
+        return $clock === null ? $persist() : $event->getConnection()->transaction($persist);
     }
 
     private function persistPrediction(
         SportEvent $event,
         CalculationRun $run,
+        CalculationRunAttempt $attempt,
         CalculationReleaseData $release,
         string $phase,
         PredictionOutput $output,
         string $outputHash,
+        ?EloSqlClockToken $clock = null,
     ): CanonicalPrediction {
-        return DB::transaction(function () use ($event, $run, $release, $phase, $output, $outputHash): CanonicalPrediction {
-            SportEvent::query()->lockForUpdate()->findOrFail($event->getKey());
+        return DB::transaction(function () use ($event, $run, $attempt, $release, $phase, $output, $outputHash, $clock): CanonicalPrediction {
+            $this->assertClock($clock, $event);
+            $event = SportEvent::query()->lockForUpdate()->findOrFail($event->getKey());
             $run = CalculationRun::query()->lockForUpdate()->findOrFail($run->getKey());
 
-            if ($run->status !== 'running') {
-                throw new PredictionLifecycleException("Calculation run {$run->id} is not available for persistence.");
-            }
+            $attempt = $this->recovery->assertOwner($run, $attempt);
+            $this->recovery->assertPregameOpen($event, $phase);
 
             $latest = CanonicalPrediction::query()
                 ->where('sport_event_id', $event->getKey())
                 ->where('phase', $phase)
                 ->orderByDesc('revision')
+                ->lockForUpdate()
                 ->first();
 
             $prediction = CanonicalPrediction::query()->create([
@@ -262,6 +339,9 @@ class PredictionLifecycleOrchestrator
                 $this->createMarket($prediction, $market);
             }
 
+            $attempt->update([
+                'status' => 'succeeded', 'completed_at' => now(), 'output_hash' => $outputHash,
+            ]);
             $run->update([
                 'status' => 'succeeded',
                 'completed_at' => now(),
@@ -270,6 +350,8 @@ class PredictionLifecycleOrchestrator
                 'failure_code' => null,
                 'failure_message' => null,
             ]);
+
+            $this->assertClock($clock, $event);
 
             return $prediction->load('markets', 'calculationRun.release', 'calculationRun.inputSnapshot');
         });
@@ -280,22 +362,6 @@ class PredictionLifecycleOrchestrator
         $prediction->markets()->create([
             ...$market->toArray(),
             'is_primary' => true,
-        ]);
-    }
-
-    private function markFailed(CalculationRun $run, Throwable $exception): void
-    {
-        $run = CalculationRun::query()->find($run->getKey());
-
-        if ($run === null || $run->status === 'succeeded') {
-            return;
-        }
-
-        $run->update([
-            'status' => 'failed',
-            'completed_at' => now(),
-            'failure_code' => class_basename($exception),
-            'failure_message' => Str::limit($exception->getMessage(), 2000, ''),
         ]);
     }
 }

@@ -1,5 +1,7 @@
-export const formatPct = (value: number, digits = 1) =>
-    `${(value * 100).toFixed(digits)}%`;
+export const formatPct = (value: number | null | undefined, digits = 1) =>
+    value == null || !Number.isFinite(value)
+        ? 'Unavailable'
+        : `${(value * 100).toFixed(digits)}%`;
 export const formatEdgePoints = (value: number | null | undefined) => {
     if (value === null || value === undefined) return '-';
     const rounded = value.toFixed(1);

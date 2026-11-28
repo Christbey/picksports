@@ -3,6 +3,7 @@
 namespace App\Actions\WCBB;
 
 use App\Actions\Sports\AbstractCollegeBasketballPredictionGenerator;
+use App\Exceptions\Predictions\PredictionLifecycleException;
 use App\Models\WCBB\Game;
 use App\Models\WCBB\Prediction;
 use App\Models\WCBB\TeamMetric;
@@ -132,4 +133,13 @@ class GeneratePrediction extends AbstractCollegeBasketballPredictionGenerator
     protected const GAME_MODEL = Game::class;
 
     protected const TEAM_STAT_MODEL = TeamStat::class;
+
+    protected const BLEND_VERSION = 'wcbb-verified-market-v2';
+
+    public function executeHistorical(Model $game, bool $dispatchNarratives = false, array $snapshotOverrides = []): ?Model
+    {
+        throw new PredictionLifecycleException(
+            'WCBB historical reconstruction lacks point-in-time inputs. Use wcbb:compare-pregame-predictions for stored forecasts.',
+        );
+    }
 }

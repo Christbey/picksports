@@ -9,7 +9,6 @@ use App\Models\CBB\PlayerStat;
 use App\Models\CBB\Team;
 use App\Services\CBB\TeamScoringCredit;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 class SyncPlayerStats extends AbstractBasketballSyncPlayerStats
@@ -46,6 +45,7 @@ class SyncPlayerStats extends AbstractBasketballSyncPlayerStats
                     throw new RuntimeException('CBB player stat column is unavailable: '.$names[0]);
                 }
             }
+            $team['statistics'][0]['labels'] = array_column($aliases, 0);
             foreach ($team['statistics'][0]['athletes'] as &$athlete) {
                 if (($athlete['didNotPlay'] ?? false) || empty($athlete['stats'])) {
                     continue;
@@ -66,7 +66,8 @@ class SyncPlayerStats extends AbstractBasketballSyncPlayerStats
         }
         unset($team);
 
-        return DB::transaction(function () use ($gameData, $game): int {
+        return $game->getConnection()->transaction(function () use ($gameData, $game): int {
+            $game = $game->newQuery()->whereKey($game->getKey())->lockForUpdate()->firstOrFail();
             $count = parent::execute($gameData, $game);
             if ($game->status === 'STATUS_FINAL') {
                 $totals = $game->playerStats()->selectRaw('team_id, sum(points) as points')->groupBy('team_id')->get()->keyBy('team_id');

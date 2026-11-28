@@ -1,3 +1,7 @@
+> Historical proposal/worklog retained on November 27, 2026. The original text below records dated proposals, implementation assertions and measurements; it is not current operating instructions, evidence of completion, or approval to change business/scientific policy. Do not run its historical commands as an operational checklist. Current references: [docs/calculations-reference.md](calculations-reference.md), [docs/model-lifecycle.md](model-lifecycle.md), [docs/codebase-reference.md](codebase-reference.md).
+>
+> Carried obligations: Full2177-line dated worklog mixes superseded findings, implementation claims and remaining research. Preserve PIT/snapshot/price/pitcher/weather requirements and protected public promotion; no formula/threshold activation or current production/performance claim from historic tables.
+
 # MLB Prediction Review and Tuning Work Order
 
 Last updated: 2026-06-18

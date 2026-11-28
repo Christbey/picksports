@@ -12,6 +12,7 @@ defineProps<{
 }>();
 
 const playerName = (player: TopPerformer): string => {
+    if (player?.player?.display_name) return player.player.display_name;
     if (player?.player?.name) return player.player.name;
     if (player?.player_id) return `Player #${player.player_id}`;
     return 'Unknown';
@@ -31,10 +32,14 @@ const teamLabel = (
     return '-';
 };
 
-const rebounds = (player: TopPerformer): number =>
-    Number(player?.rebounds_total ?? player?.rebounds ?? 0);
-const assists = (player: TopPerformer): number => Number(player?.assists ?? 0);
-const points = (player: TopPerformer): number => Number(player?.points ?? 0);
+const count = (value: number | null | undefined): string =>
+    typeof value === 'number' && Number.isFinite(value)
+        ? String(value)
+        : 'Unavailable';
+const rebounds = (player: TopPerformer): string =>
+    count(player?.rebounds_total ?? player?.rebounds);
+const assists = (player: TopPerformer): string => count(player?.assists);
+const points = (player: TopPerformer): string => count(player?.points);
 </script>
 
 <template>
@@ -87,8 +92,8 @@ const points = (player: TopPerformer): number => Number(player?.points ?? 0);
                                 {{ assists(player) }}
                             </td>
                             <td class="p-2 text-center">
-                                {{ player.field_goals_made || 0 }}-{{
-                                    player.field_goals_attempted || 0
+                                {{ count(player.field_goals_made) }}-{{
+                                    count(player.field_goals_attempted)
                                 }}
                             </td>
                         </tr>
@@ -130,8 +135,8 @@ const points = (player: TopPerformer): number => Number(player?.points ?? 0);
                         </div>
                         <div class="text-center">
                             <div class="font-bold">
-                                {{ player.field_goals_made || 0 }}-{{
-                                    player.field_goals_attempted || 0
+                                {{ count(player.field_goals_made) }}-{{
+                                    count(player.field_goals_attempted)
                                 }}
                             </div>
                             <div class="text-xs text-muted-foreground">FG</div>

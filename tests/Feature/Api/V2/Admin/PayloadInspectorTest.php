@@ -12,6 +12,14 @@ use App\Models\WebPushSubscription;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
 
+it('validates nested sport filters without casting arrays to strings', function () {
+    Sanctum::actingAs(User::factory()->admin()->create());
+
+    $this->getJson('/api/v2/admin/payload-inspector?'.http_build_query([
+        'profile' => 'dashboard', 'sports' => [['nested' => 'mlb']],
+    ]))->assertUnprocessable()->assertJsonValidationErrors('sports.0');
+});
+
 it('requires authenticated admin access for the v2 admin payload inspector', function () {
     $this->getJson('/api/v2/admin/payload-inspector?profile=dashboard')
         ->assertUnauthorized();

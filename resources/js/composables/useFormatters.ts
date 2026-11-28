@@ -89,6 +89,7 @@ export const useGameStatus = (status: () => string) => {
                 return 'Live';
             case 'STATUS_UNRESOLVED':
                 return 'Result unverified';
+            case 'STATUS_FULL_TIME':
             case 'STATUS_FINAL':
                 return 'Final';
             default:

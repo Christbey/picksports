@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { isFinalGameStatus } from '@/lib/gameStatus';
+
+import type { BasketballTeamStats } from '@/lib/basketballBoxScore';
 import HistoricalForecastReview from '@/components/game-page/HistoricalForecastReview.vue';
 import BasketballBoxScoreCard from '@/components/game-page/BasketballBoxScoreCard.vue';
 import TeamMetricsComparisonCard from '@/components/game-page/TeamMetricsComparisonCard.vue';
@@ -8,22 +11,6 @@ import type {
     TopPerformer,
     BasketballHistoricalPrediction,
 } from '@/types';
-
-interface BasketballTeamStats {
-    field_goals_made: number;
-    field_goals_attempted: number;
-    three_point_made: number;
-    three_point_attempted: number;
-    free_throws_made: number;
-    free_throws_attempted: number;
-    rebounds: number;
-    assists: number;
-    turnovers: number;
-    steals: number;
-    blocks: number;
-    points_in_paint?: number | null;
-    fast_break_points?: number | null;
-}
 
 withDefaults(
     defineProps<{
@@ -73,13 +60,13 @@ withDefaults(
 <template>
     <div>
         <HistoricalForecastReview
-            v-if="gameStatus === 'STATUS_FINAL'"
+            v-if="isFinalGameStatus(gameStatus)"
             :historical-prediction="historicalPrediction"
         />
         <template v-if="showRecap">
             <BasketballBoxScoreCard
                 v-if="
-                    gameStatus === 'STATUS_FINAL' &&
+                    isFinalGameStatus(gameStatus) &&
                     homeTeamStats &&
                     awayTeamStats
                 "
@@ -92,7 +79,7 @@ withDefaults(
             />
 
             <TopPerformersCard
-                v-if="gameStatus === 'STATUS_FINAL' && topPerformers.length > 0"
+                v-if="isFinalGameStatus(gameStatus) && topPerformers.length > 0"
                 :performers="topPerformers"
                 :mode="performersMode"
                 :home-team-id="homeTeamId"
@@ -101,6 +88,13 @@ withDefaults(
             />
         </template>
 
+        <p
+            v-if="showMetrics && homeMetrics && awayMetrics"
+            class="text-xs text-muted-foreground"
+        >
+            Latest stored season metrics; not a snapshot from before this game's
+            kickoff.
+        </p>
         <TeamMetricsComparisonCard
             v-if="showMetrics && homeMetrics && awayMetrics"
             :title="metricsTitle"

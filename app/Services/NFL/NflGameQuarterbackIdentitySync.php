@@ -3,6 +3,7 @@
 namespace App\Services\NFL;
 
 use App\Models\NFL\Game;
+use App\Support\ScoreObservation;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -96,11 +97,19 @@ class NflGameQuarterbackIdentitySync
 
     public function matchesFinalGame(Game $game, array $row): bool
     {
+        if (! is_string($row['gameday'] ?? null) || preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}\z/', $row['gameday']) !== 1) {
+            return false;
+        }
         try {
             $date = CarbonImmutable::createFromFormat('!Y-m-d', $row['gameday']);
         } catch (\Throwable) {
             return false;
         }
+        if (! $date || $date->toDateString() !== $row['gameday']) {
+            return false;
+        }
+        $sourceHomeScore = ScoreObservation::known($row['home_score'] ?? null);
+        $sourceAwayScore = ScoreObservation::known($row['away_score'] ?? null);
         $regular = in_array((string) $game->season_type, ['2', 'regular', 'REG'], true);
 
         return $game->status === 'STATUS_FINAL' && $date && in_array($game->game_date?->toDateString(), [$date->toDateString(), $date->addDay()->toDateString()], true)
@@ -110,9 +119,9 @@ class NflGameQuarterbackIdentitySync
             && ($regular ? $row['game_type'] === 'REG' : in_array($row['game_type'], ['WC', 'DIV', 'CON', 'SB'], true))
             && $this->team($row['home_team']) === $this->team((string) $game->homeTeam?->abbreviation)
             && $this->team($row['away_team']) === $this->team((string) $game->awayTeam?->abbreviation)
-            && is_numeric($row['home_score']) && is_numeric($row['away_score'])
+            && $sourceHomeScore !== null && $sourceAwayScore !== null
             && $game->home_score !== null && $game->away_score !== null
-            && (int) $row['home_score'] === (int) $game->home_score && (int) $row['away_score'] === (int) $game->away_score;
+            && $sourceHomeScore === (int) $game->home_score && $sourceAwayScore === (int) $game->away_score;
     }
 
     private function team(string $team): string

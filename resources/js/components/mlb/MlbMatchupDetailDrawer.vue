@@ -52,12 +52,7 @@ const open = defineModel<boolean>('open', { default: false });
             <SheetHeader v-if="prediction">
                 <SheetTitle>{{ matchupLabel(prediction) }}</SheetTitle>
                 <SheetDescription>
-                    {{
-                        formatTime(
-                            prediction.game?.game_date,
-                            prediction.game?.game_time,
-                        )
-                    }}
+                    {{ formatTime(prediction.game?.starts_at) }}
                     <template
                         v-if="predictionTiming(prediction).phase === 'live'"
                     >

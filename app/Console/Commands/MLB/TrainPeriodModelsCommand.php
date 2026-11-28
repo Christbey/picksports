@@ -24,14 +24,19 @@ class TrainPeriodModelsCommand extends Command
         CsvDataset $csv,
         MlbPeriodModelRunRegistrar $registrar,
     ): int {
+        if (! (bool) $this->option('no-register')) {
+            $this->error('MLB period registration is unavailable until a reviewed period source-proof and selection protocol exists. Use --no-register only for separately admitted research training.');
+
+            return self::FAILURE;
+        }
+
         $from = (int) ($this->option('from-season')
             ?: config('mlb_ml.period_models.history_start_season', 2021));
         $to = (int) ($this->option('to-season') ?: now()->year);
         $runDirectory = rtrim((string) config('mlb_ml.period_models.work_directory'), '/')
             .'/'.now()->format('Ymd_His').'_'.Str::lower(Str::random(8));
-        File::ensureDirectoryExists($runDirectory, 0700, true);
         $dataset = $runDirectory.'/dataset.csv';
-        $bundle = $runDirectory.'/period_bundle.joblib';
+        $bundle = $runDirectory.'/period_bundle.json';
         $evaluation = $runDirectory.'/evaluation.json';
         $manifest = $runDirectory.'/manifest.json';
         $rows = $features->historicalRows(range($from, $to));
@@ -40,6 +45,12 @@ class TrainPeriodModelsCommand extends Command
 
             return self::FAILURE;
         }
+        if ($rows->contains(fn (array $row): bool => ($row['pregame_safe'] ?? false) !== true || ! in_array($row['availability_status'] ?? null, ['observed_pregame', 'verified_reconstruction'], true))) {
+            $this->error('Retrospective or unknown-availability rows cannot enter point-in-time model training.');
+
+            return self::FAILURE;
+        }
+        File::ensureDirectoryExists($runDirectory, 0700, true);
         $csv->write($dataset, $rows);
 
         $command = [

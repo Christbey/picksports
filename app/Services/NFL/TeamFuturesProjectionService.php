@@ -6,6 +6,7 @@ use App\Models\NFL\Game;
 use App\Models\NFL\TeamMetric;
 use App\Models\NFL\TeamMetricSnapshot;
 use App\Services\Sports\FuturesOddsLookupService;
+use App\Support\Sports\LegacyTimestampCarrier;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 
@@ -113,6 +114,7 @@ class TeamFuturesProjectionService
                 'over_probability' => $overProbability,
                 'under_probability' => $underProbability,
                 'push_probability' => $pushProbability,
+                'metric_evidence' => $metric['_metric_evidence'],
                 'projection_factors' => [
                     'predictive_rating' => round((float) ($projectionMetric['predictive_rating'] ?? 0.0), 3),
                     'future_strength_of_schedule' => round((float) ($projectionMetric['future_strength_of_schedule'] ?? 0.0), 3),
@@ -157,13 +159,18 @@ class TeamFuturesProjectionService
         bool $pointInTime = false
     ): array {
         if ($asOfDate !== null) {
+            $carrier = LegacyTimestampCarrier::forInstant(Carbon::parse($asOfDate));
+            if ($carrier === null) {
+                return [];
+            }
             $snapshotRows = TeamMetricSnapshot::query()
                 ->where('season', $season)
-                ->where('captured_at', '<=', Carbon::parse($asOfDate))
+                ->where('captured_at', '<=', $carrier)
                 ->when($pointInTime, fn ($query) => $query->whereDate('calculation_date', '<=', Carbon::parse($asOfDate)))
                 ->orderByDesc('captured_at')
                 ->orderByDesc('id')
                 ->get([
+                    'snapshot_key', 'season', 'captured_at', 'observation',
                     'team_id',
                     'wins',
                     'losses',
@@ -176,6 +183,10 @@ class TeamFuturesProjectionService
 
             $snapshotByTeam = [];
             foreach ($snapshotRows as $row) {
+                $lineage = TeamMetricSnapshotObservation::lineage($row);
+                if ($pointInTime && ! TeamMetricSnapshotObservation::eligibleAt($lineage, Carbon::parse($asOfDate))) {
+                    continue;
+                }
                 $teamId = (int) ($row->team_id ?? 0);
                 if ($teamId <= 0 || isset($snapshotByTeam[$teamId])) {
                     continue;
@@ -190,6 +201,7 @@ class TeamFuturesProjectionService
                     'injury_total_adjustment' => (float) ($row->injury_total_adjustment ?? 0.0),
                     'calculation_date' => $row->calculation_date?->toDateString(),
                     '_source' => 'snapshot',
+                    '_metric_evidence' => $lineage,
                 ];
             }
 
@@ -242,6 +254,7 @@ class TeamFuturesProjectionService
                 'calculation_date' => $row->calculation_date?->toDateString(),
                 'ties' => (int) ($row->ties ?? 0),
                 '_source' => 'season_metric',
+                '_metric_evidence' => ['mode' => 'current_fallback_mutable_unverified', 'observed_at' => null, 'historical_availability_proven' => false, 'limitation' => 'Mutable current metric fallback; not a contemporaneous historical observation.'],
             ];
         }
 

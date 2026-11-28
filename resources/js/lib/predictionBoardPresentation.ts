@@ -42,6 +42,17 @@ export const mapV2Prediction = (
         comparison_forecasts: prediction.comparison_forecasts ?? null,
         ...predictionBoardLiveFields(prediction),
         game_id: numberValue(prediction.game_id),
+        ...('spread_convention' in prediction
+            ? {
+                  spread_convention:
+                      typeof prediction.spread_convention === 'string'
+                          ? prediction.spread_convention
+                          : null,
+              }
+            : prediction.phase === 'pregame' &&
+                typeof prediction.revision === 'number'
+              ? { spread_convention: 'home_handicap' }
+              : {}),
         predicted_spread: numberValue(projection.predicted_spread),
         predicted_total: numberValue(projection.predicted_total),
         win_probability: homeWinProbability,
@@ -78,6 +89,7 @@ export const mapV2Prediction = (
         game: {
             id: Number(game?.id ?? prediction.game_id ?? 0),
             game_date: game?.game_date ?? '',
+            starts_at: game?.starts_at ?? null,
             game_time: game?.game_time ?? undefined,
             status: prediction.status ?? game?.status ?? '',
             home_score: numberValue(game?.home_score),

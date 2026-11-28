@@ -5,9 +5,11 @@ namespace App\Actions\OddsApi;
 use App\Models\NFL\Game;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use App\Services\OddsApi\OddsApiService;
+use App\Support\Sports\SeasonTypeCandidates;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 abstract class AbstractSyncPlayerPropsForGames
 {
@@ -100,16 +102,25 @@ abstract class AbstractSyncPlayerPropsForGames
                 continue;
             }
 
-            $playerPropModel = $this->playerPropModelClass();
-            $playerPropModel::query()
-                ->where('game_id', $game->id)
-                ->delete();
-
-            if (isset($propsData['bookmakers']) && is_array($propsData['bookmakers'])) {
-                foreach ($propsData['bookmakers'] as $bookmaker) {
-                    $stored += $this->storeBookmakerProps($game, $bookmaker, $event['id'], $effectiveSportKey);
+            $stored += DB::transaction(function () use ($game, $propsData, $event, $effectiveSportKey): int {
+                $current = $game->newQuery()->lockForUpdate()->findOrFail($game->id);
+                if ($current instanceof Game && ! PlayerPropAnalyzer::nflPregame($current)) {
+                    return 0;
                 }
-            }
+                $playerPropModel = $this->playerPropModelClass();
+                // Keep immutable admission/grade evidence; ordinary mutable quotes
+                // still replace as before, and fresh snapshots get fresh row IDs.
+                $playerPropModel::query()->where('game_id', $game->id)->whereNull('graded_at')
+                    ->whereDoesntHave('gradeRevisions')->delete();
+                $count = 0;
+                if (isset($propsData['bookmakers']) && is_array($propsData['bookmakers'])) {
+                    foreach ($propsData['bookmakers'] as $bookmaker) {
+                        $count += $this->storeBookmakerProps($current, $bookmaker, $event['id'], $effectiveSportKey);
+                    }
+                }
+
+                return $count;
+            });
         }
 
         if ($stored > 0) {
@@ -289,77 +300,21 @@ abstract class AbstractSyncPlayerPropsForGames
         }
 
         $mappedEspnName = $this->oddsApiService->mappedEspnPlayerName($oddsSportKey, $playerName);
-        if ($mappedEspnName) {
-            $mappedPlayer = $playerModel::query()
-                ->whereIn('team_id', $teamIds)
-                ->where(function ($query) use ($mappedEspnName) {
-                    $query->whereRaw('LOWER(full_name) = ?', [mb_strtolower($mappedEspnName)])
-                        ->orWhere('full_name', 'like', "%{$mappedEspnName}%");
-                })
-                ->first();
+        $normalize = fn (string $value): string => preg_replace('/[^a-z0-9]/', '', strtolower($value));
+        $players = $playerModel::query()->whereIn('team_id', $teamIds)->orderBy('id')->get();
+        // A reviewed explicit ID is authoritative only within this game's teams.
+        // Every name-based path requires one normalized exact full-name match.
+        $name = $normalize($mappedEspnName ?: $playerName);
+        if ($name !== '') {
+            $matches = $players->filter(function (Model $player) use ($normalize, $name): bool {
+                $fullName = $player->full_name ?? trim(($player->first_name ?? '').' '.($player->last_name ?? ''));
 
-            if ($mappedPlayer) {
-                return $mappedPlayer->id;
+                return $normalize((string) $fullName) === $name;
+            });
+            if ($matches->count() === 1) {
+                return (int) $matches->first()->id;
             }
         }
-
-        $directMatch = $playerModel::query()
-            ->whereIn('team_id', $teamIds)
-            ->where(function ($query) use ($playerName) {
-                $query->whereRaw('LOWER(full_name) = ?', [mb_strtolower($playerName)])
-                    ->orWhere('full_name', 'like', "%{$playerName}%");
-            })
-            ->first();
-
-        if ($directMatch) {
-            return $directMatch->id;
-        }
-
-        $normalizedInput = $this->oddsApiService->normalizePlayerName($playerName);
-        $lastName = str_contains($normalizedInput, ' ')
-            ? (string) str($normalizedInput)->afterLast(' ')
-            : $normalizedInput;
-
-        $candidate = $playerModel::query()
-            ->whereIn('team_id', $teamIds)
-            ->whereNotNull('full_name')
-            ->get()
-            ->map(function ($player) use ($normalizedInput) {
-                $normalizedCandidate = $this->oddsApiService->normalizePlayerName((string) $player->full_name);
-                similar_text($normalizedInput, $normalizedCandidate, $score);
-
-                return [
-                    'player' => $player,
-                    'score' => $score,
-                ];
-            })
-            ->sortByDesc('score')
-            ->first();
-
-        if ($candidate && $candidate['score'] >= 82.0) {
-            return $candidate['player']->id;
-        }
-
-        if ($candidate) {
-            $this->oddsApiService->rememberUnmappedPlayer(
-                $oddsSportKey,
-                $playerName,
-                $candidate['player'],
-                (int) round($candidate['score'])
-            );
-        }
-
-        $lastNameMatch = $playerModel::query()
-            ->whereIn('team_id', $teamIds)
-            ->whereRaw('LOWER(last_name) = ?', [$lastName])
-            ->first();
-
-        if ($lastNameMatch) {
-            $this->oddsApiService->rememberUnmappedPlayer($oddsSportKey, $playerName, $lastNameMatch, 75);
-
-            return $lastNameMatch->id;
-        }
-
         $this->oddsApiService->rememberUnmappedPlayer($oddsSportKey, $playerName);
 
         return null;
@@ -413,36 +368,7 @@ abstract class AbstractSyncPlayerPropsForGames
      */
     protected function resolveSeasonTypeCandidates(int|string $seasonType): array
     {
-        $sportSlug = $this->sportKey();
-        $typeNames = config("{$sportSlug}.season.type_names", []);
-        $typesByKey = config("{$sportSlug}.season.types", []);
-        $candidates = [$seasonType, (string) $seasonType];
-
-        if (is_string($seasonType) && isset($typeNames[$seasonType])) {
-            $candidates[] = $typeNames[$seasonType];
-        }
-
-        if (is_string($seasonType) && isset($typesByKey[$seasonType])) {
-            $resolved = $typesByKey[$seasonType];
-            $candidates[] = $resolved;
-            $candidates[] = (string) $resolved;
-        }
-
-        if (is_numeric($seasonType)) {
-            $code = (int) $seasonType;
-            $matchedKey = array_search($code, $typesByKey, true);
-            if ($matchedKey !== false) {
-                $candidates[] = (string) $matchedKey;
-                if (isset($typeNames[$matchedKey])) {
-                    $candidates[] = $typeNames[$matchedKey];
-                }
-            }
-        }
-
-        return array_values(array_unique(array_filter(
-            $candidates,
-            fn ($value) => $value !== null && $value !== ''
-        )));
+        return SeasonTypeCandidates::resolve($this->sportKey(), $seasonType);
     }
 
     /**

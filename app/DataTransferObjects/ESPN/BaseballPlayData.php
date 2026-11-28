@@ -18,8 +18,8 @@ class BaseballPlayData extends AbstractPlayData
         public ?int $balls,
         public ?int $strikes,
         public ?int $outs,
-        public int $homeScore,
-        public int $awayScore,
+        public ?int $homeScore,
+        public ?int $awayScore,
         public ?string $battingTeamEspnId,
         public ?string $pitchingTeamEspnId,
     ) {}

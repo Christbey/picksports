@@ -3,6 +3,7 @@
 namespace App\Actions\ESPN\MLB\Concerns;
 
 use App\DataTransferObjects\ESPN\GameData;
+use App\Support\MLB\MlbGameStart;
 use Carbon\CarbonImmutable;
 
 trait ResolvesMlbGameDateParts
@@ -13,16 +14,16 @@ trait ResolvesMlbGameDateParts
      */
     protected function resolveMlbGameDateParts(array $rawGame): array
     {
-        $dateTime = is_scalar($rawGame['date'] ?? null) ? (string) $rawGame['date'] : null;
-        if ($dateTime === null || $dateTime === '') {
+        if (! array_key_exists('date', $rawGame) || $rawGame['date'] === null) {
             return GameData::extractDateParts(null);
         }
-
-        try {
-            $scheduledAt = CarbonImmutable::parse($dateTime);
-        } catch (\Throwable) {
-            return GameData::extractDateParts($dateTime);
+        if (! is_string($rawGame['date']) || trim($rawGame['date']) === '') {
+            throw new \InvalidArgumentException('Supplied MLB start must be an explicit offset/Z timestamp.');
         }
+        $dateTime = $rawGame['date'];
+
+        $observation = MlbGameStart::observed($dateTime, $rawGame);
+        $scheduledAt = CarbonImmutable::createFromTimestampUTC($observation['start_epoch']);
 
         $competition = $rawGame['competitions'][0] ?? data_get($rawGame, 'header.competitions.0', []);
         $venueCity = data_get($competition, 'venue.address.city');
@@ -37,7 +38,7 @@ trait ResolvesMlbGameDateParts
         return [
             'game_date' => $local->toDateString(),
             'game_time' => $local->format('H:i:s'),
-        ];
+        ] + $observation;
     }
 
     protected function mlbVenueTimezone(?string $venueCity, ?string $venueState): string

@@ -5,7 +5,6 @@ namespace App\Console\Commands\NFL;
 use App\Actions\NFL\GeneratePredictionFromHistoricalElo;
 use App\Actions\NFL\GradePredictions;
 use App\Models\NFL\Game;
-use App\Models\NFL\Prediction;
 use App\Models\PredictionFeatureSnapshot;
 use App\Services\NFL\NflPredictionProfileConfigurator;
 use App\Support\SportsViewCache;
@@ -27,7 +26,7 @@ class BackfillHistoricalPredictionsCommand extends Command
         {--only-unversioned : Only rebuild games whose prediction has no model version}
         {--only-missing-profile : Only rebuild games without a snapshot for the selected profile}
         {--profile=elo-only : Historical model profile: elo-only, rolling-efficiency, qb-form, line-matchup, contextual, full-historical, or configured}
-        {--regrade : Clear existing grades for selected games before grading}';
+        {--regrade : Retired; use the bounded audited legacy grade repair command}';
 
     protected $description = 'Generate and grade historical NFL predictions for completed games without requiring betting odds';
 
@@ -36,6 +35,11 @@ class BackfillHistoricalPredictionsCommand extends Command
         GradePredictions $gradePredictions,
         NflPredictionProfileConfigurator $profiles,
     ): int {
+        if ($this->option('regrade')) {
+            $this->error('Historical grade clearing is retired. Use sports:repair-legacy-prediction-grades nfl with explicit --game IDs and reviewed --apply.');
+
+            return self::FAILURE;
+        }
         try {
             [$startDate, $endDate] = $this->resolveDateRange();
             $profiles->apply((string) $this->option('profile'));
@@ -81,10 +85,6 @@ class BackfillHistoricalPredictionsCommand extends Command
         $this->newLine(2);
 
         $gameIds = $games->pluck('id')->map(fn (mixed $id): int => (int) $id)->all();
-        if ((bool) $this->option('regrade')) {
-            $this->clearExistingGrades($gameIds);
-        }
-
         $grading = $gradePredictions->executeForGameIds($gameIds);
 
         app(SportsViewCache::class)->bustSegments([
@@ -222,26 +222,5 @@ class BackfillHistoricalPredictionsCommand extends Command
             $fromDate ? Carbon::parse($fromDate)->startOfDay() : null,
             $toDate ? Carbon::parse($toDate)->endOfDay() : null,
         ];
-    }
-
-    /**
-     * @param  list<int>  $gameIds
-     */
-    private function clearExistingGrades(array $gameIds): void
-    {
-        if ($gameIds === []) {
-            return;
-        }
-
-        Prediction::query()
-            ->whereIn('game_id', $gameIds)
-            ->update([
-                'actual_spread' => null,
-                'actual_total' => null,
-                'spread_error' => null,
-                'total_error' => null,
-                'winner_correct' => null,
-                'graded_at' => null,
-            ]);
     }
 }

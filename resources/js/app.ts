@@ -7,6 +7,12 @@ import { initializeTheme } from './composables/useAppearance';
 import { flushPendingAnalyticsEvent, trackPageView } from './lib/analytics';
 import { initializePerformanceMonitoring } from './lib/performance';
 
+import {
+    isSensitiveDocument,
+    isSensitiveLocation,
+    requiresDocumentNavigation,
+} from './lib/sensitiveNavigation';
+
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
 createInertiaApp({
@@ -30,8 +36,29 @@ createInertiaApp({
     },
 });
 
+// A fresh document removes already-loaded public tags before a credential URL enters history.
+router.on('before', (event) => {
+    const visit = event.detail.visit;
+    if (
+        visit.method.toLowerCase() === 'get' &&
+        requiresDocumentNavigation(visit.url.href)
+    ) {
+        event.preventDefault();
+        window.location.assign(visit.url.href);
+    }
+});
+
 router.on('navigate', (event) => {
     const page = event.detail.page;
+    if (isSensitiveDocument() || isSensitiveLocation(window.location.href)) {
+        // POST redirects cannot be canceled as GET visits; reload before telemetry or pending conversions.
+        if (
+            !isSensitiveDocument() ||
+            !isSensitiveLocation(window.location.href)
+        )
+            window.location.replace(window.location.href);
+        return;
+    }
     window.requestAnimationFrame(() => {
         trackPageView(page);
         flushPendingAnalyticsEvent(page);

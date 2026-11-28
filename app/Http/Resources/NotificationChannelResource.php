@@ -16,10 +16,10 @@ class NotificationChannelResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'user_id' => $this->user_id,
-            'channel' => $this->channel,
-            'enabled' => $this->enabled,
-            'config' => $this->config,
+            'name' => $this->name,
+            'type' => $this->type,
+            'is_active' => $this->is_active,
+            'configured' => is_array($this->config) && $this->config !== [],
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

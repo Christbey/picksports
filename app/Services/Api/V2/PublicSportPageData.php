@@ -6,7 +6,6 @@ use App\Http\Presenters\PublicGameSummaryPresenter;
 use App\Http\Resources\BettingRecommendationResource;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use App\Support\InjuryImpactScorer;
-use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -131,8 +130,12 @@ class PublicSportPageData
                 'type' => $row->type,
                 'injury_date' => $row->injury_date,
                 'return_date' => $row->return_date,
-                'source_updated_at' => $this->normalizeDateTime($row->source_updated_at),
-                'updated_at' => $this->normalizeDateTime($row->updated_at),
+                // These legacy projections do not carry a versioned observation clock receipt.
+                'source_updated_at' => null,
+                'source_updated_at_raw' => $row->source_updated_at,
+                'source_clock_status' => 'unverified_storage_clock',
+                'last_stored_at' => $row->updated_at,
+                'updated_at' => $row->updated_at,
                 'impact_score' => $impact['score'],
                 'impact_label' => $impact['label'],
             ];
@@ -149,7 +152,7 @@ class PublicSportPageData
                 ->values()
                 ->all(),
             'recent' => $rows
-                ->sortByDesc(fn (array $injury) => $injury['source_updated_at'] ?? $injury['updated_at'] ?? '')
+                ->sortByDesc(fn (array $injury) => $injury['last_stored_at'] ?? '')
                 ->take(5)
                 ->values()
                 ->all(),
@@ -472,15 +475,6 @@ class PublicSportPageData
         }
 
         return "{$wins}-{$losses}";
-    }
-
-    private function normalizeDateTime(mixed $value): ?string
-    {
-        if ($value === null || $value === '') {
-            return null;
-        }
-
-        return Carbon::parse($value)->toIso8601String();
     }
 
     private function defaultPropsDate(string $sportCode): ?string

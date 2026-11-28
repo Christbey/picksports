@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
-import { Activity, AlertTriangle, Clock3 } from 'lucide-vue-next';
+import { Activity, AlertTriangle } from 'lucide-vue-next';
 import { computed, onMounted, ref, watch } from 'vue';
 import DataRecovery from '@/components/DataRecovery.vue';
 import { useAsyncResource } from '@/composables/useAsyncResource';
@@ -37,16 +37,21 @@ interface InjuryRow {
     expected_impact?: number;
     impact_level?: 'critical' | 'high' | 'medium' | 'low';
     source?: string;
-    is_stale?: boolean;
+    is_stale?: boolean | null;
 }
 
 interface InjuryFreshness {
     last_observed_at?: string | null;
     latest_source_updated_at?: string | null;
     age_hours?: number | null;
-    is_stale?: boolean;
-    stale_rows?: number;
+    is_stale?: boolean | null;
+    stale_rows?: number | null;
     max_age_hours?: number;
+    last_stored_at?: string | null;
+    source_clock_status?:
+        | 'unverified_storage_clock'
+        | 'no_matching_observations';
+    unverified_rows?: number;
 }
 
 const props = defineProps<{
@@ -212,20 +217,6 @@ function impactClass(level?: InjuryRow['impact_level']): string {
     return 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300';
 }
 
-function formatTimestamp(value: string | null | undefined): string {
-    if (!value) return 'Unknown';
-
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-
-    return new Intl.DateTimeFormat(undefined, {
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-    }).format(date);
-}
-
 const injuryRequest = useAsyncResource(
     async (signal) => {
         const payload = await api.injuries.index<InjuryRow>(
@@ -275,25 +266,26 @@ onMounted(() => void fetchInjuries());
                 </div>
 
                 <Alert
-                    v-if="freshness?.is_stale"
+                    v-if="freshness"
                     class="border-amber-500/40 bg-amber-500/10"
                 >
                     <AlertTriangle class="size-4 text-amber-600" />
-                    <AlertDescription
-                        class="text-amber-900 dark:text-amber-100"
-                    >
-                        Injury data is stale. Last successful sync:
-                        {{ formatTimestamp(freshness.last_observed_at) }}. Do
-                        not use this board for a new betting decision until the
-                        sync recovers.
-                    </AlertDescription>
-                </Alert>
-
-                <Alert v-else-if="freshness?.last_observed_at">
-                    <Clock3 class="size-4" />
                     <AlertDescription>
-                        Last successful sync
-                        {{ formatTimestamp(freshness.last_observed_at) }}.
+                        Observation freshness is unavailable. Stored clocks are
+                        unverified; local record updates do not prove a provider
+                        sync or complete coverage.
+                        <span
+                            v-if="
+                                freshness.source_clock_status ===
+                                'no_matching_observations'
+                            "
+                            >No matching records do not establish verified empty
+                            provider coverage.</span
+                        >
+                        <span v-if="freshness.last_stored_at"
+                            >Local record update (stored clock, timezone
+                            unverified): {{ freshness.last_stored_at }}.</span
+                        >
                     </AlertDescription>
                 </Alert>
 
@@ -407,7 +399,7 @@ onMounted(() => void fetchInjuries());
                     @retry="fetchInjuries"
                 />
 
-                <Alert v-if="warnings.length > 0 && !freshness?.is_stale">
+                <Alert v-if="warnings.length > 0 && !freshness">
                     <AlertTriangle class="size-4" />
                     <AlertDescription>{{
                         warnings.join(' ')
@@ -434,7 +426,8 @@ onMounted(() => void fetchInjuries());
 
                 <Card v-else-if="!error && grouped.length === 0">
                     <CardContent class="py-8 text-sm text-muted-foreground">
-                        No actionable injuries found.
+                        No matching stored injury records. This does not
+                        establish complete provider coverage.
                     </CardContent>
                 </Card>
 
@@ -571,11 +564,11 @@ onMounted(() => void fetchInjuries());
                                         <span
                                             class="ui-chip text-foreground/75"
                                         >
-                                            Updated:
+                                            Provider update (stored clock,
+                                            timezone unverified):
                                             {{
-                                                formatTimestamp(
-                                                    injury.source_updated_at,
-                                                )
+                                                injury.source_updated_at ??
+                                                'Unknown'
                                             }}
                                         </span>
                                     </div>

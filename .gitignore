@@ -1,6 +1,8 @@
 /.phpunit.cache
 /bootstrap/ssr
 /node_modules
+# Nested artifact/workspace dependencies, including local dependency symlinks.
+**/node_modules
 /public/build
 /public/hot
 /public/storage
@@ -56,3 +58,6 @@ __pycache__/
 /frontend/.env
 /frontend/.env.*
 !/frontend/.env.example
+
+# Local private source and verification checkpoint archives.
+outputs/production-readiness/private-checkpoints/

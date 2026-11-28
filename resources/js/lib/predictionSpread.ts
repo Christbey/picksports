@@ -5,6 +5,19 @@ export function predictionHomeMargin(
 ): number | null {
     if (!prediction || typeof prediction !== 'object') return null;
     const value = prediction as Record<string, unknown>;
+    const spread = value.predicted_spread;
+    const parsed =
+        typeof spread === 'number' ||
+        (typeof spread === 'string' && spread.trim() !== '')
+            ? Number(spread)
+            : NaN;
+    if ('spread_convention' in value) {
+        if (!Number.isFinite(parsed)) return null;
+        if (value.spread_convention === 'home_margin') return parsed;
+        if (value.spread_convention === 'home_handicap')
+            return parsed === 0 ? 0 : -parsed;
+        return null;
+    }
     // Board adapters can omit canonical phase/revision metadata. This field is
     // explicitly a home handicap in both API and dashboard payloads.
     const context = value.model_bet_context;
@@ -19,16 +32,11 @@ export function predictionHomeMargin(
     ) {
         return Number(modelLine) === 0 ? 0 : -Number(modelLine);
     }
-    const spread = value.predicted_spread;
-    if (typeof spread !== 'number' && typeof spread !== 'string') return null;
-    if (typeof spread === 'string' && !spread.trim()) return null;
-    const parsed = Number(spread);
     if (!Number.isFinite(parsed)) return null;
-    if (parsed === 0) return 0;
     const canonicalMarket =
         !usesHomeMargin &&
         value.phase === 'pregame' &&
         typeof value.revision === 'number' &&
         typeof value.game !== 'string';
-    return canonicalMarket ? -parsed : parsed;
+    return canonicalMarket && parsed !== 0 ? -parsed : parsed;
 }

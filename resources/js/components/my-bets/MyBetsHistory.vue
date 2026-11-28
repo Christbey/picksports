@@ -11,6 +11,7 @@ import { Trash2, Check, X } from 'lucide-vue-next';
 import { useMyBetsContext } from '@/composables/useMyBets';
 const {
     bets,
+    changePage,
     loading,
     error,
     hasLoaded,
@@ -163,6 +164,30 @@ const {
                     </div>
                 </div>
             </div>
+            <nav
+                v-if="hasLoaded && bets.meta.last_page > 1"
+                aria-label="Bet history pages"
+                class="mt-4 flex items-center justify-between gap-3"
+            >
+                <Button
+                    variant="outline"
+                    :disabled="loading || bets.meta.current_page <= 1"
+                    @click="changePage(bets.meta.current_page - 1)"
+                    >Previous page</Button
+                >
+                <span aria-live="polite"
+                    >Page {{ bets.meta.current_page }} of
+                    {{ bets.meta.last_page }}</span
+                >
+                <Button
+                    variant="outline"
+                    :disabled="
+                        loading || bets.meta.current_page >= bets.meta.last_page
+                    "
+                    @click="changePage(bets.meta.current_page + 1)"
+                    >Next page</Button
+                >
+            </nav>
         </CardContent>
     </Card>
 </template>

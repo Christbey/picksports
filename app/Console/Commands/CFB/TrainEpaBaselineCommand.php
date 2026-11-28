@@ -3,13 +3,15 @@
 namespace App\Console\Commands\CFB;
 
 use App\Models\CFB\Game;
-use App\Models\CFB\GameDataCheck;
 use App\Services\CFB\Data\CfbDataReadiness;
 use App\Services\CFB\Data\CfbScoringLedger;
 use App\Services\CFB\PlayEpaDataService;
 use App\Services\CFB\TrueEpaCalculator;
 use App\Services\Epa\StateBaselineService;
+use App\Support\CFB\ObservedTerminalBoundary;
+use App\Support\ScoreObservation;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 
 class TrainEpaBaselineCommand extends Command
 {
@@ -32,8 +34,7 @@ class TrainEpaBaselineCommand extends Command
 
                 continue;
             }
-            $revision = GameDataCheck::where('game_id', $game->id)->where('component', 'plays')
-                ->whereNotNull('accepted_at')->latest('accepted_at')->latest('id')->first();
+            $revision = app(CfbDataReadiness::class)->acceptedCheck($game, 'plays');
             if (! $revision) {
                 $excludedGames++;
 
@@ -53,19 +54,9 @@ class TrainEpaBaselineCommand extends Command
                 if (! $eligibility->isEpaEligiblePlay($play) || ! $play->possession_team_id || $play->period > 4) {
                     continue;
                 }
-                $startHome = $i ? $plays[$i - 1]->home_score : 0;
-                $startAway = $i ? $plays[$i - 1]->away_score : 0;
-                $value = 0;
-                for ($j = $i; $j < count($plays); $j++) {
-                    if (($play->period <= 2) !== ($plays[$j]->period <= 2) || $plays[$j]->period > 4) {
-                        break;
-                    }
-                    $hd = $plays[$j]->home_score - $startHome;
-                    $ad = $plays[$j]->away_score - $startAway;
-                    if ($hd || $ad) {
-                        $value = $play->possession_team_id === $game->home_team_id ? $hd - $ad : $ad - $hd;
-                        break;
-                    }
+                $value = $this->observedFutureValue($plays, $i, (int) $play->possession_team_id, (int) $game->home_team_id, (int) $game->away_team_id);
+                if ($value === null) {
+                    continue;
                 }
                 $key = $calculator->stateKeyForPlay($play);
                 $buckets[$key][] = $value;
@@ -86,5 +77,39 @@ class TrainEpaBaselineCommand extends Command
         $this->line(json_encode(['states' => count($rows), 'source_season' => $source, 'season' => $season, 'accepted_games' => $acceptedGames, 'excluded_games' => $excludedGames]));
 
         return self::SUCCESS;
+    }
+
+    /** Pure observation admission; no training or artifact write occurs here. */
+    private function observedFutureValue(Collection $plays, int $index, int $offense, int $homeId, int $awayId): ?float
+    {
+        if ($homeId <= 0 || $awayId <= 0 || $homeId === $awayId || $index <= 0 || ! in_array($offense, [$homeId, $awayId], true)) {
+            return null;
+        }
+        $home = ScoreObservation::known($plays[$index - 1]->home_score ?? null);
+        $away = ScoreObservation::known($plays[$index - 1]->away_score ?? null);
+        if ($home === null || $away === null) {
+            return null;
+        }
+        $period = $plays[$index]->period;
+        for ($next = $index; $next < count($plays); $next++) {
+            if (($period <= 2) !== ($plays[$next]->period <= 2) || $plays[$next]->period > 4) {
+                return null;
+            }
+            $nextHome = ScoreObservation::known($plays[$next]->home_score ?? null);
+            $nextAway = ScoreObservation::known($plays[$next]->away_score ?? null);
+            if ($nextHome === null || $nextAway === null) {
+                return null;
+            }
+            $hd = $nextHome - $home;
+            $ad = $nextAway - $away;
+            if ($hd || $ad) {
+                return (float) ($offense === $homeId ? $hd - $ad : $ad - $hd);
+            }
+            if (ObservedTerminalBoundary::forHalf($plays[$next], (int) $period, $homeId, $awayId)) {
+                return 0.0;
+            }
+        }
+
+        return null;
     }
 }

@@ -104,7 +104,11 @@ export function usePlayerPropPresentation(
         if (
             !rec.graded_at ||
             rec.actual_value === null ||
-            rec.actual_value === undefined
+            rec.actual_value === undefined ||
+            !Number.isFinite(rec.actual_value) ||
+            !Number.isFinite(rec.line) ||
+            (Math.abs(rec.actual_value - rec.line) >= 0.0001 &&
+                typeof rec.hit_over !== 'boolean')
         ) {
             return {
                 label: 'Pending',

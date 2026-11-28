@@ -29,16 +29,16 @@ def test_trains_versioned_artifacts_and_emits_output_contract(
         "manifest.json",
         "evaluation.json",
         "prediction_example.json",
-        "feature_schema.yaml",
-        "preprocessor.joblib",
-        "models/logistic_classifier.joblib",
-        "models/xgboost_classifier.ubj",
-        "models/xgboost_home_margin.ubj",
-        "models/xgboost_total_points.ubj",
-        "calibrators/logistic_regression_platt.joblib",
-        "calibrators/logistic_regression_isotonic.joblib",
-        "calibrators/xgboost_platt.joblib",
-        "calibrators/xgboost_isotonic.joblib",
+        "feature_schema.json",
+        "preprocessor.json",
+        "models/logistic_classifier.json",
+        "models/xgboost_classifier.json",
+        "models/xgboost_home_margin.json",
+        "models/xgboost_total_points.json",
+        "calibrators/logistic_regression_platt.json",
+        "calibrators/logistic_regression_isotonic.json",
+        "calibrators/xgboost_platt.json",
+        "calibrators/xgboost_isotonic.json",
         "tuning/optuna_provenance.json",
         "explanations/global_shap_importance.json",
         "explanations/shap_values.parquet",
@@ -56,7 +56,7 @@ def test_trains_versioned_artifacts_and_emits_output_contract(
     assert manifest["blend_version"] == "baseline-anchored-v2"
     assert manifest["package"] == {
         "name": "picksports-nfl-ml",
-        "version": "0.2.0",
+        "version": "0.3.0",
     }
     assert manifest["total_model"]["strategy"] == "baseline_residual_blend"
     assert evaluation["package"] == manifest["package"]
@@ -139,7 +139,7 @@ def test_trains_versioned_artifacts_and_emits_output_contract(
         InferenceBundle.load(run_dir)
     evaluation_path.write_bytes(original_evaluation)
 
-    schema_file = run_dir / "feature_schema.yaml"
+    schema_file = run_dir / "feature_schema.json"
     schema_file.write_text(
         schema_file.read_text(encoding="utf-8").replace(
             "nfl-pregame-ml-v1", "nfl-pregame-ml-v1-tampered", 1
@@ -152,7 +152,7 @@ def test_trains_versioned_artifacts_and_emits_output_contract(
         "sha256": hashlib.sha256(original_evaluation).hexdigest(),
         "bytes": len(original_evaluation),
     }
-    manifest["artifacts"]["feature_schema.yaml"] = {
+    manifest["artifacts"]["feature_schema.json"] = {
         "sha256": hashlib.sha256(schema_file.read_bytes()).hexdigest(),
         "bytes": schema_file.stat().st_size,
     }
@@ -288,14 +288,14 @@ def test_deployment_refit_includes_partial_current_season_without_metric_leakage
     assert "computed before deployment refit" in refit["pre_refit_metric_statement"]
 
     bundle = InferenceBundle.load(first["run_dir"])
-    fitted_rows = bundle.preprocessor.named_steps["scaler"].n_samples_seen_
+    fitted_rows = bundle.preprocessor.sample_count
     assert int(fitted_rows) == len(original)
-    assert first_manifest["artifacts"]["preprocessor.joblib"]["sha256"] != (
-        second_manifest["artifacts"]["preprocessor.joblib"]["sha256"]
+    assert first_manifest["artifacts"]["preprocessor.json"]["sha256"] != (
+        second_manifest["artifacts"]["preprocessor.json"]["sha256"]
     )
-    assert first_manifest["artifacts"]["models/xgboost_classifier.ubj"][
+    assert first_manifest["artifacts"]["models/xgboost_classifier.json"][
         "sha256"
-    ] != second_manifest["artifacts"]["models/xgboost_classifier.ubj"]["sha256"]
+    ] != second_manifest["artifacts"]["models/xgboost_classifier.json"]["sha256"]
 
 
 def _partial_current_season(frame: pd.DataFrame) -> pd.DataFrame:
@@ -323,3 +323,13 @@ def _partial_current_season(frame: pd.DataFrame) -> pd.DataFrame:
         lambda game_id: f"target-hash-{game_id}"
     )
     return partial
+
+
+def test_source_package_version_does_not_borrow_stale_installed_distribution(monkeypatch):
+    import importlib.metadata
+    from picksports_nfl_ml import __version__
+    from picksports_nfl_ml.pipeline import _package_version
+    original = importlib.metadata.version
+    monkeypatch.setattr(importlib.metadata, 'version', lambda name: '0.2.0' if name == 'picksports-nfl-ml' else original(name))
+    assert __version__ == '0.3.0'
+    assert _package_version() == __version__

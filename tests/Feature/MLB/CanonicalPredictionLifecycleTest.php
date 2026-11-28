@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\MLB\GenerateCanonicalPrediction;
+use App\Exceptions\Predictions\PredictionLifecycleException;
 use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
 use App\Models\EventInputSnapshot;
@@ -12,11 +13,22 @@ use App\Models\MLB\Team;
 use App\Models\MLB\TeamMetric;
 use App\Models\PredictionEvaluation;
 use App\Models\PredictionMarket;
+use App\Models\PredictionPublicationEffect;
 use App\Models\SportEvent;
 use App\Models\SportEventResult;
 use App\Models\User;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
+use App\Services\Api\V2\SportContextResolver;
 use App\Services\MLB\Predictions\MlbCalculationReleaseRegistrar;
 use App\Services\MLB\Predictions\MlbCanonicalCutoverReadinessService;
+use App\Services\Predictions\CanonicalShadowInputs;
+use App\Services\Predictions\PredictionPublisher;
+use App\Services\Predictions\PublicationEffectDelivery;
+use App\Support\MLB\MlbGameStart;
+use App\Support\MLB\MlbWeatherTime;
+use App\Support\Sports\CanonicalEventStart;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Http;
 use Laravel\Sanctum\Sanctum;
 
 /** @return array<string,mixed> */
@@ -43,15 +55,16 @@ function canonicalMlbFixture(): array
         ]);
     }
 
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'sport_event_id' => $event->getKey(), 'home_team_id' => $home->getKey(), 'away_team_id' => $away->getKey(),
-        'season' => 2026, 'season_type' => '2', 'status' => 'STATUS_SCHEDULED', 'game_date' => $startsAt,
+        'season' => 2026, 'season_type' => '2', 'status' => 'STATUS_SCHEDULED', 'game_date' => $startsAt, 'game_time' => $startsAt->format('H:i:s'),
         'home_score' => null, 'away_score' => null, 'venue_name' => 'Wrigley Field',
         'probable_home_pitcher_espn_id' => $homePitcher->espn_id, 'probable_away_pitcher_espn_id' => $awayPitcher->espn_id,
     ]);
-    GameWeather::query()->create([
-        'game_id' => $game->getKey(), 'provider' => 'test', 'observed_at' => now()->subMinute(),
-        'temperature_f' => 82, 'wind_speed_mph' => 10, 'is_indoor' => false, 'roof_status' => 'open',
+    $weather = ['provider' => 'test', 'temperature_f' => 82, 'wind_speed_mph' => 10, 'is_indoor' => false, 'roof_status' => 'open'];
+    GameWeather::query()->create($weather + [
+        'game_id' => $game->getKey(), 'observed_at' => now(),
+        'raw_payload' => ['_mlb_weather_time' => MlbWeatherTime::capture($game, $startsAt, $weather)],
     ]);
 
     return compact('event', 'game', 'home', 'away', 'homePitcher', 'awayPitcher');
@@ -107,4 +120,76 @@ it('serves strict MLB canonical reads without mistaking original rules for full 
     $this->getJson('/api/v2/sports/mlb/predictions?season=2026')->assertOk()->assertJsonCount(1, 'data')
         ->assertJsonPath('meta.prediction_source', 'canonical')->assertJsonPath('data.0.id', $prediction->public_id)
         ->assertJsonPath('data.0.game_id', $fixture['game']->getKey())->assertJsonPath('data.0.value_signal', null);
+});
+
+it('declines stale MLB canonical captures after a schedule correction without rewriting published history', function () {
+    $fixture = canonicalMlbFixture();
+    app(MlbCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
+    $prediction = app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
+    $event = $prediction->sportEvent;
+    $input = $prediction->calculationRun->inputSnapshot;
+    $priorInput = $input->getAttributes();
+    $priorPrediction = $prediction->getAttributes();
+    $query = app(CanonicalSportPredictionQuery::class);
+    $shadow = app(CanonicalShadowInputs::class);
+    expect(CanonicalEventStart::snapshot($event, $input))->toBeTrue()
+        ->and($query->queryForSport('mlb')->count())->toBe(1)
+        ->and($shadow->fromPrediction($prediction))->not->toBeNull();
+
+    $game = $fixture['game']->fresh();
+    $instant = MlbGameStart::for($game)->addHour();
+    $wall = $instant->copy()->setTimezone(config('app.timezone'));
+    $game->update(MlbGameStart::prepare($game, [
+        'game_date' => $wall->toDateString(), 'game_time' => $wall->toTimeString(),
+    ] + MlbGameStart::observed($instant->toIso8601String(), [])));
+    expect(CanonicalEventStart::snapshot($event, $input))->toBeFalse()
+        ->and($query->queryForSport('mlb')->count())->toBe(0)
+        ->and($shadow->fromPrediction($prediction))->toBeNull()
+        ->and($input->fresh()->getAttributes())->toBe($priorInput)
+        ->and($prediction->fresh()->getAttributes())->toBe($priorPrediction);
+});
+
+it('lists canonical MLB dates from the verified instant rather than treating venue walls as UTC', function () {
+    $this->travelTo(Carbon::parse('2026-07-01T06:00:00Z'));
+    $fixture = canonicalMlbFixture();
+    app(MlbCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
+    app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
+    config(['prediction_lifecycle.canonical_reads.mlb' => true]);
+    $context = app(SportContextResolver::class)->resolve('mlb');
+    expect(app(CanonicalSportPredictionQuery::class)->availableDates($context)->all())->toBe(['2026-07-02']);
+});
+
+it('refuses publication of a frozen MLB draft after its observed start context changes', function () {
+    $fixture = canonicalMlbFixture();
+    app(MlbCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
+    $draft = app(GenerateCanonicalPrediction::class)->execute($fixture['game'], publish: false);
+    $input = $draft->calculationRun->inputSnapshot;
+    $priorInput = $input->getAttributes();
+    $game = $fixture['game']->fresh();
+    $instant = MlbGameStart::for($game)->addHour();
+    $wall = $instant->copy()->setTimezone(config('app.timezone'));
+    $game->update(MlbGameStart::prepare($game, ['game_date' => $wall->toDateString(), 'game_time' => $wall->toTimeString()]
+        + MlbGameStart::observed($instant->toIso8601String(), [])));
+    expect(fn () => app(PredictionPublisher::class)->publish($draft))->toThrow(PredictionLifecycleException::class)
+        ->and($draft->fresh()->publication_state)->toBe('draft')
+        ->and($input->fresh()->getAttributes())->toBe($priorInput);
+});
+
+it('cancels queued MLB narrative admission when its frozen schedule observation is no longer current', function () {
+    Http::preventStrayRequests();
+    $fixture = canonicalMlbFixture();
+    app(MlbCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
+    $prediction = app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
+    $effect = PredictionPublicationEffect::updateOrCreate(
+        ['canonical_prediction_id' => $prediction->id, 'effect' => 'narrative'], ['payload' => ['sport' => 'mlb'],
+            'state' => 'queued', 'owner_token' => 'synthetic-current-lease', 'lease_expires_at' => now()->addMinute(),
+        ]);
+    $game = $fixture['game']->fresh();
+    $instant = MlbGameStart::for($game)->addHour();
+    $wall = $instant->copy()->setTimezone(config('app.timezone'));
+    $game->update(MlbGameStart::prepare($game, ['game_date' => $wall->toDateString(), 'game_time' => $wall->toTimeString()]
+        + MlbGameStart::observed($instant->toIso8601String(), [])));
+    app(PublicationEffectDelivery::class)->process($effect->id, 'synthetic-current-lease');
+    expect($effect->fresh()->state)->toBe('cancelled')->and($effect->fresh()->reason_code)->toBe('mlb_schedule_provenance_unavailable');
+    Http::assertNothingSent();
 });

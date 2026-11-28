@@ -38,46 +38,79 @@ const basketballMetricTiles = [
 ];
 
 const basketballSeasonStatTiles = [
-    { label: 'PPG', value: (s: any) => formatNumber(s.points_per_game) },
-    { label: 'RPG', value: (s: any) => formatNumber(s.rebounds_per_game) },
-    { label: 'APG', value: (s: any) => formatNumber(s.assists_per_game) },
+    {
+        label: 'PPG',
+        sampleKey: 'points_per_game',
+        value: (s: any) => formatNumber(s.points_per_game),
+    },
+    {
+        label: 'RPG',
+        sampleKey: 'rebounds_per_game',
+        value: (s: any) => formatNumber(s.rebounds_per_game),
+    },
+    {
+        label: 'APG',
+        sampleKey: 'assists_per_game',
+        value: (s: any) => formatNumber(s.assists_per_game),
+    },
     {
         label: 'FG%',
+        sampleKey: 'field_goal_percentage',
         value: (s: any) => `${formatNumber(s.field_goal_percentage)}%`,
     },
     {
         label: '3P%',
+        sampleKey: 'three_point_percentage',
         value: (s: any) => `${formatNumber(s.three_point_percentage)}%`,
     },
     {
         label: 'FT%',
+        sampleKey: 'free_throw_percentage',
         value: (s: any) => `${formatNumber(s.free_throw_percentage)}%`,
     },
-    { label: 'SPG', value: (s: any) => formatNumber(s.steals_per_game) },
-    { label: 'BPG', value: (s: any) => formatNumber(s.blocks_per_game) },
-    { label: 'TPG', value: (s: any) => formatNumber(s.turnovers_per_game) },
+    {
+        label: 'SPG',
+        sampleKey: 'steals_per_game',
+        value: (s: any) => formatNumber(s.steals_per_game),
+    },
+    {
+        label: 'BPG',
+        sampleKey: 'blocks_per_game',
+        value: (s: any) => formatNumber(s.blocks_per_game),
+    },
+    {
+        label: 'TPG',
+        sampleKey: 'turnovers_per_game',
+        value: (s: any) => formatNumber(s.turnovers_per_game),
+    },
     {
         label: 'ORPG',
+        sampleKey: 'offensive_rebounds_per_game',
         value: (s: any) => formatNumber(s.offensive_rebounds_per_game),
     },
     {
         label: 'DRPG',
+        sampleKey: 'defensive_rebounds_per_game',
         value: (s: any) => formatNumber(s.defensive_rebounds_per_game),
     },
     {
         label: 'Fast Break PPG',
+        sampleKey: 'fast_break_points_per_game',
         value: (s: any) => formatNumber(s.fast_break_points_per_game),
     },
     {
         label: 'Paint PPG',
+        sampleKey: 'points_in_paint_per_game',
         value: (s: any) => formatNumber(s.points_in_paint_per_game),
     },
     {
         label: '2nd Chance PPG',
+        sampleKey: 'second_chance_points_per_game',
         value: (s: any) => formatNumber(s.second_chance_points_per_game),
     },
     {
         label: 'Bench PPG',
+        sampleKey: 'bench_points_per_game',
         value: (s: any) => formatNumber(s.bench_points_per_game),
     },
 ];
@@ -410,25 +443,71 @@ export const createMlbTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
         { key: 'strength_of_schedule' },
     ],
     seasonStatTiles: [
-        { label: 'Runs', value: (s) => formatNumber(s.runs_per_game, 2) },
-        { label: 'Hits', value: (s) => formatNumber(s.hits_per_game, 2) },
-        { label: 'HR', value: (s) => formatNumber(s.home_runs_per_game, 2) },
-        { label: 'RBI', value: (s) => formatNumber(s.rbis_per_game, 2) },
-        { label: 'BB', value: (s) => formatNumber(s.walks_per_game, 2) },
-        { label: 'K', value: (s) => formatNumber(s.strikeouts_per_game, 2) },
-        { label: 'SB', value: (s) => formatNumber(s.stolen_bases_per_game, 2) },
-        { label: '2B', value: (s) => formatNumber(s.doubles_per_game, 2) },
-        { label: '3B', value: (s) => formatNumber(s.triples_per_game, 2) },
-        { label: 'AVG', value: (s) => formatBattingAverage(s.batting_average) },
+        {
+            label: 'Runs',
+            sampleKey: 'runs_per_game',
+            value: (s) => formatNumber(s.runs_per_game, 2),
+        },
+        {
+            label: 'Hits',
+            sampleKey: 'hits_per_game',
+            value: (s) => formatNumber(s.hits_per_game, 2),
+        },
+        {
+            label: 'HR',
+            sampleKey: 'home_runs_per_game',
+            value: (s) => formatNumber(s.home_runs_per_game, 2),
+        },
+        {
+            label: 'RBI',
+            sampleKey: 'rbis_per_game',
+            value: (s) => formatNumber(s.rbis_per_game, 2),
+        },
+        {
+            label: 'BB',
+            sampleKey: 'walks_per_game',
+            value: (s) => formatNumber(s.walks_per_game, 2),
+        },
+        {
+            label: 'K',
+            sampleKey: 'strikeouts_per_game',
+            value: (s) => formatNumber(s.strikeouts_per_game, 2),
+        },
+        {
+            label: 'SB',
+            sampleKey: 'stolen_bases_per_game',
+            value: (s) => formatNumber(s.stolen_bases_per_game, 2),
+        },
+        {
+            label: '2B',
+            sampleKey: 'doubles_per_game',
+            value: (s) => formatNumber(s.doubles_per_game, 2),
+        },
+        {
+            label: '3B',
+            sampleKey: 'triples_per_game',
+            value: (s) => formatNumber(s.triples_per_game, 2),
+        },
+        {
+            label: 'AVG',
+            sampleKey: 'batting_average',
+            value: (s) => formatBattingAverage(s.batting_average),
+        },
         {
             label: 'ERA',
-            value: (s) => formatNumber(s.era, 2),
+            sampleKey: 'era',
+            value: (s: any) => formatNumber(s.era, 2),
             class: (s) => eraClass(s.era),
         },
         {
             label: 'ER/G',
-            value: (s) => formatNumber(s.earned_runs_per_game, 2),
+            sampleKey: 'earned_runs_per_game',
+            value: (s: any) => formatNumber(s.earned_runs_per_game, 2),
         },
-        { label: 'E/G', value: (s) => formatNumber(s.errors_per_game, 2) },
+        {
+            label: 'E/G',
+            sampleKey: 'errors_per_game',
+            value: (s) => formatNumber(s.errors_per_game, 2),
+        },
     ],
 });

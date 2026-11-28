@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\NFL\Game;
 use App\Services\Predictions\PredictionFeatureSnapshotArchive;
 use App\Services\Predictions\SnapshotMetadataStorage;
+use App\Support\Models\GuardsCoreEvidenceMutations;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -20,6 +21,8 @@ class PredictionFeatureSnapshot extends Model
     private ?array $cachedArchiveManifest = null;
 
     private ?array $cachedArchivePayload = null;
+
+    use GuardsCoreEvidenceMutations;
 
     protected $fillable = [
         'sport',

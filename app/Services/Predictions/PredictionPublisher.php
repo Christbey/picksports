@@ -2,29 +2,61 @@
 
 namespace App\Services\Predictions;
 
+use App\Exceptions\EloAdmissionRefused;
 use App\Exceptions\Predictions\PredictionLifecycleException;
-use App\Jobs\Predictions\GeneratePredictionNarrative;
-use App\Jobs\Predictions\RefreshGameAnalysis;
 use App\Models\CanonicalPrediction;
 use App\Models\PredictionMarket;
-use App\Services\Predictions\Review\PredictionReviewCoordinator;
-use App\Services\Research\GameResearchService;
-use App\Support\SportsViewCache;
+use App\Models\SportEvent;
+use App\Services\Sports\Elo\EloAdmissionMode;
+use App\Services\Sports\Elo\EloSqlClockPolicy;
+use App\Services\Sports\Elo\EloWriterProtocol;
+use App\Services\Sports\Elo\EloWriteTargetIdentity;
+use App\Support\Sports\CanonicalEventStart;
 use Illuminate\Support\Facades\DB;
 
 class PredictionPublisher
 {
-    public function __construct(private readonly CanonicalPayloadHasher $hasher) {}
+    public function __construct(
+        private readonly CanonicalPayloadHasher $hasher,
+        private readonly PublicationEffectDelivery $effects,
+    ) {}
 
     public function publish(CanonicalPrediction $prediction): CanonicalPrediction
     {
-        return DB::transaction(function () use ($prediction): CanonicalPrediction {
+        $managed = app(EloAdmissionMode::class)->managed($prediction->sport, $prediction->getConnection());
+        if ($managed) {
+            app(EloWriterProtocol::class)->requireCapability($prediction->sport);
+            if ($prediction->getConnection() !== DB::connection()) {
+                throw new EloAdmissionRefused('sql_clock_mixed_source_connection', [], []);
+            }
+            app(EloSqlClockPolicy::class)->assertCurrent($prediction->getConnection(), true);
+        }
+
+        return DB::transaction(function () use ($prediction, $managed): CanonicalPrediction {
+            $eventId = CanonicalPrediction::query()->whereKey($prediction->getKey())->value('sport_event_id');
+            $event = SportEvent::query()->lockForUpdate()->findOrFail($eventId);
+
             $prediction = CanonicalPrediction::query()
                 ->with(['calculationRun', 'markets', 'sportEvent'])
                 ->lockForUpdate()
                 ->findOrFail($prediction->getKey());
+            $prediction->setRelation('sportEvent', $event);
+            $snapshot = $prediction->calculationRun?->inputSnapshot;
+            $evidence = data_get($snapshot?->metadata, 'elo_input_admission');
+            if ($managed || $evidence !== null) {
+                if ($prediction->getConnection() !== DB::connection()) {
+                    throw new EloAdmissionRefused('sql_clock_mixed_source_connection', [], []);
+                }
+                app(EloSqlClockPolicy::class)->assertCurrent($prediction->getConnection());
+                if (! is_array($evidence) || ! EloSqlClockPolicy::matchesPortablePolicy(data_get($snapshot?->metadata, 'elo_sql_clock_policy'))
+                    || ($evidence['target_fingerprint'] ?? null) !== app(EloWriteTargetIdentity::class)->describe($prediction->getConnection())['fingerprint']) {
+                    throw new EloAdmissionRefused('managed_publication_provenance_unqualified', [], []);
+                }
+            }
 
             if ($prediction->publication_state === 'published') {
+                DB::afterCommit(fn () => $this->effects->wakeUp($prediction->id));
+
                 return $prediction;
             }
 
@@ -41,9 +73,20 @@ class PredictionPublisher
                 throw new PredictionLifecycleException('Canonical prediction output changed after its successful calculation run.');
             }
 
+            $admittedStart = ($event->sport === 'cfb' ? CanonicalEventStart::forCurrentCfbEvent($event, true) : CanonicalEventStart::forEvent($event, true));
             if ($prediction->phase === 'pregame'
-                && ($prediction->sportEvent?->starts_at === null || now()->greaterThanOrEqualTo($prediction->sportEvent->starts_at))) {
+                && ($admittedStart === null || now()->greaterThanOrEqualTo($admittedStart) || ! CanonicalEventStart::snapshot($event, $prediction->calculationRun?->inputSnapshot, true))) {
                 throw new PredictionLifecycleException('Pregame canonical predictions must be published before the event starts.');
+            }
+
+            if (CanonicalPrediction::query()
+                ->where('sport_event_id', $prediction->sport_event_id)
+                ->where('phase', $prediction->phase)
+                ->where('revision', '>', $prediction->revision)
+                ->whereNotNull('published_at')
+                ->lockForUpdate()
+                ->first(['id']) !== null) {
+                throw new PredictionLifecycleException('A newer revision has already been published for this event and phase.');
             }
 
             $current = CanonicalPrediction::query()
@@ -66,28 +109,8 @@ class PredictionPublisher
                 'published_at' => now(),
             ]);
 
-            DB::afterCommit(static function () use ($prediction): void {
-                app(SportsViewCache::class)->bustSegments([
-                    SportsViewCache::SEGMENT_DASHBOARD,
-                    SportsViewCache::SEGMENT_LIVE_SCOREBOARD,
-                    SportsViewCache::SEGMENT_PREDICTIONS_INDEX,
-                    SportsViewCache::SEGMENT_PREDICTIONS_BY_GAME,
-                    SportsViewCache::SEGMENT_PREDICTIONS_AVAILABLE_DATES,
-                    SportsViewCache::SEGMENT_PREDICTIONS_AVAILABLE_SEASONS,
-                ]);
-                if (config('game_analysis.publisher_enabled', false)
-                    && (app(GameResearchService::class)->enabled($prediction->sport)
-                        || app(PredictionReviewCoordinator::class)->enabled($prediction->sport))) {
-                    $game = $prediction->sportEvent?->getRelationValue($prediction->sport.'Game');
-                    if ($game !== null) {
-                        RefreshGameAnalysis::dispatch($prediction->sport, (int) $game->getKey());
-                    }
-                }
-                if ($prediction->sport !== 'nfl' && $prediction->calculationRun?->trigger !== 'coverage'
-                    && app(PredictionDeliverySource::class)->legacyWriterRetired($prediction->sport)) {
-                    GeneratePredictionNarrative::dispatch(CanonicalPrediction::class, $prediction->id, $prediction->sport);
-                }
-            });
+            $this->effects->record($prediction);
+            DB::afterCommit(fn () => $this->effects->wakeUp($prediction->id));
 
             return $prediction->fresh(['markets', 'calculationRun.release', 'calculationRun.inputSnapshot']);
         });

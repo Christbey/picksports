@@ -4,6 +4,7 @@ namespace App\Services\Sports;
 
 use App\Models\CBB\Game as CbbGame;
 use App\Models\CFB\Game as CfbGame;
+use App\Models\MLB\Game;
 use App\Models\MLB\Game as MlbGame;
 use App\Models\NBA\Game as NbaGame;
 use App\Models\NFL\Game as NflGame;
@@ -11,8 +12,9 @@ use App\Models\SportEvent;
 use App\Models\SportEventProviderMapping;
 use App\Models\WCBB\Game as WcbbGame;
 use App\Models\WNBA\Game as WnbaGame;
+use App\Support\MLB\MlbGameStart;
+use App\Support\Sports\GameDateTimePresenter;
 use Carbon\CarbonImmutable;
-use DateTimeInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -344,7 +346,7 @@ class SportEventIdentityBackfill
      */
     private function eventAttributes(string $sport, Model $game): array
     {
-        return [
+        $attributes = [
             'sport' => $sport,
             'season' => is_numeric($game->getAttribute('season')) ? (int) $game->getAttribute('season') : null,
             'season_type' => $this->stringAttribute($game, 'season_type'),
@@ -357,26 +359,24 @@ class SportEventIdentityBackfill
                 ? null
                 : (bool) $game->getAttribute('neutral_site'),
         ];
+        if ($game instanceof Game && MlbGameStart::for($game) === null) {
+            // Unobserved legacy time is unavailable evidence, not an instruction to erase stored facts.
+            unset($attributes['starts_at']);
+        }
+
+        return $attributes;
     }
 
     private function startsAt(Model $game): ?CarbonImmutable
     {
-        $dateValue = $game->getAttribute('game_date');
-        $date = $dateValue instanceof DateTimeInterface
-            ? $dateValue->format('Y-m-d')
-            : $this->stringAttribute($game, 'game_date');
-        $time = $this->stringAttribute($game, 'game_time');
-
-        if ($date === null || $time === null) {
-            return null;
+        if ($game instanceof Game) {
+            return MlbGameStart::canonical($game);
         }
 
-        try {
-            return CarbonImmutable::parse("{$date} {$time}", 'UTC')
-                ->setTimezone((string) config('app.timezone', 'UTC'));
-        } catch (\Throwable) {
-            return null;
-        }
+        $start = GameDateTimePresenter::currentStoredStartsAt($game);
+
+        return $start === null ? null : CarbonImmutable::parse($start, 'UTC')
+            ->setTimezone((string) config('app.timezone', 'UTC'));
     }
 
     private function stringAttribute(Model $model, string $attribute): ?string

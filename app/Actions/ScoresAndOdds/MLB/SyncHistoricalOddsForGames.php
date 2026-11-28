@@ -6,6 +6,7 @@ use App\Models\MLB\Game;
 use App\Services\OddsApi\GameOddsSnapshotRecorder;
 use App\Services\OddsApi\OddsApiService;
 use App\Services\ScoresAndOdds\MLB\HistoricalOddsScraper;
+use App\Support\MLB\MlbGameStart;
 use App\Support\SportsViewCache;
 use Illuminate\Support\Carbon;
 
@@ -192,14 +193,7 @@ class SyncHistoricalOddsForGames
 
     private function scheduledTime(Game $game): ?Carbon
     {
-        if ($game->game_date === null || $game->game_time === null) {
-            return null;
-        }
-
-        return Carbon::parse(
-            sprintf('%s %s', $game->game_date->toDateString(), $game->game_time),
-            (string) config('app.timezone', 'UTC')
-        )->utc();
+        return MlbGameStart::for($game);
     }
 
     private function capturedAt(?string $commenceTime): ?Carbon

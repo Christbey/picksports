@@ -31,12 +31,14 @@ class SportPredictionPresentationService
     {
         app(LivePredictionStore::class)->preload($predictions->pluck('game')->filter());
         $snapshots = $this->snapshots->latestForPredictions($predictions);
+        $closingEvidence = $context->slug === 'cfb'
+            ? app(CfbClosingMarketEvidenceQuery::class)->forPredictions($predictions, $snapshots) : collect();
         $nflBoard = $context->slug === 'nfl' ? app(NflPredictionBoardContext::class)->forPredictions($predictions) : collect();
         $periodInsightsByGame = $context->slug === 'mlb'
             ? $this->mlbPeriodInsights->forGames($predictions->pluck('game')->filter())
             : [];
 
-        return $predictions->mapWithKeys(function (Model $prediction) use ($context, $snapshots, $periodInsightsByGame, $nflBoard): array {
+        return $predictions->mapWithKeys(function (Model $prediction) use ($context, $snapshots, $closingEvidence, $periodInsightsByGame, $nflBoard): array {
             $predictionId = (int) $prediction->getKey();
 
             return [$predictionId => $this->build(
@@ -45,6 +47,7 @@ class SportPredictionPresentationService
                 $snapshots->get($predictionId),
                 $periodInsightsByGame[(int) $prediction->getAttribute('game_id')] ?? [],
                 $nflBoard->get($predictionId),
+                $closingEvidence->get($predictionId),
             )];
         });
     }
@@ -58,6 +61,7 @@ class SportPredictionPresentationService
         ?PredictionFeatureSnapshot $snapshot,
         array $periodInsights,
         ?array $nflBoard = null,
+        ?array $closingEvidence = null,
     ): SportPredictionPresentationData {
         $isMlbPrediction = $context->slug === 'mlb' && $prediction instanceof MlbPrediction;
 
@@ -66,6 +70,7 @@ class SportPredictionPresentationService
             liveFields: app(LivePredictionStore::class)->forPrediction($prediction, $context->slug),
             nflBoard: $nflBoard,
             featureSnapshot: $snapshot,
+            closingMarketEvidence: $closingEvidence,
             recommendation: $isMlbPrediction
                 ? $this->mlbRecommendations->forPrediction($prediction)
                 : null,

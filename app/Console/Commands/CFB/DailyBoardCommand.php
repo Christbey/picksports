@@ -7,6 +7,7 @@ use App\Models\CFB\Game;
 use App\Models\CFB\PlayerProp;
 use App\Services\BettingRecommendations\CfbPropEligibility;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
+use App\Support\CFB\CfbGameStart;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -60,7 +61,8 @@ class DailyBoardCommand extends Command
                 $count = $quotes->where('game_id', $game->id)->count();
 
                 return ['game_id' => $game->id, 'away' => $game->awayTeam?->school, 'home' => $game->homeTeam?->school,
-                    'kickoff' => CfbPropEligibility::kickoff($game)->setTimezone('America/Chicago')->toIso8601String(),
+                    'kickoff' => CfbPropEligibility::kickoff($game)?->setTimezone('America/Chicago')->toIso8601String(),
+                    'kickoff_status' => CfbGameStart::status($game), 'raw_game_date' => $game->game_date->toDateString(),
                     'status' => $game->status, 'prediction_id' => $prediction?->id,
                     'forecast_generated_at' => $prediction?->generated_at?->toIso8601String(),
                     'home_spread' => $spread === null ? null : (float) $spread,

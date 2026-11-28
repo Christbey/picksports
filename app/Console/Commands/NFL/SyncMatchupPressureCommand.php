@@ -2,10 +2,10 @@
 
 namespace App\Console\Commands\NFL;
 
+use App\Services\NFL\MatchupSamplePublication;
 use App\Services\ProviderData\ProviderSourceStorage;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 class SyncMatchupPressureCommand extends Command
@@ -14,7 +14,7 @@ class SyncMatchupPressureCommand extends Command
 
     protected $description = 'Join free PFR weekly pressure counts from nflverse to verified game and player identities';
 
-    public function handle(ProviderSourceStorage $sources): int
+    public function handle(ProviderSourceStorage $sources, MatchupSamplePublication $publication): int
     {
         $season = filter_var($this->option('season'), FILTER_VALIDATE_INT);
         if (! $season || $season < 2018 || $season > (int) now()->year) {
@@ -22,26 +22,30 @@ class SyncMatchupPressureCommand extends Command
 
             return self::FAILURE;
         }
+        $connection = DB::connection();
         $path = tempnam(sys_get_temp_dir(), 'nfl-pressure-');
         $stream = null;
         try {
             $url = "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_pass_{$season}.csv";
-            file_put_contents($path, Http::timeout(120)->retry(2, 1000)->get($url)->throw()->body());
+            $snapshot = $publication->snapshot($connection, $season, true);
+            [$raw] = $publication->download($url);
+            if (file_put_contents($path, $raw) !== strlen($raw)) {
+                throw new RuntimeException('Unable to stage pressure source.');
+            }
             $stream = fopen($path, 'r');
             $header = fgetcsv($stream, escape: '');
             if (! is_array($header) || count(array_unique($header)) !== count($header)
                 || array_diff(['game_id', 'season', 'week', 'game_type', 'team', 'opponent', 'pfr_player_id', 'times_pressured', 'times_sacked', 'times_pressured_pct'], $header)) {
                 throw new RuntimeException('Invalid pressure header; no rows updated.');
             }
-            $games = DB::table('nflverse_pbp_plays')->where('season', $season)->whereNotNull('nfl_game_id')
-                ->select(['nflverse_game_id', 'nfl_game_id', 'possession_team', 'possession_team_id', 'defense_team_id', 'defense_team'])->distinct()->get()
-                ->groupBy(fn ($row) => $row->nflverse_game_id.'|'.$row->possession_team);
-            $rosters = DB::table('nflverse_rosters')->where('season', $season)->whereNotNull('pfr_id')->whereNotNull('gsis_id')
-                ->get(['team_id', 'pfr_id', 'gsis_id'])->groupBy(fn ($row) => $row->team_id.'|'.$row->pfr_id);
+            $games = $snapshot['plays']->groupBy(fn ($row) => $row->nflverse_game_id.'|'.$row->possession_team);
+            $rosters = $snapshot['rosters']->groupBy(fn ($row) => $row->team_id.'|'.$row->pfr_id);
             $updates = [];
             $seen = [];
             $skipped = 0;
+            $rowsRead = 0;
             while (($values = fgetcsv($stream, escape: '')) !== false) {
+                $publication->assertRowBudget(++$rowsRead);
                 if (count($values) !== count($header)) {
                     throw new RuntimeException('Malformed pressure row; no rows updated.');
                 }
@@ -79,6 +83,7 @@ class SyncMatchupPressureCommand extends Command
                 $updates[] = ['game_id' => $game->nfl_game_id, 'team_id' => $game->possession_team_id, 'opponent_id' => $game->defense_team_id,
                     'season' => $season, 'gsis_id' => $ids->first(), 'pfr_id' => $row['pfr_player_id'], 'pressures' => $pressures,
                     'sacks' => $sacks, 'pressure_rate' => $rate, 'observed_at' => now()->toDateTimeString()];
+                $publication->assertSampleBudget(count($updates));
             }
             if ($updates === []) {
                 throw new RuntimeException('No verified pressure samples; no rows updated.');
@@ -87,12 +92,10 @@ class SyncMatchupPressureCommand extends Command
                 throw new RuntimeException('Conflicting player mappings; no rows updated.');
             }
             $sources->archive('nflverse', 'pfr-weekly-pressure', $path, ['source_url' => $url, 'season' => $season]);
-            DB::transaction(function () use ($season, $updates): void {
-                DB::table('nfl_matchup_pressure_samples')->where('season', $season)->delete();
-                foreach (array_chunk($updates, 500) as $chunk) {
-                    DB::table('nfl_matchup_pressure_samples')->insert($chunk);
-                }
-            });
+            if ($skipped > 0) {
+                throw new RuntimeException('Unresolved pressure source identities; no samples updated.');
+            }
+            $publication->publish($connection, 'nfl_matchup_pressure_samples', $season, $updates, $snapshot);
             $this->info(sprintf('Pressure samples joined: %d; unresolved game/player rows: %d.', count($updates), $skipped));
 
             return $skipped > 0 ? self::FAILURE : self::SUCCESS;

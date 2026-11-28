@@ -8,7 +8,7 @@ export * from './sport-team';
 export * from './dashboard';
 export * from './api-v2';
 
-import type { Auth } from './auth';
+import type { Auth, User } from './auth';
 import type { SubscriptionInfo } from './subscription';
 
 type ImpersonationContext = {
@@ -30,3 +30,8 @@ export type AppPageProps<
     sidebarOpen: boolean;
     [key: string]: unknown;
 };
+
+/** Page contract for routes protected by the authenticated-user middleware. */
+export type AuthenticatedAppPageProps<
+    T extends Record<string, unknown> = Record<string, unknown>,
+> = AppPageProps<T> & { auth: Auth & { user: User } };

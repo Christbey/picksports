@@ -37,7 +37,9 @@ const {
                             </th>
                             <th class="p-2 text-right font-medium">Seed</th>
                             <th class="p-2 font-medium">Playoff Make</th>
-                            <th class="p-2 text-right font-medium">Edge</th>
+                            <th class="p-2 text-right font-medium">
+                                Title model difference
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
@@ -114,8 +116,11 @@ const {
                                                 row.market_edge?.has_edge ??
                                                 false
                                             )
-                                                ? 'No Edge'
-                                                : `${(row.market_edge?.edge_probability ?? 0) > 0 ? '+EV' : '-EV'} ${formatEdgePoints(row.market_edge?.edge_percent_points)}`
+                                                ? 'Unavailable'
+                                                : formatEdgePoints(
+                                                      row.market_edge
+                                                          ?.edge_percent_points,
+                                                  )
                                         }}
                                     </span>
                                 </div>

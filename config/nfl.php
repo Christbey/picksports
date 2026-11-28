@@ -551,6 +551,8 @@ return [
             'strong_model_signal_threshold' => env('NFL_ANALYSIS_STRONG_MODEL_SIGNAL_THRESHOLD', 65.0),
         ],
 
+        // Historical unverified configuration inventory. These figures are retained
+        // for audit only; matcher/public readers do not certify or expose them as current validation.
         'validated_signal_combos' => [
             [
                 'name' => 'home_pass_protection_rest_spot',
@@ -1164,7 +1166,8 @@ return [
     |
     */
     'player_futures' => [
-        'default_regular_season_games' => 18,
+        // Compatibility value only. Projection fallback uses the shared season-aware16/17 games rule, not18 schedule weeks.
+        'default_regular_season_games' => 17,
         'prior_games' => 4,
         'prior_share_games' => 6,
         'direct_rate_weight' => 0.45,

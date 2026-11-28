@@ -6,6 +6,10 @@ import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import {
+    launchFixtureBrowser,
+    isolateFixtureNetwork,
+} from './fixtures/browser-runtime.mjs';
+import {
     slateSports,
     slateDate,
     slateParityFixture,
@@ -104,13 +108,14 @@ async function linkedIds(scope, sport) {
 }
 try {
     await server.listen();
-    browser = await chromium.launch({ channel: 'chrome', headless: true });
+    browser = await launchFixtureBrowser(chromium);
     for (const source of ['legacy', 'canonical']) {
         for (const width of [1440, 390]) {
             const fixture = slateParityFixture(source);
             const context = await browser.newContext({
                 viewport: { width, height: 900 },
             });
+            await isolateFixtureNetwork(context);
             const page = await context.newPage();
             await page.clock.setFixedTime(new Date(`${slateDate}T18:00:00Z`));
             const errors = [],

@@ -237,8 +237,13 @@ it('does not convert a scoring-total injury penalty into a win-strength penalty'
     completeNflFuturesSchedule(2026, '2026-01-01');
     $service = app(TeamFuturesProjectionService::class);
     $before = $service->projections(2026, asOfDate: '2026-08-01', requireHistoricalMetrics: true);
+    expect($before)->toHaveCount(32)
+        ->and(array_values(array_unique(array_column(array_column($before, 'metric_evidence'), 'mode'))))->toBe(['current_capture']);
     TeamMetricSnapshot::query()->update(['injury_total_adjustment' => -10]);
     $after = $service->projections(2026, asOfDate: '2026-08-01', requireHistoricalMetrics: true);
+    // This is the descriptive path; the changed receipt is unverified rather than a newly observed capture.
+    expect($after)->toHaveCount(32)
+        ->and(array_values(array_unique(array_column(array_column($after, 'metric_evidence'), 'mode'))))->toBe(['legacy_unverified']);
     expect(array_column($after, 'projected_total'))->toBe(array_column($before, 'projected_total'));
 });
 

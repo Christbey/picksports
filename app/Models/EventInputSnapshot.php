@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\CachesJsonArrayCasts;
 use App\Models\Concerns\HasPublicUlid;
 use App\Services\Predictions\CfbSnapshotInputStorage;
+use App\Support\Models\GuardsCoreEvidenceMutations;
 use Database\Factories\EventInputSnapshotFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -19,6 +20,7 @@ class EventInputSnapshot extends Model
         decodeArrayAttribute as private decodeStoredArrayAttribute;
     }
 
+    use GuardsCoreEvidenceMutations;
     use HasFactory, HasPublicUlid;
 
     protected $fillable = [

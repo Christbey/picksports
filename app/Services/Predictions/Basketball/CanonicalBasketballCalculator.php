@@ -29,7 +29,9 @@ abstract class CanonicalBasketballCalculator implements SportCalculator
 
         $homeElo = $this->numeric($home, 'elo');
         $awayElo = $this->numeric($away, 'elo');
-        $homeCourtAdvantage = $this->numeric($config, 'elo.home_court_advantage');
+        $neutralSite = data_get($config, 'elo.respect_neutral_site', false)
+            && data_get($snapshot->inputs, 'event.neutral_site', false);
+        $homeCourtAdvantage = $neutralSite ? 0.0 : $this->numeric($config, 'elo.home_court_advantage');
         $eloDivisor = $this->positive($config, 'elo.points_per_spread_point');
         $eloHomeMargin = (($homeElo + $homeCourtAdvantage) - $awayElo) / $eloDivisor;
 

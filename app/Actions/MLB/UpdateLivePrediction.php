@@ -27,6 +27,17 @@ class UpdateLivePrediction
 
             return null;
         }
+        $attributes = $game->getAttributes();
+        $inning = $this->observedNonnegativeInteger($attributes['inning'] ?? null);
+        $homeScore = $this->observedNonnegativeInteger($attributes['home_score'] ?? null);
+        $awayScore = $this->observedNonnegativeInteger($attributes['away_score'] ?? null);
+        $inningState = $this->observedInningState($attributes['inning_half'] ?? null);
+        if ($inning === null || $inning < 1 || $homeScore === null || $awayScore === null
+            || $homeScore > PHP_INT_MAX - $awayScore || $inningState === null) {
+            $store->clear($game, static::class);
+
+            return null;
+        }
         $prediction = $store->baseline($game);
         if ($prediction === null) {
             $store->record($game, null, null, 'missing_pregame', static::class);
@@ -34,16 +45,16 @@ class UpdateLivePrediction
             return null;
         }
 
-        $outsRemaining = $this->calculateOutsRemaining($game->inning, $game->inning_state);
+        $outsRemaining = $this->calculateOutsRemaining($inning, $inningState);
         $outsElapsed = self::TOTAL_OUTS - $outsRemaining;
-        $margin = ($game->home_score ?? 0) - ($game->away_score ?? 0);
-        $totalRuns = ($game->home_score ?? 0) + ($game->away_score ?? 0);
+        $margin = $homeScore - $awayScore;
+        $totalRuns = $homeScore + $awayScore;
 
         // Calculate live win probability
         $liveWinProbability = $this->calculateLiveWinProbability(
             $margin,
             $outsRemaining,
-            $game->inning_state,
+            $inningState,
             $prediction->win_probability ?? 0.5
         );
 
@@ -71,6 +82,26 @@ class UpdateLivePrediction
         $store->record($game, $prediction, $values, 'live', static::class);
 
         return $values;
+    }
+
+    private function observedNonnegativeInteger(mixed $value): ?int
+    {
+        if (! is_int($value) && ! is_string($value)) {
+            return null;
+        }
+        $integer = filter_var($value, FILTER_VALIDATE_INT);
+
+        return $integer !== false && $integer >= 0 ? $integer : null;
+    }
+
+    private function observedInningState(mixed $value): ?string
+    {
+        if (! is_string($value)
+            || preg_match('/^(top|bottom|bot)(?:\s+[1-9][0-9]*(?:st|nd|rd|th)?)?$/iD', trim($value), $matches) !== 1) {
+            return null;
+        }
+
+        return strtolower($matches[1]) === 'top' ? 'top' : 'bottom';
     }
 
     protected function isGameInProgress(Game $game): bool

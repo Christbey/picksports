@@ -5,6 +5,7 @@ namespace App\Console\Commands\Sports;
 use App\Console\Commands\Concerns\ResolvesRequiredConfig;
 use App\Services\OddsApi\Exceptions\OddsApiException;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Validator;
 
 abstract class AbstractSyncHistoricalOddsCommand extends Command
 {
@@ -29,11 +30,29 @@ abstract class AbstractSyncHistoricalOddsCommand extends Command
         $season = $this->option('season');
         $fromDate = $this->option('from-date');
         $toDate = $this->option('to-date');
-        $hoursBefore = max(0, (int) ($this->option('hours-before') ?? 24));
-        $limit = max(0, (int) ($this->option('limit') ?? 0));
+        $inputs = array_filter([
+            'season' => $season,
+            'from-date' => $fromDate,
+            'to-date' => $toDate,
+            'hours-before' => $this->option('hours-before') ?? 24,
+            'limit' => $this->option('limit') ?? 0,
+        ], static fn ($value): bool => $value !== null);
+        $validator = Validator::make($inputs, [
+            'season' => ['sometimes', 'required', 'integer', 'min:1'],
+            'from-date' => ['sometimes', 'required', 'date_format:Y-m-d'],
+            'to-date' => ['sometimes', 'required', 'date_format:Y-m-d', ...($fromDate !== null ? ['after_or_equal:from-date'] : [])],
+            'hours-before' => ['required', 'integer', 'min:0'],
+            'limit' => ['required', 'integer', 'min:0'],
+        ]);
+        if ($validator->fails()) {
+            $this->error($validator->errors()->first());
+
+            return self::FAILURE;
+        }
+        $hoursBefore = (int) $inputs['hours-before'];
+        $limit = (int) $inputs['limit'];
         $oddsSport = $this->option('odds-sport');
         $oddsSport = is_string($oddsSport) && $oddsSport !== '' ? $oddsSport : null;
-        $oddsSport ??= $this->defaultOddsSportKey();
         $hydrateCurrentWhenEmpty = (bool) $this->option('hydrate-current-when-empty');
 
         if ($season !== null && ($fromDate !== null || $toDate !== null)) {
@@ -47,6 +66,8 @@ abstract class AbstractSyncHistoricalOddsCommand extends Command
 
             return self::FAILURE;
         }
+
+        $oddsSport ??= $this->defaultOddsSportKey();
 
         $this->info(sprintf(
             'Syncing historical odds snapshots %d hour(s) before tip%s...',

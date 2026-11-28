@@ -11,6 +11,7 @@ use App\Services\CFB\Predictions\CfbInputSnapshotBuilder;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Tests\Support\ObservedCfbGameFixture;
 
 it('uses the actual kickoff instant to request and select UTC forecast hours across a date boundary', function () {
     config()->set('app.timezone', 'America/Chicago');
@@ -37,6 +38,7 @@ it('includes a kickoff-valid forecast received before capture but excludes subse
     $game = Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026, 'week' => 3,
         'home_team_id' => Team::factory()->create()->id, 'away_team_id' => Team::factory()->create()->id,
         'status' => 'STATUS_SCHEDULED', 'game_date' => '2026-09-19']);
+    $game = ObservedCfbGameFixture::observe($game, $event->starts_at);
     $weather = GameWeather::create(['game_id' => $game->id, 'provider' => 'open_meteo', 'observed_at' => $event->starts_at,
         'temperature_f' => 80, 'wind_speed_mph' => 25, 'is_indoor' => false]);
     $config = app(CfbCalculationReleaseDefinition::class)->configuration();

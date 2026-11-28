@@ -7,6 +7,7 @@ use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
 use App\Models\DailyDigestSend;
 use App\Models\EventInputSnapshot;
+use App\Models\MLB\Game;
 use App\Models\NBA\Prediction;
 use App\Models\NotificationTemplate;
 use App\Models\PredictionMarket;
@@ -27,6 +28,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
+use Tests\Support\ObservedMlbGameFixture;
 
 beforeEach(function () {
     $this->travelTo(now()->setDate(2026, 10, 28)->setTime(10, 0));
@@ -52,8 +54,13 @@ function predictionDeliveryFixture(string $sport = 'nba', ?float $probability = 
         'game_date' => now()->toDateString(), 'game_time' => now()->addHours(4)->utc()->toTimeString(),
         'status' => 'STATUS_SCHEDULED', 'odds_data' => ['bookmakers' => []],
     ]);
+    if ($game instanceof Game) {
+        $game = ObservedMlbGameFixture::observe($game, $event->starts_at);
+    }
     $release = CalculationRelease::factory()->approved()->create(['sport' => $sport, 'phase' => 'pregame']);
-    $snapshot = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id, 'inputs' => ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]]]);
+    $snapshot = EventInputSnapshot::factory()->create($game instanceof Game
+        ? ObservedMlbGameFixture::snapshotAttributes($game)
+        : ['sport' => $sport, 'sport_event_id' => $event->id, 'inputs' => ['home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id]]]);
     $run = CalculationRun::factory()->create([
         'sport_event_id' => $event->id, 'event_input_snapshot_id' => $snapshot->id,
         'calculation_release_id' => $release->id, 'status' => 'succeeded',

@@ -36,6 +36,7 @@ it('syncs WCBB games from the scoreboard job without constructor type errors', f
                     'competitions' => [
                         [
                             'id' => '401999001',
+                            'neutralSite' => true,
                             'competitors' => [
                                 [
                                     'team' => ['id' => '1'],
@@ -68,5 +69,6 @@ it('syncs WCBB games from the scoreboard job without constructor type errors', f
         ->home_team_id->toBe($this->homeTeam->id)
         ->away_team_id->toBe($this->awayTeam->id)
         ->home_score->toBe(78)
-        ->away_score->toBe(65);
+        ->away_score->toBe(65)
+        ->and($game->sportEvent?->neutral_site)->toBeTrue();
 });

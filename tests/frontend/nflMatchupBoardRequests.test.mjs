@@ -136,7 +136,7 @@ test('NFL superseded board failures cannot clear newer loading or replace its re
             ? '2026-11-07'
             : '2026-11-06';
     assert.equal(x.boards.calls[1].args[1].init.signal.aborted, true);
-    assert.equal(x.state.predictions.value.length, 2);
+    assert.equal(x.state.predictions.value.length, 0);
     x.boards.calls[1].reject(Error('Old error'));
     await old;
     assert.equal(x.state.refreshing.value, true);

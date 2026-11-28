@@ -8,6 +8,7 @@ use App\Models\NBA\Game;
 use App\Models\NBA\PlayerProp;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Predictions\CanonicalTeamGameEvaluator;
+use App\Services\Predictions\LegacyPredictionGradeRecorder;
 use Illuminate\Database\Eloquent\Model;
 
 class GameFinalizationDispatcher
@@ -77,7 +78,8 @@ class GameFinalizationDispatcher
         }
 
         $predictionModel = app(SportContextResolver::class)->find($sport)?->models['prediction'] ?? null;
-        if ($predictionModel !== null && $this->hasUngradedRows($predictionModel, $game)) {
+        if ($predictionModel !== null && $predictionModel::query()->where('game_id', $game->getKey())->get()
+            ->contains(fn (Model $prediction): bool => app(LegacyPredictionGradeRecorder::class)->needsGrading($prediction, $game))) {
             return true;
         }
 

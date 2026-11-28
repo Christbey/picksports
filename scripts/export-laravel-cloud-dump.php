@@ -3,6 +3,7 @@
 
 declare(strict_types=1);
 
+use App\Support\Database\MySqlCliConnection;
 use Illuminate\Contracts\Console\Kernel;
 
 require dirname(__DIR__).'/vendor/autoload.php';
@@ -25,8 +26,18 @@ if (file_exists($outputPath)) {
 
 $outputDirectory = dirname($outputPath);
 
-if (! is_dir($outputDirectory) && ! mkdir($outputDirectory, 0755, true) && ! is_dir($outputDirectory)) {
+// Dumps contain private application data. Create both directories and output
+// files privately even when the caller's shell has a permissive umask.
+umask(0077);
+
+if (! is_dir($outputDirectory) && ! mkdir($outputDirectory, 0700, true) && ! is_dir($outputDirectory)) {
     fwrite(STDERR, "Unable to create output directory: {$outputDirectory}\n");
+    exit(2);
+}
+
+$directoryPermissions = fileperms($outputDirectory);
+if ($directoryPermissions === false || ($directoryPermissions & 0077) !== 0) {
+    fwrite(STDERR, "Refusing to export into a directory accessible by other users. Choose a private directory: {$outputDirectory}\n");
     exit(2);
 }
 
@@ -43,18 +54,10 @@ $findExecutable = static function (string $name): string {
     throw new RuntimeException("Required executable not found: {$name}");
 };
 
-$connection = config('database.connections.'.config('database.default'));
-
-if (! is_array($connection) || ($connection['driver'] ?? null) !== 'mysql') {
-    fwrite(STDERR, "The configured default database connection must use MySQL.\n");
-    exit(2);
-}
-
-$database = (string) ($connection['database'] ?? '');
-$username = (string) ($connection['username'] ?? '');
-
-if ($database === '' || $username === '') {
-    fwrite(STDERR, "The configured MySQL database name and username are required.\n");
+try {
+    $connection = MySqlCliConnection::fromConfiguration((array) config('database.connections.'.config('database.default')));
+} catch (InvalidArgumentException $exception) {
+    fwrite(STDERR, $exception->getMessage()."\n");
     exit(2);
 }
 
@@ -68,11 +71,7 @@ try {
 
 $dumpCommand = [
     $mysqldump,
-    '--protocol=TCP',
-    '--host='.(string) ($connection['host'] ?? '127.0.0.1'),
-    '--port='.(string) ($connection['port'] ?? 3306),
-    '--user='.$username,
-    '--default-character-set=utf8mb4',
+    ...$connection->arguments(),
     '--single-transaction',
     '--quick',
     '--skip-lock-tables',
@@ -83,11 +82,11 @@ $dumpCommand = [
     '--set-gtid-purged=OFF',
     '--no-tablespaces',
     '--hex-blob',
-    $database,
+    '--',
+    $connection->database(),
 ];
 
-$environment = getenv();
-$environment['MYSQL_PWD'] = (string) ($connection['password'] ?? '');
+$environment = $connection->environment();
 
 $gzipProcess = proc_open(
     [$gzip, '-6'],

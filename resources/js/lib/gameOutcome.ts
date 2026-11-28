@@ -1,3 +1,4 @@
+import { isFinalGameStatus } from './gameStatus';
 import type { RecentGameListItem } from '@/types';
 
 export const finiteValue = (value: unknown): number | null => {
@@ -14,7 +15,7 @@ export const gameOutcome = (
     >,
     teamId: number,
 ): 'W' | 'L' | 'T' | null => {
-    if (game.status && game.status !== 'STATUS_FINAL') return null;
+    if (!isFinalGameStatus(game.status)) return null;
     if (![game.home_team_id, game.away_team_id].includes(teamId)) return null;
     const home = finiteValue(game.home_score);
     const away = finiteValue(game.away_score);

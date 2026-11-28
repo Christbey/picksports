@@ -4,7 +4,10 @@ use App\Models\GameOddsSnapshot;
 use App\Models\MarketQuote;
 use App\Models\MLB\Game;
 use App\Models\MLB\Team;
+use App\Services\OddsApi\GameOddsSnapshotRecorder;
+use App\Support\MLB\MlbGameStart;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 uses()->group('mlb', 'odds');
 
@@ -71,7 +74,8 @@ it('normalizes MLB moneyline run line and total snapshots with paired no-vig pro
         ->and($quotes->pluck('sport')->unique()->all())->toBe(['mlb'])
         ->and($quotes->pluck('source')->unique()->all())->toBe(['odds_api'])
         ->and($quotes->pluck('bookmaker_key')->unique()->all())->toBe(['draftkings'])
-        ->and($quotes->every(fn (MarketQuote $quote): bool => $quote->is_pregame === true))->toBeTrue()
+        // Retained legacy snapshots cannot acquire observed-start timing certification during normalization.
+        ->and($quotes->every(fn (MarketQuote $quote): bool => $quote->is_pregame === null))->toBeTrue()
         ->and((float) $moneyline['home']->implied_probability)->toBe(0.545455)
         ->and((float) $moneyline['home']->no_vig_probability)->toBe(0.533898)
         ->and((float) $moneyline['away']->no_vig_probability)->toBe(0.466102)
@@ -264,3 +268,22 @@ function createMlbGame(array $attributes): Game
         'away_team_id' => Team::factory()->create()->id,
     ]);
 }
+
+it('retains genuine pregame quote evidence when rebuilding a newly observed synthetic snapshot', function () {
+    $this->travelTo(Carbon::parse('2026-07-29T17:00:00Z'));
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
+        'season' => 2026, 'game_date' => '2026-07-29', 'game_time' => '19:05:00', 'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => Team::factory()->create()->id, 'away_team_id' => Team::factory()->create()->id,
+    ]);
+    $snapshot = app(GameOddsSnapshotRecorder::class)->record('mlb', $game,
+        ['id' => 'synthetic-typed-backfill', 'commence_time' => MlbGameStart::for($game)->toIso8601String()],
+        standardMlbMoneylinePayload(), Carbon::parse('2026-07-29T17:00:00Z'), 'test');
+    expect($snapshot)->not->toBeNull();
+    $before = $snapshot->fresh()->getAttributes();
+    // Remove derived rows only in this fixture; the owned immutable source observation is retained.
+    DB::table('market_quotes')->where('game_odds_snapshot_id', $snapshot->id)->delete();
+    $this->artisan('sports:backfill-market-quotes', ['--sport' => ['mlb'], '--season' => 2026, '--date' => '2026-07-29'])->assertSuccessful();
+    $quotes = MarketQuote::where('game_odds_snapshot_id', $snapshot->id)->get();
+    expect($quotes)->toHaveCount(2)->and($quotes->every(fn ($quote) => $quote->is_pregame === true))->toBeTrue()
+        ->and($snapshot->fresh()->getAttributes())->toBe($before);
+});

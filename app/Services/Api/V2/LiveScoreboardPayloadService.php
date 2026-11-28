@@ -4,17 +4,29 @@ namespace App\Services\Api\V2;
 
 use App\Http\Resources\CanonicalDashboardPredictionResource;
 use App\Http\Resources\DashboardPredictionResource;
+use App\Models\NFL\Game as NflGame;
 use App\Models\User;
 use App\Services\Predictions\LivePredictionStore;
+use App\Services\Sports\DateWindow;
+use App\Services\Sports\SportsDateWindowService;
+use App\Support\NFL\NflGameStart;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Collection;
 
 class LiveScoreboardPayloadService
 {
-    public function __construct(private readonly SportsViewCache $sportsViewCache) {}
+    private const DEFAULT_LIVE_STATUSES = ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'];
+
+    private const MAX_MISSING_CLOCK_METADATA_BYTES = 65_536;
+
+    private const DEFAULT_FINAL_STATUSES = ['STATUS_FINAL', 'STATUS_FULL_TIME'];
+
+    public function __construct(
+        private readonly SportsViewCache $sportsViewCache,
+        private readonly SportsDateWindowService $dateWindows,
+    ) {}
 
     /**
      * @return array{games: array<int, array<string, mixed>>, updated_at: string}
@@ -22,8 +34,11 @@ class LiveScoreboardPayloadService
     public function payload(?User $user): array
     {
         $sportConfigs = app(DashboardSportConfig::class)->viewable($user);
+        $window = $this->dateWindows->forDate();
         $cacheKey = $this->sportsViewCache->contextHash([
-            'date' => now()->toDateString(),
+            'date' => $window->localStartDate(),
+            'timezone' => $window->timezone,
+            'window_policy' => 'verified_start_or_unverified_calendar_v2',
             'viewable_sports' => array_keys($sportConfigs),
             'canonical_reads' => config('prediction_lifecycle.canonical_reads'),
         ]);
@@ -32,14 +47,23 @@ class LiveScoreboardPayloadService
             segment: 'live_scoreboard',
             key: $cacheKey,
             ttlSeconds: (int) config('sports_view_cache.ttl.live_scoreboard_seconds', 10),
-            resolver: function () use ($sportConfigs): array {
-                $todayStartUtc = now()->startOfDay()->utc()->format('Y-m-d H:i:s');
-                $todayEndUtc = now()->endOfDay()->utc()->format('Y-m-d H:i:s');
-
-                $todayGameScope = fn (Builder $q) => $this->applyTodayGameWindow($q, $todayStartUtc, $todayEndUtc);
+            resolver: function () use ($sportConfigs, $window): array {
+                $todayGameScope = function (Builder $query) use ($window): Builder {
+                    return $query->where(function (Builder $candidates) use ($window): void {
+                        $this->dateWindows->applyGameDateWindow($candidates, $window);
+                        if ($candidates->getModel() instanceof NflGame) {
+                            // Only bounded possible legacy carriers are inspected by the exact existing classifier below.
+                            $candidates->orWhere(fn (Builder $legacy): Builder => $legacy
+                                ->whereDate('game_date', $window->localStartDate())
+                                ->whereNotNull('nflverse_game_id')
+                                ->where('game_time', 'like', '00:00:00%')
+                                ->whereRaw($legacy->getConnection()->getDriverName() === 'sqlite' ? 'LENGTH(CAST(odds_data AS BLOB)) <= ?' : 'LENGTH(odds_data) <= ?', [self::MAX_MISSING_CLOCK_METADATA_BYTES]));
+                        }
+                    });
+                };
 
                 $games = collect($sportConfigs)
-                    ->flatMap(fn (array $config, string $sport) => $this->getScoreboardGamesForSport($sport, $config, $todayGameScope))
+                    ->flatMap(fn (array $config, string $sport) => $this->getScoreboardGamesForSport($sport, $config, $todayGameScope, $window))
                     ->sortBy([
                         fn (array $game) => $game['is_live'] ? 0 : 1,
                         ['game_time', 'asc'],
@@ -55,7 +79,7 @@ class LiveScoreboardPayloadService
         );
     }
 
-    private function getScoreboardGamesForSport(string $sport, array $config, \Closure $todayGameScope): Collection
+    private function getScoreboardGamesForSport(string $sport, array $config, \Closure $todayGameScope, DateWindow $window): Collection
     {
         $statuses = array_values(array_unique(array_merge(
             $config['live_statuses'],
@@ -65,9 +89,13 @@ class LiveScoreboardPayloadService
         $context = app(SportContextResolver::class)->resolve(strtolower($sport));
         $canonical = app(CanonicalSportPredictionQuery::class);
         if ($canonical->supports($context)) {
-            $predictions = $canonical->queryForSport($context->slug, ['from_date' => now()->subDay()->toDateString()])
-                ->whereBetween('sport_events.starts_at', [now()->startOfDay()->utc(), now()->endOfDay()->utc()])
-                ->whereIn($context->slug.'_games.status', $statuses)->get();
+            $gameModel = $context->models['game'];
+            $todayGames = $todayGameScope($gameModel::query());
+            $gameTable = $todayGames->getModel()->getTable();
+            $predictions = $canonical->queryForSport($context->slug)
+                ->whereIn($gameTable.'.id', $todayGames->select($gameTable.'.id'))
+                ->whereIn($gameTable.'.status', $statuses)->get()
+                ->filter(fn ($prediction): bool => $this->matchesNflWindow($prediction->sportEvent->getRelation($context->slug.'Game'), $window));
             app(LivePredictionStore::class)->preload($predictions->map(fn ($prediction) => $prediction->sportEvent?->getRelation($context->slug.'Game'))->filter());
 
             return $predictions->map(fn ($prediction): array => (new CanonicalDashboardPredictionResource($prediction, $context, $config, app(CanonicalPredictionPresentationService::class)->forPrediction($prediction)))->resolve());
@@ -78,7 +106,8 @@ class LiveScoreboardPayloadService
                 $todayGameScope($query);
                 $query->whereIn('status', $statuses);
             })
-            ->get();
+            ->get()
+            ->filter(fn ($prediction): bool => $this->matchesNflWindow($prediction->game, $window));
 
         app(LivePredictionStore::class)->preload($predictions->pluck('game')->filter());
 
@@ -93,24 +122,15 @@ class LiveScoreboardPayloadService
         });
     }
 
-    /**
-     * @param  Builder<Model>|QueryBuilder  $query
-     * @return Builder<Model>|QueryBuilder
-     */
-    private function applyTodayGameWindow(Builder|QueryBuilder $query, string $startUtc, string $endUtc): Builder|QueryBuilder
+    private function matchesNflWindow(Model $game, DateWindow $window): bool
     {
-        $driver = $query->getConnection()->getDriverName();
-
-        if ($driver === 'sqlite') {
-            return $query->whereRaw(
-                "datetime(game_date || ' ' || COALESCE(game_time, '00:00:00')) BETWEEN ? AND ?",
-                [$startUtc, $endUtc]
-            );
+        if (! $game instanceof NflGame) {
+            return true;
         }
+        $start = NflGameStart::for($game);
 
-        return $query->whereRaw(
-            'TIMESTAMP(game_date, game_time) BETWEEN ? AND ?',
-            [$startUtc, $endUtc]
-        );
+        return $start !== null
+            ? $start->betweenIncluded($window->utcStart, $window->utcEnd)
+            : substr((string) $game->getRawOriginal('game_date'), 0, 10) === $window->localStartDate();
     }
 }

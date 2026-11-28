@@ -22,8 +22,9 @@ it('stores one immutable pregame rotation forecast and grades it against the act
         'full_name' => 'Forecast Pitcher',
         'elo_rating' => 1524,
     ]);
-    $game = Game::factory()->regularSeason()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->regularSeason()->create([
         'season' => 2026,
+        'status' => 'STATUS_SCHEDULED',
         'game_date' => '2026-08-01',
         'game_time' => '19:10:00',
         'home_team_id' => $homeTeam->id,
@@ -82,8 +83,9 @@ it('grades a changed starter as an incorrect rotation forecast and reports calib
         'espn_id' => 'actual-away',
         'elo_rating' => 1530,
     ]);
-    $game = Game::factory()->regularSeason()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->regularSeason()->create([
         'season' => 2026,
+        'status' => 'STATUS_SCHEDULED',
         'game_date' => '2026-08-02',
         'game_time' => '18:00:00',
         'home_team_id' => $homeTeam->id,
@@ -131,8 +133,9 @@ it('reports the latest pregame forecast as the headline while retaining immutabl
         'team_id' => $homeTeam->id,
         'espn_id' => 'latest-candidate',
     ]);
-    $game = Game::factory()->regularSeason()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->regularSeason()->create([
         'season' => 2026,
+        'status' => 'STATUS_SCHEDULED',
         'game_date' => '2026-08-02',
         'game_time' => '18:00:00',
         'home_team_id' => $homeTeam->id,

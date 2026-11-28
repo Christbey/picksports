@@ -2,9 +2,11 @@
 
 namespace App\Http\Requests\Admin;
 
+use App\Models\SubscriptionTier;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Spatie\Permission\Models\Role;
 
 class TierRequest extends FormRequest
 {
@@ -32,6 +34,19 @@ class TierRequest extends FormRequest
                 'string',
                 'max:255',
                 Rule::unique('subscription_tiers', 'slug')->ignore($tierId),
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    $tier = $this->route('tier');
+                    if ($tier instanceof SubscriptionTier && $value !== $tier->slug) {
+                        $fail('Tier identifiers cannot be renamed. Change the display name, or create a new tier and migrate users explicitly.');
+                    }
+                    if (in_array(strtolower(trim((string) $value)), ['admin', 'super-admin', 'super_admin', strtolower((string) config('founding_users.role', 'founding_user'))], true)) {
+                        $fail('This identifier is reserved for an independent access role.');
+                    }
+                    if (! $tier && (preg_match('/\A[a-z0-9]+(?:[-_][a-z0-9]+)*\z/', (string) $value) !== 1
+                        || Role::query()->where('guard_name', config('auth.defaults.guard', 'web'))->whereRaw('LOWER(name) = ?', [strtolower((string) $value)])->exists())) {
+                        $fail('Choose a lowercase tier identifier that does not already belong to an independent role.');
+                    }
+                },
             ],
             'description' => ['nullable', 'string'],
             'price_monthly' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],

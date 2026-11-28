@@ -1,14 +1,10 @@
 <script setup lang="ts">
+import FuturesQuote from '@/components/predictions/FuturesQuote.vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 import { useCbbForecastContext } from '@/composables/useCbbForecast';
-const {
-    formatPct,
-    formatAmericanOdds,
-    formatTeam,
-    deepRunContenders,
-    plusEvTitleEdges,
-} = useCbbForecastContext();
+const { formatPct, formatTeam, deepRunContenders, plusEvTitleEdges } =
+    useCbbForecastContext();
 </script>
 <template>
     <div class="grid gap-4 xl:grid-cols-2">
@@ -61,7 +57,7 @@ const {
                                 {{ formatTeam(row.team, row.team_id) }}
                             </p>
                             <p class="text-xs text-muted-foreground">
-                                {{ formatAmericanOdds(row.market_odds?.price) }}
+                                <FuturesQuote :quote="row.market_odds" />
                                 market ·
                                 {{ row.actual_region ?? 'TBD' }} No.
                                 {{ row.actual_seed ?? '-' }}

@@ -1,0 +1,5 @@
+# NFL basic strength of schedule
+
+Private correction dated November 28, 2026. The public NFL team-metric action computes basic schedule strength from opponent win percentages. Its secondary opponent-result query uses the requested metric phase through the existing season-type aliases and requires both recorded scores. Genuine zero scores remain valid; ties retain the existing exclusion from wins/(wins+losses). This change does not alter primary-game admission, other strength-of-schedule metrics, WEPA, thresholds, calibration or approval.
+
+Synthetic SQLite public-action controls reproduced four failures and five positives (51 assertions) before repair. The same nine passed with 63 assertions; the final cohort including existing metric tests passed 36 tests/185 assertions at 256M. Two Pint checks passed. No native, production, whole-source concurrency or allocation qualification is claimed. Full12 predates this correction. The test's optional environment-selected raw trace is local diagnostic output. The first AFTER receipt inherited an inaccurate unmodified-runtime label; its patched source hash and explicit correction are preserved in the report.

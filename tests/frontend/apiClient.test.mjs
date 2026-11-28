@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import {
     ApiError,
+    ApiProtocolError,
     fetchJson,
     mutateJson,
 } from '../../resources/js/composables/useApiClient.ts';
@@ -24,6 +25,56 @@ const documentWith = (cookie = '', token = null) => {
         querySelector: () => (token ? { content: token } : null),
     };
 };
+
+test('successful malformed responses fail explicitly for reads and writes without retrying', async () => {
+    documentWith('', 'token');
+    for (const [body, contentType, code] of [
+        ['<html>Login</html>', 'text/html', 'unexpected_content_type'],
+        ['', 'application/json', 'invalid_json'],
+        ['{broken', 'application/json', 'invalid_json'],
+        ['{}', 'application/jsonp', 'unexpected_content_type'],
+        ['{}', '', 'unexpected_content_type'],
+    ]) {
+        for (const run of [
+            () => fetchJson('/api/v2/sports/nfl/games'),
+            () => mutateJson('/api/v2/groups', 'POST', {}),
+        ]) {
+            let calls = 0;
+            globalThis.fetch = async () => {
+                calls++;
+                return new Response(body, {
+                    headers: {
+                        'Content-Type': contentType,
+                        'X-Request-ID': 'protocol-123',
+                    },
+                });
+            };
+            await assert.rejects(run, (error) => {
+                assert.ok(error instanceof ApiProtocolError);
+                assert.equal(error.status, 200);
+                assert.equal(error.requestId, 'protocol-123');
+                assert.equal(error.code, code);
+                return true;
+            });
+            assert.equal(calls, 1);
+        }
+    }
+});
+
+test('JSON media types with parameters and structured suffixes remain supported and 204 stays empty', async () => {
+    for (const type of [
+        'application/json; charset=utf-8',
+        'Application/JSON',
+        'application/problem+json',
+        'application/vnd.picksports+json; charset=utf-8',
+    ]) {
+        globalThis.fetch = async () =>
+            json({ data: [] }, 200, { 'Content-Type': type });
+        assert.deepEqual(await fetchJson('/api/v2/sports'), { data: [] });
+    }
+    globalThis.fetch = async () => new Response(null, { status: 204 });
+    assert.equal(await fetchJson('/sanctum/csrf-cookie'), null);
+});
 
 test('browser writes send decoded XSRF cookie, cookies, JSON headers and a retry key', async () => {
     documentWith('other=x; XSRF-TOKEN=encoded%2Btoken%3D');

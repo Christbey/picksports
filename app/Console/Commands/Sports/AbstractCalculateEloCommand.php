@@ -3,6 +3,13 @@
 namespace App\Console\Commands\Sports;
 
 use App\Console\Commands\Concerns\ResolvesRequiredConfig;
+use App\DataTransferObjects\ESPN\GameData;
+use App\Exceptions\EloAdmissionRefused;
+use App\Services\Sports\Elo\EloAdmissionMode;
+use App\Services\Sports\Elo\EloEligibilityPolicy;
+use App\Services\Sports\Elo\EloSeasonRollover;
+use App\Services\Sports\Elo\EloSourceContext;
+use App\Services\Sports\Elo\EloWriterProtocol;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -104,7 +111,7 @@ abstract class AbstractCalculateEloCommand extends Command
             '{--season= : Calculate Elo for a specific season}',
             '{--from-date= : Calculate Elo starting from this date (YYYY-MM-DD)}',
             '{--to-date= : Calculate Elo up to this date (YYYY-MM-DD)}',
-            '{--reset : Reset all Elo ratings to default (1500) before calculating}',
+            '{--reset : Retired destructive full reset; use a reviewed isolated rebuild}',
         ];
 
         return implode("\n ", array_merge($segments, static::EXTRA_SIGNATURE_OPTIONS));
@@ -122,20 +129,34 @@ abstract class AbstractCalculateEloCommand extends Command
 
     public function handle(): int
     {
+        if ($this->option('reset')) {
+            $this->error('Destructive Elo reset is disabled. Use a separately reviewed sport-specific isolated rebuild.');
+
+            return Command::FAILURE;
+        }
+
+        $coordinatedSport = strtolower($this->getSportName());
+        try {
+            $teamModel = $this->getTeamModel();
+            $coordinated = app(EloAdmissionMode::class)->managed($coordinatedSport, (new $teamModel)->getConnection());
+        } catch (\RuntimeException) {
+            $this->error('Durably admitted Elo cannot fall back to disabled legacy writers.');
+
+            return Command::FAILURE;
+        }
+        if ($coordinated) {
+            try {
+                app(EloWriterProtocol::class)->requireCapability($coordinatedSport);
+            } catch (\RuntimeException) {
+                $this->error('A complete coordinated Elo adapter is required; no legacy fallback is allowed.');
+
+                return Command::FAILURE;
+            }
+        }
+
         $calculateEloClass = $this->getCalculateEloAction();
         $calculateElo = new $calculateEloClass;
         $targetSeason = $this->option('season');
-
-        // Reset Elo ratings if requested
-        if ($this->option('reset')) {
-            $this->info('Resetting all Elo ratings to '.$this->getDefaultElo().'...');
-            $teamModel = $this->getTeamModel();
-            $eloRatingModel = $this->getEloRatingModel();
-
-            $teamModel::query()->update(['elo_rating' => $this->getDefaultElo()]);
-            $eloRatingModel::query()->truncate();
-            $this->info('Elo ratings reset successfully.');
-        }
 
         if ($this->hasOption('regress') && $this->option('regress') && ! $this->option('reset')) {
             if ($targetSeason === null || $targetSeason === '') {
@@ -144,7 +165,22 @@ abstract class AbstractCalculateEloCommand extends Command
                 return Command::FAILURE;
             }
 
-            if ($this->seasonAlreadyInitialized((int) $targetSeason)) {
+            if ($coordinated) {
+                $validatedSeason = filter_var($targetSeason, FILTER_VALIDATE_INT);
+                if ($validatedSeason === false) {
+                    $this->error('A valid explicit rollover season is required.');
+
+                    return Command::FAILURE;
+                }
+                try {
+                    app(EloSeasonRollover::class)->execute($coordinatedSport, $validatedSeason,
+                        ['team' => config($coordinatedSport.'.elo.offseason_regression_factor', 0.3)]);
+                } catch (\RuntimeException|\InvalidArgumentException|\DomainException) {
+                    $this->error('Elo rollover was refused; inspect baseline, version, target and season evidence.');
+
+                    return Command::FAILURE;
+                }
+            } elseif ($this->seasonAlreadyInitialized((int) $targetSeason)) {
                 $this->info("Skipping regression because Elo history already exists for season {$targetSeason}.");
             } else {
                 $this->applyRegressionTowardMean((int) $targetSeason);
@@ -154,18 +190,22 @@ abstract class AbstractCalculateEloCommand extends Command
         // Build query for completed games
         $gameModel = $this->getGameModel();
         $query = $gameModel::query()
-            ->where('status', 'STATUS_FINAL')
+            ->when($coordinated, fn (Builder $finals) => $finals->whereIn('status', GameData::finalStatuses()),
+                fn (Builder $finals) => $finals->where('status', 'STATUS_FINAL'))
             ->with(['homeTeam', 'awayTeam'])
             ->orderBy('game_date')
+            ->when($coordinated, fn (Builder $ordered) => $ordered->orderBy('game_time'))
             ->orderBy('id');
 
         // Filter to analytics-eligible season types (e.g., exclude spring training)
         $analyticsTypes = $this->getAnalyticsSeasonTypes();
-        if ($analyticsTypes) {
+        if (! $coordinated && $analyticsTypes) {
             $query->whereIn('season_type', $analyticsTypes);
         }
 
-        $this->applyAdditionalAnalyticsFilters($query);
+        if (! $coordinated) {
+            $this->applyAdditionalAnalyticsFilters($query);
+        }
 
         // Apply filters
         if ($season = $this->option('season')) {
@@ -184,7 +224,46 @@ abstract class AbstractCalculateEloCommand extends Command
             $query->where('game_date', '<=', $toDate);
         }
 
+        if ($coordinated) {
+            $gameIds = (clone $query)->limit(EloEligibilityPolicy::LIMITS['games'] + 1)->toBase()->pluck('id');
+            if ($gameIds->count() > EloEligibilityPolicy::LIMITS['games']) {
+                $this->error('Guarded Elo command game budget exceeded: considered '.$gameIds->count().'; no games applied.');
+
+                return Command::FAILURE;
+            }
+            $query->whereIn('id', $gameIds->all());
+        }
         $games = $query->get();
+        $excluded = 0;
+        if ($coordinated) {
+            if ($games->count() > EloEligibilityPolicy::LIMITS['games']) {
+                $this->error('Guarded Elo command game budget exceeded: considered '.$games->count().'; no games applied.');
+
+                return Command::FAILURE;
+            }
+            $eligibility = app(EloEligibilityPolicy::class);
+            foreach ($games as $key => $game) {
+                $classification = $eligibility->classify($coordinatedSport, $game->getRawOriginal('season_type'));
+                if ($classification === 'excluded') {
+                    $games->forget($key);
+                    $excluded++;
+
+                    continue;
+                }
+                if ($classification !== 'competitive') {
+                    $this->error('Guarded Elo source reconciliation required: unknown final season type; considered '.$games->count().' games; no games applied.');
+
+                    return Command::FAILURE;
+                }
+                try {
+                    app(EloSourceContext::class)->source($coordinatedSport, $game, []);
+                } catch (\Throwable) {
+                    $this->error('Guarded Elo source reconciliation required: incomplete observed final facts; considered '.$games->count().' games; no games applied.');
+
+                    return Command::FAILURE;
+                }
+            }
+        }
 
         if ($games->isEmpty()) {
             $this->warn('No completed games found matching the criteria.');
@@ -198,10 +277,17 @@ abstract class AbstractCalculateEloCommand extends Command
         $bar->start();
 
         $processed = 0;
-        $skipped = 0;
+        $skipped = $excluded;
 
         foreach ($games as $game) {
-            $result = $calculateElo->execute($game, skipIfExists: ! $this->option('reset'));
+            try {
+                $result = $calculateElo->execute($game, skipIfExists: ! $this->option('reset'));
+            } catch (EloAdmissionRefused $exception) {
+                $this->newLine();
+                $this->error(json_encode($exception->context(), JSON_THROW_ON_ERROR));
+
+                return Command::FAILURE;
+            }
 
             if ($result['skipped']) {
                 $skipped++;
@@ -216,7 +302,9 @@ abstract class AbstractCalculateEloCommand extends Command
         $this->newLine(2);
 
         $this->info("Processed {$processed} games.");
-        $this->comment("Skipped {$skipped} games (already calculated).");
+        $this->comment($coordinated
+            ? "Skipped {$skipped} games (stored receipts, excluded types or explicit reviewed baseline cutoffs; no new history)."
+            : "Skipped {$skipped} games (already calculated).");
 
         return Command::SUCCESS;
     }

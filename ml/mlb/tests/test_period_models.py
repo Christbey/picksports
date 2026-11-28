@@ -55,7 +55,7 @@ def test_period_models_train_chronologically_and_return_three_outcomes(
 
     dataset = tmp_path / "period.csv"
     pd.DataFrame(rows).to_csv(dataset, index=False)
-    bundle = tmp_path / "period.joblib"
+    bundle = tmp_path / "period.json"
     evaluation = tmp_path / "evaluation.json"
     manifest = tmp_path / "manifest.json"
     result = train_period_models(

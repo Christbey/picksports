@@ -40,6 +40,7 @@ return [
             'purpose' => 'Isolated NBA overnight source acquisition and assessment; provision before bridge activation',
             'connection' => 'redis',
             'requires_provisioning' => true,
+            'provisioning' => 'required_before_activation',
             'timeout' => 600,
             'tries' => 1,
             'backoff' => 0,

@@ -2,18 +2,19 @@
 
 namespace App\Models\NBA;
 
+use App\Models\Concerns\RejectsPersistedModelMutation;
 use Illuminate\Database\Eloquent\Model;
-use LogicException;
 
 abstract class ImmutableInjuryRecord extends Model
 {
+    use RejectsPersistedModelMutation;
+
     public $timestamps = false;
 
     protected $guarded = ['id'];
 
-    protected static function booted(): void
+    protected function immutableMutationMessage(): string
     {
-        static::updating(fn () => throw new LogicException('NBA injury evidence is immutable.'));
-        static::deleting(fn () => throw new LogicException('NBA injury evidence is immutable.'));
+        return 'NBA injury evidence is immutable.';
     }
 }

@@ -6,6 +6,10 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import vue from '@vitejs/plugin-vue';
+import {
+    launchFixtureBrowser,
+    isolateFixtureNetwork,
+} from './fixtures/browser-runtime.mjs';
 const { chromium } = await import(
     process.env.PLAYWRIGHT_MODULE_PATH || 'playwright'
 );
@@ -187,9 +191,7 @@ const canonical = (data) =>
     [...data].map(([key, value]) => [key, String(value)]);
 try {
     await server.listen();
-    browser = await chromium.launch({
-        headless: true,
-        channel: process.env.PLAYWRIGHT_CHANNEL,
+    browser = await launchFixtureBrowser(chromium, {
         args: [
             '--disable-gpu',
             '--force-color-profile=srgb',
@@ -197,6 +199,7 @@ try {
         ],
     });
     const context = await browser.newContext();
+    await isolateFixtureNetwork(context);
     for (const before of baseline ? [true, false] : [false])
         for (const kind of ['team', 'alerts'])
             for (const variant of kind === 'team'

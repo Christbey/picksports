@@ -6,9 +6,9 @@ use App\Models\ResearchDocument;
 use App\Models\ResearchSource;
 use App\Models\SportEvent;
 use App\Services\Api\V2\SportContextResolver;
+use App\Services\Http\ApprovedHostGet;
 use App\Services\Predictions\CanonicalPayloadHasher;
 use Carbon\CarbonInterface;
-use Illuminate\Support\Facades\Http;
 
 /** Explicit ingestion only; reading research never fetches a source. */
 class ResearchDocumentStore
@@ -26,13 +26,21 @@ class ResearchDocumentStore
 
     public function fetch(ResearchSource $source, ?string $url = null): string
     {
+        return $this->fetchWithProvenance($source, $url)['body'];
+    }
+
+    /** @return array{body:string,url:string,requested_url:string,redirects:list<array{from:string,to:string}>} */
+    public function fetchWithProvenance(ResearchSource $source, ?string $url = null): array
+    {
         $url ??= $source->url;
+        $requestedUrl = $url;
+        $redirects = [];
         for ($hop = 0; $hop < 4; $hop++) {
             if (! $this->allowed($source, $url)) {
                 throw new \InvalidArgumentException('Research source URL is not explicitly approved.');
             }
-            $response = Http::withUserAgent('PickSports research reader')->timeout(15)
-                ->withOptions(['allow_redirects' => false])->get($url);
+            $response = app(ApprovedHostGet::class)->get($url, (array) $source->allowed_hosts,
+                (int) config('research.maximum_document_bytes', 250000), headers: ['User-Agent' => 'PickSports research reader'], followRedirects: false);
             if ($response->redirect()) {
                 $next = $response->header('Location');
                 if (is_string($next) && str_starts_with($next, '/') && ! str_starts_with($next, '//')) {
@@ -41,6 +49,7 @@ class ResearchDocumentStore
                 if (! is_string($next) || ! $this->allowed($source, $next)) {
                     throw new \InvalidArgumentException('Research source redirect is not explicitly approved.');
                 }
+                $redirects[] = ['from' => $url, 'to' => $next];
                 $url = $next;
 
                 continue;
@@ -50,7 +59,7 @@ class ResearchDocumentStore
                 throw new \InvalidArgumentException('Research source document exceeds the size limit.');
             }
 
-            return $response->body();
+            return ['body' => $response->body(), 'url' => $url, 'requested_url' => $requestedUrl, 'redirects' => $redirects];
         }
 
         throw new \InvalidArgumentException('Research source redirect limit reached.');

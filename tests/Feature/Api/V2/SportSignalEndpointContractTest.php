@@ -151,6 +151,12 @@ it('exposes mlb live monitor signals through the v2 signal endpoint', function (
         ['live_predicted_spread' => 1.8, 'live_win_probability' => 0.78, 'live_predicted_total' => 8.1, 'live_outs_remaining' => 15],
         'live', 'test', now());
 
+    // Retired mutable live columns deliberately disagree with the snapshot.
+    app(LivePredictionStore::class)->record($game,
+        new LivePregameForecast(1.2, 8.4, 0.58, ['prediction_source' => 'legacy', 'prediction_table' => 'mlb_predictions', 'prediction_id' => $prediction->id]),
+        ['live_predicted_spread' => 1.8, 'live_win_probability' => 0.78, 'live_predicted_total' => 8.1, 'live_outs_remaining' => 15],
+        'live', 'test', now());
+
     $this->getJson('/api/v2/sports/mlb/signals?season=2026&as_of_date=2026-06-14')
         ->assertOk()
         ->assertJsonPath('meta.contract', 'sports.signals.index')

@@ -32,7 +32,7 @@ abstract class AbstractSimpleBasketballUpdateLivePrediction
     ];
 
     /**
-     * @return array{live_predicted_spread: float, live_win_probability: float, live_predicted_total: float, live_seconds_remaining: int}|null
+     * @return array{live_predicted_spread: float, live_win_probability: float, live_predicted_total: float|null, live_seconds_remaining: int}|null
      */
     public function execute(object $game): ?array
     {
@@ -73,18 +73,18 @@ abstract class AbstractSimpleBasketballUpdateLivePrediction
             $prediction->predicted_spread ?? 0
         );
 
-        $livePredictedTotal = $this->calculateLiveTotal(
+        $livePredictedTotal = $prediction->predicted_total === null ? null : $this->calculateLiveTotal(
             $totalPoints,
             $actualSecondsElapsed,
             $secondsRemaining,
             $effectiveGameLength,
-            $prediction->predicted_total ?? static::DEFAULT_PRE_GAME_TOTAL
+            $prediction->predicted_total
         );
 
         $values = [
             'live_predicted_spread' => round($livePredictedSpread, 1),
             'live_win_probability' => round($liveWinProbability, 3),
-            'live_predicted_total' => round($livePredictedTotal, 1),
+            'live_predicted_total' => $livePredictedTotal === null ? null : round($livePredictedTotal, 1),
             'live_seconds_remaining' => $secondsRemaining,
         ];
         $store->record($game, $prediction, $values, 'live', static::class);

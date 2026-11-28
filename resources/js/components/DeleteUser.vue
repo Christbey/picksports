@@ -26,7 +26,7 @@ const passwordInput = useTemplateRef('passwordInput');
         <Heading
             variant="small"
             title="Delete account"
-            description="Delete your account and all of its resources"
+            description="Permanently delete your account"
         />
         <div
             class="space-y-4 rounded-lg border border-red-100 bg-red-50 p-4 dark:border-red-200/10 dark:bg-red-700/10"
@@ -60,13 +60,21 @@ const passwordInput = useTemplateRef('passwordInput');
                                 account?</DialogTitle
                             >
                             <DialogDescription>
-                                Once your account is deleted, all of its
-                                resources and data will also be permanently
-                                deleted. Please enter your password to confirm
-                                you would like to permanently delete your
-                                account.
+                                Deletion is permanent. Accounts with unresolved
+                                billing require support review; billing audit
+                                history may be retained. Please enter your
+                                password to confirm you would like to
+                                permanently delete your account.
                             </DialogDescription>
                         </DialogHeader>
+
+                        <p
+                            v-if="errors.billing"
+                            role="alert"
+                            class="text-sm text-destructive"
+                        >
+                            {{ errors.billing }}
+                        </p>
 
                         <div class="grid gap-2">
                             <Label for="password" class="sr-only"

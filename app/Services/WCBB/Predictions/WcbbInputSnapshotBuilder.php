@@ -65,6 +65,17 @@ class WcbbInputSnapshotBuilder extends BasketballInputSnapshotBuilder
                 $game->game_date->toDateString(),
             ),
         );
+
+    }
+
+    protected function additionalInputs(
+        SportEvent $event,
+        Model $game,
+        CarbonImmutable $capturedAt,
+        CarbonImmutable $cutoffAt,
+        CalculationReleaseData $release,
+    ): array {
+        return ['pregame_market' => app(WcbbPregameSpread::class)->capture($game, $capturedAt, $cutoffAt)];
     }
 
     protected function sport(): string

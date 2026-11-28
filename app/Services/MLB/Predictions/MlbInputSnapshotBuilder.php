@@ -14,6 +14,8 @@ use App\Models\MLB\TeamMetric;
 use App\Models\SportEvent;
 use App\Services\Predictions\CanonicalTeamInputSnapshotBuilder;
 use App\Services\Predictions\EstablishedModelTransport;
+use App\Support\MLB\MlbGameStart;
+use App\Support\MLB\MlbWeatherTime;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 
@@ -29,11 +31,18 @@ class MlbInputSnapshotBuilder extends CanonicalTeamInputSnapshotBuilder
         if ($game === null || ! app(MlbPregameIdentity::class)->matches($game, $event)) {
             throw new PredictionLifecycleException('MLB canonical game identity must match the linked game.');
         }
+        // Pin the previously admitted source fields before the preview reads its
+        // additional inputs. Only the final capture instant may advance below.
+        $startObservation = data_get($snapshot->metadata, 'mlb_start_observation');
+        if (! MlbGameStart::capturedFor($game, $startObservation)) {
+            throw new PredictionLifecycleException('MLB canonical source observation changed before full-model capture.');
+        }
         $snapshot = app(EstablishedModelTransport::class)->capture(
             $snapshot, $release, 'mlb', MlbFullModelReleaseDefinition::INPUT_SCHEMA_VERSION,
             MlbFullModelReleaseDefinition::FORECAST_SOURCE, MlbFullModelReleaseDefinition::configurationKeys(),
             fn () => app(GeneratePrediction::class)->preview($game),
         );
+        $startObservation['captured_at_utc'] = $snapshot->capturedAt->utc()->format('Y-m-d\TH:i:s.u\Z');
         $inputs = $snapshot->inputs;
         $features = (array) data_get($inputs, 'established_model.evidence.features', []);
         foreach (['home', 'away'] as $side) {
@@ -44,7 +53,8 @@ class MlbInputSnapshotBuilder extends CanonicalTeamInputSnapshotBuilder
         }
 
         return new EventInputSnapshotData(
-            ...[...(array) $snapshot, 'inputs' => $inputs],
+            ...[...(array) $snapshot, 'inputs' => $inputs,
+                'metadata' => [...$snapshot->metadata, 'mlb_start_observation' => $startObservation]],
         );
     }
 
@@ -105,8 +115,8 @@ class MlbInputSnapshotBuilder extends CanonicalTeamInputSnapshotBuilder
     protected function additionalInputs(SportEvent $event, Model $game, CarbonImmutable $capturedAt, CarbonImmutable $cutoffAt, CalculationReleaseData $release): array
     {
         $this->capturedWeather = GameWeather::query()->where('game_id', $game->getKey())
-            ->where('updated_at', '<=', $capturedAt)->where('observed_at', '<=', $capturedAt)
-            ->orderByDesc('observed_at')->orderByDesc('id')->first();
+            ->where('updated_at', '<=', $capturedAt)->orderByDesc('id')->limit(10)->get()
+            ->first(fn (GameWeather $weather): bool => $game instanceof Game && MlbWeatherTime::available($game, $weather, $capturedAt));
         $pitching = [];
         foreach (['home', 'away'] as $side) {
             $espnId = $game instanceof Game ? $game->resolvedStartingPitcherEspnId($side) : null;
@@ -124,7 +134,8 @@ class MlbInputSnapshotBuilder extends CanonicalTeamInputSnapshotBuilder
             'venue' => ['name' => $game->getAttribute('venue_name'), 'city' => $game->getAttribute('venue_city'), 'state' => $game->getAttribute('venue_state')],
             'pitching' => $pitching,
             'weather' => $this->capturedWeather === null ? null : [
-                'observed_at' => $this->capturedWeather->observed_at?->toIso8601String(),
+                'observed_at' => data_get($this->capturedWeather->raw_payload, '_mlb_weather_time.received_at_utc'),
+                'forecast_hour_epoch' => data_get($this->capturedWeather->raw_payload, '_mlb_weather_time.forecast_hour_epoch'),
                 'temperature_f' => $this->nullableFloat($this->capturedWeather->temperature_f),
                 'wind_speed_mph' => $this->nullableFloat($this->capturedWeather->wind_speed_mph),
                 'is_indoor' => (bool) $this->capturedWeather->is_indoor, 'roof_status' => $this->capturedWeather->roof_status,

@@ -3,7 +3,14 @@ import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import vue from '@vitejs/plugin-vue';
-import { createSSRApp, createRenderer, h, nextTick } from 'vue';
+import {
+    createSSRApp,
+    createRenderer,
+    h,
+    nextTick,
+    reactive,
+    provide,
+} from 'vue';
 import { renderToString } from 'vue/server-renderer';
 let server;
 let board;
@@ -201,4 +208,95 @@ test('signals load on mount, refresh silently every 30 seconds, recover from err
         delete globalThis.__mlbSignalsApi;
     }
     assert.equal(cleared, 7);
+});
+
+test('season replacement and unmount fence delayed signals, including ignored cancellation', async () => {
+    const oldWindow = globalThis.window;
+    const requests = [];
+    globalThis.window = { setInterval: () => 9, clearInterval() {} };
+    globalThis.__mlbSignalsApi = {
+        signals: {
+            index: (sport, options) =>
+                new Promise((resolve) => requests.push({ options, resolve })),
+        },
+    };
+    const props = reactive({ season: 2026 });
+    let state;
+    const app = renderer.createApp({
+        setup() {
+            state = useMlbSignals(props);
+            return () => h('div');
+        },
+    });
+    try {
+        app.mount({});
+        await flush();
+        requests[0].resolve({ data: fixture() });
+        await flush();
+        props.season = 2025;
+        await flush();
+        assert.equal(requests.length, 2);
+        assert.equal(state.payload.value, null);
+        props.season = 2024;
+        await flush();
+        assert.equal(requests[1].options.init.signal.aborted, true);
+        requests[1].resolve({ data: fixture({ season: 2025 }) });
+        await flush();
+        assert.equal(state.payload.value, null);
+        requests[2].resolve({ data: fixture({ season: 2024 }) });
+        await flush();
+        assert.equal(state.payload.value.season, 2024);
+        props.season = 2023;
+        await flush();
+        app.unmount();
+        requests[3].resolve({ data: fixture({ season: 2023 }) });
+        await flush();
+        assert.equal(state.payload.value, null);
+    } finally {
+        app.unmount();
+        globalThis.window = oldWindow;
+        delete globalThis.__mlbSignalsApi;
+    }
+});
+
+test('actual daily board health labels stored unknown assessments and preserves a zero hit rate', async () => {
+    const { useMlbDailyPicksBoard, mlbDailyPicksBoardKey } =
+        await server.ssrLoadModule(
+            '/resources/js/composables/useMlbDailyPicksBoard.ts',
+        );
+    const Health = (
+        await server.ssrLoadModule(
+            '/resources/js/components/mlb/MlbDailyPicksBoardHealth.vue',
+        )
+    ).default;
+    const Performance = (
+        await server.ssrLoadModule(
+            '/resources/js/components/mlb/MlbDailyPicksBoardPerformance.vue',
+        )
+    ).default;
+    const html = await renderToString(
+        createSSRApp({
+            setup() {
+                const state = useMlbDailyPicksBoard({ season: 2026 });
+                state.payload.value = {
+                    board_health: { pregame_safe_rate: null },
+                    performance_summary: {
+                        last_30_days: {
+                            wins: 0,
+                            losses: 2,
+                            pushes: 0,
+                            hit_rate: 0,
+                        },
+                    },
+                };
+                provide(mlbDailyPicksBoardKey, state);
+                return () => h('div', [h(Health), h(Performance)]);
+            },
+        }),
+    );
+    assert.match(html, /Stored Safety Assessment/);
+    assert.match(html, /Unknown/);
+    assert.match(html, /Stored assessment unavailable/);
+    assert.match(html, /0\.0%/);
+    assert.doesNotMatch(html, /100%|Safety checks/);
 });

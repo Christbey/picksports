@@ -3,11 +3,13 @@
 namespace App\Models;
 
 use App\Models\Concerns\CachesJsonArrayCasts;
+use App\Support\Models\GuardsCoreEvidenceMutations;
 use Database\Factories\CalculationRunFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use InvalidArgumentException;
 use LogicException;
@@ -17,6 +19,7 @@ class CalculationRun extends Model
     /** @use HasFactory<CalculationRunFactory> */
     use CachesJsonArrayCasts;
 
+    use GuardsCoreEvidenceMutations;
     use HasFactory, HasUuids;
 
     public const STATUSES = ['pending', 'running', 'succeeded', 'failed'];
@@ -99,6 +102,11 @@ class CalculationRun extends Model
     public function release(): BelongsTo
     {
         return $this->belongsTo(CalculationRelease::class, 'calculation_release_id');
+    }
+
+    public function attempts(): HasMany
+    {
+        return $this->hasMany(CalculationRunAttempt::class);
     }
 
     public function prediction(): HasOne

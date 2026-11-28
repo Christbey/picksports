@@ -20,6 +20,7 @@ class LoginRequest extends FormRequest
             'email' => ['required', 'string', 'email'],
             'password' => ['required', 'string'],
             'device_name' => ['nullable', 'string', 'max:120'],
+            'token_profile' => ['sometimes', 'string', 'in:interactive,read_only'],
         ];
     }
 

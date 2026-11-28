@@ -8,6 +8,7 @@ import type { DashboardPrediction } from '@/types';
 const games = ref<DashboardPrediction[]>([]);
 const loading = ref(false);
 const api = useApiV2Client();
+let disposed = false;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let initialTimer: ReturnType<typeof setTimeout> | null = null;
 let initialIdleCallback: number | null = null;
@@ -66,14 +67,17 @@ function pollIntervalMs(): number {
 }
 
 async function fetchGames(): Promise<void> {
-    if (loading.value) return;
+    if (disposed || loading.value) return;
 
     loading.value = true;
     try {
         const response = await api.liveScoreboard.show();
+        if (disposed) return;
         games.value = Array.isArray(response?.data?.games)
             ? response.data.games
             : [];
+    } catch {
+        if (!disposed) games.value = [];
     } finally {
         loading.value = false;
     }
@@ -87,6 +91,7 @@ function stopPolling(): void {
 
 function scheduleNextPoll(): void {
     stopPolling();
+    if (disposed) return;
     timer = setTimeout(async () => {
         if (document.hidden) {
             scheduleNextPoll();
@@ -116,6 +121,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+    disposed = true;
     if (initialIdleCallback !== null && 'cancelIdleCallback' in window) {
         window.cancelIdleCallback(initialIdleCallback);
         initialIdleCallback = null;

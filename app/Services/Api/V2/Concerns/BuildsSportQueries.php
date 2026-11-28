@@ -49,6 +49,32 @@ trait BuildsSportQueries
     }
 
     /**
+     * Game season_type is INTEGER in these five schemas; text aliases in a numeric
+     * SQL comparison can coerce to zero on MySQL. The football schemas retain
+     * their VARCHAR alias contract.
+     *
+     * @return array<int, int|string>
+     */
+    private function gameSeasonTypeCandidates(SportContext $context, string $requested): array
+    {
+        $candidates = $this->seasonTypeCandidates($context, $requested);
+        if (! in_array($context->slug, ['nba', 'cbb', 'wcbb', 'wnba', 'mlb'], true)) {
+            return $candidates;
+        }
+        $types = (array) config("{$context->slug}.season.types", []);
+        $codes = array_values($types);
+        $names = array_values(array_intersect_key((array) config("{$context->slug}.season.type_names", []), $types));
+        if (! in_array(trim($requested), array_map('strval', [...array_keys($types), ...$codes, ...$names]), true)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_map('intval', array_filter($candidates,
+            fn (mixed $candidate): bool => (is_int($candidate) || (is_string($candidate) && preg_match('/^[0-9]+$/D', $candidate) === 1))
+                && in_array((string) $candidate, array_map('strval', $codes), true)
+        ))));
+    }
+
+    /**
      * @return array<int, int|string>
      */
     private function seasonTypeCandidates(SportContext $context, string $requestedSeasonType): array

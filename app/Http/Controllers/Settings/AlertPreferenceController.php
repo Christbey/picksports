@@ -8,6 +8,7 @@ use App\Models\UserAlertPreference;
 use App\Services\AlertService;
 use App\Services\Settings\AlertPreferencePageDataService;
 use App\Support\SportCatalog;
+use App\Support\Validation\AlertPreferenceRules;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -25,6 +26,7 @@ class AlertPreferenceController extends Controller
     public function update(AlertPreferenceUpdateRequest $request): RedirectResponse
     {
         $validated = $request->validated();
+        $validated['notification_types'] = AlertPreferenceRules::notificationTypes($validated['notification_types']);
         $existing = UserAlertPreference::query()
             ->where('user_id', $request->user()->id)
             ->first();

@@ -2,6 +2,9 @@
 
 use App\Models\NFL\Game;
 use App\Models\NFL\Team;
+use Illuminate\Console\Command;
+use Illuminate\Http\Client\Factory;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -17,7 +20,7 @@ beforeEach(function () {
     config(['provider-data.storage.disk' => 'provider-local']);
     $home = Team::factory()->create();
     $away = Team::factory()->create();
-    $game = Game::factory()->create(['home_team_id' => $home->id, 'away_team_id' => $away->id]);
+    $game = Game::factory()->create(['home_team_id' => $home->id, 'away_team_id' => $away->id, 'season' => 2026, 'week' => 1]);
     DB::table('nflverse_pbp_plays')->insert(['nflverse_play_key' => 'pressure-test', 'nflverse_game_id' => '2026_01_DEN_KC',
         'nfl_game_id' => $game->id, 'season' => 2026, 'possession_team' => 'DEN', 'defense_team' => 'KC', 'possession_team_id' => $away->id, 'defense_team_id' => $home->id]);
     DB::table('nflverse_rosters')->insert(['nflverse_roster_key' => 'pressure-roster', 'season' => 2026, 'team_id' => $away->id, 'pfr_id' => 'TestQB00', 'gsis_id' => '00-12345']);
@@ -45,4 +48,31 @@ it('does not guess player identities from names or accept ambiguous roster IDs',
     Http::fake(['*' => Http::response(pressureCsv())]);
     $this->artisan('nfl:sync-matchup-pressure --season=2026')->assertFailed();
     expect(DB::table('nfl_matchup_pressure_samples')->count())->toBe(0);
+});
+
+it('preserves the whole stored season when replacement player identities are unresolved', function () {
+    Http::preventStrayRequests();
+    Http::fake(['*' => Http::response(pressureCsv())]);
+    $this->artisan('nfl:sync-matchup-pressure --season=2026')->assertSuccessful();
+    $before = DB::table('nfl_matchup_pressure_samples')->orderBy('id')->get()->toJson();
+    Http::swap(new Factory);
+    Http::preventStrayRequests();
+    Http::fake(['*' => Http::response(pressureCsv()."2026_01_DEN_KC,2026,1,REG,DEN,KC,MissingQB,5,1,0.25\n")]);
+    $this->artisan('nfl:sync-matchup-pressure --season=2026')->assertFailed();
+    expect(DB::table('nfl_matchup_pressure_samples')->orderBy('id')->get()->toJson())->toBe($before);
+});
+
+it('refuses pressure source omissions rather than deleting a previously verified identity', function () {
+    DB::table('nflverse_rosters')->insert(['nflverse_roster_key' => 'second-roster', 'season' => 2026,
+        'team_id' => DB::table('nflverse_rosters')->value('team_id'), 'pfr_id' => 'SecondQB', 'gsis_id' => '00-54321']);
+    Http::preventStrayRequests();
+    Http::fake(['*' => Http::response(pressureCsv()."2026_01_DEN_KC,2026,1,REG,DEN,KC,SecondQB,3,0,0.1\n")]);
+    $this->artisan('nfl:sync-matchup-pressure --season=2026')->assertSuccessful();
+    $before = DB::table('nfl_matchup_pressure_samples')->orderBy('id')->get()->toJson();
+    Http::swap(new Factory);
+    Http::preventStrayRequests();
+    Http::fake(['*' => Http::response(pressureCsv())]);
+    $exit = Artisan::call('nfl:sync-matchup-pressure', ['--season' => 2026]);
+    expect(DB::table('nfl_matchup_pressure_samples')->orderBy('id')->get()->toJson())->toBe($before)
+        ->and($exit)->toBe(Command::FAILURE);
 });

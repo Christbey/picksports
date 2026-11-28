@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Services\Auth\Native\NativeCredentialPolicy;
 use Database\Factories\DeviceSessionFactory;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -25,6 +27,8 @@ class DeviceSession extends Model
         'device_identifier_hash',
         'abilities',
         'access_token_expires_at',
+        'native_policy_version',
+        'access_expires_epoch',
         'last_used_at',
         'revoked_at',
         'revocation_reason',
@@ -49,9 +53,23 @@ class DeviceSession extends Model
         return [
             'abilities' => 'array',
             'access_token_expires_at' => 'immutable_datetime',
+            'access_expires_epoch' => 'integer',
             'last_used_at' => 'immutable_datetime',
             'revoked_at' => 'immutable_datetime',
         ];
+    }
+
+    protected function accessTokenExpiresAt(): Attribute
+    {
+        return Attribute::get(function ($value) {
+            $version = $this->getAttribute('native_policy_version');
+            $epoch = $this->attributes['access_expires_epoch'] ?? null;
+            if ($version !== null || $epoch !== null) {
+                return NativeCredentialPolicy::instant($version, $epoch, $value);
+            }
+
+            return $value === null ? null : $this->asDateTime($value)->toImmutable();
+        });
     }
 
     public function user(): BelongsTo

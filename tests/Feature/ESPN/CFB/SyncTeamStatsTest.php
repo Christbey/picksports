@@ -48,3 +48,18 @@ it('preserves direct team sacks and leaves absent or invalid aggregates unknown'
     expect($stats[$this->home->id]->sacks_allowed)->toBeNull()
         ->and($stats[$this->away->id]->sacks_allowed)->toBe(3);
 })->with([null, '--', '-1', '1.5']);
+
+it('does not turn nonfinite or overflow defensive totals into observed zero', function ($invalid) {
+    $this->payload['boxscore']['players'][1]['statistics'][0]['totals'][0] = $invalid;
+    expect(app(SyncTeamStats::class)->execute($this->payload, $this->game))->toBe(2);
+    expect(TeamStat::where('game_id', $this->game->id)->where('team_id', $this->home->id)->first()->sacks_allowed)->toBeNull();
+})->with(['1e309', '2147483648']);
+
+it('leaves every prior team attribute unchanged when known facts prevent replacement', function () {
+    $old = TeamStat::create(['game_id' => $this->game->id, 'team_id' => $this->home->id, 'team_type' => 'home',
+        'total_yards' => 513, 'passing_yards' => 300, 'rushing_yards' => 213, 'passing_touchdowns' => 7,
+        'team_attributed_stats' => ['prior' => 'preserve']]);
+    $before = $old->fresh()->getAttributes();
+    expect(app(SyncTeamStats::class)->execute($this->payload, $this->game))->toBe(0)
+        ->and($old->fresh()->getAttributes())->toBe($before);
+});

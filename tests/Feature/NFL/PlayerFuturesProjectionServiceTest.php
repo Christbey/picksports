@@ -109,7 +109,7 @@ it('returns projected nfl player futures with market odds and probabilities', fu
         ]);
     }
 
-    foreach ([3, 4, 5] as $week) {
+    foreach (range(3, 17) as $week) {
         Game::factory()->create([
             'season' => 2025,
             'season_type' => config('nfl.season.types.regular'),
@@ -191,8 +191,8 @@ it('returns projected nfl player futures with market odds and probabilities', fu
     expect($row['market'])->toBe('passing_yards');
     expect($row['current_total'])->toBe(600.0);
     expect($row['games_played'])->toBe(2);
-    expect($row['team_games_scheduled'])->toBe(5);
-    expect($row['remaining_games'])->toBe(3);
+    expect($row['team_games_scheduled'])->toBe(17);
+    expect($row['remaining_games'])->toBe(15);
     expect($row['market_odds']['line'])->toBe(4099.5);
     expect($row['market_odds']['bookmaker'])->toBe('draftkings');
     expect($row['market_odds']['fetched_at'])->toBe($fetchedAt->toIso8601String());

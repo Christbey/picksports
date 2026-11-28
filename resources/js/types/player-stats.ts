@@ -19,18 +19,26 @@ export interface PlayerLeaderboardEntry {
         } | null;
     } | null;
     games_played: number;
-    points_per_game: number;
-    rebounds_per_game: number;
-    assists_per_game: number;
-    steals_per_game: number;
-    blocks_per_game: number;
-    minutes_per_game: number;
-    field_goal_percentage: number;
-    three_point_percentage: number;
+    field_samples?: Record<string, number>;
+    complete_box_score_games?: number;
+    minutes_samples?: number;
+    shooting_samples?: {
+        field_goals: number;
+        three_point: number;
+        free_throws: number;
+    };
+    points_per_game: number | null;
+    rebounds_per_game: number | null;
+    assists_per_game: number | null;
+    steals_per_game: number | null;
+    blocks_per_game: number | null;
+    minutes_per_game: number | null;
+    field_goal_percentage: number | null;
+    three_point_percentage: number | null;
     three_pointers_made_per_game?: number | null;
-    free_throw_percentage: number;
-    estimated_epa_per_game?: number;
-    estimated_epa_per_36?: number;
+    free_throw_percentage: number | null;
+    estimated_epa_per_game?: number | null;
+    estimated_epa_per_36?: number | null;
     estimated_epa_total?: number;
     estimated_epa_per_opportunity?: number;
     passing_yards_per_game?: number;
@@ -47,7 +55,7 @@ export interface PlayerLeaderboardEntry {
     def_interceptions_per_game?: number;
     passes_defended_per_game?: number;
     fumbles_recovered_per_game?: number;
-    field_goals_made_per_game?: number;
+    field_goals_made_per_game?: number | null;
     extra_points_made_per_game?: number;
     field_goal_percentage_special?: number;
     extra_point_percentage?: number;
@@ -100,5 +108,5 @@ export interface SportPlayerStatsShellConfig {
 export type PlayerStatsProps = { config: SportPlayerStatsShellConfig };
 export type NumericLeaderboardKey = Exclude<
     keyof PlayerLeaderboardEntry,
-    'player'
+    'player' | 'field_samples' | 'shooting_samples'
 >;

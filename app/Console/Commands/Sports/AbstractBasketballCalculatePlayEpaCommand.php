@@ -117,7 +117,7 @@ abstract class AbstractBasketballCalculatePlayEpaCommand extends Command
                     'expected_points_before' => $result['ep_before'],
                     'expected_points_after' => $result['ep_after'],
                     'true_epa' => $result['epa'],
-                    'epa_calculated_at' => now(),
+                    'epa_calculated_at' => $result['eligible'] && $result['epa'] === null ? null : now(),
                 ];
 
                 if (! $rebuild && $play->epa_calculated_at !== null) {

@@ -21,6 +21,7 @@ use App\Services\CFB\Predictions\CfbCalculator;
 use App\Services\CFB\Predictions\CfbPredictionInputQuality;
 use App\Services\CFB\Ratings\ResultRatingEvidence;
 use Laravel\Sanctum\Sanctum;
+use Tests\Support\ObservedCfbGameFixture;
 
 function cfbSampleOutput(array $inputs, bool $sampleAware = true): PredictionOutput
 {
@@ -190,6 +191,7 @@ it('publishes reproducible fallback forecasts with incomplete labels and no play
     $event = SportEvent::factory()->create(['sport' => 'cfb', 'season' => 2026, 'season_type' => 'regular',
         'starts_at' => now()->addHours(11), 'status' => 'STATUS_SCHEDULED']);
     $f['game']->update(['sport_event_id' => $event->id, 'week' => 2]);
+    $f['game'] = ObservedCfbGameFixture::observe($f['game'], $event->starts_at);
     app(CfbCalculationReleaseRegistrar::class)->register();
     $prediction = app(GenerateCanonicalPrediction::class)->execute($f['game']->fresh());
     expect($prediction->output_metadata['input_quality']['qualified'])->toBeFalse();

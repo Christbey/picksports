@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\Validation\AlertPreferenceRules;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -13,7 +14,7 @@ class UserAlertPreferenceResource extends JsonResource
             'id' => $this->id,
             'enabled' => $this->enabled,
             'sports' => $this->sports,
-            'notification_types' => $this->notification_types,
+            'notification_types' => AlertPreferenceRules::notificationTypes($this->notification_types),
             'minimum_edge' => $this->minimum_edge,
             'time_window_start' => $this->time_window_start?->format('H:i'),
             'time_window_end' => $this->time_window_end?->format('H:i'),

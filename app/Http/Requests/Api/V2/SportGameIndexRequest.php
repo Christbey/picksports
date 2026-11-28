@@ -20,6 +20,7 @@ class SportGameIndexRequest extends FormRequest
     {
         return [
             'status' => ['sometimes', 'string', 'max:100'],
+            'completed_only' => ['sometimes', 'boolean'],
             'season' => ['sometimes', 'integer'],
             'season_type' => ['sometimes', 'string', 'max:50'],
             'from_date' => ['sometimes', 'date'],
@@ -41,6 +42,7 @@ class SportGameIndexRequest extends FormRequest
     {
         $filters = $this->safe()->only([
             'status',
+            'completed_only',
             'season',
             'season_type',
             'from_date',
@@ -52,6 +54,10 @@ class SportGameIndexRequest extends FormRequest
 
         if (array_key_exists('status', $filters)) {
             $filters['status'] = (string) $filters['status'];
+        }
+
+        if (array_key_exists('completed_only', $filters)) {
+            $filters['completed_only'] = $this->boolean('completed_only');
         }
 
         if (array_key_exists('season', $filters)) {

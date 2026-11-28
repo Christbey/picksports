@@ -11,10 +11,14 @@ defineProps<{
     <Card v-if="seasonSummaryValues">
         <CardHeader>
             <CardTitle class="tracking-tight"
-                >Season Averages ({{ gamesCount }} games)</CardTitle
+                >Loaded Game Averages ({{ gamesCount }} games)</CardTitle
             >
         </CardHeader>
         <CardContent>
+            <p class="mb-4 text-xs text-muted-foreground">
+                Averages from the loaded game-log sample, not a complete season.
+                Missing observations are unavailable.
+            </p>
             <div class="grid grid-cols-3 gap-4 md:grid-cols-5 lg:grid-cols-9">
                 <div
                     v-for="card in seasonSummaryValues"

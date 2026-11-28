@@ -253,8 +253,31 @@ class NflModelMonitoringService
     private function calibration(Collection $settled): array
     {
         $rows = $settled
-            ->filter(fn (BetDecision $decision): bool => $decision->shadowOutput !== null
-                && (float) $decision->settlement?->result_value !== 0.0)
+            ->filter(function (BetDecision $decision): bool {
+                $output = $decision->shadowOutput;
+                $settlement = $decision->settlement;
+                $market = strtolower(trim((string) $decision->market_type));
+                $key = strtolower(trim((string) $decision->market_key));
+                // Match the full-game moneyline result semantics of the settlement writer.
+                if ($output === null || $settlement === null
+                    || in_array($market, ['first_3_moneyline', 'first_5_moneyline'], true)
+                    || in_array($key, ['h2h_1st_3_innings', 'h2h_1st_5_innings'], true)
+                    || (! in_array($market, ['moneyline', 'winner', 'win_probability'], true) && $key !== 'h2h')
+                    || ModelArtifact::normalizeMarketType((string) $output->market_type) !== 'win_probability'
+                    || ! in_array($settlement->result_status, ['win', 'loss'], true)) {
+                    return false;
+                }
+                // Validate stored scalars before Eloquent float casts can turn malformed text into zero.
+                foreach (['baseline_output', 'challenger_output'] as $attribute) {
+                    $probability = $this->floatOrNull($output->getAttributes()[$attribute] ?? null);
+                    if ($probability === null || ! is_finite($probability) || $probability < 0.0 || $probability > 1.0) {
+                        return false;
+                    }
+                }
+                $result = $this->floatOrNull($settlement->result_value);
+
+                return $result !== null && is_finite($result) && $result !== 0.0;
+            })
             ->values();
 
         if ($rows->isEmpty()) {
@@ -317,12 +340,12 @@ class NflModelMonitoringService
             'challenger_output' => (float) $output->challenger_output,
             'output_delta' => (float) $output->output_delta,
             'baseline_outputs' => [
-                'win_probability' => $this->floatOrNull($snapshotOutputs['baseline_win_probability'] ?? $output->baseline_output),
+                'win_probability' => $this->floatOrNull($snapshotOutputs['baseline_win_probability'] ?? ($output->market_type === 'win_probability' ? $output->baseline_output : null)),
                 'predicted_spread' => $this->floatOrNull($snapshotOutputs['baseline_predicted_spread'] ?? null),
                 'predicted_total' => $this->floatOrNull($snapshotOutputs['baseline_predicted_total'] ?? null),
             ],
             'challenger_outputs' => [
-                'win_probability' => $this->floatOrNull($snapshotOutputs['challenger_win_probability'] ?? data_get($output->explanation, 'challenger_outputs.win_probability') ?? $output->challenger_output),
+                'win_probability' => $this->floatOrNull($snapshotOutputs['challenger_win_probability'] ?? data_get($output->explanation, 'challenger_outputs.win_probability') ?? ($output->market_type === 'win_probability' ? $output->challenger_output : null)),
                 'predicted_spread' => $this->floatOrNull($snapshotOutputs['challenger_predicted_spread'] ?? data_get($output->explanation, 'challenger_outputs.predicted_spread')),
                 'predicted_total' => $this->floatOrNull($snapshotOutputs['challenger_predicted_total'] ?? data_get($output->explanation, 'challenger_outputs.predicted_total')),
                 'uncertainty' => $uncertainty,

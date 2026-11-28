@@ -1,3 +1,4 @@
+import { isFinalGameStatus } from '@/lib/gameStatus';
 import { computed } from 'vue';
 import { formatNumber } from '@/composables/useFormatters';
 import {
@@ -125,7 +126,7 @@ export function useMlbDetailedGamePage(gameId: number) {
                 () =>
                     homeLinescores.value.length > 0 &&
                     awayLinescores.value.length > 0 &&
-                    currentGame.value.status === 'STATUS_FINAL',
+                    isFinalGameStatus(currentGame.value.status),
             ),
             awayLinescores,
             homeLinescores,

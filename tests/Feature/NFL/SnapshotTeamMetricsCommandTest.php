@@ -9,6 +9,18 @@ use App\Models\NFL\TeamStat;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 
+$snapshotCommandClockState = null;
+
+beforeEach(function () use (&$snapshotCommandClockState) {
+    $snapshotCommandClockState = [date_default_timezone_get(), config('app.timezone'), Carbon::getTestNow()];
+});
+
+afterEach(function () use (&$snapshotCommandClockState) {
+    Carbon::setTestNow($snapshotCommandClockState[2]);
+    config(['app.timezone' => $snapshotCommandClockState[1]]);
+    date_default_timezone_set($snapshotCommandClockState[0]);
+});
+
 it('captures nfl team metric snapshots for a season', function () {
     $team = Team::factory()->create();
 
@@ -36,11 +48,15 @@ it('captures nfl team metric snapshots for a season', function () {
         ->and($snapshot->team_id)->toBe($team->id)
         ->and($snapshot->wins)->toBe(9)
         ->and($snapshot->losses)->toBe(4)
-        ->and($snapshot->captured_at?->toIso8601String())->toContain('2025-12-02T12:00:00');
+        ->and($snapshot->captured_at?->utc()->toIso8601String())->toContain('2025-12-02T12:00:00')
+        ->and($snapshot->getRawOriginal('captured_at'))->toBe(Carbon::parse('2025-12-02T12:00:00Z')->setTimezone(config('app.timezone'))->format('Y-m-d H:i:s'))
+        ->and($snapshot->observation['storage_timezone'])->toBe(config('app.timezone'))
+        ->and($snapshot->observation['cutoff_at'])->toBe('2025-12-02T12:00:00+00:00');
 });
 
 it('can backfill nfl team metric snapshots from game records across dates', function () {
     config(['app.timezone' => 'UTC']);
+    date_default_timezone_set('UTC');
     $this->travelTo(Carbon::parse('2025-08-02 12:00:00', 'UTC'));
     $team = Team::factory()->create([
         'abbreviation' => 'KC',

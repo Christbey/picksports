@@ -434,7 +434,7 @@ class GameMatchupContextService
         $time = $this->normalizeTimeValue($game->game_time);
         if ($game instanceof NflGame || $game instanceof \App\Models\CFB\Game) {
             $sport = $game instanceof NflGame ? 'nfl' : 'cfb';
-            $time = GameDateTimePresenter::forSport($sport, $game->game_date, $time)['game_time'];
+            $time = GameDateTimePresenter::forGame($sport, $game)['game_time'];
         }
         if ($time === null) {
             return null;

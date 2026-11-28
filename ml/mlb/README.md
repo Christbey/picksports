@@ -43,6 +43,9 @@ target_total_points
 ```
 
 Only `observed_pregame` and `verified_reconstruction` rows are accepted.
+Both timestamps must be present and parseable; null, empty, or `NaT` values are
+rejected. Ordering compares UTC instants, including across daylight saving
+offset changes, and permits an observation exactly at kickoff.
 `features_available_at` must be no later than `game_start_at`, and one stable
 row per game is required. The loader hashes the source before and after reading
 and can enforce a caller-supplied SHA-256.
@@ -109,12 +112,12 @@ pytest
 ## Docker
 
 ```bash
-docker build --tag picksports-mlb-ml:0.2.0 ml/mlb
+docker build --tag picksports-mlb-ml:0.3.0 ml/mlb
 
 docker run --rm \
   --volume "$PWD/storage/app/ml:/data:ro" \
   --volume "$PWD/ml/mlb/artifacts:/artifacts" \
-  picksports-mlb-ml:0.2.0 \
+  picksports-mlb-ml:0.3.0 \
   train --input /data/mlb_training.parquet --output-dir /artifacts
 ```
 
@@ -128,25 +131,31 @@ artifacts/<model-run-id>/
   manifest.json
   evaluation.json
   prediction_example.json
-  feature_schema.yaml
-  preprocessor.joblib
+  feature_schema.json
+  preprocessor.json
   models/
-    logistic_classifier.joblib
-    xgboost_classifier.ubj
-    xgboost_home_margin.ubj
-    xgboost_total_points.ubj
+    logistic_classifier.json
+    xgboost_classifier.json
+    xgboost_home_margin.json
+    xgboost_total_points.json
   calibrators/
-    logistic_regression_platt.joblib
-    logistic_regression_isotonic.joblib
-    xgboost_platt.joblib
-    xgboost_isotonic.joblib
+    logistic_regression_platt.json
+    logistic_regression_isotonic.json
+    xgboost_platt.json
+    xgboost_isotonic.json
 ```
 
 The manifest identifies `mlb_tabular_bundle`, package/module
 `picksports_mlb_ml`, model run, artifact, dataset, feature schema, configuration,
 source, code version, dependencies, chronological boundaries, selected models,
 and a SHA-256 plus byte count for every artifact. Inference verifies that
-inventory before loading any estimator.
+inventory before loading any estimator. The execution format is
+`picksports-tabular-numeric-v1`; the exact twelve inventory members above exclude
+`manifest.json` itself. Estimator components contain fixed numeric JSON state.
+Native trees are wrapped XGBoost 2.1.3 JSON, checked for their fixed objective,
+feature dimensions, tree ownership and bounded node graph before native loading.
+Source training configuration remains YAML; the artifact schema is JSON and
+preserves feature order.
 
 The evaluation report type is `mlb_tabular_walk_forward_evaluation`. Offline
 promotion remains advisory and always requires separate live shadow evidence.
@@ -204,3 +213,25 @@ the test season is never used to choose the model or calibration method.
 Registered period artifacts start as challengers with no promoted markets.
 Laravel records their quote-aware outputs as private decisions and settles
 ties as pushes from official inning line scores.
+
+### Artifact trust boundary
+
+MLB tabular and period inference accept only the versioned numeric formats. Period
+bundles are a single `period_bundle.json` document with execution format
+`picksports-period-numeric-v1`. Legacy joblib/pickle bundles are refused; there is
+no executable deserialization fallback or automatic conversion. Retain old
+artifacts for history and produce a new artifact from reviewed training inputs
+before considering it for inference. Package version alone does not establish
+execution-format compatibility.
+
+Load only artifacts from a trusted producer in restricted storage. Hashes shipped
+beside files detect corruption but do not independently authenticate a producer.
+Numeric parsing bounds bytes, nesting, structural tokens, dimensions and tree
+nodes before estimator loading. Components are limited to 8 MiB, metadata to
+2 MiB, and a period document to 32 MiB. These are refusal limits, not measured
+capacity guarantees. Publish immutable owned directories; the checks do not
+provide a sandbox or universal protection against a writer with the same OS
+identity. The independent NFL package still has its own serialization boundary
+and is not covered by the MLB format change.
+
+Reported chronological evaluation metrics describe the pre-refit evaluation models. The saved deployment estimators are refit on later eligible settled rows; those historical holdout metrics do not validate the refit score distribution. Promotion requires separately reviewed shadow evidence and does not gain calibration or approval status from this integrity check. Requirements files pin listed distributions but do not constitute a fully hashed platform-specific transitive lock; do not describe the current container build as bit reproducible.

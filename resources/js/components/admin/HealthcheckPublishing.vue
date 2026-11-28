@@ -16,13 +16,10 @@ const { labelize, ai_publishing } = useHealthchecksContext();
                     AI Publishing Review
                 </p>
                 <h2 class="mt-2 text-xl font-semibold">
-                    {{ ai_publishing.total }} analyzed pick<span
-                        v-if="ai_publishing.total !== 1"
-                        >s</span
-                    >
+                    {{ ai_publishing.total }} stored reviews in this sample
                 </h2>
                 <p class="mt-2 text-sm text-muted-foreground">
-                    Guardrail mode:
+                    Latest up to 100 stored reviews today. Guardrail mode:
                     <span class="font-medium">
                         {{
                             labelize(ai_publishing.enforcement.mode ?? 'shadow')

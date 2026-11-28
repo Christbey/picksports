@@ -181,6 +181,7 @@ class GeneratePlayoffForecast
         $games = Game::query()
             ->with(['homeTeam', 'awayTeam'])
             ->where('season', $season)
+            ->where('season_type', config('nba.season.types.postseason', 3))
             ->whereDate('game_date', '>=', $cutoff)
             ->whereIn('status', ['STATUS_FINAL', 'STATUS_SCHEDULED', 'STATUS_DELAYED'])
             ->whereNotNull('home_team_id')

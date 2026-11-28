@@ -1,11 +1,11 @@
 import type { ApiV2Prediction } from '@/types';
 import type { MlbDailyPick } from '@/types/mlb-daily-picks';
 import { teamText } from '@/lib/matchupBoardPresentation';
+import { verifiedMlbStart } from '@/lib/mlbMatchupPresentation';
 export {
     teamText,
     formatDateLabel,
     todayKey,
-    gameSortKey,
 } from '@/lib/matchupBoardPresentation';
 import type { MarketFilter } from '@/types/mlb-board';
 import {
@@ -60,4 +60,10 @@ export function searchHaystack(
         .filter(Boolean)
         .join(' ')
         .toLowerCase();
+}
+
+// MLB legacy split fields are venue walls; only admitted instants establish chronology.
+export function gameSortKey(prediction: ApiV2Prediction): string {
+    const start = verifiedMlbStart(prediction.game?.starts_at);
+    return `${start?.toISOString() ?? '~'} ${prediction.game?.short_name ?? ''} ${prediction.game?.id ?? prediction.game_id ?? ''}`;
 }

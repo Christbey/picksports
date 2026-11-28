@@ -36,7 +36,7 @@ class CalculatePossessionMetrics
         $lastGameDateByTeam = [];
 
         $processedGames = 0;
-        $gameQuery->chunkById($chunkSize, function ($games) use (&$seasonStats, &$rollingWindows, &$gameCountByTeam, &$lastGameDateByTeam, &$processedGames) {
+        $gameQuery->chunk($chunkSize, function ($games) use (&$seasonStats, &$rollingWindows, &$gameCountByTeam, &$lastGameDateByTeam, &$processedGames) {
             $gameIds = $games->pluck('id')->all();
             $playsByGame = Play::query()
                 ->whereIn('game_id', $gameIds)
@@ -89,7 +89,7 @@ class CalculatePossessionMetrics
 
                 $processedGames++;
             }
-        }, 'id');
+        });
 
         if ($rebuild) {
             TeamPossessionMetric::query()->where('season', $season)->delete();

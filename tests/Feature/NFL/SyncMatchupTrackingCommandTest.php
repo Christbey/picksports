@@ -2,7 +2,9 @@
 
 use App\Models\NFL\Game;
 use App\Models\NFL\Team;
+use Illuminate\Console\Command;
 use Illuminate\Http\Client\Factory;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -29,7 +31,7 @@ beforeEach(function () {
     config(['provider-data.storage.disk' => 'provider-local']);
     $home = Team::factory()->create();
     $away = Team::factory()->create();
-    $game = Game::factory()->create(['home_team_id' => $home->id, 'away_team_id' => $away->id]);
+    $game = Game::factory()->create(['home_team_id' => $home->id, 'away_team_id' => $away->id, 'season' => 2026, 'week' => 1]);
     DB::table('nflverse_pbp_plays')->insert(['nflverse_play_key' => 'tracking-test', 'nflverse_game_id' => '2026_01_DEN_KC',
         'nfl_game_id' => $game->id, 'season' => 2026, 'week' => 1, 'possession_team' => 'DEN', 'defense_team' => 'KC', 'possession_team_id' => $away->id]);
 });
@@ -105,3 +107,34 @@ it('keeps existing samples intact when rushing identities or measurements fail v
     "2026,REG,2026_01_DEN_KC,DEN,KC,Rusher01,0,5,5\n",
     "2026,REG,2026_01_DEN_KC,DEN,KC,Rusher01,10,5,5\n2026,REG,2026_01_DEN_KC,DEN,KC,Rusher01,10,5,5\n",
 ]);
+
+it('preserves the whole stored season when a replacement has unresolved game identities', function () {
+    Http::fake(['*advstats_week_rush_2026.csv' => Http::response(trackingRushingCsv()),
+        '*ngs_passing.csv.gz' => Http::response(gzencode(trackingPassingCsv())),
+        '*advstats_week_def_2026.csv' => Http::response(trackingDefenseCsv())]);
+    $this->artisan('nfl:sync-matchup-tracking --season=2026')->assertSuccessful();
+    $before = DB::table('nfl_matchup_tracking_samples')->orderBy('id')->get()->toJson();
+    Http::swap(new Factory);
+    Http::preventStrayRequests();
+    Http::fake(['*advstats_week_rush_2026.csv' => Http::response(trackingRushingCsv()),
+        '*ngs_passing.csv.gz' => Http::response(gzencode(trackingPassingCsv()."2026,REG,2,DEN,00-0001031,QB,2.5,20\n")),
+        '*advstats_week_def_2026.csv' => Http::response(trackingDefenseCsv())]);
+    $this->artisan('nfl:sync-matchup-tracking --season=2026')->assertFailed();
+    expect(DB::table('nfl_matchup_tracking_samples')->orderBy('id')->get()->toJson())->toBe($before);
+});
+
+it('refuses source omissions rather than silently deleting a previously observed player identity', function () {
+    Http::fake(['*advstats_week_rush_2026.csv' => Http::response(trackingRushingCsv()),
+        '*ngs_passing.csv.gz' => Http::response(gzencode(trackingPassingCsv()."2026,REG,1,DEN,00-0001032,QB,2.6,10\n")),
+        '*advstats_week_def_2026.csv' => Http::response(trackingDefenseCsv())]);
+    $this->artisan('nfl:sync-matchup-tracking --season=2026')->assertSuccessful();
+    $before = DB::table('nfl_matchup_tracking_samples')->orderBy('id')->get()->toJson();
+    Http::swap(new Factory);
+    Http::preventStrayRequests();
+    Http::fake(['*advstats_week_rush_2026.csv' => Http::response(trackingRushingCsv()),
+        '*ngs_passing.csv.gz' => Http::response(gzencode(trackingPassingCsv())),
+        '*advstats_week_def_2026.csv' => Http::response(trackingDefenseCsv())]);
+    $exit = Artisan::call('nfl:sync-matchup-tracking', ['--season' => 2026]);
+    expect(DB::table('nfl_matchup_tracking_samples')->orderBy('id')->get()->toJson())->toBe($before)
+        ->and($exit)->toBe(Command::FAILURE);
+});

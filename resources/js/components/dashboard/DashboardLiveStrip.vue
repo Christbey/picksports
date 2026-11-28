@@ -86,11 +86,18 @@ function liveTrend(game: DashboardPrediction) {
             ? game.live_win_probability / 100
             : game.live_win_probability;
     const pregame =
-        game.win_probability > 1
-            ? game.win_probability / 100
-            : game.win_probability;
+        game.win_probability === null
+            ? null
+            : game.win_probability > 1
+              ? game.win_probability / 100
+              : game.win_probability;
     const leader = live >= 0.5 ? game.home_team : game.away_team;
     const probability = Math.max(live, 1 - live) * 100;
+    if (pregame === null || !Number.isFinite(pregame))
+        return {
+            probability: `${leader} ${probability.toFixed(1)}%`,
+            movement: 'Pregame comparison unavailable',
+        };
     const movement = (live - pregame) * 100;
     const beneficiary = movement >= 0 ? game.home_team : game.away_team;
     const movementLabel =

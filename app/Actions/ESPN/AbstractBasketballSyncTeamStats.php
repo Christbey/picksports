@@ -3,6 +3,7 @@
 namespace App\Actions\ESPN;
 
 use App\Actions\ESPN\Concerns\ValidatesBoxscoreReplacement;
+use App\Support\ESPN\BasketballStatValue;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractBasketballSyncTeamStats
@@ -18,7 +19,7 @@ abstract class AbstractBasketballSyncTeamStats
     public function execute(array $gameData, Model $game): int
     {
         return $game->getConnection()->transaction(function () use ($gameData, $game): int {
-            $game->newQuery()->whereKey($game->getKey())->lockForUpdate()->firstOrFail();
+            $game = $game->newQuery()->whereKey($game->getKey())->lockForUpdate()->firstOrFail();
 
             return $this->replaceTeamStats($gameData, $game);
         });
@@ -49,10 +50,27 @@ abstract class AbstractBasketballSyncTeamStats
 
             $stats = $this->parseTeamStats($teamData['statistics'] ?? []);
 
-            $fgMade = $stats['fieldGoalsMade'] ?? 0;
-            $threeMade = $stats['threePointFieldGoalsMade'] ?? 0;
-            $ftMade = $stats['freeThrowsMade'] ?? 0;
-            $calculatedPoints = (($fgMade - $threeMade) * 2) + ($threeMade * 3) + $ftMade;
+            if ($stats === null) {
+                return 0;
+            }
+            $shooting = ['fieldGoalsMade', 'fieldGoalsAttempted', 'threePointFieldGoalsMade', 'threePointFieldGoalsAttempted', 'freeThrowsMade', 'freeThrowsAttempted'];
+            foreach (array_chunk($shooting, 2) as [$made, $attempted]) {
+                if (isset($stats[$made], $stats[$attempted]) && $stats[$made] > $stats[$attempted]) {
+                    return 0;
+                }
+            }
+            if (isset($stats['threePointFieldGoalsMade'], $stats['fieldGoalsMade'])
+                && $stats['threePointFieldGoalsMade'] > $stats['fieldGoalsMade']) {
+                return 0;
+            }
+            $calculatedPoints = count(array_intersect($shooting, array_keys($stats))) === count($shooting)
+                ? (($stats['fieldGoalsMade'] - $stats['threePointFieldGoalsMade']) * 2)
+                    + ($stats['threePointFieldGoalsMade'] * 3) + $stats['freeThrowsMade']
+                : null;
+            $points = $stats['points'] ?? $calculatedPoints;
+            if ($points === null && $teamStatModel::query()->where('game_id', $game->id)->where('team_id', $team->id)->whereNotNull('points')->exists()) {
+                return 0;
+            }
 
             $attributes = [
                 'team_id' => $team->id,
@@ -72,7 +90,7 @@ abstract class AbstractBasketballSyncTeamStats
                 'steals' => $stats['steals'] ?? null,
                 'blocks' => $stats['blocks'] ?? null,
                 'fouls' => $stats['fouls'] ?? null,
-                'points' => $stats['points'] ?? $calculatedPoints,
+                'points' => $points,
                 'possessions' => $stats['possessions'] ?? $this->calculatePossessions($stats),
                 'fast_break_points' => $stats['fastBreakPoints'] ?? null,
                 'points_in_paint' => $stats['pointsInPaint'] ?? null,
@@ -101,26 +119,38 @@ abstract class AbstractBasketballSyncTeamStats
         return $synced;
     }
 
-    protected function parseTeamStats(array $statistics): array
+    protected function parseTeamStats(array $statistics): ?array
     {
         $parsed = [];
-
+        $numeric = ['fieldGoalsMade', 'fieldGoalsAttempted', 'threePointFieldGoalsMade', 'threePointFieldGoalsAttempted',
+            'freeThrowsMade', 'freeThrowsAttempted', 'totalRebounds', 'offensiveRebounds', 'defensiveRebounds',
+            'assists', 'turnovers', 'steals', 'blocks', 'fouls', 'points', 'fastBreakPoints', 'pointsInPaint',
+            'secondChancePoints', 'benchPoints', 'biggestLead', 'timesTied', 'leadChanges'];
         foreach ($statistics as $stat) {
+            if (! is_array($stat) || ! is_string($stat['name'] ?? null) || ! array_key_exists('displayValue', $stat)) {
+                return null;
+            }
             $name = $stat['name'];
             $value = $stat['displayValue'];
-
-            if (str_contains($name, '-')) {
+            if (in_array($name, ['fieldGoalsMade-fieldGoalsAttempted',
+                'threePointFieldGoalsMade-threePointFieldGoalsAttempted', 'freeThrowsMade-freeThrowsAttempted'], true)) {
                 $parts = explode('-', $name);
-                $valueParts = explode('-', $value);
-
-                if (count($valueParts) === 2) {
-                    $parsed[$parts[0]] = (int) $valueParts[0];
-                    $parsed[$parts[1]] = (int) $valueParts[1];
+                $pair = BasketballStatValue::madeAttempt($value);
+                if ($pair === null) {
+                    return null;
                 }
-            } else {
-                $parsed[$name] = is_numeric($value)
-                    ? (str_contains($value, '.') ? (float) $value : (int) $value)
-                    : $value;
+                [$parsed[$parts[0]], $parsed[$parts[1]]] = $pair;
+            } elseif (in_array($name, $numeric, true)) {
+                $integer = BasketballStatValue::integer($value);
+                if ($integer === null) {
+                    return null;
+                }
+                $parsed[$name] = $integer;
+            } elseif ($name === 'possessions') {
+                if (! is_numeric($value) || ! is_finite((float) $value) || (float) $value < 0) {
+                    return null;
+                }
+                $parsed[$name] = (float) $value;
             }
         }
 

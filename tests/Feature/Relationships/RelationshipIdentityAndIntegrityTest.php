@@ -82,7 +82,7 @@ it('reports event-sport mismatches without changing the offending row', function
     $inventory = app(RelationshipInventory::class)->inspect();
     $result = app(RelationshipIntegrityAudit::class)->inspect([Game::class => $inventory[Game::class]]);
 
-    expect($result['nfl_games']['event_sport_mismatch_count'])->toBe(1)
+    expect($result[DB::connection()->getName().'::nfl_games']['event_sport_mismatch_count'])->toBe(1)
         ->and($game->fresh()->sport_event_id)->toBe($event->id);
 });
 
@@ -108,7 +108,7 @@ it('counts pre-constraint duplicate and orphan fixtures read only', function () 
         'foreign_keys' => [['columns' => ['parent_id'], 'foreign_table' => 'relationship_audit_parents', 'foreign_columns' => ['id']]],
         'indexes' => [['name' => 'candidate_identity_unique', 'columns' => ['identity'], 'unique' => true]],
     ];
-    $result = app(RelationshipIntegrityAudit::class)->inspect(['Fixture' => $definition])['relationship_audit_children'];
+    $result = app(RelationshipIntegrityAudit::class)->inspect(['Fixture' => $definition])[DB::connection()->getName().'::relationship_audit_children'];
 
     expect($result['foreign_keys'][0]['orphan_count'])->toBe(1)
         ->and($result['unique_indexes'][0]['duplicate_group_count'])->toBe(1)
@@ -231,7 +231,7 @@ it('counts invalid dynamic game references without resolving arbitrary table nam
         ]);
     }
     $inventory = app(RelationshipInventory::class)->inspect();
-    $result = app(RelationshipIntegrityAudit::class)->inspect([GameOddsSnapshot::class => $inventory[GameOddsSnapshot::class]])['game_odds_snapshots'];
+    $result = app(RelationshipIntegrityAudit::class)->inspect([GameOddsSnapshot::class => $inventory[GameOddsSnapshot::class]])[DB::connection()->getName().'::game_odds_snapshots'];
 
     expect($result['dynamic_game_references'])->toBe(['invalid_type_count' => 1, 'orphan_count' => 1])
         ->and(GameOddsSnapshot::query()->count())->toBe(3);

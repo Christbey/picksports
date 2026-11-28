@@ -2,6 +2,9 @@
 
 namespace App\DataTransferObjects\ESPN\Concerns;
 
+use App\Support\ESPN\PlayIdentity;
+use App\Support\ScoreObservation;
+
 trait ParsesEspnPlayFields
 {
     use CastsEspnValues;
@@ -15,21 +18,21 @@ trait ParsesEspnPlayFields
      *   clock:string,
      *   playType:?string,
      *   playText:string,
-     *   homeScore:int,
-     *   awayScore:int
+     *   homeScore:?int,
+     *   awayScore:?int
      * }
      */
     protected static function parseCommonPlayFields(array $play, int $index): array
     {
         return [
-            'espnPlayId' => self::stringOrNull($play['id'] ?? null),
+            'espnPlayId' => PlayIdentity::from($play['id'] ?? null),
             'sequenceNumber' => $index + 1,
             'period' => self::intOrZero($play['period']['number'] ?? null),
             'clock' => self::stringOrEmpty($play['clock']['displayValue'] ?? '0:00'),
             'playType' => $play['type']['text'] ?? null,
             'playText' => self::stringOrEmpty($play['text'] ?? null),
-            'homeScore' => self::intOrZero($play['homeScore'] ?? null),
-            'awayScore' => self::intOrZero($play['awayScore'] ?? null),
+            'homeScore' => ScoreObservation::from($play['homeScore'] ?? null),
+            'awayScore' => ScoreObservation::from($play['awayScore'] ?? null),
         ];
     }
 

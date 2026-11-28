@@ -6,7 +6,6 @@ use App\Actions\WNBA\GeneratePrediction;
 use App\Actions\WNBA\GradePredictions;
 use App\DataTransferObjects\ESPN\GameData;
 use App\Models\WNBA\Game;
-use App\Models\WNBA\Prediction;
 use App\Support\SportsViewCache;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
@@ -23,12 +22,17 @@ class BackfillHistoricalPredictionsCommand extends Command
         {--season-type=2 : Filter by season type, default regular season}
         {--limit=0 : Limit the number of games processed}
         {--only-missing : Only generate predictions for games without an existing prediction}
-        {--regrade : Clear existing grades for selected games before grading}';
+        {--regrade : Retired; use the bounded audited legacy grade repair command}';
 
     protected $description = 'Generate and grade historical WNBA predictions for completed games';
 
     public function handle(GeneratePrediction $generatePrediction, GradePredictions $gradePredictions): int
     {
+        if ($this->option('regrade')) {
+            $this->error('Historical grade clearing is retired. Use sports:repair-legacy-prediction-grades wnba with explicit --game IDs and reviewed --apply.');
+
+            return self::FAILURE;
+        }
         try {
             [$startDate, $endDate] = $this->resolveDateRange();
         } catch (\InvalidArgumentException $exception) {
@@ -68,10 +72,6 @@ class BackfillHistoricalPredictionsCommand extends Command
         $this->newLine(2);
 
         $gameIds = $games->pluck('id')->map(fn (mixed $id): int => (int) $id)->all();
-        if ((bool) $this->option('regrade')) {
-            $this->clearExistingGrades($gameIds);
-        }
-
         $grading = $gradePredictions->executeForGameIds($gameIds);
 
         app(SportsViewCache::class)->bustSegments([
@@ -224,26 +224,5 @@ class BackfillHistoricalPredictionsCommand extends Command
         }
 
         return array_values(array_unique(array_filter($candidates, fn (mixed $value): bool => $value !== null && $value !== '')));
-    }
-
-    /**
-     * @param  list<int>  $gameIds
-     */
-    private function clearExistingGrades(array $gameIds): void
-    {
-        if ($gameIds === []) {
-            return;
-        }
-
-        Prediction::query()
-            ->whereIn('game_id', $gameIds)
-            ->update([
-                'actual_spread' => null,
-                'actual_total' => null,
-                'spread_error' => null,
-                'total_error' => null,
-                'winner_correct' => null,
-                'graded_at' => null,
-            ]);
     }
 }

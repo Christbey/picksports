@@ -27,18 +27,24 @@ const tableRows = computed(() =>
     basketballStatRows.filter(
         (row) =>
             !row.optional ||
-            (props.awayTeamStats[row.key] && props.homeTeamStats[row.key]),
+            props.awayTeamStats[row.key] != null ||
+            props.homeTeamStats[row.key] != null,
     ),
 );
 const percentage = (stats: BasketballTeamStats, row: BasketballStatRow) =>
-    shootingPercentage(stats[row.key] ?? 0, stats[row.attempted!] ?? 0);
+    shootingPercentage(stats[row.key] ?? null, stats[row.attempted!] ?? null);
+const percentLabel = (stats: BasketballTeamStats, row: BasketballStatRow) => {
+    const value = percentage(stats, row);
+    return value === 'Unavailable' ? 'Percentage unavailable' : `${value}%`;
+};
 const tableValue = (stats: BasketballTeamStats, row: BasketballStatRow) =>
     row.attempted
-        ? `${basketballStatValue(stats, row)} (${percentage(stats, row)}%) `
+        ? `${basketballStatValue(stats, row)} (${percentLabel(stats, row)})`
         : basketballStatValue(stats, row);
 const betterSide = (row: BasketballStatRow) => {
-    const home = props.homeTeamStats[row.key] ?? 0,
-        away = props.awayTeamStats[row.key] ?? 0;
+    const home = props.homeTeamStats[row.key],
+        away = props.awayTeamStats[row.key];
+    if (home == null || away == null) return null;
     return row.lowerIsBetter
         ? props.getBetterValue(home, away, true)
         : props.getBetterValue(home, away);
@@ -124,9 +130,9 @@ const betterClass = (row: BasketballStatRow, side: 'home' | 'away') =>
                     <div class="col-span-3 text-center text-muted-foreground">
                         <template v-if="row.attempted"
                             >{{ row.compactLabel }} ({{
-                                percentage(awayTeamStats, row)
-                            }}% -
-                            {{ percentage(homeTeamStats, row) }}%)</template
+                                percentLabel(awayTeamStats, row)
+                            }}
+                            - {{ percentLabel(homeTeamStats, row) }})</template
                         ><template v-else>{{ row.label }}</template>
                     </div>
                     <div

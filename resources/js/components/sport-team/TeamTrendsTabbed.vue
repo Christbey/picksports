@@ -10,7 +10,10 @@ defineProps<{
 
 <template>
     <div
-        v-if="trendsData && Object.keys(trendsData).length > 0"
+        v-if="
+            (trendsData && Object.keys(trendsData).length > 0) ||
+            (lockedTrends && Object.keys(lockedTrends).length > 0)
+        "
         class="space-y-4"
     >
         <ul role="list" aria-label="Trend categories" class="space-y-4">

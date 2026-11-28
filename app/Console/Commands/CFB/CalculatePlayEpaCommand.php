@@ -3,10 +3,11 @@
 namespace App\Console\Commands\CFB;
 
 use App\Models\CFB\Game;
-use App\Models\CFB\GameDataCheck;
 use App\Models\CFB\Play;
 use App\Services\CFB\CfbPlayEpaWriter;
+use App\Services\CFB\Data\CfbDataReadiness;
 use App\Services\CFB\Data\CfbScoringLedger;
+use App\Services\CFB\Data\CfbSourceAssessmentRecorder;
 use App\Services\CFB\TrueEpaCalculator;
 use Illuminate\Console\Command;
 
@@ -65,14 +66,22 @@ class CalculatePlayEpaCommand extends Command
         $heldGames = 0;
 
         foreach ($games as $game) {
-            $revision = GameDataCheck::where('game_id', $game->id)->where('component', 'plays')
-                ->whereNotNull('accepted_at')->latest('accepted_at')->latest('id')->first();
+            $revision = app(CfbDataReadiness::class)->acceptedCheck($game, 'plays');
             if (! $revision) {
                 $heldGames++;
                 $bar->advance();
 
                 continue;
             }
+            $receiptId = app(CfbSourceAssessmentRecorder::class)->acceptanceReceipt($revision)?->id;
+            if ($receiptId === null) {
+                $heldGames++;
+                $bar->advance();
+
+                continue;
+            }
+            $box = app(CfbDataReadiness::class)->acceptedCheck($game, 'boxscore');
+            $boxReceiptId = $box === null ? null : app(CfbSourceAssessmentRecorder::class)->acceptanceReceipt($box)?->id;
             $plays = Play::query()
                 ->where('game_id', $game->id)
                 ->where('source_revision', $revision->source_hash)
@@ -151,10 +160,16 @@ class CalculatePlayEpaCommand extends Command
             }
 
             if (! $dryRun && $writes !== []) {
-                app(CfbPlayEpaWriter::class)->write($game->id, $revision->source_hash, $writes);
+                try {
+                    app(CfbPlayEpaWriter::class)->write($game->id, $revision->source_hash, $writes, $receiptId, $boxReceiptId);
+                } catch (\DomainException $error) {
+                    $this->newLine();
+                    $this->error($error->getMessage());
+
+                    return 2;
+                }
             }
-            $latestRevision = GameDataCheck::where('game_id', $game->id)->where('component', 'plays')
-                ->whereNotNull('accepted_at')->latest('accepted_at')->latest('id')->value('source_hash');
+            $latestRevision = app(CfbDataReadiness::class)->acceptedCheck($game->fresh(), 'plays')?->source_hash;
             if ($latestRevision !== $revision->source_hash) {
                 $this->newLine();
                 $this->error("Game {$game->id}: accepted plays changed during EPA calculation; retry normalization.");

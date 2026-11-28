@@ -10,9 +10,11 @@ use App\Models\MLB\Prediction;
 use App\Models\MLB\Team;
 use App\Models\PredictionMarket;
 use App\Models\SportEvent;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Tests\Support\ObservedMlbGameFixture;
 
 beforeEach(function () {
     $this->travelTo('2026-10-30 10:00:00');
@@ -23,21 +25,30 @@ afterEach(fn () => $this->travelBack());
 
 function calculationAuditRetirementFixture(string $variant = 'valid'): array
 {
+    $fixtureNow = now()->toImmutable();
     $event = SportEvent::factory()->create(['sport' => 'mlb', 'season' => 2026, 'starts_at' => now()->addDay()]);
     $game = Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026, 'season_type' => 2,
         'status' => 'STATUS_SCHEDULED', 'game_date' => now()->addDay()->toDateString(), 'game_time' => '17:00:00',
         'home_team_id' => Team::factory(), 'away_team_id' => Team::factory()]);
     $start = $event->refresh()->starts_at;
+    CarbonImmutable::setTestNow($fixtureNow->subMinutes(11));
+    $game = ObservedMlbGameFixture::observe($game, $start);
+    CarbonImmutable::setTestNow($fixtureNow);
     $legacy = Prediction::query()->create(['game_id' => $game->id, 'predicted_spread' => -8, 'predicted_total' => 18,
         'win_probability' => 0.1, 'confidence_score' => 90, 'model_version' => 'historical', 'feature_version' => 'historical', 'blend_version' => 'historical']);
-    $input = EventInputSnapshot::factory()->create(['sport' => 'mlb', 'sport_event_id' => $event->id,
+    $inputAttributes = ['sport' => 'mlb', 'sport_event_id' => $event->id,
         'captured_at' => now()->subMinutes(10), 'cutoff_at' => now()->subMinutes(10),
         'latest_source_available_at' => now()->subMinutes(12), 'pregame_safety_status' => $variant === 'unsafe' ? 'unverified' : 'verified',
         'inputs' => ['event' => ['starts_at' => ($variant === 'kickoff_mismatch' ? $start->copy()->addHour() : $start)->toIso8601String()],
             'home' => ['elo' => 1510, 'metrics' => ['runs_per_game' => 4.8]], 'away' => ['elo' => 1480],
             'pitching' => ['home' => ['elo' => 1600], 'away' => ['elo' => 1500]],
             'weather' => ['temperature_f' => 77, 'observed_at' => now()->subHour()->toIso8601String()],
-            'pregame_market' => ['available' => true, 'consensus' => ['spread' => ['line' => -1.5, 'captured_at' => now()->subMinutes(15)->toIso8601String()]]]]]);
+            'pregame_market' => ['available' => true, 'consensus' => ['spread' => ['line' => -1.5, 'captured_at' => now()->subMinutes(15)->toIso8601String()]]]]];
+    $qualified = ObservedMlbGameFixture::snapshotAttributes($game, $inputAttributes['inputs'], $inputAttributes['captured_at']);
+    $input = EventInputSnapshot::factory()->create([...$inputAttributes, ...$qualified,
+        'pregame_safety_status' => $inputAttributes['pregame_safety_status'],
+        'latest_source_available_at' => $inputAttributes['latest_source_available_at']]);
+
     $release = CalculationRelease::factory()->approved()->create(['sport' => 'mlb', 'phase' => 'pregame']);
     $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
         'calculation_release_id' => $release->id, 'status' => 'succeeded', 'diagnostics' => ['stored_adjustment' => 0.4]]);
@@ -55,6 +66,8 @@ function calculationAuditRetirementFixture(string $variant = 'valid'): array
     if ($variant === 'withdrawn') {
         $native->update(['publication_state' => 'withdrawn', 'withdrawn_at' => now()]);
     }
+
+    CarbonImmutable::setTestNow($fixtureNow);
 
     return [$game, $native, $legacy];
 }

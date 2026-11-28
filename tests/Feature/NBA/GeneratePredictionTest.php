@@ -41,8 +41,8 @@ it('generates prediction for an upcoming game', function () {
     expect((float) $prediction->away_elo)->toBe(1450.0);
     expect((float) $prediction->predicted_spread)->toBeGreaterThan(0); // Home team favored
     expect((float) $prediction->win_probability)->toBeGreaterThan(0.5); // Home team more likely to win
-    expect($prediction->model_version)->toBe('rules-v1')
-        ->and($prediction->feature_version)->toBe('core-v1')
+    expect($prediction->model_version)->toBe('rules-observed-neutral-v2')
+        ->and($prediction->feature_version)->toBe('core-neutral-observation-v2')
         ->and($prediction->blend_version)->toBe('baseline-v1');
 
     $snapshot = PredictionFeatureSnapshot::query()

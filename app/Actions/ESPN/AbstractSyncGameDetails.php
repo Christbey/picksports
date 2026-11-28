@@ -3,7 +3,9 @@
 namespace App\Actions\ESPN;
 
 use App\Services\ESPN\BaseEspnService;
+use App\Services\GameFinalizationDispatcher;
 use App\Services\Sports\SportEventIdentitySynchronizer;
+use App\Support\EspnBasketballNeutralSite;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractSyncGameDetails
@@ -28,12 +30,23 @@ abstract class AbstractSyncGameDetails
 
         $gameData = $this->espnService->getGame($eventId);
 
-        if (! $gameData) {
+        if (! $gameData || (data_get($gameData, 'header.id') !== null && (string) data_get($gameData, 'header.id') !== $eventId)
+            || ! EspnBasketballNeutralSite::valid($this->sportKey(), $gameData)) {
             return $this->emptyResult();
         }
 
-        $gameUpdated = $this->updateGame($gameData, $game);
-        app(SportEventIdentitySynchronizer::class)->sync($this->sportKey(), $game->fresh());
+        $gameUpdated = false;
+        $previousStatus = null;
+        app(SportEventIdentitySynchronizer::class)->mutateAndSync($this->sportKey(), $game,
+            function (Model $locked) use ($gameData, &$gameUpdated, &$previousStatus): void {
+                $previousStatus = (string) $locked->status;
+                EspnBasketballNeutralSite::persist($this->sportKey(), $locked, $gameData);
+                $gameUpdated = $this->updateGame($gameData, $locked);
+            }, EspnBasketballNeutralSite::reported($this->sportKey(), $gameData));
+        $game = $game->fresh();
+        if ($gameUpdated) {
+            $game->getConnection()->afterCommit(fn () => app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game, $previousStatus));
+        }
 
         $result = [
             'plays' => $this->syncPlays->execute($eventId),

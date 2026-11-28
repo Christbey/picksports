@@ -7,6 +7,7 @@ use App\Models\CFB\Player;
 use App\Models\CFB\PlayerProp;
 use App\Services\CFB\CfbPlayerEvidenceService;
 use App\Services\CFB\CfbPlayerMatcher;
+use App\Support\CFB\CfbGameStart;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -14,23 +15,14 @@ class CfbPropEligibility
 {
     public const MARKETS = ['player_pass_yds', 'player_rush_yds', 'player_reception_yds'];
 
-    public static function kickoff(Game $game): CarbonImmutable
+    public static function kickoff(Game $game): ?CarbonImmutable
     {
-        return CarbonImmutable::parse($game->game_date->format('Y-m-d').' '.$game->game_time, 'UTC');
+        return CfbGameStart::for($game);
     }
 
     public static function onDate(Builder $query, string $date): Builder
     {
-        $start = CarbonImmutable::parse($date, 'America/Chicago')->startOfDay()->utc();
-        $end = $start->setTimezone('America/Chicago')->addDay()->utc();
-
-        return $query->where(function ($q) use ($start) {
-            $q->whereDate('game_date', '>', $start->toDateString())
-                ->orWhere(fn ($q) => $q->whereDate('game_date', $start->toDateString())->where('game_time', '>=', $start->format('H:i:s')));
-        })->where(function ($q) use ($end) {
-            $q->whereDate('game_date', '<', $end->toDateString())
-                ->orWhere(fn ($q) => $q->whereDate('game_date', $end->toDateString())->where('game_time', '<', $end->format('H:i:s')));
-        });
+        return app(CfbPropCalendarRead::class)->onDate($query, $date);
     }
 
     public static function normalize(string $name): string
@@ -54,7 +46,7 @@ class CfbPropEligibility
         if (! $game || ! $player || ! $prop->is_current || $prop->graded_at
             || ! in_array($prop->market, self::MARKETS, true)
             || ! in_array($player->team_id, [$game->home_team_id, $game->away_team_id], true)
-            || $game->status !== 'STATUS_SCHEDULED' || self::kickoff($game)->isPast()
+            || $game->status !== 'STATUS_SCHEDULED' || ! ($kickoff = self::kickoff($game)) || $kickoff->isPast()
             || ! $prop->fetched_at || $prop->fetched_at->lt(now()->subMinutes(90))
             || ! $prop->over_price || ! $prop->under_price) {
             return false;

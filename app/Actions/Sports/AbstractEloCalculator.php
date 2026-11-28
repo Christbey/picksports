@@ -2,6 +2,8 @@
 
 namespace App\Actions\Sports;
 
+use App\Services\Sports\Elo\EloAdmissionMode;
+use App\Services\Sports\Elo\EloCoordinatedWriter;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractEloCalculator
@@ -151,6 +153,9 @@ abstract class AbstractEloCalculator
      */
     public function execute(Model $game, bool $skipIfExists = true): array
     {
+        if (app(EloAdmissionMode::class)->managed($this->getSport(), $game->getConnection())) {
+            return app(EloCoordinatedWriter::class)->execute($this->getSport(), $game, $this);
+        }
         if ($game->status !== 'STATUS_FINAL') {
             return ['home_change' => 0, 'away_change' => 0, 'skipped' => false];
         }
@@ -170,42 +175,15 @@ abstract class AbstractEloCalculator
             return ['home_change' => 0, 'away_change' => 0, 'skipped' => true];
         }
 
-        // Get current Elo ratings using dynamic config
         $sport = $this->getSport();
         $defaultElo = config("{$sport}.elo.default") ?? config("{$sport}.elo.default_rating");
-        $homeAdvantage = (bool) ($game->neutral_site ?? false)
-            ? 0
-            : (config("{$sport}.elo.home_court_advantage")
-                ?? config("{$sport}.elo.home_field_advantage"));
-
-        $homeElo = $homeTeam->elo_rating ?? $defaultElo;
-        $awayElo = $awayTeam->elo_rating ?? $defaultElo;
-
-        // Adjust for home advantage
-        $adjustedHomeElo = $homeElo + $homeAdvantage;
-
-        // Calculate expected win probabilities
-        $homeExpected = $this->calculateExpectedScore($adjustedHomeElo, $awayElo);
-        $awayExpected = 1 - $homeExpected;
-
-        // Draws split the result; they must not silently count as away wins.
-        $homeActual = $game->home_score == $game->away_score
-            ? 0.5
-            : ($game->home_score > $game->away_score ? 1.0 : 0.0);
-        $awayActual = 1 - $homeActual;
-
-        // Calculate K-factor with margin of victory and playoff multiplier
-        $kFactor = $this->calculateKFactor($game);
-        $kFactor *= $this->calculateSosAdjustment($homeElo, $awayElo);
-
-        // Calculate Elo changes
-        $homeChange = round($kFactor * ($homeActual - $homeExpected), 1);
-        $awayChange = round($kFactor * ($awayActual - $awayExpected), 1);
+        $changes = $this->previewChanges($game, $homeTeam->elo_rating ?? $defaultElo, $awayTeam->elo_rating ?? $defaultElo);
+        $homeChange = $changes['home_change'];
+        $awayChange = $changes['away_change'];
+        $newHomeElo = $changes['home_new_elo'];
+        $newAwayElo = $changes['away_new_elo'];
 
         // Update team Elo ratings
-        $newHomeElo = round($homeElo + $homeChange);
-        $newAwayElo = round($awayElo + $awayChange);
-
         $homeTeam->update(['elo_rating' => $newHomeElo]);
         $awayTeam->update(['elo_rating' => $newAwayElo]);
 
@@ -220,6 +198,28 @@ abstract class AbstractEloCalculator
             'away_new_elo' => (int) $newAwayElo,
             'skipped' => false,
         ];
+    }
+
+    /** Pure rating math: callers supply the scoped baseline; no team/history writes. */
+    public function previewChanges(Model $game, int|float $homeElo, int|float $awayElo): array
+    {
+        if ($game->home_score === null || $game->away_score === null) {
+            throw new \InvalidArgumentException('Elo preview requires observed scores.');
+        }
+        $sport = $this->getSport();
+        $homeAdvantage = (bool) ($game->neutral_site ?? false)
+            ? 0
+            : (config("{$sport}.elo.home_court_advantage") ?? config("{$sport}.elo.home_field_advantage"));
+        $homeExpected = $this->calculateExpectedScore($homeElo + $homeAdvantage, $awayElo);
+        $awayExpected = 1 - $homeExpected;
+        $homeActual = $game->home_score == $game->away_score ? 0.5 : ($game->home_score > $game->away_score ? 1.0 : 0.0);
+        $awayActual = 1 - $homeActual;
+        $kFactor = $this->calculateKFactor($game) * $this->calculateSosAdjustment($homeElo, $awayElo);
+        $homeChange = round($kFactor * ($homeActual - $homeExpected), 1);
+        $awayChange = round($kFactor * ($awayActual - $awayExpected), 1);
+
+        return ['home_change' => $homeChange, 'away_change' => $awayChange,
+            'home_new_elo' => (int) round($homeElo + $homeChange), 'away_new_elo' => (int) round($awayElo + $awayChange)];
     }
 
     /**

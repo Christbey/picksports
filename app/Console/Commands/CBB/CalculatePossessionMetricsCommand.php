@@ -19,11 +19,19 @@ class CalculatePossessionMetricsCommand extends Command
 
     public function handle(CalculatePossessionMetrics $action): int
     {
-        $season = (int) ($this->option('season') ?: (config('cbb.season.default') ?? BasketballSeason::forDate()));
-        $gameId = $this->option('game_id') ? (int) $this->option('game_id') : null;
+        $seasonValue = $this->input->hasParameterOption('--season', true)
+            ? $this->option('season') : (config('cbb.season.default') ?? BasketballSeason::forDate());
+        $season = filter_var($seasonValue, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        $gameId = $this->input->hasParameterOption('--game_id', true)
+            ? filter_var($this->option('game_id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) : null;
+        $limitGames = filter_var($this->option('limit-games'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+        if ($season === false || $gameId === false || $limitGames === false) {
+            $this->error('Season and game_id must be positive integers; limit-games must be a nonnegative integer.');
+
+            return self::FAILURE;
+        }
         $rebuild = (bool) $this->option('rebuild');
         $chunkSize = max(25, (int) $this->option('chunk'));
-        $limitGames = max(0, (int) $this->option('limit-games'));
 
         $this->info("Calculating CBB possession metrics for season {$season}".($gameId ? " using game {$gameId}" : '').'...');
 

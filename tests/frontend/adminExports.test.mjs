@@ -190,3 +190,279 @@ test('every export tab retains its empty state and disables bulk export when no 
         assert.match(bulkButton, /\sdisabled(?:[=\s>])/);
     }
 });
+
+test('unknown export confidence stays outside relative ranking while genuine zero remains observed', () => {
+    const props = reactive(exportProps());
+    props.predictions = [
+        {
+            ...props.predictions[0],
+            confidence: null,
+            win_probability: null,
+            pick_side: null,
+            pick_team: null,
+        },
+    ];
+    const scope = effectScope();
+    const state = scope.run(() => useAdminExports(props));
+    try {
+        assert.equal(state.signalForPrediction(props.predictions[0]), null);
+        props.predictions[0].confidence = 0;
+        assert.equal(state.signalForPrediction(props.predictions[0]), 0);
+        assert.equal(presentation.normalizePercent(null), null);
+    } finally {
+        scope.stop();
+    }
+});
+
+test('rendered exports label the stored home probability explicitly', async () => {
+    const { default: Page } = await server.ssrLoadModule(
+        '/resources/js/pages/Admin/PlayerPropExports.vue',
+    );
+    const props = exportProps({ activeTab: 'predictions' });
+    props.predictions[0].pick_side = 'Away';
+    props.predictions[0].pick_team = 'Away';
+    props.predictions[0].win_probability = 40;
+    const html = await renderToString(createSSRApp(Page, props));
+    assert.match(html, /Home win probability/);
+    assert.match(html, /40\.0%/);
+});
+
+test('actual card drawing never turns missing confidence into a zero percent badge', async () => {
+    const oldDocument = globalThis.document;
+    const texts = [];
+    const ctx = new Proxy(
+        {},
+        {
+            get(target, key) {
+                if (key === 'measureText')
+                    return (text) => ({ width: String(text).length * 5 });
+                if (key === 'fillText')
+                    return (text) => texts.push(String(text));
+                if (key === 'createLinearGradient')
+                    return () => ({ addColorStop() {} });
+                return () => {};
+            },
+        },
+    );
+    globalThis.document = {
+        createElement: () => ({
+            getContext: () => ctx,
+            toBlob: (callback) => callback(null),
+        }),
+    };
+    const props = exportProps();
+    const prediction = {
+        ...props.predictions[0],
+        confidence: null,
+        win_probability: null,
+        pick_side: null,
+        pick_team: null,
+    };
+    props.predictions = [prediction];
+    const scope = effectScope();
+    const state = scope.run(() => useAdminExports(props));
+    try {
+        await state.exportPrediction(prediction, 0);
+        assert.ok(texts.includes('N/A'));
+        assert.ok(!texts.includes('0%'));
+        assert.ok(!texts.includes('0.0%'));
+        assert.ok(!texts.some((text) => text.includes('null')));
+    } finally {
+        scope.stop();
+        globalThis.document = oldDocument;
+    }
+});
+
+test('rendered exports refuse an unverified split wall clock', async () => {
+    const { default: Page } = await server.ssrLoadModule(
+        '/resources/js/pages/Admin/PlayerPropExports.vue',
+    );
+    const html = await renderToString(
+        createSSRApp(Page, exportProps({ activeTab: 'predictions' })),
+    );
+    assert.match(html, /Time unavailable/);
+});
+
+test('known relative ranking remains unchanged and missing rows cannot distort it', () => {
+    const known = [
+        { id: 1, value: 72 },
+        { id: 2, value: 80 },
+        { id: 'canonical-id', value: 85 },
+    ];
+    assert.deepEqual(presentation.buildRelativeSignalMap(known), {
+        1: 48,
+        2: 77,
+        'canonical-id': 96,
+    });
+    assert.deepEqual(
+        presentation.buildRelativeSignalMap([
+            ...known,
+            { id: 99, value: null },
+        ]),
+        presentation.buildRelativeSignalMap(known),
+    );
+    assert.equal(presentation.formatRelativeSignal(1), '1/100');
+    assert.equal(presentation.formatRelativeSignal(null), 'N/A');
+});
+
+test('actual exports remain bound to received data while a different sport filter is selected', async () => {
+    const oldDocument = globalThis.document;
+    const oldCreate = URL.createObjectURL;
+    const oldRevoke = URL.revokeObjectURL;
+    const texts = [],
+        downloads = [];
+    const ctx = new Proxy(
+        {},
+        {
+            get(target, key) {
+                if (key === 'measureText')
+                    return (text) => ({ width: String(text).length * 5 });
+                if (key === 'fillText')
+                    return (text) => texts.push(String(text));
+                if (key === 'createLinearGradient')
+                    return () => ({ addColorStop() {} });
+                return () => {};
+            },
+        },
+    );
+    globalThis.document = {
+        createElement: (tag) =>
+            tag === 'canvas'
+                ? {
+                      getContext: () => ctx,
+                      toBlob: (callback) => callback(new Blob(['synthetic'])),
+                  }
+                : {
+                      click() {
+                          downloads.push(this.download);
+                      },
+                      remove() {},
+                  },
+        body: { appendChild() {} },
+    };
+    URL.createObjectURL = () => 'blob:synthetic';
+    URL.revokeObjectURL = () => {};
+    const props = exportProps();
+    const scope = effectScope();
+    const state = scope.run(() => useAdminExports(props));
+    try {
+        state.selectedSport.value = 'MLB';
+        await state.exportFuturesRow(props.futures[0], 0);
+        assert.ok(texts.includes('NBA Futures'));
+        assert.ok(!texts.includes('MLB Futures'));
+        assert.match(downloads[0], /^NBA-futures-/);
+    } finally {
+        scope.stop();
+        globalThis.document = oldDocument;
+        URL.createObjectURL = oldCreate;
+        URL.revokeObjectURL = oldRevoke;
+    }
+});
+
+test('stored push outcomes are never counted as Under wins', () => {
+    const record = { games: 5, hits: 2, over: 2, under: 1, pushes: 2 };
+    assert.equal(
+        presentation.recommendationHitCount('Under', record),
+        '1/5 (2 pushes)',
+    );
+    assert.equal(
+        presentation.recommendationHitCount('Under', { games: 5, hits: 2 }),
+        'N/A',
+    );
+    assert.equal(
+        presentation.recommendationHitCount('Under', {
+            games: 5,
+            hits: 5,
+            under: 0,
+            over: 5,
+            pushes: 0,
+        }),
+        '0/5',
+    );
+});
+
+test('actual export rows prefer the rich observed cover record over a sparse legacy complement', () => {
+    const rec = exportProps().recommendations[0];
+    rec.stats.cover_record = {
+        last_5: { games: 5, hits: 2, over: 2, under: 1, pushes: 2 },
+    };
+    assert.equal(
+        presentation.buildStatRows(rec).find((row) => row.key === 'hit5').value,
+        '1/5 (2 pushes)',
+    );
+});
+
+test('legacy decimal wire values stay visible without accepting malformed or nonfinite numbers', () => {
+    assert.equal(presentation.formatStatNumber('1.8'), '1.8');
+    assert.equal(presentation.formatStatNumber('-0.5'), '-0.5');
+    assert.equal(presentation.formatStatNumber('0.0'), '0.0');
+    assert.equal(presentation.normalizePercent('0.8'), 80);
+    for (const value of ['', 'Infinity', '1e999', '0x10', false, []])
+        assert.equal(presentation.formatStatNumber(value), 'N/A');
+});
+
+test('actual bulk drawing preserves unknown stats and a known low relative score without rescaling it', async () => {
+    const oldDocument = globalThis.document;
+    const texts = [];
+    const ctx = new Proxy(
+        {},
+        {
+            get(target, key) {
+                if (key === 'measureText')
+                    return (text) => ({ width: String(text).length * 5 });
+                if (key === 'fillText')
+                    return (text) => texts.push(String(text));
+                if (key === 'createLinearGradient')
+                    return () => ({ addColorStop() {} });
+                return () => {};
+            },
+        },
+    );
+    globalThis.document = {
+        createElement: () => ({
+            getContext: () => ctx,
+            toBlob: (callback) => callback(null),
+        }),
+    };
+    const props = exportProps();
+    props.recommendations[0].stats.season_avg = null;
+    props.recommendations[0].stats.last5_avg = null;
+    props.recommendations[0].edge = null;
+    const scope = effectScope();
+    const state = scope.run(() => useAdminExports(props));
+    try {
+        await state.exportAllCurrent();
+        assert.ok(texts.filter((text) => text === 'N/A').length >= 3);
+        assert.ok(!texts.includes('0'));
+        texts.length = 0;
+        props.predictions[0].confidence = 0.01;
+        await state.exportPrediction(props.predictions[0], 0);
+        assert.ok(texts.includes('1/100'));
+        assert.ok(!texts.includes('100%'));
+    } finally {
+        scope.stop();
+        globalThis.document = oldDocument;
+    }
+});
+
+test('sport replacement cannot submit the previous sports game and market selectors', () => {
+    const calls = [];
+    globalThis.__adminRouter = { get: (...args) => calls.push(args) };
+    const props = reactive(exportProps());
+    const scope = effectScope();
+    const state = scope.run(() => useAdminExports(props));
+    try {
+        state.selectedDate.value = '2026-11-04';
+        state.selectedGame.value = '1';
+        state.selectedMarket.value = 'player_points';
+        state.selectedSeason.value = '2026';
+        state.selectedSport.value = 'MLB';
+        state.applyFilters();
+        assert.deepEqual(calls.at(-1)[1], { sport: 'MLB', tab: 'props' });
+        assert.equal(state.selectedGame.value, '');
+        assert.equal(state.selectedMarket.value, '');
+    } finally {
+        scope.stop();
+        delete globalThis.__adminRouter;
+    }
+});

@@ -7,9 +7,12 @@ use App\Actions\ESPN\CFB\SyncPlayers;
 use App\Actions\ESPN\NBA\SyncGamesFromScoreboard;
 use App\Actions\ESPN\NBA\SyncPlayerInjuries;
 use App\Events\GameFinalized;
+use App\Http\Controllers\Subscription\OwnedLegacyPaymentController;
 use App\Listeners\NotificationDeliverySubscriber;
 use App\Listeners\TriggerGameFinalizationGrading;
+use App\Models\BillingSubscription;
 use App\Models\DeveloperApiCredential;
+use App\Services\Billing\BillingCanonicalWriteContext;
 use App\Services\CBB\CbbRosterStrength;
 use App\Services\CBB\CbbScoreMarginRatings;
 use App\Services\CommandHeartbeatService;
@@ -33,6 +36,8 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
+use Laravel\Cashier\Cashier;
+use Laravel\Cashier\Http\Controllers\PaymentController;
 use Laravel\Passport\Passport;
 use Symfony\Component\Console\Input\InputInterface;
 
@@ -52,6 +57,8 @@ class AppServiceProvider extends ServiceProvider
             ->needs(BaseEspnService::class)
             ->give(\App\Services\ESPN\CFB\EspnService::class);
         $this->app->singleton(ModelRunRecorder::class);
+        $this->app->scoped(BillingCanonicalWriteContext::class);
+        $this->app->bind(PaymentController::class, OwnedLegacyPaymentController::class);
         $this->registerEspnScoreboardSyncActions();
         $this->registerEspnPlayerInjurySyncActions();
     }
@@ -62,6 +69,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+        Cashier::useSubscriptionModel(BillingSubscription::class);
         $this->configureDeveloperApiGuard();
         $this->configurePassport();
         $this->configureApiRateLimiters();

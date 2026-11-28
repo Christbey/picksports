@@ -1,3 +1,9 @@
+import { isFinalGameStatus } from '@/lib/gameStatus';
+import { recentGamesBefore, recentGameQuery } from '@/lib/recentGameEvidence';
+import { predictionHomeMargin } from '@/lib/predictionSpread';
+import { optionalPredictionNumber } from '@/lib/predictionNormalization';
+import { recentRecord } from '@/lib/gameOutcome';
+import { ApiError } from '@/composables/useApiClient';
 import { useAsyncPolling } from '@/composables/useAsyncPolling';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useApiV2Client } from '@/composables/useApiV2Client';
@@ -16,7 +22,6 @@ import {
 import { useSportGameLayoutFromConfig } from '@/composables/useSportGameLayout';
 import { useTeamTrends } from '@/composables/useTeamTrends';
 import { useGameViewTracking } from '@/composables/useGameViewTracking';
-import { predictionHomeMargin } from '@/lib/predictionSpread';
 import { getCfbPostseasonLabel } from '@/lib/cfbPostseason';
 import type {
     NflPageGame,
@@ -122,19 +127,7 @@ export function useCfbDetailedGamePage(gameId: number) {
         formatTrendCategoryName: formatCategoryName,
     } = useTeamTrends(homeTrends, awayTrends);
 
-    const getNumericRecord = (
-        games: RecentGameListItem[],
-        teamId: number,
-    ): string => {
-        const wins = games.filter((g) => {
-            const isHome = g.home_team_id === teamId;
-            const teamScore = isHome ? g.home_score : g.away_score;
-            const oppScore = isHome ? g.away_score : g.home_score;
-            return teamScore && oppScore && teamScore > oppScore;
-        }).length;
-        const losses = games.length - wins;
-        return `${wins}-${losses}`;
-    };
+    const getNumericRecord = recentRecord;
 
     const load = async () => {
         try {
@@ -146,9 +139,16 @@ export function useCfbDetailedGamePage(gameId: number) {
             };
             const [gameData, predictionData] = await Promise.all([
                 api.games.show('cfb', gameId, requestOptions),
-                api.predictions.forGame('cfb', gameId, requestOptions),
+                api.predictions
+                    .forGame('cfb', gameId, requestOptions)
+                    .catch((caught: unknown) => {
+                        if (caught instanceof ApiError && caught.status === 404)
+                            return null;
+                        throw caught;
+                    }),
             ]);
 
+            if (requestController.signal.aborted) return;
             if (gameData?.data) {
                 const fullGame = gameData.data as unknown as NflPageGame;
                 currentGame.value = fullGame;
@@ -163,10 +163,18 @@ export function useCfbDetailedGamePage(gameId: number) {
             }
 
             if (predictionData?.data) {
+                const raw = predictionData.data as unknown as Record<
+                    string,
+                    unknown
+                >;
                 prediction.value = {
-                    ...predictionData.data,
-                    predicted_spread:
-                        predictionHomeMargin(predictionData.data) ?? '',
+                    ...raw,
+                    spread_convention: 'home_margin',
+                    predicted_spread: predictionHomeMargin(raw) ?? '',
+                    predicted_total:
+                        optionalPredictionNumber(raw.predicted_total) ?? '',
+                    win_probability:
+                        optionalPredictionNumber(raw.win_probability) ?? '',
                 } as unknown as NflPagePrediction;
             }
 
@@ -185,6 +193,7 @@ export function useCfbDetailedGamePage(gameId: number) {
                         init: { signal: requestController.signal },
                     })
                     .then((response) => {
+                        if (requestController.signal.aborted) return;
                         const stats = flattenApiV2Stats(
                             response?.data,
                         ) as unknown as NflTeamStats[];
@@ -197,6 +206,7 @@ export function useCfbDetailedGamePage(gameId: number) {
                     }),
             ];
 
+            const recentQuery = recentGameQuery(currentGame.value);
             const addTeamContext = (
                 team: number | string | null | undefined,
                 recentGames: typeof homeRecentGames,
@@ -205,26 +215,29 @@ export function useCfbDetailedGamePage(gameId: number) {
                 if (!team) return;
 
                 supplemental.push(
-                    api.teams
-                        .games('cfb', team, {
-                            query: { per_page: 25 },
-                            init: { signal: requestController.signal },
-                        })
-                        .then((response) => {
-                            recentGames.value = (response?.data ?? [])
-                                .filter(
-                                    (game) =>
-                                        game.status === 'STATUS_FINAL' &&
-                                        game.id !== currentGame.value.id,
-                                )
-                                .slice(0, 5) as RecentGameListItem[];
-                        }),
+                    recentQuery
+                        ? api.teams
+                              .games('cfb', team, {
+                                  query: recentQuery,
+                                  init: { signal: requestController.signal },
+                              })
+                              .then((response) => {
+                                  if (requestController.signal.aborted) return;
+                                  recentGames.value = recentGamesBefore(
+                                      (response?.data ??
+                                          []) as unknown as RecentGameListItem[],
+                                      currentGame.value,
+                                      Number(team),
+                                  );
+                              })
+                        : Promise.resolve(),
                     api.teams
                         .trends('cfb', team, {
                             query: trendQuery,
                             init: { signal: requestController.signal },
                         })
                         .then((response) => {
+                            if (requestController.signal.aborted) return;
                             trends.value =
                                 (response?.data as TeamTrendData | undefined) ??
                                 null;
@@ -237,11 +250,14 @@ export function useCfbDetailedGamePage(gameId: number) {
 
             await Promise.allSettled(supplemental);
         } catch (e) {
+            if (requestController.signal.aborted) return;
             if (e instanceof DOMException && e.name === 'AbortError') return;
             error.value = e instanceof Error ? e.message : 'An error occurred';
         } finally {
-            loading.value = false;
-            trendsLoading.value = false;
+            if (!requestController.signal.aborted) {
+                loading.value = false;
+                trendsLoading.value = false;
+            }
         }
     };
 
@@ -259,7 +275,7 @@ export function useCfbDetailedGamePage(gameId: number) {
             }
         },
         30_000,
-        () => !document.hidden && currentGame.value.status !== 'STATUS_FINAL',
+        () => !document.hidden && !isFinalGameStatus(currentGame.value.status),
     );
 
     onMounted(async () => {
@@ -271,14 +287,25 @@ export function useCfbDetailedGamePage(gameId: number) {
     const awayLabel = computed(() => awayTeam.value?.abbreviation || null);
     const homeLabel = computed(() => homeTeam.value?.abbreviation || null);
     const awayRecord = computed(() =>
-        getNumericRecord(awayRecentGames.value, currentGame.value.away_team_id),
+        currentGame.value.starts_at
+            ? getNumericRecord(
+                  awayRecentGames.value,
+                  currentGame.value.away_team_id,
+              )
+            : 'Recent record unavailable: kickoff timing unverified',
     );
     const homeRecord = computed(() =>
-        getNumericRecord(homeRecentGames.value, currentGame.value.home_team_id),
+        currentGame.value.starts_at
+            ? getNumericRecord(
+                  homeRecentGames.value,
+                  currentGame.value.home_team_id,
+              )
+            : 'Recent record unavailable: kickoff timing unverified',
     );
 
     const predictionSectionProps = computed(() => ({
         section: 'prediction' as const,
+        game: currentGame.value,
         prediction: prediction.value,
         awayLabel: awayLabel.value,
         homeLabel: homeLabel.value,
@@ -288,6 +315,7 @@ export function useCfbDetailedGamePage(gameId: number) {
 
     const analysisSectionProps = computed(() => ({
         section: 'analysis' as const,
+        game: currentGame.value,
         prediction: prediction.value,
         awayLabel: awayLabel.value,
         homeLabel: homeLabel.value,
@@ -361,6 +389,7 @@ export function useCfbDetailedGamePage(gameId: number) {
             ),
             showScoreStatuses: [
                 'STATUS_FINAL',
+                'STATUS_FULL_TIME',
                 'STATUS_IN_PROGRESS',
                 'STATUS_HALFTIME',
             ],
@@ -371,7 +400,7 @@ export function useCfbDetailedGamePage(gameId: number) {
                 () =>
                     homeLinescores.value.length > 0 &&
                     awayLinescores.value.length > 0 &&
-                    currentGame.value.status === 'STATUS_FINAL',
+                    isFinalGameStatus(currentGame.value.status),
             ),
             awayLinescores,
             homeLinescores,

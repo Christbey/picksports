@@ -5,6 +5,9 @@ const {
     signalForPrediction,
     getConfidenceColor,
     getSignalBand,
+    formatRelativeSignal,
+    formatExportGameStart,
+    formatExportPercent,
     formatStatNumber,
     buildPredictionRows,
     exportPrediction,
@@ -45,7 +48,7 @@ const {
                     <th
                         class="w-[170px] px-4 py-3 text-left text-xs font-bold tracking-wide text-muted-foreground uppercase"
                     >
-                        Signal
+                        Relative score
                     </th>
                     <th
                         class="min-w-[360px] px-4 py-3 text-left text-xs font-bold tracking-wide text-muted-foreground uppercase"
@@ -71,18 +74,19 @@ const {
                             {{ prediction.home_team }}
                         </p>
                         <p class="text-sm text-muted-foreground">
-                            {{ prediction.game.date ?? 'N/A' }} •
-                            {{ prediction.game.time ?? 'TBD' }}
+                            {{ formatExportGameStart(prediction.game) }}
                         </p>
                     </td>
                     <td class="px-4 py-4">
                         <p class="text-sm font-semibold text-foreground">
-                            {{ prediction.pick_side }} •
-                            {{ prediction.pick_team }}
+                            {{ prediction.pick_side ?? 'Pick unavailable' }} •
+                            {{ prediction.pick_team ?? 'N/A' }}
                         </p>
                         <p class="text-xs text-muted-foreground">
-                            Win Prob
-                            {{ formatStatNumber(prediction.win_probability) }}%
+                            Home win probability
+                            {{
+                                formatExportPercent(prediction.win_probability)
+                            }}
                         </p>
                     </td>
                     <td class="px-4 py-4">
@@ -100,12 +104,12 @@ const {
                             <div
                                 class="flex items-center justify-between text-xs text-muted-foreground"
                             >
-                                <span>Signal</span>
-                                <span class="font-semibold text-foreground"
-                                    >{{
-                                        signalForPrediction(prediction)
-                                    }}%</span
-                                >
+                                <span>Relative score</span>
+                                <span class="font-semibold text-foreground">{{
+                                    formatRelativeSignal(
+                                        signalForPrediction(prediction),
+                                    )
+                                }}</span>
                             </div>
                             <div
                                 class="h-2.5 overflow-hidden rounded-full bg-muted"
@@ -118,7 +122,7 @@ const {
                                         )
                                     "
                                     :style="{
-                                        width: `${signalForPrediction(prediction)}%`,
+                                        width: `${signalForPrediction(prediction) ?? 0}%`,
                                     }"
                                 />
                             </div>

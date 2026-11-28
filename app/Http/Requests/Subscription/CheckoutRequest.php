@@ -15,10 +15,10 @@ class CheckoutRequest extends FormRequest
 
     public function rules(SubscriptionTierCache $tiers): array
     {
-        $slugs = array_values(array_unique([
+        $slugs = array_values(array_filter(array_unique([
             ...array_keys(config('subscriptions.tiers', [])),
             ...$tiers->activeOrdered()->pluck('slug')->all(),
-        ]));
+        ]), fn (string $slug): bool => $tiers->tierBySlug($slug)?->is_active !== false));
 
         return [
             'tier' => ['required', Rule::in($slugs)],

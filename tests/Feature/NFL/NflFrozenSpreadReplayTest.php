@@ -112,7 +112,7 @@ it('loads preforecast evidence and ignores future inputs and mutable odds withou
     $event = SportEvent::factory()->create(['sport' => 'nfl', 'starts_at' => '2026-09-20 17:00:00']);
     $game = Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026, 'season_type' => '2', 'week' => 2,
         'home_team_id' => Team::factory()->create()->id, 'away_team_id' => Team::factory()->create()->id,
-        'status' => 'STATUS_FINAL', 'game_date' => '2026-09-20', 'game_time' => '17:00:00',
+        'status' => 'STATUS_FINAL', 'game_date' => '2026-09-20', 'game_time' => '22:00:00',
         'home_score' => 20, 'away_score' => 32, 'odds_data' => ['vegas_spread' => -45]]);
     $game->forceFill(['result_updated_at' => '2026-09-20 21:00:00'])->saveQuietly();
     $fixture = collect(json_decode(file_get_contents(base_path('tests/Fixtures/nfl-frozen-spread-replay-2026.json')), true))->firstWhere('snapshot_id', 190049);
@@ -121,6 +121,8 @@ it('loads preforecast evidence and ignores future inputs and mutable odds withou
         'predicted_spread' => 6.5, 'vegas_spread' => -6.5, 'model_metadata' => $fixture['metadata'],
     ], ['generated_at' => '2026-09-20 16:00:00', 'features_available_at' => '2026-09-20 16:00:00',
         'model_version' => 'nfl-historical-elo-v2-career-regular-v2', 'features' => ['home_field_advantage' => 25]]);
+    expect(PredictionFeatureSnapshot::query()->sole()->game_start_at->getTimestamp())->toBe($event->starts_at->getTimestamp())
+        ->and(PredictionFeatureSnapshot::query()->sole()->pregame_safe)->toBeTrue();
     $inputs = ['event' => ['season_type' => '2'],
         'home' => ['team_id' => $game->home_team_id, 'metrics' => ['record_season' => 2026, 'predictive_rating' => -25.044]],
         'away' => ['team_id' => $game->away_team_id, 'metrics' => ['record_season' => 2026, 'predictive_rating' => 0]]];

@@ -1,3 +1,4 @@
+import { isFinalGameStatus } from '@/lib/gameStatus';
 import { predictionHomeMargin } from '@/lib/predictionSpread';
 import type {
     DashboardPrediction,
@@ -32,9 +33,9 @@ interface NormalizedPredictionLiveState {
     livePredictedTotal: number | null;
     liveSecondsRemaining: number | null;
     liveOutsRemaining: number | null;
-    preGameWinProbability: number;
-    preGamePredictedSpread: number;
-    preGamePredictedTotal: number;
+    preGameWinProbability: number | null;
+    preGamePredictedSpread: number | null;
+    preGamePredictedTotal: number | null;
 }
 
 export function isPredictionListItem(
@@ -52,8 +53,10 @@ export function normalizePredictionLiveState(
     if (!isPredictionListItem(prediction)) {
         return {
             isDashboard: true,
-            isLive: !!prediction.is_live,
-            isFinal: !!prediction.is_final,
+            isLive:
+                !isFinalGameStatus(prediction.status) && !!prediction.is_live,
+            isFinal:
+                isFinalGameStatus(prediction.status) || !!prediction.is_final,
             status: prediction.status ?? null,
             homeScore: prediction.home_score ?? null,
             awayScore: prediction.away_score ?? null,
@@ -69,9 +72,10 @@ export function normalizePredictionLiveState(
             livePredictedTotal: prediction.live_predicted_total ?? null,
             liveSecondsRemaining: prediction.live_seconds_remaining ?? null,
             liveOutsRemaining: prediction.live_outs_remaining ?? null,
-            preGameWinProbability: prediction.win_probability ?? 0,
-            preGamePredictedSpread: predictionHomeMargin(prediction, true) ?? 0,
-            preGamePredictedTotal: prediction.predicted_total ?? 0,
+            preGameWinProbability: prediction.win_probability ?? null,
+            preGamePredictedSpread:
+                predictionHomeMargin(prediction, true) ?? null,
+            preGamePredictedTotal: prediction.predicted_total ?? null,
         };
     }
 
@@ -91,9 +95,10 @@ export function normalizePredictionLiveState(
     return {
         isDashboard: false,
         isLive:
-            (gameLiveProbability?.is_live ?? false) ||
-            LIVE_STATUSES.has(prediction.game.status),
-        isFinal: prediction.game.status === 'STATUS_FINAL',
+            !isFinalGameStatus(prediction.game.status) &&
+            ((gameLiveProbability?.is_live ?? false) ||
+                LIVE_STATUSES.has(prediction.game.status)),
+        isFinal: isFinalGameStatus(prediction.game.status),
         status: prediction.game.status ?? null,
         homeScore: prediction.game.home_score ?? null,
         awayScore: prediction.game.away_score ?? null,
@@ -112,9 +117,9 @@ export function normalizePredictionLiveState(
             gameLiveProbability?.seconds_remaining ??
             null,
         liveOutsRemaining: prediction.live_outs_remaining ?? null,
-        preGameWinProbability: prediction.win_probability ?? 0,
-        preGamePredictedSpread: predictionHomeMargin(prediction) ?? 0,
-        preGamePredictedTotal: prediction.predicted_total ?? 0,
+        preGameWinProbability: prediction.win_probability ?? null,
+        preGamePredictedSpread: predictionHomeMargin(prediction) ?? null,
+        preGamePredictedTotal: prediction.predicted_total ?? null,
     };
 }
 

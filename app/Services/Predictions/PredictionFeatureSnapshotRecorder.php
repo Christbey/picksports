@@ -2,13 +2,24 @@
 
 namespace App\Services\Predictions;
 
+use App\Models\MLB\Game as MlbGame;
+use App\Models\ModelRun;
 use App\Models\NFL\Game;
 use App\Models\PredictionFeatureSnapshot;
+use App\Services\CFB\CfbSnapshotCaptureIntegrity;
 use App\Services\ML\ShadowModelOutputRecorder;
+use App\Services\MLB\MlbSnapshotCaptureIntegrity;
 use App\Services\NFL\GameDepthChartLinkRecorder;
+use App\Support\MLB\MlbGameStart;
 use App\Support\Odds\MarketSpread;
+use App\Support\Sports\LegacyTimestampCarrier;
+use Carbon\CarbonImmutable;
+use DateTimeImmutable;
+use DateTimeInterface;
+use DateTimeZone;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 class PredictionFeatureSnapshotRecorder
 {
@@ -16,7 +27,50 @@ class PredictionFeatureSnapshotRecorder
      * @param  array<string, mixed>  $predictionData
      * @param  array<string, mixed>  $snapshot
      */
-    public function record(Model $prediction, Model $game, string $sport, array $predictionData, array $snapshot = []): PredictionFeatureSnapshot
+    public function record(Model $prediction, Model $game, string $sport, array $predictionData, array $snapshot = [], ?array $preparedRunContext = null): PredictionFeatureSnapshot
+    {
+        if ($sport === 'mlb' && $game instanceof MlbGame) {
+            if (($snapshot['run_type'] ?? 'prediction') !== 'historical_reconstruction' && $game->getConnection()->transactionLevel() === 0) {
+                return $this->recordCurrentMlb($prediction, $game, $predictionData, $snapshot, $preparedRunContext);
+            }
+            // Do not introduce Game-after-Prediction locks into an unknown inherited/reconstruction transaction.
+            $snapshot['pregame_safe'] = false;
+            $snapshot['point_in_time_verified'] = false;
+            $snapshot['availability_status'] = ($snapshot['run_type'] ?? 'prediction') === 'historical_reconstruction'
+                ? 'reconstructed_now' : 'capture_boundary_unverified';
+        }
+
+        return $this->recordLocal($prediction, $game, $sport, $predictionData, $snapshot, preparedRunContext: $preparedRunContext);
+    }
+
+    /** Explicit known Game-first entry. Arbitrary caller-owned opposite locks are not supported. */
+    public function recordCurrentMlb(Model $prediction, MlbGame $game, array $predictionData, array $snapshot = [], ?array $preparedRunContext = null): PredictionFeatureSnapshot
+    {
+        $connection = $game->getConnection();
+        foreach ([$prediction, new PredictionFeatureSnapshot, new ModelRun] as $model) {
+            if ($model->getConnection()->getName() !== $connection->getName()) {
+                throw new InvalidArgumentException('MLB capture requires one coherent resolved database connection.');
+            }
+        }
+        if (! $prediction->exists || ! $game->exists || $prediction->getTable() !== 'mlb_predictions') {
+            throw new InvalidArgumentException('MLB capture requires persisted matching prediction and Game identities.');
+        }
+
+        return $connection->transaction(function () use ($prediction, $game, $predictionData, $snapshot, $preparedRunContext): PredictionFeatureSnapshot {
+            $currentGame = $game->newQuery()->lockForUpdate()->findOrFail($game->getKey());
+            if (MlbGameStart::context($currentGame) !== MlbGameStart::context($game) || $currentGame->status !== $game->status) {
+                throw new InvalidArgumentException('MLB capture Game context changed; retry the complete calculation.');
+            }
+            $currentPrediction = $prediction->newQuery()->lockForUpdate()->findOrFail($prediction->getKey());
+            if ((int) $currentPrediction->game_id !== (int) $currentGame->getKey()) {
+                throw new InvalidArgumentException('MLB capture prediction does not belong to its current locked Game.');
+            }
+
+            return $this->recordLocal($currentPrediction, $currentGame, 'mlb', $predictionData, $snapshot, true, $preparedRunContext);
+        });
+    }
+
+    private function recordLocal(Model $prediction, Model $game, string $sport, array $predictionData, array $snapshot, bool $captureMlb = false, ?array $preparedRunContext = null): PredictionFeatureSnapshot
     {
         $modelVersion = (string) ($snapshot['model_version'] ?? $predictionData['model_version'] ?? 'rules-v1');
         $featureVersion = (string) ($snapshot['feature_version'] ?? $predictionData['feature_version'] ?? 'core-v1');
@@ -27,7 +81,48 @@ class PredictionFeatureSnapshotRecorder
         $marketContext = $snapshot['market_context'] ?? $this->extractMarketContext($predictionData);
         $modelMetadata = $snapshot['model_metadata']
             ?? (is_array($predictionData['model_metadata'] ?? null) ? $predictionData['model_metadata'] : null);
-        $generatedAt = $snapshot['generated_at'] ?? now();
+        $generatedAt = $this->snapshotInstant($snapshot['generated_at'] ?? now());
+        $provenance = app(SnapshotProvenanceResolver::class)->resolve($game, $snapshot, $generatedAt);
+        if ($sport === 'cfb' && $game instanceof \App\Models\CFB\Game) {
+            $modelMetadata = is_array($modelMetadata) ? $modelMetadata : [];
+            // Always derive this marker here; caller metadata cannot manufacture capture certification.
+            $modelMetadata['snapshot_integrity'] = app(CfbSnapshotCaptureIntegrity::class)->marker(
+                $game, $features, $outputs, $marketContext, $provenance['game_start_at'],
+            );
+        }
+
+        if ($sport === 'mlb' && $game instanceof MlbGame) {
+            $modelMetadata = is_array($modelMetadata) ? $modelMetadata : [];
+            unset($modelMetadata['mlb_capture_integrity']);
+            if ($captureMlb) {
+                $marker = app(MlbSnapshotCaptureIntegrity::class)->marker($prediction, $game, $features, $outputs, $marketContext, $generatedAt, $provenance, ['model' => $modelVersion, 'feature' => $featureVersion, 'blend' => $blendVersion]);
+                $modelMetadata['mlb_capture_integrity'] = $marker;
+                $provenance['features_available_at'] = CarbonImmutable::parse($marker['available_at_utc']);
+                $provenance['pregame_safe'] = $marker['qualified'];
+                if (! $marker['qualified']) {
+                    $provenance['availability_status'] = 'capture_unqualified';
+                    $provenance['lineage_metadata']['point_in_time_verified'] = false;
+                }
+            }
+        }
+
+        // These columns are legacy application-wall TIMESTAMP(0) carriers, not UTC6 evidence.
+        $generatedCarrier = LegacyTimestampCarrier::forInstant($generatedAt);
+        $availableCarrier = LegacyTimestampCarrier::forInstant($this->snapshotInstant($provenance['features_available_at']));
+        if ($generatedCarrier === null || $availableCarrier === null) {
+            throw new InvalidArgumentException('Snapshot generation/availability time cannot be represented by its legacy timestamp carrier.');
+        }
+        $start = $provenance['game_start_at'];
+        $startCarrier = $start === null ? null : LegacyTimestampCarrier::forInstant($this->snapshotInstant($start));
+        if ($start !== null && $startCarrier === null) {
+            $provenance['pregame_safe'] = false;
+            $provenance['availability_status'] = 'game_start_unrepresentable';
+            $provenance['lineage_metadata']['point_in_time_verified'] = false;
+            $provenance['lineage_metadata']['observed_before_game_start'] = false;
+        }
+        $provenance['game_start_at'] = $startCarrier;
+        $provenance['features_available_at'] = $availableCarrier;
+
         $modelRun = app(ModelRunRecorder::class)->forPrediction(
             $sport,
             $modelVersion,
@@ -37,9 +132,8 @@ class PredictionFeatureSnapshotRecorder
                 'run_type' => (string) ($snapshot['run_type'] ?? 'prediction'),
                 'parameters' => $snapshot['run_parameters'] ?? null,
             ],
+            preparedContext: $preparedRunContext,
         );
-        $provenance = app(SnapshotProvenanceResolver::class)->resolve($game, $snapshot, $generatedAt);
-
         $featureSnapshot = (new PredictionFeatureSnapshot)->getConnection()->transaction(fn (): PredictionFeatureSnapshot => PredictionFeatureSnapshot::query()->create([
             'sport' => $sport,
             'prediction_table' => $prediction->getTable(),
@@ -59,7 +153,7 @@ class PredictionFeatureSnapshotRecorder
                 'outputs' => $outputs,
                 'market_context' => $marketContext,
             ])),
-            'generated_at' => $generatedAt,
+            'generated_at' => $generatedCarrier,
             ...$provenance,
         ]));
 
@@ -70,6 +164,27 @@ class PredictionFeatureSnapshotRecorder
         app(ShadowModelOutputRecorder::class)->record($featureSnapshot);
 
         return $featureSnapshot;
+    }
+
+    private function snapshotInstant(mixed $value): CarbonImmutable
+    {
+        if ($value instanceof DateTimeInterface) {
+            return CarbonImmutable::instance($value);
+        }
+        if (! is_string($value) || preg_match('/\A\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})?\z/D', $value) !== 1) {
+            throw new InvalidArgumentException('Snapshot timestamps require a valid explicit calendar date and clock.');
+        }
+        try {
+            $instant = new DateTimeImmutable($value, new DateTimeZone((string) config('app.timezone', 'UTC')));
+            $errors = DateTimeImmutable::getLastErrors();
+            if ($errors !== false && ($errors['warning_count'] || $errors['error_count'])) {
+                throw new InvalidArgumentException('Snapshot timestamp contains an invalid calendar date or clock.');
+            }
+
+            return CarbonImmutable::instance($instant);
+        } catch (\Throwable $exception) {
+            throw new InvalidArgumentException('Snapshot timestamp contains an invalid calendar date or clock.', previous: $exception);
+        }
     }
 
     /**

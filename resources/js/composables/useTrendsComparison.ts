@@ -140,7 +140,11 @@ export function useTrendsComparison(props: TrendsComparisonProps) {
                 !isConditionalPattern(insight.category, insight.message),
         );
         const isNew = (insight: TrendInsight) =>
-            !selected.some((item) => item.message === insight.message);
+            !selected.some(
+                (item) =>
+                    item.key === insight.key ||
+                    item.message === insight.message,
+            );
 
         const pushBest = (tone: TrendTone) => {
             const available = candidates.filter(

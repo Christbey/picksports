@@ -4,6 +4,7 @@ use App\Models\CalculationRelease;
 use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
 use App\Models\EventInputSnapshot;
+use App\Models\MLB\Game;
 use App\Models\NFL\Prediction;
 use App\Models\PredictionMarket;
 use App\Models\SportEvent;
@@ -19,6 +20,7 @@ use App\Services\Predictions\SportsAiPublishingDecisionPolicy;
 use App\Services\Predictions\SportsExternalGameContextBuilder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Tests\Support\ObservedMlbGameFixture;
 
 beforeEach(function () {
     $this->travelTo('2026-10-29 12:00:00');
@@ -36,13 +38,21 @@ function canonicalAnalysisFixture(string $sport, ?CalculationRelease $release = 
     $game = $gameClass::factory()->create(['season' => 2026, 'season_type' => '2', 'sport_event_id' => $event->id,
         'status' => 'STATUS_SCHEDULED', 'game_date' => $event->starts_at->toDateString(), 'game_time' => $event->starts_at->format('H:i:s'),
         'home_team_id' => $teamClass::factory(), 'away_team_id' => $teamClass::factory()]);
+    if ($game instanceof Game) {
+        $game = ObservedMlbGameFixture::observe($game, $event->starts_at);
+    }
     $release ??= CalculationRelease::factory()->approved()->create(['sport' => $sport, 'phase' => 'pregame']);
-    $input = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id,
+    $inputAttributes = ['sport' => $sport, 'sport_event_id' => $event->id,
         'phase' => 'pregame', 'pregame_safety_status' => 'verified', 'captured_at' => now(), 'cutoff_at' => now(),
         'inputs' => ['recommendation_context' => ['version' => NflRecommendationInputBuilder::VERSION,
             'outputs' => ['predicted_spread' => 4.0, 'predicted_total' => 9.0, 'win_probability' => 0.7], 'model_metadata' => ['source' => 'frozen-canonical']], 'pregame_market' => ['available' => true, 'captured_at' => now()->toIso8601String(),
                 'consensus' => ['spread' => ['line' => -2.5], 'total' => ['line' => 8.0]]], 'home' => ['team_id' => $game->home_team_id, 'elo' => 1550], 'away' => ['team_id' => $game->away_team_id, 'elo' => 1490],
-            'pitching' => ['home' => ['elo' => 1600, 'espn_id' => '100'], 'away' => ['elo' => 1450, 'espn_id' => '200']]]]);
+            'pitching' => ['home' => ['elo' => 1600, 'espn_id' => '100'], 'away' => ['elo' => 1450, 'espn_id' => '200']]]];
+    if ($game instanceof Game) {
+        // Seed the real observed-input contract at insertion, never backstamp persisted evidence.
+        $inputAttributes = [...$inputAttributes, ...ObservedMlbGameFixture::snapshotAttributes($game, $inputAttributes['inputs'])];
+    }
+    $input = EventInputSnapshot::factory()->create($inputAttributes);
     $run = CalculationRun::factory()->create(['output_hash' => str_repeat('a', 64), 'sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
         'calculation_release_id' => $release->id, 'status' => 'succeeded']);
     $native = CanonicalPrediction::factory()->create(['output_hash' => str_repeat('a', 64), 'sport' => $sport, 'sport_event_id' => $event->id,

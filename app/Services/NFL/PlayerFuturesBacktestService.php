@@ -76,6 +76,7 @@ class PlayerFuturesBacktestService
                     'line' => $line,
                     'over_probability' => $overProbability,
                     'actual_over' => $actualOver,
+                    'schedule_coverage' => $projection['schedule_coverage'] ?? null,
                 ];
 
                 $weekRows[] = $row;
@@ -128,11 +129,17 @@ class PlayerFuturesBacktestService
      */
     protected function summarize(array $rows): array
     {
+        $coverage = [
+            'inferred_schedule_rows' => count(array_filter($rows, fn (array $row): bool => data_get($row, 'schedule_coverage.fallback_used') === true)),
+            'unexpected_schedule_rows' => count(array_filter($rows, fn (array $row): bool => data_get($row, 'schedule_coverage.status') === 'unexpected_inventory')),
+            'unknown_schedule_rows' => count(array_filter($rows, fn (array $row): bool => ! is_array($row['schedule_coverage'] ?? null))),
+        ];
         $settledRows = array_filter($rows, fn (array $row): bool => $row['actual_total'] !== null);
         $count = count($settledRows);
         $pendingCount = count($rows) - $count;
         if ($count === 0) {
             return [
+                ...$coverage,
                 'count' => 0,
                 'pending_count' => $pendingCount,
                 'mae' => null,
@@ -171,6 +178,7 @@ class PlayerFuturesBacktestService
         }
 
         return [
+            ...$coverage,
             'count' => $count,
             'pending_count' => $pendingCount,
             'mae' => round($absError / $count, 3),

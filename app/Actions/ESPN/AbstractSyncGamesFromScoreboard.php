@@ -3,10 +3,13 @@
 namespace App\Actions\ESPN;
 
 use App\DataTransferObjects\ESPN\GameData;
+use App\Models\MLB\Game;
 use App\Services\ESPN\BaseEspnService;
 use App\Services\GameFinalizationDispatcher;
 use App\Services\Sports\SportEventIdentitySynchronizer;
+use App\Support\EspnBasketballNeutralSite;
 use App\Support\EspnGameStatusResolver;
+use App\Support\MLB\MlbGameStart;
 use App\Support\NflGameStateGuard;
 use Illuminate\Database\Eloquent\Model;
 
@@ -145,6 +148,11 @@ abstract class AbstractSyncGamesFromScoreboard
         ]);
     }
 
+    protected function currentGameAttributes(Model $game, array $attributes): array
+    {
+        return $attributes;
+    }
+
     public function execute(string $date): int
     {
         $response = $this->espnService->getScoreboard($date);
@@ -164,10 +172,14 @@ abstract class AbstractSyncGamesFromScoreboard
             }
 
             $scoreboardEventIds[] = (string) $eventData['id'];
+            if (! EspnBasketballNeutralSite::valid($this->sportKey(), $eventData)) {
+                continue;
+            }
             $dto = $this->gameDtoFromResponse($eventData);
             [$homeTeam, $awayTeam] = $this->resolveTeams($dto, $eventData);
 
-            $attributes = $this->buildGameAttributes($dto, $eventData, $homeTeam, $awayTeam);
+            $attributes = EspnBasketballNeutralSite::attributes($this->sportKey(),
+                $this->buildGameAttributes($dto, $eventData, $homeTeam, $awayTeam), $eventData);
 
             if (! $homeTeam || ! $awayTeam) {
                 if (! $this->shouldStorePartialGame($attributes)) {
@@ -195,38 +207,29 @@ abstract class AbstractSyncGamesFromScoreboard
             }
 
             $existingGame = $gameModel::query()->where($uniqueKey, $dto->espnEventId)->first();
+            $identity = app(SportEventIdentitySynchronizer::class);
+            $reported = EspnBasketballNeutralSite::reported($this->sportKey(), $eventData);
+            $previousStatus = null;
             if ($existingGame) {
-                $attributes = $this->preserveExistingTeamSlots($attributes, $existingGame);
-                $attributes = NflGameStateGuard::preserve($existingGame, $attributes);
-                $attributes['status'] = $this->statusResolver->resolveForUpdate(
-                    (string) ($existingGame->status ?? ''),
-                    (string) ($attributes['status'] ?? ''),
-                    'scoreboard',
-                    $this->sportKey(),
-                );
-            } else {
-                $attributes['status'] = $this->statusResolver->resolveForCreate(
-                    (string) ($attributes['status'] ?? ''),
-                    'scoreboard',
-                    $this->sportKey(),
-                );
-            }
-            $attributes = $this->guardFinalStatusForSync($attributes, $existingGame, 'scoreboard');
-
-            if ($existingGame) {
-                $previousStatus = (string) ($existingGame->status ?? '');
-                if (! in_array($existingGame->status, GameData::finalStatuses(), true)) {
-                    $existingGame->update($attributes);
-                }
-                $this->touchSyncedGame($existingGame);
+                $identity->mutateAndSync($this->sportKey(), $existingGame, function (Model $locked) use ($attributes, $eventData, &$previousStatus): void {
+                    $previousStatus = (string) $locked->status;
+                    $updates = $this->preserveExistingTeamSlots($this->currentGameAttributes($locked, $attributes), $locked);
+                    $updates = NflGameStateGuard::preserve($locked, $updates);
+                    $updates['status'] = $this->statusResolver->resolveForUpdate((string) $locked->status, (string) ($updates['status'] ?? ''), 'scoreboard', $this->sportKey());
+                    $updates = $this->guardFinalStatusForSync($updates, $locked, 'scoreboard');
+                    if (! in_array($locked->status, GameData::finalStatuses(), true)) {
+                        $locked->update($locked instanceof Game ? MlbGameStart::prepare($locked, $updates) : $updates);
+                    }
+                    EspnBasketballNeutralSite::persist($this->sportKey(), $locked, $eventData);
+                    $this->touchSyncedGame($locked);
+                }, $reported);
                 $game = $existingGame->fresh();
-                app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game, $previousStatus);
             } else {
-                $game = $gameModel::query()->create($attributes);
-                app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game, null);
+                $attributes['status'] = $this->statusResolver->resolveForCreate((string) ($attributes['status'] ?? ''), 'scoreboard', $this->sportKey());
+                $attributes = $this->guardFinalStatusForSync($attributes, null, 'scoreboard');
+                $game = $identity->createAndSync($this->sportKey(), $gameModel, $attributes, $reported);
             }
-
-            app(SportEventIdentitySynchronizer::class)->sync($this->sportKey(), $game);
+            $game->getConnection()->afterCommit(fn () => app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game, $previousStatus));
 
             if ($game->home_team_id && $game->away_team_id) {
                 $this->updateLivePrediction->execute($game);
@@ -268,7 +271,7 @@ abstract class AbstractSyncGamesFromScoreboard
 
         foreach ($orphanedGames as $game) {
             $gameData = $this->espnService->getGame((string) $game->{$uniqueKey});
-            if (! is_array($gameData)) {
+            if (! is_array($gameData) || ! EspnBasketballNeutralSite::valid($this->sportKey(), $gameData)) {
                 usleep(300_000);
 
                 continue;
@@ -317,7 +320,7 @@ abstract class AbstractSyncGamesFromScoreboard
 
         foreach ($orphanedGames as $game) {
             $gameData = $this->espnService->getGame((string) $game->{$uniqueKey});
-            if (! is_array($gameData)) {
+            if (! is_array($gameData) || ! EspnBasketballNeutralSite::valid($this->sportKey(), $gameData)) {
                 usleep(300_000);
 
                 continue;
@@ -337,53 +340,64 @@ abstract class AbstractSyncGamesFromScoreboard
      */
     protected function updateGameFromSummary(array $gameData, Model $game): void
     {
-        $previousStatus = (string) ($game->status ?? '');
-
-        $header = $gameData['header'] ?? [];
-        $competition = $header['competitions'][0] ?? [];
-        $competitors = $competition['competitors'] ?? [];
-        $status = $competition['status'] ?? [];
-
-        $homeTeam = collect($competitors)->firstWhere('homeAway', 'home');
-        $awayTeam = collect($competitors)->firstWhere('homeAway', 'away');
-        $normalizedStatus = GameData::normalizeStatus((string) ($status['type']['name'] ?? 'scheduled'));
-        $resolvedStatus = $this->statusResolver->resolveForUpdate(
-            (string) ($game->status ?? ''),
-            $normalizedStatus,
-            'summary',
-            $this->sportKey(),
-        );
-
-        $updates = [
-            'status' => $normalizedStatus,
-            'home_score' => isset($homeTeam['score']) ? (int) $homeTeam['score'] : $game->home_score,
-            'away_score' => isset($awayTeam['score']) ? (int) $awayTeam['score'] : $game->away_score,
-            'home_linescores' => $homeTeam['linescores'] ?? $game->home_linescores,
-            'away_linescores' => $awayTeam['linescores'] ?? $game->away_linescores,
-            'period' => isset($status['period']) ? (int) $status['period'] : $game->period,
-            'game_clock' => $status['displayClock'] ?? $game->game_clock,
-        ];
-
-        $updates = NflGameStateGuard::preserve($game, $updates);
-        $updates['status'] = $resolvedStatus;
-
-        $summaryDate = $this->extractSummaryDate($header, $competition);
-        if ($summaryDate !== null) {
-            $dateParts = $this->summaryDateParts($summaryDate, $header, $competition);
-            if ($dateParts['game_date'] !== null) {
-                $updates['game_date'] = $dateParts['game_date'];
-            }
-            if ($dateParts['game_time'] !== null) {
-                $updates['game_time'] = $dateParts['game_time'];
-            }
+        if (! EspnBasketballNeutralSite::valid($this->sportKey(), $gameData)) {
+            return;
         }
-        $updates = $this->guardFinalStatusForSync($updates, $game, 'summary');
+        $previousStatus = null;
+        app(SportEventIdentitySynchronizer::class)->mutateAndSync($this->sportKey(), $game, function (Model $game) use ($gameData, &$previousStatus): void {
+            $previousStatus = (string) $game->status;
+            $header = $gameData['header'] ?? [];
+            $competition = $header['competitions'][0] ?? [];
+            $competitors = $competition['competitors'] ?? [];
+            $status = $competition['status'] ?? [];
 
-        $game->update($updates);
-        $this->touchSyncedGame($game);
-        app(SportEventIdentitySynchronizer::class)->sync($this->sportKey(), $game->fresh());
+            $homeTeam = collect($competitors)->firstWhere('homeAway', 'home');
+            $awayTeam = collect($competitors)->firstWhere('homeAway', 'away');
+            $normalizedStatus = GameData::normalizeStatus((string) ($status['type']['name'] ?? 'scheduled'));
+            $resolvedStatus = $this->statusResolver->resolveForUpdate(
+                (string) ($game->status ?? ''),
+                $normalizedStatus,
+                'summary',
+                $this->sportKey(),
+            );
 
-        app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game->fresh(), $previousStatus);
+            $updates = [
+                'status' => $normalizedStatus,
+                'home_score' => isset($homeTeam['score']) ? (int) $homeTeam['score'] : $game->home_score,
+                'away_score' => isset($awayTeam['score']) ? (int) $awayTeam['score'] : $game->away_score,
+                'home_linescores' => $homeTeam['linescores'] ?? $game->home_linescores,
+                'away_linescores' => $awayTeam['linescores'] ?? $game->away_linescores,
+                'period' => isset($status['period']) ? (int) $status['period'] : $game->period,
+                'game_clock' => $status['displayClock'] ?? $game->game_clock,
+            ];
+
+            $updates = EspnBasketballNeutralSite::attributes($this->sportKey(), $updates, $gameData);
+            $updates = NflGameStateGuard::preserve($game, $updates);
+            $updates['status'] = $resolvedStatus;
+
+            $summaryDate = $this->extractSummaryDate($header, $competition);
+            if ($summaryDate !== null) {
+                $dateParts = $this->summaryDateParts($summaryDate, $header, $competition);
+                if ($game instanceof Game) {
+                    $updates += array_intersect_key($dateParts, array_flip(MlbGameStart::FIELDS));
+                }
+                if ($game instanceof \App\Models\CFB\Game && array_key_exists('kickoff_observation', $dateParts)) {
+                    $updates['kickoff_observation'] = $dateParts['kickoff_observation'];
+                }
+                if ($dateParts['game_date'] !== null) {
+                    $updates['game_date'] = $dateParts['game_date'];
+                }
+                if ($dateParts['game_time'] !== null) {
+                    $updates['game_time'] = $dateParts['game_time'];
+                }
+            }
+            $updates = $this->guardFinalStatusForSync($updates, $game, 'summary');
+
+            $game->update($game instanceof Game ? MlbGameStart::prepare($game, $updates) : $updates);
+            $this->touchSyncedGame($game);
+        }, EspnBasketballNeutralSite::reported($this->sportKey(), $gameData));
+        $game = $game->fresh();
+        $game->getConnection()->afterCommit(fn () => app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game, $previousStatus));
     }
 
     protected function touchSyncedGame(Model $game): void

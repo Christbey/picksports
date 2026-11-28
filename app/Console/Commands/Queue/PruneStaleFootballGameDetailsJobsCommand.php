@@ -6,12 +6,9 @@ use App\Jobs\ESPN\CFB\FetchGameDetails as FetchCfbGameDetails;
 use App\Jobs\ESPN\NFL\FetchGameDetails as FetchNflGameDetails;
 use App\Models\CFB\Game as CfbGame;
 use App\Models\NFL\Game as NflGame;
-use Illuminate\Bus\UniqueLock;
-use Illuminate\Cache\RedisStore;
+use App\Support\Queue\BoundedReadyQueueScripts;
 use Illuminate\Console\Command;
-use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Queue\RedisQueue;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 
 class PruneStaleFootballGameDetailsJobsCommand extends Command
@@ -45,62 +42,75 @@ class PruneStaleFootballGameDetailsJobsCommand extends Command
         $redis = $queue->getConnection();
         $queueKey = $queue->getQueue('default');
         $notifyKey = $queueKey.':notify';
-        $rawPayloads = $redis->lrange($queueKey, 0, -1);
-        $jobsByUuid = [];
-        $report = [];
+        try {
+            $snapshot = $redis->eval(BoundedReadyQueueScripts::snapshot(), 1, $queueKey);
+        } catch (\Throwable) {
+            $this->error('Unable to inspect the ready queue; no jobs removed.');
 
-        foreach (self::TARGETS as $jobClass => $gameClass) {
-            $payloads = collect($rawPayloads)
-                ->map(fn (string $raw): array => ['raw' => $raw, 'payload' => json_decode($raw, true)])
-                ->filter(fn (array $row): bool => data_get($row, 'payload.displayName') === $jobClass)
-                ->values();
+            return self::FAILURE;
+        }
+        $rawPayloads = $this->validatedSnapshot($snapshot);
+        if ($rawPayloads === null) {
+            $this->error('Ready queue snapshot exceeds safety bounds or is invalid; no jobs removed.');
 
-            $jobs = $payloads->mapWithKeys(function (array $row) use ($jobClass): array {
-                $uuid = data_get($row, 'payload.uuid');
-                $serialized = data_get($row, 'payload.data.command');
-                if (! is_string($uuid) || ! is_string($serialized)) {
-                    return [];
+            return self::FAILURE;
+        }
+        $records = [];
+        $seenUuids = [];
+        foreach ($rawPayloads as $raw) {
+            $payload = json_decode($raw, true);
+            $jobClass = data_get($payload, 'displayName');
+            if (! is_string($jobClass) || ! array_key_exists($jobClass, self::TARGETS)) {
+                continue;
+            }
+            $uuid = data_get($payload, 'uuid');
+            $serialized = data_get($payload, 'data.command');
+            try {
+                if (! is_string($uuid) || $uuid === '' || ! is_string($serialized)
+                    || (isset($seenUuids[$uuid]) && $seenUuids[$uuid] !== $raw)) {
+                    throw new \UnexpectedValueException;
                 }
+                $job = @unserialize($serialized, ['allowed_classes' => [$jobClass]]);
+                if (! $job instanceof $jobClass || ! is_string($job->uniqueId()) || $job->uniqueId() === '') {
+                    throw new \UnexpectedValueException;
+                }
+            } catch (\Throwable) {
+                $this->error('A target job payload is malformed or has ambiguous identity; no jobs removed.');
 
-                $job = unserialize($serialized, ['allowed_classes' => [$jobClass]]);
-
-                return $job instanceof $jobClass ? [$uuid => $job] : [];
-            });
-            $eventIds = $jobs
-                ->map(fn ($job): string => (string) $job->uniqueId())
-                ->unique()
-                ->values();
-            $games = $gameClass::query()
-                ->whereIn('espn_event_id', $eventIds->all())
+                return self::FAILURE;
+            }
+            $seenUuids[$uuid] = $raw;
+            $records[] = ['raw' => $raw, 'class' => $jobClass, 'event_id' => $job->uniqueId()];
+        }
+        $removePayloads = [];
+        $report = [];
+        foreach (self::TARGETS as $jobClass => $gameClass) {
+            $jobs = collect($records)->where('class', $jobClass);
+            $games = $jobs->isEmpty() ? collect() : $gameClass::query()
+                ->whereIn('espn_event_id', $jobs->pluck('event_id')->unique()->values()->all())
                 ->get(['espn_event_id', 'game_date'])
                 ->keyBy(fn ($game): string => (string) $game->espn_event_id);
-
-            $remove = $jobs->filter(function ($job) use ($games, $lowerDate, $upperDate): bool {
-                $game = $games->get((string) $job->uniqueId());
+            $unmapped = $stale = 0;
+            foreach ($jobs as $job) {
+                $game = $games->get($job['event_id']);
                 if ($game === null || $game->game_date === null) {
-                    return false;
+                    $unmapped++;
+
+                    continue;
                 }
-
                 $gameDate = $game->game_date->toDateString();
-
-                return $gameDate < $lowerDate || $gameDate > $upperDate;
-            });
-            foreach ($remove as $uuid => $job) {
-                $jobsByUuid[(string) $uuid] = $job;
+                if ($gameDate < $lowerDate || $gameDate > $upperDate) {
+                    $removePayloads[] = $job['raw'];
+                    $stale++;
+                }
             }
-
-            $report[] = [
-                class_basename($gameClass),
-                $payloads->count(),
-                $remove->count(),
-                $jobs->count() - $games->count(),
-            ];
+            $report[] = [class_basename($gameClass), $jobs->count(), $stale, $unmapped];
         }
 
         $this->line("Preserving game-detail jobs dated {$lowerDate} through {$upperDate}.");
         $this->table(['Sport game model', 'Ready jobs', 'Outside window', 'Unmapped'], $report);
 
-        if ($jobsByUuid === []) {
+        if ($removePayloads === []) {
             $this->info('No stale football game-detail jobs found.');
 
             return self::SUCCESS;
@@ -112,72 +122,43 @@ class PruneStaleFootballGameDetailsJobsCommand extends Command
             return self::SUCCESS;
         }
 
-        $lua = <<<'LUA'
-local remove = {}
-for index = 1, #ARGV do
-    remove[ARGV[index]] = true
-end
+        try {
+            $result = $redis->eval(BoundedReadyQueueScripts::remove(), 2, $queueKey, $notifyKey, ...$removePayloads);
+        } catch (\Throwable) {
+            $this->error('Ready queue pruning failed; inspect the queue before retrying.');
 
-local values = redis.call('lrange', KEYS[1], 0, -1)
-redis.call('del', KEYS[1])
-local removed = {}
+            return self::FAILURE;
+        }
+        if (! is_array($result) || ($result[0] ?? null) !== 'ok' || ! is_int($result[1] ?? null)
+            || $result[1] < 0 || $result[1] > count($removePayloads)) {
+            $this->error('Ready queue changed or exceeded safety bounds; no successful prune reported.');
 
-for _, value in ipairs(values) do
-    local decoded, payload = pcall(cjson.decode, value)
-    if decoded and payload['uuid'] and remove[payload['uuid']] then
-        table.insert(removed, payload['uuid'])
-    else
-        redis.call('rpush', KEYS[1], value)
-    end
-end
-
--- RedisQueue writes one anonymous notification token for every ready job.
--- Remove the same number of tokens as payloads while this queue mutation is
--- still atomic, without disturbing delayed, reserved, or unrelated jobs.
-local notifyCount = redis.call('llen', KEYS[2])
-local trimCount = math.min(#removed, notifyCount)
-if trimCount > 0 then
-    redis.call('ltrim', KEYS[2], trimCount, -1)
-end
-
-return removed
-LUA;
-
-        $removedUuids = $redis->eval($lua, 2, $queueKey, $notifyKey, ...array_keys($jobsByUuid));
-        $removedJobs = collect($removedUuids)
-            ->map(fn (string $uuid) => $jobsByUuid[$uuid] ?? null)
-            ->filter()
-            ->unique(fn ($job): string => get_class($job).':'.$job->uniqueId())
-            ->values();
-
-        $this->releaseUniqueLocks($removedJobs->all());
-        $this->info('Removed '.count($removedUuids).' stale ready job(s) and released their unique locks.');
+            return self::FAILURE;
+        }
+        $this->info('Removed '.$result[1].' stale ready job(s); unique locks retained until natural expiry.');
 
         return self::SUCCESS;
     }
 
-    /**
-     * @param  list<object>  $jobs
-     */
-    private function releaseUniqueLocks(array $jobs): void
+    /** @return list<string>|null */
+    private function validatedSnapshot(mixed $snapshot): ?array
     {
-        $store = Cache::getStore();
-        if ($store instanceof RedisStore) {
-            $keys = collect($jobs)
-                ->map(fn (object $job): string => $store->getPrefix().UniqueLock::getKey($job))
-                ->unique()
-                ->values();
-
-            foreach ($keys->chunk(500) as $chunk) {
-                $store->connection()->del(...$chunk->all());
+        if (! is_array($snapshot) || ($snapshot[0] ?? null) !== 'ok' || ! is_int($snapshot[1] ?? null)
+            || ! is_int($snapshot[2] ?? null) || ! is_array($snapshot[3] ?? null)
+            || $snapshot[1] !== count($snapshot[3]) || $snapshot[1] > BoundedReadyQueueScripts::MAX_JOBS) {
+            return null;
+        }
+        $bytes = 0;
+        foreach ($snapshot[3] as $raw) {
+            if (! is_string($raw) || strlen($raw) > BoundedReadyQueueScripts::MAX_PAYLOAD_BYTES) {
+                return null;
             }
-
-            return;
+            $bytes += strlen($raw);
+            if ($bytes > BoundedReadyQueueScripts::MAX_TOTAL_BYTES) {
+                return null;
+            }
         }
 
-        $uniqueLock = new UniqueLock(app(CacheRepository::class));
-        foreach ($jobs as $job) {
-            $uniqueLock->release($job);
-        }
+        return $bytes === $snapshot[2] ? array_values($snapshot[3]) : null;
     }
 }

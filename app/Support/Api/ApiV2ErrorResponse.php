@@ -83,16 +83,21 @@ class ApiV2ErrorResponse
             return $response;
         }
 
+        if ($response->getStatusCode() >= 500) {
+            return $this->jsonResponse($response, [
+                'error' => [
+                    'code' => $this->code($response->getStatusCode()),
+                    'message' => 'An unexpected error occurred.',
+                    'request_id' => $requestId,
+                ],
+                'request_id' => $requestId,
+                'message' => 'An unexpected error occurred.',
+            ]);
+        }
+
         $payload = $this->payload($response);
 
         if ($this->isStandardEnvelope($payload)) {
-            if ($response->getStatusCode() >= 500) {
-                $payload['error']['code'] = $this->code($response->getStatusCode());
-                $payload['error']['message'] = 'An unexpected error occurred.';
-                $payload['message'] = 'An unexpected error occurred.';
-                unset($payload['error']['fields'], $payload['errors'], $payload['exception'], $payload['trace']);
-            }
-
             $payload['request_id'] = $requestId;
             $payload['error']['request_id'] = $requestId;
 

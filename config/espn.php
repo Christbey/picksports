@@ -25,6 +25,11 @@ return [
     | summaries and play-by-play are intentionally never cached.
     |
     */
+    'transport' => [
+        'allowed_hosts' => ['site.api.espn.com', 'sports.core.api.espn.com', 'cdn.espn.com', 'site.web.api.espn.com'],
+        'maximum_bytes' => 20 * 1024 * 1024,
+    ],
+
     'cache' => [
         'enabled' => env('ESPN_CACHE_ENABLED', true),
         'ttl_minutes' => env('ESPN_CACHE_TTL_MINUTES', 5),

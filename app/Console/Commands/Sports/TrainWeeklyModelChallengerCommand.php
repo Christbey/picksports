@@ -10,6 +10,8 @@ class TrainWeeklyModelChallengerCommand extends Command
 {
     protected $signature = 'sports:train-weekly-model-challenger
         {sport : Sport to train: mlb or nfl}
+        {--worker= : Prepare inputs for this worker UUID instead of executing locally}
+        {--resume= : Resume a prepared cycle UUID without exporting or promoting the previous challenger}
         {--force : Run even when weekly training is disabled or the training fingerprint is unchanged}
         {--no-promote : Evaluate the active challenger without promoting it}
         {--retain-workdir : Keep the local dataset and Python run directory after successful registration}';
@@ -19,12 +21,31 @@ class TrainWeeklyModelChallengerCommand extends Command
     public function handle(WeeklyChallengerTrainingService $training): int
     {
         try {
-            $result = $training->run(
-                sport: strtolower((string) $this->argument('sport')),
-                force: (bool) $this->option('force'),
-                allowPromotion: ! (bool) $this->option('no-promote'),
-                retainWorkDirectory: (bool) $this->option('retain-workdir'),
-            );
+            if ($this->option('worker') && $this->option('resume')) {
+                throw new \RuntimeException('Choose either --worker or --resume.');
+            }
+            if ($this->option('worker')) {
+                $result = $training->run(
+                    strtolower((string) $this->argument('sport')),
+                    (bool) $this->option('force'),
+                    ! (bool) $this->option('no-promote'),
+                    (bool) $this->option('retain-workdir'),
+                    (string) $this->option('worker'),
+                );
+            } elseif ($this->option('resume')) {
+                $result = $training->resume(
+                    strtolower((string) $this->argument('sport')),
+                    (string) $this->option('resume'),
+                    (bool) $this->option('retain-workdir'),
+                );
+            } else {
+                $result = $training->run(
+                    sport: strtolower((string) $this->argument('sport')),
+                    force: (bool) $this->option('force'),
+                    allowPromotion: ! (bool) $this->option('no-promote'),
+                    retainWorkDirectory: (bool) $this->option('retain-workdir'),
+                );
+            }
         } catch (Throwable $exception) {
             $this->error($exception->getMessage());
 
@@ -48,7 +69,7 @@ class TrainWeeklyModelChallengerCommand extends Command
             }
         }
 
-        return in_array($status, ['completed', 'skipped', 'disabled'], true)
+        return in_array($status, ['completed', 'skipped', 'disabled', 'prepared'], true)
             ? self::SUCCESS
             : self::FAILURE;
     }

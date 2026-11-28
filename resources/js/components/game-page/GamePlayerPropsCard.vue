@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/card';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { useApiV2Resource } from '@/composables/useApiV2Resource';
+import { storedTimestamp } from '@/lib/dataFreshness';
 import type { ApiV2PlayerProp } from '@/types';
 
 type PlayerPropRecommendation = {
@@ -25,7 +26,8 @@ type PlayerPropRecommendation = {
     market: string;
     line: number;
     recommendation: 'Over' | 'Under';
-    odds: number;
+    odds: number | null;
+    fetched_at: string | null;
     confidence: number;
     stats: {
         season_avg?: number | null;
@@ -98,12 +100,10 @@ const filteredRecommendations = computed(() => {
 });
 
 const shouldRender = computed(
-    () => loading.value || filteredRecommendations.value.length > 0,
+    () => loading.value || !!error.value || propsResource.data.value !== null,
 );
 
-const strongestRecommendation = computed(
-    () => recommendations.value[0] ?? null,
-);
+const latestRecommendation = computed(() => recommendations.value[0] ?? null);
 
 const normalizeSide = (
     side: ApiV2PlayerProp['recommendation'] extends infer T
@@ -141,38 +141,39 @@ const teamLabel = (prop: ApiV2PlayerProp) => {
 };
 
 const oddsForSide = (prop: ApiV2PlayerProp, side: 'Over' | 'Under') =>
-    Number(side === 'Over' ? prop.over_price : prop.under_price) || 0;
+    finite(side === 'Over' ? prop.over_price : prop.under_price);
 
 const confidenceScore = (prop: ApiV2PlayerProp) =>
     Math.round(Number(prop.recommendation?.confidence_score ?? 0));
 
+const finite = (value: unknown): number | null => {
+    if (typeof value !== 'number' && typeof value !== 'string') return null;
+    if (typeof value === 'string' && value.trim() === '') return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+};
+const percent = (value: unknown): boolean => {
+    const number = finite(value);
+    return number !== null && number >= 0 && number <= 100;
+};
 const hasPropRecommendation = (prop: ApiV2PlayerProp): boolean => {
-    const recommendation = prop.recommendation;
-
-    return !!(
-        recommendation?.side &&
-        recommendation.confidence_score !== null &&
-        recommendation.confidence_score !== undefined &&
-        recommendation.predicted_over_probability !== null &&
-        recommendation.predicted_over_probability !== undefined &&
-        recommendation.market_over_probability !== null &&
-        recommendation.market_over_probability !== undefined &&
-        recommendation.edge_probability !== null &&
-        recommendation.edge_probability !== undefined &&
-        recommendation.data_quality_score !== null &&
-        recommendation.data_quality_score !== undefined
+    const rec = prop.recommendation;
+    return (
+        !!rec &&
+        ['over', 'under'].includes(String(rec.side).toLowerCase()) &&
+        finite(prop.line) !== null &&
+        [
+            rec.confidence_score,
+            rec.predicted_over_probability,
+            rec.market_over_probability,
+            rec.data_quality_score,
+        ].every(percent) &&
+        finite(rec.edge_probability) !== null
     );
 };
-
-const edgeScore = (prop: ApiV2PlayerProp) => {
-    const edge = prop.recommendation?.edge_probability;
-
-    if (edge === null || edge === undefined) {
-        return 0;
-    }
-
-    return Math.abs(Number(edge)) <= 1 ? Number(edge) * 100 : Number(edge);
-};
+// Producer stores probabilities/scores in percentage units and edge in percentage points.
+const edgeScore = (prop: ApiV2PlayerProp) =>
+    finite(prop.recommendation?.edge_probability) ?? 0;
 
 const mapPlayerProp = (prop: ApiV2PlayerProp): PlayerPropRecommendation => {
     const side = normalizeSide(prop.recommendation?.side);
@@ -193,6 +194,8 @@ const mapPlayerProp = (prop: ApiV2PlayerProp): PlayerPropRecommendation => {
         line: Number(prop.line ?? 0),
         recommendation: side,
         odds: oddsForSide(prop, side),
+        fetched_at:
+            typeof prop.fetched_at === 'string' ? prop.fetched_at : null,
         confidence: confidenceScore(prop),
         stats: {
             season_avg: null,
@@ -240,11 +243,26 @@ watch(markets, (options) => {
 const marketLabel = (value: string) =>
     markets.value.find((market) => market.value === value)?.label ?? value;
 
-const formatOdds = (odds: number) => (odds > 0 ? `+${odds}` : String(odds));
+const formatOdds = (odds: number | null) =>
+    odds === null || odds === 0
+        ? 'Price unavailable'
+        : odds > 0
+          ? `+${odds}`
+          : String(odds);
+const quoteFreshness = (value: string | null) => {
+    const timestamp = value === null ? NaN : Date.parse(value);
+    if (!Number.isFinite(timestamp))
+        return 'Stored quote · observation time unavailable';
+    return `Stored quote · ${storedTimestamp(value)}${Date.now() - timestamp > 36 * 60 * 60 * 1000 ? ' · Stale (older than 36 hours)' : ''}`;
+};
 
 const signedNumber = (value: number | null | undefined, decimals = 1) => {
-    if (value === null || value === undefined || Number.isNaN(Number(value))) {
-        return '0.0';
+    if (
+        value === null ||
+        value === undefined ||
+        !Number.isFinite(Number(value))
+    ) {
+        return 'Unavailable';
     }
 
     const numeric = Number(value);
@@ -269,13 +287,17 @@ const confidenceLabel = (rec: PlayerPropRecommendation) => {
 };
 
 const formatPercent = (value: number | null | undefined) => {
-    if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    if (
+        value === null ||
+        value === undefined ||
+        !Number.isFinite(Number(value))
+    ) {
         return '-';
     }
 
     const numeric = Number(value);
 
-    return `${(Math.abs(numeric) <= 1 ? numeric * 100 : numeric).toFixed(1)}%`;
+    return `${numeric.toFixed(1)}%`;
 };
 
 onMounted(() => {
@@ -297,33 +319,32 @@ watch(
                 class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
             >
                 <div>
-                    <div class="ui-kicker">Pregame Props</div>
+                    <div class="ui-kicker">Stored Player Props</div>
                     <CardTitle class="tracking-tight">{{ title }}</CardTitle>
                     <CardDescription>
-                        Model probability, market price, edge, and data quality
-                        in one place.
+                        Stored recommendation evidence and quotes. Availability
+                        is unverified. Model and market percentages below refer
+                        to the over side.
                     </CardDescription>
                 </div>
 
                 <div
-                    v-if="strongestRecommendation"
+                    v-if="latestRecommendation && !loading"
                     class="ui-surface-subtle min-w-0 p-3 lg:w-72"
                 >
                     <p class="text-xs font-medium text-muted-foreground">
-                        Strongest prop
+                        Latest stored prop
                     </p>
                     <p class="mt-1 truncate font-semibold">
-                        {{ strongestRecommendation.player.name }}
+                        {{ latestRecommendation.player.name }}
                     </p>
                     <div class="mt-1 flex flex-wrap items-center gap-2 text-sm">
-                        <span
-                            :class="recommendationTone(strongestRecommendation)"
-                        >
-                            {{ strongestRecommendation.recommendation }}
-                            {{ strongestRecommendation.line }}
+                        <span :class="recommendationTone(latestRecommendation)">
+                            {{ latestRecommendation.recommendation }}
+                            {{ latestRecommendation.line }}
                         </span>
                         <span class="text-muted-foreground">
-                            {{ strongestRecommendation.market }}
+                            {{ latestRecommendation.market }}
                         </span>
                     </div>
                 </div>
@@ -357,17 +378,26 @@ watch(
                 Loading player props...
             </div>
 
-            <div
-                v-else-if="error && filteredRecommendations.length > 0"
-                class="py-8 text-center"
-            >
+            <div v-else-if="error" class="py-8 text-center">
                 <BarChart3
                     class="mx-auto mb-3 h-10 w-10 text-muted-foreground"
                 />
                 <p class="font-medium">Player props unavailable</p>
                 <p class="text-sm text-muted-foreground">{{ error }}</p>
+                <Button
+                    variant="outline"
+                    class="mt-3"
+                    @click="propsResource.execute()"
+                    >Retry player props</Button
+                >
             </div>
 
+            <p
+                v-else-if="filteredRecommendations.length === 0"
+                class="text-sm text-muted-foreground"
+            >
+                No stored recommendations are available for this selection.
+            </p>
             <div v-else class="space-y-2">
                 <div
                     v-for="rec in filteredRecommendations"
@@ -401,6 +431,9 @@ watch(
                             {{ rec.market }} • {{ rec.recommendation }}
                             {{ rec.line }} • {{ formatOdds(rec.odds) }}
                         </p>
+                        <p class="mt-1 text-xs text-muted-foreground">
+                            {{ quoteFreshness(rec.fetched_at) }}
+                        </p>
                     </div>
 
                     <div class="grid grid-cols-3 gap-2 text-sm">
@@ -419,7 +452,11 @@ watch(
                         <div>
                             <p class="text-xs text-muted-foreground">Quality</p>
                             <p class="font-medium">
-                                {{ formatPercent(rec.data_quality_score) }}
+                                {{
+                                    rec.data_quality_score == null
+                                        ? 'Unavailable'
+                                        : `${Number(rec.data_quality_score).toFixed(1)}/100`
+                                }}
                             </p>
                         </div>
                     </div>
@@ -427,7 +464,7 @@ watch(
                     <div class="flex items-center gap-2 md:justify-end">
                         <Badge variant="secondary">
                             {{ confidenceLabel(rec) }}
-                            {{ rec.confidence }}%
+                            {{ rec.confidence }}/100
                         </Badge>
                         <Badge
                             variant="outline"
@@ -437,7 +474,7 @@ watch(
                                     : 'border-red-500/30 text-red-600 dark:text-red-400'
                             "
                         >
-                            Edge {{ signedNumber(rec.edge) }}
+                            Edge {{ signedNumber(rec.edge) }} pp
                         </Badge>
                     </div>
                 </div>

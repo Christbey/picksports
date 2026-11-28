@@ -4,6 +4,8 @@ namespace App\Services\OddsApi;
 
 use App\Models\GameOddsSnapshot;
 use App\Models\MarketQuote;
+use App\Models\MLB\Game;
+use App\Support\MLB\MlbQuoteTime;
 use App\Support\Odds\AmericanOdds;
 use App\Support\Odds\MarketSpread;
 use Illuminate\Database\Eloquent\Collection;
@@ -130,6 +132,16 @@ class MarketQuoteRecorder
             'unknown_start_quotes' => 0,
             'issues' => [],
         ];
+        $mlbGame = null;
+        if ($snapshot->sport === 'mlb') {
+            foreach ([new Game, new MarketQuote] as $model) {
+                if ($model->getConnection()->getName() !== $snapshot->getConnection()->getName()) {
+                    throw new \RuntimeException('MLB quote normalization requires one coherent database connection.');
+                }
+            }
+            // One current game lookup per snapshot, never one query per outcome.
+            $mlbGame = Game::query()->lockForUpdate()->find($snapshot->game_id);
+        }
         $homeTeam = $this->normalizedName($oddsData['home_team'] ?? null);
         $awayTeam = $this->normalizedName($oddsData['away_team'] ?? null);
         $bookmakers = $oddsData['bookmakers'] ?? null;
@@ -262,6 +274,7 @@ class MarketQuoteRecorder
                             $outcome['implied_probability'] !== null && $probabilitySum > 0.0
                                 ? $outcome['implied_probability'] / $probabilitySum
                                 : null,
+                            $mlbGame,
                         );
                         $result['rows'][] = $row;
                         $result['quotes_normalized']++;
@@ -393,6 +406,7 @@ class MarketQuoteRecorder
         array $outcome,
         ?float $bookmakerHomeLine,
         ?float $noVigProbability,
+        ?Game $mlbGame = null,
     ): array {
         $bookmakerKey = $this->nullableString($bookmaker['key'] ?? null);
         $bookmakerTitle = $this->nullableString($bookmaker['title'] ?? null);
@@ -409,7 +423,7 @@ class MarketQuoteRecorder
             $outcome['price'],
         ];
 
-        return [
+        $row = [
             'game_odds_snapshot_id' => $snapshot->getKey(),
             'sport' => $snapshot->sport,
             'game_table' => $snapshot->game_table,
@@ -461,6 +475,14 @@ class MarketQuoteRecorder
                 'raw_outcome' => $outcome['raw'],
             ],
         ];
+        if ($snapshot->sport === 'mlb') {
+            $row['metadata']['_mlb_time'] = data_get($snapshot->market_context, '_mlb_time');
+            $row['metadata']['_mlb_quote_value_hash'] = MlbQuoteTime::quoteValueHash($row);
+            $row['is_pregame'] = $mlbGame === null || MlbQuoteTime::marker($mlbGame, $snapshot) === null
+                ? null : MlbQuoteTime::pregame($mlbGame, $snapshot);
+        }
+
+        return $row;
     }
 
     private function side(mixed $name, ?string $homeTeam, ?string $awayTeam): string

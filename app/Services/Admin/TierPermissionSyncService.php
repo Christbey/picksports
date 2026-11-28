@@ -5,6 +5,8 @@ namespace App\Services\Admin;
 use App\Models\SubscriptionTier;
 use App\Support\PredictionDataPermissions;
 use App\Support\SportPredictionAccess;
+use Illuminate\Validation\ValidationException;
+use LogicException;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -15,19 +17,34 @@ class TierPermissionSyncService
 
     public function syncTierRolePermissions(SubscriptionTier $tier): Role
     {
-        $this->permissions->forgetCachedPermissions();
+        $connection = $tier->getConnection();
+        if ($connection !== (new SubscriptionTier)->getConnection()
+            || $connection !== (new Role)->getConnection()
+            || $connection !== (new Permission)->getConnection()) {
+            throw new LogicException('Tier permission synchronization requires one primary database connection.');
+        }
 
-        $guardName = (string) config('auth.defaults.guard', 'web');
-        $role = Role::query()->firstOrCreate([
-            'name' => $tier->slug,
-            'guard_name' => $guardName,
-        ]);
+        return $connection->transaction(function () use ($tier): Role {
+            if ($tier->exists) {
+                $tier = SubscriptionTier::query()->lockForUpdate()->findOrFail($tier->id);
+            }
+            if (in_array(strtolower(trim($tier->slug)), ['admin', 'super-admin', 'super_admin', strtolower((string) config('founding_users.role', 'founding_user'))], true)) {
+                throw ValidationException::withMessages(['slug' => 'This identifier is reserved for an independent access role.']);
+            }
+            $this->permissions->forgetCachedPermissions();
 
-        $permissionNames = $this->resolvePermissionNamesForTier($tier);
-        $role->syncPermissions($permissionNames);
-        $this->syncFoundingRolePermissionsFromTier($tier, $permissionNames, $guardName);
+            $guardName = (string) config('auth.defaults.guard', 'web');
+            $role = Role::query()->firstOrCreate([
+                'name' => $tier->slug,
+                'guard_name' => $guardName,
+            ]);
 
-        return $role;
+            $permissionNames = $this->resolvePermissionNamesForTier($tier);
+            $role->syncPermissions($permissionNames);
+            $this->syncFoundingRolePermissionsFromTier($tier, $permissionNames, $guardName);
+
+            return $role;
+        });
     }
 
     /**

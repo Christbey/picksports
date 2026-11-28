@@ -6,6 +6,7 @@ use App\Models\CalculationRelease;
 use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
 use App\Models\EventInputSnapshot;
+use App\Models\MLB\Game;
 use App\Models\MLB\PickCandidate;
 use App\Models\MLB\Prediction;
 use App\Models\PredictionMarket;
@@ -27,6 +28,7 @@ use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\Support\ObservedMlbGameFixture;
 
 beforeEach(function () {
     $this->travelTo(now()->setDate(2026, 10, 28)->setTime(10, 0));
@@ -64,13 +66,20 @@ function nativeBettingWorkflowFixture(string $sport = 'mlb', bool $pitching = tr
         'odds_updated_at' => now(),
         ...($sport === 'mlb' ? ['probable_home_pitcher_espn_id' => '111', 'probable_away_pitcher_espn_id' => '222'] : []),
     ]);
+    if ($game instanceof Game) {
+        $game = ObservedMlbGameFixture::observe($game, $start);
+    }
     $release = CalculationRelease::factory()->approved()->create(['sport' => $sport, 'phase' => 'pregame']);
-    $snapshot = EventInputSnapshot::factory()->create([
+    $snapshotAttributes = [
         'sport' => $sport, 'sport_event_id' => $event->id,
         'inputs' => ['home' => ['elo' => 1540], 'away' => ['elo' => 1500],
             'pregame_market' => ['available' => true, 'consensus' => ['spread' => ['line' => -1.5], 'total' => ['line' => 8.5]]],
             ...($pitching ? ['pitching' => ['home' => ['elo' => 1600], 'away' => ['elo' => 1450]]] : [])],
-    ]);
+    ];
+    if ($game instanceof Game) {
+        $snapshotAttributes = ObservedMlbGameFixture::snapshotAttributes($game, $snapshotAttributes['inputs']);
+    }
+    $snapshot = EventInputSnapshot::factory()->create($snapshotAttributes);
     $run = CalculationRun::factory()->create(['output_hash' => str_repeat('a', 64),
         'sport_event_id' => $event->id, 'event_input_snapshot_id' => $snapshot->id,
         'calculation_release_id' => $release->id, 'status' => 'succeeded',

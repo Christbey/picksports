@@ -7,14 +7,18 @@ use App\Http\Requests\Admin\PlayerPropCardExportIndexRequest;
 use App\Http\Resources\Api\V2\CanonicalSportPredictionResource;
 use App\Http\Resources\BettingRecommendationResource;
 use App\Models\CBB\TournamentForecast as CbbTournamentForecast;
+use App\Models\MLB\Game as MlbGame;
 use App\Models\MLB\PlayoffForecast as MlbPlayoffForecast;
 use App\Models\NBA\PlayoffForecast as NbaPlayoffForecast;
 use App\Services\Api\V2\CanonicalPredictionPresentationService;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
+use App\Support\MLB\MlbGameStart;
+use App\Support\Sports\GameDateTimePresenter;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -124,7 +128,7 @@ class PlayerPropCardExportController extends Controller
                 ->map(fn ($prediction) => [
                     'id' => $prediction['game_id'],
                     'label' => $prediction['away_team'].' @ '.$prediction['home_team'],
-                    'date' => $prediction['game']['date'], 'time' => $prediction['game']['time'],
+                    'date' => $prediction['game']['date'], 'time' => $prediction['game']['time'], 'starts_at' => $prediction['game']['starts_at'],
                 ])->unique('id')->values()->all();
         }
 
@@ -149,13 +153,15 @@ class PlayerPropCardExportController extends Controller
                 $home = $game->homeTeam->abbreviation ?? $game->homeTeam->name ?? 'Home';
                 $away = $game->awayTeam->abbreviation ?? $game->awayTeam->name ?? 'Away';
                 $date = optional($game->game_date)->format('Y-m-d');
-                $time = optional($game->game_date)->format('g:i A');
+                $startsAt = $this->exportStartsAt($game);
+                $time = $this->exportStartTime($startsAt);
 
                 return [
                     'id' => $game->id,
                     'label' => "{$away} @ {$home}",
                     'date' => $date,
                     'time' => $time,
+                    'starts_at' => $startsAt,
                 ];
             })
             ->filter()
@@ -192,10 +198,10 @@ class PlayerPropCardExportController extends Controller
 
             $homeName = $home?->abbreviation ?? $home?->name ?? 'Home';
             $awayName = $away?->abbreviation ?? $away?->name ?? 'Away';
-            $winProbability = (float) ($prediction->win_probability ?? 0.5);
-            $homeWinPct = $winProbability <= 1 ? $winProbability * 100 : $winProbability;
-            $pickSide = $homeWinPct >= 50 ? 'Home' : 'Away';
-            $pickTeam = $pickSide === 'Home' ? $homeName : $awayName;
+            $startsAt = $this->exportStartsAt($game);
+            $homeWinPct = $this->nullableHomeProbability($prediction->win_probability);
+            $pickSide = $homeWinPct === null ? null : ($homeWinPct >= 50 ? 'Home' : 'Away');
+            $pickTeam = $pickSide === null ? null : ($pickSide === 'Home' ? $homeName : $awayName);
 
             return [
                 'id' => $prediction->id,
@@ -206,12 +212,13 @@ class PlayerPropCardExportController extends Controller
                     'home_team' => $homeName,
                     'away_team' => $awayName,
                     'date' => optional($game?->game_date)->format('Y-m-d'),
-                    'time' => optional($game?->game_date)->format('g:i A'),
+                    'time' => $this->exportStartTime($startsAt),
+                    'starts_at' => $startsAt,
                 ],
                 'predicted_spread' => $prediction->predicted_spread,
                 'predicted_total' => $prediction->predicted_total,
-                'win_probability' => round($homeWinPct, 1),
-                'confidence' => round((float) ($prediction->confidence_score ?? 0), 1),
+                'win_probability' => $homeWinPct,
+                'confidence' => is_numeric($prediction->confidence_score) && is_finite((float) $prediction->confidence_score) ? round((float) $prediction->confidence_score, 1) : null,
                 'home_elo' => $prediction->home_elo ?? $prediction->home_team_elo ?? $prediction->home_combined_elo,
                 'away_elo' => $prediction->away_elo ?? $prediction->away_team_elo ?? $prediction->away_combined_elo,
                 'pick_side' => $pickSide,
@@ -233,18 +240,45 @@ class PlayerPropCardExportController extends Controller
             $home = data_get($data, 'game.home_team.abbreviation') ?? 'Home';
             $away = data_get($data, 'game.away_team.abbreviation') ?? 'Away';
             $probability = $data['home_win_probability'];
+            $startsAt = data_get($data, 'game.starts_at');
             $pickSide = $probability === null ? null : ($probability >= 0.5 ? 'Home' : 'Away');
 
             return [
                 'id' => $data['id'], 'game_id' => $data['game_id'], 'home_team' => $home, 'away_team' => $away,
                 'game' => ['home_team' => $home, 'away_team' => $away,
-                    'date' => data_get($data, 'game.game_date'), 'time' => data_get($data, 'game.game_time')],
+                    'date' => data_get($data, 'game.game_date'), 'time' => $this->exportStartTime($startsAt), 'starts_at' => $startsAt],
                 'predicted_spread' => $data['predicted_spread'], 'predicted_total' => $data['predicted_total'],
                 'win_probability' => $probability === null ? null : round($probability * 100, 1),
                 'confidence' => $data['confidence_score'], 'home_elo' => null, 'away_elo' => null,
                 'pick_side' => $pickSide, 'pick_team' => $pickSide === null ? null : ($pickSide === 'Home' ? $home : $away),
             ];
         })->values()->all();
+    }
+
+    private function exportStartsAt(?Model $game): ?string
+    {
+        if ($game === null) {
+            return null;
+        }
+
+        return $game instanceof MlbGame ? MlbGameStart::for($game)?->toIso8601String()
+            : GameDateTimePresenter::currentStoredStartsAt($game);
+    }
+
+    private function exportStartTime(?string $startsAt): ?string
+    {
+        return $startsAt === null ? null : Carbon::parse($startsAt)->utc()->format('H:i T');
+    }
+
+    private function nullableHomeProbability(mixed $value): ?float
+    {
+        if (! is_numeric($value) || ! is_finite((float) $value)) {
+            return null;
+        }
+        $number = (float) $value;
+        $percentage = $number <= 1 ? $number * 100 : $number;
+
+        return $percentage >= 0 && $percentage <= 100 ? round($percentage, 1) : null;
     }
 
     protected function getFuturesModel(string $sport): ?string

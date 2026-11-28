@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <!-- Explicit opt-in database/schema credentials come from the disposable
+         CI service or isolated local server. The test target guard still runs. -->
+    <testsuites>
+        <testsuite name="MySQL integration">
+            <directory>tests/Integration/MySql</directory>
+            <file>tests/Feature/CBB/RosterObservationImmutabilityBoundaryTest.php</file>
+    </testsuite>
+        <testsuite name="MySQL contracts">
+            <file>tests/Feature/Sports/EloForecastInputAdmissionTest.php</file>
+            <file>tests/Feature/AI/AiGenerationRecorderTest.php</file>
+            <file>tests/Feature/AI/AiGenerationRecorderIntegrityTest.php</file>
+            <file>tests/Feature/Predictions/ReviewSpendAdmissionIntegrityTest.php</file>
+            <file>tests/Feature/Predictions/PredictionReviewExecutionTest.php</file>
+            <directory>tests/Feature/ML</directory>
+            <file>tests/Feature/Predictions/CalculationRunRecoveryTest.php</file>
+            <file>tests/Feature/Predictions/CalculationRunAttemptIntegrityTest.php</file>
+            <file>tests/Feature/Predictions/PredictionCalculationLifecycleTest.php</file>
+            <file>tests/Feature/Api/V2/ApiV2WriteSafetyTest.php</file>
+            <file>tests/Feature/Api/V2/AtomicApiIdempotencyTest.php</file>
+            <file>tests/Feature/NFL/NflSignalObservationImmutabilityBoundaryTest.php</file>
+            <file>tests/Feature/Api/V2/IdempotencyReceiptPersistenceBoundaryTest.php</file>
+            <file>tests/Feature/GroupApiTest.php</file>
+            <file>tests/Feature/Settings/WebPushSecurityTest.php</file>
+            <file>tests/Feature/Settings/WebPushSubscriptionControllerTest.php</file>
+            <file>tests/Feature/Predictions/PublicationEffectDeliveryTest.php</file>
+            <file>tests/Feature/Predictions/PublicationEffectMutationAdmissionTest.php</file>
+            <file>tests/Feature/Events/CanonicalGameFinalizationTest.php</file>
+            <file>tests/Feature/Predictions/PredictionMarketOwnershipTest.php</file>
+            <file>tests/Feature/Predictions/EvidenceDeletionGuardTest.php</file>
+            <file>tests/Feature/Authorization/AccountGroupIntegrityTest.php</file>
+            <file>tests/Feature/Admin/TierLifecycleIntegrityTest.php</file>
+            <file>tests/Feature/Predictions/LegacyGradeAtomicityTest.php</file>
+            <file>tests/Feature/Predictions/PropFinalStatusAdmissionTest.php</file>
+            <file>tests/Feature/NBA/PlayerPropIntegrityTest.php</file>
+            <file>tests/Feature/NBA/GradePlayerPropsTest.php</file>
+            <file>tests/Feature/NFL/GradePlayerPropsTest.php</file>
+            <file>tests/Feature/CFB/PlayerPropsPipelineTest.php</file>
+            <file>tests/Feature/NFL/NflSettlementCorrectionTest.php</file>
+            <file>tests/Feature/CFB/CfbSettlementRegradeTest.php</file>
+            <file>tests/Feature/Predictions/PlayerPropCorrectionTest.php</file>
+            <file>tests/Feature/Predictions/PredictionEvaluationRecorderTest.php</file>
+            <file>tests/Feature/MLB/MlbCandidateSettlementIntegrityTest.php</file>
+            <file>tests/Feature/Database/DatabaseGuardrailCommandsTest.php</file>
+            <file>tests/Feature/Database/IndexAuditServiceTest.php</file>
+            <file>tests/Feature/ESPN/BasketballPlayerStatIntegrityTest.php</file>
+            <file>tests/Feature/ESPN/AtomicIngestionReplacementTest.php</file>
+            <file>tests/Feature/Subscription/CheckoutTest.php</file>
+            <file>tests/Feature/Subscription/SubscriptionManagementResponseTest.php</file>
+            <file>tests/Feature/Subscription/StripeWebhookAdmissionTest.php</file>
+            <file>tests/Feature/Relationships/RelationshipAuditBoundariesTest.php</file>
+            <file>tests/Feature/Auth/NativePushRegistrationIntegrityTest.php</file>
+            <file>tests/Feature/Auth/NativeDeviceSessionTokenServiceTest.php</file>
+            <file>tests/Feature/Auth/NativeDeviceSessionApiTest.php</file>
+            <file>tests/Feature/Auth/NativeTokenConnectionAdmissionTest.php</file>
+            <file>tests/Feature/CFB/CfbAssessmentConsumerAdmissionTest.php</file>
+            <file>tests/Feature/CFB/CfbEpaAndDriveIntegrityTest.php</file>
+            <file>tests/Feature/CFB/CfbScoringExportTest.php</file>
+            <file>tests/Feature/CFB/CfbScoringExportBatchTest.php</file>
+            <file>tests/Feature/CFB/CfbExportPublicationIntegrityTest.php</file>
+            <file>tests/Feature/CFB/CfbScoringWorkflowTest.php</file>
+            <file>tests/Feature/CFB/CfbOfficialSourceRepairTest.php</file>
+            <file>tests/Feature/CFB/CfbCfbdTeamBoxscoreTest.php</file>
+            <file>tests/Feature/CFB/CfbSourceAssessmentRevisionTest.php</file>
+            <file>tests/Feature/ESPN/NonBasketballStatIntegrityTest.php</file>
+            <file>tests/Feature/CFB/CfbDataAuditAdmissionTest.php</file>
+            <file>tests/Feature/CFB/CfbCutoverCurrentIdentityTest.php</file>
+            <file>tests/Feature/ESPN/NflPregameMetadataOwnershipTest.php</file>
+            <file>tests/Feature/ESPN/NflMetadataNeutralPropagationTest.php</file>
+            <file>tests/Feature/NFL/SyncMatchupTrackingCommandTest.php</file>
+            <file>tests/Feature/NFL/SyncMatchupPressureCommandTest.php</file>
+            <file>tests/Feature/NFL/MatchupPublicationSafetyTest.php</file>
+            <file>tests/Feature/MLB/EloObservationAdmissionTest.php</file>
+            <file>tests/Feature/WNBA/HistoricalEloReplayIntegrityTest.php</file>
+            <file>tests/Feature/ESPN/BasketballNeutralSiteProducerTest.php</file>
+            <file>tests/Feature/Sports/EloBaselineAdmissionTest.php</file>
+            <file>tests/Feature/Sports/EloReceiptIntegrityTest.php</file>
+            <file>tests/Feature/Sports/EloCoordinatedWriterTest.php</file>
+            <file>tests/Feature/Sports/EloSeasonRolloverTest.php</file>
+            <file>tests/Feature/Predictions/ImmutableCoreMutationTest.php</file>
+            <file>tests/Feature/CFB/CfbClosingMarketEvidenceTest.php</file>
+            <file>tests/Feature/Auth/NativeCredentialEpochTest.php</file>
+            <file>tests/Feature/Api/Auth/FiniteTokenPolicyTest.php</file>
+            <file>tests/Feature/Notifications/AlertReservationPersistenceBoundaryTest.php</file>
+            <file>tests/Feature/CBB/TournamentRepairPersistenceBoundaryTest.php</file>
+            <file>tests/Feature/MLB/MlbCanonicalCutoverTest.php</file>
+            <file>tests/Feature/Predictions/CalculationReleasePersistenceBoundaryTest.php</file>
+            <file>tests/Feature/AssetMirrorPersistenceBoundaryTest.php</file>
+            <file>tests/Feature/GroupUpdatePersistenceBoundaryTest.php</file>
+        </testsuite>
+    </testsuites>
+    <php>
+        <env name="APP_ENV" value="testing" force="true"/>
+        <env name="DB_CONNECTION" value="mysql" force="true"/>
+        <env name="DB_URL" value="" force="true"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="BROADCAST_CONNECTION" value="null"/>
+        <env name="CACHE_STORE" value="array"/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="SPORTS_ASSETS_DISK" value="local"/>
+        <env name="SITE_ASSETS_DISK" value="local"/>
+        <env name="PULSE_ENABLED" value="false"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="NIGHTWATCH_ENABLED" value="false"/>
+    </php>
+</phpunit>

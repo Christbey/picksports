@@ -24,14 +24,15 @@ const metricKey = (entry: TeamDepthChartEntry, index: number): string =>
                 {{ title || 'Depth Chart' }}
             </h2>
             <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Current starters and recent stat context for this team.
+                Stored starter listings and completed-game stat context for this
+                team.
             </p>
         </div>
 
         <div class="space-y-3 p-6">
             <div
                 v-for="entry in depthChart.entries"
-                :key="`${depthChart.team.id}-${entry.position_slot_key}-${entry.depth_rank}-${entry.espn_athlete_id ?? entry.player_id ?? 'unknown'}`"
+                :key="`${depthChart.team?.id ?? 'unresolved'}-${entry.position_slot_key}-${entry.depth_rank}-${entry.espn_athlete_id ?? entry.player_id ?? 'unknown'}`"
                 class="rounded-2xl border border-slate-200/80 bg-slate-50/90 p-4 dark:border-slate-800 dark:bg-slate-900/60"
             >
                 <div class="flex items-start justify-between gap-4">
@@ -93,13 +94,25 @@ const metricKey = (entry: TeamDepthChartEntry, index: number): string =>
                         <div
                             class="text-[10px] font-semibold tracking-[0.16em] text-slate-400 uppercase dark:text-slate-500"
                         >
-                            {{ metric.label }}
+                            {{ metric.label
+                            }}{{
+                                metric.unit === 'decimal_innings'
+                                    ? ' (decimal)'
+                                    : ''
+                            }}
                         </div>
                         <div
                             class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100"
                         >
                             {{ metric.value }}
                         </div>
+                        <p
+                            v-if="metric.sample_size !== undefined"
+                            class="mt-1 text-[10px] text-muted-foreground"
+                        >
+                            {{ metric.sample_size }} observed /
+                            {{ entry.stats.games_played }} recorded games
+                        </p>
                     </div>
                 </div>
             </div>

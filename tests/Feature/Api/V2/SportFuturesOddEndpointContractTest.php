@@ -7,6 +7,7 @@ use App\Models\NFL\Team as NflTeam;
 use App\Models\Sports\FuturesOdd;
 use App\Models\User;
 use App\Models\WCBB\Team as WcbbTeam;
+use App\Services\Api\V2\SportFuturesOddQuery;
 use Illuminate\Database\Eloquent\Model;
 use Laravel\Sanctum\Sanctum;
 
@@ -192,3 +193,48 @@ function assertV2FuturesContractHasNoRawLeakage(array $payload): void
         expect($encoded)->not->toContain($forbidden);
     }
 }
+
+it('refuses malformed route team selectors before futures filtering', function (string $selector) {
+    actAsV2FuturesContractUser();
+    $team = NflTeam::factory()->create();
+    $other = NflTeam::factory()->create();
+    createV2FuturesContractOdd('nfl', 'nfl_team_id', $team);
+    createV2FuturesContractOdd('nfl', 'nfl_team_id', $other);
+    $selector = str_replace('{id}', (string) $team->id, $selector);
+    $this->getJson('/api/v2/sports/nfl/teams/'.$selector.'/futures')
+        ->assertUnprocessable()->assertJsonValidationErrors('team_id');
+})->with(['zero' => '0', 'junk' => 'junk', 'partial' => '{id}junk', 'exponent' => '{id}e0', 'overflow' => '999999999999999999999999999999']);
+
+it('keeps valid unknown futures team selectors empty', function (string $slug, string $teamModel, string $key) {
+    actAsV2FuturesContractUser();
+    $team = $teamModel::factory()->create();
+    createV2FuturesContractOdd($slug, $key, $team);
+    $unknown = $team->id + 10000;
+    $this->getJson('/api/v2/sports/'.$slug.'/teams/'.$unknown.'/futures')
+        ->assertOk()->assertJsonCount(0, 'data')->assertJsonPath('meta.team_id', $unknown);
+})->with('v2FuturesContractSports');
+
+it('makes a valid futures route team authoritative over query team selectors', function (string $slug, string $teamModel, string $key) {
+    actAsV2FuturesContractUser();
+    $team = $teamModel::factory()->create();
+    $other = $teamModel::factory()->create();
+    $odd = createV2FuturesContractOdd($slug, $key, $team);
+    createV2FuturesContractOdd($slug, $key, $other);
+    $this->getJson('/api/v2/sports/'.$slug.'/teams/'.$team->id.'/futures?team_id='.$other->id)
+        ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $odd->id);
+})->with('v2FuturesContractSports');
+
+it('preserves omitted league futures selectors', function (string $slug, string $teamModel, string $key) {
+    actAsV2FuturesContractUser();
+    createV2FuturesContractOdd($slug, $key, $teamModel::factory()->create());
+    createV2FuturesContractOdd($slug, $key, $teamModel::factory()->create());
+    $this->getJson('/api/v2/sports/'.$slug.'/markets/futures')->assertOk()->assertJsonCount(2, 'data');
+})->with('v2FuturesContractSports');
+
+it('does not treat explicit zero direct futures filters as absent', function (string $filter) {
+    $team = NflTeam::factory()->create();
+    createV2FuturesContractOdd('nfl', 'nfl_team_id', $team);
+    $query = app(SportFuturesOddQuery::class);
+    expect($query->query('nfl', [$filter => 0])->count())->toBe(0)
+        ->and($query->query('nfl', [$filter => null])->count())->toBe(1);
+})->with(['team_id', 'player_id']);

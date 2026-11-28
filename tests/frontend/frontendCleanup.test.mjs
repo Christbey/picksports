@@ -247,10 +247,7 @@ test('box-score rows preserve zero, missing, shooting, and lower-is-better rules
     assert.equal(shootingPercentage(0, 0), '0.0');
     assert.equal(shootingPercentage(1, 3), '33.3');
     const points = basketballStatRows.find((r) => r.key === 'points_in_paint');
-    assert.equal(
-        basketballStatValue({ points_in_paint: 0 }, points, true),
-        '-',
-    );
+    assert.equal(basketballStatValue({ points_in_paint: 0 }, points, true), 0);
     assert.equal(basketballStatValue({ points_in_paint: 0 }, points), 0);
     assert.equal(
         basketballStatRows
@@ -305,15 +302,22 @@ test('public display retains spread sign, pick-em, zero metrics, and season cove
     assert.equal(p.formatHomeSpreadLine(3), '-3.0');
     assert.equal(p.formatHomeSpreadLine(-3), '+3.0');
     const prop = {
+        recommendation: 'Over',
         stats: {
             times_covered_season: { hits: 8, games: 10 },
             times_covered_last5: { hits: 1, games: 5 },
         },
     };
-    assert.equal(p.coverageBreakdown(prop).label, 'Season cover rate');
+    assert.equal(
+        p.coverageBreakdown(prop).label,
+        'Season selected-side record',
+    );
     assert.equal(p.coverageBreakdown(prop).hitPct, 80);
     prop.stats.times_covered_season.games = 0;
-    assert.equal(p.coverageBreakdown(prop).label, 'Last 5 cover rate');
+    assert.equal(
+        p.coverageBreakdown(prop).label,
+        'Last 5 selected-side record',
+    );
 });
 test('bracket layout retains round tracks, safe fallback rows, participant identity, and play-in labeling', async () => {
     const p = await server.ssrLoadModule(

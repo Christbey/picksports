@@ -5,7 +5,8 @@ namespace App\Services\NFL;
 use App\Models\ModelArtifact;
 use App\Models\ModelRun;
 use App\Services\ML\ModelArtifactRegistry;
-use Carbon\CarbonImmutable;
+use App\Support\Sports\ExplicitOffsetInstant;
+use App\Support\Sports\LegacyTimestampCarrier;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
@@ -21,6 +22,7 @@ class NflTabularModelRunRegistrar
     public function register(string $runDirectory, ?string $datasetPath = null): ModelArtifact
     {
         $prepared = $this->bundles->create($runDirectory, $datasetPath);
+        $datasetPath = $prepared['owned_dataset_path'];
         $manifest = $prepared['manifest'];
         $evaluation = $prepared['evaluation'];
         $artifactId = (string) $manifest['artifact_id'];
@@ -30,6 +32,11 @@ class NflTabularModelRunRegistrar
             : (string) Str::uuid();
 
         try {
+            $reportedAt = ExplicitOffsetInstant::parse($manifest['generated_at'] ?? null);
+            $startedAt = $reportedAt === null ? null : LegacyTimestampCarrier::forInstant($reportedAt);
+            if ($startedAt === null) {
+                throw new RuntimeException('NFL run generation requires an explicit real instant representable by its legacy timestamp carrier.');
+            }
             if (ModelArtifact::query()->whereKey($artifactId)->exists()
                 || ModelRun::query()->whereKey($modelRunId)->exists()) {
                 throw new RuntimeException('This Python NFL tabular run is already registered.');
@@ -43,7 +50,7 @@ class NflTabularModelRunRegistrar
                 $modelRunId,
                 $prepared,
                 $pythonModelRunId,
-                $runDirectory,
+                $startedAt,
             ): ModelArtifact {
                 $trainingRun = ModelRun::query()->create([
                     'id' => $modelRunId,
@@ -65,7 +72,7 @@ class NflTabularModelRunRegistrar
                         'held_out_test_season' => $manifest['held_out_test_season'] ?? null,
                     ],
                     'status' => 'running',
-                    'started_at' => CarbonImmutable::parse((string) ($manifest['generated_at'] ?? 'now')),
+                    'started_at' => $startedAt,
                     'metadata' => [
                         'python_model_run_id' => $pythonModelRunId,
                         'python_manifest' => $manifest,
@@ -88,7 +95,8 @@ class NflTabularModelRunRegistrar
                         'walk_forward' => data_get($evaluation, 'walk_forward.summary', []),
                     ],
                     datasetPath: $datasetPath,
-                    evaluationReportPath: rtrim($this->absolutePath($runDirectory), '/').'/evaluation.json',
+                    evaluationReportPath: $prepared['owned_report_path'],
+                    storageExpectations: $prepared['storage_expectations'],
                 );
 
                 $metadata = (array) $trainingRun->refresh()->metadata;
@@ -100,10 +108,5 @@ class NflTabularModelRunRegistrar
         } finally {
             File::deleteDirectory($prepared['temporary_directory']);
         }
-    }
-
-    private function absolutePath(string $path): string
-    {
-        return str_starts_with($path, '/') ? $path : base_path($path);
     }
 }

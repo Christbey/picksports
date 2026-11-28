@@ -13,12 +13,14 @@ use App\Models\CFB\PredictionCalibration;
 use App\Models\CFB\Team;
 use App\Models\CFB\TeamMetric;
 use App\Models\PredictionFeatureSnapshot;
+use App\Models\PredictionPostgameEnrichment;
 use App\Services\OddsApi\GameOddsSnapshotRecorder;
 use App\Support\CfbSeasonAffiliationResolver;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\ObservedCfbGameFixture;
 
 uses()->group('cfb', 'predictions');
 
@@ -1247,6 +1249,8 @@ it('enriches cfb market movement with closing line value when predictions are gr
         'neutral_site' => true,
     ]);
 
+    $game = ObservedCfbGameFixture::observe($game, '2026-09-05T19:00:00Z');
+
     recordCfbSpreadSnapshot($game, '2026-08-20T12:00:00Z', ['draftkings' => -4.0]);
     recordCfbSpreadSnapshot($game, '2026-09-04T11:00:00Z', ['draftkings' => -6.5]);
 
@@ -1266,10 +1270,13 @@ it('enriches cfb market movement with closing line value when predictions are gr
     $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
     $snapshot = cfbPredictionSnapshot($prediction);
 
-    expect((float) data_get($snapshot->model_metadata, 'cfb_market_movement.closing_bookmaker_home_line'))->toBe(-7.5)
-        ->and((float) data_get($snapshot->model_metadata, 'cfb_market_movement.closing_home_margin'))->toBe(7.5)
-        ->and((float) data_get($snapshot->model_metadata, 'cfb_market_movement.closing_line_value_points'))->toBe(1.0)
-        ->and(data_get($snapshot->model_metadata, 'cfb_market_movement.closing_line_value_bucket'))->toBe('positive');
+    $receipt = PredictionPostgameEnrichment::query()->where('prediction_feature_snapshot_id', $snapshot->id)->sole();
+    expect(data_get($snapshot->model_metadata, 'cfb_market_movement.closing_bookmaker_home_line'))->toBeNull()
+        ->and((float) data_get($receipt->output, 'closing_bookmaker_home_line'))->toBe(-7.5)
+        ->and((float) data_get($receipt->output, 'closing_home_margin'))->toBe(7.5)
+        ->and((float) data_get($receipt->output, 'closing_line_value_points'))->toBe(1.0)
+        ->and(data_get($receipt->output, 'closing_line_value_bucket'))->toBe('positive')
+        ->and($receipt->availability_status)->toBe('available');
 
     Carbon::setTestNow();
 });

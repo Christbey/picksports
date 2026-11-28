@@ -5,7 +5,7 @@ use App\Actions\NBA\GeneratePrediction;
 use App\Application\Predictions\Data\CalculationReleaseData;
 use App\Application\Predictions\Data\EventInputSnapshotData;
 use App\Exceptions\Predictions\PredictionLifecycleException;
-use App\Jobs\Predictions\GeneratePredictionNarrative;
+use App\Jobs\Predictions\DeliverPublicationEffect;
 use App\Models\BetDecision;
 use App\Models\CalculationRelease;
 use App\Models\CalculationRun;
@@ -17,6 +17,7 @@ use App\Models\NBA\Team;
 use App\Models\NBA\TeamMetric;
 use App\Models\PredictionEvaluation;
 use App\Models\PredictionMarket;
+use App\Models\PredictionPublicationEffect;
 use App\Models\SportEvent;
 use App\Models\SportEventResult;
 use App\Models\User;
@@ -28,6 +29,8 @@ use App\Services\NBA\Predictions\NbaInputSnapshotBuilder;
 use App\Services\Predictions\CalculationReleaseManager;
 use App\Services\Predictions\CanonicalPayloadHasher;
 use App\Services\Predictions\PredictionDeliverySource;
+use App\Services\Predictions\PredictionNarrativeService;
+use App\Services\Predictions\PublicationEffectDelivery;
 use App\Support\SportsViewCache;
 use Illuminate\Support\Facades\Bus;
 use Laravel\Sanctum\Sanctum;
@@ -238,8 +241,21 @@ it('queues source-correct narratives after native publication when the legacy wr
     $fixture = canonicalNbaFixture();
     app(NbaCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
     $prediction = app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
-    Bus::assertDispatched(GeneratePredictionNarrative::class,
-        fn ($job) => $job->predictionModelClass === CanonicalPrediction::class && $job->predictionId === $prediction->id && $job->sport === 'nba');
+    $effect = PredictionPublicationEffect::query()->where('canonical_prediction_id', $prediction->id)
+        ->where('effect', PublicationEffectDelivery::NARRATIVE)->sole();
+    expect($effect->payload)->toBe(['sport' => 'nba'])->and($effect->state)->toBe('queued');
+    Bus::assertDispatched(DeliverPublicationEffect::class,
+        fn ($job) => $job->effectId === $effect->id && $job->ownerToken === $effect->owner_token);
+    $narratives = Mockery::mock(PredictionNarrativeService::class);
+    $narratives->shouldReceive('inputHashForSport')->once()
+        ->with(Mockery::on(fn ($source) => $source instanceof CanonicalPrediction && $source->id === $prediction->id), null, 'nba')
+        ->andReturn('nba-canonical-outbox-source');
+    $narratives->shouldReceive('forSport')->once()
+        ->with(Mockery::on(fn ($source) => $source instanceof CanonicalPrediction && $source->id === $prediction->id), null, 'nba', true)
+        ->andReturn(['summary' => 'Canonical NBA fixture.']);
+    app()->instance(PredictionNarrativeService::class, $narratives);
+    app(PublicationEffectDelivery::class)->process($effect->id, $effect->owner_token);
+    expect($effect->fresh()->state)->toBe('completed');
 });
 
 it('preserves the coverage repair suppression of narrative work', function () {
@@ -247,8 +263,10 @@ it('preserves the coverage repair suppression of narrative work', function () {
     config(['prediction_lifecycle.canonical_pipeline.nba' => true, 'prediction_lifecycle.canonical_reads.nba' => true]);
     $fixture = canonicalNbaFixture();
     app(NbaCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
-    app(GenerateCanonicalPrediction::class)->execute($fixture['game'], trigger: 'coverage');
-    Bus::assertNotDispatched(GeneratePredictionNarrative::class);
+    $prediction = app(GenerateCanonicalPrediction::class)->execute($fixture['game'], trigger: 'coverage');
+    expect(PredictionPublicationEffect::query()->where('canonical_prediction_id', $prediction->id)
+        ->where('effect', PublicationEffectDelivery::NARRATIVE)->exists())->toBeFalse();
+    Bus::assertNotDispatched(DeliverPublicationEffect::class, fn ($job) => PredictionPublicationEffect::find($job->effectId)?->effect === PublicationEffectDelivery::NARRATIVE);
 });
 
 it('transports the established NBA model exactly using frozen configuration without legacy writes or public approvals', function () {

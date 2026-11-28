@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import {
     clearPendingAnalyticsEvent,
     createAnalyticsEventId,
     pushAnalyticsEvent,
-    setPendingAnalyticsEvent,
 } from '@/lib/analytics';
 import { type BreadcrumbItem } from '@/types';
 
@@ -31,7 +30,7 @@ interface Tier {
     name: string;
     description: string;
     price: TierPrice;
-    features: TierFeatures;
+    features: Partial<TierFeatures> | null;
     is_current: boolean;
 }
 
@@ -40,8 +39,23 @@ const props = defineProps<{
     currentTier: string | null;
 }>();
 
+const displayTiers = computed(() =>
+    props.tiers.map((tier) => ({
+        ...tier,
+        features: {
+            ...tier.features,
+            predictions_per_day: tier.features?.predictions_per_day,
+            historical_data_days: tier.features?.historical_data_days,
+            sports_access: Array.isArray(tier.features?.sports_access)
+                ? tier.features.sports_access
+                : [],
+        },
+    })),
+);
+
 const selectedBillingPeriod = ref<'monthly' | 'yearly'>('monthly');
 const isProcessing = ref(false);
+const checkoutError = ref('');
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -72,16 +86,9 @@ function subscribe(tierId: string) {
         value,
         currency: value !== undefined ? 'USD' : undefined,
     });
-    setPendingAnalyticsEvent('purchase', {
-        event_id: eventId,
-        plan_name: planName,
-        plan_id: tierId,
-        billing_cycle: selectedBillingPeriod.value,
-        value,
-        currency: value !== undefined ? 'USD' : undefined,
-    });
 
     isProcessing.value = true;
+    checkoutError.value = '';
 
     router.post(
         '/subscription/checkout',
@@ -90,7 +97,10 @@ function subscribe(tierId: string) {
             billing_period: selectedBillingPeriod.value,
         },
         {
-            onError: () => {
+            onError: (errors) => {
+                checkoutError.value =
+                    errors.billing ||
+                    'Checkout could not start. Resolve any pending billing request before trying another purchase.';
                 clearPendingAnalyticsEvent();
             },
             onFinish: () => {
@@ -108,6 +118,7 @@ function formatPrice(price: number | string | null): string {
 }
 
 function formatFeatureValue(value: any): string {
+    if (value === undefined) return 'Not specified';
     if (value === null) return 'Unlimited';
     if (typeof value === 'boolean') return value ? 'Yes' : 'No';
     if (Array.isArray(value)) return value.join(', ');
@@ -122,6 +133,13 @@ function formatFeatureValue(value: any): string {
         <div
             class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4"
         >
+            <p
+                v-if="checkoutError"
+                role="alert"
+                class="text-sm text-destructive"
+            >
+                {{ checkoutError }}
+            </p>
             <div class="text-center">
                 <h1 class="text-3xl font-bold">Choose Your Plan</h1>
                 <p class="mt-2 text-muted-foreground">
@@ -156,7 +174,7 @@ function formatFeatureValue(value: any): string {
 
             <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
                 <div
-                    v-for="tier in tiers"
+                    v-for="tier in displayTiers"
                     :key="tier.id"
                     :class="[
                         'relative flex flex-col rounded-xl border p-6',

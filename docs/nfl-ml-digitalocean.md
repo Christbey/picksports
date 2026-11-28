@@ -273,3 +273,25 @@ Win-probability and spread behavior are unchanged. The artifact is
 `promotion_eligible`, not promoted: production promotion still requires at
 least 25 live pregame-safe observations and 10 settled shadow decisions for
 each requested market.
+
+
+## Diagnostic output protection — November 28, 2026
+
+The privately qualified `picksports-nfl-ml diagnose` repair refuses an output path that identifies its dataset or feature schema, including existing symbolic-link and hard-link aliases. It checks before loading inputs or fitting models and retains the resolved destination. Choose a distinct report path; an existing distinct report can still be replaced.
+
+Scoped controls used real schema/dataset loading, chronological splitting and file writes with expensive model and diagnostic computation stubbed. Six original alias cases replaced protected inputs with diagnostic JSON; two distinct-report controls passed. The repair passed all eight controls without fitting or contacting production. This is an input-file protection check, not scientific evaluation, filesystem-adversary isolation, or production deployment evidence.
+
+
+## NFL market comparison cohorts
+
+The private candidate now evaluates each classifier and its calibrated blend on the same test games that have an observed market spread before comparing them with the market baseline. A market subset is never compared with the model’s full test cohort. Missing paired metrics or mismatched sample counts are unavailable comparison evidence. Complete-market and absent-market behavior remain supported.
+
+Older evaluation JSON without paired evidence is not retroactively certified or rewritten. Regenerating any report or training artifacts is a separate authorized operation. This correction changes evaluation bookkeeping, not prediction weights, probability calibration, model selection thresholds or public approval. Public promotion remains disabled.
+
+Qualification uses synthetic inputs through the real schema/immutable-data loader, chronological folds, evaluation and promotion functions, with controlled inference outputs and no model fitting. The same15 cases fail9/pass6 before and pass15 after, including3 original partial-cohort reversals plus6 missing/mismatched-evidence guards. A39-test focused no-fit run also passes. These results are separate from the earlier full PHP and Linux package checkpoints; they do not establish predictive accuracy or independent live-shadow performance.
+
+## Owned extraction failure cleanup (private repair qualification, 2026-11-28)
+
+`NflTabularModelBundle` binds `Throwable` to the global interface so a reached extraction failure removes only its unique temporary directory and rethrows the original exception. The registered synthetic-container control verifies that the archive and an unrelated sentinel remain intact. Successful registration and changed-inner-byte refusal remain supported.
+
+Final formatted scoped proof: four cases, 49 assertions, strict verifier and two-file Pint check passed. The original one-failure/one-positive before proof and its event-accounting wrapper refusal are retained separately. These are local opaque-container/filesystem controls: no numerical model admission, Python/inference/training, native-engine, concurrency, deployment or full-release certificate.

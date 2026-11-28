@@ -280,21 +280,37 @@ test('ranking retries preserve selected season and local filters while retaining
 });
 
 test('CBB defaults to its current sport season and team filtering combines with player search', async (t) => {
-    t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-24T18:00:00Z').getTime() });
+    t.mock.timers.enable({
+        apis: ['Date'],
+        now: new Date('2026-11-24T18:00:00Z').getTime(),
+    });
     const year = new Date().getFullYear();
     const calls = [];
     const entry = (id, name, teamId, teamName, abbreviation) => ({
         player_id: id,
         games_played: 12,
         points_per_game: id,
-        player: { full_name: name, team: { id: teamId, display_name: teamName, name: teamName, abbreviation } },
+        player: {
+            full_name: name,
+            team: {
+                id: teamId,
+                display_name: teamName,
+                name: teamName,
+                abbreviation,
+            },
+        },
     });
     globalThis.__playerStatsApi = {
         leaderboards: {
             playerAvailableSeasons: async () => ({ data: [year, year + 1] }),
             players: async (sport, options) => {
                 calls.push(options.query);
-                return { data: [entry(1, 'Alex One', 10, 'Duke Blue Devils', 'DUKE'), entry(2, 'Alex Two', 20, 'Kansas Jayhawks', 'KU')] };
+                return {
+                    data: [
+                        entry(1, 'Alex One', 10, 'Duke Blue Devils', 'DUKE'),
+                        entry(2, 'Alex Two', 20, 'Kansas Jayhawks', 'KU'),
+                    ],
+                };
             },
         },
     };
@@ -302,16 +318,69 @@ test('CBB defaults to its current sport season and team filtering combines with 
     await flush();
     assert.equal(state.selectedSeason.value, String(year + 1));
     assert.equal(calls[0].season, String(year + 1));
-    assert.match(state.teamOptions.value.find((team) => team.value === '20').search, /KU/);
+    assert.match(
+        state.teamOptions.value.find((team) => team.value === '20').search,
+        /KU/,
+    );
     state.selectedTeam.value = '10';
     state.visibleLimit.value = 200;
     await nextTick();
     assert.equal(state.visibleLimit.value, 100);
-    assert.deepEqual(state.sortedPlayers.value.map((row) => row.player_id), [1]);
+    assert.deepEqual(
+        state.sortedPlayers.value.map((row) => row.player_id),
+        [1],
+    );
     state.searchQuery.value = 'Two';
     assert.equal(state.sortedPlayers.value.length, 0);
     state.selectedTeam.value = '';
-    assert.deepEqual(state.sortedPlayers.value.map((row) => row.player_id), [2]);
+    assert.deepEqual(
+        state.sortedPlayers.value.map((row) => row.player_id),
+        [2],
+    );
     assert.equal(calls.length, 1);
     app.unmount();
+});
+
+test('unknown leaderboard values sort after observed zero and negative values in either direction', async () => {
+    globalThis.__playerStatsApi = {
+        leaderboards: {
+            playerAvailableSeasons: async () => ({ data: [2026] }),
+            players: async () => ({
+                data: [
+                    {
+                        player_id: 1,
+                        games_played: 1,
+                        estimated_epa_per_game: -1,
+                    },
+                    {
+                        player_id: 2,
+                        games_played: 1,
+                        estimated_epa_per_game: 0,
+                    },
+                    {
+                        player_id: 3,
+                        games_played: 1,
+                        estimated_epa_per_game: null,
+                    },
+                ],
+            }),
+        },
+    };
+    const { app, state } = mount({ sport: 'nba', minGames: 1 });
+    try {
+        await flush();
+        state.sortBy.value = 'estimated_epa_per_game';
+        assert.deepEqual(
+            state.sortedPlayers.value.map((row) => row.player_id),
+            [2, 1, 3],
+        );
+        state.sortDesc.value = false;
+        assert.deepEqual(
+            state.sortedPlayers.value.map((row) => row.player_id),
+            [1, 2, 3],
+        );
+    } finally {
+        app.unmount();
+        delete globalThis.__playerStatsApi;
+    }
 });

@@ -44,12 +44,14 @@ class RefreshProbablePitchersCommand extends Command
 
         // Run scoreboard sync inline for each date so probable-pitcher updates land deterministically.
         $syncedDays = 0;
+        $failures = 0;
         $cursor = $today;
         while ($cursor <= $end) {
             try {
                 $sync->execute($cursor->format('Ymd'));
                 $syncedDays++;
             } catch (Throwable $e) {
+                $failures++;
                 Log::warning('MLB probable-pitcher refresh: scoreboard sync failed.', [
                     'date' => $cursor->toDateString(),
                     'message' => $e->getMessage(),
@@ -64,12 +66,13 @@ class RefreshProbablePitchersCommand extends Command
             ->with(['homeTeam', 'awayTeam'])
             ->where('status', 'STATUS_SCHEDULED')
             ->whereBetween('game_date', [$today->startOfDay(), $end->endOfDay()])
-            ->each(function (Game $game) use ($projector, &$projectionChanges): void {
+            ->each(function (Game $game) use ($projector, &$projectionChanges, &$failures): void {
                 try {
                     if ($projector->project($game)['changed']) {
                         $projectionChanges++;
                     }
                 } catch (Throwable $e) {
+                    $failures++;
                     Log::warning('MLB probable-pitcher refresh: rotation projection failed.', [
                         'game_id' => $game->id,
                         'message' => $e->getMessage(),
@@ -83,7 +86,7 @@ class RefreshProbablePitchersCommand extends Command
         if ($changed->isEmpty()) {
             $this->info("Synced {$syncedDays} scoreboard day(s); no probable-pitcher changes detected ({$projectionChanges} projection updates).");
 
-            return self::SUCCESS;
+            return $this->refreshExitCode($failures);
         }
 
         $this->info("Synced {$syncedDays} scoreboard day(s); {$changed->count()} game(s) had probable-pitcher changes ({$projectionChanges} projection updates).");
@@ -104,7 +107,7 @@ class RefreshProbablePitchersCommand extends Command
                 ));
             }
 
-            return self::SUCCESS;
+            return $this->refreshExitCode($failures);
         }
 
         $regenerated = 0;
@@ -120,6 +123,7 @@ class RefreshProbablePitchersCommand extends Command
                     $regenerated++;
                 }
             } catch (Throwable $e) {
+                $failures++;
                 Log::warning('MLB probable-pitcher refresh: prediction regen failed.', [
                     'game_id' => $game->id,
                     'message' => $e->getMessage(),
@@ -140,6 +144,17 @@ class RefreshProbablePitchersCommand extends Command
         }
 
         $this->info("Regenerated predictions for {$regenerated} game(s).");
+
+        return $this->refreshExitCode($failures);
+    }
+
+    private function refreshExitCode(int $failures): int
+    {
+        if ($failures > 0) {
+            $this->warn("Refresh incomplete: {$failures} stage(s) failed; inspect the reported target failures.");
+
+            return self::FAILURE;
+        }
 
         return self::SUCCESS;
     }

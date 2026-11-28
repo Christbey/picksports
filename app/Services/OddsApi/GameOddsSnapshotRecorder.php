@@ -3,6 +3,11 @@
 namespace App\Services\OddsApi;
 
 use App\Models\GameOddsSnapshot;
+use App\Models\MarketQuote;
+use App\Models\MLB\Game;
+use App\Support\MLB\MlbGameStart;
+use App\Support\MLB\MlbQuoteTime;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -21,8 +26,40 @@ class GameOddsSnapshotRecorder
         ?Carbon $capturedAt = null,
         string $source = 'odds_api'
     ): ?GameOddsSnapshot {
+        if ($sport === 'mlb' && $game instanceof Game) {
+            foreach ([new GameOddsSnapshot, new MarketQuote] as $model) {
+                if ($model->getConnection()->getName() !== $game->getConnection()->getName()) {
+                    throw new \RuntimeException('MLB quote observations require one coherent database connection.');
+                }
+            }
+
+            return $game->getConnection()->transaction(function () use ($sport, $game, $rawEvent, $oddsData, $capturedAt, $source): ?GameOddsSnapshot {
+                $current = $game->newQuery()->lockForUpdate()->findOrFail($game->id);
+                if (MlbGameStart::context($current) !== MlbGameStart::context($game)) {
+                    throw new \RuntimeException('MLB schedule changed before quote recording; retry with current source facts.');
+                }
+
+                return $this->recordLocal($sport, $current, $rawEvent, $oddsData, $capturedAt, $source);
+            });
+        }
+
+        return $this->recordLocal($sport, $game, $rawEvent, $oddsData, $capturedAt, $source);
+    }
+
+    private function recordLocal(string $sport, Model $game, array $rawEvent, array $oddsData, ?Carbon $capturedAt, string $source): ?GameOddsSnapshot
+    {
         $capturedAt ??= now();
         $payloadHash = hash('sha256', json_encode($oddsData));
+        $marketContext = is_array($oddsData['market_context'] ?? null) ? $oddsData['market_context'] : [];
+        if ($sport === 'mlb') {
+            unset($marketContext['_mlb_time']);
+            if ($game instanceof Game) {
+                $marker = MlbQuoteTime::capture($game, $capturedAt, $this->commenceTime($rawEvent['commence_time'] ?? null), isset($rawEvent['id']) ? (string) $rawEvent['id'] : null, $payloadHash, $oddsData);
+                if ($marker !== null) {
+                    $marketContext['_mlb_time'] = $marker;
+                }
+            }
+        }
 
         $latestSnapshot = GameOddsSnapshot::query()
             ->where('game_table', $game->getTable())
@@ -39,7 +76,13 @@ class GameOddsSnapshotRecorder
                     ? (int) config('cfb.predictions.spread_value.maximum_quote_age_minutes', 60)
                     : (int) config('nfl.predictions.pregame_market.maximum_quote_age_minutes', 60)) / 2,
             ));
-            if (! in_array($sport, ['nfl', 'cfb', 'cbb'], true)
+            if ($sport === 'mlb' && $game instanceof Game) {
+                $prior = MlbQuoteTime::marker($game, $latestSnapshot);
+                $refreshMinutes = max(1, (int) floor((float) config('mlb.signals.odds_stale_hours', 12) * 30));
+                if ($prior !== null && CarbonImmutable::parse($prior['observed_at_utc'])->gt(now()->subMinutes($refreshMinutes))) {
+                    return null;
+                }
+            } elseif (! in_array($sport, ['nfl', 'cfb', 'cbb'], true)
                 || $latestSnapshot->captured_at === null
                 || $latestSnapshot->captured_at->gt($capturedAt->copy()->subMinutes($refreshAfterMinutes))) {
                 return null;
@@ -58,7 +101,7 @@ class GameOddsSnapshotRecorder
             'captured_at' => $this->storageTimestamp($capturedAt),
             'payload_hash' => $payloadHash,
             'odds_data' => $oddsData,
-            'market_context' => is_array($oddsData['market_context'] ?? null) ? $oddsData['market_context'] : null,
+            'market_context' => $sport === 'mlb' ? $marketContext : (is_array($oddsData['market_context'] ?? null) ? $oddsData['market_context'] : null),
         ]);
 
         app(MarketQuoteRecorder::class)->record($snapshot, $oddsData);

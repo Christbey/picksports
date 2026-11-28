@@ -11,8 +11,11 @@ use App\Models\NFL\TeamStat;
 use App\Models\OddsApiPlayerMapping;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use App\Services\NFL\NflPlayerPropCoverage;
+use App\Services\NFL\NflPropProbabilityExperiment;
 use App\Services\OddsApi\OddsApiService;
 use App\Support\SportsViewCache;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 beforeEach(function () {
     config(['nfl.props.opportunity_projection_enabled' => true]);
@@ -72,19 +75,21 @@ test('model history excludes missing preseason future old season and transferred
         ->and(data_get($meta, 'stat_summary.season_avg'))->toEqual(20);
 });
 
-test('defensive evidence uses the other offense and exactly the latest twelve regular season games', function () {
+test('shadow positional adjustments do not reuse prior season team totals', function () {
     for ($i = 1; $i <= 13; $i++) {
         $g = ($this->history)(2025, sprintf('2025-10-%02d', $i), 10);
         TeamStat::factory()->create(['game_id' => $g->id, 'team_id' => $this->team->id, 'rushing_attempts' => $i === 1 ? 100 : 20]);
         TeamStat::factory()->create(['game_id' => $g->id, 'team_id' => $this->opponent->id, 'rushing_attempts' => 5]);
     }
     $config = ($this->invoke)('getSportConfig', 'NFL');
-    $context = ($this->invoke)('buildContextAdjustments', $this->game, $this->player->id, $this->team->id, $this->opponent->id, 'player_rush_attempts', $config);
-    expect($context['opponent_evidence']['games'])->toBe(12)
-        ->and($context['opponent_evidence']['allowed_average'])->toEqual(20);
+    $experiment = app(NflPropProbabilityExperiment::class);
+    $shadowContext = fn () => (new ReflectionMethod($experiment, 'buildContextAdjustments'))->invoke($experiment, $this->game, $this->player->id, $this->team->id, $this->opponent->id, 'player_rush_attempts', $config);
+    $context = $shadowContext();
+    expect($context['opponent_evidence']['reason'])->toBe('missing_position_coverage')
+        ->and($context['opponent_factor'])->toEqual(1);
     TeamStat::where('team_id', $this->opponent->id)->update(['rushing_attempts' => 80]);
-    $changed = ($this->invoke)('buildContextAdjustments', $this->game, $this->player->id, $this->team->id, $this->opponent->id, 'player_rush_attempts', $config);
-    expect($changed['opponent_evidence']['allowed_average'])->toEqual(20);
+    $changed = $shadowContext();
+    expect($changed['opponent_factor'])->toEqual(1);
 });
 
 test('a favorable no-vig comparison cannot approve a negative expected value price', function () {
@@ -264,3 +269,77 @@ test('quarterback starter baselines exclude known relief appearances without dro
         ->and(data_get($meta, 'history.role.excluded_game_ids'))->toBe([$relief->id])
         ->and(data_get($meta, 'stat_summary.season_avg'))->toEqual(250);
 });
+
+test('shared NFL history matches uncached calculations while reducing reads and refreshing each run', function (bool $opportunityEnabled) {
+    config(['nfl.props.opportunity_projection_enabled' => $opportunityEnabled]);
+    ($this->history)(2025, '2025-10-01', 7);
+    ($this->history)(2026, '2026-09-01', 9);
+    ($this->history)(2026, '2026-09-06', 18);
+    ($this->history)(2026, '2026-09-13', 21);
+    $otherBook = $this->prop->replicate();
+    $otherBook->bookmaker = 'second-book';
+    $otherBook->line = 15.5;
+    $otherBook->save();
+    $otherMarket = $this->prop->replicate();
+    $otherMarket->market = 'player_rush_yds';
+    $otherMarket->line = 40.5;
+    $otherMarket->save();
+    PlayerStat::query()->update(['rushing_yards' => 75]);
+    $reference = new class extends PlayerPropAnalyzer
+    {
+        protected function finalizedPlayerStats(
+            int $playerId,
+            string $playerStatModel,
+            ?int $limit = null,
+            ?int $opponentId = null,
+            ?int $venueTeamId = null,
+            bool $isHome = true
+        ): Collection {
+            $query = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel);
+            if ($opponentId !== null) {
+                $query->whereHas('game', fn ($game) => $game->where(fn ($teams) => $teams
+                    ->where('home_team_id', $opponentId)->orWhere('away_team_id', $opponentId)));
+            }
+            if ($venueTeamId !== null) {
+                $query->whereHas('game', fn ($game) => $game->where($isHome ? 'home_team_id' : 'away_team_id', $venueTeamId));
+            }
+            if ($limit !== null) {
+                $query->take($limit);
+            }
+
+            return $query->with('game')->get();
+        }
+    };
+    $snapshots = fn () => PlayerProp::where('game_id', $this->game->id)->orderBy('id')->get()->map->only([
+        'recommended_side', 'predicted_over_probability', 'market_over_probability', 'edge_probability',
+        'confidence_score', 'data_quality_score', 'confidence_decomposition',
+    ])->all();
+    $run = function (PlayerPropAnalyzer $analyzer) {
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        try {
+            $analyzer->analyzeProps('NFL', gameFilter: $this->game->id, attachNarratives: false);
+
+            return collect(DB::getQueryLog())
+                ->filter(fn ($query) => str_starts_with(strtolower($query['query']), 'select')
+                    && str_contains($query['query'], 'from "nfl_player_stats"'))->count();
+        } finally {
+            DB::disableQueryLog();
+        }
+    };
+    $referenceReads = $run($reference);
+    $expected = $snapshots();
+    $optimizedReads = $run($this->analyzer);
+    expect($snapshots())->toBe($expected)
+        ->and(PlayerPropAnalyzer::NFL_MODEL_VERSION)->toBe('nfl-player-prop-v4-integrity')
+        // Published v4 does not issue the two experimental positional-history reads.
+        ->and($optimizedReads)->toBe(4)
+        ->and($referenceReads)->toBeGreaterThan($optimizedReads);
+
+    PlayerStat::query()->update(['rushing_attempts' => 3]);
+    $run($this->analyzer);
+    expect(data_get($this->prop->fresh()->confidence_decomposition, 'stat_summary.season_avg'))->toEqual(3);
+})->with([
+    'legacy model' => false,
+    'opportunity model' => true,
+]);

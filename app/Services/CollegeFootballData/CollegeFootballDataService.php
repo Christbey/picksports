@@ -2,8 +2,12 @@
 
 namespace App\Services\CollegeFootballData;
 
+use App\Services\CollegeFootballData\Fpi\BoundedFpiSink;
+use App\Support\Json\JsonAllocationBudget;
+use App\Support\Sports\ExplicitOffsetInstant;
 use Carbon\CarbonImmutable;
 use GuzzleHttp\Psr7\Response as PsrResponse;
+use GuzzleHttp\Psr7\Utils;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
@@ -11,6 +15,7 @@ use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 
 class CollegeFootballDataService
 {
@@ -191,10 +196,95 @@ class CollegeFootballDataService
     /** @return array{rows: array, observed_at: string} */
     public function getFpiSeasonSnapshot(int $year): array
     {
-        return $this->seasonSnapshot('/ratings/fpi', ['year' => $year]);
+        $validate = function (array $snapshot) use ($year): array {
+            $observed = ExplicitOffsetInstant::parse($snapshot['observed_at'] ?? null);
+            if ($observed === null || $observed->isFuture() || ! is_array($snapshot['rows'] ?? null)
+                || ! array_is_list($snapshot['rows']) || count($snapshot['rows']) > 1024) {
+                throw new RuntimeException('Cached or received FPI snapshot is invalid.');
+            }
+            $raw = json_encode($snapshot['rows'], JSON_THROW_ON_ERROR);
+            JsonAllocationBudget::inspect($raw, BoundedFpiSink::MAXIMUM_BYTES, 100000, 16, 'FPI season source');
+            foreach ($snapshot['rows'] as $row) {
+                if (! is_array($row) || ! is_string($row['team'] ?? null) || strlen($row['team']) > 256
+                    || (int) ($row['season'] ?? $row['year'] ?? $year) !== $year) {
+                    throw new RuntimeException('FPI source row identity is invalid.');
+                }
+            }
+
+            return $snapshot;
+        };
+        if ($this->monthlyQuotaExhausted()) {
+            (new Response(new PsrResponse(429, ['Content-Type' => 'application/json'], '{"message":"Monthly call quota exceeded."}')))->throw();
+        }
+        $makeSink = fn () => new BoundedFpiSink(Utils::streamFor(fopen('php://temp/maxmemory:262144', 'w+')));
+        $sink = $makeSink();
+        $deadline = hrtime(true) / 1e9 + 87;
+        $body = null;
+        try {
+            $response = $this->request()->withOptions(['sink' => $sink])
+                ->retry([250, 1000], when: function (\Throwable $error, PendingRequest $request) use (&$sink, $makeSink, $deadline): bool {
+                    $retry = $error instanceof ConnectionException || ($error instanceof RequestException
+                        && ! $this->fpiQuotaExceeded($error->response) && in_array($error->response->status(), [429, 500, 502, 503, 504], true));
+                    $remaining = $deadline - hrtime(true) / 1e9;
+                    if (! $retry || $remaining <= 1) {
+                        return false;
+                    }
+                    $sink->close();
+                    $sink = $makeSink();
+                    $request->withOptions(['sink' => $sink])->timeout(min(30, $remaining - 1))->connectTimeout(min(30, $remaining - 1));
+
+                    return true;
+                }, throw: false)->get('/ratings/fpi', ['year' => $year]);
+            $body = $response->toPsrResponse()->getBody();
+            if ($response->status() === 429 && $this->fpiQuotaExceeded($response)) {
+                Cache::put($this->quotaCacheKey(), true, now('UTC')->startOfMonth()->addMonth());
+            }
+            $response->throw();
+            if ($body->isSeekable()) {
+                $body->rewind();
+            }
+            $raw = $body->read(BoundedFpiSink::MAXIMUM_BYTES + 1);
+            if (! str_starts_with(ltrim($raw), '[')) {
+                throw new RuntimeException('FPI HTTP source must be a top-level JSON list.');
+            }
+            JsonAllocationBudget::inspect($raw, BoundedFpiSink::MAXIMUM_BYTES, 100000, 16, 'FPI HTTP source');
+            if (! $body->eof()) {
+                throw new RuntimeException('FPI HTTP source exceeds its byte budget.');
+            }
+            $rows = json_decode($raw, true, 17, JSON_THROW_ON_ERROR);
+            $snapshot = $validate(['rows' => $rows, 'observed_at' => now()->toIso8601String()]);
+
+            return $snapshot;
+        } finally {
+            $body?->close();
+            $sink->close();
+        }
     }
 
     /** @return array{rows: array, observed_at: string} */
+    private function fpiQuotaExceeded(Response $response): bool
+    {
+        if ($response->status() !== 429) {
+            return false;
+        }
+        $body = $response->toPsrResponse()->getBody();
+        if ($body->isSeekable()) {
+            $body->rewind();
+        }
+        $raw = $body->read(BoundedFpiSink::MAXIMUM_BYTES + 1);
+        JsonAllocationBudget::inspect($raw, BoundedFpiSink::MAXIMUM_BYTES, 100000, 16, 'FPI quota response');
+        if (! $body->eof()) {
+            throw new RuntimeException('FPI quota response exceeds its byte budget.');
+        }
+        $decoded = json_decode($raw, true, 17, JSON_THROW_ON_ERROR);
+        if ($body->isSeekable()) {
+            $body->rewind();
+        }
+
+        return is_array($decoded) && is_string($decoded['message'] ?? null)
+            && strcasecmp(trim($decoded['message']), 'Monthly call quota exceeded.') === 0;
+    }
+
     private function seasonSnapshot(string $path, array $query): array
     {
         ksort($query);
@@ -294,7 +384,7 @@ class CollegeFootballDataService
     protected function request(): PendingRequest
     {
         if (! $this->apiKey) {
-            throw new \RuntimeException(
+            throw new RuntimeException(
                 'CollegeFootballData API key is not configured. Please set COLLEGEFOOTBALLDATA_API_KEY in your .env file.'
             );
         }

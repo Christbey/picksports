@@ -84,6 +84,7 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
         $processed = 0;
         $skipped = 0;
         $rateLimited = false;
+        $failed = 0;
 
         if (! $this->option('dry-run') && (! Schema::hasTable('sports_ai_prediction_analyses')
             || ! Schema::hasColumn('sports_ai_prediction_analyses', 'canonical_prediction_id'))) {
@@ -195,6 +196,7 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                 $latencyMs = (int) round((microtime(true) - $startedAt) * 1000);
 
                 if (! $analysis) {
+                    $failed++;
                     $this->warn('  - skipped '.$this->matchup($prediction).' (AI analysis unavailable'.($failureReason ? ': '.$failureReason : '').')');
                     $skipped++;
 
@@ -262,39 +264,45 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
 
                 [$generatedProvider, $generatedModel] = $this->providerModel((string) ($analysis['generated_by'] ?? ''));
 
-                SportsAiPredictionAnalysis::query()->updateOrCreate(
-                    $identity,
-                    [
-                        'game_id' => $gameId,
-                        'game_date' => $gameDate,
-                        'provider' => $generatedProvider,
-                        'model' => $generatedModel,
-                        'input_hash' => $inputHash,
-                        'raw_payload' => $payload,
-                        'recommendation' => $publishingDecision['recommendation'],
-                        'ai_confidence' => (int) $analysis['ai_confidence'],
-                        'analysis_confidence' => (int) $analysis['analysis_confidence'],
-                        'bet_classification' => $publishingDecision['bet_classification'],
-                        'summary' => $publishingDecision['summary'],
-                        'key_factors' => $analysis['key_factors'],
-                        'risk_flags' => $publishingDecision['risk_flags'],
-                        'reason_codes' => $publishingDecision['reason_codes'],
-                        'market_notes' => $publishingDecision['market_notes'],
-                        'calculated_edge' => $payloadBuilder->calculatedEdge($prediction, $sport),
-                        'metadata' => [
-                            'command' => 'sports:ai-daily-predictions',
-                            'prediction_source' => $payload['prediction_source'] ?? ['type' => 'legacy'],
-                            'schema_version' => $payload['schema_version'] ?? null,
-                            'operational_context_schema_version' => $operationalContext['schema_version'] ?? null,
-                            'publication_guardrail_status' => data_get($operationalContext, 'publication_guardrails.status'),
-                            'required_actions' => $operationalContext['required_actions'] ?? [],
-                            'shadow_agents' => $shadowAgents,
-                            'publishing_enforcement' => $publishingDecision['enforcement'],
-                            'ai_generated_summary' => (string) $analysis['summary'],
-                        ],
-                        'latency_ms' => $latencyMs,
-                    ]
-                );
+                $attributes = [
+                    'game_id' => $gameId,
+                    'game_date' => $gameDate,
+                    'provider' => $generatedProvider,
+                    'model' => $generatedModel,
+                    'input_hash' => $inputHash,
+                    'raw_payload' => $payload,
+                    'recommendation' => $publishingDecision['recommendation'],
+                    'ai_confidence' => (int) $analysis['ai_confidence'],
+                    'analysis_confidence' => (int) $analysis['analysis_confidence'],
+                    'bet_classification' => $publishingDecision['bet_classification'],
+                    'summary' => $publishingDecision['summary'],
+                    'key_factors' => $analysis['key_factors'],
+                    'risk_flags' => $publishingDecision['risk_flags'],
+                    'reason_codes' => $publishingDecision['reason_codes'],
+                    'market_notes' => $publishingDecision['market_notes'],
+                    'calculated_edge' => $payloadBuilder->calculatedEdge($prediction, $sport),
+                    'metadata' => [
+                        'command' => 'sports:ai-daily-predictions',
+                        'prediction_source' => $payload['prediction_source'] ?? ['type' => 'legacy'],
+                        'schema_version' => $payload['schema_version'] ?? null,
+                        'operational_context_schema_version' => $operationalContext['schema_version'] ?? null,
+                        'publication_guardrail_status' => data_get($operationalContext, 'publication_guardrails.status'),
+                        'required_actions' => $operationalContext['required_actions'] ?? [],
+                        'shadow_agents' => $shadowAgents,
+                        'publishing_enforcement' => $publishingDecision['enforcement'],
+                        'ai_generated_summary' => (string) $analysis['summary'],
+                    ],
+                    'latency_ms' => $latencyMs,
+                ];
+                try {
+                    $this->persistAnalysis($identity, $attributes);
+                } catch (\Throwable $error) {
+                    report($error);
+                    $failed++;
+                    $this->error('  - could not save '.$this->matchup($prediction).' (analysis persistence was not confirmed)');
+
+                    continue;
+                }
 
                 $processed++;
                 $this->line('  - saved '.$this->matchup($prediction).' -> '.$publishingDecision['bet_classification'].' / '.$publishingDecision['recommendation']);
@@ -303,7 +311,63 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
 
         $this->info("AI daily prediction analysis complete. Processed {$processed}; skipped {$skipped}.");
 
-        return $rateLimited && $processed === 0 ? self::FAILURE : self::SUCCESS;
+        return $failed > 0 || ($rateLimited && $processed === 0) ? self::FAILURE : self::SUCCESS;
+    }
+
+    /** Confirm requested values against the primary row, never an observer-mutated returned object. */
+    private function persistAnalysis(array $identity, array $attributes): void
+    {
+        $intended = new SportsAiPredictionAnalysis([...$identity, ...$attributes]);
+        $expected = $this->normalizedAnalysisValue($intended->attributesToArray());
+        $connection = $intended->getConnection();
+        $connection->transaction(function () use ($identity, $attributes, $intended, $expected, $connection): void {
+            $saved = SportsAiPredictionAnalysis::query()->updateOrCreate($identity, $attributes);
+            if (! $saved->exists || $saved->isDirty() || $saved->getConnection() !== $connection) {
+                throw new \RuntimeException('Analysis persistence was cancelled or changed connection.');
+            }
+            // Bound every actual body relative to its already-staged requested value
+            // before PDO hydration. This is a verification bound, not a global payload policy.
+            $query = (new SportsAiPredictionAnalysis)->newQuery()->useWritePdo()->whereKey($saved->getKey());
+            $grammar = $connection->getQueryGrammar();
+            $oversized = [];
+            $query->select('id');
+            foreach ($intended->getAttributes() as $field => $raw) {
+                $column = $grammar->wrap($field);
+                $bytes = match ($connection->getDriverName()) {
+                    'mysql' => "OCTET_LENGTH(CAST($column AS BINARY))",
+                    'sqlite' => "LENGTH(CAST($column AS BLOB))",
+                    default => throw new \RuntimeException('Unsupported analysis persistence verification driver.'),
+                };
+                $maximum = max(256, strlen((string) $raw) * 2 + 256);
+                $query->selectRaw("CASE WHEN $bytes <= ? THEN $column ELSE NULL END AS $column", [$maximum]);
+                $oversized[] = "$bytes > $maximum";
+            }
+            $current = $query->selectRaw('CASE WHEN '.implode(' OR ', $oversized).' THEN 1 ELSE 0 END AS _persistence_oversized')->first();
+            if ($current === null || (int) $current->getAttribute('_persistence_oversized') !== 0
+                || $current->getConnection() !== $connection
+                || $this->normalizedAnalysisValue(array_intersect_key($current->attributesToArray(), $expected)) !== $expected) {
+                throw new \RuntimeException('Stored analysis differs from its staged requested values.');
+            }
+        });
+    }
+
+    private function normalizedAnalysisValue(mixed $value): mixed
+    {
+        if (is_array($value)) {
+            $detached = [];
+            foreach ($value as $key => $item) {
+                $detached[$key] = $this->normalizedAnalysisValue($item);
+            }
+            if (! array_is_list($detached)) {
+                ksort($detached, SORT_STRING);
+            }
+
+            return $detached;
+        }
+
+        // Match ordinary JSON storage's numeric representation without coercing strings or booleans.
+        return is_float($value) && is_finite($value) && floor($value) === $value
+            && abs($value) <= 9007199254740991 ? (int) $value : $value;
     }
 
     /**

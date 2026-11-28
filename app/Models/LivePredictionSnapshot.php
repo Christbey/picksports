@@ -2,14 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\RejectsPersistedModelMutation;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use LogicException;
 
 class LivePredictionSnapshot extends Model
 {
-    use HasFactory;
+    use HasFactory, RejectsPersistedModelMutation;
 
     public $timestamps = false;
 
@@ -20,10 +20,9 @@ class LivePredictionSnapshot extends Model
         return ['baseline' => 'array', 'state' => 'array', 'projection' => 'array', 'observed_at' => 'immutable_datetime'];
     }
 
-    protected static function booted(): void
+    protected function immutableMutationMessage(): string
     {
-        static::updating(fn () => throw new LogicException('Live prediction snapshots are append-only.'));
-        static::deleting(fn () => throw new LogicException('Live prediction snapshots are append-only.'));
+        return 'Live prediction snapshots are append-only.';
     }
 
     public function canonicalPrediction(): BelongsTo

@@ -33,7 +33,9 @@ defineProps<{
                         ? livePrediction?.provisional
                             ? 'Live Estimate'
                             : 'Live Trading'
-                        : 'Market Edge'
+                        : bettingValue?.length
+                          ? 'Market Edge'
+                          : 'Stored Context'
                 }}
             </div>
             <CardTitle class="flex items-center gap-2">
@@ -46,7 +48,11 @@ defineProps<{
                     ></span>
                 </span>
                 <span>{{
-                    hasLivePrediction ? 'Live Analysis' : 'Betting Signals'
+                    hasLivePrediction
+                        ? 'Live Analysis'
+                        : bettingValue?.length
+                          ? 'Betting Signals'
+                          : 'Historical Patterns'
                 }}</span>
                 <span
                     v-if="!hasLivePrediction && bettingValue?.length"

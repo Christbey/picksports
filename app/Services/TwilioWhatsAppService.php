@@ -38,14 +38,13 @@ class TwilioWhatsAppService
             if (! $response->successful()) {
                 Log::warning('Twilio WhatsApp request failed.', [
                     'status' => $response->status(),
-                    'body' => $response->body(),
                 ]);
 
                 return false;
             }
         } catch (Throwable $e) {
             Log::warning('Twilio WhatsApp request threw an exception.', [
-                'message' => $e->getMessage(),
+                'exception_class' => $e::class,
             ]);
 
             return false;

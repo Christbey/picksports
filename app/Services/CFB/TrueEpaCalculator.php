@@ -3,6 +3,8 @@
 namespace App\Services\CFB;
 
 use App\Services\Epa\StateBaselineService;
+use App\Support\CFB\ObservedTerminalBoundary;
+use App\Support\ScoreObservation;
 use Illuminate\Support\Collection;
 
 class TrueEpaCalculator
@@ -36,7 +38,7 @@ class TrueEpaCalculator
             $play = $rows[$i];
             $playId = (int) $play->id;
 
-            if (! $this->playDataService->isEpaEligiblePlay($play) || ! is_numeric($play->possession_team_id ?? null)) {
+            if (! $this->playDataService->isEpaEligiblePlay($play) || ! is_numeric($play->possession_team_id ?? null) || ! in_array((int) ($play->possession_team_id ?? 0), [$homeTeamId, $awayTeamId], true)) {
                 $results[$playId] = [
                     'eligible' => false,
                     'ep_before' => null,
@@ -53,8 +55,12 @@ class TrueEpaCalculator
 
             $period = (int) ($play->period ?? 0);
             $end = data_get($play->source_state ?? [], 'end');
-            $terminal = (bool) ($play->is_scoring_play ?? false)
-                || (in_array($period, [2, 4], true) && ($play->clock ?? null) === '0:00');
+            $next = $rows[$i + 1] ?? null;
+            $observedEnd = $next !== null
+                && ObservedTerminalBoundary::forHalf($next, $period, $homeTeamId, $awayTeamId)
+                && ScoreObservation::known($play->home_score ?? null) === ScoreObservation::known($next->home_score ?? null)
+                && ScoreObservation::known($play->away_score ?? null) === ScoreObservation::known($next->away_score ?? null);
+            $terminal = (bool) ($play->is_scoring_play ?? false) || $observedEnd;
             if ($terminal) {
                 $epAfter = 0.0;
             } elseif (is_array($end) && isset($end['down'], $end['distance'], $end['yardsToEndzone']) && $end['down'] >= 1 && $end['down'] <= 4) {
@@ -79,7 +85,7 @@ class TrueEpaCalculator
             }
 
             $scoreDelta = $this->scoreDeltaForOffense($rows, $i, $offenseTeamId, $homeTeamId, $awayTeamId);
-            if ($epBefore === null || $epAfter === null) {
+            if ($scoreDelta === null || $epBefore === null || $epAfter === null) {
                 $results[$playId] = ['eligible' => true, 'ep_before' => $epBefore, 'ep_after' => $epAfter, 'epa' => null];
 
                 continue;
@@ -100,21 +106,24 @@ class TrueEpaCalculator
     /**
      * @param  array<int,object>  $rows
      */
-    private function scoreDeltaForOffense(array $rows, int $index, int $offenseTeamId, int $homeTeamId, int $awayTeamId): float
+    private function scoreDeltaForOffense(array $rows, int $index, int $offenseTeamId, int $homeTeamId, int $awayTeamId): ?float
     {
         if ($index <= 0) {
-            return $this->scoreDeltaBetween((object) ['home_score' => 0, 'away_score' => 0], $rows[$index], $offenseTeamId, $homeTeamId, $awayTeamId);
+            return null;
         }
 
         return $this->scoreDeltaBetween($rows[$index - 1], $rows[$index], $offenseTeamId, $homeTeamId, $awayTeamId);
     }
 
-    private function scoreDeltaBetween(object $before, object $after, int $offenseTeamId, int $homeTeamId, int $awayTeamId): float
+    private function scoreDeltaBetween(object $before, object $after, int $offenseTeamId, int $homeTeamId, int $awayTeamId): ?float
     {
-        $homeBefore = (int) ($before->home_score ?? 0);
-        $awayBefore = (int) ($before->away_score ?? 0);
-        $homeAfter = (int) ($after->home_score ?? 0);
-        $awayAfter = (int) ($after->away_score ?? 0);
+        $homeBefore = ScoreObservation::known($before->home_score ?? null);
+        $awayBefore = ScoreObservation::known($before->away_score ?? null);
+        $homeAfter = ScoreObservation::known($after->home_score ?? null);
+        $awayAfter = ScoreObservation::known($after->away_score ?? null);
+        if ($homeBefore === null || $awayBefore === null || $homeAfter === null || $awayAfter === null) {
+            return null;
+        }
 
         $homeDelta = $homeAfter - $homeBefore;
         $awayDelta = $awayAfter - $awayBefore;
@@ -127,7 +136,7 @@ class TrueEpaCalculator
             return (float) ($awayDelta - $homeDelta);
         }
 
-        return 0.0;
+        return null;
     }
 
     public function stateKeyForPlay(object $play): string

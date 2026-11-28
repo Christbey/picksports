@@ -7,6 +7,8 @@ use App\Models\MLB\Prediction;
 use App\Services\MLB\MlbAnalysisForecastSource;
 use App\Services\MLB\MlbPredictionRecommendationService;
 use App\Services\MLB\Predictions\MlbCalculationReleaseDefinition;
+use App\Support\MLB\MlbGameStart;
+use App\Support\MLB\MlbQuoteTime;
 use App\Support\Odds\AmericanOdds;
 use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
@@ -333,7 +335,7 @@ class ResearchMarketBlendsCommand extends Command
                 'analysis_pregame_safe' => $analysisPregameSafe,
                 'public_recommendations_enabled' => false,
                 'public_promoted_rows' => 0,
-                'strict_pregame_safe' => collect($exclusions)->every(fn (array $row): bool => (int) $row[1] === 0),
+                'strict_pregame_safe' => $rows->isNotEmpty() && collect($exclusions)->every(fn (array $row): bool => (int) $row[1] === 0),
                 'notes' => 'Report-only shadow research. Stored MLB predictions and public recommendations are unchanged.',
             ],
             'market_aware_blend_grid' => $this->blendGrid($analysisRows),
@@ -887,6 +889,9 @@ class ResearchMarketBlendsCommand extends Command
     {
         $game = $prediction->game;
         $flags = [];
+        if (($oddsContext['timing_verified'] ?? false) !== true) {
+            $flags[] = 'market_time_provenance_unverified';
+        }
         $prices = $this->extractH2hPrices($prediction, $oddsContext['odds_data']);
 
         if ($prices['home'] === null || $prices['away'] === null) {
@@ -910,6 +915,9 @@ class ResearchMarketBlendsCommand extends Command
             $flags[] = 'stale_odds';
         }
 
+        if ($prediction->created_at !== null && $start !== null && $prediction->created_at->gte($start)) {
+            $flags[] = 'prediction_after_first_pitch';
+        }
         if ($prediction->created_at === null) {
             $flags[] = 'missing_prediction_timestamp';
         }
@@ -933,13 +941,21 @@ class ResearchMarketBlendsCommand extends Command
         $game = $prediction->game;
         $start = $this->gameStartAt($prediction);
 
-        if ($game !== null && $start !== null) {
+        $typed = $game === null ? null : MlbQuoteTime::latest($game);
+        if ($typed !== null) {
+            $marker = MlbQuoteTime::marker($game, $typed);
+
+            return ['odds_data' => $typed->odds_data, 'captured_at' => Carbon::parse($marker['captured_at_utc']),
+                'source' => 'verified_epoch_odds_snapshot', 'snapshot_id' => (int) $typed->id, 'timing_verified' => true];
+        }
+        $legacyBoundary = $game === null ? null : MlbGameStart::canonical($game);
+        if ($game !== null && $start !== null && $legacyBoundary !== null) {
             $snapshot = GameOddsSnapshot::query()
                 ->where('sport', 'mlb')
                 ->where('game_table', $game->getTable())
                 ->where('game_id', (int) $game->id)
                 ->whereNotNull('captured_at')
-                ->where('captured_at', '<', $start)
+                ->where('captured_at', '<', $legacyBoundary)
                 ->latest('captured_at')
                 ->latest('id')
                 ->first();
@@ -948,7 +964,7 @@ class ResearchMarketBlendsCommand extends Command
                 return [
                     'odds_data' => is_array($snapshot->odds_data) ? $snapshot->odds_data : null,
                     'captured_at' => $snapshot->captured_at,
-                    'source' => 'pregame_odds_snapshot',
+                    'source' => 'legacy_time_unverified_snapshot', 'timing_verified' => false,
                     'snapshot_id' => (int) $snapshot->id,
                 ];
             }
@@ -957,7 +973,7 @@ class ResearchMarketBlendsCommand extends Command
         return [
             'odds_data' => is_array($game?->odds_data) ? $game->odds_data : null,
             'captured_at' => $game?->odds_updated_at,
-            'source' => 'game_current_odds',
+            'source' => 'game_current_odds', 'timing_verified' => false,
             'snapshot_id' => null,
         ];
     }
@@ -975,12 +991,7 @@ class ResearchMarketBlendsCommand extends Command
 
     private function gameStartAt(Prediction $prediction): ?Carbon
     {
-        $game = $prediction->game;
-        if (! $game?->game_date || ! $game->game_time) {
-            return null;
-        }
-
-        return Carbon::parse($game->game_date->toDateString().' '.$game->game_time, config('app.timezone'));
+        return $prediction->game === null ? null : MlbGameStart::for($prediction->game);
     }
 
     /**

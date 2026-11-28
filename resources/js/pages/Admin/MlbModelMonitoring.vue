@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TrainingOperationsPanel from '@/components/admin/TrainingOperationsPanel.vue';
 import { Head } from '@inertiajs/vue3';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AppLayout from '@/layouts/AppLayout.vue';
@@ -30,6 +31,12 @@ const { breadcrumbs } = state;
         <SettingsLayout full-width>
             <div class="min-w-0 space-y-6">
                 <MlbMonitoringHeader />
+
+                <TrainingOperationsPanel
+                    v-if="training_operations"
+                    sport="mlb"
+                    :initial="training_operations"
+                />
 
                 <MlbMonitoringArtifact />
 

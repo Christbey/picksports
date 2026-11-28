@@ -65,6 +65,8 @@ const code = ref<string>('');
                         <div class="flex w-full items-center justify-center">
                             <InputOTP
                                 id="otp"
+                                aria-label="Authentication code"
+                                autocomplete="one-time-code"
                                 v-model="code"
                                 :maxlength="6"
                                 :disabled="processing"
@@ -105,6 +107,8 @@ const code = ref<string>('');
                     #default="{ errors, processing, clearErrors }"
                 >
                     <Input
+                        id="recovery_code"
+                        aria-label="Recovery code"
                         name="recovery_code"
                         type="text"
                         placeholder="Enter recovery code"

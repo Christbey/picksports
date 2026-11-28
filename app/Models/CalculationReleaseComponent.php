@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Models\GuardsCoreEvidenceMutations;
 use Database\Factories\CalculationReleaseComponentFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -10,6 +11,8 @@ use LogicException;
 
 class CalculationReleaseComponent extends Model
 {
+    use GuardsCoreEvidenceMutations;
+
     /** @use HasFactory<CalculationReleaseComponentFactory> */
     use HasFactory;
 

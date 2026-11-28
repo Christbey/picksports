@@ -28,6 +28,13 @@ const { loading, error, forecasts, fetchForecasts } = state;
         <div class="space-y-5">
             <MlbFuturesFilters />
 
+            <p class="text-sm text-muted-foreground">
+                Stored model estimates, not calibrated betting probabilities or
+                approved bets. Title model differences compare championship
+                probabilities with stored prices; quotes older than 36 hours are
+                excluded from comparisons.
+            </p>
+
             <DataRecovery
                 v-if="error"
                 :message="error"

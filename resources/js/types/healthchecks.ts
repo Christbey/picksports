@@ -1,3 +1,10 @@
+export interface HealthRemediation {
+    supported: boolean;
+    kind: string | null;
+    effects: string | null;
+    reason: string;
+}
+
 export interface ValidationRunSummary {
     total_findings?: number;
     passing?: number;
@@ -18,7 +25,8 @@ export interface Healthcheck {
     status: string;
     message: string;
     metadata: HealthcheckMetadata | null;
-    checked_at: string;
+    remediation?: HealthRemediation;
+    checked_at: string | null;
 }
 export interface TeamScheduleOutlier {
     type: string;
@@ -92,6 +100,7 @@ export interface Props {
             message: string;
             facts: Record<string, unknown> | null;
             recommended_action: string | null;
+            remediation?: HealthRemediation;
             detected_at: string | null;
         }>;
     } | null;

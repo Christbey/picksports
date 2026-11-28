@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { useHealthchecksContext } from '@/composables/useHealthchecks';
 const {
-    syncingCheck,
+    isSyncing,
     syncData,
-    canSync,
     getSyncLabel,
     getStatusColor,
     getStatusIcon,
@@ -262,21 +261,30 @@ const {
                         >
                             {{ formatDate(check.checked_at) }}
                         </div>
+                        <p
+                            v-if="check.remediation?.supported"
+                            class="max-w-xs text-xs text-muted-foreground"
+                        >
+                            {{ check.remediation.effects }}
+                            {{ check.remediation.reason }}
+                        </p>
+                        <p
+                            v-else-if="check.metadata?.recommended_action"
+                            class="max-w-xs text-xs text-muted-foreground"
+                        >
+                            {{
+                                check.remediation?.reason ??
+                                'Unsupported action: review the recommendation using the explicit operator workflow.'
+                            }}
+                        </p>
                         <button
-                            v-if="
-                                canSync(check.sport, check.check_type) ||
-                                !!check.metadata?.recommended_action
-                            "
+                            v-if="check.remediation?.supported"
                             @click="syncData(check.sport, check.check_type)"
-                            :disabled="
-                                syncingCheck ===
-                                `${check.sport}-${check.check_type}`
-                            "
+                            :disabled="isSyncing(check.sport, check.check_type)"
                             class="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             {{
-                                syncingCheck ===
-                                `${check.sport}-${check.check_type}`
+                                isSyncing(check.sport, check.check_type)
                                     ? 'Syncing...'
                                     : getSyncLabel(check.check_type)
                             }}

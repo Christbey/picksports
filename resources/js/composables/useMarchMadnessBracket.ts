@@ -51,12 +51,37 @@ export function useMarchMadnessBracket(props: {
     const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
     const metaSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
     let metaSaveTimer: number | undefined;
+    let alive = true;
+    let contextGeneration = 0;
+    let contextController = new AbortController();
+    let groupRequest = 0;
+    let bracketRequest = 0;
+    let leaderboardRequest = 0;
+    let metadataRequest = 0;
+    let picksRequest = 0;
+    let appliedPicks = '{}';
+    let pickSaveQueue = Promise.resolve();
     onScopeDispose(() => {
+        alive = false;
+        contextController.abort();
+        contextGeneration += 1;
         if (metaSaveTimer !== undefined) window.clearTimeout(metaSaveTimer);
     });
     const resetConfirmOpen = ref(false);
     const storageLoaded = ref(false);
     const serverLoaded = ref(false);
+    const accountReadErrors = reactive<{
+        brackets: string | null;
+        groups: string | null;
+        leaderboard: string | null;
+    }>({ brackets: null, groups: null, leaderboard: null });
+    const accountReadErrorMessages = computed(() =>
+        Object.values(accountReadErrors).filter(
+            (message): message is string => message !== null,
+        ),
+    );
+    const accountLoading = ref(false);
+    let accountLoadingToken: string | null = null;
 
     const tournament = useBracketTournament(
         props,
@@ -85,8 +110,20 @@ export function useMarchMadnessBracket(props: {
     const currentUserId = computed(() =>
         Number(page.props.auth?.user?.id ?? 0),
     );
+    const contextKey = computed(
+        () => `${currentUserId.value}:${currentSeason.value}`,
+    );
+    const localStorageKey = computed(() => `${storageKey}:${contextKey.value}`);
+    const captureContext = () => `${contextGeneration}:${contextKey.value}`;
+    const contextIsCurrent = (token: string) =>
+        alive && token === captureContext();
     const bracketLockDate = computed(() => new Date(bracketLockAtIso));
     const isBracketLocked = computed(() => {
+        if (
+            currentBracket.value?.is_locked ||
+            currentBracket.value?.can_edit === false
+        )
+            return true;
         if (currentBracket.value?.lock_at) {
             return new Date() >= new Date(currentBracket.value.lock_at);
         }
@@ -137,6 +174,8 @@ export function useMarchMadnessBracket(props: {
     const saveStateLabel = computed(() => {
         if (isBracketLocked.value) return 'Locked Mar 19, 2026 at 11:00 AM CT';
         if (!isAuthenticated.value) return 'Saved on this device';
+        if (accountReadErrors.brackets)
+            return 'Account sync unavailable; picks saved on this device';
         if (saveState.value === 'saving') return 'Saving to account';
         if (saveState.value === 'saved') return 'Saved to account';
         if (saveState.value === 'error') return 'Save failed';
@@ -246,15 +285,22 @@ export function useMarchMadnessBracket(props: {
         const validMatchupIds = new Set(
             allBracketMatchups.value.map((matchup) => matchup.id),
         );
-        picks.value = Object.fromEntries(
+        const validPicks = Object.fromEntries(
             Object.entries(stored).filter(([matchupId]) =>
                 validMatchupIds.has(matchupId),
             ),
         );
+        appliedPicks = JSON.stringify(validPicks);
+        picks.value = validPicks;
     };
 
-    const readLocalPicks = () => {
-        const stored = window.localStorage.getItem(storageKey);
+    const readLocalPicks = (allowGuestImport = false) => {
+        let key = localStorageKey.value;
+        let stored = window.localStorage.getItem(key);
+        if (!stored && allowGuestImport && isAuthenticated.value) {
+            key = `${storageKey}:0:${currentSeason.value}`;
+            stored = window.localStorage.getItem(key);
+        }
         if (!stored) {
             storageLoaded.value = true;
             return;
@@ -263,7 +309,7 @@ export function useMarchMadnessBracket(props: {
         try {
             applyStoredPicks(JSON.parse(stored) as Record<string, string>);
         } catch {
-            window.localStorage.removeItem(storageKey);
+            window.localStorage.removeItem(key);
         } finally {
             storageLoaded.value = true;
         }
@@ -277,6 +323,8 @@ export function useMarchMadnessBracket(props: {
             return null;
         }
 
+        const token = captureContext();
+        const activeAtStart = activeBracketPublicId.value;
         const resolvedGroupId = bracketGroupIdDraft.value
             ? Number(bracketGroupIdDraft.value)
             : requiresGroupAssignment.value && availableGroups.value.length
@@ -290,43 +338,50 @@ export function useMarchMadnessBracket(props: {
                 group_id: resolvedGroupId,
                 picks: initialPicks,
             },
+            { init: { signal: contextController.signal } },
         );
 
         const bracket = response?.data;
-        if (!bracket) {
+        if (!bracket || !contextIsCurrent(token)) {
             return null;
         }
 
         upsertBracketInList(bracket);
-        activateBracket(bracket, syncPicks);
+        if (activeBracketPublicId.value === activeAtStart)
+            activateBracket(bracket, syncPicks);
 
         return bracket;
     };
 
     const loadGroups = async () => {
-        if (!isAuthenticated.value) {
-            return;
-        }
-
-        const response = await api.groups.index<ApiResource<Group[]>>({
-            query: {
-                type: 'bracket_pool',
-                sport: 'cbb',
-                season: currentSeason.value,
-            },
-        });
-
-        const groups = response?.data ?? [];
-        availableGroups.value = groups;
-
-        if (
-            !bracketGroupIdDraft.value &&
-            groups.length > 0 &&
-            groups.some(
-                (group: Group) => group.owner_id !== currentUserId.value,
+        if (!isAuthenticated.value) return;
+        const token = captureContext();
+        const request = ++groupRequest;
+        accountReadErrors.groups = null;
+        try {
+            const response = await api.groups.index<ApiResource<Group[]>>({
+                init: { signal: contextController.signal },
+                query: {
+                    type: 'bracket_pool',
+                    sport: 'cbb',
+                    season: currentSeason.value,
+                },
+            });
+            if (!contextIsCurrent(token) || request !== groupRequest) return;
+            if (!response || !Array.isArray(response.data))
+                throw new Error('Missing group response');
+            const groups = response.data;
+            availableGroups.value = groups;
+            if (
+                !bracketGroupIdDraft.value &&
+                groups.length > 0 &&
+                groups.some((group) => group.owner_id !== currentUserId.value)
             )
-        ) {
-            bracketGroupIdDraft.value = String(groups[0].id);
+                bracketGroupIdDraft.value = String(groups[0].id);
+        } catch {
+            if (contextIsCurrent(token) && request === groupRequest)
+                accountReadErrors.groups =
+                    'Bracket groups could not be loaded.';
         }
     };
 
@@ -340,6 +395,9 @@ export function useMarchMadnessBracket(props: {
         }
 
         if (metaSaveTimer !== undefined) window.clearTimeout(metaSaveTimer);
+        const token = captureContext();
+        const sourceId = currentBracket.value.public_id;
+        const request = ++metadataRequest;
         metaSaveState.value = 'saving';
 
         try {
@@ -351,11 +409,16 @@ export function useMarchMadnessBracket(props: {
 
             const response = await api.cbbBrackets.update<
                 ApiResource<SavedBracket>
-            >(currentBracket.value.public_id, {
-                name: bracketNameDraft.value.trim() || null,
-                group_id: resolvedGroupId,
-            });
+            >(
+                sourceId,
+                {
+                    name: bracketNameDraft.value.trim() || null,
+                    group_id: resolvedGroupId,
+                },
+                { init: { signal: contextController.signal } },
+            );
 
+            if (!contextIsCurrent(token) || request !== metadataRequest) return;
             const savedBracket = response?.data;
             if (!savedBracket) {
                 metaSaveState.value = 'error';
@@ -363,6 +426,7 @@ export function useMarchMadnessBracket(props: {
             }
 
             upsertBracketInList(savedBracket);
+            if (activeBracketPublicId.value !== sourceId) return;
             activateBracket(savedBracket, false);
             metaSaveState.value = 'saved';
 
@@ -372,7 +436,12 @@ export function useMarchMadnessBracket(props: {
                 }
             }, 2000);
         } catch {
-            metaSaveState.value = 'error';
+            if (
+                contextIsCurrent(token) &&
+                request === metadataRequest &&
+                activeBracketPublicId.value === sourceId
+            )
+                metaSaveState.value = 'error';
         }
     };
 
@@ -380,6 +449,8 @@ export function useMarchMadnessBracket(props: {
         const bracket =
             brackets.value.find((entry) => entry.public_id === publicId) ??
             null;
+        metaSaveState.value = 'idle';
+        saveState.value = 'idle';
         activateBracket(bracket);
     };
 
@@ -388,24 +459,29 @@ export function useMarchMadnessBracket(props: {
             serverLoaded.value = true;
             return;
         }
-
+        const token = captureContext();
+        const request = ++bracketRequest;
+        serverLoaded.value = false;
+        accountReadErrors.brackets = null;
         try {
             const response = await api.cbbBrackets.index<
                 ApiResource<SavedBracket[]>
             >({
                 query: { season: currentSeason.value },
+                init: { signal: contextController.signal },
             });
-
-            const serverBrackets = response?.data ?? [];
+            if (!contextIsCurrent(token) || request !== bracketRequest) return;
+            if (!response || !Array.isArray(response.data))
+                throw new Error('Missing bracket response');
+            const serverBrackets = response.data;
             brackets.value = serverBrackets;
-
             if (serverBrackets.length > 0) {
-                const activeBracket =
+                activateBracket(
                     serverBrackets.find(
                         (entry) =>
                             entry.public_id === activeBracketPublicId.value,
-                    ) ?? serverBrackets[0];
-                activateBracket(activeBracket);
+                    ) ?? serverBrackets[0],
+                );
             } else if (
                 !isBracketLocked.value &&
                 Object.keys(picks.value).length > 0
@@ -414,35 +490,103 @@ export function useMarchMadnessBracket(props: {
             } else {
                 activateBracket(null);
             }
-        } finally {
-            serverLoaded.value = true;
+            if (contextIsCurrent(token) && request === bracketRequest)
+                serverLoaded.value = true;
+        } catch {
+            if (contextIsCurrent(token) && request === bracketRequest)
+                accountReadErrors.brackets =
+                    'Saved brackets could not be loaded. Your local draft is retained.';
         }
     };
 
     const loadLeaderboard = async () => {
-        if (!isAuthenticated.value) {
-            return;
+        if (!isAuthenticated.value) return;
+        const token = captureContext();
+        const groupId = currentBracket.value?.group_id ?? null;
+        const request = ++leaderboardRequest;
+        leaderboard.value = [];
+        accountReadErrors.leaderboard = null;
+        try {
+            const response = await api.cbbBrackets.leaderboard<
+                ApiResource<LeaderboardEntry[]>
+            >({
+                init: { signal: contextController.signal },
+                query: {
+                    season: currentSeason.value,
+                    limit: 10,
+                    group_id: groupId ?? undefined,
+                },
+            });
+            if (
+                !contextIsCurrent(token) ||
+                request !== leaderboardRequest ||
+                (currentBracket.value?.group_id ?? null) !== groupId
+            )
+                return;
+            if (!response || !Array.isArray(response.data))
+                throw new Error('Missing leaderboard response');
+            leaderboard.value = response.data;
+        } catch {
+            if (
+                contextIsCurrent(token) &&
+                request === leaderboardRequest &&
+                (currentBracket.value?.group_id ?? null) === groupId
+            )
+                accountReadErrors.leaderboard =
+                    'Bracket standings could not be loaded.';
         }
+    };
 
-        const response = await api.cbbBrackets.leaderboard<
-            ApiResource<LeaderboardEntry[]>
-        >({
-            query: {
-                season: currentSeason.value,
-                limit: 10,
-                group_id: currentBracket.value?.group_id ?? undefined,
-            },
-        });
-
-        leaderboard.value = response?.data ?? [];
+    const reloadAccountData = async () => {
+        const token = captureContext();
+        if (accountLoading.value && accountLoadingToken === token) return;
+        accountLoadingToken = token;
+        accountLoading.value = true;
+        try {
+            await Promise.all([
+                loadGroups(),
+                loadServerBrackets(),
+                loadLeaderboard(),
+            ]);
+        } finally {
+            if (contextIsCurrent(token)) accountLoading.value = false;
+        }
     };
 
     onMounted(() => {
-        readLocalPicks();
-        void loadGroups();
-        void loadServerBrackets();
-        void loadLeaderboard();
+        readLocalPicks(true);
+        void reloadAccountData();
     });
+
+    watch(
+        contextKey,
+        (_key, previousKey) => {
+            contextController.abort();
+            contextController = new AbortController();
+            contextGeneration += 1;
+            metadataRequest += 1;
+            picksRequest += 1;
+            if (metaSaveTimer !== undefined) window.clearTimeout(metaSaveTimer);
+            currentBracket.value = null;
+            activeBracketPublicId.value = null;
+            brackets.value = [];
+            availableGroups.value = [];
+            leaderboard.value = [];
+            bracketNameDraft.value = '';
+            bracketGroupIdDraft.value = '';
+            saveState.value = 'idle';
+            metaSaveState.value = 'idle';
+            serverLoaded.value = false;
+            accountReadErrors.brackets = null;
+            accountReadErrors.groups = null;
+            accountReadErrors.leaderboard = null;
+            appliedPicks = '{}';
+            picks.value = {};
+            readLocalPicks(previousKey?.startsWith('0:') ?? false);
+            void reloadAccountData();
+        },
+        { flush: 'sync' },
+    );
 
     watch(
         () => currentBracket.value?.group_id,
@@ -455,7 +599,10 @@ export function useMarchMadnessBracket(props: {
         picks,
         (value) => {
             if (typeof window === 'undefined') return;
-            window.localStorage.setItem(storageKey, JSON.stringify(value));
+            window.localStorage.setItem(
+                localStorageKey.value,
+                JSON.stringify(value),
+            );
         },
         { deep: true },
     );
@@ -472,59 +619,109 @@ export function useMarchMadnessBracket(props: {
                 return;
             }
 
+            if (
+                JSON.stringify(value) === appliedPicks &&
+                saveState.value !== 'saving'
+            )
+                return;
+            const token = captureContext();
+            const sourceId = activeBracketPublicId.value;
+            const request = ++picksRequest;
+            const savedPicks = { ...value };
             saveState.value = 'saving';
 
             const timeoutId = window.setTimeout(async () => {
-                try {
-                    let savedBracket: SavedBracket;
+                const save = async () => {
+                    if (
+                        !contextIsCurrent(token) ||
+                        request !== picksRequest ||
+                        activeBracketPublicId.value !== sourceId
+                    )
+                        return;
+                    try {
+                        let savedBracket: SavedBracket;
 
-                    if (activeBracketPublicId.value) {
-                        const response = await api.cbbBrackets.update<
-                            ApiResource<SavedBracket>
-                        >(activeBracketPublicId.value, {
-                            picks: value,
-                        });
+                        if (sourceId) {
+                            const response = await api.cbbBrackets.update<
+                                ApiResource<SavedBracket>
+                            >(
+                                sourceId,
+                                {
+                                    picks: savedPicks,
+                                },
+                                { init: { signal: contextController.signal } },
+                            );
 
-                        if (!response?.data) {
+                            if (!response?.data) {
+                                saveState.value = 'error';
+                                return;
+                            }
+
+                            savedBracket = response.data;
+                        } else {
+                            const createdBracket = await createBracket(
+                                savedPicks,
+                                false,
+                            );
+
+                            if (!createdBracket) {
+                                return;
+                            }
+
+                            savedBracket = createdBracket;
+                            if (
+                                contextIsCurrent(token) &&
+                                request !== picksRequest &&
+                                activeBracketPublicId.value ===
+                                    createdBracket.public_id
+                            ) {
+                                // A newer edit made while creating the draft must save against its new ID.
+                                picks.value = { ...picks.value };
+                            }
+                        }
+
+                        if (
+                            !contextIsCurrent(token) ||
+                            request !== picksRequest
+                        )
+                            return;
+                        upsertBracketInList(savedBracket);
+                        if (
+                            sourceId !== null &&
+                            activeBracketPublicId.value !== sourceId
+                        )
+                            return;
+                        appliedPicks = JSON.stringify(savedPicks);
+                        saveState.value = 'saved';
+                        activateBracket(savedBracket, false);
+                    } catch (error: unknown) {
+                        if (
+                            !contextIsCurrent(token) ||
+                            request !== picksRequest ||
+                            activeBracketPublicId.value !== sourceId
+                        )
+                            return;
+                        if (apiStatus(error) === 423) {
+                            saveState.value = 'idle';
+                            currentBracket.value = currentBracket.value
+                                ? {
+                                      ...currentBracket.value,
+                                      is_locked: true,
+                                      can_edit: false,
+                                      lock_at:
+                                          apiLockAt(error) ??
+                                          currentBracket.value.lock_at ??
+                                          bracketLockAtIso,
+                                  }
+                                : null;
+                        } else {
                             saveState.value = 'error';
-                            return;
                         }
-
-                        savedBracket = response.data;
-                    } else {
-                        const createdBracket = await createBracket(
-                            value,
-                            false,
-                        );
-
-                        if (!createdBracket) {
-                            return;
-                        }
-
-                        savedBracket = createdBracket;
                     }
-
-                    saveState.value = 'saved';
-                    upsertBracketInList(savedBracket);
-                    activateBracket(savedBracket, false);
-                } catch (error: unknown) {
-                    if (apiStatus(error) === 423) {
-                        saveState.value = 'idle';
-                        currentBracket.value = currentBracket.value
-                            ? {
-                                  ...currentBracket.value,
-                                  is_locked: true,
-                                  can_edit: false,
-                                  lock_at:
-                                      apiLockAt(error) ??
-                                      currentBracket.value.lock_at ??
-                                      bracketLockAtIso,
-                              }
-                            : null;
-                    } else {
-                        saveState.value = 'error';
-                    }
-                }
+                };
+                const queued = pickSaveQueue.then(save, save);
+                pickSaveQueue = queued.catch(() => undefined);
+                await queued;
             }, 500);
 
             onCleanup(() => window.clearTimeout(timeoutId));
@@ -563,6 +760,10 @@ export function useMarchMadnessBracket(props: {
     return reactive({
         ...tournament,
         ...progress,
+        accountReadErrors,
+        accountReadErrorMessages,
+        accountLoading,
+        reloadAccountData,
         roundLabels,
         accentByRegion,
         picks,

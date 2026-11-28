@@ -23,14 +23,17 @@ import {
     shortMarket,
     sanitizeFilename,
     formatStatNumber,
+    formatRelativeSignal,
+    formatExportGameStart,
+    formatExportPercent,
 } from '@/lib/adminExportPresentation';
 type TableContext = {
     props: AdminExportProps;
     adSafeMode: Ref<boolean>;
     selectedSport: Ref<string>;
-    signalForProp: (row: Recommendation) => number;
-    signalForPrediction: (row: PredictionExport) => number;
-    signalForFutures: (row: FuturesExport) => number;
+    signalForProp: (row: Recommendation) => number | null;
+    signalForPrediction: (row: PredictionExport) => number | null;
+    signalForFutures: (row: FuturesExport) => number | null;
 };
 
 export function createAdminExportTables({
@@ -116,7 +119,7 @@ export function createAdminExportTables({
             ctx.fill();
             drawCenteredText(
                 ctx,
-                `${signal}%`,
+                formatRelativeSignal(signal),
                 pctX + pctW / 2,
                 pctY + pctH / 2,
                 '800 30px "Instrument Sans"',
@@ -154,11 +157,11 @@ export function createAdminExportTables({
 
             cursorY += 100;
             const propSheetRows: Array<[string, string]> = [
-                ['Season Avg', `${rec.stats?.season_avg ?? 0}`],
-                ['Last 5 Games', `${rec.stats?.last5_avg ?? 0}`],
+                ['Season Avg', formatStatNumber(rec.stats?.season_avg)],
+                ['Last 5 Games', formatStatNumber(rec.stats?.last5_avg)],
                 [
                     'Edge vs Line',
-                    `${(rec.edge ?? 0) > 0 ? '+' : ''}${rec.edge ?? 0}`,
+                    `${(rec.edge ?? 0) > 0 ? '+' : ''}${formatStatNumber(rec.edge)}`,
                 ],
             ];
             const visiblePropSheetRows = adSafeMode.value
@@ -238,7 +241,7 @@ export function createAdminExportTables({
             ctx.fillText(
                 fitTextToWidth(
                     ctx,
-                    `${prediction.game.date ?? 'N/A'} • ${prediction.game.time ?? 'TBD'}`,
+                    formatExportGameStart(prediction.game),
                     contentW - 18,
                 ),
                 contentX,
@@ -255,7 +258,7 @@ export function createAdminExportTables({
             ctx.fill();
             drawCenteredText(
                 ctx,
-                `${pct}%`,
+                formatRelativeSignal(pct),
                 pctX + pctW / 2,
                 pctY + pctH / 2,
                 '800 30px "Instrument Sans"',
@@ -272,7 +275,7 @@ export function createAdminExportTables({
             ctx.fillText(
                 fitTextToWidth(
                     ctx,
-                    `${prediction.pick_side} • ${prediction.pick_team}`,
+                    `${prediction.pick_side ?? 'Pick unavailable'} • ${prediction.pick_team ?? 'N/A'}`,
                     contentW - 28,
                 ),
                 contentX + 14,
@@ -294,8 +297,8 @@ export function createAdminExportTables({
             cursorY += 100;
             const predictionSheetRows: Array<[string, string]> = [
                 [
-                    'Win Probability',
-                    `${formatStatNumber(prediction.win_probability)}%`,
+                    'Home win probability',
+                    `${formatExportPercent(prediction.win_probability)}`,
                 ],
                 ['Home Elo', `${formatStatNumber(prediction.home_elo)}`],
                 ['Away Elo', `${formatStatNumber(prediction.away_elo)}`],
@@ -390,7 +393,7 @@ export function createAdminExportTables({
             ctx.fill();
             drawCenteredText(
                 ctx,
-                `${pct}%`,
+                formatRelativeSignal(pct),
                 pctX + pctW / 2,
                 pctY + pctH / 2,
                 '800 30px "Instrument Sans"',
@@ -413,7 +416,7 @@ export function createAdminExportTables({
             ctx.font =
                 '600 17px "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
             ctx.fillText(
-                `Title ${formatStatNumber(row.champion_probability)}%`,
+                `Title ${formatExportPercent(row.champion_probability)}`,
                 contentX + 14,
                 cursorY + 57,
             );
@@ -422,15 +425,15 @@ export function createAdminExportTables({
             const futuresSheetRows: Array<[string, string]> = [
                 [
                     'Playoff Make',
-                    `${formatStatNumber(row.playoff_make_probability)}%`,
+                    `${formatExportPercent(row.playoff_make_probability)}`,
                 ],
                 [
                     'Conf/LCS',
-                    `${formatStatNumber(row.conference_finals_probability ?? row.league_championship_probability)}%`,
+                    `${formatExportPercent(row.conference_finals_probability ?? row.league_championship_probability)}`,
                 ],
                 [
                     'Finals/WS',
-                    `${formatStatNumber(row.nba_finals_probability ?? row.world_series_probability)}%`,
+                    `${formatExportPercent(row.nba_finals_probability ?? row.world_series_probability)}`,
                 ],
             ];
             const visibleFuturesSheetRows = adSafeMode.value

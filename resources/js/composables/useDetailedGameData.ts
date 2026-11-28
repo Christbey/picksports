@@ -1,3 +1,4 @@
+import { recentGamesBefore, recentGameQuery } from '@/lib/recentGameEvidence';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { ApiError } from '@/composables/useApiClient';
 import { useApiV2Client } from '@/composables/useApiV2Client';
@@ -55,14 +56,20 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
     const loading = ref(true);
     const error = ref<string | null>(null);
     let requestController: AbortController | null = null;
+    let generation = 0;
+    let disposed = false;
 
     const resolveMetrics =
         options.metricFromResponse ?? defaultMetricFromResponse;
 
     const load = async () => {
+        if (disposed) return;
+        const request = ++generation;
         requestController?.abort();
         requestController = new AbortController();
         const signal = requestController.signal;
+        const isCurrent = () =>
+            !disposed && generation === request && !signal.aborted;
 
         try {
             loading.value = true;
@@ -83,6 +90,13 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                     }),
             ]);
 
+            if (!isCurrent()) return;
+            homeMetrics.value = awayMetrics.value = null;
+            homeTrends.value = awayTrends.value = null;
+            homeTeamStats.value = awayTeamStats.value = null;
+            topPerformers.value = [];
+            homeRecentGames.value = [];
+            awayRecentGames.value = [];
             const archive = (
                 gameData as unknown as {
                     historical_prediction?: BasketballHistoricalPrediction | null;
@@ -97,8 +111,8 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
             const fullGame = gameData?.data as unknown as Game | undefined;
             if (fullGame) {
                 game.value = fullGame;
-                homeTeam.value = fullGame.home_team ?? homeTeam.value;
-                awayTeam.value = fullGame.away_team ?? awayTeam.value;
+                homeTeam.value = fullGame.home_team ?? null;
+                awayTeam.value = fullGame.away_team ?? null;
             }
 
             prediction.value = predictionData?.data ?? null;
@@ -114,6 +128,7 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                             init: { signal },
                         })
                         .then((response) => {
+                            if (!isCurrent()) return;
                             const stats = flattenApiV2Stats(
                                 response?.data,
                             ) as TeamStatsEntry[];
@@ -130,6 +145,7 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                             init: { signal },
                         })
                         .then((response) => {
+                            if (!isCurrent()) return;
                             const players = flattenApiV2Stats(
                                 response?.data,
                             ) as TopPerformer[];
@@ -144,6 +160,15 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                 topPerformers.value = [];
             }
 
+            const recentQuery = game.value ? recentGameQuery(game.value) : null;
+            const metricQuery = {
+                ...(game.value?.season != null
+                    ? { season: game.value.season }
+                    : {}),
+                ...(game.value?.season_type != null
+                    ? { season_type: String(game.value.season_type) }
+                    : {}),
+            };
             const homeTeamId = homeTeam.value?.id ?? game.value?.home_team_id;
             const awayTeamId = awayTeam.value?.id ?? game.value?.away_team_id;
 
@@ -151,9 +176,11 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                 supplemental.push(
                     api.teams
                         .metrics(options.sport, homeTeamId, {
+                            query: metricQuery,
                             init: { signal },
                         })
                         .then((response) => {
+                            if (!isCurrent()) return;
                             if (response) {
                                 homeMetrics.value = resolveMetrics(
                                     response as unknown as ApiEnvelope<
@@ -162,18 +189,27 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                                 );
                             }
                         }),
-                    api.teams
-                        .games(options.sport, homeTeamId, {
-                            query: { per_page: 25 },
-                            init: { signal },
-                        })
-                        .then((response) => {
-                            homeRecentGames.value = (
-                                (response?.data ?? []) as unknown as Game[]
-                            )
-                                .filter((row) => row.status === 'STATUS_FINAL')
-                                .slice(0, 5);
-                        }),
+                    recentQuery
+                        ? api.teams
+                              .games(options.sport, homeTeamId, {
+                                  query: recentQuery ?? {
+                                      per_page: 1,
+                                      exclude_game_id: options.gameId,
+                                  },
+                                  init: { signal },
+                              })
+                              .then((response) => {
+                                  if (!isCurrent()) return;
+                                  homeRecentGames.value = game.value
+                                      ? recentGamesBefore(
+                                            (response?.data ??
+                                                []) as unknown as Game[],
+                                            game.value,
+                                            homeTeamId,
+                                        )
+                                      : [];
+                              })
+                        : Promise.resolve(),
                 );
             }
 
@@ -181,9 +217,11 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                 supplemental.push(
                     api.teams
                         .metrics(options.sport, awayTeamId, {
+                            query: metricQuery,
                             init: { signal },
                         })
                         .then((response) => {
+                            if (!isCurrent()) return;
                             if (response) {
                                 awayMetrics.value = resolveMetrics(
                                     response as unknown as ApiEnvelope<
@@ -192,18 +230,27 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                                 );
                             }
                         }),
-                    api.teams
-                        .games(options.sport, awayTeamId, {
-                            query: { per_page: 25 },
-                            init: { signal },
-                        })
-                        .then((response) => {
-                            awayRecentGames.value = (
-                                (response?.data ?? []) as unknown as Game[]
-                            )
-                                .filter((row) => row.status === 'STATUS_FINAL')
-                                .slice(0, 5);
-                        }),
+                    recentQuery
+                        ? api.teams
+                              .games(options.sport, awayTeamId, {
+                                  query: recentQuery ?? {
+                                      per_page: 1,
+                                      exclude_game_id: options.gameId,
+                                  },
+                                  init: { signal },
+                              })
+                              .then((response) => {
+                                  if (!isCurrent()) return;
+                                  awayRecentGames.value = game.value
+                                      ? recentGamesBefore(
+                                            (response?.data ??
+                                                []) as unknown as Game[],
+                                            game.value,
+                                            awayTeamId,
+                                        )
+                                      : [];
+                              })
+                        : Promise.resolve(),
                 );
             }
 
@@ -234,6 +281,7 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                             init: { signal },
                         })
                         .then((response) => {
+                            if (!isCurrent()) return;
                             homeTrends.value =
                                 (response?.data as TeamTrendData | undefined) ??
                                 null;
@@ -244,6 +292,7 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                             init: { signal },
                         })
                         .then((response) => {
+                            if (!isCurrent()) return;
                             awayTrends.value =
                                 (response?.data as TeamTrendData | undefined) ??
                                 null;
@@ -251,18 +300,32 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                 );
             }
 
-            await Promise.allSettled(supplemental);
+            const results = await Promise.allSettled(supplemental);
+            if (
+                isCurrent() &&
+                results.some((result) => result.status === 'rejected')
+            ) {
+                error.value =
+                    'Some supplemental game context is unavailable. Retry the game page.';
+            }
         } catch (e) {
+            if (!isCurrent()) return;
             if (e instanceof DOMException && e.name === 'AbortError') return;
             error.value = e instanceof Error ? e.message : 'An error occurred';
         } finally {
-            loading.value = false;
-            trendsLoading.value = false;
+            if (isCurrent()) {
+                loading.value = false;
+                trendsLoading.value = false;
+            }
         }
     };
 
     onMounted(load);
-    onBeforeUnmount(() => requestController?.abort());
+    onBeforeUnmount(() => {
+        disposed = true;
+        generation++;
+        requestController?.abort();
+    });
 
     return {
         game,

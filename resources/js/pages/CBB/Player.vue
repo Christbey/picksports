@@ -50,8 +50,14 @@ defineProps<{ playerId: number }>();
                         </p>
                     </li>
                 </ul>
+                <p
+                    v-else-if="Array.isArray(player.active_injuries)"
+                    class="mt-2 text-sm text-zinc-500 dark:text-zinc-400"
+                >
+                    No active injuries listed in stored observations.
+                </p>
                 <p v-else class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-                    No active injuries listed.
+                    Injury coverage unavailable.
                 </p>
             </div>
         </template>

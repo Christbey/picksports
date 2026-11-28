@@ -2,6 +2,7 @@
 
 namespace App\Application\Predictions\Data;
 
+use App\Services\Sports\Elo\EloSqlClockToken;
 use Carbon\CarbonImmutable;
 
 final readonly class EventInputSnapshotData
@@ -21,5 +22,6 @@ final readonly class EventInputSnapshotData
         public string $pregameSafetyStatus = 'unknown',
         public ?string $objectUri = null,
         public array $metadata = [],
+        public ?EloSqlClockToken $sqlClockToken = null,
     ) {}
 }

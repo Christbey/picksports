@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from picksports_mlb_ml.dependencies import dependency_versions
+from picksports_mlb_ml import __version__
 from picksports_mlb_ml.artifacts import (
     refresh_artifact_descriptor,
     save_run_artifacts,
@@ -144,6 +145,7 @@ def train(
         "model_type": "mlb_tabular_bundle",
         "model_version": "mlb-tabular-v1",
         "package": "picksports_mlb_ml",
+        "package_version": _package_version(),
         "module": "picksports_mlb_ml",
         "model_run_id": model_run_id,
         "artifact_id": artifact_id,
@@ -744,10 +746,7 @@ def _optional_int(value: Any) -> int | None:
 
 
 def _package_version() -> str:
-    try:
-        return importlib.metadata.version("picksports-mlb-ml")
-    except importlib.metadata.PackageNotFoundError:
-        return "0.2.0"
+    return __version__
 
 
 def _dependency_versions() -> dict[str, str]:

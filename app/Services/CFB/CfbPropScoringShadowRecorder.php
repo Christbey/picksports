@@ -17,6 +17,9 @@ class CfbPropScoringShadowRecorder
             return;
         }
         $kickoff = CfbPropEligibility::kickoff($prop->game);
+        if ($kickoff === null) {
+            return;
+        }
         $payload = ['policy' => 'cfb-prop-scoring-shadow-v1', 'analysis' => $analysis,
             'candidate' => $this->candidate($analysis),
             'quote_fetched_at' => $prop->fetched_at->toIso8601String(),

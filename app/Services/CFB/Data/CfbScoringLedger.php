@@ -3,7 +3,6 @@
 namespace App\Services\CFB\Data;
 
 use App\Models\CFB\Game;
-use App\Models\CFB\GameDataCheck;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -15,8 +14,7 @@ class CfbScoringLedger
 
     public function normalize(Game $game, Collection $plays): Collection
     {
-        $check = GameDataCheck::where('game_id', $game->id)->where('component', 'boxscore')
-            ->where('state', 'complete')->whereNotNull('accepted_at')->latest('accepted_at')->latest('id')->first();
+        $check = app(CfbDataReadiness::class)->acceptedCheck($game, 'boxscore');
         if (! $check) {
             return $plays;
         }

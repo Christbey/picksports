@@ -26,6 +26,7 @@ it('creates missing players from boxscore athletes before syncing stats', functi
                     'team' => ['id' => '12'],
                     'statistics' => [
                         [
+                            'labels' => ['MIN', 'PTS', 'FG', '3PT', 'FT', 'REB', 'AST', 'TO', 'STL', 'BLK', 'OREB', 'DREB', 'PF'],
                             'athletes' => [
                                 [
                                     'athlete' => [
@@ -91,6 +92,7 @@ it('updates duplicate wnba player game stats from repeated boxscore athletes', f
             'players' => [[
                 'team' => ['id' => '12'],
                 'statistics' => [[
+                    'labels' => ['MIN', 'PTS', 'FG', '3PT', 'FT', 'REB', 'AST', 'TO', 'STL', 'BLK', 'OREB', 'DREB', 'PF'],
                     'athletes' => [
                         $athlete,
                         [...$athlete, 'stats' => ['32', '20', '8-13', '1-2', '3-4', '9', '6', '2', '1', '0', '2', '7', '3']],

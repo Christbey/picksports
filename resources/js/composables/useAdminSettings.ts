@@ -107,6 +107,9 @@ export function useAdminSettings(props: AdminSettingsProps) {
     }
 
     function setGroupUserSearch(groupId: number, value: string): void {
+        if (assignMemberForm.group_id === groupId) {
+            assignMemberForm.user_id = null;
+        }
         groupUserSearch.value = { ...groupUserSearch.value, [groupId]: value };
         searchAssignableUsers(groupId);
     }

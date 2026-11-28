@@ -36,6 +36,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
         $middleware->validateCsrfTokens(except: [
+            'stripe/webhook',
             'api/v2/security/reports/csp',
             'api/v2/security/reports/integrity',
         ]);
@@ -43,8 +44,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             AddServerTiming::class,
             HandleAppearance::class,
-            HandleInertiaRequests::class,
             AddSecurityHeaders::class,
+            HandleInertiaRequests::class,
             UpdateUserLastActive::class,
         ]);
 

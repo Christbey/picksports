@@ -16,7 +16,9 @@ beforeEach(function () {
     Http::preventStrayRequests();
 });
 
-function isolatedPickDecisionFixture(bool $canonical = true): array
+afterEach(fn () => $this->travelBack());
+
+function isolatedPickDecisionFixture(bool $canonical = true, bool $gradable = false): array
 {
     $event = SportEvent::factory()->create(['sport' => 'mlb', 'starts_at' => now()->addDay()]);
     $game = Game::factory()->create(['sport_event_id' => $event->id, 'home_team_id' => Team::factory(),
@@ -33,7 +35,7 @@ function isolatedPickDecisionFixture(bool $canonical = true): array
         'canonical_prediction_id' => $canonical ? $native->id : null, 'market_type' => 'moneyline', 'market_key' => 'h2h',
         'side' => 'home', 'price' => -110, 'model_probability' => 0.61, 'status' => 'tracking_only',
         'recommendation_label' => 'tracking_only', 'is_public' => false, 'is_tracking_only' => true, 'is_bet' => false,
-        'risk_flags' => ['point_in_time_unsafe'], 'reason_codes' => ['model_market_agrees'],
+        'risk_flags' => $gradable ? [] : ['point_in_time_unsafe'], 'reason_codes' => ['model_market_agrees'],
         'feature_snapshot' => ['prediction_lineage' => ['source' => 'canonical', 'prediction_id' => $native->id,
             'calculation_run_id' => 'frozen-run', 'event_input_snapshot_id' => 'frozen-input'],
             'promotion_blocked_reasons' => ['canonical_candidate_requires_validation']],
@@ -74,11 +76,14 @@ it('retains the original snapshot lookup for historical candidates after cutover
 });
 
 it('keeps an existing recorded decision stable and settles from its candidate without legacy reads', function () {
-    [$candidate] = isolatedPickDecisionFixture();
+    [$candidate] = isolatedPickDecisionFixture(gradable: true);
     $recorder = app(BetDecisionRecorder::class);
     $original = $recorder->record($candidate)->fresh()->getAttributes();
+    $this->travelTo($candidate->game_start_at->copy()->addHours(6));
     $candidate->forceFill(['model_probability' => 0.99, 'graded_at' => now(), 'result_status' => 'win',
         'result_value' => 1, 'result_profit_units' => 0.91])->save();
+    // Outcome reconciliation uses actual final scores, never the candidate's claimed result.
+    $candidate->game->update(['status' => 'STATUS_FINAL', 'home_score' => 5, 'away_score' => 3]);
     DB::enableQueryLog();
     DB::flushQueryLog();
     try {
@@ -89,6 +94,8 @@ it('keeps an existing recorded decision stable and settles from its candidate wi
         DB::disableQueryLog();
     }
     expect(BetDecision::count())->toBe(1)->and($settlement->result_status)->toBe('win')
-        ->and((float) $settlement->profit_units)->toBe(0.91)
+        ->and((float) $settlement->profit_units)->toBe(0.0)
+        ->and((float) data_get($settlement->metadata, 'shadow_profit_units'))->toBe(0.909)
+        ->and((float) $settlement->result_value)->toBe(2.0)
         ->and($queries)->not->toContain('prediction_feature_snapshots')->not->toContain('mlb_predictions');
 });

@@ -164,6 +164,13 @@ export type ApiV2PlayerSummary = {
 };
 
 export type ApiV2GameSummary = {
+    starts_at?: string | null;
+    kickoff_at?: string | null;
+    start_time_provenance?:
+        | 'observed_offset_timestamp_v1'
+        | 'legacy_time_unverified'
+        | 'observed_start_invalid'
+        | null;
     id: ApiV2Id;
     espn_id?: string | number | null;
     season?: number | string | null;
@@ -238,11 +245,22 @@ export type ApiV2Player = ApiV2PlayerSummary & {
     throwing_hand?: string | null;
     headshot_url?: string | null;
     team?: ApiV2TeamSummary | null;
+    active_injuries?: Array<{
+        id: ApiV2Id;
+        status: string | null;
+        detail: string | null;
+        type: string | null;
+        return_date: string | null;
+        source_updated_at: string | null;
+        source_updated_at_raw?: string | null;
+        source_clock_status?: 'unverified_storage_clock';
+    }> | null;
     created_at?: string | null;
     updated_at?: string | null;
 };
 
 export type ApiV2Prediction = {
+    spread_convention?: 'home_margin' | 'home_handicap' | null;
     comparison_forecasts?: CfbComparisonForecasts | null;
     forecast_coordination?: Record<string, unknown> | null;
     raw_home_win_probability?: number | null;

@@ -3,12 +3,14 @@
 namespace App\Models;
 
 use App\Models\Concerns\HasPublicUlid;
+use App\Support\Models\GuardsCoreEvidenceMutations;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use LogicException;
 
 class FeatureSchema extends Model
 {
+    use GuardsCoreEvidenceMutations;
     use HasPublicUlid;
 
     protected $fillable = [

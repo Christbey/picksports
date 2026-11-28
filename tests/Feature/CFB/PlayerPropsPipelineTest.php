@@ -17,7 +17,9 @@ use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use App\Services\CFB\CfbPlayerEvidenceService;
 use App\Services\ESPN\CFB\EspnService;
 use App\Services\OddsApi\OddsApiService;
+use App\Support\CFB\CfbGameStart;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Artisan;
 use Laravel\Sanctum\Sanctum;
 
 require_once __DIR__.'/../../Fixtures/cfb_complete_box.php';
@@ -27,7 +29,8 @@ beforeEach(function () {
     $this->team = Team::factory()->create();
     $this->away = Team::factory()->create();
     $this->game = Game::factory()->create(['home_team_id' => $this->team->id, 'away_team_id' => $this->away->id,
-        'season' => 2026, 'season_type' => 2, 'status' => 'STATUS_SCHEDULED', 'game_date' => '2026-09-12', 'game_time' => '20:00:00', 'odds_api_event_id' => 'cfb-event']);
+        'season' => 2026, 'season_type' => 2, 'status' => 'STATUS_SCHEDULED', 'game_date' => '2026-09-12', 'game_time' => '20:00:00', 'odds_api_event_id' => 'cfb-event', 'espn_event_id' => 'synthetic-props',
+        ...CfbGameStart::attributes('2026-09-12T20:00:00Z', [], 'espn_scoreboard', 'synthetic-props')]);
     $this->player = Player::factory()->create(['espn_id' => fake()->unique()->numerify('########'), 'team_id' => $this->team->id, 'full_name' => 'Dante Moore']);
     $this->response = fn ($line = 250.5, $name = 'Dante Moore') => ['id' => 'cfb-event', 'commence_time' => '2026-09-12T20:00:00Z', 'bookmakers' => [[
         'key' => 'fanduel', 'markets' => [['key' => 'player_pass_yds', 'outcomes' => [
@@ -86,7 +89,7 @@ test('keeps alternate lines separate and leaves ambiguous players unlinked', fun
 
 test('supports January postseason and Central dates crossing UTC midnight but skips kickoff', function () {
     $this->travelTo(Carbon::parse('2027-01-12 00:00:00', 'UTC'));
-    $this->game->update(['season_type' => 3, 'game_date' => '2027-01-12', 'game_time' => '01:00:00']);
+    $this->game->update(['season_type' => 3, 'game_date' => '2027-01-12', 'game_time' => '01:00:00', ...CfbGameStart::attributes('2027-01-12T01:00:00Z', [], 'espn_scoreboard', 'synthetic-props')]);
     $response = ($this->response)();
     $response['commence_time'] = '2027-01-12T01:00:00Z';
     $api = Mockery::mock(OddsApiService::class);
@@ -158,6 +161,8 @@ test('preparation imports roster before box scores and links previously unknown 
     $prop->update(['player_id' => null]);
     $this->player->delete();
     $espn = Mockery::mock(EspnService::class);
+    $espn->shouldReceive('swapRefreshBudget')->with(null)->times(4)->andReturn(null);
+    $espn->shouldReceive('assertRefreshRows')->with(0)->andReturnNull();
     $roster = ['athletes' => [['items' => [['id' => '123456', 'firstName' => 'Dante', 'lastName' => 'Moore', 'fullName' => 'Dante Moore', 'displayName' => 'Dante Moore']]]]];
     $espn->shouldReceive('getRoster')->with((string) $this->team->espn_id)->andReturn($roster);
     $other = ['athletes' => [['items' => [['id' => '654321', 'displayName' => 'Other Player', 'fullName' => 'Other Player']]]]];
@@ -180,7 +185,8 @@ test('preparation imports roster before box scores and links previously unknown 
         $espn->shouldReceive('getGame')->with((string) $history->espn_event_id)->once()->andReturn($payload);
     }
     app()->instance(EspnService::class, $espn);
-    $this->artisan('cfb:prepare-player-props', ['--date' => '2026-09-12'])->assertSuccessful();
+    $exit = Artisan::call('cfb:prepare-player-props', ['--date' => '2026-09-12']);
+    expect($exit)->toBe(0, Artisan::output());
     expect(PlayerStat::count())->toBe(6)->and($prop->fresh()->player_id)->not->toBeNull();
     expect((float) data_get($prop->fresh()->confidence_decomposition, 'stat_summary.season_avg'))->toBe(300.0);
 });

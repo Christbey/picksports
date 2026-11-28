@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V2\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\Predictions\RefreshGameAnalysis;
+use App\Models\MLB\Game;
 use App\Services\Api\V2\GameAnalysisAccess;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportGameQuery;
@@ -21,8 +22,8 @@ class GameAnalysisRetryController extends Controller
         $context = $sports->resolve($sport);
         $access->authorize($request->user(), $context->slug);
         $resolved = $games->find($context, $game, $request->user(), 'identity');
-        $start = $resolved->sportEvent?->starts_at
-            ?? $dates->gameDateTimeUtc($resolved->game_date, $resolved->game_time);
+        $start = $resolved instanceof Game ? $dates->gameStart($resolved) : $resolved->sportEvent?->starts_at
+            ?? $dates->gameStart($resolved);
         abort_unless(($research->enabled($context->slug) || $reviews->enabled($context->slug))
             && $start?->isFuture() && in_array($resolved->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true),
             422, 'Game analysis refresh is available only for enabled pregame games.');

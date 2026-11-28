@@ -2,6 +2,7 @@
 
 namespace App\Models\MLB;
 
+use App\Services\Predictions\CanonicalPayloadHasher;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -81,14 +82,56 @@ class StartingPitcherForecast extends Model
         ];
     }
 
-    protected static function booted(): void
+    public function save(array $options = []): bool
     {
-        static::updating(function (self $forecast): void {
+        if (! $this->exists) {
+            return parent::save($options);
+        }
+
+        return $this->withCurrentForecast(fn (): bool => parent::save($options));
+    }
+
+    public function delete(): ?bool
+    {
+        throw new LogicException('Starting pitcher forecast history cannot be deleted.');
+    }
+
+    protected function incrementOrDecrement($column, $amount, $extra, $method)
+    {
+        if (! $this->exists || ! is_string($column)) {
+            throw new LogicException('Numeric starter forecast updates require a persisted identity.');
+        }
+        foreach ([$column, ...array_keys($extra)] as $field) {
+            if ($field === $this->getKeyName() || in_array($field, self::IMMUTABLE_FORECAST_FIELDS, true)) {
+                throw new LogicException("Starting pitcher forecast field [{$field}] is immutable.");
+            }
+        }
+
+        return $this->withCurrentForecast(fn () => parent::incrementOrDecrement($column, $amount, $extra, $method));
+    }
+
+    /** Existing producers lock Game first; this guard never requests a parent lock afterward. */
+    private function withCurrentForecast(callable $write): mixed
+    {
+        if ($this->isDirty($this->getKeyName())) {
+            throw new LogicException('Starting pitcher forecast identity is immutable.');
+        }
+
+        return $this->getConnection()->transaction(function () use ($write): mixed {
+            $persisted = $this->newQuery()->whereKey($this->getRawOriginal($this->getKeyName()))->lockForUpdate()->firstOrFail();
+            $comparison = clone $persisted;
+            $comparison->setRawAttributes($this->getAttributes());
             foreach (self::IMMUTABLE_FORECAST_FIELDS as $field) {
-                if ($forecast->isDirty($field)) {
+                // SQL JSON stores object members in its own order; values and list order remain immutable.
+                $equivalent = $field === 'evidence'
+                    ? hash_equals(app(CanonicalPayloadHasher::class)->hash($persisted->evidence), app(CanonicalPayloadHasher::class)->hash($this->evidence))
+                    : $comparison->originalIsEquivalent($field);
+                if (! $equivalent) {
                     throw new LogicException("Starting pitcher forecast field [{$field}] is immutable.");
                 }
             }
+
+            return $write();
         });
     }
 

@@ -4,6 +4,8 @@
     "type": "module",
     "scripts": {
         "test:browser:slate-parity": "node tests/browser/slate-parity.mjs",
+        "test:browser:settings": "node tests/browser/settings-page-split.mjs",
+        "test:browser:ci": "npm run test:browser:slate-parity && npm run test:browser:settings && npm run test:browser:accessibility",
         "build": "vite build",
         "build:ssr": "vite build && vite build --ssr",
         "dev": "vite",
@@ -16,7 +18,8 @@
         "quality:check": "npm run format:check && npm run lint:check && npm run typecheck",
         "frontend:dev": "npm run dev --workspace @picksports/frontend",
         "frontend:build": "npm run build --workspace @picksports/frontend",
-        "frontend:typecheck": "npm run typecheck --workspace @picksports/frontend"
+        "frontend:typecheck": "npm run typecheck --workspace @picksports/frontend",
+        "test:browser:accessibility": "node tests/browser/accessibility/acceptance.mjs navigation-board && node tests/browser/accessibility/acceptance.mjs forms-states && node tests/browser/accessibility/acceptance.mjs standalone && node tests/browser/accessibility/ownership.mjs navigation-board"
     },
     "devDependencies": {
         "@eslint/js": "^9.19.0",
@@ -31,13 +34,14 @@
         "eslint-import-resolver-typescript": "^4.4.4",
         "eslint-plugin-import": "^2.32.0",
         "eslint-plugin-vue": "^9.32.0",
+        "playwright": "1.65.1",
         "prettier": "^3.4.2",
         "prettier-plugin-tailwindcss": "^0.6.11",
         "typescript": "^5.2.2",
         "typescript-eslint": "^8.23.0",
         "vite": "^7.0.4",
         "vite-plugin-manifest-sri": "^0.2.0",
-        "vue-tsc": "^2.2.4"
+        "vue-tsc": "^3.3.14"
     },
     "dependencies": {
         "@fortawesome/fontawesome-svg-core": "^7.2.0",

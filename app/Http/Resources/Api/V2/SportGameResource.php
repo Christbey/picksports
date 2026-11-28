@@ -9,6 +9,8 @@ use App\Models\MLB\Game;
 use App\Models\NFL\Team;
 use App\Services\Api\V2\SelectedGameForecasts;
 use App\Services\Api\V2\SportContext;
+use App\Support\CFB\CfbGameStart;
+use App\Support\MLB\MlbGameStart;
 use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -35,11 +37,7 @@ class SportGameResource extends JsonResource
             return $this->summaryPayload($this->resource);
         }
 
-        $dateTime = GameDateTimePresenter::forSport(
-            $this->context->slug,
-            $this->game_date ?? null,
-            $this->game_time ?? null,
-        );
+        $dateTime = GameDateTimePresenter::forGame($this->context->slug, $this->resource);
 
         return [
             'id' => $this->id,
@@ -56,7 +54,8 @@ class SportGameResource extends JsonResource
             'short_name' => $this->short_name ?? null,
             'game_date' => $dateTime['game_date'],
             'game_time' => $dateTime['game_time'],
-            ...($this->context->slug === 'nfl' ? ['starts_at' => GameDateTimePresenter::nflStartsAt($this->game_date, $this->game_time)] : []),
+            'start_time_provenance' => $this->resource instanceof Game ? MlbGameStart::status($this->resource) : ($this->resource instanceof \App\Models\CFB\Game ? CfbGameStart::status($this->resource) : null),
+            'starts_at' => $this->resource instanceof Game ? MlbGameStart::for($this->resource)?->toIso8601String() : GameDateTimePresenter::startsAtForGame($this->context->slug, $this->resource),
             'venue' => $this->venue_name ?? $this->venue ?? null,
             'venue_name' => $this->venue_name ?? $this->venue ?? null,
             'venue_city' => $this->venue_city ?? null,
@@ -159,7 +158,8 @@ class SportGameResource extends JsonResource
             'short_name' => $game->shortName,
             'game_date' => $game->gameDate,
             'game_time' => $game->gameTime,
-            ...($game->sport === 'nfl' ? ['starts_at' => $game->startsAt] : []),
+            'starts_at' => $game->startsAt,
+            'start_time_provenance' => $game->startTimeProvenance,
             'venue' => $game->venue,
             'venue_name' => $game->venue,
             'venue_city' => $game->venueCity,

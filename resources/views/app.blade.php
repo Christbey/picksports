@@ -9,6 +9,8 @@
             $baseUrl = rtrim(config('app.url', 'https://picksports.app'), '/');
             $canonicalUrl = url()->current();
             $path = trim(request()->path(), '/');
+            $sensitiveDocument = \App\Support\Privacy\SensitiveDocument::matches(request());
+            $sensitivePaths = \App\Support\Privacy\SensitiveDocument::paths();
             $isPublicPage = ! request()->is([
                 'dashboard',
                 'my-bets',
@@ -27,7 +29,7 @@
                 'wcbb/*',
                 'mlb/*',
             ]);
-            $showAdsense = auth()->guest() && ($isPublicPage || request()->is([
+            $showAdsense = ! $sensitiveDocument && auth()->guest() && ($isPublicPage || request()->is([
                 'nba/*',
                 'wnba/*',
                 'nfl/*',
@@ -205,7 +207,7 @@
         @if ($showAdsense)
             <meta name="google-adsense-account" content="ca-pub-2394264248851783">
         @endif
-        <meta name="robots" content="{{ $isPublicPage ? 'index,follow' : 'noindex,nofollow' }}">
+        <meta name="robots" content="{{ ($isPublicPage && ! $sensitiveDocument) ? 'index,follow' : 'noindex,nofollow' }}">
         <link rel="canonical" href="{{ $canonicalUrl }}">
         <link rel="alternate" hreflang="en-US" href="{{ $canonicalUrl }}">
         <link rel="alternate" hreflang="x-default" href="{{ $canonicalUrl }}">
@@ -216,8 +218,6 @@
         <meta property="og:url" content="{{ $canonicalUrl }}">
         <meta property="og:image" content="{{ $ogImage }}">
         <meta property="og:image:alt" content="{{ $ogImageAlt }}">
-        <meta property="og:image:width" content="1200">
-        <meta property="og:image:height" content="1200">
         <meta name="twitter:card" content="summary_large_image">
         <meta name="twitter:title" content="{{ $metaTitle }}">
         <meta name="twitter:description" content="{{ $metaDescription }}">
@@ -243,6 +243,7 @@
             <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2394264248851783" crossorigin="anonymous"></script>
         @endif
 
+        @if (! $sensitiveDocument)
         <!-- Google Tag Manager -->
         <script id="picksports-tag-manager" data-wait-for-board="{{ auth()->check() && request()->routeIs('cfb-predictions') ? 'true' : 'false' }}">
             (() => {
@@ -306,19 +307,27 @@
             })();
         </script>
         <!-- End Google Tag Manager -->
+        @endif
 
         @foreach ($schemas as $schema)
             <script type="application/ld+json">{!! json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!}</script>
         @endforeach
 
+        <meta name="ps-sensitive-paths" content="{{ json_encode($sensitivePaths) }}">
+        <meta name="ps-sensitive-document" content="{{ $sensitiveDocument ? 'true' : 'false' }}">
+        @if ($sensitiveDocument)
+            <meta name="referrer" content="no-referrer">
+        @endif
         @vite(['resources/js/app.ts', "resources/js/pages/{$page['component']}.vue"])
         @inertiaHead
     </head>
     <body class="font-sans antialiased">
+        @if (! $sensitiveDocument)
         <!-- Google Tag Manager (noscript) -->
         <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-P5NFGS3P"
         height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         <!-- End Google Tag Manager (noscript) -->
+        @endif
         @if ($betaEnabled && $betaLabel !== '')
             <div
                 class="beta-indicator pointer-events-none fixed right-3 z-[100] rounded-full border border-amber-300 bg-amber-100/95 px-2.5 py-1 text-[10px] font-bold tracking-[0.2em] text-amber-900 shadow-sm dark:border-amber-700 dark:bg-amber-900/90 dark:text-amber-100"

@@ -2,13 +2,9 @@
 
 namespace App\Console\Commands\MLB;
 
-use App\Models\PredictionFeatureSnapshot;
-use App\Services\ML\CsvDataset;
-use App\Services\Predictions\SnapshotEvaluationProjector;
+use App\Services\MLB\MlbTabularDatasetExporter;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\LazyCollection;
-use Illuminate\Support\Str;
 use Throwable;
 
 class ExportTrainingDataCommand extends Command
@@ -22,41 +18,45 @@ class ExportTrainingDataCommand extends Command
 
     protected $description = 'Export one canonical, target-stable MLB snapshot per game as training data';
 
-    public function handle(CsvDataset $csv): int
+    public function handle(MlbTabularDatasetExporter $exporter): int
     {
         $path = (string) $this->option('path');
-        $absolutePath = str_starts_with($path, '/')
-            ? $path
-            : base_path($path);
-        $datasetSchemaHash = null;
+        $absolutePath = str_starts_with($path, '/') ? $path : base_path($path);
         try {
-            $exported = $csv->write($absolutePath, $this->loadRows(), [
-                'dataset_schema_hash' => function (array $headers) use (&$datasetSchemaHash): string {
-                    return $datasetSchemaHash = $this->stableHash(collect($headers)->sort()->values()->all());
-                },
-            ]);
+            $seasons = [];
+            foreach ((array) $this->option('season') as $season) {
+                if (! is_string($season) && ! is_int($season) || preg_match('/\A[0-9]{4}\z/D', (string) $season) !== 1) {
+                    throw new \RuntimeException('Every explicit season must be a four-digit year.');
+                }
+                $seasons[] = (int) $season;
+            }
+            if (count($seasons) > 20 || preg_match('/\A[0-9]+\z/D', (string) $this->option('limit')) !== 1
+                || strlen((string) $this->option('limit')) > 5 || (int) $this->option('limit') > 10000) {
+                throw new \RuntimeException('MLB export scope exceeds its explicit season/row budget.');
+            }
+            $proof = $exporter->export($absolutePath, array_values(array_unique($seasons)), (int) $this->option('limit'),
+                (bool) $this->option('include-metadata'), (bool) $this->option('include-unsafe'));
+            if ($proof['rows'] === 0) {
+                if (! $this->removeStaleDestination($absolutePath) || ! $this->removeStaleDestination($absolutePath.'.manifest.json')) {
+                    return self::FAILURE;
+                }
+                $this->warn('No MLB rows met the requested provenance and target requirements.');
+
+                return self::FAILURE;
+            }
+            $this->info('MLB training data exported.');
+            $this->line('Rows: '.$proof['rows']);
+            $this->line('Pregame proof required: '.((bool) $this->option('include-unsafe') ? 'no (research override)' : 'yes'));
+            $this->line('Dataset schema SHA-256: '.$proof['dataset_schema_hash']);
+            $this->line('Dataset SHA-256: '.$proof['dataset_sha256']);
+            $this->line('Path: '.$absolutePath);
+
+            return self::SUCCESS;
         } catch (Throwable $exception) {
             $this->error($exception->getMessage());
 
             return self::FAILURE;
         }
-        if ($exported === 0) {
-            if (! $this->removeStaleDestination($absolutePath)) {
-                return self::FAILURE;
-            }
-            $this->warn('No MLB rows met the requested provenance and target requirements.');
-
-            return self::FAILURE;
-        }
-
-        $this->info('MLB training data exported.');
-        $this->line('Rows: '.$exported);
-        $this->line('Pregame proof required: '.((bool) $this->option('include-unsafe') ? 'no (research override)' : 'yes'));
-        $this->line('Dataset schema SHA-256: '.$datasetSchemaHash);
-        $this->line('Dataset SHA-256: '.hash_file('sha256', $absolutePath));
-        $this->line('Path: '.$absolutePath);
-
-        return self::SUCCESS;
     }
 
     private function removeStaleDestination(string $path): bool
@@ -74,315 +74,5 @@ class ExportTrainingDataCommand extends Command
         $this->error("Unable to remove stale export path: {$path}");
 
         return false;
-    }
-
-    /**
-     * @return LazyCollection<int, array<string, mixed>>
-     */
-    private function loadRows(): LazyCollection
-    {
-        $query = PredictionFeatureSnapshot::query()
-            ->where('prediction_feature_snapshots.sport', 'mlb')
-            ->where('prediction_feature_snapshots.prediction_table', 'mlb_predictions')
-            ->join('prediction_evaluations as pe', function ($join): void {
-                $join->on('prediction_feature_snapshots.prediction_table', '=', 'pe.prediction_table')
-                    ->on('prediction_feature_snapshots.prediction_id', '=', 'pe.prediction_id')
-                    ->on('prediction_feature_snapshots.model_version', '=', 'pe.model_version')
-                    ->on('prediction_feature_snapshots.feature_version', '=', 'pe.feature_version')
-                    ->on('prediction_feature_snapshots.blend_version', '=', 'pe.blend_version');
-            })
-            ->join('mlb_games as g', 'prediction_feature_snapshots.game_id', '=', 'g.id')
-            ->leftJoin('model_runs as mr', 'prediction_feature_snapshots.model_run_id', '=', 'mr.id')
-            ->select(
-                'prediction_feature_snapshots.*',
-                'pe.actuals as evaluation_actuals',
-                'pe.evaluated_at as evaluation_evaluated_at',
-                'g.season',
-                'mr.config_hash as model_run_config_hash',
-                'mr.code_version as model_run_code_version'
-            );
-
-        $seasons = collect($this->option('season'))
-            ->filter(fn (mixed $value): bool => $value !== null && $value !== '')
-            ->map(fn (mixed $value): int => (int) $value)
-            ->values();
-
-        if ($seasons->isNotEmpty()) {
-            $query->whereIn('g.season', $seasons->all());
-        }
-
-        if (! (bool) $this->option('include-unsafe')) {
-            $query
-                ->where('prediction_feature_snapshots.pregame_safe', true)
-                ->whereNotNull('prediction_feature_snapshots.game_start_at')
-                ->whereNotNull('prediction_feature_snapshots.features_available_at')
-                ->whereColumn(
-                    'prediction_feature_snapshots.features_available_at',
-                    '<=',
-                    'prediction_feature_snapshots.game_start_at'
-                )
-                ->where(function ($trustQuery): void {
-                    $trustQuery
-                        ->where(function ($observedQuery): void {
-                            $observedQuery
-                                ->where('prediction_feature_snapshots.availability_status', 'observed_pregame')
-                                ->whereColumn(
-                                    'prediction_feature_snapshots.generated_at',
-                                    '<=',
-                                    'prediction_feature_snapshots.game_start_at'
-                                );
-                        })
-                        ->orWhere(function ($reconstructionQuery): void {
-                            $reconstructionQuery
-                                ->where('prediction_feature_snapshots.availability_status', 'verified_reconstruction')
-                                ->where(
-                                    'prediction_feature_snapshots.lineage_metadata->point_in_time_verified',
-                                    true
-                                );
-                        });
-                });
-        }
-
-        $canonicalSnapshots = collect();
-        $canonicalRanks = [];
-        $timestampCache = [];
-
-        $throughId = PredictionFeatureSnapshot::query()->max('id') ?? 0;
-        $query->where('prediction_feature_snapshots.id', '<=', $throughId);
-        foreach ((clone $query)
-            ->select(['prediction_feature_snapshots.id', 'prediction_feature_snapshots.game_id',
-                'prediction_feature_snapshots.features_available_at', 'prediction_feature_snapshots.generated_at',
-                'prediction_feature_snapshots.game_start_at'])
-            ->reorder()
-            ->lazyById(500, 'prediction_feature_snapshots.id', 'id') as $snapshot) {
-            $canonicalKey = (string) $snapshot->game_id;
-            $rank = $this->snapshotRank($snapshot, $timestampCache);
-            if (! isset($canonicalRanks[$canonicalKey]) || $rank > $canonicalRanks[$canonicalKey]) {
-                $canonicalSnapshots->put($canonicalKey, $snapshot);
-                $canonicalRanks[$canonicalKey] = $rank;
-            }
-        }
-
-        $limit = max(0, (int) $this->option('limit'));
-        $canonicalSnapshots = $canonicalSnapshots
-            ->sortBy(fn (PredictionFeatureSnapshot $snapshot): array => [
-                $snapshot->game_start_at?->toIso8601String()
-                    ?? $snapshot->generated_at?->toIso8601String()
-                    ?? '',
-                (int) $snapshot->game_id,
-            ])
-            ->values();
-
-        if ($limit > 0) {
-            $canonicalSnapshots = $canonicalSnapshots->take($limit)->values();
-        }
-
-        return LazyCollection::make(function () use ($canonicalSnapshots, $query): \Generator {
-            foreach ($canonicalSnapshots->chunk(100) as $headers) {
-                $selected = (clone $query)->whereIn('prediction_feature_snapshots.id', $headers->pluck('id'))
-                    ->get()->keyBy('id');
-                foreach ($headers as $header) {
-                    $snapshot = $selected->get($header->id);
-                    if (! $snapshot instanceof PredictionFeatureSnapshot) {
-                        continue;
-                    }
-                    $row = $this->snapshotRow($snapshot);
-                    if ($row !== null) {
-                        yield $row;
-                    }
-                }
-            }
-        });
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function snapshotRow(PredictionFeatureSnapshot $snapshot): ?array
-    {
-        $predictionHorizon = $this->predictionHorizon($snapshot);
-        $features = $this->arrayValue($snapshot->features);
-        $outputs = $this->arrayValue($snapshot->outputs);
-        $actuals = $this->arrayValue($snapshot->evaluation_actuals);
-        $actualHomeMargin = data_get($actuals, 'actual_spread');
-        $actualTotal = data_get($actuals, 'actual_total');
-
-        if (! is_numeric($actualHomeMargin) || ! is_numeric($actualTotal)) {
-            return null;
-        }
-
-        $targetHomeMargin = (float) $actualHomeMargin;
-        $targetTotalPoints = (float) $actualTotal;
-        $projection = app(SnapshotEvaluationProjector::class)->project(
-            $outputs,
-            $actuals,
-            $this->arrayValue($snapshot->market_context),
-        );
-        $errors = $projection['errors'];
-        $marketComparison = $projection['market_comparison'];
-        $targetHash = $this->stableHash([
-            'game_id' => (int) $snapshot->game_id,
-            'actuals' => $actuals,
-        ]);
-        $featureSchemaHash = $this->stableHash([
-            'feature_version' => $snapshot->feature_version,
-            'feature_keys' => collect(array_keys($features))->sort()->values()->all(),
-        ]);
-
-        $row = [
-            'canonical_snapshot_id' => $snapshot->id,
-            'snapshot_run_id' => $snapshot->snapshot_run_id,
-            'model_run_id' => $snapshot->model_run_id,
-            'config_hash' => $snapshot->model_run_config_hash,
-            'code_version' => $snapshot->model_run_code_version,
-            'game_id' => $snapshot->game_id,
-            'season' => $snapshot->season,
-            'prediction_id' => $snapshot->prediction_id,
-            'prediction_horizon' => $predictionHorizon,
-            'model_version' => $snapshot->model_version,
-            'feature_version' => $snapshot->feature_version,
-            'blend_version' => $snapshot->blend_version,
-            'generated_at' => $snapshot->generated_at?->toIso8601String() ?? '',
-            'game_start_at' => $snapshot->game_start_at?->toIso8601String() ?? '',
-            'features_available_at' => $snapshot->features_available_at?->toIso8601String() ?? '',
-            'evaluated_at' => $snapshot->evaluation_evaluated_at,
-            'pregame_safe' => (bool) $snapshot->pregame_safe,
-            'availability_status' => $snapshot->availability_status,
-            'target_home_win' => $targetHomeMargin > 0 ? 1 : 0,
-            'target_home_margin' => $targetHomeMargin,
-            'target_total_points' => $targetTotalPoints,
-            'source_timestamps' => $this->arrayValue($snapshot->source_timestamps),
-            'lineage_metadata' => $this->arrayValue($snapshot->lineage_metadata),
-            'feature_hash' => $snapshot->feature_hash,
-            'feature_schema_hash' => $featureSchemaHash,
-            'target_hash' => $targetHash,
-            'row_lineage_hash' => $this->stableHash([
-                'snapshot_run_id' => $snapshot->snapshot_run_id,
-                'model_run_id' => $snapshot->model_run_id,
-                'game_id' => (int) $snapshot->game_id,
-                'prediction_horizon' => $predictionHorizon,
-                'model_version' => $snapshot->model_version,
-                'feature_version' => $snapshot->feature_version,
-                'blend_version' => $snapshot->blend_version,
-                'feature_hash' => $snapshot->feature_hash,
-                'target_hash' => $targetHash,
-            ]),
-        ];
-
-        foreach ($features as $key => $value) {
-            $row["feature_{$key}"] = $value;
-        }
-
-        foreach ($outputs as $key => $value) {
-            $row["output_{$key}"] = $value;
-        }
-
-        foreach ($actuals as $key => $value) {
-            $row["actual_{$key}"] = $value;
-        }
-
-        foreach ($errors as $key => $value) {
-            $row["error_{$key}"] = $value;
-        }
-
-        foreach ($marketComparison as $key => $value) {
-            $row["market_{$key}"] = $value;
-        }
-
-        if ($this->option('include-metadata')) {
-            $row['model_metadata'] = $snapshot->model_metadata ?? [];
-        }
-
-        return $row;
-    }
-
-    private function predictionHorizon(PredictionFeatureSnapshot $snapshot): string
-    {
-        $lineage = $this->arrayValue($snapshot->lineage_metadata);
-        $metadata = $this->arrayValue($snapshot->model_metadata);
-        $horizon = data_get($lineage, 'prediction_horizon')
-            ?? data_get($metadata, 'prediction_horizon')
-            ?? data_get($lineage, 'horizon')
-            ?? data_get($metadata, 'horizon');
-
-        if (is_string($horizon) && trim($horizon) !== '') {
-            return (string) Str::of($horizon)
-                ->lower()
-                ->replaceMatches('/[^a-z0-9]+/', '_')
-                ->trim('_');
-        }
-
-        return $snapshot->availability_status === 'verified_reconstruction'
-            ? 'historical_reconstruction'
-            : 'pregame';
-    }
-
-    /**
-     * @param  array<string, int>  $timestamps
-     * @return list<int>
-     */
-    private function snapshotRank(PredictionFeatureSnapshot $snapshot, array &$timestamps): array
-    {
-        $rank = [];
-        foreach (['features_available_at', 'generated_at'] as $field) {
-            $raw = $snapshot->getRawOriginal($field);
-            if ($raw === null) {
-                $rank[] = PHP_INT_MIN;
-
-                continue;
-            }
-            $key = $field.':'.$raw;
-            if (! isset($timestamps[$key])) {
-                if (count($timestamps) >= 1024) {
-                    $timestamps = [];
-                }
-                $timestamps[$key] = $snapshot->{$field}->getTimestamp();
-            }
-            $rank[] = $timestamps[$key];
-        }
-        $rank[] = (int) $snapshot->id;
-
-        return $rank;
-    }
-
-    private function stableHash(mixed $value): string
-    {
-        return hash('sha256', json_encode(
-            $this->canonicalize($value),
-            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES
-        ));
-    }
-
-    private function canonicalize(mixed $value): mixed
-    {
-        if (! is_array($value)) {
-            return $value;
-        }
-
-        if (array_is_list($value)) {
-            return array_map(fn (mixed $item): mixed => $this->canonicalize($item), $value);
-        }
-
-        ksort($value);
-
-        return array_map(fn (mixed $item): mixed => $this->canonicalize($item), $value);
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function arrayValue(mixed $value): array
-    {
-        if (is_array($value)) {
-            return $value;
-        }
-
-        if (is_string($value) && $value !== '') {
-            $decoded = json_decode($value, true);
-
-            return is_array($decoded) ? $decoded : [];
-        }
-
-        return [];
     }
 }

@@ -22,6 +22,7 @@ final class PublicGameSummaryPresenter
             'game_id' => $game->id,
             'matchup' => trim($awayName.' at '.$homeName),
             'game_date' => $game->gameDate,
+            'starts_at' => $game->startsAt,
             'status' => $game->status,
             'pick' => $homeWinProbability === null ? null : ($homeWinProbability >= 0.5 ? $homeName : $awayName),
             'home_team_abbreviation' => $game->homeTeam?->abbreviation,

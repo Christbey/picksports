@@ -87,6 +87,9 @@ test('api v2 openapi generator includes security and sport filter metadata', fun
         ->and($userBetStoreSchema['properties']['prediction_type'])->toBeFalse()
         ->and($spec['components']['schemas']['UserBet']['properties'])->not->toHaveKey('prediction_type');
 
+    expect(collect($spec['paths']['/api/v2/sports/{sport}/player-props/board']['get']['parameters'])->where('in', 'query')->pluck('name')->all())
+        ->toBe(['date', 'game', 'market', 'limit', 'filters_only']);
+
     expect($gameOperation['responses']['200']['content']['application/json']['schema']['$ref'])->toBe('#/components/schemas/SportGameResponse')
         ->and($spec['components']['schemas']['SportGame']['properties'])->toHaveKeys(['id', 'sport_event_id', 'sport'])
         ->and($spec['components']['schemas']['SportGame']['properties']['id']['type'])->toBe('integer')
@@ -210,4 +213,21 @@ test('specialized game contracts describe their actual sports filters and respon
         ->and(collect($paths[$base.'live-snapshot']['get']['parameters'])->where('in', 'query'))->toHaveCount(0)
         ->and($spec['components']['schemas']['NflLiveSnapshotResponse']['required'])->toBe(['data'])
         ->and($spec['components']['schemas']['CfbLiveBettingResponse']['required'])->toBe(['data', 'history', 'meta']);
+});
+
+test('game index contracts expose supported history filters and truthful prediction units', function () {
+    Artisan::call('api:v2-openapi-generate', ['--stdout' => true]);
+    $spec = json_decode(Artisan::output(), true, 512, JSON_THROW_ON_ERROR);
+    foreach (['/api/v2/sports/{sport}/games', '/api/v2/sports/{sport}/teams/{team}/games'] as $path) {
+        $parameters = collect($spec['paths'][$path]['get']['parameters'])->where('in', 'query')->keyBy('name');
+        expect($parameters->keys()->all())->toContain('season_type', 'completed_only', 'before_game_at', 'exclude_game_id')
+            ->and($parameters['per_page']['schema']['maximum'])->toBe(500)
+            ->and($parameters['completed_only']['schema']['type'])->toBe('boolean');
+    }
+    expect(collect($spec['paths']['/api/v2/sports/{sport}/games/{game}']['get']['parameters'])->where('in', 'query')->pluck('name')->all())->not->toContain('completed_only', 'before_game_at');
+    $game = $spec['components']['schemas']['SportGame']['properties'];
+    expect($game['starts_at']['type'])->toBe(['string', 'null'])
+        ->and($game['starts_at']['format'])->toBe('date-time')
+        ->and($game['start_time_provenance']['enum'])->toContain('observed_offset_timestamp_v1', 'legacy_time_unverified', 'observed_start_invalid', null)
+        ->and($spec['components']['schemas']['SportPrediction']['properties']['spread_convention']['enum'])->toBe(['home_margin', 'home_handicap']);
 });

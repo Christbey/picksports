@@ -6,9 +6,9 @@ use App\Models\PredictionFeatureSnapshot;
 use App\Services\Api\V2\SportContext;
 use App\Services\Api\V2\SportPredictionPresentationData;
 use App\Services\MLB\MlbRecommendationPresentation;
-use App\Services\Sports\SportsDateWindowService;
 use App\Support\MLB\MlbGamePhase;
 use App\Support\Sports\GameDateTimePresenter;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -34,6 +34,7 @@ class SportPredictionResource extends JsonResource
         return [
             'id' => $this->attribute('id'),
             'sport' => $this->context->slug,
+            'spread_convention' => 'home_margin',
             'game_id' => $this->attribute('game_id'),
             'home_team_id' => $this->gameAttribute('home_team_id'),
             'away_team_id' => $this->gameAttribute('away_team_id'),
@@ -60,7 +61,7 @@ class SportPredictionResource extends JsonResource
                 ...$this->presentation->nflBoard,
                 'can_retry_research' => (bool) $request->user()?->isAdmin()
                     && in_array($this->gameAttribute('status'), ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true)
-                    && app(SportsDateWindowService::class)->gameDateTimeUtc($this->gameAttribute('game_date'), $this->gameAttribute('game_time'))?->isFuture(),
+                    && $this->nflKickoff()?->isFuture(),
             ],
             'period_insights' => $this->context->slug === 'mlb' ? $this->presentation->periodInsights : [],
             'cfb_signal_context' => $this->cfbSignalContext(),
@@ -108,11 +109,7 @@ class SportPredictionResource extends JsonResource
             return null;
         }
 
-        $dateTime = GameDateTimePresenter::forSport(
-            $this->context->slug,
-            $game->getAttribute('game_date'),
-            $game->getAttribute('game_time'),
-        );
+        $dateTime = GameDateTimePresenter::forGame($this->context->slug, $game);
 
         return [
             'id' => $game->getAttribute('id'),
@@ -124,9 +121,8 @@ class SportPredictionResource extends JsonResource
             'short_name' => $game->getAttribute('short_name'),
             'game_date' => $dateTime['game_date'],
             'game_time' => $dateTime['game_time'],
-            'kickoff_at' => $this->context->slug === 'nfl'
-                ? app(SportsDateWindowService::class)->gameDateTimeUtc($game->getAttribute('game_date'), $game->getAttribute('game_time'))?->toIso8601String()
-                : null,
+            'starts_at' => GameDateTimePresenter::startsAtForGame($this->context->slug, $game),
+            'kickoff_at' => $this->nflKickoff()?->toIso8601String(),
             'status' => $game->getAttribute('status'),
             'home_score' => $game->getAttribute('home_score'),
             'away_score' => $game->getAttribute('away_score'),
@@ -142,6 +138,16 @@ class SportPredictionResource extends JsonResource
             'home_team' => $this->team($game, 'homeTeam'),
             'away_team' => $this->team($game, 'awayTeam'),
         ];
+    }
+
+    private function nflKickoff(): ?CarbonImmutable
+    {
+        $game = $this->relation('game');
+        $instant = $this->context->slug === 'nfl' && $game !== null
+            ? GameDateTimePresenter::startsAtForGame('nfl', $game)
+            : null;
+
+        return $instant === null ? null : CarbonImmutable::parse($instant);
     }
 
     /**
@@ -441,17 +447,28 @@ class SportPredictionResource extends JsonResource
             ? $snapshot->model_metadata
             : (is_array($this->attribute('model_metadata')) ? $this->attribute('model_metadata') : []);
 
-        if ($metadata === []) {
+        if ($metadata === [] && $this->presentation->closingMarketEvidence === null) {
             return null;
         }
 
         $preseason = $this->sanitizeCfbPreseasonLayer(data_get($metadata, 'cfb_preseason_layer'));
         $gameContext = $this->sanitizeCfbGameContext(data_get($metadata, 'cfb_game_context'));
-        $marketMovement = $this->sanitizeCfbMarketMovement(data_get($metadata, 'cfb_market_movement'));
+        $marketMovement = $this->sanitizeCfbMarketMovement(data_get($snapshot?->market_context, 'cfb_market_movement') ?? data_get($metadata, 'cfb_market_movement'));
+        $closing = $this->presentation->closingMarketEvidence;
+        if ($marketMovement !== null) {
+            // Compatibility aliases remain explicitly postgame; never write them into entry features.
+            if (($closing['availability_status'] ?? null) === 'available') {
+                $marketMovement = [...$marketMovement, ...(array) $closing['output']];
+            }
+            $marketMovement['closing_evidence_provenance'] = $closing === null ? [
+                'phase' => 'postgame', 'availability_status' => 'unavailable', 'source_integrity_status' => 'legacy_unverified',
+                'reason_codes' => ['postgame_evidence_not_recorded'],
+            ] : array_intersect_key($closing, array_flip(['phase', 'availability_status', 'source_integrity_status', 'receipt_id', 'revision', 'observed_at', 'reason_codes']));
+        }
         $advancedMetricLayer = $this->sanitizeCfbAdjustmentList(data_get($metadata, 'cfb_advanced_metric_layer'));
         $playerAvailability = $this->sanitizeCfbPlayerAvailability(data_get($metadata, 'cfb_player_availability'));
 
-        if (! $preseason && ! $gameContext && ! $marketMovement && ! $advancedMetricLayer && ! $playerAvailability) {
+        if (! $preseason && ! $gameContext && ! $marketMovement && ! $advancedMetricLayer && ! $playerAvailability && $closing === null) {
             return null;
         }
 
@@ -459,6 +476,7 @@ class SportPredictionResource extends JsonResource
             'preseason_layer' => $preseason,
             'game_context' => $gameContext,
             'market_movement' => $marketMovement,
+            'closing_market_evidence' => $closing,
             'advanced_metric_layer' => $advancedMetricLayer,
             'player_availability' => $playerAvailability,
             'audit' => [

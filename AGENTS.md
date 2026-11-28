@@ -1,12 +1,13 @@
 # PickSports agent instructions
 
-Read [CLAUDE.md](CLAUDE.md) for engineering conventions. The following rules govern sports analysis and the use of this system.
+Read [docs/engineering.md](docs/engineering.md) for shared engineering conventions. Start with [README.md](README.md) and [docs/README.md](docs/README.md) for setup and operational guidance. The following rules govern sports analysis and the use of this system.
 
 ## Help the user make decisions
 
 - Requests for picks, handicaps, predictions, props, results, or team comparisons are analysis tasks. Use the existing system and answer the question; do not turn them into coding, deployments, migrations, calibration projects, or provider refreshes.
 - Model calibration is background work. Its absence does not block descriptive analysis or clearly labeled betting leans. Never invent cover probabilities, call an unvalidated probability calibrated, or change an approval status to make a selection look approved.
 - Present the selection, stored playable line and price when available, supporting system facts, and the main concern. Keep technical diagnostics out of ordinary betting answers unless they materially affect the interpretation or the user asks.
+- For a full NFL game breakdown, use [the reusable game analysis checklist](docs/nfl-game-analysis-checklist.md) to cover the user's established matchup questions without repeated prompting. Respect the requested scope and exclusions; narrow follow-ups do not require repeating the full checklist.
 
 ## Use PickSports data as the source of truth
 

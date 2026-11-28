@@ -1,8 +1,8 @@
 # NFL prediction formulas: executable model reference
 
 Reviewed September 25, 2026. This describes the local working tree, not a claim
-that its safeguards have been deployed. Preserve the findings in
-[the review ledger](nfl-prediction-review-ledger.md) when continuing this work.
+that its safeguards have been deployed. Confirm each formula against the referenced
+implementation before changing it; this reference does not establish the active production release.
 The `ats-v3` changes and their limits are summarized in
 [pregame driver safeguards](nfl-pregame-driver-safeguards.md).
 
@@ -535,7 +535,7 @@ m,t unchanged
 ```
 
 The code compares `predictedHomeWin = p>=0.5` with `homeWon = homeScore>awayScore`.
-Ties are not separately removed by this helper. This is not spread-cover
+Tied final scores are excluded from this helper’s prior-game sample in the current private candidate. This is not spread-cover
 calibration. Its mutable-history and fallback-bucket behavior require review.
 
 ## 16. Automated forecast tweaks — `applyAutomatedCalibrationTweaks`
@@ -692,3 +692,30 @@ zero and `fumbles` fallback do not establish verified zero events or lost fumble
   counterfactual results, plus exclusions and source snapshot IDs.
 - Review and deploy deliberately. Local implementation and passing tests do not
   establish deployment or improved out-of-sample accuracy.
+
+### Source correction — November 28, 2026
+
+The current private candidate’s `applyAdaptiveWinProbabilityCalibration` filters prior samples whose home and away final scores are equal before computing calibration buckets. This corrects the earlier tie statement above; the original review date and other historical observations remain historical. This is a source-only correction, with no calibration execution, production configuration verification, or activation/approval change.
+
+
+## Monitoring market display integrity (private scoped repair)
+
+The monitoring table displays recorded baseline/challenger win probabilities. A market scalar fallback is permitted only when market_type is win_probability. Missing non-win probability evidence is unavailable, rather than a spread or total converted to a percentage. Genuine zero and existing snapshot/explanation precedence remain. Market scalar deltas are separately labeled in their recorded units (points for spread/total). This is a DTO/display repair; no probability formulas, model/default/approval changes. Qualification is scoped PHP7 plus separate compatibility14 and fresh Node668/static builds, not a production, browser, SSR-server or whole-application certificate.
+
+
+## Reason-code explanation boundaries (private scoped repair)
+
+The 75 reviewed explanation labels describe their actual stored-input or model gates. Calendar-week conditions do not establish motivation, lookahead or resting starters; aggregate injury adjustments do not establish a particular QB replacement; team head-to-head rows do not establish coach identity history. Stored UTC clock windows retain their existing thresholds and are labeled as UTC context, independently of New York or Chicago display clocks. They do not establish a broadcast schedule or local primetime. Measured weather tokens and the five quote-derived heuristic metadata policies remain separate.
+
+The shared `weather_total_suppression` token and aggregate-only `qb_replacement_value_edge` token carry diagnostic, nonactionable model-context metadata. The team-history token `coach_vs_opponent_history_edge` is schedule context. Existing conservative metadata floors remain. These changes do not alter opaque tokens, numeric formulas, default settings or the raw rule engine. The separate duplicate late-week primetime emitter is removed; its removal can also change the derived `single_factor_signal` count.
+
+Catalog `direction` and `market_type` still classify opaque token spelling. For example, `rivalry_under_signal` retains under/total metadata even though its label says the direction was not measured. Observation materialization preserves these fields and observational grading can consume the compatible token direction, recording signal direction with `is_actual_bet=false`. Neither a label nor that grade establishes independent measured evidence or betting eligibility. The raw rule engine continues to evaluate raw codes; relabeling does not disable its configured rules.
+
+Stored historical reason metadata retains precedence in the signals API and materializer. This repair does not rewrite old predictions, observations or immutable receipts. Numeric/rule conservation qualification is limited to the executed controls and their exact source epochs; no predictive validation, calibration approval, production activation or whole-application acceptance follows from these explanation changes.
+
+Executed qualification is scoped to frozen source114: original23 had15 assertion failures/8 positives, prototype2 had8 assertion failures/15 positives, and final23 passed265 assertions. Both transitions retained21 complete preview output dictionaries. Prototype2→final preserved all raw analysis fields except the intended reason metadata; original→prototype2 removed the duplicate primetime code in six preview traces and added derived single-factor context in four. Separate owning compatibility passed67/538 and Pint3 passed. The initial compatibility66/1error epoch remains refused: the no-Git copy lacked a code-version input. Its source-identical successor used an explicitly synthetic SOURCE_VERSION marker, not a real commit identity. These are scoped private results, not a current full-suite, native, production or scientific acceptance.
+
+
+## Monitoring Brier cohort and observation count (private scoped repair)
+
+Brier statistics use compatible full-game home-win probability outputs and moneyline decision semantics only. Both recorded probability values must be finite and within [0,1], and settlement must have a non-tie home-margin result. Tracking-only observations remain eligible; this is not a bet-only gate. There is no new game deduplication. The legacy `calibration_games` response field counts eligible observations, not unique games; the interface labels that count explicitly. Existing squared-error, mean and delta formulas, model/default and approval rules are unchanged. Actual public-chain and reader controls, separate owning compatibility, and fresh673 frontend/static builds qualify this private scope only; they do not approve scientific calibration or a whole production release.

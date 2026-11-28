@@ -1,11 +1,13 @@
 # API V2 Reference
 
-Last reviewed: 2026-09-26. Route inventory verified against all 86 registered V2 routes (GET includes HEAD).
+Route inventory checkpoint: November 25, 2026, 89 local V2 route entries (GET includes HEAD). Authentication policy updated November 26; complete workflow certification remains separate.
 
-This is the current human and agent reference for `/api/v2`. It complements
-`docs/api-v2-modernization-plan.md` and
-`docs/api-v2-contracts-and-retirement.md` by listing the actual route surface,
-expected filters, frontend client ownership, and contract-test coverage.
+This is the human and agent reference for `/api/v2`: route surface, expected
+filters, frontend client ownership, and contract-test coverage. Use
+`routes/api-v2.php` and its request classes to verify the current implementation.
+V1 was removed on September 25, 2026; its former routes are not the current API.
+Superseded migration plans have been removed; API operating policies live in
+[api/v2/README.md](api/v2/README.md).
 
 The generated [OpenAPI artifact](openapi-v2.json) contains named request and response schemas. The [endpoint contract index](api-v2-endpoint-contracts.md) maps every method and path to those schemas. This reference
 adds the operational context that a route-level schema cannot fully express.
@@ -43,8 +45,13 @@ adds the operational context that a route-level schema cannot fully express.
 | `POST /security/reports/csp`, `POST /security/reports/integrity` | Public, CSRF exempt | 1,000/minute in production; 10,000/minute in local/testing |
 
 Paths above are relative to `/api/v2`. `v2.auth` accepts the application session,
-Sanctum tokens, or Passport OAuth bearer tokens. OAuth reads require
-`mobile:read`; mutations require `mobile:write`. Sport entitlement and resource
+Sanctum tokens, or Passport OAuth bearer tokens. Scoped Sanctum bearer tokens
+and Passport OAuth tokens require `mobile:read` for safe methods and
+`mobile:write` for mutations. A missing Sanctum ability returns 403 with
+`insufficient_token_scope`; missing Passport scope retains
+`insufficient_oauth_scope`. Legacy Sanctum wildcard tokens remain supported,
+and application sessions use their normal authorization and CSRF controls.
+Sport entitlement and resource
 ownership checks still apply after authentication. Developer credentials use the
 separate sandbox guard; they do not grant application API access.
 
@@ -84,8 +91,8 @@ curl --fail-with-body "$API_BASE/sports/nfl/games/<game-id>/research" \
   -H 'Accept: application/json' -H "Authorization: Bearer $API_TOKEN"
 ```
 
-Password login accepts `email`, `password` and optional `device_name`; success
-returns `token_type`, `access_token` and `user`. `GET /auth/me` returns the
+Password login accepts `email`, `password` and optional `device_name` and `token_profile`; success
+returns `token_type`, `access_token`, `user`, granted `token_profile`/`abilities`, and nullable `expires_at`, `expires_epoch`, `expires_in`. `GET /auth/me` returns the
 current user resource. `POST /auth/logout` revokes the current token/device
 session; `POST /auth/logout-all` revokes all of the user's tokens/device
 sessions. Both return 204 with no body.
@@ -93,12 +100,16 @@ sessions. Both return 204 with no body.
 Passkey login first calls `POST /auth/passkeys/options` with optional `email`.
 Use the returned challenge in the platform WebAuthn flow, then send
 `challenge_id`, `credential_id`, `client_data_json`, `authenticator_data` and
-`signature` to `POST /auth/passkeys/verify`; `device_name` is optional. The
+`signature` to `POST /auth/passkeys/verify`; `device_name` and `token_profile` are optional. The
 verification response has the same token envelope as password login.
+
+Password and passkey token responses use `Cache-Control: private, no-store`.
+Finite issuance is staged behind `API_TOKEN_FINITE_ISSUANCE_ENABLED=false` by default. While off, existing interactive issuance returns `legacy_interactive`, wildcard abilities and null expiry; requesting `read_only` is rejected. After verified activation, `interactive` grants only `mobile:read`/`mobile:write`; `read_only` grants only `mobile:read`. The default lifetime is 60 minutes, configurable from 5 to 1,440; exact UTC/epoch expiry applies at admission. A read-only credential cannot POST logout; revoke it through an authorized account-management flow. An expired credential returns 401; reauthenticate or use the native refresh flow, and never automatically replay a failed mutation. Browser sessions, OAuth and unmarked native/legacy credentials retain their existing policy. Existing permanent credentials are not automatically revoked. See [finite API token operations](operations/api-token-policy.md) for fleet, rollback, pruning and legacy migration gates.
 
 For native applications:
 
-1. Authenticate, then `POST /auth/device-sessions` with `device_name` (max 120),
+1. Use a browser session or, with native epoch admission enabled, a finite server-issued
+   interactive password/passkey API login. Then `POST /auth/device-sessions` with `device_name` (max 120),
    `platform` (`ios` or `android`) and optional `device_identifier` (max 255).
    A 201 response contains `access_token`, `refresh_token`, both expiry
    timestamps, `token_type` and `device_session` (`id`, `device_name`, `platform`).
@@ -117,6 +128,19 @@ For native applications:
    Both return 204. `{deviceSession}` is the returned public session ID, and
    must belong to the authenticated user.
 
+An existing native-session-linked bearer cannot bootstrap another family (403); rotate its
+refresh token instead. Passport OAuth stays on its own refresh protocol and is not converted
+here. Unmarked, unlinked legacy bearer bootstrap is retained only while native epoch admission
+is OFF. API finite login issuance and all authentication runtimes must be verified before
+activating native epoch admission; a device name never proves credential provenance.
+
+Native issuance and refresh responses use `Cache-Control: private, no-store`.
+Push registration rechecks the current session under a database lock; revoked
+sessions and tokens retained by another account are refused. The same account
+may move a registration between its active sessions. See [native lifecycle
+boundaries](operations/native-device-sessions.md), including account-switching
+and connection requirements, before enabling a device workflow.
+
 ## Mutation retries, errors and request IDs
 
 The [endpoint contract index](api-v2-endpoint-contracts.md) marks the mutations
@@ -129,9 +153,17 @@ is 24 hours (`API_V2_IDEMPOTENCY_TTL_HOURS`).
 A completed replay returns the original status/body with
 `Idempotency-Replayed: true`. Initial responses use `false`; both include
 `Idempotency-Key-Expires-At`. A changed payload returns 409
-`idempotency_key_reused`; a still-running request returns 409
-`idempotency_request_in_progress`. Invalid key syntax returns 400
-`invalid_idempotency_key`. Exceptions and 5xx responses are not cached.
+`idempotency_key_reused`. Concurrent requests for the same key wait for the local
+transaction, then replay its completed receipt. Business writes and successful
+response receipts commit atomically for the explicitly classified local-database
+routes. Exceptions and returned HTTP errors roll back those local writes; their
+safe reservations may resume with the original fingerprint. Incomplete legacy
+outcomes fail closed with 409 `idempotency_outcome_unknown`, even after TTL, and
+are excluded from pruning. Invalid key syntax returns 400
+`invalid_idempotency_key`; an unclassified keyed operation returns 503
+`idempotency_operation_unsupported`. Only completed expired receipts can be
+recycled or pruned. See the [atomic idempotency contract and cutover
+requirements](production-readiness/api-idempotency-2026-11-25.md).
 
 The Vue client supplies CSRF and idempotency headers, retries a network failure
 once with the same key/body, and exposes `ApiError` with `status`, `data`, `code`,
@@ -286,27 +318,42 @@ CBB team-player reads select the latest season-specific roster observation known
 
 | Endpoint family | Supported query filters |
 | --- | --- |
-| Games | `status`, `season`, `season_type`, `from_date`, `to_date`, `before_game_at`, `exclude_game_id`, `per_page` |
+| Games | `status`, `completed_only`, `season`, `season_type`, `from_date`, `to_date`, `before_game_at`, `exclude_game_id`, `per_page` |
 | Predictions | `season`, `season_type`, `week`, `from_date`, `to_date`, `status`, `team_id`, `game_id`, `include`, `market`, `per_page` |
 | Teams | `conference`, `division`, `league`, `search`, `per_page` |
 | Players | `team_id`, `position`, `status`, `search`, `per_page` |
 | Team metrics | `season`, `season_type`, `team_id`, `per_page` |
+| Team depth charts | `season` (1–9999), `season_type` (configured/supported phase name or code; no `all`), `before_date` |
 | Player/team stats | `season`, `season_type`, `week`, `from_date`, `to_date`, `game_id`, `team_id`, `player_id`, `stat_type`, `team_type`, `per_page` |
-| Team stat averages | `season`, `season_type`, `team_id`, `per_page` |
+| Team stat averages | `season` (1–9999), `season_type` (configured phase/code/name or explicit `all`) |
 | Team trends | `games`, `season`, `season_type`, `before_date` |
 | Player props | `date`, `from_date`, `to_date`, `game_id`, `player_id`, `market`, `bookmaker`, `recommended_side`, `per_page` |
 | Futures odds | `season`, `market_key`, `bookmaker`, `team_id`, `player_id`, `event_id`, `outcome_name`, `per_page` |
 | Forecasts | `season`, `as_of_date`, `require_historical_metrics`, `sort_by`, `sort_direction` |
 | Signals | `season`, `as_of_date` |
-| Injuries | `active`, `team_id`, `status`, `limit` (1–500) |
+| Injuries | `active`, `actionable` (`0` or `1`), `team_id`, `status`, `limit` (1–500) |
 | Player leaderboards | `season`, `season_type`, `stat_type`, `min_games`, `focus_player_id` |
 | MLB daily picks | `date`, `season`, `game_id`, `compact`, `limit` |
+
+Depth-chart team scope is validated before queries. Phase aliases resolve to a canonical code. An omitted season preserves the existing calendar-year fallback; omitted phase remains unfiltered within that season. The game-specific route derives its stat scope from the stored game and accepts no query filters. `before_date` is an exclusive stored game calendar-date cutoff for stat samples, not proof that a mutable depth listing existed at kickoff. Listings are stored context without a verified provider freshness claim. An unresolved side may have `team: null` and empty entries, while the known side remains available. Stat metric `sample_size` reports its actual field or paired-rate observations; all-missing values display `-`, genuine zero is retained, and rates use their matching observations. Stored numeric IP is explicitly labeled decimal innings; no legacy outs-notation reinterpretation is performed.
+
+Team stat averages cover completed games only in the selected phase. An omitted season resolves to the latest stored completed season within that scope, not an assumed current season; an omitted phase uses the configured default. `meta.scope` reports both resolutions. An explicit empty scope never broadens to other history. Per-field `sample_sizes` distinguish missing observations from genuine zero; shooting percentages use paired made/attempted observations and expose `shooting_totals`. The team-specific empty scope returns 404 with its scope metadata, while the league collection returns an empty array.
+
+Injury observation freshness is nullable for legacy projection clocks. `meta.freshness.source_clock_status` distinguishes `unverified_storage_clock` from `no_matching_observations`; neither proves fresh or complete provider coverage. `is_stale`, `stale_rows`, `age_hours`, `last_observed_at` and `latest_source_updated_at` remain `null` until a qualified, currently bound observation can establish them. `unverified_rows` counts the returned unqualified records. `last_stored_at` is only a raw local database mutation marker for the included rows, and raw `data[].source_updated_at` remains clearly labeled stored text with unverified timezone. A local edit or a fresh row on another team cannot establish freshness. The 48-hour policy is retained for a future verified observation adapter; this read repair does not implement that adapter or certify an empty result as a successful complete sync. See [the required provenance plan](production-readiness/injury-observation-provenance-plan-2026-11-26.md).
 
 Use `page` for Laravel-paginated collections. Date ranges use `YYYY-MM-DD`
 and require `to_date >= from_date`. Business date windows use
 `config(sports.business_timezone)`; timestamps in responses retain their stated
 offset. `/daily-picks` is MLB-only and returns a custom board rather than a
-paginated collection. Availability routes return available dates/seasons rather
+paginated collection. Its `summary.pregame_safe_rate` and
+`board_health.pregame_safe_rate` are nullable historical stored signal assessments,
+not current source/safety revalidation: no candidates or any unknown included
+assessment yields `null`. Compact projections omit the detailed stored assessment, so they remain unknown rather than inferring safety from absent flags. The UI labels this Stored Safety Assessment. Candidate
+`game.starts_at` is an offset-bearing observed kickoff bound to the current game,
+or `null` for unmarked/invalid legacy clocks. Candidate `game.game_date` remains a
+serialized stored calendar date and must not be interpreted as kickoff. Genuine
+zero hit rates and complete observed zero inning scores remain zero; incomplete
+inning scores are unavailable. Availability routes return available dates/seasons rather
 than the full resources. Numeric IDs are required unless an endpoint explicitly
 supports a sport-event public ID; do not assume public-ID support for every
 `{team}`, `{player}`, `{prediction}` or game subresource.
@@ -450,7 +497,7 @@ Use these when repairing the data path during an active NFL season:
 
 ```bash
 php8.5 artisan sports:operations-sentinel --sport=nfl --season=2026 --repair --ai
-php8.5 artisan espn:sync-nfl-current
+php8.5 artisan espn:sync-nfl-current --skip-teams
 php8.5 artisan espn:sync-nfl-games-scoreboard
 php8.5 artisan espn:sync-nfl-game-details
 php8.5 artisan espn:sync-nfl-depth-charts --season=2026
@@ -611,7 +658,7 @@ Unsupported sports return 404. All paths are relative to `/api/v2`.
 | `/sports/{sport}/games/{game}/trends` | MLB | `games` (defaults to `season`); season, season type and cutoff are derived from the game | `data.home`, `data.away`, and `meta` |
 | `/sports/{sport}/games/{game}/research` | NFL | None | Latest 20 revisions in `data.revisions`, `data.game_id`, and `meta`; requires NFL, spread, win-probability and betting-value permissions |
 | `/sports/{sport}/games/{game}/live-betting` | CFB | None | Nullable latest snapshot in `data`, up to 25 snapshots in `history`, and `meta` |
-| `/sports/{sport}/games/{game}/live-snapshot` | NFL | None | `data` with game state, nullable provisional projection, timestamps and limitations; no `meta`; private/no-store |
+| `/sports/{sport}/games/{game}/live-snapshot` | NFL | None | `data` with game state, nullable provisional projection and limitations; `source_updated_at` is null with `source_clock_status=observation_unavailable`; `record_updated_at` is null; `record_updated_at_raw` is local mutation text with `record_clock_status=unverified_storage_clock`, not a successful provider sync; no `meta`; private/no-store |
 | `/sports/{sport}/games/{game}/market-history` | NFL | `since` (2009 through game season), optional `home_line` (-60 to 60 in half-point increments) | Historical market evidence in `data`, plus `meta` |
 | `/sports/{sport}/games/{game}/matchup-signals` | NFL | `window`: `season_to_date` (default) or `previous_season` | Independent matchup and situational evidence in `data`, plus `meta` |
 
@@ -653,11 +700,23 @@ Supplemental team evidence, research, depth charts, independent analysis and
 market history remain separate requests, listed in `meta.deferred`. MLB retains
 its existing composite page contract.
 
-
-## Opt-in shared research administration
-
-`GET /api/v2/sports/{sport}/games/{game}/analysis/research` returns the stored descriptive assessment and independently applicable AI review. It requires admin status and the corresponding prediction disclosure permissions; it never fetches sources, writes assessment/work records or purchases provider calls. Missing schema/capability yields an explicit unavailable state. Existing NFL `/research` behavior is retained.
-
-`POST /api/v2/admin/{sport}/games/{game}/analysis/retry` requires admin and disclosure access, write throttling and enabled capabilities. It returns 202 after dispatch, not completion; queued work rechecks authorization. Explicit retry can create assessment/work and invoke a paid review only when its gates are enabled. Shared flags default false. See [operations](operations/nba-research-rollout.md) and generated [OpenAPI](openapi-v2.json) for the contract and staged rollout.
-
 Basketball player leaderboards include `three_pointers_made_per_game`, rounded to one decimal over non-null `three_point_made` game records in the selected season and season type. It is null when all qualifying records lack that stat; recorded zeroes are included. The CBB player stats view displays and sorts this field as `3PM/G`.
+
+Game list and team-game list filters apply before pagination (`per_page` 1–500). `completed_only=true` selects stored final/full-time statuses; `before_game_at` is exclusive. Prefer an offset-bearing ISO timestamp for cutoff queries. Game `starts_at` is nullable: the six audited UTC-storage sports derive it only from a valid stored clock; MLB requires its observed-start provenance contract. Unknown or unverified clocks remain unavailable. Prediction `spread_convention` distinguishes `home_margin` (positive favors home) from `home_handicap` (negative favors home); clients must convert once before displaying or saving a pick.
+
+Basketball leaderboard averages use only non-null observations for each field, with counts in `field_samples`; an all-missing field is `null`, not zero. `shooting_samples` counts matched made/attempt pairs used for each percentage. `minutes_per_game` excludes missing or malformed minutes and reports `minutes_samples`. The box-score EPA proxy is only available when `complete_box_score_games` equals `games_played`; EPA/36 also requires a complete matching minutes cohort and a positive minutes denominator. Partial records remain available as independent stored field averages. These are read-time completeness rules, not model calibration, provider coverage or training changes. Existing proxy weights and fully observed arithmetic are unchanged.
+
+### Live scoreboard date and kickoff semantics
+
+`GET /api/v2/live-scoreboard` consumes no caller date-range filters. It returns accessible live/final predictions for the configured sports business date (`sports.business_timezone`), with the existing 24-row display limit. Verified starts are matched to that date's UTC bounds. MLB uses its authoritative observed-start epoch; wholly unmarked legacy MLB rows may remain calendar inventory with `game_time: null`. NFL missing-clock rows likewise remain date-only when supported by the existing clock classifier. A known UTC midnight remains a real instant, not a missing-clock default. Canonical selection retains its publication, input, release and current MLB source-binding gates; event-wall storage is not compared as UTC. Response kickoff fields use the current authoritative game start or null.
+
+For the extra old NFL midnight-carrier candidates only, stored clock metadata must fit a 65,536-byte SQL preflight before classification; oversized extra candidates are not expanded into the slate. This is not a global JSON/body coverage guarantee. `updated_at` remains the cached payload assembly timestamp, not a provider synchronization time.
+
+For NFL prediction detail payloads, `game.kickoff_at` follows the same current strict stored-start classification as `game.starts_at`, in both legacy and canonical reads. Null clocks and identified old imported missing-clock carriers remain null; an explicit real midnight remains a timestamp. The legacy board's `can_retry_research` affordance additionally requires a known future kickoff and the existing administrator/status conditions. This read affordance is not certification of the separate research mutation endpoint.
+
+Player-prop recommendation boards withhold rows whose stored line is missing or nonfinite; a real line of zero remains valid. The underlying raw quote, statistics and stored assessment are retained. The raw `/player-props` collection still returns a missing line as null. A board processing-policy cache namespace prevents older false-zero responses from being reused without purging historical cache entries.
+
+NFL prop date options and single-date filters use the same strict current clock classification as their card labels. Identified old imported missing-midnight carriers remain on their stored calendar date with `Time TBD`; a real UTC midnight uses its actual business date. The read adapter projects at most 65,536 metadata bytes per row in small chunks before model JSON casts. If a possible imported midnight cannot be classified within that processing budget, its clock remains unavailable rather than being invented. This inventory adapter does not create a source observation, model approval or transactional source-admission receipt, and does not certify every other JSON hydration path.
+
+
+Embedded active injury observations on player detail and NFL game-page team payloads expose `source_updated_at: null`, `source_updated_at_raw` (exact stored legacy text or null), and `source_clock_status: unverified_storage_clock`. These rows lack a qualified observation clock; local `updated_at` is a record mutation time, not a successful provider refresh. Clinical injury/return DATE values remain calendar dates. Empty or unloaded injury coverage does not establish a fresh report. No legacy timestamp conversion or backfill is performed.

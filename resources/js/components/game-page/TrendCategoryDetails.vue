@@ -26,19 +26,26 @@ const {
         <summary
             class="min-h-11 cursor-pointer content-center text-sm font-semibold"
         >
-            All patterns · both teams
+            All patterns · both teams (recorded context)
         </summary>
         <div
             v-if="supportingPatterns?.length"
             class="mb-3 border-t border-border pt-2"
         >
-            <h4 class="mb-1 text-sm font-semibold">Supporting patterns</h4>
+            <h4 class="mb-1 text-sm font-semibold">
+                Recorded supporting context
+            </h4>
             <ul class="list-disc space-y-1 pl-4 text-sm text-muted-foreground">
                 <li v-for="(pattern, index) in supportingPatterns" :key="index">
                     {{ pattern }}
                 </li>
             </ul>
         </div>
+        <p class="my-2 text-xs text-muted-foreground">
+            Selected highlights exclude explicitly conditional in-game
+            observations. All recorded patterns remain available here; ranks are
+            not betting probabilities.
+        </p>
         <details
             v-for="category in allTrendCategories"
             :key="category"

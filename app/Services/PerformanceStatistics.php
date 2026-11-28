@@ -101,7 +101,13 @@ class PerformanceStatistics
             $stats = ['total_graded' => 0, 'winner_correct' => 0, 'spread_error_samples' => 0,
                 'spread_error_sum' => 0.0, 'total_error_samples' => 0, 'total_error_sum' => 0.0];
             foreach ($predictions as $prediction) {
-                $errors = $prediction->latestEvaluation->errors;
+                $evaluation = $prediction->latestEvaluation;
+                // A correction can invalidate the relation between the parent
+                // query and eager loading. Omit that pending grade entirely.
+                if ($evaluation === null) {
+                    continue;
+                }
+                $errors = $evaluation->errors;
                 $winner = data_get($errors, 'winner_correct');
                 $stats['total_graded'] += (int) ($winner !== null);
                 $stats['winner_correct'] += (int) ($winner === true);

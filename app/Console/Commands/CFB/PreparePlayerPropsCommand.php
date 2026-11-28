@@ -38,7 +38,7 @@ class PreparePlayerPropsCommand extends Command
         $query = Game::where('status', 'STATUS_SCHEDULED')->whereHas('playerProps', fn ($q) => $q->where('is_current', true));
         CfbPropEligibility::onDate($query, $date);
         $games = $query->when($this->option('game'), fn ($q, $id) => $q->whereKey($id))->get()
-            ->filter(fn ($game) => CfbPropEligibility::kickoff($game)->isFuture());
+            ->filter(fn ($game) => CfbPropEligibility::kickoff($game)?->isFuture() === true);
         $started = hrtime(true);
         $teamIds = $games->flatMap(fn ($game) => [$game->home_team_id, $game->away_team_id])->unique();
         $counts = ['teams' => 0, 'roster_players' => 0, 'history_games' => 0, 'stat_rows' => 0, 'linked' => 0, 'recommendations' => 0, 'failed' => 0];

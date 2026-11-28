@@ -19,6 +19,8 @@ interface InjuryItem {
     injury_date?: string | null;
     return_date?: string | null;
     source_updated_at?: string | null;
+    source_updated_at_raw?: string | null;
+    source_clock_status?: 'unverified_storage_clock';
 }
 
 const props = withDefaults(
@@ -200,10 +202,20 @@ const injuryNote = (injury: InjuryItem): string => {
 
 const compactDate = (value: string | null | undefined): string | null => {
     if (!value) return null;
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return value;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return value;
+    const [, year, month, day] = match;
+    const parsed = new Date(`${year}-${month}-${day}T00:00:00Z`);
+    if (
+        !Number.isFinite(parsed.getTime()) ||
+        parsed.getUTCFullYear() !== Number(year) ||
+        parsed.getUTCMonth() + 1 !== Number(month) ||
+        parsed.getUTCDate() !== Number(day)
+    )
+        return value;
 
     return parsed.toLocaleDateString(undefined, {
+        timeZone: 'UTC',
         month: 'short',
         day: 'numeric',
         year: 'numeric',
@@ -314,14 +326,16 @@ const modelImpactLines = computed(() => {
             </p>
         </div>
         <p v-if="storedListings" class="mt-2 text-sm text-muted-foreground">
-            Stored reports are not verified current availability. Check the
-            supplied source dates below.
+            Stored reports are not verified current availability. Supplied
+            source dates do not establish report freshness.
         </p>
-        <details
+        <component
+            :is="storedListings ? 'details' : 'div'"
             v-if="modelImpactLines.length > 0"
             class="mt-3 border-t border-border pt-3"
         >
-            <summary
+            <component
+                :is="storedListings ? 'summary' : 'div'"
                 class="flex min-h-11 cursor-pointer flex-wrap items-center justify-between gap-2 text-xs"
             >
                 <span
@@ -335,13 +349,13 @@ const modelImpactLines = computed(() => {
                     {{ modelImpactLines.length }}
                     {{ modelImpactLines.length === 1 ? 'note' : 'notes' }}
                 </span>
-            </summary>
+            </component>
             <div class="mt-2 space-y-1.5 text-sm text-foreground/90">
                 <p v-for="line in modelImpactLines" :key="line">
                     {{ line }}
                 </p>
             </div>
-        </details>
+        </component>
 
         <div class="mt-4 grid gap-4 md:grid-cols-2">
             <section

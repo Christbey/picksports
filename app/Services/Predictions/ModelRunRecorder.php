@@ -21,23 +21,41 @@ class ModelRunRecorder
         string $featureVersion,
         string $blendVersion,
         array $metadata = [],
+        ?array $preparedContext = null,
     ): ModelRun {
         $config = $this->canonicalize((array) config($sport, []));
         $configHash = hash('sha256', json_encode($config, JSON_THROW_ON_ERROR));
+        if ($preparedContext !== null) {
+            $this->assertPreparedContext($sport, $configHash, $preparedContext);
+        }
         $runType = (string) ($metadata['run_type'] ?? 'prediction');
-        $cacheKey = implode('|', [$sport, $runType, $modelVersion, $featureVersion, $blendVersion, $configHash]);
+        $parameters = $metadata['parameters'] ?? null;
+        $cacheKey = hash('sha256', json_encode($this->cacheIdentity([
+            $sport, $runType, $modelVersion, $featureVersion, $blendVersion, $configHash, $parameters,
+        ]), JSON_THROW_ON_ERROR));
+        $cached = $this->runs[$cacheKey] ?? null;
+        if ($cached !== null) {
+            // A command-scoped recorder can outlive a rolled-back transaction.
+            // Check the parent on the writer connection before reusing its ID.
+            if ($cached->getConnection() === (new ModelRun)->getConnection()
+                && ModelRun::query()->useWritePdo()->whereKey($cached->getKey())->first(['id']) !== null) {
+                return $cached;
+            }
+            unset($this->runs[$cacheKey]);
+        }
 
-        return $this->runs[$cacheKey] ??= $this->create(
+        return $this->runs[$cacheKey] = $this->create(
             sport: $sport,
             runType: $runType,
             modelVersion: $modelVersion,
             featureVersion: $featureVersion,
             blendVersion: $blendVersion,
-            parameters: $metadata['parameters'] ?? null,
+            parameters: $parameters,
             metadata: $metadata,
             status: 'completed',
             completedAt: now(),
             configHash: $configHash,
+            preparedContext: $preparedContext,
         );
     }
 
@@ -56,7 +74,12 @@ class ModelRunRecorder
         string $status = 'running',
         mixed $completedAt = null,
         ?string $configHash = null,
+        ?array $preparedContext = null,
     ): ModelRun {
+        if ($preparedContext !== null) {
+            $this->assertPreparedContext($sport, $configHash ?? $this->configHash($sport), $preparedContext);
+        }
+
         return ModelRun::query()->create([
             'id' => (string) Str::uuid(),
             'sport' => $sport,
@@ -65,13 +88,28 @@ class ModelRunRecorder
             'feature_version' => $featureVersion,
             'blend_version' => $blendVersion,
             'config_hash' => $configHash ?? $this->configHash($sport),
-            'code_version' => $this->codeVersion(),
+            'code_version' => $preparedContext !== null ? $preparedContext['code_version'] : $this->codeVersion(),
             'parameters' => $parameters,
             'status' => $status,
             'started_at' => now(),
             'completed_at' => $completedAt,
             'metadata' => $metadata,
         ]);
+    }
+
+    /** Stage only descriptive run metadata; this does not confer input or model authority. */
+    public function preparePredictionContext(string $sport): array
+    {
+        return ['sport' => $sport, 'config_hash' => $this->configHash($sport), 'code_version' => $this->codeVersion()];
+    }
+
+    private function assertPreparedContext(string $sport, string $configHash, array $context): void
+    {
+        if (($context['sport'] ?? null) !== $sport || ($context['config_hash'] ?? null) !== $configHash
+            || $configHash !== $this->configHash($sport) || ! array_key_exists('code_version', $context)
+            || ($context['code_version'] !== null && (! is_string($context['code_version']) || strlen($context['code_version']) > 64))) {
+            throw new \InvalidArgumentException('Prepared prediction run context changed; retry the complete calculation.');
+        }
     }
 
     public function configHash(string $sport): string
@@ -120,6 +158,26 @@ class ModelRunRecorder
         }
 
         return null;
+    }
+
+    /** Preserve list/map shape for cache identity without changing published config hashes. */
+    private function cacheIdentity(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return ['value', $value];
+        }
+        if (array_is_list($value)) {
+            return ['list', array_map(fn (mixed $item): array => $this->cacheIdentity($item), $value)];
+        }
+        $keys = array_keys($value);
+        $keyIdentity = static fn (int|string $key): string => (is_int($key) ? 'integer:' : 'string:').$key;
+        usort($keys, static fn (int|string $left, int|string $right): int => strcmp($keyIdentity($left), $keyIdentity($right)));
+        $entries = [];
+        foreach ($keys as $key) {
+            $entries[] = [is_int($key) ? 'integer' : 'string', $key, $this->cacheIdentity($value[$key])];
+        }
+
+        return ['map', $entries];
     }
 
     private function canonicalize(mixed $value): mixed

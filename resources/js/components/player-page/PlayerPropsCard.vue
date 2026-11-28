@@ -8,7 +8,7 @@ defineProps<{ playerProps: PlayerProp[] }>();
 <template>
     <Card v-if="playerProps.length > 0" class="mb-4">
         <CardHeader>
-            <CardTitle>Upcoming Props</CardTitle>
+            <CardTitle>Stored Props</CardTitle>
         </CardHeader>
         <CardContent>
             <div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -27,7 +27,9 @@ defineProps<{ playerProps: PlayerProp[] }>();
                         >
                     </div>
                     <div class="flex items-center justify-center py-2">
-                        <span class="text-2xl font-bold">{{ prop.line }}</span>
+                        <span class="text-2xl font-bold">{{
+                            prop.line ?? 'Line unavailable'
+                        }}</span>
                     </div>
                     <div class="grid grid-cols-2 gap-2 text-sm">
                         <div class="rounded bg-muted p-2 text-center">

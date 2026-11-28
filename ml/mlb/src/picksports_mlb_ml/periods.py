@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import joblib
 import numpy as np
 import pandas as pd
 import yaml
@@ -20,9 +19,11 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
 
+from picksports_mlb_ml import __version__
 from picksports_mlb_ml.calibration import ProbabilityCalibrator, fit_calibrator
 from picksports_mlb_ml.dependencies import dependency_versions
 from picksports_mlb_ml.hashing import sha256_file, sha256_json
+from picksports_mlb_ml.numeric_artifacts import PERIOD_FORMAT, period_bundle_state, load_period_bundle, read_json, write_json
 
 
 CLASSES = np.asarray([0, 1, 2], dtype=int)
@@ -119,6 +120,7 @@ def train_period_models(
         "model_run_id": model_run_id,
         "artifact_id": artifact_id,
         "model_version": "mlb-period-multiclass-v1",
+        "execution_format": PERIOD_FORMAT,
         "feature_schema_version": config["schema_version"],
         "feature_schema_hash": schema_hash,
         "dataset_hash": dataset_hash,
@@ -141,7 +143,7 @@ def train_period_models(
     }
     output = Path(output_path).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(bundle, output)
+    write_json(output, period_bundle_state(bundle), max_bytes=32 * 1024 * 1024)
     manifest["artifact_hash"] = sha256_file(output)
     evaluation["promotion_summary"] = promotion
     evaluation["manifest"] = manifest
@@ -158,7 +160,7 @@ def train_period_models(
 def predict_period_models(
     bundle_path: str | Path, input_path: str | Path
 ) -> list[dict[str, Any]]:
-    bundle = joblib.load(Path(bundle_path).expanduser().resolve())
+    bundle = load_period_bundle(read_json(Path(bundle_path).expanduser(), max_bytes=32 * 1024 * 1024))
     manifest = bundle["manifest"]
     frame = _read_frame(input_path)
     rows: list[dict[str, Any]] = []
@@ -687,10 +689,7 @@ def _write_json(path: Path, value: Any) -> None:
 
 
 def _package_version() -> str:
-    try:
-        return importlib.metadata.version("picksports-mlb-ml")
-    except importlib.metadata.PackageNotFoundError:
-        return "0.2.0"
+    return __version__
 
 
 def _dependency_versions() -> dict[str, str]:

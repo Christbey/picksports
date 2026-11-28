@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ChevronRight, Clock } from 'lucide-vue-next';
 import { computed } from 'vue';
+import { formatTime } from '@/lib/mlbMatchupPresentation';
 import {
     labelizeMlbCode,
     safeMlbPickStatus,
@@ -335,31 +336,6 @@ function teamScoreClass(team: 'away' | 'home'): string {
     return 'text-foreground';
 }
 
-function formatTime(value?: string | null, time?: string | null): string {
-    if (!value) return 'Time pending';
-
-    const date = gameDateTime(value, time);
-
-    return new Intl.DateTimeFormat(undefined, {
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-    }).format(date);
-}
-
-function gameDateTime(value: string, time?: string | null): Date {
-    if (time && /^\d{1,2}:\d{2}/.test(time)) {
-        const datePart = value.includes('T')
-            ? value.split('T')[0]
-            : value.split(' ')[0];
-
-        return new Date(`${datePart}T${time}`);
-    }
-
-    return new Date(value);
-}
-
 function formatSignedPercent(value: number): string {
     const percent = value * 100;
 
@@ -459,7 +435,7 @@ function resultBadgeClass(
                             class="inline-flex items-center gap-1 rounded-full border bg-background/75 px-2.5 py-1 text-xs text-muted-foreground"
                         >
                             <Clock class="h-3.5 w-3.5" />
-                            {{ formatTime(game?.game_date, game?.game_time) }}
+                            {{ formatTime(game?.starts_at) }}
                         </span>
                         <span
                             class="rounded-full border bg-background/75 px-2.5 py-1 text-xs font-semibold text-muted-foreground"

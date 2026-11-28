@@ -6,6 +6,7 @@ use App\Models\CFB\PlayerProp;
 use App\Models\CFB\PlayerStat;
 use App\Models\CFB\Team;
 use App\Services\CFB\CfbPropScoringShadowRecorder;
+use App\Support\CFB\CfbGameStart;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +16,8 @@ beforeEach(function () {
     $team = Team::factory()->create();
     $away = Team::factory()->create();
     $this->game = Game::factory()->create(['home_team_id' => $team->id, 'away_team_id' => $away->id,
-        'season' => 2026, 'game_date' => '2026-10-10', 'game_time' => '20:00:00', 'status' => 'STATUS_SCHEDULED']);
+        'season' => 2026, 'game_date' => '2026-10-10', 'game_time' => '20:00:00', 'status' => 'STATUS_SCHEDULED', 'espn_event_id' => 'shadow-clock',
+        ...CfbGameStart::attributes('2026-10-10T20:00:00Z', [], 'espn_schedule', 'shadow-clock')]);
     $this->player = Player::factory()->create(['team_id' => $team->id, 'espn_id' => '90001234', 'full_name' => 'Test Quarterback']);
     $this->prop = PlayerProp::create(['game_id' => $this->game->id, 'player_id' => $this->player->id,
         'player_name' => $this->player->full_name, 'market' => 'player_pass_yds', 'bookmaker' => 'fanduel',

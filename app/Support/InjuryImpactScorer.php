@@ -178,11 +178,7 @@ class InjuryImpactScorer
         }
 
         if (
-            str_contains($normalized, 'out')
-            || str_contains($normalized, 'doubtful')
-            || str_contains($normalized, 'inactive')
-            || str_contains($normalized, 'suspended')
-            || str_contains($normalized, 'ir')
+            preg_match('/(?<![a-z])(?:out|doubtful|inactive|suspended|ir|injured[\s_-]+reserve)(?![a-z])/', $normalized) === 1
         ) {
             return 'out';
         }

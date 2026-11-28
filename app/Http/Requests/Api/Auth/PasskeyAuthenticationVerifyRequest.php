@@ -23,6 +23,7 @@ class PasskeyAuthenticationVerifyRequest extends FormRequest
             'authenticator_data' => ['required', 'string', 'max:4096'],
             'signature' => ['required', 'string', 'max:4096'],
             'device_name' => ['nullable', 'string', 'max:120'],
+            'token_profile' => ['sometimes', 'string', 'in:interactive,read_only'],
         ];
     }
 

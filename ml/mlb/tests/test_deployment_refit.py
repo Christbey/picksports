@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-import joblib
+from picksports_mlb_ml.numeric_artifacts import read_json, load_preprocessor
 import pandas as pd
 
 import picksports_mlb_ml.pipeline as pipeline
@@ -107,8 +107,8 @@ def test_deployment_refit_includes_newest_rows_after_holdout_evaluation(
         "pre_refit_untouched_chronological_holdout"
     )
 
-    preprocessor = joblib.load(run_dir / "preprocessor.joblib")
-    assert int(preprocessor.named_steps["scaler"].n_samples_seen_) == len(
+    preprocessor = load_preprocessor(read_json(run_dir / "preprocessor.json"))
+    assert int(preprocessor.sample_count) == len(
         synthetic_frame
     )
 

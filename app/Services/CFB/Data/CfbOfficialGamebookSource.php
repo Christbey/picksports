@@ -42,7 +42,7 @@ class CfbOfficialGamebookSource
         $game->loadMissing(['homeTeam', 'awayTeam']);
         $normalize = fn ($name) => preg_replace('/[^a-z]/', '', strtolower(Str::ascii($name)));
         if ($game->status !== 'STATUS_FINAL' || (int) $game->season !== $spec['season']
-            || CfbPropEligibility::kickoff($game)->setTimezone('America/Chicago')->toDateString() !== $spec['date']) {
+            || CfbPropEligibility::kickoff($game)?->setTimezone('America/Chicago')->toDateString() !== $spec['date']) {
             throw new RuntimeException('Official gamebook event date, season or final status does not match.');
         }
         foreach (['home', 'away'] as $side) {

@@ -178,6 +178,7 @@ test('missing or invalid forecast values never become zero, a favorite or a fake
             win_probability: invalid,
         });
         assert.match(html, /Win probability unavailable/);
+        assert.doesNotMatch(html, /Edge below threshold|>Pass</);
         assert.doesNotMatch(
             html,
             /NaN|Infinity|favored|Even matchup|width:|0\.0%/,
@@ -355,6 +356,7 @@ test('CFB page converts canonical home lines once and preserves legacy margins a
             const prediction = state.predictionSectionProps.value.prediction;
             assert.deepEqual(prediction, {
                 ...raw,
+                spread_convention: 'home_margin',
                 predicted_spread: fixture.margin,
             });
             assert.equal(raw.predicted_spread, fixture.source.predicted_spread);

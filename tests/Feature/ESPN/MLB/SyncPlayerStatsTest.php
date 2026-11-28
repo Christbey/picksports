@@ -71,8 +71,9 @@ it('maps pitching stats by label and normalizes innings pitched', function () {
         ->strikeouts_pitched->toBe(7)
         ->home_runs_allowed->toBe(1)
         ->pitches_thrown->toBe(88)
-        ->pitch_count->toBe(88)
-        ->era->toBe(2.7);
+        ->pitch_count->toBe(88);
+
+    expect($stat->era)->toBeNumeric()->and((float) $stat->era)->toBe(2.7);
 
     expect(abs(((float) $stat->innings_pitched) - (5 + (1 / 3))))->toBeLessThan(0.0001);
 });
@@ -178,9 +179,10 @@ it('parses batting stats correctly when h-ab is present and labels are incomplet
         ->walks->toBe(0)
         ->strikeouts->toBe(1)
         ->stolen_bases->toBeNull()
-        ->batting_average->toBeNull()
-        ->on_base_percentage->toBe(0.28)
-        ->slugging_percentage->toBe(0.6);
+        ->batting_average->toBeNull();
+
+    expect($stat->on_base_percentage)->toBeNumeric()->and((float) $stat->on_base_percentage)->toBe(0.28);
+    expect($stat->slugging_percentage)->toBeNumeric()->and((float) $stat->slugging_percentage)->toBe(0.6);
 });
 
 it('does not treat pitch count as stolen bases when batting labels omit sb', function () {
@@ -231,8 +233,9 @@ it('does not treat pitch count as stolen bases when batting labels omit sb', fun
         ->hits->toBe(1)
         ->home_runs->toBe(1)
         ->rbis->toBe(3)
-        ->stolen_bases->toBeNull()
-        ->batting_average->toBe(0.293)
-        ->on_base_percentage->toBe(0.362)
-        ->slugging_percentage->toBe(0.569);
+        ->stolen_bases->toBeNull();
+
+    expect($stat->batting_average)->toBeNumeric()->and((float) $stat->batting_average)->toBe(0.293);
+    expect($stat->on_base_percentage)->toBeNumeric()->and((float) $stat->on_base_percentage)->toBe(0.362);
+    expect($stat->slugging_percentage)->toBeNumeric()->and((float) $stat->slugging_percentage)->toBe(0.569);
 });

@@ -22,6 +22,7 @@ test('authenticated users can visit the dashboard', function () {
 });
 
 test('the dashboard exposes evaluated mlb passes and tracking candidates', function () {
+    config(['app.timezone' => 'America/Chicago']);
     Carbon::setTestNow('2026-08-10 12:00:00');
 
     $user = User::factory()->create();
@@ -49,7 +50,7 @@ test('the dashboard exposes evaluated mlb passes and tracking candidates', funct
             ->component('Dashboard')
             ->where('sports.0.name', 'MLB')
             ->where('sports.0.predictions.0.id', $pass->id)
-            ->where('sports.0.predictions.0.game_time', '2026-08-10T18:10:00')
+            ->where('sports.0.predictions.0.game_time', '2026-08-10T23:10:00+00:00')
             ->where('sports.0.predictions.0.recommendation.candidate.recommendation_type', 'no_play')
             ->where('sports.0.predictions.0.recommendation.candidate.no_bet_reason', 'no_moneyline_market_value')
             ->where('sports.0.predictions.1.id', $tracking->id)
@@ -131,7 +132,7 @@ function dashboardMlbPrediction(
         'abbreviation' => 'H'.substr($gameTime, 0, 2),
         'color' => '004c54',
     ]);
-    $game = MlbGame::factory()->regularSeason()->create([
+    $game = MlbGame::factory()->regularSeason()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2026,
         'game_date' => '2026-08-10',
         'game_time' => $gameTime,

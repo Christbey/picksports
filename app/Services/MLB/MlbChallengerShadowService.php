@@ -5,6 +5,7 @@ namespace App\Services\MLB;
 use App\Application\Sports\ReadModels\CanonicalShadowSnapshot;
 use App\Models\MLB\Game;
 use App\Models\ModelArtifact;
+use App\Models\ModelRun;
 use App\Models\PredictionFeatureSnapshot;
 use App\Models\ShadowModelOutput;
 use App\Services\ML\ShadowArtifactSelector;
@@ -102,7 +103,11 @@ class MlbChallengerShadowService
 
             foreach ($artifacts as $artifact) {
                 try {
+                    $commits = app(MlbInferenceOutputCommit::class);
+                    $prepared = $commits->prepare($artifact, $snapshot, $features);
                     $output = $this->inference->predict($artifact, $features);
+                    $created = $commits->commit($prepared, $output,
+                        fn (ModelArtifact $current, PredictionFeatureSnapshot|CanonicalShadowSnapshot $target, array $values, array $receipt, callable $assertOwned): int => $this->recordOutputs($current, $target, $values, $receipt, $assertOwned));
                 } catch (Throwable $exception) {
                     Log::warning('MLB tabular shadow inference failed.', [
                         'artifact_id' => $artifact->id,
@@ -136,7 +141,7 @@ class MlbChallengerShadowService
                 }
 
                 $inferred++;
-                $outputsCreated += $this->recordOutputs($artifact, $snapshot, $output);
+                $outputsCreated += $created;
             }
         }
 
@@ -251,20 +256,9 @@ class MlbChallengerShadowService
         ModelArtifact $artifact,
         PredictionFeatureSnapshot|CanonicalShadowSnapshot $snapshot,
         array $output,
+        array $receipt,
+        callable $assertOwned,
     ): int {
-        $inferenceRun = $this->runs->forPrediction(
-            sport: 'mlb',
-            modelVersion: $artifact->model_version,
-            featureVersion: $artifact->feature_version,
-            blendVersion: 'shadow-inference-v1',
-            metadata: [
-                'run_type' => 'shadow_inference',
-                'parameters' => [
-                    'model_artifact_id' => $artifact->id,
-                    'artifact_hash' => $artifact->artifact_hash,
-                ],
-            ],
-        );
         $baselineOutputs = [
             'win_probability' => $this->number(data_get($snapshot->outputs, 'win_probability')),
             'predicted_spread' => $this->number(data_get($snapshot->outputs, 'predicted_spread')),
@@ -279,6 +273,8 @@ class MlbChallengerShadowService
             'uncertainty' => $output['uncertainty'],
         ];
         $created = 0;
+        $inferenceRun = null;
+        $intendedOutputs = [];
 
         foreach ([
             'win_probability' => 'win_probability',
@@ -290,9 +286,39 @@ class MlbChallengerShadowService
             if ($baseline === null) {
                 continue;
             }
+            $identity = ['model_artifact_id' => $artifact->id,
+                ...($snapshot instanceof CanonicalShadowSnapshot ? $snapshot->identity() : ['prediction_feature_snapshot_id' => $snapshot->id]),
+                'market_type' => $marketType];
+            if (ShadowModelOutput::query()->where($identity)->exists()) {
+                continue;
+            }
+            if ($inferenceRun === null) {
+                $assertOwned();
+                $inferenceRun = ModelRun::query()->create([
+                    'id' => $receipt['id'], 'sport' => 'mlb', 'run_type' => 'shadow_inference',
+                    'model_version' => $artifact->model_version, 'feature_version' => $artifact->feature_version,
+                    'blend_version' => 'shadow-inference-v1', 'config_hash' => $receipt['config_hash'], 'code_version' => $receipt['code_version'],
+                    'parameters' => ['model_artifact_id' => $artifact->id, 'artifact_hash' => $artifact->artifact_hash],
+                    'metadata' => ['run_type' => 'shadow_inference', 'parameters' => ['model_artifact_id' => $artifact->id, 'artifact_hash' => $artifact->artifact_hash]], 'status' => 'completed',
+                    'started_at' => now(), 'completed_at' => now(),
+                ]);
+                if (! $inferenceRun->exists || ! $inferenceRun->wasRecentlyCreated || $inferenceRun->id !== $receipt['id']
+                    || $inferenceRun->status !== 'completed' || $inferenceRun->sport !== 'mlb' || $inferenceRun->run_type !== 'shadow_inference'
+                    || data_get($inferenceRun->parameters, 'model_artifact_id') !== $artifact->id
+                    || data_get($inferenceRun->parameters, 'artifact_hash') !== $artifact->artifact_hash) {
+                    throw new \RuntimeException('Inference receipt persistence was cancelled or changed identity.');
+                }
+            }
+            $assertOwned();
+            $this->assertPersistedHeader('model_runs', $receipt['id'], [
+                'id' => $receipt['id'], 'sport' => 'mlb', 'run_type' => 'shadow_inference', 'status' => 'completed',
+                'model_version' => $artifact->model_version, 'feature_version' => $artifact->feature_version,
+                'blend_version' => 'shadow-inference-v1', 'config_hash' => $receipt['config_hash'], 'code_version' => $receipt['code_version'],
+            ]);
             $promoted = $artifact->isPromotedForMarket($marketType)
                 && $artifact->promoted_at !== null
                 && $artifact->promoted_at->lessThanOrEqualTo(now());
+            $assertOwned();
             $shadow = ShadowModelOutput::query()->firstOrCreate(
                 [
                     'model_artifact_id' => $artifact->id,
@@ -339,10 +365,82 @@ class MlbChallengerShadowService
                     'generated_at' => now(),
                 ],
             );
-            $created += $shadow->wasRecentlyCreated ? 1 : 0;
+            if (! $shadow->exists || ! $shadow->wasRecentlyCreated || $shadow->inference_run_id !== $receipt['id']
+                || $shadow->model_artifact_id !== $artifact->id || (int) $shadow->game_id !== (int) $snapshot->game_id
+                || $shadow->market_type !== $marketType || $shadow->status !== ($promoted ? 'promoted_shadow' : 'shadow')
+                || ($snapshot instanceof CanonicalShadowSnapshot
+                    ? (int) $shadow->canonical_prediction_id !== (int) $snapshot->id
+                    : (int) $shadow->prediction_feature_snapshot_id !== (int) $snapshot->id)) {
+                throw new \RuntimeException('Inference output persistence was cancelled or changed identity.');
+            }
+            $assertOwned();
+            $expectedOutput = [
+                'id' => $shadow->id, 'inference_run_id' => $receipt['id'], 'model_artifact_id' => $artifact->id,
+                'sport' => 'mlb', 'game_table' => 'mlb_games', 'game_id' => $snapshot->game_id,
+                'prediction_table' => $snapshot->prediction_table, 'prediction_id' => $snapshot->prediction_id,
+                'prediction_feature_snapshot_id' => $snapshot instanceof CanonicalShadowSnapshot ? null : $snapshot->id,
+                'canonical_prediction_id' => $snapshot instanceof CanonicalShadowSnapshot ? $snapshot->id : null,
+                'market_type' => $marketType, 'status' => $promoted ? 'promoted_shadow' : 'shadow',
+                'baseline_output' => (float) $baseline, 'challenger_output' => (float) $challenger, 'output_delta' => (float) ($challenger - $baseline),
+            ];
+            $this->assertPersistedHeader('shadow_model_outputs', $shadow->id, $expectedOutput);
+            $intendedOutputs[$shadow->id] = $expectedOutput;
+            $created++;
+        }
+
+        foreach ($intendedOutputs as $outputId => $expectedOutput) {
+            $assertOwned();
+            $this->assertPersistedHeader('shadow_model_outputs', $outputId, $expectedOutput);
+        }
+        if ($inferenceRun !== null) {
+            $assertOwned();
+            $this->assertPersistedHeader('model_runs', $receipt['id'], [
+                'id' => $receipt['id'], 'sport' => 'mlb', 'run_type' => 'shadow_inference', 'status' => 'completed',
+                'model_version' => $artifact->model_version, 'feature_version' => $artifact->feature_version,
+                'blend_version' => 'shadow-inference-v1', 'config_hash' => $receipt['config_hash'], 'code_version' => $receipt['code_version'],
+            ]);
         }
 
         return $created;
+    }
+
+    /** Current primary headers witness actual persisted rows, not only Eloquent result flags. */
+    private function assertPersistedHeader(string $table, mixed $id, array $expected): void
+    {
+        $connection = (new ModelRun)->getConnection();
+        $select = $invalid = [];
+        foreach (array_keys($expected) as $field) {
+            $column = $connection->getQueryGrammar()->wrap($field);
+            $bytes = $connection->getDriverName() === 'mysql' ? 'OCTET_LENGTH('.$column.')' : 'length(CAST('.$column.' AS BLOB))';
+            $select[] = 'CASE WHEN COALESCE('.$bytes.',0) <= 4096 THEN '.$column.' ELSE NULL END AS '.$column;
+            $invalid[] = 'COALESCE('.$bytes.',0) > 4096';
+        }
+        $current = $connection->table($table)->useWritePdo()->where('id', $id)->lockForUpdate()
+            ->selectRaw(implode(', ', $select).', CASE WHEN ('.implode(' OR ', $invalid).') THEN 1 ELSE 0 END AS _oversized')->first();
+        if ($current === null || (int) $current->_oversized !== 0) {
+            throw new \RuntimeException('Intended inference receipt/output is not currently persisted.');
+        }
+        foreach ($expected as $field => $value) {
+            $actual = $current->$field;
+            if (is_float($value)) {
+                // These three storage columns are DECIMAL(12,6) on MySQL and
+                // NUMERIC affinity on SQLite. Compare the engine's conversion,
+                // never an epsilon or a rounded scientific/model input.
+                if (! in_array($field, ['baseline_output', 'challenger_output', 'output_delta'], true)) {
+                    throw new \RuntimeException('Unsupported numeric inference header.');
+                }
+                $type = $connection->getDriverName() === 'mysql' ? 'DECIMAL(12,6)' : 'NUMERIC';
+                $stored = $connection->scalar('SELECT CAST(? AS '.$type.')', [$value], false);
+                $matches = $connection->getDriverName() === 'mysql'
+                    ? (string) $actual === (string) $stored
+                    : is_numeric($actual) && (float) $actual === (float) $stored;
+                if ($actual === null || ! $matches) {
+                    throw new \RuntimeException('Current persisted inference numeric representation differs from its intended storage value.');
+                }
+            } elseif (($actual === null) !== ($value === null) || ($value !== null && (string) $actual !== (string) $value)) {
+                throw new \RuntimeException('Current persisted inference receipt/output changed its intended header.');
+            }
+        }
     }
 
     private function number(mixed $value): ?float

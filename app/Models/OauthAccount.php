@@ -26,6 +26,12 @@ class OauthAccount extends Model
         'last_used_at',
     ];
 
+    protected $hidden = [
+        'access_token',
+        'refresh_token',
+        'provider_claims',
+    ];
+
     /**
      * @return array<string, string>
      */

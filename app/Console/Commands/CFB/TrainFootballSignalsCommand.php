@@ -28,14 +28,14 @@ class TrainFootballSignalsCommand extends Command
 
             return self::FAILURE;
         }
-        $memoryLimit = ini_get('memory_limit');
+        $previousMemoryLimit = ini_get('memory_limit');
         try {
             return $this->train($trainer);
         } finally {
-            $lock->release();
-            if ($memoryLimit !== false) {
-                ini_set('memory_limit', $memoryLimit);
+            if ($previousMemoryLimit !== false && ini_get('memory_limit') !== $previousMemoryLimit) {
+                ini_set('memory_limit', $previousMemoryLimit);
             }
+            $lock->release();
         }
     }
 
@@ -66,7 +66,11 @@ class TrainFootballSignalsCommand extends Command
             return self::SUCCESS;
         }
         // Historical reconstruction is an offline operation, bounded independently of web requests.
-        ini_set('memory_limit', '512M');
+        $memoryLimit = ini_get('memory_limit');
+        if ($memoryLimit !== false && ini_parse_quantity($memoryLimit) > 0
+            && ini_parse_quantity($memoryLimit) < 512 * 1024 * 1024) {
+            ini_set('memory_limit', '512M');
+        }
         $artifact = $trainer->train($configuration, (int) $from, (int) $to,
             CarbonImmutable::now(), fn ($count) => $this->line("Reconstructed {$count} games."));
         Cache::forget('cfb:football-signal-evidence:'.app(CanonicalPayloadHasher::class)->hash($configuration).':'.$release->semantic_version);

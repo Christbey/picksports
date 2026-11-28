@@ -295,40 +295,33 @@ CFP rating is then derived from normalized power and resume inputs in the same a
 Source:
 - `app/Actions/MLB/CalculateTeamMetrics.php`
 
-MLB uses custom composite formulas.
-
-Offensive rating:
+MLB uses custom composite indices, not standard OPS+, FIP or calibrated win probabilities. The following equations show `config/mlb.php` defaults, verified against the current implementation on November 25, 2026; configured overrides change the coefficients.
 
 ```text
-offensive_rating =
-  (runs_per_game * runs_multiplier)
-  + (batting_average * batting_avg_multiplier)
-  + (home_run_rate * home_run_multiplier)
+offensive_rating = clamp(100
+  + (runs_per_game - 4.40) * 12
+  + (OPS - 0.720) * 120
+  + (home_runs_per_game - 1.10) * 5, 50, 180)
+
+pitching_rating = clamp(100
+  + (4.40 - runs_allowed_per_game) * 8
+  + (4.20 - ERA) * 7
+  + (1.30 - WHIP) * 35
+  + (strikeouts_minus_walks_per_game - 5.20) * 3
+  + (1.10 - home_runs_allowed_per_game) * 4, 50, 180)
 ```
 
-Pitching rating:
+Higher values mean stronger offense/run prevention within these custom definitions. OPS uses OBP plus total bases/at-bats. The offensive index includes HBP/SF in its OBP denominator when any input row supplies either field, treating absent values as zero; otherwise it uses the hits/walks approximation. This branch does not prove complete official component coverage. ERA and WHIP use normalized innings, not arithmetic on baseball's outs notation. Runs allowed comes from opponent runs where supplied, otherwise earned runs/game. No games returns zero; pitching also returns zero without innings, and nonfinite index values return zero rather than the normal clamp.
 
-```text
-era = (earned_runs / innings_pitched) * 9
-era_component = max(0, era_max - (era * era_scale))
-
-pitching_rating =
-  era_component
-  + strikeouts_per_game
-  - walks_per_game
-```
-
-Defensive rating:
+The defensive implementation retains its existing custom fielding proxy:
 
 ```text
 fielding_pct = (putouts + assists - errors) / (putouts + assists + errors)
-
-defensive_rating =
-  (fielding_pct * fielding_pct_multiplier)
-  + putouts_per_game
-  + assists_per_game
-  - (errors_per_game * errors_multiplier)
+defensive_rating = fielding_pct * 100
+  + putouts_per_game + assists_per_game - errors_per_game * 10
 ```
+
+The fielding fraction is zero when putouts+assists is not positive; no games returns zero. This is the application's proxy, not the conventional fielding-percentage definition or a validated measure of range. These source-matching descriptions do not establish predictive accuracy or justify changing coefficients.
 
 Additional MLB metrics:
 - `runs_per_game`
@@ -493,9 +486,8 @@ Normal CBB generation freezes at tipoff. Historical reconstruction remains expli
 The shared model below is not a complete description of the NFL historical-Elo
 forecast pipeline. For that path, use the September 21, 2026
 [NFL formula reference](operations/nfl-prediction-formulas.md), covering all 18
-steps from Elo through output/grading, and its
-[review ledger](operations/nfl-prediction-review-ledger.md). Local safeguards and
-observed production behavior are explicitly distinguished there.
+steps from Elo through output/grading. Confirm behavior against the current
+calculator and regression tests; the dated review ledger has been retired.
 
 Source:
 - `app/Actions/Sports/AbstractAmericanFootballPredictionGenerator.php`
@@ -852,7 +844,7 @@ Source:
 | --- | --- |
 | Filtering | `season.analytics_types` |
 | Elo | `elo.default_rating`, `elo.base_k_factor`, `elo.playoff_multiplier`, `elo.home_field_advantage`, `elo.team_weight`, `elo.pitcher_weight`, `elo.recent_starts_limit`, `elo.average_runs_per_game`, `elo.team_regression_factor`, `elo.pitcher_regression_factor`, `elo.pitcher_k_factor`, `elo.pitcher_margin_dampening`, `elo.pitcher_home_field_advantage`, `elo.margin_multipliers.*` |
-| Team metrics | `metrics.offensive_rating.runs_multiplier`, `metrics.offensive_rating.batting_avg_multiplier`, `metrics.offensive_rating.home_run_multiplier`, `metrics.pitching_rating.era_scale`, `metrics.pitching_rating.era_max`, `metrics.defensive_rating.fielding_pct_multiplier`, `metrics.defensive_rating.errors_multiplier` |
+| Team metrics | `metrics.offensive_rating` (baseline/bounds, league RPG/OPS/HRG references and `runs_per_game_weight` / `ops_weight` / `home_run_rate_weight`), `metrics.pitching_rating` (baseline/bounds, league references and `runs_allowed_weight` / `era_weight` / `whip_weight` / `k_minus_walk_weight` / `home_runs_allowed_weight`), `metrics.defensive_rating.fielding_pct_multiplier`, `metrics.defensive_rating.errors_multiplier` |
 | Prediction | `prediction.use_previous_season_metrics_fallback`, `prediction.spread_to_probability_coefficient`, `prediction.elo_diff_to_spread_divisor`, `prediction.total_model.base_runs`, `prediction.total_model.average_elo_baseline`, `prediction.total_model.average_elo_divisor`, `prediction.early_season.*` |
 | Injury model | `prediction.injury_out_spread_penalty`, `prediction.injury_questionable_spread_penalty`, `prediction.injury_out_total_penalty`, `prediction.injury_questionable_total_penalty`, `prediction.probable_pitcher_out_spread_penalty`, `prediction.probable_pitcher_questionable_spread_penalty`, `prediction.probable_pitcher_out_total_boost`, `prediction.probable_pitcher_questionable_total_boost`, `prediction.depth_chart.*` |
 | Forecasting | `playoff_forecast.regression.*`, `playoff_forecast.selection_weights.*` and related playoff forecast keys |
@@ -1030,8 +1022,8 @@ Source:
 | Column | Formula / meaning | Source |
 | --- | --- | --- |
 | `wins`, `losses` | Win-loss record from completed games | `calculateWinLossRecord()` in `app/Concerns/FiltersTeamGames.php` |
-| `offensive_rating` | `(runs_per_game * runs_multiplier) + (batting_average * batting_avg_multiplier) + (home_run_rate * home_run_multiplier)` | `calculateOffensiveRating()` |
-| `pitching_rating` | `max(0, era_max - (era * era_scale)) + strikeouts_per_game - walks_per_game` | `calculatePitchingRating()` |
+| `offensive_rating` | 100-centered runs/game, OPS and HR/game deviations; default equation in [MLB team metrics](#mlb-team-metrics) | `calculateOffensiveRating()` |
+| `pitching_rating` | 100-centered runs-allowed, ERA, WHIP, K-minus-walk and HR-allowed deviations; default equation [above](#mlb-team-metrics) | `calculatePitchingRating()` |
 | `defensive_rating` | `(fielding_pct * fielding_pct_multiplier) + putouts_per_game + assists_per_game - (errors_per_game * errors_multiplier)` | `calculateDefensiveRating()` |
 | `runs_per_game` | Average runs scored | `calculateRunsPerGame()` |
 | `runs_allowed_per_game` | Average runs allowed | `calculateRunsAllowedPerGame()` |

@@ -21,7 +21,7 @@ class HealthcheckSummaryResource extends JsonResource
             'status' => $this->status,
             'message' => $this->message,
             'metadata' => $this->metadata,
-            'checked_at' => $this->checked_at?->toDateTimeString(),
+            'checked_at' => $this->checked_at?->toIso8601String(),
         ];
     }
 }

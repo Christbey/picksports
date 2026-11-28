@@ -3,10 +3,12 @@
 namespace App\Actions\ESPN;
 
 use App\Services\ESPN\BaseEspnService;
+use App\Services\ProviderData\Refresh\ProviderRefreshCoordinator;
+use App\Services\ProviderData\Refresh\RefreshContext;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 abstract class AbstractSyncTeamDepthCharts
 {
@@ -25,37 +27,72 @@ abstract class AbstractSyncTeamDepthCharts
             return 0;
         }
 
+        $context = app(ProviderRefreshCoordinator::class)->begin($team, 'depth_chart', $season);
+        $priorBudget = $this->espnService->swapRefreshBudget($context->attempt === null ? null : $context->budget);
+        try {
+            return $this->executeObserved($team, $teamEspnId, $season, $context);
+        } catch (\Throwable $error) {
+            $context->fail($error);
+            throw $error;
+        } finally {
+            try {
+                $context->finish();
+            } finally {
+                $this->espnService->swapRefreshBudget($priorBudget);
+            }
+        }
+    }
+
+    private function executeObserved(Model $team, string $teamEspnId, int $season, RefreshContext $context): int
+    {
         $observedAt = now();
         $payload = $this->espnService->getTeamDepthCharts($teamEspnId, $season);
         if ($payload === null || ! is_array($payload['items'] ?? null)) {
-            throw new \RuntimeException("Depth chart response unavailable or malformed for team {$teamEspnId} in season {$season}.");
+            throw new RuntimeException("Depth chart response unavailable or malformed for team {$teamEspnId} in season {$season}.");
+        }
+        if ($context->attempt !== null) {
+            $rowCount = 0;
+            foreach ($payload['items'] as $chart) {
+                foreach ((array) ($chart['positions'] ?? []) as $slot) {
+                    $rowCount += is_array($slot['athletes'] ?? null) ? count($slot['athletes']) : 0;
+                    $context->budget->rows($rowCount);
+                }
+            }
         }
         $entries = $this->normalizeEntries($payload, (int) $team->getKey(), $season, $observedAt);
 
-        if (is_array($payload)) {
-            $this->persistHistoricalSnapshot(
-                $team,
-                $teamEspnId,
-                $season,
-                $payload,
-                $entries,
-                $observedAt
-            );
+        $model = app($this->depthChartModelClass());
+        $connection = $model->getConnection();
+        if ($team->getConnection()->getName() !== $connection->getName()
+            || app($this->playerModelClass())->getConnection()->getName() !== $connection->getName()) {
+            throw new RuntimeException('Depth chart models must use one database connection.');
         }
 
-        $table = $this->depthChartTable();
-        DB::table($table)
-            ->where('team_id', (int) $team->getKey())
-            ->where('season', $season)
-            ->delete();
+        return $context->commit(true, $entries, fn (): int => $connection->transaction(function () use ($connection, $model, $team, $teamEspnId, $season, $payload, $entries, $observedAt, $context): int {
+            $currentTeam = $team->newQuery()->whereKey($team->getKey())->lockForUpdate()->first();
+            if ($currentTeam === null || (string) $currentTeam->espn_id !== $teamEspnId) {
+                throw new RuntimeException('Depth chart team identity changed before replacement.');
+            }
+            $knownPlayers = array_values(array_unique(array_filter(array_column($entries, 'player_id'))));
+            $players = $this->playerModelClass()::on($connection->getName())->whereIn('id', $knownPlayers)
+                ->orderBy('id')->lockForUpdate()->get(['id', 'team_id', 'espn_id'])->keyBy('id');
+            foreach ($entries as $entry) {
+                if ($entry['player_id'] !== null) {
+                    $player = $players->get($entry['player_id']);
+                    if ($player === null || (int) $player->team_id !== (int) $team->getKey()
+                        || (string) $player->espn_id !== $entry['espn_athlete_id']) {
+                        throw new RuntimeException('Depth chart player identity changed before replacement.');
+                    }
+                }
+            }
+            $this->persistHistoricalSnapshot($currentTeam, $teamEspnId, $season, $payload, $entries, $observedAt, $context);
+            $connection->table($model->getTable())->where('team_id', $team->getKey())->where('season', $season)->delete();
+            if ($entries !== []) {
+                $connection->table($model->getTable())->insert($entries);
+            }
 
-        if ($entries === []) {
-            return 0;
-        }
-
-        DB::table($table)->insert($entries);
-
-        return count($entries);
+            return count($entries);
+        }));
     }
 
     public function syncAllTeams(int $season): int
@@ -87,8 +124,8 @@ abstract class AbstractSyncTeamDepthCharts
         $now = $observedAt ?? now();
 
         foreach ($charts as $chart) {
-            if (! is_array($chart)) {
-                continue;
+            if (! is_array($chart) || ! is_array($chart['positions'] ?? null)) {
+                throw new RuntimeException('Depth chart positions are missing or malformed.');
             }
 
             $chartId = trim((string) ($chart['id'] ?? ''));
@@ -96,8 +133,8 @@ abstract class AbstractSyncTeamDepthCharts
             $positions = is_array($chart['positions'] ?? null) ? $chart['positions'] : [];
 
             foreach ($positions as $slotKey => $slotData) {
-                if (! is_array($slotData)) {
-                    continue;
+                if (! is_array($slotData) || ! is_array($slotData['athletes'] ?? null)) {
+                    throw new RuntimeException('Depth chart athlete list is missing or malformed.');
                 }
 
                 $position = is_array($slotData['position'] ?? null) ? $slotData['position'] : [];
@@ -105,13 +142,23 @@ abstract class AbstractSyncTeamDepthCharts
 
                 foreach ($athletes as $athleteEntry) {
                     if (! is_array($athleteEntry)) {
-                        continue;
+                        throw new RuntimeException('Depth chart athlete entry is malformed.');
                     }
 
                     $espnAthleteId = $this->extractAthleteEspnId($athleteEntry);
                     $playerId = $espnAthleteId !== null ? ($playerMap[$espnAthleteId] ?? null) : null;
-                    $depthRank = max(1, (int) ($athleteEntry['rank'] ?? 1));
-                    $slotOrder = isset($athleteEntry['slot']) ? (int) $athleteEntry['slot'] : null;
+                    if ($espnAthleteId === null || preg_match('/\A[1-9][0-9]*\z/', $espnAthleteId) !== 1
+                        || filter_var($athleteEntry['rank'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 65535]]) === false) {
+                        throw new RuntimeException('Depth chart athlete identity or rank is invalid.');
+                    }
+                    $depthRank = (int) $athleteEntry['rank'];
+                    $slotOrder = null;
+                    if (isset($athleteEntry['slot'])) {
+                        $slotOrder = filter_var($athleteEntry['slot'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 0, 'max_range' => 65535]]);
+                        if ($slotOrder === false) {
+                            throw new RuntimeException('Depth chart slot order is invalid.');
+                        }
+                    }
 
                     $rows[] = [
                         'team_id' => $teamId,
@@ -136,7 +183,7 @@ abstract class AbstractSyncTeamDepthCharts
                             ],
                             'position' => $position,
                             'entry' => $athleteEntry,
-                        ], JSON_UNESCAPED_SLASHES),
+                        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
                         'created_at' => $now,
                         'updated_at' => $now,
                     ];
@@ -156,7 +203,8 @@ abstract class AbstractSyncTeamDepthCharts
         int $season,
         ?array $payload,
         array $entries,
-        CarbonInterface $observedAt
+        CarbonInterface $observedAt,
+        ?RefreshContext $context = null
     ): void {}
 
     protected function extractAthleteEspnId(array $athleteEntry): ?string

@@ -134,9 +134,20 @@ const {
                             }"
                         />
                         <div
-                            class="bg-rose-400"
+                            :class="
+                                coverageBreakdown(prop)?.misses === null
+                                    ? 'bg-slate-500'
+                                    : 'bg-rose-400'
+                            "
                             :style="{
-                                width: `${100 - (coverageBreakdown(prop)?.hitPct ?? 0)}%`,
+                                width: `${coverageBreakdown(prop)?.remainingPct ?? 0}%`,
+                            }"
+                        />
+                        <div
+                            v-if="coverageBreakdown(prop)?.pushes !== null"
+                            class="bg-amber-300"
+                            :style="{
+                                width: `${coverageBreakdown(prop)?.pushPct ?? 0}%`,
                             }"
                         />
                     </div>
@@ -147,7 +158,13 @@ const {
                             >Covered {{ coverageBreakdown(prop)?.hits }}</span
                         >
                         <span class="text-rose-300"
-                            >Missed {{ coverageBreakdown(prop)?.misses }}</span
+                            >Missed
+                            {{
+                                coverageBreakdown(prop)?.misses ?? 'Unknown'
+                            }}</span
+                        >
+                        <span v-if="coverageBreakdown(prop)?.pushes !== null"
+                            >Pushes {{ coverageBreakdown(prop)?.pushes }}</span
                         >
                     </div>
                 </div>

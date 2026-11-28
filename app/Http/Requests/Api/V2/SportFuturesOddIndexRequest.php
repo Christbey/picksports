@@ -13,6 +13,13 @@ class SportFuturesOddIndexRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->route('team') !== null) {
+            $this->merge(['team_id' => $this->route('team')]);
+        }
+    }
+
     /**
      * @return array<string, mixed>
      */

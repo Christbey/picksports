@@ -32,7 +32,7 @@ it('audits archived closing lines with verified game identity and correct spread
         'game_date' => '2024-09-08', 'game_time' => '17:00:00', 'home_score' => 24, 'away_score' => 21, 'status' => 'STATUS_FINAL']);
     $prediction = Prediction::factory()->create(['game_id' => $game->id, 'model_version' => 'historical']);
     app(PredictionFeatureSnapshotRecorder::class)->record($prediction, $game, 'nfl', ['predicted_spread' => 5, 'model_version' => 'historical'],
-        ['generated_at' => '2026-07-30', 'point_in_time_verified' => true, 'run_type' => 'historical_reconstruction']);
+        ['generated_at' => '2026-07-30T00:00:00-05:00', 'point_in_time_verified' => true, 'run_type' => 'historical_reconstruction']);
     $before = $prediction->fresh()->getAttributes();
     expect(Artisan::call('nfl:audit-historical-spreads', ['--source-id' => $source->id, '--evaluation-season' => 2024]))->toBe(0);
     $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);

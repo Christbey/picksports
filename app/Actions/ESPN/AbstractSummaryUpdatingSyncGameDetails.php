@@ -9,6 +9,11 @@ abstract class AbstractSummaryUpdatingSyncGameDetails extends AbstractSyncGameDe
 {
     use UpdatesGameFromSummary;
 
+    protected function dispatchSummaryFinalization(): bool
+    {
+        return false;
+    }
+
     protected function includeGameUpdatedFlag(): bool
     {
         return true;

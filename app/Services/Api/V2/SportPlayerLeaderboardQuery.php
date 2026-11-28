@@ -114,7 +114,10 @@ class SportPlayerLeaderboardQuery
         $gameModel = $this->modelClass($context, 'game', 'Games');
         $minGames = (int) ($filters['min_games'] ?? 10);
         $season = array_key_exists('season', $filters) ? (int) $filters['season'] : null;
-        $seasonTypeCandidates = $this->seasonTypeCandidates($context, (string) ($filters['season_type'] ?? ''));
+        $requestedSeasonType = (string) ($filters['season_type'] ?? '');
+        $seasonTypeCandidates = $requestedSeasonType === ''
+            ? null
+            : $this->gameSeasonTypeCandidates($context, $requestedSeasonType);
         $profile = in_array($context->slug, ['cbb', 'wcbb'], true)
             ? NbaPlayerEpaCalculator::PROFILE_CBB
             : NbaPlayerEpaCalculator::PROFILE_NBA;
@@ -122,25 +125,23 @@ class SportPlayerLeaderboardQuery
         return $this->basketballLeaderboards
             ->execute($playerStatModel, $playerModel, $minGames, $gameModel, $season, $seasonTypeCandidates)
             ->map(function (array $entry) use ($profile): array {
-                $estimatedEpaPerGame = $this->basketballEpa->estimateFromBoxScore(
-                    $entry['points_per_game'] ?? 0,
-                    $entry['assists_per_game'] ?? 0,
-                    $entry['rebounds_per_game'] ?? 0,
-                    $entry['steals_per_game'] ?? 0,
-                    $entry['blocks_per_game'] ?? 0,
-                    $entry['turnovers_per_game'] ?? 0,
-                    $entry['field_goals_made_per_game'] ?? 0,
-                    $entry['field_goals_attempted_per_game'] ?? 0,
-                    $entry['free_throws_made_per_game'] ?? 0,
-                    $entry['free_throws_attempted_per_game'] ?? 0,
-                    $profile,
-                );
-
+                $fields = [
+                    'points' => 'points_per_game', 'assists' => 'assists_per_game', 'rebounds_total' => 'rebounds_per_game',
+                    'steals' => 'steals_per_game', 'blocks' => 'blocks_per_game', 'turnovers' => 'turnovers_per_game',
+                    'field_goals_made' => 'field_goals_made_per_game', 'field_goals_attempted' => 'field_goals_attempted_per_game',
+                    'free_throws_made' => 'free_throws_made_per_game', 'free_throws_attempted' => 'free_throws_attempted_per_game',
+                ];
+                $observations = [];
+                foreach ($fields as $field => $average) {
+                    $observations[$field] = $entry[$average] ?? null;
+                }
+                $estimatedEpaPerGame = ($entry['complete_box_score_games'] ?? 0) === $entry['games_played']
+                    ? $this->basketballEpa->estimateFromObservedBoxScore($observations, $profile)
+                    : null;
                 $entry['estimated_epa_per_game'] = $estimatedEpaPerGame;
-                $entry['estimated_epa_per_36'] = $this->basketballEpa->estimatePer36(
-                    $estimatedEpaPerGame,
-                    $entry['minutes_per_game'] ?? 0,
-                );
+                $entry['estimated_epa_per_36'] = ($entry['minutes_samples'] ?? 0) === $entry['games_played']
+                    ? $this->basketballEpa->estimateObservedPer36($estimatedEpaPerGame, $entry['minutes_per_game'] ?? null)
+                    : null;
 
                 return $entry;
             })

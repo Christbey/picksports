@@ -3,9 +3,11 @@
 namespace App\Http\Resources;
 
 use App\Services\Predictions\LivePredictionStore;
+use App\Support\NflValidatedSignalCombos;
+use App\Support\Sports\GameDateTimePresenter;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Carbon;
 
 class DashboardPredictionResource extends JsonResource
 {
@@ -102,15 +104,16 @@ class DashboardPredictionResource extends JsonResource
         $data = [
             'id' => $prediction->id,
             'sport' => $this->sport,
+            'spread_convention' => 'home_margin',
             'game_id' => $game->id,
             'season_type' => $game->season_type,
             'game' => $game->name,
             'game_time' => $this->gameDateTime($game),
             'home_team' => $game->homeTeam?->abbreviation,
             'away_team' => $game->awayTeam?->abbreviation,
-            'win_probability' => (float) $prediction->win_probability,
-            'predicted_spread' => (float) $prediction->predicted_spread,
-            'predicted_total' => (float) $prediction->predicted_total,
+            'win_probability' => $prediction->win_probability === null ? null : (float) $prediction->win_probability,
+            'predicted_spread' => $prediction->predicted_spread === null ? null : (float) $prediction->predicted_spread,
+            'predicted_total' => $prediction->predicted_total === null ? null : (float) $prediction->predicted_total,
             'actual_total' => $prediction->actual_total !== null ? (float) $prediction->actual_total : null,
             'winner_correct' => $prediction->winner_correct,
             'home_logo' => $game->homeTeam?->logo_url,
@@ -162,14 +165,9 @@ class DashboardPredictionResource extends JsonResource
 
     private function gameDateTime(object $game): ?string
     {
-        if ($game->game_date === null) {
-            return null;
-        }
-
-        $date = Carbon::parse($game->game_date)->toDateString();
-        $time = trim((string) ($game->game_time ?? ''));
-
-        return $time !== '' ? "{$date}T{$time}" : $date;
+        return $game instanceof Model
+            ? GameDateTimePresenter::startsAtForGame(strtolower($this->sport), $game)
+            : null;
     }
 
     /**
@@ -183,6 +181,8 @@ class DashboardPredictionResource extends JsonResource
         if (! is_array($analysis) || ($analysis['applied'] ?? false) !== true) {
             return null;
         }
+
+        $analysis = NflValidatedSignalCombos::publicAnalysis($analysis);
 
         return [
             'trust_score' => isset($analysis['trust_score']) ? (float) $analysis['trust_score'] : null,

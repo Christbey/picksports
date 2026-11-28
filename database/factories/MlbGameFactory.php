@@ -3,6 +3,8 @@
 namespace Database\Factories;
 
 use App\Models\MLB\Game;
+use App\Support\MLB\MlbGameStart;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -44,6 +46,15 @@ class MlbGameFactory extends Factory
             'home_score' => $this->faker->numberBetween(0, 12),
             'away_score' => $this->faker->numberBetween(0, 12),
         ];
+    }
+
+    /** Explicit synthetic fixture observation; never enabled by the default factory state. */
+    public function withSyntheticWallStart(string $timezone): static
+    {
+        return $this->afterCreating(function (Game $game) use ($timezone): void {
+            $instant = CarbonImmutable::parse($game->game_date->toDateString().' '.$game->game_time, $timezone)->toIso8601String();
+            $game->update(MlbGameStart::prepare($game, MlbGameStart::observed($instant, ['synthetic_fixture_wall_time' => $instant])));
+        });
     }
 
     public function regularSeason(): static

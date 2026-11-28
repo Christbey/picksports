@@ -6,6 +6,8 @@ use App\Application\Sports\ReadModels\BettingForecast;
 use App\Models\GameOddsSnapshot;
 use App\Models\MLB\Game;
 use App\Services\Predictions\BettingForecastSource;
+use App\Support\MLB\MlbGameStart;
+use App\Support\MLB\MlbQuoteTime;
 use App\Support\Odds\AmericanOdds;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
@@ -88,13 +90,21 @@ class MlbMarketAwareProjectionService
         $game = $prediction->game;
         $start = $this->gameStartAt($prediction);
 
-        if ($game !== null && $start !== null) {
+        $typed = $game instanceof Game ? MlbQuoteTime::latest($game) : null;
+        if ($typed !== null) {
+            $marker = MlbQuoteTime::marker($game, $typed);
+
+            return ['odds_data' => $typed->odds_data, 'captured_at' => Carbon::parse($marker['captured_at_utc']),
+                'source' => 'verified_epoch_odds_snapshot', 'snapshot_id' => (int) $typed->id, 'timing_verified' => true];
+        }
+        $legacyBoundary = $game instanceof Game ? MlbGameStart::canonical($game) : null;
+        if ($game !== null && $start !== null && $legacyBoundary !== null) {
             $snapshot = GameOddsSnapshot::query()
                 ->where('sport', 'mlb')
                 ->where('game_table', $game->getTable())
                 ->where('game_id', (int) $game->id)
                 ->whereNotNull('captured_at')
-                ->where('captured_at', '<', $start)
+                ->where('captured_at', '<', $legacyBoundary)
                 ->latest('captured_at')
                 ->latest('id')
                 ->first();
@@ -103,7 +113,8 @@ class MlbMarketAwareProjectionService
                 return [
                     'odds_data' => is_array($snapshot->odds_data) ? $snapshot->odds_data : null,
                     'captured_at' => $snapshot->captured_at,
-                    'source' => 'pregame_odds_snapshot',
+                    'source' => 'legacy_time_unverified_snapshot',
+                    'timing_verified' => false,
                     'snapshot_id' => (int) $snapshot->id,
                 ];
             }
@@ -113,6 +124,7 @@ class MlbMarketAwareProjectionService
             'odds_data' => is_array($game?->odds_data) ? $game->odds_data : null,
             'captured_at' => $game?->odds_updated_at,
             'source' => 'game_current_odds',
+            'timing_verified' => false,
             'snapshot_id' => null,
         ];
     }
@@ -137,11 +149,27 @@ class MlbMarketAwareProjectionService
             $reasons[] = 'missing_market_odds_timestamp';
         }
 
+        if (($oddsContext['timing_verified'] ?? false) !== true) {
+            $reasons[] = 'market_time_provenance_unverified';
+        }
+
+        if ($game instanceof Game && $start !== null && MlbGameStart::canonical($game) === null) {
+            $reasons[] = 'legacy_quote_time_unrepresentable';
+        }
+
         if ($start === null) {
             $reasons[] = 'missing_game_start_time';
         }
 
-        if ($this->predictionGeneratedAt($prediction) === null) {
+        $generatedAt = $this->predictionGeneratedAt($prediction);
+        if ($generatedAt !== null && $start !== null && $generatedAt->gte($start)) {
+            $reasons[] = 'prediction_after_first_pitch';
+        }
+        if ($generatedAt !== null && $game instanceof Game && ! MlbGameStart::observedBy($game, $generatedAt)) {
+            $reasons[] = 'schedule_observation_after_prediction';
+        }
+
+        if ($generatedAt === null) {
             $reasons[] = 'missing_prediction_timestamp';
         }
 
@@ -190,12 +218,7 @@ class MlbMarketAwareProjectionService
 
     private function gameStartAt(BettingForecast $prediction): ?Carbon
     {
-        $game = $prediction->game;
-        if (! $game?->game_date || ! $game->game_time) {
-            return null;
-        }
-
-        return Carbon::parse($game->game_date->toDateString().' '.$game->game_time, config('app.timezone'));
+        return $prediction->game instanceof Game ? MlbGameStart::for($prediction->game) : null;
     }
 
     /**

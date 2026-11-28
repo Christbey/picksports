@@ -2,6 +2,7 @@
 
 namespace App\Services\MLB\Picks;
 
+use App\Support\MLB\MlbGameStart;
 use Carbon\CarbonInterface;
 
 final class MlbPickCandidateData
@@ -68,7 +69,7 @@ final class MlbPickCandidateData
             'risk_flags' => array_values(array_unique($this->riskFlags)),
             'feature_snapshot' => $this->featureSnapshot,
             'market_snapshot' => $this->marketSnapshot,
-            'game_start_at' => $this->gameStartAt,
+            'game_start_at' => $this->gameStartAt === null ? null : MlbGameStart::legacyTimestamp($this->gameStartAt),
         ];
     }
 }

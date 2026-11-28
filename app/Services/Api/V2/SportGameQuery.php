@@ -4,9 +4,13 @@ namespace App\Services\Api\V2;
 
 use App\Application\Sports\ReadModels\GameSummary;
 use App\Application\Sports\ReadModels\GameSummaryMapper;
+use App\DataTransferObjects\ESPN\GameData;
 use App\Models\NFL\Game;
 use App\Services\Api\V2\Concerns\BuildsSportQueries;
+use App\Services\Sports\CfbGameCalendarRead;
 use App\Services\Sports\SportsDateWindowService;
+use App\Support\MLB\MlbGameStart;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -192,8 +196,10 @@ class SportGameQuery
                 fn (string $relation): bool => $relation !== 'prediction' || ! app(CanonicalSportPredictionQuery::class)->supports($context),
             )))
             ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
+            ->when($filters['completed_only'] ?? false, fn (Builder $query): Builder => $query->whereIn('status', GameData::FINAL_STATUSES))
             ->when($filters['season'] ?? null, fn (Builder $query, int $season): Builder => $query->where('season', $season))
-            ->when($filters['season_type'] ?? null, fn (Builder $query, string $phase): Builder => $query->where('season_type', $phase))
+            ->when(isset($filters['season_type']) && $filters['season_type'] !== '' && $filters['season_type'] !== 'all',
+                fn (Builder $query): Builder => $query->whereIn('season_type', $this->gameSeasonTypeCandidates($context, (string) $filters['season_type'])))
             ->tap(fn (Builder $query): Builder => $this->whereGameDateFilters($query, $filters))
             ->when($filters['before_game_at'] ?? null, fn (Builder $query, string $before): Builder => $this->whereBeforeGame($query, $before))
             ->when($filters['exclude_game_id'] ?? null, fn (Builder $query, int $gameId): Builder => $query->whereKeyNot($gameId))
@@ -243,7 +249,16 @@ class SportGameQuery
 
     private function whereBeforeGame(Builder $query, string $before): Builder
     {
-        $cutoff = Carbon::parse($before)->setTimezone($query->getModel() instanceof Game ? 'UTC' : (string) config('app.timezone', 'UTC'));
+        if ($query->getModel() instanceof \App\Models\MLB\Game) {
+            return MlbGameStart::before($query, Carbon::parse($before)->utc());
+        }
+        if ($query->getModel() instanceof \App\Models\CFB\Game) {
+            return app(CfbGameCalendarRead::class)
+                ->before($query, CarbonImmutable::parse($before)->utc());
+        }
+        // The six shared ESPN schemas store UTC date/time parts.
+        $utcStored = in_array($query->getModel()->getTable(), ['nfl_games', 'cfb_games', 'nba_games', 'wnba_games', 'cbb_games', 'wcbb_games'], true);
+        $cutoff = Carbon::parse($before)->setTimezone($utcStored ? 'UTC' : (string) config('app.timezone', 'UTC'));
         $date = $cutoff->toDateString();
         $time = $cutoff->format('H:i:s');
 

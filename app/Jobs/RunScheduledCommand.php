@@ -7,6 +7,7 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Symfony\Component\Console\Output\ConsoleOutput;
@@ -22,6 +23,11 @@ class RunScheduledCommand implements ShouldBeUnique, ShouldQueue
 
     public int $timeout;
 
+    // Defaults also apply to jobs serialized before worker execution groups existed.
+    public ?int $maxExceptions = null;
+
+    public ?int $executionRetryDeadline = null;
+
     public function __construct(public string $commandLine, public string $scheduledName, public ?string $heartbeatUrl = null)
     {
         $liveDispatcher = str_starts_with($commandLine, 'espn:')
@@ -30,6 +36,10 @@ class RunScheduledCommand implements ShouldBeUnique, ShouldQueue
         $this->onConnection('redis');
         $this->onQueue($liveDispatcher || $commandLine === 'cfb:sync-live-betting' ? 'default' : 'sync');
         $this->timeout = $this->queue === 'default' ? 110 : 1700;
+        if ($this->executionGroup() !== null) {
+            $this->executionRetryDeadline = now()->getTimestamp() + $this->uniqueFor;
+            $this->maxExceptions = 1;
+        }
     }
 
     public function displayName(): string
@@ -42,7 +52,57 @@ class RunScheduledCommand implements ShouldBeUnique, ShouldQueue
         return 'scheduled-command:'.hash('sha256', $this->scheduledName.'|'.$this->commandLine);
     }
 
+    public function retryUntil(): ?int
+    {
+        return $this->executionRetryDeadline;
+    }
+
+    public function executionGroup(): ?string
+    {
+        $verb = strtok($this->commandLine, ' ');
+
+        return match ($verb) {
+            'nfl:run-pregame-pipeline', 'nfl:report-canonical-cutover-readiness' => 'nfl-canonical-generation-readiness',
+            'mlb:generate-predictions' => 'mlb-generation:'.hash('sha256', $this->commandLine),
+            default => null,
+        };
+    }
+
+    public function executionLockKey(): ?string
+    {
+        $group = $this->executionGroup();
+
+        return $group === null ? null : 'scheduled-command-execution:'.$group;
+    }
+
     public function handle(CommandHeartbeatService $heartbeats): void
+    {
+        $lock = null;
+        if ($key = $this->executionLockKey()) {
+            $lease = $this->timeout + 60;
+            $reservation = (int) config('queue.connections.redis.retry_after', 2100);
+            if ($lease <= 0 || $lease >= $reservation) {
+                throw new RuntimeException('Scheduled execution lock must outlive the job timeout and expire before its queue reservation.');
+            }
+            $lock = Cache::lock($key, $lease);
+            if (! $lock->get()) {
+                if ($this->job === null) {
+                    throw new RuntimeException('Scheduled execution group is busy and requires a queued retry.');
+                }
+                $this->release(30);
+
+                return;
+            }
+        }
+
+        try {
+            $this->executeCommand($heartbeats);
+        } finally {
+            $lock?->release();
+        }
+    }
+
+    private function executeCommand(CommandHeartbeatService $heartbeats): void
     {
         $started = hrtime(true);
         $sport = $heartbeats->inferSportFromCommand($this->commandLine);

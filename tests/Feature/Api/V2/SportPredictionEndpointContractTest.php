@@ -29,6 +29,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
+use Tests\Support\ObservedCfbGameFixture;
 
 dataset('v2PredictionContractSports', [
     'nba' => ['nba', NbaTeam::class, NbaGame::class, NbaPrediction::class],
@@ -80,7 +81,7 @@ it('lists v2 predictions with sport, filter, pagination, freshness, and warning 
         $gameModel,
         $predictionModel,
         [
-            'status' => 'STATUS_FINAL',
+            'status' => $slug === 'cfb' ? 'STATUS_SCHEDULED' : 'STATUS_FINAL',
             'home_score' => 5,
             'away_score' => 3,
         ],
@@ -93,6 +94,13 @@ it('lists v2 predictions with sport, filter, pagination, freshness, and warning 
             'graded_at' => now(),
         ],
     );
+
+    if ($slug === 'cfb') {
+        // Fresh synthetic phase transition; no historical availability or snapshot is backstamped.
+        ObservedCfbGameFixture::observe($game,
+            substr((string) $game->getRawOriginal('game_date'), 0, 10).'T'.$game->game_time.'Z');
+        $game->update(['status' => 'STATUS_FINAL']);
+    }
 
     $response = $this->getJson("/api/v2/sports/{$slug}/predictions?season=2026&per_page=5")
         ->assertOk()
@@ -459,6 +467,8 @@ it('presents cfb v2 prediction game dates in eastern football time', function ()
         ],
     );
 
+    ObservedCfbGameFixture::observe($game, '2026-08-30T02:00:00Z');
+
     $this->getJson("/api/v2/sports/cfb/predictions/{$prediction->id}")
         ->assertOk()
         ->assertJsonPath('data.game_id', $game->id)
@@ -775,7 +785,7 @@ it('resolves the CFB board period from legacy forecasts when canonical reads are
     config()->set('prediction_lifecycle.canonical_reads.cfb', false);
     $this->travelTo(Carbon::parse('2026-08-29 15:00:00 UTC'));
     v2PredictionContractActingAsBypassUser();
-    v2PredictionContractCreateGamePrediction(CfbTeam::class, CfbGame::class, CfbPrediction::class, [
+    [$game] = v2PredictionContractCreateGamePrediction(CfbTeam::class, CfbGame::class, CfbPrediction::class, [
         'season' => 2026,
         'season_type' => 2,
         'week' => 0,
@@ -783,7 +793,25 @@ it('resolves the CFB board period from legacy forecasts when canonical reads are
         'game_time' => '02:00:00',
     ]);
 
+    ObservedCfbGameFixture::observe($game, '2026-08-30T02:00:00Z');
+
     $this->getJson('/api/v2/sports/cfb/predictions/available-seasons?view=board')
         ->assertSuccessful()
         ->assertJsonPath('meta.board_period', ['season' => 2026, 'season_type' => '2', 'week' => 0]);
+});
+
+it('refuses malformed legacy game prediction selectors without returning another game', function (string $selector) {
+    config()->set('prediction_lifecycle.canonical_reads.nfl', false);
+    v2PredictionContractActingAsBypassUser();
+    [$game] = v2PredictionContractCreateGamePrediction(NflTeam::class, NflGame::class, NflPrediction::class);
+    $value = $selector === 'partial' ? $game->id.'junk' : $selector;
+    $this->getJson('/api/v2/sports/nfl/games/'.$value.'/prediction')->assertNotFound();
+})->with(['0', 'junk', 'partial', '1e0', '999999999999999999999999999999']);
+
+it('preserves valid and unknown legacy game prediction identities', function () {
+    config()->set('prediction_lifecycle.canonical_reads.nfl', false);
+    v2PredictionContractActingAsBypassUser();
+    [$game, $prediction] = v2PredictionContractCreateGamePrediction(NflTeam::class, NflGame::class, NflPrediction::class);
+    $this->getJson('/api/v2/sports/nfl/games/'.$game->id.'/prediction')->assertOk()->assertJsonPath('data.id', $prediction->id)->assertJsonPath('meta.game_id', $game->id);
+    $this->getJson('/api/v2/sports/nfl/games/999999999/prediction')->assertNotFound();
 });

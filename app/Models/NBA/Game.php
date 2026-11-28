@@ -42,6 +42,7 @@ class Game extends Model
         'status',
         'period',
         'game_clock',
+        'neutral_site',
         'venue_name',
         'venue_city',
         'venue_state',
@@ -55,6 +56,7 @@ class Game extends Model
     protected function casts(): array
     {
         return [
+            'neutral_site' => 'boolean',
             'game_date' => 'datetime',
             'neutral_site' => 'boolean',
             'completed_at' => 'datetime',

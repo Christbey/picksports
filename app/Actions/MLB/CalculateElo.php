@@ -9,6 +9,10 @@ use App\Models\MLB\PitcherEloRating;
 use App\Models\MLB\Player;
 use App\Models\MLB\PlayerStat;
 use App\Models\MLB\Team;
+use App\Services\Sports\Elo\EloAdmissionMode;
+use App\Services\Sports\Elo\EloCoordinatedWriter;
+use App\Support\ESPN\ObservedStatValue;
+use DomainException;
 use Illuminate\Database\Eloquent\Model;
 
 class CalculateElo extends AbstractEloCalculator
@@ -22,6 +26,9 @@ class CalculateElo extends AbstractEloCalculator
      */
     public function execute(Model $game, bool $skipIfExists = true): array
     {
+        if (app(EloAdmissionMode::class)->managed('mlb', $game->getConnection())) {
+            return app(EloCoordinatedWriter::class)->execute('mlb', $game, $this);
+        }
         if ($game->status !== 'STATUS_FINAL') {
             return [
                 'home_team_change' => 0,
@@ -30,6 +37,15 @@ class CalculateElo extends AbstractEloCalculator
                 'away_pitcher_change' => 0,
                 'skipped' => false,
             ];
+        }
+
+        try {
+            ObservedStatValue::integer($game->home_score);
+            ObservedStatValue::integer($game->away_score);
+        } catch (DomainException) {
+            return ['home_team_change' => 0, 'away_team_change' => 0,
+                'home_pitcher_change' => 0, 'away_pitcher_change' => 0,
+                'skipped' => true, 'reason' => 'missing_or_invalid_final_scores'];
         }
 
         $homeTeam = $game->homeTeam;
@@ -82,6 +98,21 @@ class CalculateElo extends AbstractEloCalculator
             'away_pitcher_new_elo' => $pitcherEloResult['away_new_elo'] ?? null,
             'skipped' => false,
         ];
+    }
+
+    /** Non-persisting counterpart for the coordinated transaction; observed ties score one half. */
+    public function previewPitcherChanges(Model $game, int|float $homeElo, int|float $awayElo): array
+    {
+        ObservedStatValue::integer($game->home_score);
+        ObservedStatValue::integer($game->away_score);
+        $expected = $this->calculateExpectedScore($homeElo + (float) config('mlb.elo.pitcher_home_field_advantage'), $awayElo);
+        $actual = $game->home_score == $game->away_score ? 0.5 : ($game->home_score > $game->away_score ? 1.0 : 0.0);
+        $factor = $this->calculatePitcherKFactor($game);
+        $homeChange = round($factor * ($actual - $expected), 1);
+        $awayChange = round($factor * ((1 - $actual) - (1 - $expected)), 1);
+
+        return ['home_change' => $homeChange, 'away_change' => $awayChange,
+            'home_new_elo' => (int) round($homeElo + $homeChange), 'away_new_elo' => (int) round($awayElo + $awayChange)];
     }
 
     protected function getStartingPitcher(Game $game, Team $team): ?Player
@@ -262,6 +293,9 @@ class CalculateElo extends AbstractEloCalculator
      */
     public function applyTeamRegression(Team $team, ?float $regressionFactor = null): int
     {
+        if (app(EloAdmissionMode::class)->managed('mlb', $team->getConnection())) {
+            throw new \RuntimeException('Use the coordinated explicit-season MLB rollover; unversioned regression is refused.');
+        }
         $regressionFactor ??= config('mlb.elo.team_regression_factor');
         $defaultElo = config('mlb.elo.default_rating');
         $currentElo = $team->elo_rating ?? $defaultElo;
@@ -277,6 +311,9 @@ class CalculateElo extends AbstractEloCalculator
      */
     public function applyPitcherRegression(Player $pitcher, ?float $regressionFactor = null): int
     {
+        if (app(EloAdmissionMode::class)->managed('mlb', $pitcher->getConnection())) {
+            throw new \RuntimeException('Use the coordinated explicit-season MLB rollover; unversioned regression is refused.');
+        }
         $regressionFactor ??= config('mlb.elo.pitcher_regression_factor');
         $defaultElo = config('mlb.elo.default_rating');
         $currentElo = $pitcher->elo_rating ?? $defaultElo;

@@ -27,16 +27,16 @@ def test_training_writes_compatible_bundle_and_inference_contract(
         "manifest.json",
         "evaluation.json",
         "prediction_example.json",
-        "feature_schema.yaml",
-        "preprocessor.joblib",
-        "models/logistic_classifier.joblib",
-        "models/xgboost_classifier.ubj",
-        "models/xgboost_home_margin.ubj",
-        "models/xgboost_total_points.ubj",
-        "calibrators/logistic_regression_platt.joblib",
-        "calibrators/logistic_regression_isotonic.joblib",
-        "calibrators/xgboost_platt.joblib",
-        "calibrators/xgboost_isotonic.joblib",
+        "feature_schema.json",
+        "preprocessor.json",
+        "models/logistic_classifier.json",
+        "models/xgboost_classifier.json",
+        "models/xgboost_home_margin.json",
+        "models/xgboost_total_points.json",
+        "calibrators/logistic_regression_platt.json",
+        "calibrators/logistic_regression_isotonic.json",
+        "calibrators/xgboost_platt.json",
+        "calibrators/xgboost_isotonic.json",
     }
     assert expected_files == {
         str(path.relative_to(run_dir))
@@ -128,7 +128,7 @@ def test_feature_schema_must_match_manifest_semantic_hash(
         run_id="schema-tamper-run",
     )
     run_dir = Path(result["run_dir"])
-    schema_file = run_dir / "feature_schema.yaml"
+    schema_file = run_dir / "feature_schema.json"
     schema_file.write_text(
         schema_file.read_text(encoding="utf-8").replace(
             "mlb-pregame-ml-v1", "mlb-pregame-ml-v1-tampered", 1
@@ -137,7 +137,7 @@ def test_feature_schema_must_match_manifest_semantic_hash(
     )
     manifest_file = run_dir / "manifest.json"
     manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
-    manifest["artifacts"]["feature_schema.yaml"] = {
+    manifest["artifacts"]["feature_schema.json"] = {
         "sha256": hashlib.sha256(schema_file.read_bytes()).hexdigest(),
         "bytes": schema_file.stat().st_size,
     }

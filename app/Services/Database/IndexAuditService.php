@@ -28,7 +28,11 @@ class IndexAuditService
                 SEQ_IN_INDEX AS sequence,
                 COLUMN_NAME AS column_name,
                 SUB_PART AS sub_part,
-                CARDINALITY AS cardinality
+                CARDINALITY AS cardinality,
+                INDEX_TYPE AS index_type,
+                IS_VISIBLE AS is_visible,
+                COLLATION AS direction,
+                EXPRESSION AS expression
             FROM information_schema.STATISTICS
             WHERE TABLE_SCHEMA = ?
             ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX
@@ -45,9 +49,13 @@ class IndexAuditService
                     'table' => (string) $first->table_name,
                     'name' => (string) $first->index_name,
                     'unique' => (int) $first->non_unique === 0,
+                    'type' => strtoupper((string) $first->index_type),
+                    'visible' => strtoupper((string) $first->is_visible) === 'YES',
                     'columns' => $parts->map(fn (object $row): array => [
                         'name' => (string) $row->column_name,
                         'prefix' => $row->sub_part === null ? null : (int) $row->sub_part,
+                        'direction' => $row->direction,
+                        'expression' => $row->expression,
                     ])->values()->all(),
                     'cardinality' => $parts->map(fn (object $row): ?int => $row->cardinality === null ? null : (int) $row->cardinality)->max(),
                 ];
@@ -59,7 +67,7 @@ class IndexAuditService
     }
 
     /**
-     * @param  list<array{table:string,name:string,unique:bool,columns:list<array{name:string,prefix:int|null}>,cardinality:int|null}>  $indexes
+     * @param  list<array{table:string,name:string,unique:bool,type:string,visible:bool,columns:list<array{name:string,prefix:int|null,direction:string|null,expression:string|null}>,cardinality:int|null}>  $indexes
      * @return list<array<string, mixed>>
      */
     public function analyze(array $indexes): array
@@ -72,8 +80,18 @@ class IndexAuditService
                     continue;
                 }
 
+                if (! $this->reviewableBtree($candidate)) {
+                    $findings[] = [
+                        'table' => $table, 'index' => $candidate['name'], 'kind' => 'not_assessed',
+                        'covered_by' => null, 'columns' => array_column($candidate['columns'], 'name'),
+                        'message' => 'Redundancy is assessed only for visible BTREE indexes with known ordinary columns and directions; review other definitions separately.',
+                    ];
+
+                    continue;
+                }
+
                 foreach ($tableIndexes as $covering) {
-                    if ($candidate['name'] === $covering['name']) {
+                    if ($candidate['name'] === $covering['name'] || ! $this->reviewableBtree($covering)) {
                         continue;
                     }
 
@@ -82,6 +100,11 @@ class IndexAuditService
                     }
 
                     $exact = count($candidate['columns']) === count($covering['columns']);
+                    // Keep a stable survivor for identical non-unique indexes;
+                    // never emit a cycle suggesting both copies cover each other.
+                    if ($exact && ! $covering['unique'] && strcmp($covering['name'], $candidate['name']) >= 0) {
+                        continue;
+                    }
                     $findings[] = [
                         'table' => $table,
                         'index' => $candidate['name'],
@@ -121,9 +144,25 @@ class IndexAuditService
             ->all();
     }
 
+    /** Ordinary visible B-tree definitions are the only supported coverage proof. */
+    private function reviewableBtree(array $index): bool
+    {
+        if (($index['type'] ?? null) !== 'BTREE' || ($index['visible'] ?? null) !== true || $index['columns'] === []) {
+            return false;
+        }
+        foreach ($index['columns'] as $column) {
+            if (($column['name'] ?? '') === '' || ! array_key_exists('expression', $column)
+                || $column['expression'] !== null || ! in_array($column['direction'] ?? null, ['A', 'D'], true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /**
-     * @param  list<array{name:string,prefix:int|null}>  $candidate
-     * @param  list<array{name:string,prefix:int|null}>  $covering
+     * @param  list<array{name:string,prefix:int|null,direction:string|null,expression:string|null}>  $candidate
+     * @param  list<array{name:string,prefix:int|null,direction:string|null,expression:string|null}>  $covering
      */
     private function isLeftPrefix(array $candidate, array $covering): bool
     {
@@ -132,7 +171,8 @@ class IndexAuditService
         }
 
         foreach ($candidate as $offset => $column) {
-            if ($column !== ($covering[$offset] ?? null)) {
+            $other = $covering[$offset] ?? [];
+            if (array_any(['name', 'prefix', 'direction', 'expression'], fn (string $key): bool => ($column[$key] ?? null) !== ($other[$key] ?? null))) {
                 return false;
             }
         }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from itertools import product
+import math
 from typing import Any
 
 import numpy as np
@@ -14,7 +15,9 @@ def select_probability_blend(
     targets: np.ndarray,
     max_challenger_weight: float = 0.5,
 ) -> dict[str, Any]:
-    maximum_units = int(round(min(1.0, max(0.0, max_challenger_weight)) * 10))
+    if type(max_challenger_weight) not in (int, float) or not 0 <= max_challenger_weight <= 1 or not math.isfinite(max_challenger_weight):
+        raise ValueError("The maximum challenger weight must be finite and within zero to one.")
+    maximum_units = math.floor(max_challenger_weight * 10)
     best: tuple[tuple[float, float, float, float, float], dict[str, Any]] | None = (
         None
     )

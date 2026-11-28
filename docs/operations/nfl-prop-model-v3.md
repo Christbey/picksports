@@ -34,3 +34,7 @@ A recommendation must beat both the existing no-vig edge threshold and the actua
 `tests/Feature/BettingRecommendations/NflPropModelIntegrityTest.php` covers the prior-backup/current-starter fixture, missing stats versus zero, history eligibility, defensive side-of-ball, last-12 aggregation, negative-EV prices, pushes, availability, model versions, and snapshot protection across kickoff.
 
 Before deployment: run the player-prop feature suites, frontend contract tests, typecheck, lint, and production build. Assess changes in shadow mode before claiming improved predictive performance.
+
+## Historical version scope — 2026-11-28
+
+This document preserves the v3 input and rollout history. It does not identify the currently published model version. Current repository `PlayerPropAnalyzer::nflModelVersion()` selects `nfl-player-prop-v4-integrity` by default, or `nfl-player-prop-v4-opportunity` when the existing opportunity-projection option is enabled. The repository default for that option remains false. Historical v3/v5 records remaining readable do not activate those versions or relabel forecasts. This source review does not verify effective production settings or model calibration.

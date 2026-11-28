@@ -10,6 +10,8 @@ class ApiIdempotencyKey extends Model
 {
     use MassPrunable;
 
+    public const ATOMIC_LOCAL = 'atomic_local_v1';
+
     protected $fillable = [
         'principal_type',
         'principal_id',
@@ -17,6 +19,7 @@ class ApiIdempotencyKey extends Model
         'key_hash',
         'scope_hash',
         'request_fingerprint',
+        'execution_mode',
         'response_status',
         'response_headers',
         'response_body',
@@ -36,6 +39,9 @@ class ApiIdempotencyKey extends Model
 
     public function prunable(): Builder
     {
-        return static::query()->where('expires_at', '<=', now());
+        // An incomplete legacy request may already have committed business writes.
+        // TTL expiry is not evidence that it is safe to execute again.
+        return static::query()->where('expires_at', '<=', now())
+            ->whereNotNull('completed_at')->whereNotNull('response_status');
     }
 }

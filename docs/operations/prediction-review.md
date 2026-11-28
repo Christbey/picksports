@@ -14,7 +14,7 @@ Every valid result creates an immutable `PredictionReviewRevision`. A response a
 
 ## NBA provenance revalidation
 
-The optional `NBA_REVIEW_PROVENANCE_REUSE_ENABLED` flag defaults false. With additive storage installed, identical archived NBA research content can be explicitly revalidated against an unexpired original review through immutable provenance associations. Full desired fingerprints, original paid validity/accounting and fresh deterministic decision checks remain authoritative. NFL and manual/PDF evidence retain the existing path. See [the candidate contract and rollout steps](nba-review-provenance-reuse.md); this does not enable a scheduler or source refresh.
+The optional `NBA_REVIEW_PROVENANCE_REUSE_ENABLED` flag defaults false. With additive storage installed, identical archived NBA research content can be explicitly revalidated against an unexpired original review through immutable provenance associations. Full desired fingerprints, original paid validity/accounting and fresh deterministic decision checks remain authoritative. NFL and manual/PDF evidence retain the existing path. See [the NBA review operating contract](nba-research-rollout.md); this does not enable a scheduler or source refresh.
 
 ## Accounting and retries
 

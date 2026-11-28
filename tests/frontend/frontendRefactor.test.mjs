@@ -511,7 +511,7 @@ test('guest brackets restore, save and reset local picks through the extracted s
     scope.stop();
     const storage = new Map([
         [
-            'march-madness-bracket-builder-v3',
+            'march-madness-bracket-builder-v3:0:2027',
             JSON.stringify({
                 [first.id]: first.participants[0].participant.id,
                 invalid: 'team:99',
@@ -542,7 +542,7 @@ test('guest brackets restore, save and reset local picks through the extracted s
         state.selectWinner(matchup, matchup.participants[1]);
         await nextTick();
         assert.equal(
-            JSON.parse(storage.get('march-madness-bracket-builder-v3'))[
+            JSON.parse(storage.get('march-madness-bracket-builder-v3:0:2027'))[
                 matchup.id
             ],
             matchup.participants[1].participant.id,
@@ -554,7 +554,7 @@ test('guest brackets restore, save and reset local picks through the extracted s
         assert.equal(state.resetConfirmOpen, false);
         assert.equal(state.pickedGames, 0);
         assert.deepEqual(
-            JSON.parse(storage.get('march-madness-bracket-builder-v3')),
+            JSON.parse(storage.get('march-madness-bracket-builder-v3:0:2027')),
             {},
         );
     } finally {
@@ -809,4 +809,90 @@ test('compact team logos fall back once and preserve custom and dashboard source
     } finally {
         scope.stop();
     }
+});
+
+test('compiled team schedule explicitly labels unverified kickoff rows without showing a guessed clock', async () => {
+    const { state, app } = await teamState([]);
+    try {
+        const Card = (
+            await server.ssrLoadModule(
+                '/resources/js/components/sport-team/TeamGamesCard.vue',
+            )
+        ).default;
+        const html = await renderToString(
+            createSSRApp(Card, {
+                title: 'Scheduled games',
+                teamId: 1,
+                games: [
+                    game(42, 2026, null, null, {
+                        status: 'STATUS_SCHEDULED',
+                        game_date: '2026-10-10',
+                        starts_at: null,
+                        away_team: { name: 'Opponent' },
+                    }),
+                ],
+                gameLink: (id) => `/cbb/games/${id}`,
+                getOpponent: (row) => row.away_team,
+                formatDate: state.formatDate,
+                showScore: false,
+            }),
+        );
+        assert.match(html, /Oct 10/);
+        assert.match(html, /Time unavailable/);
+        assert.doesNotMatch(html, /00:00|12:00/);
+        assert.match(html, /href="\/cbb\/games\/42"/);
+    } finally {
+        app.unmount();
+    }
+});
+
+test('compiled team averages label their resolved season and observed field denominator', async () => {
+    const Card = (
+        await server.ssrLoadModule(
+            '/resources/js/components/sport-team/TeamSeasonStatsCard.vue',
+        )
+    ).default;
+    const html = await renderToString(
+        createSSRApp(Card, {
+            seasonStats: {
+                season: 2025,
+                season_type: '2',
+                games_played: 2,
+                points_per_game: 0,
+                sample_sizes: { points_per_game: 1 },
+            },
+            tiles: [
+                {
+                    label: 'PPG',
+                    value: (row) => String(row.points_per_game),
+                    sampleKey: 'points_per_game',
+                },
+            ],
+        }),
+    );
+    assert.match(html, /2025/);
+    assert.match(html, /phase 2/i);
+    assert.match(html, /1 observed games/);
+    assert.doesNotMatch(html, /Current Season/i);
+});
+
+test('compiled metric ranks disclose the measured population rather than treating missing observations as ranked teams', async () => {
+    const Card = (
+        await server.ssrLoadModule(
+            '/resources/js/components/sport-team/TeamMetricsCard.vue',
+        )
+    ).default;
+    const html = await renderToString(
+        createSSRApp(Card, {
+            metrics: { season: 2025, net_rating: 0 },
+            tiles: [
+                { label: 'Net', value: () => '0', rankingKey: 'net_rating' },
+            ],
+            metricRankings: { net_rating: 1 },
+            rankingTotalTeams: 3,
+            rankingSampleCounts: { net_rating: 1 },
+        }),
+    );
+    assert.match(html.replace(/<!--.*?-->/g, ''), /Rank 1 \/ 1 observed/);
+    assert.doesNotMatch(html, /Current Season/);
 });

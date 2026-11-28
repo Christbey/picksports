@@ -3,14 +3,21 @@
 namespace App\Services\ML;
 
 use App\Models\ModelArtifact;
+use App\Models\ModelRun;
 use App\Models\PredictionFeatureSnapshot;
 use App\Models\ShadowModelOutput;
 use App\Services\Predictions\ModelRunRecorder;
+use Illuminate\Support\Str;
+use RuntimeException;
 
 class ShadowModelOutputRecorder
 {
     public function record(PredictionFeatureSnapshot $snapshot): ?ShadowModelOutput
     {
+        $owner = $this->currentSnapshotContext($snapshot);
+        if ($owner === null) {
+            return null;
+        }
         $shadow = (array) data_get($snapshot->model_metadata, 'shadow_inference', []);
         $contexts = $this->shadowContexts($shadow);
 
@@ -26,13 +33,115 @@ class ShadowModelOutputRecorder
             }
         }
 
-        $firstOutput = null;
+        if ($contexts === []) {
+            return null;
+        }
+        // Context resolution may read a compacted/archive body. Do that before
+        // opening this component's leaf-lock transaction; inherited callers may
+        // already own a transaction, as before.
+        $ids = [];
         foreach ($contexts as $context) {
-            $output = $this->recordContext($snapshot, $context);
-            $firstOutput ??= $output;
+            if (is_string($context['artifact_id'] ?? null) && Str::isUuid($context['artifact_id'])) {
+                $ids[] = strtolower($context['artifact_id']);
+            }
+        }
+        $ids = array_values(array_unique($ids));
+        sort($ids, SORT_STRING);
+
+        return $owner['connection']->transaction(function () use ($snapshot, $contexts, $owner, $ids): ?ShadowModelOutput {
+            if (! $this->ownsCurrentConnection($snapshot, $owner)) {
+                throw new RuntimeException('Generic shadow recording connection changed before leaf admission.');
+            }
+            $current = $this->currentSnapshotContext($snapshot, true);
+            if ($current === null) {
+                return null;
+            }
+            if ($current['connection'] !== $owner['connection'] || $current['pdo'] !== $owner['pdo']) {
+                throw new RuntimeException('Generic shadow recording resolved another current owner.');
+            }
+            $current['artifacts'] = [];
+            if (! $current['mlb']) {
+                // All artifact leaves are planned and locked in UUID order, while
+                // processing below retains the caller's original context order.
+                foreach ($ids as $id) {
+                    $artifact = (new ModelArtifact)->setConnection($owner['connection']->getName())->newModelQuery()
+                        ->useWritePdo()->whereKey($id)->lockForUpdate()->first();
+                    if (! $this->ownsCurrentConnection($snapshot, $owner)) {
+                        throw new RuntimeException('Generic shadow recording lost its leaf connection.');
+                    }
+                    if ($artifact !== null && ! $artifact->isDirty()) {
+                        $current['artifacts'][strtolower((string) $artifact->getKey())] = $artifact;
+                    }
+                }
+            }
+            $firstOutput = null;
+            foreach ($contexts as $context) {
+                $output = $this->recordContext($snapshot, $context, $current);
+                $firstOutput ??= $output;
+            }
+            if (! $this->ownsCurrentConnection($snapshot, $owner)) {
+                throw new RuntimeException('Generic shadow recording connection changed during persistence.');
+            }
+
+            return $firstOutput;
+        });
+    }
+
+    /** Current scalar classification only; this is never an inference-authority token. */
+    private function currentSnapshotContext(PredictionFeatureSnapshot $snapshot, bool $lock = false): ?array
+    {
+        $literal = new PredictionFeatureSnapshot;
+        if (! $snapshot->exists || $snapshot->getTable() !== $literal->getTable()
+            || $snapshot->getKeyName() !== $literal->getKeyName()
+            || (string) $snapshot->getKey() !== (string) $snapshot->getRawOriginal($literal->getKeyName())
+            || filter_var($snapshot->getKey(), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false) {
+            return null;
+        }
+        $connection = $snapshot->getConnection();
+        $owner = ['connection' => $connection, 'pdo' => $connection->getPdo()];
+        if (! $this->ownsCurrentConnection($snapshot, $owner)
+            || ! in_array($connection->getDriverName(), ['mysql', 'sqlite'], true)) {
+            return null;
+        }
+        $grammar = $connection->getQueryGrammar();
+        $mysql = $connection->getDriverName() === 'mysql';
+        $length = $mysql ? 'OCTET_LENGTH' : 'length';
+        $cast = $mysql ? 'BINARY' : 'BLOB';
+        $select = [];
+        foreach (['id' => 20, 'sport' => 32, 'prediction_table' => 96, 'prediction_id' => 20, 'game_id' => 20, 'model_run_id' => 36] as $field => $limit) {
+            $column = $grammar->wrap($field);
+            $select[] = "CASE WHEN $length(CAST($column AS $cast)) <= $limit THEN $column ELSE NULL END AS $column";
+        }
+        $query = $connection->table($literal->getTable())->useWritePdo()->where('id', $snapshot->getKey())
+            ->selectRaw(implode(', ', $select).', CASE WHEN sport = ? OR prediction_table = ? THEN 1 ELSE 0 END AS _mlb_role', ['mlb', 'mlb_predictions']);
+        if ($lock) {
+            $query->lockForUpdate();
+        }
+        $header = $query->first();
+        if ($header === null || ! is_string($header->sport) || $header->sport === '' || ! is_string($header->prediction_table)) {
+            return null;
+        }
+        foreach (['sport', 'prediction_table', 'prediction_id', 'game_id', 'model_run_id'] as $field) {
+            if ((string) $header->{$field} !== (string) $snapshot->getRawOriginal($field)
+                || (string) $header->{$field} !== (string) $snapshot->getAttribute($field)) {
+                return null;
+            }
         }
 
-        return $firstOutput;
+        return [...$owner, 'header' => $header, 'mlb' => (int) $header->_mlb_role === 1
+            || strtolower(trim($header->sport)) === 'mlb'];
+    }
+
+    private function ownsCurrentConnection(PredictionFeatureSnapshot $snapshot, array $owner): bool
+    {
+        $connection = $owner['connection'];
+        foreach ([$snapshot, new PredictionFeatureSnapshot, new ModelArtifact, new ModelRun, new ShadowModelOutput] as $model) {
+            if ($model->getConnection() !== $connection) {
+                return false;
+            }
+        }
+
+        return $connection->getRawPdo() === $owner['pdo'];
     }
 
     /**
@@ -41,16 +150,57 @@ class ShadowModelOutputRecorder
     private function recordContext(
         PredictionFeatureSnapshot $snapshot,
         array $context,
+        array $owner,
     ): ?ShadowModelOutput {
         $artifactId = $context['artifact_id'] ?? null;
-        $observations = $this->structuredObservations($context);
-        if (! is_string($artifactId) || $observations === []) {
+        if (! is_string($artifactId)) {
             return null;
         }
 
-        $artifact = ModelArtifact::query()->find($artifactId);
-        if (! $artifact || ! in_array($artifact->status, ['challenger', 'promotion_eligible', 'promoted'], true)) {
+        if (! $this->ownsCurrentConnection($snapshot, $owner)) {
             return null;
+        }
+        if ($owner['mlb']) {
+            // A derived pregame capture marker proves capture, not model execution.
+            // Only the separate Event-first final-output coordinator may author NEW
+            // MLB execution rows. Existing historical bookkeeping remains readable.
+            $markets = $this->historicalMlbMarketTypes($context);
+            if ($markets === []) {
+                return null;
+            }
+            $row = $owner['connection']->table('shadow_model_outputs')->useWritePdo()
+                ->where('prediction_feature_snapshot_id', $snapshot->getKey())
+                ->where('model_artifact_id', $artifactId)->whereIn('market_type', $markets)
+                ->where('sport', $owner['header']->sport)->where('game_id', $owner['header']->game_id)
+                ->where('prediction_table', $owner['header']->prediction_table)
+                ->where('prediction_id', $owner['header']->prediction_id)->orderBy('id')->value('id');
+
+            return $row === null ? null : (new ShadowModelOutput)->setConnection($owner['connection']->getName())
+                ->newModelQuery()->useWritePdo()->find($row);
+        }
+        $observations = $this->structuredObservations($context);
+        if ($observations === []) {
+            return null;
+        }
+        $artifact = $owner['artifacts'][strtolower($artifactId)] ?? null;
+        if (! $this->ownsCurrentConnection($snapshot, $owner) || ! $artifact || $artifact->sport !== $owner['header']->sport
+            || ! in_array($artifact->status, ['challenger', 'promotion_eligible', 'promoted'], true)) {
+            return null;
+        }
+
+        $current = $this->currentSnapshotContext($snapshot, true);
+        if ($current === null || $current['mlb'] || $artifact->sport !== $current['header']->sport) {
+            return null;
+        }
+        $identity = $owner['connection']->table('model_artifacts')->useWritePdo()->where('id', $artifact->id)
+            ->select(['id', 'sport', 'model_type', 'training_run_id', 'status'])->lockForUpdate()->first();
+        if ($identity === null) {
+            return null;
+        }
+        foreach (['id', 'sport', 'model_type', 'training_run_id', 'status'] as $field) {
+            if ((string) $identity->{$field} !== (string) $artifact->getRawOriginal($field)) {
+                return null;
+            }
         }
 
         $inferenceRun = app(ModelRunRecorder::class)->forPrediction(
@@ -75,6 +225,9 @@ class ShadowModelOutputRecorder
                 $marketType,
                 $snapshot->generated_at,
             );
+            $existingId = ShadowModelOutput::query()->useWritePdo()
+                ->where('model_artifact_id', $artifact->id)->where('prediction_feature_snapshot_id', $snapshot->id)
+                ->where('market_type', $marketType)->value('id');
             $output = ShadowModelOutput::query()->firstOrCreate(
                 [
                     'model_artifact_id' => $artifact->id,
@@ -90,7 +243,7 @@ class ShadowModelOutputRecorder
                     'prediction_id' => $snapshot->prediction_id,
                     'baseline_output' => $outputs['baseline'],
                     'challenger_output' => $outputs['challenger'],
-                    'output_delta' => $outputs['challenger'] - $outputs['baseline'],
+                    'output_delta' => $outputs['delta'],
                     'status' => $marketPromoted ? 'promoted_shadow' : 'shadow',
                     'explanation' => [
                         'artifact_id' => $artifact->id,
@@ -117,6 +270,29 @@ class ShadowModelOutputRecorder
                     'generated_at' => $snapshot->generated_at,
                 ],
             );
+            if (! $output->exists || $output->getKey() === null) {
+                throw new RuntimeException('Generic shadow output persistence was cancelled.');
+            }
+            $persisted = $owner['connection']->table('shadow_model_outputs')->useWritePdo()
+                ->where('id', $output->getKey())->where('model_artifact_id', $artifact->id)
+                ->where('prediction_feature_snapshot_id', $snapshot->id)->where('market_type', $marketType)
+                ->where('sport', $owner['header']->sport)->where('game_id', $owner['header']->game_id)
+                ->where('prediction_table', $owner['header']->prediction_table)->where('prediction_id', $owner['header']->prediction_id)
+                ->first(['id', 'inference_run_id', 'baseline_output', 'challenger_output', 'output_delta']);
+            if ($persisted === null) {
+                throw new RuntimeException('Generic shadow output no longer has its persisted owner.');
+            }
+            if ($existingId === null) {
+                if ($persisted->inference_run_id !== $inferenceRun->id) {
+                    throw new RuntimeException('Generic shadow output inference owner changed during persistence.');
+                }
+                foreach (['baseline_output' => 'baseline', 'challenger_output' => 'challenger', 'output_delta' => 'delta'] as $field => $key) {
+                    if (! is_numeric($persisted->$field) || ! is_finite((float) $persisted->$field)
+                        || (float) $persisted->$field !== $outputs[$key]) {
+                        throw new RuntimeException('Generic shadow output differs from its staged requested values.');
+                    }
+                }
+            }
             $firstOutput ??= $output;
         }
 
@@ -139,6 +315,33 @@ class ShadowModelOutputRecorder
         }
 
         return is_string($shadow['artifact_id'] ?? null) ? [$shadow] : [];
+    }
+
+    /** Market identity alone selects retained history; mutable values never author or refresh it. */
+    private function historicalMlbMarketTypes(array $context): array
+    {
+        $markets = [];
+        if (is_array($context['baseline_outputs'] ?? null)
+            && is_array($context['challenger_outputs'] ?? null)
+            && is_array($context['market_promotion'] ?? null)) {
+            foreach (['win_probability' => 'win_probability', 'spread' => 'predicted_spread', 'total' => 'predicted_total'] as $market => $key) {
+                if (array_key_exists($key, $context['baseline_outputs'])
+                    || array_key_exists($key, $context['challenger_outputs'])) {
+                    $markets[] = $market;
+                }
+            }
+        }
+        if ($markets !== []) {
+            return $markets;
+        }
+        $type = $context['market_type'] ?? 'win_probability';
+        if (! is_string($type)) {
+            return [];
+        }
+        $type = ModelArtifact::normalizeMarketType($type);
+        $type = $type === 'run_line' ? 'spread' : $type;
+
+        return in_array($type, ['win_probability', 'spread', 'total'], true) ? [$type] : [];
     }
 
     /**
@@ -169,14 +372,10 @@ class ShadowModelOutputRecorder
                 ?? ($marketType === 'win_probability' ? ($shadow['baseline_output'] ?? null) : null);
             $challenger = $challengerOutputs[$outputKey]
                 ?? ($marketType === 'win_probability' ? ($shadow['challenger_output'] ?? null) : null);
-            if (! is_numeric($baseline) || ! is_numeric($challenger)) {
-                continue;
+            $values = $this->observationValues($baseline, $challenger, $marketType);
+            if ($values !== null) {
+                $observations[$marketType] = $values;
             }
-
-            $observations[$marketType] = [
-                'baseline' => (float) $baseline,
-                'challenger' => (float) $challenger,
-            ];
         }
 
         return $observations !== []
@@ -193,21 +392,38 @@ class ShadowModelOutputRecorder
      */
     private function legacyObservations(mixed $baseline, mixed $challenger, string $marketType): array
     {
-        if (! is_numeric($baseline) || ! is_numeric($challenger)) {
-            return [];
-        }
-
         $marketType = match (ModelArtifact::normalizeMarketType($marketType)) {
             'run_line' => 'spread',
             default => ModelArtifact::normalizeMarketType($marketType),
         };
+        $values = $this->observationValues($baseline, $challenger, $marketType);
 
-        return [
-            $marketType => [
-                'baseline' => (float) $baseline,
-                'challenger' => (float) $challenger,
-            ],
-        ];
+        return $values === null ? [] : [$marketType => $values];
+    }
+
+    /** Validate observations, then normalize only their existing DECIMAL(12,6) storage representation. */
+    private function observationValues(mixed $baseline, mixed $challenger, string $marketType): ?array
+    {
+        if (! in_array($marketType, ['win_probability', 'spread', 'total'], true)
+            || ! is_numeric($baseline) || ! is_numeric($challenger)) {
+            return null;
+        }
+        $baseline = (float) $baseline;
+        $challenger = (float) $challenger;
+        if (! is_finite($baseline) || ! is_finite($challenger)
+            || ($marketType === 'win_probability' && ($baseline < 0 || $baseline > 1 || $challenger < 0 || $challenger > 1))
+            || ($marketType === 'total' && ($baseline < 0 || $challenger < 0))) {
+            return null;
+        }
+        $values = ['baseline' => round($baseline, 6), 'challenger' => round($challenger, 6),
+            'delta' => round($challenger - $baseline, 6)];
+        foreach ($values as $value) {
+            if (! is_finite($value) || abs($value) > 999999.999999) {
+                return null;
+            }
+        }
+
+        return $values;
     }
 
     /**

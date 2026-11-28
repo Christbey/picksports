@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import FuturesQuote from '@/components/predictions/FuturesQuote.vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 import { useCbbForecastContext } from '@/composables/useCbbForecast';
-const { formatPct, formatAmericanOdds, formatTeam, titleContenders } =
-    useCbbForecastContext();
+const { formatPct, formatTeam, titleContenders } = useCbbForecastContext();
 </script>
 <template>
     <Card>
@@ -64,7 +64,7 @@ const { formatPct, formatAmericanOdds, formatTeam, titleContenders } =
                                 {{ formatPct(row.champion_probability, 2) }}
                             </td>
                             <td class="p-2 text-right">
-                                {{ formatAmericanOdds(row.market_odds?.price) }}
+                                <FuturesQuote :quote="row.market_odds" />
                             </td>
                             <td
                                 class="p-2 text-right"

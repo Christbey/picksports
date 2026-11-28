@@ -185,6 +185,28 @@ onBeforeUnmount(() => {
     }
 });
 
+/** Submitted page context is evidence, not an instruction to navigate an arbitrary scheme. */
+function submissionPageLink(value: string | null): string | null {
+    if (
+        typeof value !== 'string' ||
+        value.length > 2048 ||
+        /[\u0000-\u0020\u007f\\]/.test(value)
+    )
+        return null;
+    if (value.startsWith('/')) return value.startsWith('//') ? null : value;
+    try {
+        const url = new URL(value);
+        return ['https:', 'http:'].includes(url.protocol) &&
+            url.hostname !== '' &&
+            url.username === '' &&
+            url.password === ''
+            ? value
+            : null;
+    } catch {
+        return null;
+    }
+}
+
 function previewMessage(value: string): string {
     if (value.length <= 140) {
         return value;
@@ -328,7 +350,6 @@ function previewMessage(value: string): string {
                 </div>
 
                 <div
-                    id="submissions"
                     class="rounded-xl border border-sidebar-border bg-white dark:bg-sidebar"
                 >
                     <div class="border-b border-sidebar-border px-4 py-3">
@@ -446,6 +467,7 @@ function previewMessage(value: string): string {
                 </div>
 
                 <div
+                    id="submissions"
                     class="rounded-xl border border-sidebar-border bg-white dark:bg-sidebar"
                 >
                     <div class="border-b border-sidebar-border px-4 py-3">
@@ -499,14 +521,28 @@ function previewMessage(value: string): string {
                                     </td>
                                     <td class="px-4 py-3">
                                         <a
-                                            v-if="submission.page_url"
-                                            :href="submission.page_url"
+                                            v-if="
+                                                submissionPageLink(
+                                                    submission.page_url,
+                                                )
+                                            "
+                                            :href="
+                                                submissionPageLink(
+                                                    submission.page_url,
+                                                ) ?? undefined
+                                            "
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             class="underline underline-offset-2"
                                         >
                                             Open
                                         </a>
+                                        <span
+                                            v-else-if="submission.page_url"
+                                            class="break-all text-muted-foreground"
+                                            >Unsupported link:
+                                            {{ submission.page_url }}</span
+                                        >
                                         <span
                                             v-else
                                             class="text-muted-foreground"

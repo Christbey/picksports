@@ -5,6 +5,7 @@ namespace App\Actions\ESPN\NFL;
 use App\Actions\ESPN\AbstractFootballSyncTeamStats;
 use App\Models\NFL\Team;
 use App\Models\NFL\TeamStat;
+use App\Services\ESPN\FootballTeamStatParser;
 use Illuminate\Database\Eloquent\Model;
 
 class SyncTeamStats extends AbstractFootballSyncTeamStats
@@ -15,32 +16,7 @@ class SyncTeamStats extends AbstractFootballSyncTeamStats
 
     protected function parseTeamStats(array $statistics): array
     {
-        $parsed = [];
-
-        foreach ($statistics as $stat) {
-            $name = $stat['name'];
-            $value = $stat['displayValue'];
-
-            match ($name) {
-                'firstDowns' => $parsed['firstDowns'] = (int) $value,
-                'totalYards' => $parsed['totalYards'] = (int) $value,
-                'netPassingYards' => $parsed['passingYards'] = (int) $value,
-                'rushingYards' => $parsed['rushingYards'] = (int) $value,
-                'rushingAttempts' => $parsed['rushingAttempts'] = (int) $value,
-                'interceptions' => $parsed['interceptions'] = (int) $value,
-                'fumblesLost' => $parsed['fumblesLost'] = (int) $value,
-                'possessionTime' => $parsed['possessionTime'] = $value,
-                'completionAttempts' => $this->parseFraction($value, 'completions', 'passingAttempts', $parsed),
-                'thirdDownEff' => $this->parseFraction($value, 'thirdDownConversions', 'thirdDownAttempts', $parsed),
-                'fourthDownEff' => $this->parseFraction($value, 'fourthDownConversions', 'fourthDownAttempts', $parsed),
-                'redZoneAttempts' => $this->parseFraction($value, 'redZoneScores', 'redZoneAttempts', $parsed),
-                'totalPenaltiesYards' => $this->parseFraction($value, 'penalties', 'penaltyYards', $parsed),
-                'sacksYardsLost' => $this->parseFraction($value, 'sacksAllowed', null, $parsed),
-                default => null,
-            };
-        }
-
-        return $parsed;
+        return app(FootballTeamStatParser::class)->parse($statistics);
     }
 
     protected function sportSpecificAttributes(array $stats): array

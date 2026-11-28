@@ -160,7 +160,7 @@ it('does not count opportunities when no delivery channel is enabled', function 
     Notification::assertNothingSent();
 });
 
-it('claims one transport attempt and permits a failed attempt to retry', function () {
+it('claims one transport attempt without retrying an uncertain failed outcome', function () {
     $subscriber = app(NotificationDeliverySubscriber::class);
     $user = User::factory()->create();
     $notification = new ResetPassword('test-token');
@@ -169,7 +169,8 @@ it('claims one transport attempt and permits a failed attempt to retry', functio
     expect($subscriber->sending($event))->toBeNull()->and($subscriber->sending($event))->toBeFalse();
     $record = NotificationDelivery::query()->sole();
     app(NotificationDeliveryService::class)->markFailed($record, 'transport_failed');
-    expect($subscriber->sending($event))->toBeNull();
+    expect($subscriber->sending($event))->toBeFalse()
+        ->and($record->fresh()->status)->toBe('outcome_unknown');
     $subscriber->sent(new NotificationSent($user, $notification, 'mail', null));
     expect($subscriber->sending($event))->toBeFalse()->and($record->fresh()->status)->toBe('accepted');
 });

@@ -1,31 +1,17 @@
+import '@inertiajs/vue3';
 import type { AppPageProps } from './index';
 
-// Extend ImportMeta interface for Vite...
-declare module 'vite/client' {
-    interface ImportMetaEnv {
-        readonly VITE_APP_NAME: string;
-        [key: string]: string | boolean | undefined;
-    }
-
-    interface ImportMeta {
-        readonly env: ImportMetaEnv;
-        readonly glob: <T>(pattern: string) => Record<string, () => Promise<T>>;
-    }
-}
-
+// Extend the official Inertia/Vue declarations rather than redeclaring router APIs.
 declare module '@inertiajs/core' {
-    interface PageProps extends InertiaPageProps, AppPageProps {}
-}
-
-declare module 'vue' {
-    interface ComponentCustomProperties {
-        $inertia: typeof Router;
-        $page: Page;
-        $headManager: ReturnType<typeof createHeadManager>;
-    }
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- Inertia extends shared props through interface merging.
+    interface PageProps extends AppPageProps {}
 }
 
 declare global {
+    interface ImportMetaEnv {
+        readonly VITE_APP_NAME?: string;
+    }
+
     interface Window {
         dataLayer: Array<Record<string, unknown>>;
     }

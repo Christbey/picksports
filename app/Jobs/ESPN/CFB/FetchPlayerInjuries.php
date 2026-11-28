@@ -21,7 +21,7 @@ class FetchPlayerInjuries extends BulkEspnJob implements ShouldBeUnique
 
     public function uniqueId(): string
     {
-        return $this->teamEspnId ?: 'all-teams';
+        return $this->teamEspnId ?? 'all-teams';
     }
 
     public function handle(): void
@@ -30,8 +30,11 @@ class FetchPlayerInjuries extends BulkEspnJob implements ShouldBeUnique
         $action = new SyncPlayerInjuries($service);
 
         try {
-            if ($this->teamEspnId) {
+            if ($this->teamEspnId !== null) {
                 $count = $action->execute($this->teamEspnId);
+                if (! $action->lastSyncReliable()) {
+                    throw new \RuntimeException('CFB injury source unavailable or incomplete for the selected team.');
+                }
                 Log::info("CFB: Synced {$count} player injuries for team {$this->teamEspnId} from ESPN");
             } else {
                 $count = $action->syncAllTeams();

@@ -35,6 +35,7 @@ const eventStatusUrl = computed(() => {
     const code = (props.gameStatusCode || '').toUpperCase();
     const map: Record<string, string> = {
         STATUS_FINAL: 'https://schema.org/EventCompleted',
+        STATUS_FULL_TIME: 'https://schema.org/EventCompleted',
         STATUS_IN_PROGRESS: 'https://schema.org/EventInProgress',
         STATUS_HALFTIME: 'https://schema.org/EventInProgress',
         STATUS_POSTPONED: 'https://schema.org/EventPostponed',

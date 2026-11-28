@@ -199,25 +199,12 @@ class CalculateTeamMetrics
     }
 
     /**
-     * Calculate offensive rating.
-     *
-     * Formula: (Runs/Game * multiplier) + (Batting Avg * multiplier) + (HR Rate * multiplier)
-     *
-     * Offensive rating combines multiple offensive components into a single metric that
-     * represents a team's overall offensive production. This weighted formula considers
-     * runs scored (the ultimate offensive goal), batting average (hitting consistency),
-     * and home run rate (power hitting). The multipliers are configurable to fine-tune
-     * the relative importance of each component.
-     *
-     * Components:
-     * - Runs per game: Total runs divided by games played
-     * - Batting average: Hits divided by at-bats
-     * - Home run rate: Home runs per game
-     *
-     * Expected Range: 50-150 (configurable based on multipliers)
+     * Configurable 100-centered index of runs/game, OPS and home runs/game
+     * relative to configured league references; normally clamped to 50–180.
+     * Missing games or nonfinite output return zero, not a league-average rating.
      *
      * @param  array<int, TeamStat>  $teamStats  Team statistics records
-     * @return float Composite offensive rating
+     * @return float Custom offensive index, not OPS+ or a calibrated probability
      */
     protected function calculateOffensiveRating(array $teamStats): float
     {
@@ -285,27 +272,14 @@ class CalculateTeamMetrics
     }
 
     /**
-     * Calculate pitching rating.
-     *
-     * Formula: (ERA Component) + (K's per game) - (Walks per game)
-     * Where: ERA Component = max(0, ERA_MAX - (ERA * ERA_SCALE))
-     *
-     * Pitching rating combines ERA (earned run average), strikeouts, and walks into
-     * a composite metric representing overall pitching staff quality. The ERA component
-     * is inverted and scaled so that lower ERAs produce higher ratings. Strikeouts are
-     * added (more is better) and walks are subtracted (fewer is better).
-     *
-     * Components:
-     * - ERA: (Earned runs / Innings pitched) * 9
-     * - Strikeouts per game: Total strikeouts divided by games
-     * - Walks per game: Total walks allowed divided by games
-     *
-     * The ERA_MAX and ERA_SCALE configurables control how ERA contributes to the rating.
-     *
-     * Expected Range: Varies based on configuration (typically 50-150)
+     * Configurable 100-centered run-prevention index using runs allowed/game,
+     * ERA, WHIP, strikeouts minus walks/game and home runs allowed/game.
+     * Higher is better; normal bounds are 50–180. Missing games/innings or
+     * nonfinite output return zero. Innings are normalized before ERA/WHIP.
      *
      * @param  array<int, TeamStat>  $teamStats  Team statistics records
-     * @return float Composite pitching rating
+     * @param  array<int, TeamStat>  $opponentStats  Opponent statistics records
+     * @return float Custom pitching index, not FIP or a calibrated probability
      */
     protected function calculatePitchingRating(array $teamStats, array $opponentStats = []): float
     {

@@ -4,6 +4,8 @@ export type MarketOdds = {
     price: number | null;
     implied_probability: number | null;
     fetched_at: string | null;
+    market_last_update?: string | null;
+    stale?: boolean;
     odds_api_sport_key: string;
 };
 export type MarketEdge = {

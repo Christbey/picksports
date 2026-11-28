@@ -33,7 +33,7 @@ From {{ $report['window']['start'] }} (included) to {{ $report['window']['end'] 
 | Recorded activity | Count |
 | :--- | ---: |
 | Mail accepted by transport | {{ $mailOutcomes->where('status', 'accepted')->sum('count') }} |
-| Mail failed | {{ $mailOutcomes->where('status', 'failed')->sum('count') }} |
+| Mail transport errors (outcome may be unknown) | {{ $mailOutcomes->where('status', 'failed')->sum('count') }} |
 | Mail suppressed | {{ $mailOutcomes->where('status', 'suppressed')->sum('count') }} |
 | Mail dispatched | {{ $mailOutcomes->where('status', 'dispatched')->sum('count') }} |
 | Legacy digest send completions | {{ $report['digests']['sent'] ?? 0 }} |
@@ -41,7 +41,7 @@ From {{ $report['window']['start'] }} (included) to {{ $report['window']['end'] 
 
 Transport acceptance does not confirm inbox delivery. Transition counts overlap: one notification can be dispatched and accepted. Legacy counts can also overlap the audit; empty audit history does not establish no earlier sends.
 
-**Current unresolved mail:** {{ $mailBacklog ?? 'Unavailable' }} planned, dispatched or sending records as of the operational snapshot. This is separate from activity-window transitions.
+**Current unresolved mail:** {{ $mailBacklog ?? 'Unavailable' }} planned, dispatched, sending, historical failed or outcome-unknown records as of the operational snapshot. This is separate from activity-window transitions. An uncertain transport outcome is not proof of non-delivery and is not automatically retried with the same delivery key.
 
 **Current controls:** Digest delivery {{ $digestEnabled ? 'enabled' : 'disabled' }} · Admin report {{ ($report['features']['admin_report_enabled'] ?? false) ? 'enabled' : 'disabled' }} · Validation notifications {{ ($report['features']['regression_alerts_enabled'] ?? false) ? 'enabled' : 'disabled' }}.
 

@@ -7,6 +7,7 @@ use App\Actions\ESPN\MLB\Concerns\ResolvesMlbGameDateParts;
 use App\DataTransferObjects\ESPN\GameData;
 use App\Models\MLB\Game;
 use App\Models\MLB\Team;
+use App\Support\MLB\MlbGameStart;
 use App\Support\MlbSeasonTypeResolver;
 use Illuminate\Database\Eloquent\Model;
 
@@ -17,6 +18,14 @@ class SyncGames extends AbstractSyncGames
     protected const GAME_MODEL_CLASS = Game::class;
 
     protected const TEAM_MODEL_CLASS = Team::class;
+
+    protected function gameDtoFromResponse(array $gameData): GameData
+    {
+        // DTO transport only: raw omitted source time stays omitted for the strict MLB boundary.
+        $gameData['date'] ??= '';
+
+        return parent::gameDtoFromResponse($gameData);
+    }
 
     protected function buildGameAttributes(GameData $dto, array $gameData, ?Model $homeTeam, ?Model $awayTeam): array
     {
@@ -36,6 +45,7 @@ class SyncGames extends AbstractSyncGames
             ),
             'game_date' => $dateParts['game_date'],
             'game_time' => $dateParts['game_time'],
+            ...array_intersect_key($dateParts, array_flip(MlbGameStart::FIELDS)),
             'name' => $dto->name,
             'short_name' => $dto->shortName,
             'home_team_id' => $homeTeam->getKey(),

@@ -62,7 +62,12 @@ const {
                             }}</span>
                         </div>
                         <div class="mt-1 text-sm text-slate-400">
-                            {{ formatGameDate(prediction.game_date) }}
+                            {{
+                                formatGameDate(
+                                    prediction.starts_at ??
+                                        prediction.game_date?.slice(0, 10),
+                                )
+                            }}
                         </div>
                     </div>
                     <Badge
@@ -111,7 +116,7 @@ const {
                     <div
                         class="flex items-center justify-between text-[11px] tracking-[0.18em] text-slate-500 uppercase"
                     >
-                        <span>Model edge</span>
+                        <span>Home win probability</span>
                         <span
                             >{{
                                 formatMetric(prediction.home_win_probability)
@@ -122,9 +127,11 @@ const {
                         class="mt-2 h-2 overflow-hidden rounded-full bg-white/10"
                     >
                         <div
+                            v-if="predictionBarWidth(prediction) !== null"
                             class="h-full rounded-full bg-gradient-to-r from-sky-300 to-cyan-400"
                             :style="{
-                                width: predictionBarWidth(prediction),
+                                width:
+                                    predictionBarWidth(prediction) ?? undefined,
                             }"
                         />
                     </div>

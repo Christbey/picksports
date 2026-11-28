@@ -9,6 +9,7 @@ use App\Jobs\ESPN\CFB\FetchPlayerInjuries;
 use App\Jobs\ESPN\MLB\FetchTeamDepthCharts;
 use App\Jobs\NBA\RefreshOvernightSources;
 use Illuminate\Support\Facades\File;
+use Symfony\Component\Finder\Finder;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -84,20 +85,21 @@ it('keeps every ESPN job with a long timeout off the live worker', function () {
 });
 
 it('has a worker contract for every statically named application queue', function () {
-    $namedQueues = collect(File::allFiles(app_path()))
-        ->flatMap(function ($file): array {
-            preg_match_all(
-                '/(?:onQueue|allOnQueue)\(\s*[\'\"]([^\'\"]+)[\'\"]\s*\)/',
-                File::get($file->getPathname()),
-                $matches,
-            );
+    $namedQueues = [];
+    // Keep the original first-party recursive scope and dot/VCS policy. Stream
+    // file handles instead of sorting/materializing the complete source tree.
+    foreach (Finder::create()->files()->ignoreDotFiles(true)->in(app_path()) as $file) {
+        preg_match_all(
+            '/(?:onQueue|allOnQueue)\(\s*[\'\"]([^\'\"]+)[\'\"]\s*\)/',
+            File::get($file->getPathname()),
+            $matches,
+        );
+        foreach ($matches[1] as $queue) {
+            $namedQueues['queue:'.$queue] = $queue;
+        }
+    }
 
-            return $matches[1];
-        })
-        ->unique()
-        ->values();
-
-    expect($namedQueues->diff(array_keys(config('queue.worker_contracts')))->all())->toBeEmpty();
+    expect(array_diff(array_values($namedQueues), array_keys(config('queue.worker_contracts'))))->toBeEmpty();
 });
 
 it('declares the isolated NBA source worker without provisioning it or sharing the live queue', function () {

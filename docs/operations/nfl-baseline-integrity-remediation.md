@@ -1,6 +1,10 @@
+> Historical proposal/worklog retained on November 27, 2026. The original text below records dated proposals, implementation assertions and measurements; it is not current operating instructions, evidence of completion, or approval to change business/scientific policy. Do not run its historical commands as an operational checklist. Current references: [docs/operations/nfl-spread-integrity.md](nfl-spread-integrity.md).
+>
+> Carried obligations: Preserve exact4630-row correction/source/ID manifest obligations; current repair boundary does not certify source correction complete.
+
 # NFL baseline integrity remediation — September 21, 2026
 
-For measured before/after effects, see the [integrity change impact review](nfl-integrity-change-impact.md).
+For measured before/after effects, see the historical integrity change impact review (`nfl-integrity-change-impact.md`; unavailable in the current candidate).
 
 Status: code fixed and tested locally; not deployed. The production archive
 planner was run read-only in memory. No historical odds, ratings, predictions,
@@ -45,7 +49,7 @@ The new read-only planner inspected 4,630 nflverse snapshots from 2009–2025:
   corrected kickoff times; synthetic capture timestamps are not sufficient.
 - No ambiguous/conflicting source records were reported in this run.
 
-[Saved production summary](../../outputs/nflverse-archive-repair-plan-2026-09-21.json).
+Historical saved summary: `outputs/nflverse-archive-repair-plan-2026-09-21.json` (unavailable in the current candidate; the dated counts below are not independently reverified here).
 
 After deployment, the summary is reproducible with:
 
@@ -76,6 +80,6 @@ claim to normalize timestamps or refresh provenance by themselves.
 6. Rerun matched historical comparisons, then explicitly approve deployment/data
    correction. Keep this separate from tuning prediction weights.
 
-The original [all-history audit](nfl-all-history-baseline-audit.md) remains a
+The original all-history audit (`nfl-all-history-baseline-audit.md`; unavailable in the current candidate) remains a
 record of the inspected state. Its results are not retroactively relabeled as
 performance of these local repairs.

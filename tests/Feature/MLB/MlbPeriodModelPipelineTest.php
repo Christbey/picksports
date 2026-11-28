@@ -16,10 +16,11 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 
-it('builds f3 and f5 training rows only from games completed earlier in time', function () {
+it('builds f3 and f5 retrospective rows only from games completed earlier in time', function () {
+    $this->travelTo(Carbon::parse('2025-03-31 12:00:00', config('app.timezone')));
     $home = Team::factory()->create();
     $away = Team::factory()->create();
-    $first = Game::factory()->create([
+    $first = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2025,
         'season_type' => config('mlb.season.types.regular'),
         'home_team_id' => $home->id,
@@ -32,7 +33,7 @@ it('builds f3 and f5 training rows only from games completed earlier in time', f
         'home_linescores' => [1, 0, 1, 0, 0, 1, 0, 1, 0],
         'away_linescores' => [0, 0, 0, 1, 0, 0, 1, 0, 0],
     ]);
-    $second = Game::factory()->create([
+    $second = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2025,
         'season_type' => config('mlb.season.types.regular'),
         'home_team_id' => $away->id,
@@ -79,6 +80,7 @@ it('builds f3 and f5 training rows only from games completed earlier in time', f
     $secondF3 = $rows->first(fn (array $row): bool => $row['game_id'] === $second->id
         && $row['market_type'] === 'first_3_moneyline');
 
+    expect($rows->every(fn (array $row): bool => $row['pregame_safe'] === false && $row['availability_status'] === 'reconstructed_now'))->toBeTrue();
     expect($rows)->toHaveCount(4)
         ->and($firstF3['feature_home_prior_games'])->toBe(0)
         ->and($firstF3['feature_away_prior_games'])->toBe(0)
@@ -99,7 +101,7 @@ it('limits period shadow snapshots in the database after choosing the latest sna
     $snapshots = collect();
     foreach ([3, 1, 2] as $daysAhead) {
         $gameStart = now()->addDays($daysAhead);
-        $game = Game::factory()->create([
+        $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
             'season' => 2026,
             'home_team_id' => $home->id,
             'away_team_id' => $away->id,
@@ -148,7 +150,7 @@ it('prices period moneylines with tie pushes and settles from inning scores', fu
     $home = Team::factory()->create();
     $away = Team::factory()->create();
     $gameStart = Carbon::parse('2026-07-30 19:00:00');
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2026,
         'season_type' => config('mlb.season.types.regular'),
         'home_team_id' => $home->id,

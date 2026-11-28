@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\PersistsMirroredAssetPaths;
 use App\Models\CBB\Team as CbbTeam;
 use App\Models\CFB\Team as CfbTeam;
 use App\Models\MLB\Team as MlbTeam;
@@ -15,14 +16,17 @@ use Illuminate\Database\Eloquent\Model;
 
 class SyncTeamLogosCommand extends Command
 {
+    use PersistsMirroredAssetPaths;
+
     protected $signature = 'team-logos:sync {sport? : Optional sport key (nba, nfl, cfb, cbb, mlb, wnba, wcbb)}';
 
     protected $description = 'Mirror team logos into configured object storage and rewrite stored logo paths.';
 
     public function handle(SportsAssetStorage $sportsAssetStorage): int
     {
+        $sportProvided = $this->argument('sport') !== null;
         $requestedSport = strtolower(trim((string) $this->argument('sport')));
-        $sports = $requestedSport !== ''
+        $sports = $sportProvided
             ? collect($this->sportMap())->only([$requestedSport])->all()
             : $this->sportMap();
 
@@ -51,7 +55,7 @@ class SyncTeamLogosCommand extends Command
             ->orderBy('id')
             ->chunkById(100, function ($teams) use ($sport, $config, $sportsAssetStorage, &$updated): void {
                 foreach ($teams as $team) {
-                    $dirty = false;
+                    $changes = [];
                     $teamIdentifier = $this->teamAssetIdentifier($team);
 
                     foreach ($config['columns'] as $column) {
@@ -59,14 +63,12 @@ class SyncTeamLogosCommand extends Command
                         $mirrored = $sportsAssetStorage->mirrorTeamLogo($current, $sport, $teamIdentifier);
 
                         if ($mirrored !== null && $mirrored !== $current) {
-                            $team->{$column} = $mirrored;
-                            $dirty = true;
+                            $changes[$column] = $mirrored;
                         }
                     }
 
-                    if ($dirty) {
-                        $team->save();
-                        $updated++;
+                    if ($changes !== []) {
+                        $updated += (int) $this->persistMirroredAssetPaths($team, $changes);
                     }
                 }
             });

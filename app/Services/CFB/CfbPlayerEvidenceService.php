@@ -45,7 +45,7 @@ class CfbPlayerEvidenceService
             $game->loadMissing('sportEvent');
             $availability = app(AvailabilityEvidence::class)->forGame($game, $teamId, $cutoff);
 
-            return new CfbPlayerEvidenceContext($this->history($game, $teamId), $availability['injuries'], $cutoff, $availability);
+            return new CfbPlayerEvidenceContext($this->history($game, $teamId, $cutoff), $availability['injuries'], $cutoff, $availability);
         };
 
         return $this->batchCutoff === null ? $load() : ($this->contexts[$key] ??= $load());
@@ -53,11 +53,14 @@ class CfbPlayerEvidenceService
 
     public function history(Game $game, int $teamId, ?CarbonInterface $asOf = null): Collection
     {
+        $asOf = $this->cutoff($asOf);
+
         return PlayerStat::with(['game', 'player'])->where('team_id', $teamId)
-            ->whereHas('player', fn ($q) => $q->where('team_id', $teamId))
-            ->whereHas('game', fn ($q) => $q->where('status', 'STATUS_FINAL')
+            ->where('created_at', '<=', $asOf)->where('updated_at', '<=', $asOf)
+            ->whereHas('game', fn ($q) => $q->whereIn('status', ['STATUS_FINAL', 'STATUS_FINAL_OVERTIME'])
                 ->whereIn('season_type', ['2', '3', 'regular', 'postseason'])
                 ->whereBetween('season', [$game->season - 1, $game->season])
+                ->whereDate('game_date', '<=', $asOf->toDateString())
                 ->whereDate('game_date', '<', $game->game_date))
             ->get()->sortByDesc(fn ($row) => $row->game->game_date->format('Y-m-d').' '.$row->game->game_time)->values();
     }
@@ -88,7 +91,15 @@ class CfbPlayerEvidenceService
             'injury_coverage' => $coverage['state'],
             'injury_coverage_complete' => $coverage['complete'],
             'injury_coverage_evidence' => $coverage,
-            'replacement_player_id' => null];
+            'replacement_player_id' => null,
+            'as_of' => $asOf->toIso8601String(),
+            'history_record_updated_at' => $history->max('updated_at')?->toIso8601String(),
+            'passer_record_updated_at' => $leader?->updated_at?->toIso8601String(),
+            'source_game_date' => $leader?->game?->game_date?->toIso8601String(),
+            'injury_record_count' => $injuries->count(),
+            'injury_records_updated_at' => $injuries->max('updated_at')?->toIso8601String(),
+            'injury_source_updated_at' => $injuries->max('source_updated_at')?->toIso8601String(),
+            'freshness_interpretation' => 'record_times_are_availability_evidence_not_confirmed_starter_or_healthy_team'];
     }
 
     private function cutoff(?CarbonInterface $asOf): CarbonImmutable

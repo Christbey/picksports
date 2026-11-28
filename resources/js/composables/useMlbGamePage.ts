@@ -1,12 +1,12 @@
+import { finiteValue as toOptionalNumber } from '@/lib/gameOutcome';
+import { recentGamesBefore, observedStart } from '@/lib/recentGameEvidence';
 import {
-    predictionNumber as toNumber,
-    optionalPredictionNumber as toOptionalNumber,
     normalizePredictionConfidence,
     normalizeNarrativeContent,
     normalizeModernBettingPlan,
 } from '@/lib/predictionNormalization';
 import { normalizeDepthChartContext } from '@/lib/depthChartContext';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { formatDateLong, useGameStatus } from '@/composables/useFormatters';
 import {
@@ -81,52 +81,6 @@ const objectValue = <T>(value: unknown): T | null =>
         ? (value as T)
         : null;
 
-const gameStartIso = (game: MlbPageGame): string | null => {
-    if (!game.game_date) return null;
-    if (!game.game_time) return game.game_date;
-
-    const date = game.game_date.slice(0, 10);
-    const offset = game.game_date.match(/(Z|[+-]\d{2}:\d{2})$/)?.[1] ?? '';
-
-    return `${date}T${game.game_time}${offset}`;
-};
-
-const gameStartTimestamp = (game: MlbPageGame): number | null => {
-    const value = gameStartIso(game);
-    if (!value) return null;
-
-    const timestamp = Date.parse(value);
-    return Number.isFinite(timestamp) ? timestamp : null;
-};
-
-const recentGamesBefore = (
-    games: MlbPageGame[],
-    currentGame: MlbPageGame,
-): MlbPageGame[] => {
-    const currentStart = gameStartTimestamp(currentGame);
-
-    return games
-        .filter((game) => {
-            if (
-                game.status !== 'STATUS_FINAL' ||
-                game.id === currentGame.id ||
-                game.season !== currentGame.season
-            ) {
-                return false;
-            }
-
-            const start = gameStartTimestamp(game);
-            return currentStart === null || start === null
-                ? (game.game_date ?? '') <= (currentGame.game_date ?? '')
-                : start < currentStart;
-        })
-        .sort(
-            (a, b) =>
-                (gameStartTimestamp(b) ?? 0) - (gameStartTimestamp(a) ?? 0),
-        )
-        .slice(0, 5);
-};
-
 const normalizeMlbTeamMetrics = (
     rawMetrics: ApiV2TeamMetric,
 ): MlbTeamMetricsData => {
@@ -177,11 +131,14 @@ export const normalizeMlbPrediction = (
 
     const record = source as Record<string, unknown>;
     if (
-        record.home_win_probability === undefined ||
-        record.away_win_probability === undefined
-    ) {
+        ![
+            'home_win_probability',
+            'away_win_probability',
+            'predicted_spread',
+            'predicted_total',
+        ].some((key) => key in record)
+    )
         return null;
-    }
 
     const { confidenceScore, confidenceLevel, confidenceContext } =
         normalizePredictionConfidence(record);
@@ -198,10 +155,11 @@ export const normalizeMlbPrediction = (
         : null;
 
     return {
-        home_win_probability: toNumber(record.home_win_probability),
-        away_win_probability: toNumber(record.away_win_probability),
-        predicted_spread: predictionHomeMargin(record) ?? 0,
-        predicted_total: toNumber(record.predicted_total),
+        spread_convention: 'home_margin',
+        home_win_probability: toOptionalNumber(record.home_win_probability),
+        away_win_probability: toOptionalNumber(record.away_win_probability),
+        predicted_spread: predictionHomeMargin(record),
+        predicted_total: toOptionalNumber(record.predicted_total),
         confidence_level: confidenceLevel,
         confidence_context: confidenceContext,
         confidence_score: confidenceScore,
@@ -258,6 +216,8 @@ const mlbTeamDisplayName = (team: MlbPageTeam): string => {
 
 export function useMlbGamePage(gameId: number) {
     const api = useApiV2Client();
+    const requestController = new AbortController();
+    onBeforeUnmount(() => requestController.abort());
     const currentGame = ref<MlbPageGame>(fallbackGame(gameId));
     const homeTeam = ref<MlbPageTeam | null>(null);
     const awayTeam = ref<MlbPageTeam | null>(null);
@@ -290,14 +250,18 @@ export function useMlbGamePage(gameId: number) {
         parseLinescores(currentGame.value.away_linescores),
     );
     const homeRecentForm = computed(() =>
-        homeTeam.value
-            ? getRecentForm(homeRecentGames.value, homeTeam.value.id)
-            : '',
+        observedStart(currentGame.value.starts_at) === null
+            ? 'Recent form unavailable: kickoff timing unverified'
+            : homeTeam.value
+              ? getRecentForm(homeRecentGames.value, homeTeam.value.id)
+              : '',
     );
     const awayRecentForm = computed(() =>
-        awayTeam.value
-            ? getRecentForm(awayRecentGames.value, awayTeam.value.id)
-            : '',
+        observedStart(currentGame.value.starts_at) === null
+            ? 'Recent form unavailable: kickoff timing unverified'
+            : awayTeam.value
+              ? getRecentForm(awayRecentGames.value, awayTeam.value.id)
+              : '',
     );
     const trendsSubtitle = computed(() => {
         const awaySample = awayTrends.value?.sample_size ?? 0;
@@ -346,16 +310,21 @@ export function useMlbGamePage(gameId: number) {
             const response = await api.games.trends<MlbMatchupTrendPayload>(
                 'mlb',
                 gameId,
-                { query: { games: 'season' } },
+                {
+                    query: { games: 'season' },
+                    init: { signal: requestController.signal },
+                },
             );
+            if (requestController.signal.aborted) return;
             homeTrends.value = response?.data?.home ?? null;
             awayTrends.value = response?.data?.away ?? null;
             trendsLoaded.value = true;
         } catch {
+            if (requestController.signal.aborted) return;
             homeTrends.value = null;
             awayTrends.value = null;
         } finally {
-            trendsLoading.value = false;
+            if (!requestController.signal.aborted) trendsLoading.value = false;
         }
     };
 
@@ -367,7 +336,9 @@ export function useMlbGamePage(gameId: number) {
             const response = await api.games.page<MlbGamePageBootstrap>(
                 'mlb',
                 gameId,
+                { init: { signal: requestController.signal } },
             );
+            if (requestController.signal.aborted) return;
             const payload = response?.data;
             if (!payload?.game) {
                 throw new Error('Game page data is unavailable');
@@ -408,9 +379,10 @@ export function useMlbGamePage(gameId: number) {
 
             loading.value = false;
         } catch (e) {
+            if (requestController.signal.aborted) return;
             error.value = e instanceof Error ? e.message : 'An error occurred';
         } finally {
-            loading.value = false;
+            if (!requestController.signal.aborted) loading.value = false;
         }
     };
 

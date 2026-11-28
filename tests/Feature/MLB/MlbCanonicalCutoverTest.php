@@ -24,7 +24,10 @@ use App\Services\MLB\Predictions\MlbCalculator;
 use App\Services\MLB\Predictions\MlbCanonicalCutoverReadinessService;
 use App\Services\MLB\Predictions\MlbInputSnapshotBuilder;
 use App\Services\Predictions\PredictionDeliverySource;
+use App\Support\MLB\MlbGameStart;
+use Carbon\CarbonImmutable;
 use Laravel\Sanctum\Sanctum;
+use Tests\Support\ObservedMlbGameFixture;
 
 /** @return array<string,mixed> */
 function mlbCutoverFixture(): array
@@ -57,6 +60,7 @@ function mlbCutoverFixture(): array
         'game_time' => $startsAt->toTimeString(),
         'probable_home_pitcher_espn_id' => $homePitcher->espn_id, 'probable_away_pitcher_espn_id' => $awayPitcher->espn_id,
     ]);
+    $game = ObservedMlbGameFixture::observe($game, $startsAt);
     GameWeather::query()->create([
         'game_id' => $game->getKey(), 'provider' => 'test', 'observed_at' => now()->subMinute(),
         'temperature_f' => 82, 'wind_speed_mph' => 10, 'is_indoor' => false, 'roof_status' => 'open',
@@ -123,9 +127,12 @@ it('blocks MLB kickoff identity mismatches and expired generation', function () 
 
 it('preserves MLB history separately from active forecasts and never settles unresolved games', function () {
     config(['prediction_lifecycle.canonical_reads.mlb' => true, 'subscriptions.enforce_tiers' => false]);
+    $current = now()->toImmutable();
+    $this->travelTo($current->subDays(8));
     $f = mlbCutoverFixture();
+    $this->travelTo($current);
     app(MlbCalculationReleaseRegistrar::class)->register('1.1.0', effectiveAt: now()->subMinute()->toImmutable());
-    $f['game']->forceFill(['status' => 'STATUS_UNRESOLVED', 'game_date' => now()->subWeek(), 'game_time' => '12:00:00'])->save();
+    $f['game']->forceFill(['status' => 'STATUS_UNRESOLVED'])->save();
     $legacy = LegacyMlbPrediction::query()->create(['game_id' => $f['game']->id, 'predicted_spread' => 1.5, 'predicted_total' => 8.5, 'win_probability' => .6]);
     Sanctum::actingAs(User::factory()->create());
     $this->getJson('/api/v2/sports/mlb/games/'.$f['game']->id.'/page')->assertSuccessful()
@@ -173,3 +180,77 @@ it('rejects incomplete MLB frozen outputs without consulting mutable legacy fore
         new EventInputSnapshotData($snapshot->schemaVersion, $inputs, $snapshot->capturedAt), $data,
     ))->toThrow(PredictionLifecycleException::class);
 })->with(['predicted_spread', 'predicted_total', 'win_probability']);
+
+it('publishes a real MLB capture spanning a second without changing source ownership', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-07-01 12:00:00.900000', 'America/Chicago'));
+    $f = mlbCutoverFixture();
+    app(MlbCalculationReleaseRegistrar::class)->register('1.1.0', effectiveAt: now()->subMinute()->toImmutable());
+    $real = app(GeneratePrediction::class);
+    $this->mock(GeneratePrediction::class)->shouldReceive('preview')->once()->andReturnUsing(function (Game $game) use ($real) {
+        $this->travel(1)->seconds();
+
+        return $real->preview($game);
+    });
+    $p = app(GenerateCanonicalPrediction::class)->execute($f['game']->fresh());
+    expect($p->publication_state)->toBe('published')
+        ->and($p->calculationRun->inputSnapshot->captured_at->getTimestamp())
+        ->toBe(CarbonImmutable::parse(data_get($p->calculationRun->inputSnapshot->metadata, 'mlb_start_observation.captured_at_utc'))->getTimestamp());
+});
+
+it('refuses MLB capture spanning kickoff rather than backstamping preview inputs', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-07-01 12:00:00.900000', 'America/Chicago'));
+    $f = mlbCutoverFixture();
+    app(MlbCalculationReleaseRegistrar::class)->register('1.1.0', effectiveAt: now()->subMinute()->toImmutable());
+    $real = app(GeneratePrediction::class);
+    $this->mock(GeneratePrediction::class)->shouldReceive('preview')->once()->andReturnUsing(function (Game $game) use ($real) {
+        $output = $real->preview($game);
+        $this->travelTo(MlbGameStart::for($game)->toImmutable());
+
+        return $output;
+    });
+    expect(fn () => app(GenerateCanonicalPrediction::class)->execute($f['game']->fresh()))
+        ->toThrow(PredictionLifecycleException::class, 'capture must precede kickoff');
+    expect(CanonicalPrediction::query()->where('publication_state', 'published')->count())->toBe(0);
+});
+
+it('refuses changed current MLB source observation after preview without refreshing its source authority', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-07-01 12:00:00.900000', 'America/Chicago'));
+    $f = mlbCutoverFixture();
+    app(MlbCalculationReleaseRegistrar::class)->register('1.1.0', effectiveAt: now()->subMinute()->toImmutable());
+    $real = app(GeneratePrediction::class);
+    $this->mock(GeneratePrediction::class)->shouldReceive('preview')->once()->andReturnUsing(function (Game $game) use ($real) {
+        $output = $real->preview($game);
+        $this->travel(1)->seconds();
+        // Deliberate synthetic current-row replacement using the production
+        // observation formatter. A normal equivalent refresh preserves identity;
+        // this raw counterfactual must not become authority for older inputs.
+        $raw = $game->fresh();
+        $attributes = ['game_date' => $raw->game_date->toDateString(), 'game_time' => $raw->game_time,
+            ...MlbGameStart::observed(MlbGameStart::for($raw)->toIso8601String(), [])];
+        $raw->forceFill($attributes);
+        $raw->start_context_hash = MlbGameStart::context($raw);
+        $raw->save();
+
+        return $output;
+    });
+    expect(fn () => app(GenerateCanonicalPrediction::class)->execute($f['game']->fresh()))
+        ->toThrow(PredictionLifecycleException::class, 'Pregame canonical predictions');
+    expect(CanonicalPrediction::query()->where('publication_state', 'published')->count())->toBe(0);
+});
+
+it('keeps the final MLB DTO capture instant and source observation metadata coherent', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-07-01 12:00:00.900000', 'America/Chicago'));
+    $f = mlbCutoverFixture();
+    $release = app(MlbCalculationReleaseRegistrar::class)->register('1.1.0', effectiveAt: now()->subMinute()->toImmutable());
+    $real = app(GeneratePrediction::class);
+    $this->mock(GeneratePrediction::class)->shouldReceive('preview')->once()->andReturnUsing(function (Game $game) use ($real) {
+        $this->travel(1)->seconds();
+
+        return $real->preview($game);
+    });
+    $snapshot = app(MlbInputSnapshotBuilder::class)->build($f['event']->fresh(), CalculationReleaseData::fromModel($release));
+    expect(data_get($snapshot->metadata, 'mlb_start_observation.captured_at_utc'))
+        ->toBe($snapshot->capturedAt->utc()->format('Y-m-d\TH:i:s.u\Z'))
+        ->and($snapshot->latestSourceAvailableAt->equalTo($snapshot->capturedAt))->toBeTrue()
+        ->and(MlbGameStart::capturedFor($f['game']->fresh(), data_get($snapshot->metadata, 'mlb_start_observation')))->toBeTrue();
+});

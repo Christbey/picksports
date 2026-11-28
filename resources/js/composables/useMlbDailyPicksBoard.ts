@@ -229,12 +229,15 @@ export function useMlbDailyPicksBoard(
         },
         {
             icon: ShieldCheck,
-            label: 'Pregame Safety',
-            value: formatPercent(boardHealth.value?.pregame_safe_rate),
+            label: 'Stored Safety Assessment',
+            value:
+                boardHealth.value?.pregame_safe_rate == null
+                    ? 'Unknown'
+                    : formatPercent(boardHealth.value.pregame_safe_rate),
             detail:
                 boardHealth.value?.pregame_safe_rate == null
-                    ? 'Waiting for scan'
-                    : 'Safety checks',
+                    ? 'Stored assessment unavailable'
+                    : 'Recorded when generated; not revalidated',
             percent: boardHealth.value?.pregame_safe_rate ?? null,
             tone: 'emerald',
         },

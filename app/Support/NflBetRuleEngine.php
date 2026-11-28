@@ -20,6 +20,17 @@ class NflBetRuleEngine
             ];
         }
 
+        if (! is_finite($trustScore)
+            || ($spreadEdge !== null && ! is_finite($spreadEdge))
+            || ($totalEdge !== null && ! is_finite($totalEdge))) {
+            return [
+                'enabled' => true,
+                'action' => 'pass',
+                'matched_rules' => [],
+                'pass_rules' => ['invalid_numeric_inputs'],
+            ];
+        }
+
         $matched = [];
         $passes = [];
         $tokens = array_values(array_unique(array_merge($reasonCodes, $riskFlags)));

@@ -47,6 +47,10 @@ class RecalculateTournamentOutlook
     ): TournamentStateSnapshot {
         $asOf ??= now();
         $games = $this->tournamentGames($season);
+        if ($games->contains(fn (Game $game): bool => $game->status === config('cbb.statuses.final')
+            && ($game->home_score === null || $game->away_score === null))) {
+            throw new \RuntimeException('Tournament outlook requires both observed scores for every final game.');
+        }
         $this->storedProbabilities = app(BettingForecastSource::class)
             ->forGames('cbb', $games->pluck('id')->all())
             ->mapWithKeys(fn ($forecast): array => [$forecast->game->id => $forecast->winProbability])->all();

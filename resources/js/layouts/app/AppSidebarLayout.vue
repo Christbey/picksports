@@ -7,7 +7,7 @@ import AppSidebar from '@/components/AppSidebar.vue';
 import AppSidebarHeader from '@/components/AppSidebarHeader.vue';
 import LazyFeedbackSubmissionModal from '@/components/LazyFeedbackSubmissionModal.vue';
 import { pickSportsThemeKey } from '@/composables/usePickSportsTheme';
-import type { AppPageProps, BreadcrumbItem } from '@/types';
+import type { AuthenticatedAppPageProps, BreadcrumbItem } from '@/types';
 
 type Props = {
     breadcrumbs?: BreadcrumbItem[];
@@ -23,7 +23,7 @@ provide(
     computed(() => props.picksports ?? false),
 );
 
-const page = usePage<AppPageProps>();
+const page = usePage<AuthenticatedAppPageProps>();
 const impersonation = computed(() => page.props.impersonation);
 const currentUser = computed(() => page.props.auth?.user ?? null);
 let heartbeatTimer: number | null = null;

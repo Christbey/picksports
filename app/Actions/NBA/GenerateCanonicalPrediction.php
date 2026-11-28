@@ -6,6 +6,8 @@ use App\Models\CanonicalPrediction;
 use App\Models\NBA\Game;
 use App\Services\NBA\Predictions\NbaCalculator;
 use App\Services\NBA\Predictions\NbaInputSnapshotBuilder;
+use App\Services\Predictions\Basketball\BasketballPolicyCalculator;
+use App\Services\Predictions\Basketball\BasketballPolicyInputSnapshotBuilder;
 use App\Services\Predictions\PredictionLifecycleOrchestrator;
 
 class GenerateCanonicalPrediction
@@ -19,7 +21,7 @@ class GenerateCanonicalPrediction
     public function execute(Game $game, bool $publish = true, string $trigger = 'scheduled'): CanonicalPrediction
     {
         return $this->orchestrator->generateForGame(
-            $game, 'nba', $this->snapshotBuilder, $this->calculator, $publish, $trigger,
+            $game, 'nba', new BasketballPolicyInputSnapshotBuilder($this->snapshotBuilder, 'nba'), new BasketballPolicyCalculator($this->calculator, 'nba'), $publish, $trigger,
         );
     }
 }

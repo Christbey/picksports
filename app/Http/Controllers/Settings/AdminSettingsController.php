@@ -153,23 +153,27 @@ class AdminSettingsController extends Controller
     {
         $validated = $request->validated();
 
-        $group = Group::query()->create([
-            'owner_id' => $request->user()->id,
-            'name' => $validated['name'],
-            'type' => 'bracket_pool',
-            'sport' => 'cbb',
-            'season' => (int) $validated['season'],
-        ]);
+        $group = DB::transaction(function () use ($request, $validated): Group {
+            $group = Group::query()->create([
+                'owner_id' => $request->user()->id,
+                'name' => $validated['name'],
+                'type' => 'bracket_pool',
+                'sport' => 'cbb',
+                'season' => (int) $validated['season'],
+            ]);
 
-        $group->users()->attach($request->user()->id, [
-            'role' => 'owner',
-            'joined_at' => now(),
-        ]);
+            $group->users()->attach($request->user()->id, [
+                'role' => 'owner',
+                'joined_at' => now(),
+            ]);
 
-        GroupJoinLink::query()->create([
-            'group_id' => $group->id,
-            'created_by' => $request->user()->id,
-        ]);
+            GroupJoinLink::query()->create([
+                'group_id' => $group->id,
+                'created_by' => $request->user()->id,
+            ]);
+
+            return $group;
+        });
 
         return $this->backSuccess("Created group {$group->name}.");
     }
@@ -313,14 +317,17 @@ class AdminSettingsController extends Controller
             return $this->backWarning("{$user->email} is not in {$group->name}.");
         }
 
-        $group->users()->detach($user->id);
+        DB::transaction(function () use ($group, $user): void {
+            Group::query()->lockForUpdate()->findOrFail($group->id);
+            $group->users()->detach($user->id);
 
-        CbbBracket::query()
-            ->where('user_id', $user->id)
-            ->where('group_id', $group->id)
-            ->update([
-                'group_id' => null,
-            ]);
+            CbbBracket::query()
+                ->where('user_id', $user->id)
+                ->where('group_id', $group->id)
+                ->update([
+                    'group_id' => null,
+                ]);
+        });
 
         return $this->backSuccess("Removed {$user->email} from {$group->name}.");
     }

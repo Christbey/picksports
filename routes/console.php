@@ -843,20 +843,8 @@ $attachCommandHeartbeat(
     $mlbWeeklyTrainingCommand,
     'MLB: Weekly Model Challenger Training',
 );
-$mlbPeriodWeeklyTrainingCommand = "mlb:train-period-models --from-season=2021 --to-season={$currentYear}";
-$mlbPeriodWeeklyTraining = Schedule::command($mlbPeriodWeeklyTrainingCommand)
-    ->weeklyOn(1, '07:20')
-    ->timezone(config('app.timezone'))
-    ->when($mlbInSeason)
-    ->name('MLB: Weekly F3/F5 Model Training')
-    ->withoutOverlapping(360)
-    ->onOneServer()
-    ->runInBackground();
-$attachCommandHeartbeat(
-    $mlbPeriodWeeklyTraining,
-    $mlbPeriodWeeklyTrainingCommand,
-    'MLB: Weekly F3/F5 Model Training',
-);
+// New period registration has no reviewed source-proof/selection protocol.
+// Retained period inference remains scheduled above; manual research is separate.
 
 $mlbPostOddsRefreshHours = '8,12,16,20';
 $mlbPostOddsRefreshJobs = [
@@ -1556,6 +1544,14 @@ $nflMonitorEvent = Schedule::command($nflMonitorCommand)->everyMinute()->timezon
     ->onOneServer()->withoutOverlapping(20)->runInBackground()->name('NFL: Refresh Admin Monitor Reports');
 $attachCommandHeartbeat($nflMonitorEvent, $nflMonitorCommand, 'NFL: Refresh Admin Monitor Reports');
 
+// Replays only transactionally admitted publication intents. This does not
+// enable research/review or create work for earlier disabled publications.
+$publicationEffectsCommand = 'sports:reconcile-publication-effects --limit=100';
+$publicationEffectsName = 'Sports: Reconcile Publication Effects';
+$publicationEffectsEvent = Schedule::command($publicationEffectsCommand)->everyMinute()
+    ->onOneServer()->withoutOverlapping(5)->runInBackground()->name($publicationEffectsName);
+$attachCommandHeartbeat($publicationEffectsEvent, $publicationEffectsCommand, $publicationEffectsName);
+
 // Shared analysis is additive and opt-in. Existing NFL schedules keep ownership
 // until the corresponding capability is explicitly activated.
 foreach ([
@@ -1574,3 +1570,26 @@ Schedule::job(new RefreshOvernightSources)->cron('12,42 * * * *')->timezone('Ame
     ->between('23:00', '07:59')->when($nbaInSeason)
     ->when(fn (): bool => (bool) config('nba.source_bridge.enabled', false))
     ->onOneServer()->withoutOverlapping(12)->name('NBA: Overnight Source Acquisition');
+
+// Optional latency recovery only; SQL customer generations/leases remain the safety boundary.
+$billingRecoveryCommand = 'billing:scan-reconciliation --limit=10 --apply';
+$billingRecoveryName = 'Billing: Recover Durable Reconciliation';
+$billingRecoveryEvent = Schedule::command($billingRecoveryCommand)->everyMinute()
+    ->when(fn (): bool => (bool) config('billing.durable.enabled', false))
+    ->onOneServer()->withoutOverlapping(5)->runInBackground()->name($billingRecoveryName);
+$attachCommandHeartbeat($billingRecoveryEvent, $billingRecoveryCommand, $billingRecoveryName);
+
+// Epoch-marked credentials use a separate bounded cleanup from Sanctum's naive-date pruning.
+$apiTokenPruneCommand = 'auth:prune-policy-tokens --hours=24 --limit=1000 --apply';
+$apiTokenPruneName = 'Auth: Prune Finite API Credentials';
+$apiTokenPruneEvent = Schedule::command($apiTokenPruneCommand)->hourly()
+    ->when(fn (): bool => config('api_tokens.finite_issuance_enabled', false) === true)
+    ->onOneServer()->withoutOverlapping(10)->runInBackground()->name($apiTokenPruneName);
+$attachCommandHeartbeat($apiTokenPruneEvent, $apiTokenPruneCommand, $apiTokenPruneName);
+
+$billingMutationCommand = 'billing:scan-mutations --limit=10 --apply';
+$billingMutationName = 'Billing: Recover Durable Mutations';
+$billingMutationEvent = Schedule::command($billingMutationCommand)->everyMinute()
+    ->when(fn (): bool => (bool) config('billing.durable.enabled', false))
+    ->onOneServer()->withoutOverlapping(5)->runInBackground()->name($billingMutationName);
+$attachCommandHeartbeat($billingMutationEvent, $billingMutationCommand, $billingMutationName);

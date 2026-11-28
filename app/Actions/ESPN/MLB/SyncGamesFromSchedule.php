@@ -7,6 +7,7 @@ use App\Actions\ESPN\MLB\Concerns\ResolvesMlbGameDateParts;
 use App\DataTransferObjects\ESPN\GameData;
 use App\Models\MLB\Game;
 use App\Models\MLB\Team;
+use App\Support\MLB\MlbGameStart;
 use App\Support\MlbSeasonTypeResolver;
 use Illuminate\Database\Eloquent\Model;
 
@@ -15,6 +16,13 @@ class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
     use ResolvesMlbGameDateParts;
 
     protected const GAME_MODEL_CLASS = Game::class;
+
+    protected function gameDtoFromResponse(array $game): GameData
+    {
+        $game['date'] ??= '';
+
+        return parent::gameDtoFromResponse($game);
+    }
 
     protected function resolveTeams(GameData $dto, array $rawGame): array
     {
@@ -41,6 +49,7 @@ class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
             ),
             'game_date' => $dateParts['game_date'],
             'game_time' => $dateParts['game_time'],
+            ...array_intersect_key($dateParts, array_flip(MlbGameStart::FIELDS)),
             'name' => $dto->name,
             'short_name' => $dto->shortName,
             'home_team_id' => $homeTeam->id,
@@ -79,7 +88,7 @@ class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
         $attributes['game_date'] = $dateParts['game_date'];
         $attributes['game_time'] = $dateParts['game_time'];
 
-        return $attributes;
+        return $attributes + array_intersect_key($dateParts, array_flip(MlbGameStart::FIELDS));
     }
 
     /**

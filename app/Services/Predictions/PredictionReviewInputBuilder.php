@@ -4,6 +4,7 @@ namespace App\Services\Predictions;
 
 use App\Application\Sports\ReadModels\PredictionReviewInput;
 use App\Models\CanonicalPrediction;
+use App\Models\MLB\Game;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\BettingRecommendations\GameBettingRecommendationService;
 use App\Services\NFL\Predictions\NflRecommendationInputBuilder;
@@ -36,8 +37,8 @@ class PredictionReviewInputBuilder
 
         $source = $selected->source;
         $canonical = $source instanceof CanonicalPrediction;
-        $startsAt = $canonical ? $source->sportEvent?->starts_at
-            : $this->dates->gameDateTimeUtc($game->game_date, $game->game_time);
+        $startsAt = $game instanceof Game ? $this->dates->gameStart($game) : ($canonical ? $source->sportEvent?->starts_at
+            : $this->dates->gameStart($game));
         $snapshot = $canonical ? $source->calculationRun?->inputSnapshot : null;
         $recommendationContext = $sport === 'nfl' && $snapshot !== null
             ? data_get($snapshot->inputs, 'recommendation_context') : null;

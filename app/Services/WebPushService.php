@@ -4,13 +4,18 @@ namespace App\Services;
 
 use App\Models\User;
 use App\Models\WebPushSubscription;
+use App\Services\WebPush\PushEndpointPolicy;
+use App\Services\WebPush\PushHttpTransport;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
 class WebPushService
 {
     public function __construct(
         private readonly SiteAssetStorage $siteAssetStorage,
+        private readonly PushEndpointPolicy $endpoints,
+        private readonly PushHttpTransport $transport,
     ) {}
 
     public function isConfigured(): bool
@@ -39,17 +44,69 @@ class WebPushService
             throw new RuntimeException('Invalid push subscription payload.');
         }
 
-        return WebPushSubscription::updateOrCreate(
-            ['endpoint' => $endpoint],
-            [
-                'user_id' => $user->id,
-                'public_key' => $publicKey,
-                'auth_token' => $authToken,
-                'content_encoding' => $contentEncoding,
-                'user_agent' => $userAgent,
-                'expired_at' => null,
-            ]
-        );
+        $this->endpoints->host($endpoint);
+        if (strlen($endpoint) > 255) {
+            throw ValidationException::withMessages(['endpoint' => 'This push endpoint exceeds the current 255-character storage limit.']);
+        }
+        $attributes = [
+            'user_id' => $user->id, 'public_key' => $publicKey, 'auth_token' => $authToken,
+            'content_encoding' => $contentEncoding, 'user_agent' => $userAgent, 'expired_at' => null,
+        ];
+        // The unique endpoint is reserved before locking, so concurrent initial
+        // registrations converge without overwriting another account's secrets.
+        $subscription = WebPushSubscription::query()->firstOrCreate(['endpoint' => $endpoint], $attributes);
+
+        $connection = $subscription->getConnection();
+        $reservationId = $subscription->getKey();
+
+        return $connection->transaction(function () use ($connection, $reservationId, $endpoint, $publicKey, $authToken, $contentEncoding, $attributes): WebPushSubscription {
+            $refuse = static function (): never {
+                throw ValidationException::withMessages(['endpoint' => 'Could not save your push subscription. Please try again.']);
+            };
+            $model = (new WebPushSubscription)->setConnection($connection->getName());
+            if ($model->getConnection() !== $connection) {
+                $refuse();
+            }
+            $subscription = $model->newQuery()->lockForUpdate()->findOrFail($reservationId);
+            $id = $subscription->getRawOriginal('id');
+            if ((string) $id !== (string) $reservationId
+                || $subscription->getRawOriginal('endpoint') !== $endpoint
+                || $subscription->getConnection() !== $connection
+                || $subscription->getTable() !== 'web_push_subscriptions') {
+                $refuse();
+            }
+            if ((string) $subscription->getRawOriginal('user_id') !== (string) $attributes['user_id']
+                && (! hash_equals($subscription->getRawOriginal('public_key'), $publicKey)
+                    || ! hash_equals($subscription->getRawOriginal('auth_token'), $authToken)
+                    || ! hash_equals($subscription->getRawOriginal('content_encoding'), $contentEncoding))) {
+                abort(409, 'This subscription belongs to another account. Reset browser push permissions and create a new subscription.');
+            }
+            // Matching both subscription keys is explicit possession proof for a
+            // legitimate browser switching accounts; an endpoint alone is not.
+            $expected = ['id' => $id, 'endpoint' => $endpoint, ...$attributes];
+            if ($subscription->fill($attributes)->save() !== true
+                || $subscription->getConnection() !== $connection
+                || $subscription->getTable() !== 'web_push_subscriptions') {
+                $refuse();
+            }
+            $current = $connection->table('web_push_subscriptions')->where('id', $id)->first();
+            if ($current === null) {
+                $refuse();
+            }
+            $actual = (array) $current;
+            foreach ($expected as $field => $value) {
+                if (! array_key_exists($field, $actual)
+                    || (($value === null || $actual[$field] === null)
+                        ? $actual[$field] !== $value
+                        : (string) $actual[$field] !== (string) $value)) {
+                    $refuse();
+                }
+            }
+            // Return the independently verified row, not observer-mutated memory.
+            $subscription->setRawAttributes($actual, true);
+
+            return $subscription;
+        });
     }
 
     public function removeSubscription(User $user, ?string $endpoint = null): int
@@ -94,8 +151,9 @@ class WebPushService
         }
 
         try {
+            $this->endpoints->host($subscription->endpoint);
             $request = $this->buildEncryptedPushRequest($subscription, $payload);
-            $response = $this->post(
+            $response = $this->transport->post(
                 $subscription->endpoint,
                 $request['body'],
                 $request['headers']
@@ -103,7 +161,7 @@ class WebPushService
         } catch (\Throwable $e) {
             Log::warning('Web push send failed during request build.', [
                 'subscription_id' => $subscription->id,
-                'error' => $e->getMessage(),
+                'exception_class' => $e::class,
             ]);
 
             return false;
@@ -126,7 +184,6 @@ class WebPushService
         Log::warning('Web push provider returned non-success status.', [
             'subscription_id' => $subscription->id,
             'status' => $response['status'],
-            'response' => $response['body'],
         ]);
 
         return false;
@@ -146,6 +203,9 @@ class WebPushService
 
         $serverKey = openssl_pkey_new([
             'private_key_type' => OPENSSL_KEYTYPE_EC,
+            // PHP validates the numeric default before honoring the EC curve.
+            // The explicit curve still produces a 256-bit P-256 key.
+            'private_key_bits' => 2048,
             'curve_name' => 'prime256v1',
         ]);
 
@@ -223,36 +283,6 @@ class WebPushService
             'url' => $payload['url'] ?? '/',
             'tag' => $payload['tag'] ?? null,
             'data' => $payload['data'] ?? [],
-        ];
-    }
-
-    /**
-     * @return array{status: int, body: string}
-     */
-    private function post(string $endpoint, string $body, array $headers): array
-    {
-        $ch = curl_init($endpoint);
-
-        curl_setopt_array($ch, [
-            CURLOPT_POST => true,
-            CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_POSTFIELDS => $body,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 20,
-        ]);
-
-        $responseBody = curl_exec($ch);
-        $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-        $curlError = curl_error($ch);
-        curl_close($ch);
-
-        if ($responseBody === false) {
-            throw new RuntimeException("Push provider request failed: {$curlError}");
-        }
-
-        return [
-            'status' => $status,
-            'body' => is_string($responseBody) ? $responseBody : '',
         ];
     }
 

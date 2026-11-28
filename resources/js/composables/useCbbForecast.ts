@@ -25,10 +25,10 @@ type TournamentForecast = {
     team_id: number;
     season: number;
     projected_seed: number | null;
-    tournament_make_probability: number;
-    champion_probability: number;
-    final_four_probability: number;
-    title_game_probability: number;
+    tournament_make_probability: number | null;
+    champion_probability: number | null;
+    final_four_probability: number | null;
+    title_game_probability: number | null;
     team: ForecastTeam | null;
     market_odds?: MarketOdds | null;
     market_edge?: MarketEdge | null;
@@ -109,16 +109,32 @@ export function useCbbForecast() {
 
     const titleContenders = computed(() =>
         [...actualFieldForecasts.value]
-            .sort((a, b) => b.champion_probability - a.champion_probability)
+            .filter((row) => row.champion_probability !== null)
+            .sort(
+                (a, b) =>
+                    (b.champion_probability ?? -1) -
+                    (a.champion_probability ?? -1),
+            )
             .slice(0, 24),
     );
 
     const deepRunContenders = computed(() =>
         [...actualFieldForecasts.value]
+            .filter(
+                (row) =>
+                    row.final_four_probability !== null ||
+                    row.title_game_probability !== null,
+            )
             .sort((a, b) => {
                 if (b.final_four_probability !== a.final_four_probability)
-                    return b.final_four_probability - a.final_four_probability;
-                return b.title_game_probability - a.title_game_probability;
+                    return (
+                        (b.final_four_probability ?? -1) -
+                        (a.final_four_probability ?? -1)
+                    );
+                return (
+                    (b.title_game_probability ?? -1) -
+                    (a.title_game_probability ?? -1)
+                );
             })
             .slice(0, 16),
     );

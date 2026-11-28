@@ -7,9 +7,11 @@ use App\Models\NFL\Player;
 use App\Models\NFL\ResearchDocument;
 use App\Models\NFL\ResearchSource;
 use App\Models\NFL\Team;
+use App\Services\Http\ApprovedHostGet;
 use Carbon\CarbonInterface;
 use DOMDocument;
 use DOMXPath;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -86,7 +88,8 @@ class OfficialSourceIngestor
                 $headers = [];
             }
         }
-        $response = $this->fetch($source->url, $headers);
+        $receipt = $this->fetch($source->url, $headers);
+        $response = $receipt['response'];
         if ($response->status() === 304) {
             if (in_array($source->kind, ['roster', 'injury'], true) && ! $source->current_document_id) {
                 throw new RuntimeException('Conditional source response has no confirmed document');
@@ -144,10 +147,10 @@ class OfficialSourceIngestor
             }
         } elseif ($source->kind === 'roster') {
             $rows = $this->roster($body);
-            $changed += $this->save($source, $source->url, 'Official roster and reserve lists', json_encode($rows), null, $rows);
+            $changed += $this->save($source, $receipt['url'], 'Official roster and reserve lists', json_encode($rows), null, $rows);
             $this->refreshUnmatchedRoster($source->team, $rows);
         } else {
-            $changed += $this->save($source, $source->url, 'Official injury report', $this->text($body), null);
+            $changed += $this->save($source, $receipt['url'], 'Official injury report', $this->text($body), null);
         }
         $source->update(['checked_at' => now(), 'succeeded_at' => now(), 'error' => null, 'etag' => $response->header('ETag'), 'last_modified' => $response->header('Last-Modified'), 'latest_published_at' => $latest ?? $source->latest_published_at]);
 
@@ -160,7 +163,9 @@ class OfficialSourceIngestor
         if (parse_url($url, PHP_URL_HOST) !== parse_url($source->url, PHP_URL_HOST)) {
             return 0;
         }
-        $html = $this->fetch($url)->body();
+        $receipt = $this->fetch($url);
+        $url = $receipt['url'];
+        $html = $receipt['response']->body();
         $dom = $this->html($html);
         foreach ($dom->getElementsByTagName('meta') as $meta) {
             if ($meta->getAttribute('property') === 'article:published_time') {
@@ -244,7 +249,8 @@ class OfficialSourceIngestor
             && in_array(parse_url($url, PHP_URL_HOST), array_values(config('nfl_research.teams', [])), true);
     }
 
-    private function fetch(string $url, array $headers = [])
+    /** @return array{response:Response,url:string} */
+    private function fetch(string $url, array $headers = []): array
     {
         if ($this->deadline && now()->gte($this->deadline)) {
             throw new RuntimeException('Research ingestion time budget exhausted');
@@ -252,15 +258,16 @@ class OfficialSourceIngestor
         if (! $this->allowed($url)) {
             throw new RuntimeException('Source host not allowed');
         }
+        $sourceHost = parse_url($url, PHP_URL_HOST);
         for ($hop = 0; $hop < 4; $hop++) {
-            $r = Http::withHeaders($headers)->withUserAgent('Picksports research feed reader')->timeout(15)
-                ->withOptions(['allow_redirects' => false])->get($url);
+            $r = app(ApprovedHostGet::class)->get($url, [$sourceHost], 3_000_000,
+                headers: array_merge($headers, ['User-Agent' => 'Picksports research feed reader']), followRedirects: false);
             if (in_array($r->status(), [301, 302, 303, 307, 308], true)) {
                 $next = $r->header('Location');
                 if (str_starts_with($next ?? '', '/') && ! str_starts_with($next, '//')) {
                     $next = 'https://'.parse_url($url, PHP_URL_HOST).$next;
                 }
-                if (! is_string($next) || ! $this->allowed($next)) {
+                if (! is_string($next) || ! $this->allowed($next) || parse_url($next, PHP_URL_HOST) !== $sourceHost) {
                     throw new RuntimeException('Unapproved source redirect');
                 }
                 $url = $next;
@@ -276,7 +283,7 @@ class OfficialSourceIngestor
             throw new RuntimeException('Oversized source');
         }
 
-        return $r;
+        return ['response' => $r, 'url' => $url];
     }
 
     private function xml(string $body): DOMDocument

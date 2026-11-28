@@ -5,15 +5,73 @@ namespace App\Services\Predictions;
 use App\Application\Predictions\Data\CalculationReleaseData;
 use App\Application\Predictions\Data\EventInputSnapshotData;
 use App\Contracts\Predictions\EventInputSnapshotBuilder;
+use App\Exceptions\EloAdmissionRefused;
 use App\Exceptions\Predictions\PredictionLifecycleException;
+use App\Models\MLB\Game;
 use App\Models\SportEvent;
+use App\Services\Sports\Elo\EloAdmissionMode;
+use App\Services\Sports\Elo\EloInputAdmission;
+use App\Services\Sports\Elo\EloSqlClockPolicy;
+use App\Services\Sports\Elo\EloSqlClockToken;
+use App\Services\Sports\Elo\EloWriterProtocol;
+use App\Support\MLB\MlbGameStart;
+use App\Support\Sports\CanonicalEventStart;
+use App\Support\Sports\LegacyTimestampCarrier;
 use Carbon\CarbonImmutable;
+use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 abstract class CanonicalTeamInputSnapshotBuilder implements EventInputSnapshotBuilder
 {
+    private ?EloSqlClockToken $activeClockToken = null;
+
     public function build(SportEvent $event, CalculationReleaseData $release): EventInputSnapshotData
+    {
+        return $this->withManagedClockCapture($event, fn (): EventInputSnapshotData => $this->buildSnapshot($event, $release));
+    }
+
+    /** All existing source selectors use the default connection; mixed targets must not inherit its rows. */
+    protected function withManagedClockCapture(SportEvent $event, Closure $capture): EventInputSnapshotData
+    {
+        $connection = $event->getConnection();
+        if (! app(EloAdmissionMode::class)->managed($event->sport, $connection)) {
+            return $capture();
+        }
+        app(EloWriterProtocol::class)->requireCapability($event->sport);
+        if ($connection !== DB::connection()) {
+            throw new EloAdmissionRefused('sql_clock_mixed_source_connection', [], []);
+        }
+        foreach ([$this->gameModel(), $this->teamMetricModel(), $this->playerInjuryModel()] as $class) {
+            if ((new $class)->getConnection() !== $connection) {
+                throw new EloAdmissionRefused('sql_clock_mixed_source_connection', [], []);
+            }
+        }
+        $policy = app(EloSqlClockPolicy::class);
+        $owner = $this->activeClockToken === null;
+        $token = $this->activeClockToken ?? $policy->capture($connection);
+        $policy->assertUnchanged($token, $connection);
+        $this->activeClockToken = $token;
+        try {
+            $data = $capture();
+            $policy->assertUnchanged($token, $event->getConnection());
+
+            return new EventInputSnapshotData(
+                schemaVersion: $data->schemaVersion, inputs: $data->inputs, capturedAt: $data->capturedAt,
+                cutoffAt: $data->cutoffAt, latestSourceAvailableAt: $data->latestSourceAvailableAt,
+                sourceTimestamps: $data->sourceTimestamps, pregameSafetyStatus: $data->pregameSafetyStatus,
+                objectUri: $data->objectUri, metadata: [...$data->metadata, 'elo_sql_clock_policy' => EloSqlClockPolicy::policy()],
+                sqlClockToken: $token,
+            );
+        } finally {
+            if ($owner) {
+                $this->activeClockToken = null;
+            }
+        }
+    }
+
+    private function buildSnapshot(SportEvent $event, CalculationReleaseData $release): EventInputSnapshotData
     {
         $sport = $this->sport();
 
@@ -35,8 +93,21 @@ abstract class CanonicalTeamInputSnapshotBuilder implements EventInputSnapshotBu
             throw new PredictionLifecycleException(strtoupper($sport).' pregame predictions require a scheduled or delayed game.');
         }
 
+        if ($game instanceof Game) {
+            $game = CanonicalEventStart::game($event, true);
+            if ($game === null) {
+                throw new PredictionLifecycleException('MLB inputs require a current linked game.');
+            }
+            $game->load(['homeTeam', 'awayTeam']);
+            if (! in_array($game->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true)) {
+                throw new PredictionLifecycleException('MLB pregame inputs require current scheduled or delayed status.');
+            }
+        }
         $capturedAt = now()->toImmutable();
-        $cutoffAt = $event->starts_at?->toImmutable();
+        $cutoffAt = ($event->sport === 'cfb' ? CanonicalEventStart::forCurrentCfbEvent($event, true) : CanonicalEventStart::forEvent($event, true));
+        if ($game instanceof Game && ! MlbGameStart::observedBy($game, $capturedAt)) {
+            throw new PredictionLifecycleException('MLB input capture requires an observed schedule available by capture time.');
+        }
 
         if (! $cutoffAt instanceof CarbonImmutable) {
             throw new PredictionLifecycleException(strtoupper($sport).' pregame predictions require a canonical event start time.');
@@ -44,6 +115,17 @@ abstract class CanonicalTeamInputSnapshotBuilder implements EventInputSnapshotBu
 
         $homeTeam = $game->getRelation('homeTeam');
         $awayTeam = $game->getRelation('awayTeam');
+        $eloAdmission = app(EloInputAdmission::class)->teams($sport, $game, $cutoffAt, $event);
+        if ($eloAdmission !== null) {
+            $capturedAt = LegacyTimestampCarrier::forInstant(CarbonImmutable::parse($eloAdmission['evidence']['admitted_at_utc']));
+            if ($capturedAt === null) {
+                throw new EloAdmissionRefused('input_capture_clock_unrepresentable', [], []);
+            }
+        }
+        if ($game instanceof Game && (MlbGameStart::legacyTimestamp($capturedAt) === null
+            || ! MlbGameStart::observedBy($game, $capturedAt))) {
+            throw new PredictionLifecycleException('MLB canonical capture requires a lossless capture clock and schedule available by capture.');
+        }
         $homeMetric = $this->metricFor($game, $homeTeam, $capturedAt, $cutoffAt, $release);
         $awayMetric = $this->metricFor($game, $awayTeam, $capturedAt, $cutoffAt, $release);
         $homeInjuries = $this->injuriesFor($homeTeam, $capturedAt);
@@ -60,6 +142,10 @@ abstract class CanonicalTeamInputSnapshotBuilder implements EventInputSnapshotBu
             $awayInjuries,
         );
 
+        if ($game instanceof Game) {
+            $sourceTimestamps['mlb_scheduled_start_observed_at_utc'] = CarbonImmutable::parse($game->start_observed_at, 'UTC')->format('Y-m-d\TH:i:s.u\Z');
+        }
+
         return new EventInputSnapshotData(
             schemaVersion: $this->inputSchemaVersion(),
             inputs: [
@@ -71,8 +157,8 @@ abstract class CanonicalTeamInputSnapshotBuilder implements EventInputSnapshotBu
                     'starts_at' => $cutoffAt->toIso8601String(),
                     'neutral_site' => (bool) $event->neutral_site,
                 ],
-                'home' => $this->teamInputs($homeTeam, $homeMetric, $homeInjuries, $release),
-                'away' => $this->teamInputs($awayTeam, $awayMetric, $awayInjuries, $release),
+                'home' => $this->teamInputs($homeTeam, $homeMetric, $homeInjuries, $release, $eloAdmission['values'][$homeTeam->getKey()] ?? null),
+                'away' => $this->teamInputs($awayTeam, $awayMetric, $awayInjuries, $release, $eloAdmission['values'][$awayTeam->getKey()] ?? null),
                 ...$additionalInputs,
             ],
             capturedAt: $capturedAt,
@@ -81,6 +167,8 @@ abstract class CanonicalTeamInputSnapshotBuilder implements EventInputSnapshotBu
             sourceTimestamps: $sourceTimestamps,
             pregameSafetyStatus: 'verified',
             metadata: [
+                ...($game instanceof Game ? ['mlb_timing_policy' => MlbGameStart::TIMING_POLICY, 'mlb_start_observation' => MlbGameStart::capture($game, $capturedAt)] : []),
+                ...($eloAdmission === null ? [] : ['elo_input_admission' => $eloAdmission['evidence']]),
                 'builder' => static::class,
                 'point_in_time_policy' => 'captured_before_event_start',
                 'excluded_unversioned_inputs' => [
@@ -164,6 +252,7 @@ abstract class CanonicalTeamInputSnapshotBuilder implements EventInputSnapshotBu
         ?Model $metric,
         Collection $injuries,
         CalculationReleaseData $release,
+        ?string $admittedElo = null,
     ): array {
         $displayName = $team->getAttribute('display_name')
             ?: trim(implode(' ', array_filter([
@@ -174,7 +263,7 @@ abstract class CanonicalTeamInputSnapshotBuilder implements EventInputSnapshotBu
         return [
             'team_id' => (int) $team->getKey(),
             'name' => $displayName,
-            'elo' => (float) ($team->getAttribute('elo_rating') ?? data_get($release->configuration, 'elo.default', 1500)),
+            'elo' => (float) ($admittedElo ?? $team->getAttribute('elo_rating') ?? data_get($release->configuration, 'elo.default', 1500)),
             'metrics' => $metric === null ? null : $this->metricInputs($metric),
             'injuries' => $injuries->map(fn (Model $injury): array => [
                 'player_id' => (int) $injury->getAttribute('player_id'),
@@ -224,9 +313,18 @@ abstract class CanonicalTeamInputSnapshotBuilder implements EventInputSnapshotBu
     /** @param array<string, string|null> $timestamps */
     private function latestTimestamp(array $timestamps): ?CarbonImmutable
     {
-        $latest = collect($timestamps)->filter()->sortDesc()->first();
+        $latest = null;
+        foreach ($timestamps as $timestamp) {
+            if (! is_string($timestamp) || ! $timestamp) {
+                continue;
+            }
+            $candidate = CarbonImmutable::parse($timestamp);
+            if ($latest === null || $candidate->gt($latest)) {
+                $latest = $candidate;
+            }
+        }
 
-        return is_string($latest) ? CarbonImmutable::parse($latest) : null;
+        return $latest;
     }
 
     protected function nullableFloat(mixed $value): ?float

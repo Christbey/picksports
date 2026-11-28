@@ -3,16 +3,16 @@
 namespace App\Models;
 
 use App\Models\Concerns\HasPublicUlid;
+use App\Models\Concerns\RejectsPersistedModelMutation;
 use Database\Factories\DeveloperApiUsageRecordFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use LogicException;
 
 class DeveloperApiUsageRecord extends Model
 {
     /** @use HasFactory<DeveloperApiUsageRecordFactory> */
-    use HasFactory, HasPublicUlid;
+    use HasFactory, HasPublicUlid, RejectsPersistedModelMutation;
 
     public const UPDATED_AT = null;
 
@@ -41,10 +41,9 @@ class DeveloperApiUsageRecord extends Model
         ];
     }
 
-    protected static function booted(): void
+    protected function immutableMutationMessage(): string
     {
-        static::updating(fn (): never => throw new LogicException('Developer API usage records are immutable.'));
-        static::deleting(fn (): never => throw new LogicException('Developer API usage records are immutable.'));
+        return 'Developer API usage records are immutable.';
     }
 
     public function organization(): BelongsTo

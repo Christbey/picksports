@@ -6,7 +6,6 @@ use App\Models\Healthcheck;
 use App\Models\ValidationFinding;
 use App\Models\ValidationRun;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\DB;
 use Throwable;
 
 class ValidationRunRecorder
@@ -41,16 +40,17 @@ class ValidationRunRecorder
     /** Persist both views together so the admin summary cannot disagree with the audit history. */
     public function record(ValidationRun $run, string $sport, array $result): void
     {
-        DB::transaction(function () use ($run, $sport, $result): void {
+        $connection = $run->getConnection();
+        $connection->transaction(function () use ($run, $sport, $result, $connection): void {
             $metadata = (array) ($result['metadata'] ?? []);
             $action = $result['recommended_action'] ?? null;
-            Healthcheck::query()->create([
+            (new Healthcheck)->setConnection($connection->getName())->newQuery()->create([
                 'sport' => $sport, 'check_type' => $result['check_type'], 'status' => $result['status'],
                 'message' => $result['message'], 'checked_at' => now(),
                 'metadata' => [...$metadata, 'validation_run_id' => $run->id,
                     'validation_scope' => $run->summary['validation_scope'], 'recommended_action' => $action],
             ]);
-            ValidationFinding::query()->create([
+            (new ValidationFinding)->setConnection($connection->getName())->newQuery()->create([
                 'validation_run_id' => $run->id, 'sport' => $sport, 'check_type' => $result['check_type'],
                 'status' => $result['status'], 'severity' => $result['severity'] ?? $result['status'],
                 'message' => $result['message'], 'facts' => $metadata, 'recommended_action' => $action, 'detected_at' => now(),

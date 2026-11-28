@@ -20,9 +20,16 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Resolve target ref
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_REF: ${{ github.event.inputs.ref }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "TARGET_REF=${{ github.event.inputs.ref }}" >> "$GITHUB_ENV"
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            if ! git check-ref-format --branch "${REQUESTED_REF}" >/dev/null; then
+              echo 'Invalid staging branch reference.' >&2
+              exit 1
+            fi
+            echo "TARGET_REF=${REQUESTED_REF}" >> "$GITHUB_ENV"
           else
             echo "TARGET_REF=staging" >> "$GITHUB_ENV"
           fi

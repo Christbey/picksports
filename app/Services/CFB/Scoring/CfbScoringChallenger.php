@@ -6,10 +6,8 @@ use App\Application\Predictions\Data\EventInputSnapshotData;
 use App\Application\Predictions\Data\PredictionMarketOutput;
 use App\Application\Predictions\Data\PredictionOutput;
 use App\Models\CFB\Game;
-use App\Models\CFB\GameDataCheck;
 use App\Services\CFB\Signals\CfbFootballSignalCatalog;
 use App\Services\CFB\Signals\CfbFootballSignalJointModel;
-use Carbon\CarbonImmutable;
 
 /** Freeze the challenger result with original inputs; never load a newer artifact on replay. */
 class CfbScoringChallenger
@@ -23,6 +21,11 @@ class CfbScoringChallenger
         try {
             $loaded = app(CfbScoringArtifact::class)->load($id, $snapshot->capturedAt, allowResearchShadow: true);
             $artifact = $loaded['payload'];
+            $rejection = app(CfbTrainingSourceProvenance::class)->rejection($artifact, $snapshot->capturedAt);
+            if ($rejection !== null) {
+                return ['state' => $rejection === 'unknown_training_source_provenance' ? 'unavailable' : 'stale',
+                    'reason' => $rejection, 'artifact_id' => $id];
+            }
             $catalog = CfbFootballSignalCatalog::all();
             if (($artifact['feature_policy'] ?? null) === CfbScoringFeatures::POLICY) {
                 $catalog = app(CfbScoringFeatures::class)->independentCatalog($catalog);
@@ -46,11 +49,6 @@ class CfbScoringChallenger
                 'fpi' => ['home' => data_get($inputs, 'home.metrics.fpi'), 'away' => data_get($inputs, 'away.metrics.fpi')],
                 'venue' => data_get($inputs, 'event.venue'), 'context' => app(CfbScoringFeatures::class)->capture($inputs),
                 'signals' => CfbFootballSignalJointModel::features($inputs, ['catalog' => $catalog, 'feature_policy' => 'observed_only']), 'signal_missing' => $missing];
-            // A corrected accepted training revision requires retraining; do not silently use stale ratings.
-            $latest = GameDataCheck::whereIn('game_id', $artifact['training_ids'])->whereNotNull('accepted_at')->max('accepted_at');
-            if ($latest && CarbonImmutable::parse($latest)->gt(CarbonImmutable::parse($artifact['max_source_available_at']))) {
-                return ['state' => 'stale', 'reason' => 'accepted_history_changed', 'artifact_id' => $id];
-            }
             $seed = (int) hexdec(substr(hash('sha256', json_encode($evidence).$loaded['record']->artifact_hash), 0, 7));
             $reference = null;
             if ((float) ($artifact['fpi_weight'] ?? 0) === 1.0

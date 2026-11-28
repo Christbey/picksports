@@ -8,9 +8,11 @@ use App\Actions\GradePlayerProps;
 use App\Actions\MLB\GradePredictions as MlbGradePredictions;
 use App\Actions\NBA\GradePredictions as NbaGradePredictions;
 use App\Actions\NFL\GradePredictions as NflGradePredictions;
+use App\Actions\WCBB\EvaluateCanonicalPrediction as EvaluateWcbbCanonicalPrediction;
 use App\Actions\WCBB\GradePredictions as WcbbGradePredictions;
 use App\Actions\WNBA\GradePredictions as WnbaGradePredictions;
 use App\Events\GameFinalized;
+use App\Models\WCBB\Game as WcbbGame;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Predictions\CanonicalTeamGameEvaluator;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -75,7 +77,9 @@ class TriggerGameFinalizationGrading implements ShouldBeUnique, ShouldQueue
             $gameClass = app(SportContextResolver::class)->find($event->sport)?->models['game'] ?? null;
             if ($gameClass !== null && $gameClass === $event->gameModelClass) {
                 $game = $gameClass::query()->find($event->gameId);
-                if ($game !== null) {
+                if ($game instanceof WcbbGame) {
+                    app(EvaluateWcbbCanonicalPrediction::class)->execute($game);
+                } elseif ($game !== null) {
                     app(CanonicalTeamGameEvaluator::class)->evaluate($game, $event->sport);
                 }
             }

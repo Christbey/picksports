@@ -33,6 +33,8 @@ export function usePlayerStats(props: PlayerStatsProps) {
     const visibleLimit = ref(100);
     const api = useApiV2Client();
     let disposed = false;
+    let initialization = 0;
+    let displayedScope: string | null = null;
     let leaderboardAbortController: AbortController | null = null;
     let seasonsAbortController: AbortController | null = null;
 
@@ -174,8 +176,12 @@ export function usePlayerStats(props: PlayerStatsProps) {
     const sortedPlayers = computed(() => {
         const sorted = [...filteredPlayers.value];
         sorted.sort((a, b) => {
-            const aVal = a[sortBy.value as NumericLeaderboardKey] ?? 0;
-            const bVal = b[sortBy.value as NumericLeaderboardKey] ?? 0;
+            const aVal = a[sortBy.value as NumericLeaderboardKey];
+            const bVal = b[sortBy.value as NumericLeaderboardKey];
+            const aKnown = typeof aVal === 'number' && Number.isFinite(aVal);
+            const bKnown = typeof bVal === 'number' && Number.isFinite(bVal);
+            if (!aKnown) return bKnown ? 1 : 0;
+            if (!bKnown) return -1;
             return sortDesc.value ? bVal - aVal : aVal - bVal;
         });
         return sorted;
@@ -187,6 +193,12 @@ export function usePlayerStats(props: PlayerStatsProps) {
 
     const fetchPlayers = async () => {
         if (disposed) return;
+        if (!seasonReady.value) return initialize();
+        if (!selectedSeason.value) {
+            players.value = [];
+            loading.value = false;
+            return;
+        }
         leaderboardAbortController?.abort();
         const controller = new AbortController();
         leaderboardAbortController = controller;
@@ -204,6 +216,9 @@ export function usePlayerStats(props: PlayerStatsProps) {
                 query.season_type = selectedSeasonType.value;
             }
 
+            const scope = JSON.stringify([props.config.sport, query]);
+            if (scope !== displayedScope) players.value = [];
+            displayedScope = scope;
             const response = await api.leaderboards.players(
                 props.config.sport,
                 {
@@ -276,16 +291,26 @@ export function usePlayerStats(props: PlayerStatsProps) {
             selectedCategory.value = categoryOptions.value[0]?.key ?? 'all';
         }
 
-        fetchAvailableSeasons()
-            .catch(() => {
-                if (!disposed) availableSeasons.value = [];
-            })
-            .then(() => {
-                if (disposed) return;
-                seasonReady.value = true;
-                fetchPlayers();
-            });
+        void initialize();
     });
+
+    async function initialize(): Promise<void> {
+        const generation = ++initialization;
+        loading.value = true;
+        error.value = null;
+        try {
+            await fetchAvailableSeasons();
+            if (disposed || generation !== initialization) return;
+            seasonReady.value = true;
+            await fetchPlayers();
+        } catch {
+            if (disposed || generation !== initialization) return;
+            players.value = [];
+            error.value =
+                'Available seasons could not be loaded. Retry to load player stats.';
+            loading.value = false;
+        }
+    }
 
     watch(selectedSeason, () => {
         if (!seasonReady.value) return;

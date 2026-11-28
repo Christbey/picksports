@@ -8,9 +8,7 @@ from typing import Sequence
 import pandas as pd
 
 from picksports_nfl_ml.data import load_immutable_dataset
-from picksports_nfl_ml.experiments import diagnose
 from picksports_nfl_ml.inference import InferenceBundle
-from picksports_nfl_ml.pipeline import train
 from picksports_nfl_ml.schema import FeatureSchema
 
 
@@ -186,6 +184,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             )
             return
         if arguments.command == "train":
+            from picksports_nfl_ml.pipeline import train
+
             _print_json(
                 train(
                     input_path=arguments.input,
@@ -203,6 +203,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             )
             return
         if arguments.command == "diagnose":
+            from picksports_nfl_ml.experiments import diagnose
+
             _print_json(
                 diagnose(
                     input_path=arguments.input,
@@ -247,9 +249,12 @@ def _read_prediction_input(path: str | Path) -> pd.DataFrame:
     resolved = Path(path).expanduser().resolve()
     suffix = resolved.suffix.lower()
     if suffix == ".json":
-        with resolved.open("r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-        return pd.DataFrame(payload if isinstance(payload, list) else [payload])
+        from picksports_nfl_ml.numeric_artifacts import read_json, MAX_METADATA_BYTES
+        payload = read_json(resolved, max_bytes=MAX_METADATA_BYTES, max_tokens=50000)
+        rows = payload if isinstance(payload, list) else [payload]
+        if not rows or len(rows) > 1000 or any(type(row) is not dict for row in rows):
+            raise ValueError("Prediction JSON requires one to 1000 feature objects.")
+        return pd.DataFrame(rows)
     if suffix == ".csv":
         return pd.read_csv(resolved)
     if suffix in {".parquet", ".pq"}:
@@ -258,7 +263,7 @@ def _read_prediction_input(path: str | Path) -> pd.DataFrame:
 
 
 def _print_json(value: object) -> None:
-    print(json.dumps(value, indent=2, sort_keys=True))
+    print(json.dumps(value, indent=2, sort_keys=True, allow_nan=False))
 
 
 def _parse_training_windows(value: str) -> list[int | None]:

@@ -3,6 +3,7 @@
 namespace App\Console\Commands\MLB;
 
 use App\Actions\MLB\ReconcileGameScoreFromTeamStats;
+use App\Exceptions\MlbScoreReconciliationPersistenceException;
 use App\Models\MLB\Game;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -51,36 +52,42 @@ class ReconcileFinalScoresCommand extends Command
 
         $samples = [];
 
-        $query->lazyById()->each(function (Game $game) use ($reconcile, $force, $dryRun, &$counts, &$samples): void {
-            $result = $reconcile->execute($game, force: $force, dryRun: $dryRun);
-            $status = (string) $result['status'];
-            $reason = (string) $result['reason'];
+        try {
+            $query->lazyById()->each(function (Game $game) use ($reconcile, $force, $dryRun, &$counts, &$samples): void {
+                $result = $reconcile->execute($game, force: $force, dryRun: $dryRun);
+                $status = (string) $result['status'];
+                $reason = (string) $result['reason'];
 
-            if (array_key_exists($status, $counts)) {
-                $counts[$status]++;
-            }
+                if (array_key_exists($status, $counts)) {
+                    $counts[$status]++;
+                }
 
-            if ($status === 'skipped' && $reason === 'missing_team_stats_runs') {
-                $counts['skipped_missing_team_stats']++;
-            }
+                if ($status === 'skipped' && $reason === 'missing_team_stats_runs') {
+                    $counts['skipped_missing_team_stats']++;
+                }
 
-            if ($status === 'skipped' && $reason === 'game_not_final') {
-                $counts['skipped_non_final']++;
-            }
+                if ($status === 'skipped' && $reason === 'game_not_final') {
+                    $counts['skipped_non_final']++;
+                }
 
-            if (in_array($status, ['updated', 'conflict', 'skipped'], true) && count($samples) < 8) {
-                $samples[] = [
-                    $game->id,
-                    $game->espn_event_id,
-                    $game->short_name ?: $game->name,
-                    $game->game_date?->toDateString(),
-                    $status,
-                    $reason,
-                    $result['home_score_before'].'-'.$result['away_score_before'],
-                    $result['home_score_after'].'-'.$result['away_score_after'],
-                ];
-            }
-        });
+                if (in_array($status, ['updated', 'conflict', 'skipped'], true) && count($samples) < 8) {
+                    $samples[] = [
+                        $game->id,
+                        $game->espn_event_id,
+                        $game->short_name ?: $game->name,
+                        $game->game_date?->toDateString(),
+                        $status,
+                        $reason,
+                        $result['home_score_before'].'-'.$result['away_score_before'],
+                        $result['home_score_after'].'-'.$result['away_score_after'],
+                    ];
+                }
+            });
+        } catch (MlbScoreReconciliationPersistenceException $exception) {
+            $this->error($exception->getMessage());
+
+            return Command::FAILURE;
+        }
 
         $remainingMissing = $this->missingFinalScoresQuery($season, $from, $to)->count();
         $remainingReconstructable = $this->reconstructableMissingScoresQuery($season, $from, $to)->count();

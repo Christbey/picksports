@@ -227,10 +227,13 @@ watch(
                                         type="text"
                                         readonly
                                         :value="manualSetupKey"
+                                        aria-label="Authenticator setup key"
                                         class="h-full w-full bg-background p-3 text-foreground"
                                     />
                                     <button
                                         @click="copy(manualSetupKey || '')"
+                                        type="button"
+                                        aria-label="Copy authenticator setup key"
                                         class="relative block h-auto border-l border-border px-3 hover:bg-muted"
                                     >
                                         <Check
@@ -263,6 +266,8 @@ watch(
                             >
                                 <InputOTP
                                     id="otp"
+                                    aria-label="Authentication code"
+                                    autocomplete="one-time-code"
                                     v-model="code"
                                     :maxlength="6"
                                     :disabled="processing"

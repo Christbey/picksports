@@ -6,6 +6,7 @@ use App\Models\CalculationRelease;
 use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
 use App\Models\EventInputSnapshot;
+use App\Models\MLB\Game;
 use App\Models\PredictionMarket;
 use App\Models\SportEvent;
 use App\Models\User;
@@ -17,6 +18,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Laravel\Sanctum\Sanctum;
+use Tests\Support\ObservedMlbGameFixture;
 
 beforeEach(function () {
     $this->travelTo('2026-10-29 12:00:00');
@@ -41,17 +43,37 @@ function trendRetirementFixture(string $sport, string $variant = 'valid', int $c
     for ($i = 0; $i < $count; $i++) {
         $start = CarbonImmutable::parse('2026-10-20T17:00:00Z')->subDays($i);
         $event = SportEvent::factory()->create(['sport' => $sport, 'season' => 2026, 'starts_at' => $start]);
+        $fixtureNow = now()->toImmutable();
+        if ($sport === 'mlb') {
+            CarbonImmutable::setTestNow($start->subHours(4));
+        }
         $game = $gameClass::factory()->create(['sport_event_id' => $event->id,
             'home_team_id' => $home->id, 'away_team_id' => $away->id, 'season' => 2026, 'season_type' => '2',
             'game_date' => $start->toDateString(), 'game_time' => $start->toTimeString(),
-            'status' => 'STATUS_FINAL', 'home_score' => 30, 'away_score' => 20]);
-        $input = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id,
+            'status' => $sport === 'mlb' ? 'STATUS_SCHEDULED' : 'STATUS_FINAL', 'home_score' => $sport === 'mlb' ? null : 30, 'away_score' => $sport === 'mlb' ? null : 20]);
+        if ($game instanceof Game) {
+            $game = ObservedMlbGameFixture::observe($game, $event->starts_at);
+        }
+        $inputAttributes = ['sport' => $sport, 'sport_event_id' => $event->id,
             'phase' => 'pregame', 'pregame_safety_status' => $variant === 'unverified' ? 'unverified' : 'verified',
             'captured_at' => $variant === 'late_input' ? $start->addMinute() : $start->subHours(2),
             'cutoff_at' => $variant === 'late_input' ? $start->addMinute() : $start->subHours(2),
             'latest_source_available_at' => $start->subHours(3),
             'source_timestamps' => ['ratings' => $start->subHours(3)->toIso8601String()],
-            'inputs' => ['home' => ['team_id' => $game->home_team_id, 'elo' => 1600], 'away' => ['team_id' => $game->away_team_id, 'elo' => 1600]]]);
+            'inputs' => ['home' => ['team_id' => $game->home_team_id, 'elo' => 1600], 'away' => ['team_id' => $game->away_team_id, 'elo' => 1600]]];
+        if ($game instanceof Game) {
+            $qualified = ObservedMlbGameFixture::snapshotAttributes($game, $inputAttributes['inputs'], $start->subHours(2));
+            $inputAttributes = [...$inputAttributes, ...$qualified, 'pregame_safety_status' => $inputAttributes['pregame_safety_status'] ?? 'verified'];
+            if ($variant === 'late_input') {
+                $inputAttributes['captured_at'] = $start->addMinute();
+            }
+        }
+        $input = EventInputSnapshot::factory()->create($inputAttributes);
+        if ($sport === 'mlb') {
+            CarbonImmutable::setTestNow($fixtureNow);
+            $game->update(['status' => 'STATUS_FINAL', 'home_score' => 30, 'away_score' => 20]);
+        }
+
         $run = CalculationRun::factory()->create(['output_hash' => str_repeat('a', 64), 'sport_event_id' => $event->id,
             'event_input_snapshot_id' => $input->id, 'calculation_release_id' => $release->id, 'status' => 'succeeded']);
         $native = CanonicalPrediction::factory()->create(['output_hash' => str_repeat('a', 64), 'sport' => $sport, 'sport_event_id' => $event->id,

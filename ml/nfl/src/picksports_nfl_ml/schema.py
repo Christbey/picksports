@@ -22,14 +22,30 @@ class FeatureSchema:
     @classmethod
     def load(cls, path: str | Path) -> "FeatureSchema":
         resolved = Path(path).expanduser().resolve()
-        with resolved.open("r", encoding="utf-8") as handle:
-            raw = yaml.safe_load(handle)
+        if resolved.suffix.lower() == ".json":
+            from picksports_nfl_ml.numeric_artifacts import read_json, MAX_METADATA_BYTES
+            raw = read_json(resolved, max_bytes=MAX_METADATA_BYTES, max_tokens=50000)
+        else:
+            with resolved.open("r", encoding="utf-8") as handle:
+                raw = yaml.safe_load(handle)
+        return cls.from_mapping(resolved, raw)
+
+    @classmethod
+    def from_mapping(cls, path: Path, raw: Any) -> "FeatureSchema":
         if not isinstance(raw, dict):
             raise SchemaError("Feature schema must be a YAML mapping.")
         for section in ("schema_version", "dataset", "features", "targets", "training"):
             if section not in raw:
                 raise SchemaError(f"Feature schema is missing '{section}'.")
-        return cls(path=resolved, raw=raw)
+        for section in ("dataset", "features", "targets", "training"):
+            if type(raw[section]) is not dict:
+                raise SchemaError("Feature schema sections must be mappings.")
+        if type(raw["schema_version"]) is not str or not raw["schema_version"] or not 1 <= len(raw["features"]) <= 512:
+            raise SchemaError("Invalid bounded numeric feature schema.")
+        for name, spec in raw["features"].items():
+            if type(name) is not str or not name or len(name) > 128 or type(spec) is not dict or type(spec.get("nullable", False)) is not bool:
+                raise SchemaError("Feature definitions must retain named numeric/nullability contracts.")
+        return cls(path=path, raw=raw)
 
     @property
     def version(self) -> str:
@@ -94,6 +110,9 @@ class FeatureSchema:
         validated["features_available_at"] = pd.to_datetime(
             validated["features_available_at"], utc=True, errors="raise"
         )
+        for timestamp in (self.time_column, "features_available_at"):
+            if validated[timestamp].isna().any():
+                raise SchemaError(f"Pregame timestamp '{timestamp}' contains missing values.")
         validated[self.season_column] = pd.to_numeric(
             validated[self.season_column], errors="raise"
         ).astype("int64")

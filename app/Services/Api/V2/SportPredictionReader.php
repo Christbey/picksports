@@ -67,6 +67,7 @@ class SportPredictionReader
                 ...($context->slug === 'nfl' ? ['sportEvent.nflGame.weather'] : []),
                 'sportEvent.'.$context->slug.'Game.homeTeam',
                 'sportEvent.'.$context->slug.'Game.awayTeam',
+                ...($context->slug === 'wcbb' ? ['trackedWcbbSpread'] : []),
                 ...($context->slug === 'cfb' ? ['sportEvent.cfbGame.weather', 'sportEvent.cfbGame.latestLiveSnapshot'] : []),
             ]);
             app(LivePredictionStore::class)->preload($predictions->map(fn ($prediction) => $prediction->sportEvent?->getRelation($context->slug.'Game'))->filter());

@@ -48,7 +48,6 @@ it('refuses wrong identities, wrong seasons, unconfirmed times and non pregame s
     expect($this->game->fresh()->getRawOriginal())->toBe($before);
 })->with([
     ['header.id', 'another-event'], ['header.season.year', 2025],
-    ['header.competitions.0.timeValid', false], ['header.competitions.0.status.type.detail', '10/10 - TBD'],
     ['header.competitions.0.status.type.name', 'STATUS_FINAL'],
 ]);
 

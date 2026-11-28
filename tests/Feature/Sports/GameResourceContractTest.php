@@ -18,6 +18,7 @@ use App\Models\WNBA\Game as WnbaGame;
 use App\Models\WNBA\Team as WnbaTeam;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Tests\Support\ObservedCfbGameFixture;
 
 function gameResourceRequest(): Request
 {
@@ -115,7 +116,9 @@ test('wnba game resource exposes game time plus venue and clock aliases', functi
 });
 
 test('cfb game resource presents late kickoff dates in eastern football time', function () {
-    $game = (new CfbGame)->forceFill([
+    CfbTeam::factory()->create(['id' => 1, 'abbreviation' => 'UNLV', 'school' => 'UNLV', 'mascot' => 'Rebels']);
+    CfbTeam::factory()->create(['id' => 2, 'abbreviation' => 'MEM', 'school' => 'Memphis', 'mascot' => 'Tigers']);
+    $game = CfbGame::factory()->create([
         'id' => 44,
         'home_team_id' => 1,
         'away_team_id' => 2,
@@ -129,6 +132,8 @@ test('cfb game resource presents late kickoff dates in eastern football time', f
     ])
         ->setRelation('homeTeam', new CfbTeam(['id' => 1, 'abbreviation' => 'UNLV', 'school' => 'UNLV', 'mascot' => 'Rebels']))
         ->setRelation('awayTeam', new CfbTeam(['id' => 2, 'abbreviation' => 'MEM', 'school' => 'Memphis', 'mascot' => 'Tigers']));
+
+    $game = ObservedCfbGameFixture::observe($game, '2026-08-30T02:00:00Z');
 
     $data = CfbGameResource::make($game)->response()->getData(true)['data'];
 

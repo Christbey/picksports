@@ -20,6 +20,7 @@ use App\Services\NFL\NflSignalObservationMaterializer;
 use App\Services\NFL\Predictions\NflRecommendationInputBuilder;
 use App\Services\Predictions\ModelRunRecorder;
 use App\Support\NflModelVersion;
+use App\Support\Sports\LegacyTimestampCarrier;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -40,7 +41,7 @@ function evidenceAuditRetirementFixture(string $variant = 'valid', array $metada
     $start = now()->subDay()->utc();
     $generated = now()->subHours(26);
     $captured = now()->subHours(27);
-    $event = SportEvent::factory()->create(['sport' => 'nfl', 'season' => 2026, 'starts_at' => $start]);
+    $event = SportEvent::factory()->create(['sport' => 'nfl', 'season' => 2026, 'starts_at' => LegacyTimestampCarrier::forInstant($start)]);
     $game = Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026, 'season_type' => '2',
         'game_date' => $start->toDateString(), 'game_time' => $start->toTimeString(), 'status' => 'STATUS_FINAL',
         'home_score' => 27, 'away_score' => 20, 'home_team_id' => Team::factory(), 'away_team_id' => Team::factory(),
@@ -180,7 +181,9 @@ it('isolates operations caches when forecast sources change', function () {
 it('retains the frozen kickoff mismatch hold when an event is rescheduled', function () {
     [$game] = evidenceAuditRetirementFixture();
     $event = $game->sportEvent;
-    $event->update(['starts_at' => $event->starts_at->addHours(2)]);
+    $rescheduled = $event->starts_at->addHours(2);
+    $event->update(['starts_at' => LegacyTimestampCarrier::forInstant($rescheduled)]);
+    $game->update(['game_date' => $rescheduled->utc()->toDateString(), 'game_time' => $rescheduled->utc()->format('H:i:s')]);
     $report = app(NflEvidenceLedgerAudit::class)->report(2026);
     expect($report['reasons']['winner']['kickoff_mismatch'])->toBe(1)
         ->and($report['reasons']['spread']['kickoff_mismatch'])->toBe(1)

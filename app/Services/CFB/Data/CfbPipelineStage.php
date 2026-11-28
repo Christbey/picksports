@@ -17,23 +17,64 @@ class CfbPipelineStage
             return ['state' => 'busy'];
         }
         try {
-            $table = DB::table('cfb_pipeline_steps');
-            $row = (clone $table)->where($key)->first();
-            if ($resume && $row?->state === 'complete') {
-                return json_decode($row->result, true);
+            $connection = DB::connection();
+            $pdo = $connection->getPdo();
+            $prefix = $connection->getTablePrefix();
+            $table = $connection->table('cfb_pipeline_steps')->useWritePdo();
+            // A nested transaction remains caller-owned: it does not make a
+            // reservation durable before work when an outer transaction exists.
+            $reservation = $connection->transaction(function () use ($table, $key, $resume, $failureCooldownSeconds): array {
+                $row = (clone $table)->where($key)->lockForUpdate()->first();
+                if ($resume && $row?->state === 'complete') {
+                    return ['result' => json_decode($row->result, true)];
+                }
+                if ($failureCooldownSeconds > 0 && in_array($row?->state, ['failed', 'blocked', 'partial'], true)
+                    && $row->completed_at && Carbon::parse($row->completed_at)->addSeconds($failureCooldownSeconds)->isFuture()) {
+                    return ['result' => json_decode($row->result, true)];
+                }
+                $rawGeneration = $row?->attempts ?? 0;
+                if (! is_int($rawGeneration) && (! is_string($rawGeneration) || ! preg_match('/^(0|[1-9][0-9]*)$/D', $rawGeneration))) {
+                    throw new \RuntimeException('Invalid CFB stage receipt generation.');
+                }
+                $generation = (int) $rawGeneration;
+                if ($generation < 0 || $generation >= 4294967295 || (string) $generation !== (string) $rawGeneration) {
+                    return ['result' => ['state' => 'busy', 'reason' => 'receipt_generation_exhausted']];
+                }
+                $next = $generation + 1;
+                $values = ['state' => 'running', 'attempts' => $next, 'started_at' => now(), 'completed_at' => null, 'updated_at' => now()];
+                if ($row === null) {
+                    $id = (clone $table)->insertGetId([...$key, ...$values, 'created_at' => now()]);
+                } else {
+                    $id = $row->id;
+                    $changed = (clone $table)->where($key)->where('id', $id)->where('attempts', $generation)->update($values);
+                    if ($changed !== 1) {
+                        throw new \RuntimeException('CFB stage receipt reservation changed.');
+                    }
+                }
+
+                return ['id' => $id, 'generation' => $next];
+            });
+            if (array_key_exists('result', $reservation)) {
+                return $reservation['result'];
             }
-            if ($failureCooldownSeconds > 0 && in_array($row?->state, ['failed', 'blocked', 'partial'], true)
-                && $row->completed_at && Carbon::parse($row->completed_at)->addSeconds($failureCooldownSeconds)->isFuture()) {
-                return json_decode($row->result, true);
-            }
-            $table->updateOrInsert($key, ['state' => 'running', 'attempts' => ($row?->attempts ?? 0) + 1, 'started_at' => now(), 'completed_at' => null, 'created_at' => $row?->created_at ?? now(), 'updated_at' => now()]);
             try {
                 $result = $work();
             } catch (\Throwable $e) {
                 report($e);
                 $result = ['state' => 'failed', 'error' => $e->getMessage()];
             }
-            (clone $table)->where($key)->update(['state' => $result['state'], 'result' => json_encode($result, JSON_THROW_ON_ERROR), 'completed_at' => now(), 'updated_at' => now()]);
+            if ($connection->getPdo() !== $pdo || $connection->getTablePrefix() !== $prefix) {
+                return ['state' => 'busy', 'reason' => 'receipt_connection_changed'];
+            }
+            // The work itself is not rolled back here. Only this generation may
+            // publish its terminal receipt. A superseded generation cannot author
+            // completion or overwrite the receipt belonging to a newer worker.
+            $changed = (clone $table)->where($key)->where('id', $reservation['id'])
+                ->where('attempts', $reservation['generation'])->where('state', 'running')
+                ->update(['state' => $result['state'], 'result' => json_encode($result, JSON_THROW_ON_ERROR), 'completed_at' => now(), 'updated_at' => now()]);
+            if ($changed !== 1) {
+                return ['state' => 'busy', 'reason' => 'receipt_generation_superseded'];
+            }
 
             return $result;
         } finally {

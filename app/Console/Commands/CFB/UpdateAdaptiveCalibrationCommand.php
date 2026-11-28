@@ -290,25 +290,35 @@ class UpdateAdaptiveCalibrationCommand extends Command
      */
     private function storeCalibration(array $report, bool $activate): PredictionCalibration
     {
-        if ($activate) {
-            PredictionCalibration::query()
-                ->where('season', (int) $report['season'])
-                ->where('is_active', true)
-                ->update(['is_active' => false]);
-        }
+        $model = new PredictionCalibration;
 
-        return PredictionCalibration::query()->create([
-            'season' => $report['season'],
-            'training_from_week' => $report['training_from_week'],
-            'training_through_week' => $report['training_through_week'],
-            'games_count' => $report['games_count'],
-            'min_games' => $report['min_games'],
-            'learning_rate' => $report['learning_rate'],
-            'parameters' => $report['parameters'],
-            'metrics' => $report['metrics'],
-            'is_active' => $activate,
-            'generated_at' => now(),
-        ]);
+        return $model->getConnection()->transaction(function () use ($model, $report, $activate): PredictionCalibration {
+            if ($activate) {
+                $model->newQuery()
+                    ->where('season', (int) $report['season'])
+                    ->where('is_active', true)
+                    ->update(['is_active' => false]);
+            }
+
+            $stored = $model->newQuery()->create([
+                'season' => $report['season'],
+                'training_from_week' => $report['training_from_week'],
+                'training_through_week' => $report['training_through_week'],
+                'games_count' => $report['games_count'],
+                'min_games' => $report['min_games'],
+                'learning_rate' => $report['learning_rate'],
+                'parameters' => $report['parameters'],
+                'metrics' => $report['metrics'],
+                'is_active' => $activate,
+                'generated_at' => now(),
+            ]);
+
+            if (! $stored->exists || $stored->getKey() === null) {
+                throw new \RuntimeException('Could not store the CFB calibration profile.');
+            }
+
+            return $stored;
+        });
     }
 
     /**

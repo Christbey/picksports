@@ -44,7 +44,7 @@ class SportFuturesOddController extends Controller
         SportFuturesOddQuery $futures,
     ): JsonResponse {
         $context = $sports->resolve($sport);
-        $filters = $request->validatedFilters() + ['team_id' => (int) $team];
+        $filters = $request->validatedFilters();
         $paginator = $futures->paginate($context->slug, $filters);
 
         $paginator->setCollection(
@@ -58,7 +58,7 @@ class SportFuturesOddController extends Controller
                 'per_page' => $paginator->perPage(),
                 'total' => $paginator->total(),
                 'last_page' => $paginator->lastPage(),
-            ]) + ['team_id' => (int) $team],
+            ]) + ['team_id' => $filters['team_id']],
         ]);
     }
 

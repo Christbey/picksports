@@ -71,10 +71,11 @@ it('separates a model projection from independent completed-game evidence', func
     $base = ['claim' => 'Internal evidence', 'evidence_kind' => 'application', 'source_url' => '', 'document_id' => null, 'evidence_excerpt' => null];
     $result = app(ResearchClaimGrounding::class)->apply(['decision_research' => ['supporting' => [
         [...$base, 'evidence_reference' => 'analysis_context.final_forecast.predicted_spread'],
-        [...$base, 'evidence_reference' => 'analysis_context.season_evidence.teams.home.games'],
+        [...$base, 'source_url' => 'https://team.example/news', 'evidence_reference' => 'analysis_context.season_evidence.teams.home.games'],
         [...$base, 'evidence_reference' => 'invented.record'],
     ]]], groundedResearchInput());
     expect($result['decision_research']['supporting'])->toHaveCount(1)
+        ->and($result['decision_research']['supporting'][0]['source_url'])->toBe('')
         ->and($result['decision_research']['model_context'])->toHaveCount(1)
         ->and($result['analysis_quality']['rejected_claims'])->toBe(1);
 });

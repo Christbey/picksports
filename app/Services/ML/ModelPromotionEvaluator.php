@@ -28,6 +28,19 @@ class ModelPromotionEvaluator
             throw new \RuntimeException('Rolling evaluation report is invalid.');
         }
 
+        return $this->evaluateReport($artifact, $report, $criteria);
+    }
+
+    /**
+     * Pure offline decision over an already bounded and decoded report.
+     * The caller owns admission and any later current-source mutation fence.
+     *
+     * @param  array<string, mixed>  $report
+     * @param  array<string, mixed>  $criteria
+     * @return array<string, mixed>
+     */
+    public function evaluateReport(ModelArtifact $artifact, array $report, array $criteria = []): array
+    {
         $normalized = $this->reports->normalize($report);
         $summary = $normalized['raw_summary'];
         $windows = $normalized['raw_windows'];

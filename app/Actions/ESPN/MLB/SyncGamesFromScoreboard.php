@@ -8,6 +8,7 @@ use App\Actions\MLB\UpdateLivePrediction;
 use App\DataTransferObjects\ESPN\MLBGameData;
 use App\Models\MLB\Game;
 use App\Models\MLB\Team;
+use App\Support\MLB\MlbGameStart;
 use Illuminate\Database\Eloquent\Model;
 
 class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
@@ -44,6 +45,8 @@ class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
         if ($awayProbablePitcherId !== null) {
             $attributes['probable_away_pitcher_espn_id'] = $awayProbablePitcherId;
         }
+        // The DTO supplies now() when date is absent; omission must not overwrite a known schedule.
+        unset($attributes['game_date'], $attributes['game_time']);
         if ($dateParts['game_date'] !== null) {
             $attributes['game_date'] = $dateParts['game_date'];
         }
@@ -51,7 +54,20 @@ class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
             $attributes['game_time'] = $dateParts['game_time'];
         }
 
-        return $attributes;
+        return $attributes + array_intersect_key($dateParts, array_flip(MlbGameStart::FIELDS));
+    }
+
+    protected function updateGameFromSummary(array $gameData, Model $game): void
+    {
+        $competition = data_get($gameData, 'header.competitions.0', []);
+        $header = $gameData['header'] ?? [];
+        foreach ([$competition, $header] as $part) {
+            if (array_key_exists('date', $part) && $part['date'] !== null) {
+                $this->resolveMlbGameDateParts(['date' => $part['date'], 'competitions' => [$competition]]);
+                break;
+            }
+        }
+        parent::updateGameFromSummary($gameData, $game);
     }
 
     /**

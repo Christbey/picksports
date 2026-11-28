@@ -36,7 +36,7 @@ defineProps<{
                             #{{ powerRanking.rank }}
                         </div>
                         <div class="mt-1 text-sm text-muted-foreground">
-                            of {{ powerRanking.total_teams }} teams
+                            of {{ powerRanking.total_teams }} observed teams
                         </div>
                     </div>
                     <div v-if="teamMetrics" class="text-right">

@@ -3,6 +3,7 @@
 namespace App\Models\MLB;
 
 use App\Models\SportEvent;
+use App\Support\MLB\MlbGameStart;
 use Database\Factories\MlbGameFactory;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -37,6 +38,12 @@ class Game extends Model
         'season_type',
         'game_date',
         'game_time',
+        'start_time_version',
+        'start_observation_id',
+        'start_epoch',
+        'start_source_hash',
+        'start_context_hash',
+        'start_observed_at',
         'name',
         'short_name',
         'home_team_id',
@@ -143,6 +150,14 @@ class Game extends Model
         return $this->belongsTo(Player::class, 'projected_away_pitcher_espn_id', 'espn_id');
     }
 
+    private function currentPitcherProjection(): bool
+    {
+        return MlbGameStart::for($this) !== null
+            && data_get($this->pitcher_projection_metadata, 'timing_policy') === MlbGameStart::TIMING_POLICY
+            && data_get($this->pitcher_projection_metadata, 'start_context_hash') === $this->start_context_hash
+            && data_get($this->pitcher_projection_metadata, 'start_source_hash') === $this->start_source_hash;
+    }
+
     public function resolvedStartingPitcherEspnId(string $side): ?string
     {
         $actual = trim((string) ($side === 'home'
@@ -165,7 +180,7 @@ class Game extends Model
             ? $this->projected_home_pitcher_espn_id
             : $this->projected_away_pitcher_espn_id));
 
-        return $projected !== '' ? $projected : null;
+        return $this->currentPitcherProjection() && $projected !== '' ? $projected : null;
     }
 
     public function startingPitcherSource(string $side): ?string
@@ -186,7 +201,7 @@ class Game extends Model
             return 'espn_probable';
         }
 
-        return filled($this->resolvedStartingPitcherEspnId($side))
+        return $this->currentPitcherProjection() && filled($this->resolvedStartingPitcherEspnId($side))
             ? 'rotation_projection'
             : null;
     }
@@ -203,6 +218,10 @@ class Game extends Model
             return (float) config('mlb.starter_projection.probable_confidence', 0.90);
         }
 
+        if (! $this->currentPitcherProjection()) {
+            return null;
+        }
+
         $confidence = $side === 'home'
             ? $this->projected_home_pitcher_confidence
             : $this->projected_away_pitcher_confidence;
@@ -215,6 +234,9 @@ class Game extends Model
      */
     public function startingPitcherCandidates(string $side): array
     {
+        if (! $this->currentPitcherProjection()) {
+            return [];
+        }
         $candidates = data_get($this->pitcher_projection_metadata, "{$side}.candidates", []);
 
         return is_array($candidates) ? array_values($candidates) : [];
@@ -222,6 +244,9 @@ class Game extends Model
 
     public function expectedStartingPitcherRating(string $side): ?float
     {
+        if (! $this->currentPitcherProjection()) {
+            return null;
+        }
         $rating = data_get($this->pitcher_projection_metadata, "{$side}.expected_pitcher_rating");
 
         return is_numeric($rating) ? (float) $rating : null;
@@ -229,6 +254,9 @@ class Game extends Model
 
     public function startingPitcherUncertainty(string $side): ?float
     {
+        if (! $this->currentPitcherProjection()) {
+            return null;
+        }
         $uncertainty = data_get($this->pitcher_projection_metadata, "{$side}.uncertainty");
 
         return is_numeric($uncertainty) ? (float) $uncertainty : null;

@@ -18,8 +18,8 @@ class FootballPlayData extends AbstractPlayData
         public bool $isScoringPlay,
         public bool $isTurnover,
         public bool $isPenalty,
-        public int $homeScore,
-        public int $awayScore,
+        public ?int $homeScore,
+        public ?int $awayScore,
         public ?string $possessionTeamEspnId,
     ) {}
 

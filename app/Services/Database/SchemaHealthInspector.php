@@ -56,9 +56,24 @@ class SchemaHealthInspector
                 : sprintf('%d migration(s) are pending: %s', count($pending), implode(', ', array_slice($pending, 0, 5))),
         );
 
+        $unknown = $current['migration_state']['unknown'] ?? null;
+        $this->add(
+            $checks,
+            'unknown_migrations',
+            is_array($unknown) && $unknown === [],
+            ! is_array($unknown)
+                ? 'Applied migration history could not be reconciled with files on disk.'
+                : ($unknown === [] ? 'Every applied migration has a matching file on disk.'
+                    : sprintf('%d applied migration(s) have no file on disk: %s', count($unknown), implode(', ', array_slice($unknown, 0, 5)))),
+        );
+
         if ($minimumMysqlVersion !== null) {
-            $isMysql = $current['driver'] === 'mysql';
-            $meetsMinimum = $isMysql && version_compare($this->numericVersion((string) $current['server_version']), $minimumMysqlVersion, '>=');
+            $serverVersion = (string) $current['server_version'];
+            $isMysql = $current['driver'] === 'mysql' && ! str_contains(strtolower($serverVersion), 'mariadb');
+            $numericVersion = $this->numericVersion($serverVersion);
+            $validMinimum = preg_match('/\A\d+\.\d+(?:\.\d+)?\z/', $minimumMysqlVersion) === 1;
+            $meetsMinimum = $isMysql && $numericVersion !== null && $validMinimum
+                && version_compare($numericVersion, $minimumMysqlVersion, '>=');
             $this->add(
                 $checks,
                 'mysql_version',
@@ -223,10 +238,10 @@ class SchemaHealthInspector
         ];
     }
 
-    private function numericVersion(string $version): string
+    private function numericVersion(string $version): ?string
     {
-        return preg_match('/\d+(?:\.\d+){0,2}/', $version, $matches) === 1
-            ? $matches[0]
-            : '0.0.0';
+        return preg_match('/\A(\d+\.\d+(?:\.\d+)?)(?:[-+ ][^\r\n]*)?\z/', trim($version), $matches) === 1
+            ? $matches[1]
+            : null;
     }
 }

@@ -18,7 +18,11 @@ use App\Models\WCBB\Team as WcbbTeam;
 use App\Models\WNBA\Game as WnbaGame;
 use App\Models\WNBA\Team as WnbaTeam;
 use App\Services\MLB\MlbStartingPitcherForecastService;
+use App\Support\MLB\MlbGameStart;
+use Illuminate\Support\Carbon;
 use Laravel\Sanctum\Sanctum;
+use Tests\Support\ObservedCfbGameFixture;
+use Tests\Support\ObservedMlbGameFixture;
 
 dataset('v2GameContractSports', [
     'nba' => ['nba', NbaTeam::class, NbaGame::class],
@@ -188,6 +192,14 @@ it('returns a projected mlb starter with explicit rotation provenance', function
         'pitcher_projection_generated_at' => now(),
     ]);
 
+    $game = ObservedMlbGameFixture::observe($game, now()->addDay());
+    $game->update(['pitcher_projection_metadata' => [
+        ...(array) $game->pitcher_projection_metadata,
+        'timing_policy' => MlbGameStart::TIMING_POLICY,
+        'start_context_hash' => $game->start_context_hash,
+        'start_source_hash' => $game->start_source_hash,
+    ]]);
+
     $this->getJson("/api/v2/sports/mlb/games/{$game->id}")
         ->assertOk()
         ->assertJsonPath('data.home_starting_pitcher.full_name', 'Projected Starter')
@@ -202,6 +214,7 @@ it('returns a projected mlb starter with explicit rotation provenance', function
 });
 
 it('returns the box score starter ahead of probable and projected mlb pitchers', function () {
+    $this->travelTo(Carbon::parse('2026-06-20T12:00:00Z'));
     Sanctum::actingAs(User::factory()->create());
 
     $homeTeam = MlbTeam::factory()->create(['abbreviation' => 'CLE']);
@@ -228,6 +241,14 @@ it('returns the box score starter ahead of probable and projected mlb pitchers',
         'starting_pitcher_confirmation_metadata' => ['home' => ['source' => 'espn_boxscore']],
         'starting_pitchers_confirmed_at' => now(),
     ]);
+    $game = ObservedMlbGameFixture::observe($game, now()->addDay());
+    // Record genuinely pregame forecasts, then apply the observed boxscore confirmation.
+    $game->update([
+        'status' => 'STATUS_SCHEDULED',
+        'actual_home_pitcher_espn_id' => null, 'actual_away_pitcher_espn_id' => null,
+        'starting_pitchers_confirmed_at' => null,
+        'projected_home_pitcher_espn_id' => null,
+    ]);
     app(MlbStartingPitcherForecastService::class)->record($game, 'home', [
         'pitcher_espn_id' => $actualPitcher->espn_id,
         'confidence' => 0.82,
@@ -238,6 +259,18 @@ it('returns the box score starter ahead of probable and projected mlb pitchers',
         'confidence' => 0.74,
         'evidence' => ['rotation_size' => 5],
     ]);
+
+    expect($game->startingPitcherForecasts()->where('known_before_game_start', true)->count())->toBe(2);
+    $this->travelTo(now()->addDays(2));
+    $game->update([
+        'status' => 'STATUS_FINAL',
+        'actual_home_pitcher_espn_id' => $actualPitcher->espn_id,
+        'actual_away_pitcher_espn_id' => $actualAwayPitcher->espn_id,
+        'starting_pitchers_confirmed_at' => now(),
+    ]);
+    app(MlbStartingPitcherForecastService::class)->confirmGame($game->fresh());
+    // Conflicting current projection tests response precedence, not a later forecast admission.
+    $game->update(['projected_home_pitcher_espn_id' => 'projected-5001']);
 
     $this->getJson("/api/v2/sports/mlb/games/{$game->id}")
         ->assertOk()
@@ -268,6 +301,8 @@ it('presents cfb v2 game dates in eastern football time', function () {
         'game_date' => '2026-08-30 00:00:00',
         'game_time' => '02:00:00',
     ]);
+
+    ObservedCfbGameFixture::observe($game, '2026-08-30T02:00:00Z');
 
     $this->getJson("/api/v2/sports/cfb/games/{$game->id}")
         ->assertOk()

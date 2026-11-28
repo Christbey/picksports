@@ -2,9 +2,13 @@
 
 Scope: identify the active environment and perform authorized read-only inspection. Live read-only verification on November 20, 2026 established **Laravel Cloud** as current production, application `picksports`, environment `production`, primary domain `picksports.app`, release root `/var/www/html`. See the [NBA rollout runbook](nba-research-rollout.md) for verified deployment metadata, staging behavior and redacted preflight evidence.
 
+For later dated deployment, database and runtime observations, use the connection register (private verification record retained separately) and database release prerequisite assessment (private verification record retained separately). Historical access or successful metadata reads do not certify the current candidate, worker liveness or recovery.
+
 ## Identify the environment first
 
 Use the current Laravel Cloud environment and deployment configuration as the authority. Push-to-deploy is enabled for `main`, and the deploy command runs migrations. The local API key must be mapped privately from `LARAVEL_CLOUD_API_TOKEN` to the CLI's `LARAVEL_CLOUD_TOKEN`; never print either value.
+
+The installed Cloud CLI v0.6.0 database-cluster resolver can silently fall back to the sole existing cluster after an explicit ID lookup fails. A read-only probe after the November 25 rehearsal returned production for the already deleted copy ID. Never blindly retry database-cluster mutations or treat a preflight GET as protection against that race. Future destructive operations must use direct API/SDK requests with literal validated new-resource UUIDs and fail on missing resources, without fallback selection. The CLI itself is not patched. See isolated restore evidence and OQ-22 (private verification record retained separately).
 
 The Forge SSH/tunnel helper and `/home/forge/picksports.app/current` instructions below are **historical**. The saved Forge host contained an old storage-only release during inspection and is not the active application. Do not use it as current production database evidence or deploy there for Cloud rollout.
 
@@ -78,6 +82,21 @@ For a deployment, use the active platform's configured release workflow and back
 
 Queue names are separate from the configured queue connection: a queue named `sync` does not imply Laravel's synchronous `sync` driver. Read [queue configuration](../../config/queue.php) and confirm the actual hosting worker commands. Keep live/default consumers separate from bulk/sync work so imports do not block score updates. `queue.worker_contracts` defines default/bulk job limits; the database/Redis reservation lease must exceed the longest worker timeout. Do not copy old platform-specific Redis commands onto a database-backed deployment.
 
+The registry also declares the isolated Redis `nba-sources` worker contract: 600-second timeout, one attempt, and provisioning required before source-bridge activation. A registry entry does not create a hosting worker or enable the bridge. Verify actual process capacity and the Redis reservation interval before enabling it; see the [source bridge operating contract](nba-research-rollout.md#overnight-source-bridge). A job's explicit timeout overrides the worker's fallback timeout, so compare reservation leases against effective job timeouts as well as process flags.
+
+### Reviewed Redis worker commands
+
+The November 25 read-only worker inventory (private verification record retained separately) reports separate configured Redis default/sync processes matching the source contracts. Confirm that inventory and the actual hosting configuration before provisioning or replacing a process; the commands below configure consumers and are not read-only health checks:
+
+```bash
+php artisan queue:work redis --queue=default --sleep=1 --tries=3 --backoff=15 --timeout=120 --max-jobs=500 --max-time=3600 --memory=384
+php artisan queue:work redis --queue=sync --sleep=1 --tries=3 --backoff=30 --timeout=1800 --max-jobs=100 --max-time=3600 --memory=768
+```
+
+Run each as its own managed process; do not combine queues behind a single bulk-blocked worker. The declared database/Redis reservation defaults are 2,100 seconds, above the longest 1,800-second worker timeout; effective environment overrides and explicit job timeouts still require verification. Restart/recycle only through the authorized release procedure. Do not start duplicate legacy-host workers or a second scheduler. The isolated nba-sources worker remains unprovisioned/activation-gated by the current inventory.
+
+Historical alert suggestions were default oldest-job age above 5 minutes or depth above 200; sync age above 30 minutes or depth growing across two scheduler cycles; failed jobs/repeated restarts; Redis memory above 70% or eviction. These are **proposed, unvalidated thresholds**, not measured production SLOs or enabled alarms. PR-22 in the scope of work (private verification record retained separately) requires workload/headroom measurements, operator ownership and alert-delivery rehearsal before adopting thresholds.
+
 For incidents, compare oldest job age, failures/restarts, PHP peak memory, database/storage headroom, and last successful pipeline heartbeats. A training heartbeat alone does not establish fresh inference or complete grading. Capture before/after measurements for each scoped fix. Do not dispatch unbounded backfills, delete evidence, change retention, or resize infrastructure as a connection check.
 
 For large provider payloads, preserve source hashes and reader compatibility before archival. Verify archive put/read/hash and restoration with a bounded pilot before removing database payloads. Free-space recovery and schema reclamation are separate operations; neither is authorized by a read-only investigation.
@@ -89,3 +108,9 @@ Connecting to production does not require rotating `APP_KEY`. Preserve the stabl
 The CollegeFootballData credential key read by `config/services.php` is `COLLEGEFOOTBALLDATA_API_KEY`. The legacy spelling `COLLEGE_FOOTBALL_DATA_API_KEY` does not configure that service. Verify selected key presence privately rather than printing secret values.
 
 For AI operational inspection, use the allowlisted report `php artisan ai:status --json`, implemented by `AiStatusCommand`. Avoid full `config:show ai` or environment dumps, which can expose credentials.
+
+### Infrastructure capacity configuration
+
+`INFRASTRUCTURE_HEALTH_DATABASE_STORAGE_CAPACITY_GB` must reflect an authoritative current capacity when database-storage severity is enabled. Its default is unknown. A dated platform observation is not a permanent setting. Missing capacity yields unavailable utilization and a failed required health assessment; do not substitute0% or silently reuse an old volume size. Explicitly disabling that metric is different from measuring it healthy.
+
+The MySQL collector estimates application table/index allocation divided by configured capacity. It does not measure all platform disk usage, logs, temporary files or free volume space; retain the platform's independent capacity monitoring. The CLI renders unknown capacity as unavailable. This documentation does not establish the current runtime setting, and no live infrastructure probe is part of this change.

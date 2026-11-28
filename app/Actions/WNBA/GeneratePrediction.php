@@ -3,6 +3,7 @@
 namespace App\Actions\WNBA;
 
 use App\Actions\Sports\AbstractPredictionGenerator;
+use App\Actions\Sports\Concerns\UsesObservedBasketballNeutralContext;
 use App\Models\WNBA\EloRating;
 use App\Models\WNBA\Game;
 use App\Models\WNBA\Prediction;
@@ -13,6 +14,12 @@ use Illuminate\Support\Facades\Schema;
 
 class GeneratePrediction extends AbstractPredictionGenerator
 {
+    use UsesObservedBasketballNeutralContext;
+
+    protected const MODEL_VERSION = 'rules-observed-neutral-v2';
+
+    protected const FEATURE_VERSION = 'core-neutral-observation-v2';
+
     protected const SPORT_KEY = 'wnba';
 
     protected const TEAM_METRIC_MODEL = TeamMetric::class;
@@ -61,7 +68,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $this->currentGame = $game;
 
         // Calculate predicted spread (negative means away team favored)
-        $homeCourtAdvantage = config('wnba.elo.home_court_advantage');
+        $this->calibrationMetadata['neutral_context'] = $this->observedNeutralContext($game, 'wnba', $this->usingHistoricalReconstructionContext);
+        $homeCourtAdvantage = $this->calibrationMetadata['neutral_context']['effective_home_court_advantage'];
         $eloToSpread = config('wnba.prediction.elo_to_spread_divisor');
         $eloDiff = ($homeElo + $homeCourtAdvantage) - $awayElo;
 
@@ -215,12 +223,14 @@ class GeneratePrediction extends AbstractPredictionGenerator
     ): array {
         $defaultEfficiency = config('wnba.prediction.default_efficiency');
         $averagePace = (float) config('wnba.prediction.average_pace');
-        $homeCourtAdvantage = (float) config('wnba.elo.home_court_advantage');
+        $neutralContext = $this->calibrationMetadata['neutral_context'] ?? $this->observedNeutralContext($this->currentGame, 'wnba', $this->usingHistoricalReconstructionContext);
+        $homeCourtAdvantage = $neutralContext['effective_home_court_advantage'];
         $sampleGames = $this->metricSampleGames($homeMetrics, $awayMetrics);
         $signalContext = $this->currentGame instanceof Model
             ? app(WnbaPredictionSignalService::class)->forGame($this->currentGame)
             : [];
         $snapshotFeatures = [
+            'neutral_context' => $neutralContext,
             'home_elo' => $homeElo,
             'away_elo' => $awayElo,
             'home_metric_season' => $homeMetrics?->season,
@@ -248,6 +258,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
         ];
         $modelMetadata = [
             'model' => 'wnba_elo_efficiency_context',
+            'neutral_context' => $neutralContext,
             'calibration' => $this->calibrationMetadata,
             'signal_context' => $signalContext,
             'season_context' => [

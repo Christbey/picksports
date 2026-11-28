@@ -13,6 +13,8 @@ use App\Models\MLB\Team;
 use App\Models\MLB\TeamMetric;
 use App\Models\MLB\TeamStat;
 use App\Models\PredictionFeatureSnapshot;
+use App\Support\MLB\MlbGameStart;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Config;
 
 uses()->group('mlb');
@@ -196,6 +198,7 @@ it('falls back to default pitcher elo when no recent pitcher ratings exist', fun
 });
 
 it('uses rotation projections as lower-confidence pitcher inputs', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-06-01 12:00:00 UTC'));
     $homeTeam = Team::factory()->create(['elo_rating' => 1500]);
     $awayTeam = Team::factory()->create(['elo_rating' => 1500]);
     $homePitcher = Player::factory()->pitcher()->create([
@@ -208,8 +211,10 @@ it('uses rotation projections as lower-confidence pitcher inputs', function () {
         'espn_id' => 'projected-away',
         'elo_rating' => 1478,
     ]);
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2026,
+        'game_date' => '2026-06-02',
+        'game_time' => '13:00:00',
         'season_type' => '2',
         'status' => 'STATUS_SCHEDULED',
         'home_team_id' => $homeTeam->id,
@@ -219,6 +224,14 @@ it('uses rotation projections as lower-confidence pitcher inputs', function () {
         'projected_home_pitcher_confidence' => 0.62,
         'projected_away_pitcher_confidence' => 0.58,
     ]);
+
+    // Explicit synthetic projection bound to this fixture's observed schedule, not old metadata relabeling.
+    $game->update(['pitcher_projection_metadata' => [
+        ...(array) $game->pitcher_projection_metadata,
+        'timing_policy' => MlbGameStart::TIMING_POLICY,
+        'start_context_hash' => $game->start_context_hash,
+        'start_source_hash' => $game->start_source_hash,
+    ]]);
 
     $prediction = app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
 
@@ -234,6 +247,7 @@ it('uses rotation projections as lower-confidence pitcher inputs', function () {
 });
 
 it('uses a candidate-weighted pitcher rating when only a rotation projection is available', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-06-01 12:00:00 UTC'));
     $homeTeam = Team::factory()->create(['elo_rating' => 1500]);
     $awayTeam = Team::factory()->create(['elo_rating' => 1500]);
     $homePitcher = Player::factory()->pitcher()->create([
@@ -241,8 +255,10 @@ it('uses a candidate-weighted pitcher rating when only a rotation projection is 
         'espn_id' => 'weighted-home',
         'elo_rating' => 1600,
     ]);
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2026,
+        'game_date' => '2026-06-02',
+        'game_time' => '13:00:00',
         'season_type' => '2',
         'status' => 'STATUS_SCHEDULED',
         'home_team_id' => $homeTeam->id,
@@ -264,6 +280,14 @@ it('uses a candidate-weighted pitcher rating when only a rotation projection is 
             ],
         ],
     ]);
+
+    // Explicit synthetic projection bound to this fixture's observed schedule, not old metadata relabeling.
+    $game->update(['pitcher_projection_metadata' => [
+        ...(array) $game->pitcher_projection_metadata,
+        'timing_policy' => MlbGameStart::TIMING_POLICY,
+        'start_context_hash' => $game->start_context_hash,
+        'start_source_hash' => $game->start_source_hash,
+    ]]);
 
     $prediction = app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
 

@@ -4,10 +4,12 @@ use App\Application\Predictions\Data\EventInputSnapshotData;
 use App\Application\Predictions\Data\PredictionMarketOutput;
 use App\Application\Predictions\Data\PredictionOutput;
 use App\Models\CFB\Game;
+use App\Models\CFB\Team;
 use App\Models\EpaStateBaseline;
 use App\Models\ModelArtifact;
 use App\Models\ModelRun;
 use App\Services\CFB\CfbEpaBaselineEvidence;
+use App\Services\CFB\Data\CfbGameDataValidator;
 use App\Services\CFB\Data\CfbPipelineStage;
 use App\Services\CFB\Scoring\CfbPossessionScorer;
 use App\Services\CFB\Scoring\CfbScoringArtifact;
@@ -15,6 +17,8 @@ use App\Services\CFB\Scoring\CfbScoringChallenger;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+
+require_once __DIR__.'/../../Support/CfbAssessmentFixtures.php';
 
 it('retries failed stages, reuses success, and invalidates changed inputs', function () {
     $stage = app(CfbPipelineStage::class);
@@ -97,7 +101,12 @@ it('invalidates reused normalization when the accepted prior-season EPA baseline
 
 it('reuses a fully selected untransformed FPI distribution without changing its forecast', function () {
     $artifact = json_decode(file_get_contents(__DIR__.'/../../Fixtures/cfb-scoring-synthetic.json'), true);
-    $artifact['training_ids'] = [];
+    $trainingGame = Game::factory()->create(['home_team_id' => Team::factory(), 'away_team_id' => Team::factory()]);
+    foreach (['boxscore', 'plays'] as $component) {
+        cfbObservedAcceptedFixture(['game_id' => $trainingGame->id, 'component' => $component, 'source_hash' => hash('sha256', 'fpi-test-'.$component), 'source_path' => 'synthetic.json', 'validator_version' => CfbGameDataValidator::VERSION, 'state' => 'complete', 'discrepancies' => [], 'evidence' => [], 'accepted_at' => now()]);
+    }
+    $artifact['training_ids'] = [$trainingGame->id];
+    $artifact['source_assessment_provenance'] = cfbSyntheticTrainingProvenance($trainingGame);
     $artifact['fpi_weight'] = 1.0;
     $artifact['calibration_temperature'] = 1.0;
     $artifact['models']['fpi_margin'] = ['coefficients' => ['intercept' => 7.0]];

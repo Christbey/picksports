@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import PredictionTableRow from '@/components/predictions/PredictionTableRow.vue';
+import DashboardPredictionRow from '@/components/dashboard/DashboardPredictionRow.vue';
 import { Badge } from '@/components/ui/badge';
 import UnifiedPredictionCard from '@/components/predictions/UnifiedPredictionCard.vue';
 import { useDashboardPresentation } from '@/composables/useDashboardView';
@@ -72,6 +72,7 @@ const showSpringTrainingBadge = (sport: DashboardSport): boolean =>
                                     'Model winner',
                                     'Spread / Margin',
                                     'Total',
+                                    'Signal',
                                 ]"
                                 :key="column"
                                 scope="col"
@@ -84,7 +85,7 @@ const showSpringTrainingBadge = (sport: DashboardSport): boolean =>
                             </th>
                         </tr>
                     </thead>
-                    <PredictionTableRow
+                    <DashboardPredictionRow
                         v-for="prediction in sport.predictions"
                         :key="`${prediction.sport}-${prediction.game_id}`"
                         :prediction="prediction"

@@ -77,7 +77,6 @@ const emit = defineEmits<{ toggle: [] }>();
                     {{ formatPropTimestamp(rec.fetched_at, rec.game.timezone) }}
                 </p>
                 <p
-                    v-if="isAdmin"
                     :class="
                         presentation.quoteStatus(rec) === 'stale'
                             ? 'text-amber-700 dark:text-amber-400'

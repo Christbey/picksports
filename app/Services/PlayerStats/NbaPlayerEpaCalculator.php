@@ -8,6 +8,60 @@ class NbaPlayerEpaCalculator
 
     public const PROFILE_CBB = 'cbb';
 
+    /** Required observed counts for the read-only box-score proxy. Legacy estimate semantics remain unchanged. */
+    public const BOX_SCORE_FIELDS = ['points', 'assists', 'rebounds_total', 'steals', 'blocks', 'turnovers', 'field_goals_made', 'field_goals_attempted', 'free_throws_made', 'free_throws_attempted'];
+
+    /** @param array<string,mixed> $stats */
+    public function estimateFromObservedBoxScore(array $stats, string $profile = self::PROFILE_NBA): ?float
+    {
+        $values = [];
+        foreach (self::BOX_SCORE_FIELDS as $field) {
+            $value = $stats[$field] ?? null;
+            if ((! is_int($value) && ! is_float($value) && ! is_string($value))
+                || (is_string($value) && (strlen($value) > 64 || preg_match('/\A(?:\d+(?:\.\d*)?|\.\d+)\z/', $value) !== 1))
+                || ! is_numeric($value) || ! is_finite((float) $value) || (float) $value < 0) {
+                return null;
+            }
+            $values[$field] = (float) $value;
+        }
+        if ($values['field_goals_made'] > $values['field_goals_attempted'] || $values['free_throws_made'] > $values['free_throws_attempted']) {
+            return null;
+        }
+
+        $estimate = $this->estimateFromBoxScore(...[...array_values($values), $profile]);
+
+        return is_finite($estimate) ? $estimate : null;
+    }
+
+    public function observedMinutes(mixed $value): ?float
+    {
+        if ((! is_string($value) && ! is_float($value) && ! is_int($value)) || (is_string($value) && strlen($value) > 64)) {
+            return null;
+        }
+        if (is_string($value)) {
+            $value = trim($value);
+            if (preg_match('/\A(\d+):([0-5]?\d)\z/', $value, $parts) === 1) {
+                $value = (float) $parts[1] + (int) $parts[2] / 60;
+            } elseif (preg_match('/\A\d+(?:\.\d+)?\z/', $value) !== 1) {
+                return null;
+            }
+        }
+
+        return is_numeric($value) && is_finite((float) $value) && (float) $value >= 0 ? (float) $value : null;
+    }
+
+    public function estimateObservedPer36(?float $estimatedEpa, mixed $minutesPlayed): ?float
+    {
+        $minutes = $this->observedMinutes($minutesPlayed);
+        if ($estimatedEpa === null || ! is_finite($estimatedEpa) || $minutes === null || $minutes <= 0) {
+            return null;
+        }
+
+        $estimate = $this->estimatePer36($estimatedEpa, $minutes);
+
+        return is_finite($estimate) ? $estimate : null;
+    }
+
     /**
      * @var array<string, array<string, float>>
      */

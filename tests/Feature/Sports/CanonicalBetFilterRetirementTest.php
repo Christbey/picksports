@@ -13,6 +13,7 @@ use App\Services\Api\V2\SportContextResolver;
 use App\Services\MLB\MlbBettingSignalService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Tests\Support\ObservedMlbGameFixture;
 
 beforeEach(function () {
     $this->travelTo('2026-10-29 12:00:00');
@@ -31,11 +32,20 @@ function betFilterRetirementFixture(string $sport, ?CalculationRelease $release 
         'status' => 'STATUS_SCHEDULED', 'game_date' => $event->starts_at->toDateString(), 'game_time' => $event->starts_at->format('H:i:s'),
         'home_team_id' => $teamClass::factory(), 'away_team_id' => $teamClass::factory()]);
     $release ??= CalculationRelease::factory()->approved()->create(['sport' => $sport, 'phase' => 'pregame']);
-    $input = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id,
+    if ($game instanceof Game) {
+        $game = ObservedMlbGameFixture::observe($game, $event->starts_at);
+    }
+    $inputAttributes = ['sport' => $sport, 'sport_event_id' => $event->id,
         'phase' => 'pregame', 'pregame_safety_status' => 'verified', 'captured_at' => now(), 'cutoff_at' => now(),
         'inputs' => ['pregame_market' => ['available' => true, 'captured_at' => now()->toIso8601String(),
             'consensus' => ['spread' => ['line' => -2.5], 'total' => ['line' => 8.0]]], 'home' => ['elo' => 1550], 'away' => ['elo' => 1490],
-            'pitching' => ['home' => ['elo' => 1600, 'espn_id' => '100'], 'away' => ['elo' => 1450, 'espn_id' => '200']]]]);
+            'pitching' => ['home' => ['elo' => 1600, 'espn_id' => '100'], 'away' => ['elo' => 1450, 'espn_id' => '200']]]];
+    if ($game instanceof Game) {
+        $qualified = ObservedMlbGameFixture::snapshotAttributes($game, $inputAttributes['inputs'], $inputAttributes['captured_at'] ?? now());
+        $inputAttributes = [...$inputAttributes, ...$qualified, 'pregame_safety_status' => $inputAttributes['pregame_safety_status'] ?? 'verified'];
+    }
+    $input = EventInputSnapshot::factory()->create($inputAttributes);
+
     $run = CalculationRun::factory()->create(['output_hash' => str_repeat('a', 64), 'sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
         'calculation_release_id' => $release->id, 'status' => 'succeeded']);
     $native = CanonicalPrediction::factory()->create(['output_hash' => str_repeat('a', 64), 'sport' => $sport, 'sport_event_id' => $event->id,

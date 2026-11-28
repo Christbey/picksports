@@ -1,72 +1,37 @@
 # Documentation
 
-## Practical guides
+## Setup and engineering
 
-| Guide | Use it for |
-| --- | --- |
-| [Local development](local-development.md) | Installation, local database, development server, and checks |
-| [Production access](operations/production-access.md) | Host verification, SSH, API access, and deployment boundaries |
-| [Database access](operations/database-access.md) | Local MySQL/SQLite, production tunnel, connection checks, and troubleshooting |
-| [Engineering conventions](engineering.md) | Shared implementation rules, independent of assistant vendor |
+- [Local development](local-development.md)
+- [Engineering conventions](engineering.md)
+- [Codebase reference](codebase-reference.md)
+- [Scheduler reference](../SCHEDULER_REFERENCE.md)
+- [Production access](operations/production-access.md)
+- [Database access](operations/database-access.md)
 
-## Application references
+## Operating contracts
 
-- [NFL prediction authority](operations/nfl-prediction-authority.md): numerical model, AI research, canonical publication, scenarios and grading; November 25 audit.
+The [curated contract index](contracts/README.md) preserves the required API idempotency and injury-observation provenance paths and current recovery contracts. Private execution logs, deployment identities, audit inventories and historical canary records are retained separately. Documentation describes source contracts; it does not establish that a particular deployment runs them.
 
-- [Codebase reference](codebase-reference.md): domain layers and data semantics.
-- [API v2 operating policies](api/v2/README.md): changelog, versioning/deprecation, sandbox, and service objectives.
-- [API v2 reference](api-v2-reference.md), [endpoint contracts](api-v2-endpoint-contracts.md), and [OpenAPI](openapi-v2.json): routes, authentication, and payloads. Route and request implementations resolve disagreements.
-- [Model lifecycle](model-lifecycle.md), [calculations](calculations-reference.md), and [team metrics](team-metrics-architecture.md): prediction and metric ownership.
-- [Scheduler reference](../SCHEDULER_REFERENCE.md): scheduled work; confirm against `routes/console.php`.
-- [Agents and operations](agents-and-operations.md): application AI workflows and operational commands, some of which write data or call paid providers.
-- [Production performance](production-performance.md): Forge deployment helper, worker recycling, assets, and observability.
-- [NFL analysis checklist](nfl-game-analysis-checklist.md): scope and evidence for full game breakdowns.
-- [Operation-specific runbooks](operations/): use the relevant sport or subsystem guide; check commands against source before running them.
+- [API reference](api-v2-reference.md), [endpoint contracts](api-v2-endpoint-contracts.md), [OpenAPI](openapi-v2.json) and [API operating policies](api/v2/README.md)
+- [Architecture decision continuity](architecture/decision-continuity.md)
+- [Model lifecycle](model-lifecycle.md), [calculation reference](calculations-reference.md) and [team metrics](team-metrics-architecture.md)
+- [Account access](operations/account-access.md), [finite API credentials](operations/api-token-policy.md) and [native device sessions](operations/native-device-sessions.md)
+- [Billing webhooks](operations/billing-webhooks.md), [billing entitlement provenance](operations/billing-entitlements.md) and [web push](operations/web-push.md)
+- [Queue workers](operations/laravel-cloud-queue-workers.md), [bounded pruning](operations/queue-pruning.md) and [remote model training](operations/remote-model-training.md)
+- [NFL canonical operations](operations/nfl-canonical-operations.md), [analysis checklist](nfl-game-analysis-checklist.md), [QB provenance](operations/nfl-historical-qb-provenance.md) and [strength of schedule](operations/nfl-basic-sos.md)
+- [CFB pregame pipeline](operations/cfb-pregame-pipeline.md), [kickoff evidence](cfb-kickoff-operations.md), [live projections](operations/cfb-live-betting.md) and [closing evidence](operations/cfb-postgame-closing-evidence.md)
+- [CBB possession maintenance](operations/cbb-possession-metrics.md)
+- [Selected accessibility fixtures](operations/accessibility-fixtures.md): synthetic24 browser controls, focus ownership and manual assistive-technology limits
+- [Python CI runtime](operations/python-ci-runtime.md): exact ARM target closure and hosted-interpreter qualification limits
+- [Women’s basketball play observations](operations/womens-basketball-play-observations.md): persisted identity/flags, wire aliases and acquisition/history boundaries
+- [NFL research admission and cost controls](operations/nfl-research-cost-controls.md): estimated budgets, manual force boundaries and read-only accounting
+- [MLB observed starts](operations/mlb-observed-start.md), [output/period boundaries](mlb-output-and-period-registration-boundaries.md) and [artifact storage](operations/ml-artifact-storage.md)
+- [NBA research rollout](operations/nba-research-rollout.md), [structured adapter](operations/nba-structured-research-adapter.md) and [release preparation](operations/nba-adapter-release-candidate-2026-11-21.md)
+- [Descriptive team trends](operations/descriptive-team-trends.md), [player-prop corrections](operations/player-prop-corrections.md), [dashboard health](operations/dashboard-health-status.md) and [AI readiness](operations/ai-readiness-review.md)
 
-## Verify instructions against source
+## Use current source and verified targets
 
-| Subject | Owning source |
-| --- | --- |
-| Runtime versions and developer commands | `composer.json`, `package.json`, lockfiles, and `.github/workflows/` |
-| Environment names and connection behavior | `.env.example` and `config/`; use active infrastructure for actual production values |
-| API routes, access, and filters | `routes/api-v2.php`, middleware, and request classes |
-| Scheduled commands and ordering | `routes/console.php` and command implementations |
-| Release mutations | `scripts/post-deploy.sh` plus the active platform's deployment configuration |
+Command signatures, routes, request classes, lockfiles, configuration and tests resolve implementation disagreements. Source review does not prove live connectivity, worker liveness, restore readiness or model approval. Accessing production does not authorize deployment, provider refreshes, historical backfills or notifications.
 
-A successful source review confirms what a command is defined to do. It does not confirm that a server is running that release or that a credential still works.
-
-## Historical documentation
-
-Use the current guides above for operations. Older hosting migrations, rollout plans and incident reports are historical references; their presence does not establish current deployment configuration or production access. Dated local analysis and execution artifacts under `outputs/` record their inspected environment and are not general operating instructions.
-
-## Keeping documentation useful
-
-Put setup and access instructions in the practical guides above. Link to them instead of copying connection instructions into assistant files or sport reports. For a runbook, state its scope, prerequisites, commands, expected result, side effects, and recovery steps where applicable. Record verification dates for environment claims and distinguish code inspection from live checks.
-
-When changing a route, command, environment key, or deployment behavior, update its owning guide in the same change. Keep credentials and machine-specific helpers untracked. Remove superseded plans and completed reports once useful guidance has been consolidated. Use Git history for retired tracked documentation rather than maintaining duplicate archive files.
-
-## Review baseline — November 17, 2026
-
-This documentation pass checked repository scripts, dependency manifests, database configuration, API authentication documentation, and test configuration. It added the missing onboarding/access guides and removed the dependency on Claude for shared engineering conventions. It did not verify live production connectivity or audit every sport formula. Superseded Cloud migration notes and other obsolete plans/reports were removed; the production guide states what remains unverified about the active environment.
-
-## Shared research rollout
-
-- [NBA research rollout](operations/nba-research-rollout.md): opt-in source admission, review ownership, activation and rollback.
-- [Shared descriptive research](operations/multi-sport-research.md) and [prediction review execution](operations/prediction-review.md).
-
-## NBA structured evidence
-
-- [NBA capture](operations/nba-injury-observation-implementation.md) and [structured research adapter](operations/nba-structured-research-adapter.md): disabled-by-default acquisition ordering, provenance, verification and activation gates.
-- [NBA source refresh plan](operations/nba-source-refresh-plan.md): optional PDFs, overnight coverage and review deduplication gates.
-
-- [NBA adapter release candidate](operations/nba-adapter-release-candidate-2026-11-21.md): live nonproduction end-to-end canary, isolated baseline, review evidence and unexecuted activation/rollback sequence.
-
-- [NBA team canary scope](operations/nba-team-canary-scope.md): two-team, expiring capture/research admission with unchanged nonselected NBA and NFL behavior.
-
-- [NBA expanded context research](operations/nba-expanded-context-research.md): explicitly captured lineup projections/starter flags, historical rotation, and schedule-based rest/travel within the existing canary scope.
-
-- [NBA identical-content review reuse candidate](operations/nba-review-provenance-reuse.md): default-off append-only provenance revalidation with original paid validity and NFL compatibility preserved.
-
-- [NBA context identity fix and overnight audit](operations/nba-context-identity-overnight-2026-11-21.md): cross-packet reuse verification, failed overnight coverage gate and source-only trial requirements; automation remains off.
-
-- [NBA overnight source bridge release candidate](operations/nba-overnight-source-bridge-rc-2026-11-21.md): disabled NBA acquisition/assessment, isolated worker, context identity fix, tested overnight/DST behavior and deployment gates.
+Keep historical evidence private and dated. Do not copy old deployment IDs, canary game IDs, raw credentials, customer data or machine-specific paths into operating instructions. Retain an explicit successor for any normative contract when retiring an old report; do not remove an entire documentation directory simply because it also contains private proof.

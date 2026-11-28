@@ -2,12 +2,15 @@
 
 namespace App\Models\NBA;
 
+use App\Models\Concerns\RejectsPersistedModelMutation;
 use App\Models\ResearchSource;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ResearchContextSnapshot extends Model
 {
+    use RejectsPersistedModelMutation;
+
     protected $table = 'nba_research_context_snapshots';
 
     public $timestamps = false;
@@ -19,10 +22,9 @@ class ResearchContextSnapshot extends Model
         return ['responses' => 'array', 'captured_at' => 'immutable_datetime'];
     }
 
-    protected static function booted(): void
+    protected function immutableMutationMessage(): string
     {
-        static::updating(fn () => throw new \LogicException('NBA context evidence is immutable.'));
-        static::deleting(fn () => throw new \LogicException('NBA context evidence is immutable.'));
+        return 'NBA context evidence is immutable.';
     }
 
     public function source(): BelongsTo

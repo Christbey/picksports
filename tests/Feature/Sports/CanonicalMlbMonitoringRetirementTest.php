@@ -14,15 +14,19 @@ use App\Models\SportEvent;
 use App\Models\User;
 use App\Services\MLB\MlbModelMonitoringService;
 use App\Services\Predictions\ModelRunRecorder;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\Support\ObservedMlbGameFixture;
 
 beforeEach(function () {
     $this->travelTo('2026-07-29 12:00:00');
     $this->withoutVite();
     Http::preventStrayRequests();
+    // These tests assert Inertia props, not a live SSR renderer.
+    config(['inertia.ssr.enabled' => false]);
     config(['prediction_lifecycle.canonical_reads.mlb' => true]);
 });
 afterEach(fn () => $this->travelBack());
@@ -36,12 +40,24 @@ function mlbMonitoringRetirementFixture(string $variant = 'valid'): array
         'model_version' => 'test-v1', 'feature_version' => 'core-v1', 'dataset_hash' => str_repeat('a', 64),
         'artifact_path' => 'missing-test-artifact', 'artifact_hash' => hash('sha256', (string) Str::uuid()), 'status' => 'challenger']);
     $event = SportEvent::factory()->create(['sport' => 'mlb', 'starts_at' => now()->subHour(), 'season' => 2026]);
+    $fixtureNow = now()->toImmutable();
+    CarbonImmutable::setTestNow($fixtureNow->subHours(4)->subMinute());
     $game = Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026, 'status' => 'STATUS_SCHEDULED',
         'home_team_id' => Team::factory(), 'away_team_id' => Team::factory(), 'game_date' => now()->toDateString()]);
-    $input = EventInputSnapshot::factory()->create(['sport' => 'mlb', 'sport_event_id' => $event->id,
+    if ($game instanceof Game) {
+        $game = ObservedMlbGameFixture::observe($game, $event->starts_at);
+    }
+    CarbonImmutable::setTestNow($fixtureNow);
+    $inputAttributes = ['sport' => 'mlb', 'sport_event_id' => $event->id,
         'captured_at' => now()->subHours(3), 'cutoff_at' => now()->subHours(3),
         'latest_source_available_at' => now()->subHours(4), 'pregame_safety_status' => $variant === 'unsafe' ? 'unverified' : 'verified',
-        'inputs' => ['home' => ['elo' => 1500], 'unused_diagnostics' => str_repeat('large', 1000)]]);
+        'inputs' => ['home' => ['elo' => 1500], 'unused_diagnostics' => str_repeat('large', 1000)]];
+    if ($game instanceof Game) {
+        $qualified = ObservedMlbGameFixture::snapshotAttributes($game, $inputAttributes['inputs'], $inputAttributes['captured_at'] ?? now());
+        $inputAttributes = [...$inputAttributes, ...$qualified, 'pregame_safety_status' => $inputAttributes['pregame_safety_status'] ?? 'verified'];
+    }
+    $input = EventInputSnapshot::factory()->create($inputAttributes);
+
     $release = CalculationRelease::factory()->approved()->create(['sport' => 'mlb', 'phase' => 'pregame']);
     $calculation = CalculationRun::factory()->create(['output_hash' => str_repeat('a', 64), 'sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
         'calculation_release_id' => $release->id, 'status' => 'succeeded']);

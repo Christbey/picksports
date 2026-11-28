@@ -6,6 +6,7 @@ use App\Application\Sports\ReadModels\BettingForecast;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game as CfbGame;
 use App\Models\NFL\Game as NflGame;
+use App\Models\WCBB\Game as WcbbGame;
 use App\Services\BettingRecommendations\GameBettingRecommendationService;
 use App\Services\CFB\Live\LiveBoardPresentation;
 use App\Services\CFB\Predictions\CfbCanonicalSpreadValueSignalService;
@@ -16,6 +17,7 @@ use App\Services\MLB\MlbRecommendationPresentation;
 use App\Services\Predictions\BettingForecastSource;
 use App\Services\Predictions\LivePredictionStore;
 use App\Services\Predictions\PredictionDeliverySource;
+use App\Services\WCBB\Predictions\WcbbSpreadTracking;
 
 class CanonicalPredictionPresentationService
 {
@@ -65,7 +67,11 @@ class CanonicalPredictionPresentationService
             marketAwareProjection: $prediction->sport === 'mlb'
                 ? app(MlbMarketAwareProjectionService::class)->forPrediction($mlbForecast) : null,
             confidenceContext: $this->confidenceContext($prediction, $confidence),
-            valueSignal: $game instanceof CfbGame ? $this->cfbValueSignals->forPrediction($prediction, $game) : null,
+            valueSignal: match (true) {
+                $game instanceof CfbGame => $this->cfbValueSignals->forPrediction($prediction, $game),
+                $game instanceof WcbbGame => app(WcbbSpreadTracking::class)->signal($prediction, $game),
+                default => null,
+            },
             modelBetContext: app(PredictionModelBetContext::class)->forPrediction($prediction, $game),
             weatherForecast: $game instanceof CfbGame || $game instanceof NflGame ? app(PredictionWeatherContext::class)->forPrediction($prediction, $game) : null,
         );

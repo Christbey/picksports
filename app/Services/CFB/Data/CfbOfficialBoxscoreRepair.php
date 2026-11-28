@@ -8,6 +8,7 @@ use App\Models\CFB\Game;
 use App\Models\CFB\GameDataCheck;
 use App\Models\CFB\PlayerStat;
 use App\Models\CFB\TeamStat;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -123,13 +124,12 @@ class CfbOfficialBoxscoreRepair
         });
     }
 
-    public function currentProof(Game $game, ?GameDataCheck $primary): ?GameDataCheck
+    public function currentProof(Game $game, ?GameDataCheck $primary, ?CarbonInterface $asOf = null): ?GameDataCheck
     {
         if ($game->status !== 'STATUS_FINAL') {
             return null;
         }
-        $check = GameDataCheck::where('game_id', $game->id)->where('component', 'boxscore')->where('validator_version', self::VERSION)
-            ->where('state', 'complete')->whereNotNull('accepted_at')->latest('accepted_at')->latest('id')->first();
+        $check = app(CfbSourceAssessmentRecorder::class)->acceptedForGame($game, 'boxscore', [self::VERSION], asOf: $asOf);
         $spec = config('cfb_official_sources.boxscores.'.$game->espn_event_id);
         if (! is_array($spec) || ! $check || data_get($check->evidence, 'official_source_hash') !== $spec['sha256']
             || data_get($check->evidence, 'primary_source_hash') !== $primary?->source_hash) {

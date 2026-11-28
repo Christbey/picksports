@@ -4,7 +4,9 @@ namespace App\Actions\CBB;
 
 use App\Models\CBB\Game;
 use App\Models\CBB\Team;
+use Illuminate\Database\Connection;
 use Illuminate\Support\Collection;
+use RuntimeException;
 
 class RepairTournamentStructure
 {
@@ -23,20 +25,30 @@ class RepairTournamentStructure
 
     public function execute(int $season): int
     {
+        $connection = (new Game)->getConnection();
+        if ($connection !== (new Team)->getConnection()) {
+            throw new RuntimeException('Tournament repair requires one game and team connection.');
+        }
+
+        return $connection->transaction(fn (): int => $this->repairSeason($season, $connection));
+    }
+
+    private function repairSeason(int $season, Connection $connection): int
+    {
         $games = Game::query()
             ->with(['homeTeam', 'awayTeam'])
             ->where('season', $season)
             ->where('season_type', (int) config('cbb.season.types.postseason'))
             ->where('is_ncaa_tournament', true)
             ->orderBy('id')
+            ->lockForUpdate()
             ->get();
 
         $teams = Team::query()
             ->select(['id', 'espn_id', 'school', 'mascot', 'abbreviation', 'logo_url'])
             ->get();
 
-        $createdOrUpdated = 0;
-
+        $plans = [];
         foreach (self::REGIONS as $region) {
             foreach (self::ROUND_OF_64_SEED_PAIRINGS as [$highSeed, $lowSeed]) {
                 $placeholderEventId = $this->placeholderEventId($season, $region, $highSeed, $lowSeed);
@@ -46,19 +58,137 @@ class RepairTournamentStructure
 
                 if ($realGame) {
                     if ($placeholderGame) {
-                        $placeholderGame->delete();
+                        $this->assertDeletable($connection, $placeholderGame);
                     }
+                    $plans[] = ['kind' => 'real', 'id' => $realGame->id,
+                        'expected' => array_intersect_key($realGame->getRawOriginal(), array_flip([
+                            'espn_event_id', 'sport_event_id', 'season', 'season_type', 'tournament_round',
+                            'tournament_region', 'home_seed', 'away_seed', 'home_team_id', 'away_team_id',
+                            'status', 'home_score', 'away_score',
+                        ])), 'obsolete' => $placeholderGame];
 
                     continue;
                 }
 
                 $attributes = $this->buildPlaceholderAttributes($games, $teams, $season, $region, $highSeed, $lowSeed);
-                Game::query()->updateOrCreate(['espn_event_id' => $placeholderEventId], $attributes);
-                $createdOrUpdated++;
+                // Detach date objects before any model observer can run.
+                $attributes = (new Game($attributes))->getAttributes();
+                $current = Game::query()->where('espn_event_id', $placeholderEventId)->lockForUpdate()->first();
+                if ($current !== null && $current->getRawOriginal('espn_event_id') !== $placeholderEventId) {
+                    throw new RuntimeException('Tournament placeholder key has an ambiguous current owner.');
+                }
+                $plans[] = ['kind' => 'write', 'row' => $current, 'id' => $current?->getRawOriginal('id'),
+                    'attributes' => $attributes, 'key' => $placeholderEventId,
+                    'expected' => ['espn_event_id' => $placeholderEventId, ...$attributes,
+                        'sport_event_id' => $current?->getRawOriginal('sport_event_id')]];
+            }
+        }
+
+        $createdOrUpdated = 0;
+        $headers = [];
+        $deleted = [];
+        foreach ($plans as $plan) {
+            if ($plan['kind'] === 'real') {
+                $this->assertSlot($connection, $plan['id'], $plan['expected']);
+                if ($plan['obsolete'] !== null) {
+                    $obsolete = $plan['obsolete'];
+                    $id = $obsolete->id;
+                    $key = $obsolete->getRawOriginal('espn_event_id');
+                    $this->assertDeletable($connection, $obsolete);
+                    if ($obsolete->delete() !== true || $connection->table('cbb_games')->useWritePdo()->where('id', $id)->exists()) {
+                        throw new RuntimeException('Obsolete tournament placeholder deletion was not persisted.');
+                    }
+                    $deleted[] = ['id' => $id, 'key' => $key];
+                }
+                $headers[] = ['id' => $plan['id'], 'expected' => $plan['expected']];
+
+                continue;
+            }
+            $row = $plan['row'] ?? new Game(['espn_event_id' => $plan['key']]);
+            $row->fill($plan['attributes']);
+            if ($row->getConnection() !== $connection || $row->save() !== true || ! $row->exists
+                || $row->getConnection() !== $connection || $row->getTable() !== 'cbb_games'
+                || ($plan['id'] !== null && (string) $row->id !== (string) $plan['id'])) {
+                throw new RuntimeException('Tournament placeholder save was not persisted.');
+            }
+            $this->assertSlot($connection, $row->id, $plan['expected']);
+            $headers[] = ['id' => $row->id, 'expected' => $plan['expected']];
+            $createdOrUpdated++;
+        }
+        // At most 32 intended slots; a later observer cannot erase an earlier receipt.
+        foreach ($headers as $header) {
+            $this->assertSlot($connection, $header['id'], $header['expected']);
+        }
+        foreach ($deleted as $row) {
+            if ($connection->table('cbb_games')->useWritePdo()->where('id', $row['id'])
+                ->orWhere('espn_event_id', $row['key'])->exists()) {
+                throw new RuntimeException('Obsolete tournament placeholder reappeared during repair.');
             }
         }
 
         return $createdOrUpdated;
+    }
+
+    private function assertSlot(Connection $connection, int|string $id, array $expected): void
+    {
+        $query = $connection->table('cbb_games')->useWritePdo()->where('id', $id)->lockForUpdate()->select('id');
+        foreach ($expected as $field => $value) {
+            $column = $connection->getQueryGrammar()->wrap($field);
+            if ($value === null) {
+                $query->selectRaw("CASE WHEN {$column} IS NULL THEN NULL ELSE '__not_null__' END AS {$column}");
+            } else {
+                $query->selectRaw("CASE WHEN LENGTH({$column}) <= ? THEN {$column} ELSE NULL END AS {$column}", [max(32, strlen((string) $value) + 1)]);
+            }
+        }
+        $current = $query->first();
+        if ($current === null) {
+            throw new RuntimeException('An intended tournament slot disappeared.');
+        }
+        foreach ($expected as $field => $value) {
+            $actual = $current->{$field};
+            if ($field === 'game_date' && $value !== null) {
+                $date = substr((string) $value, 0, 10);
+                $matches = in_array($actual, [$date, $date.' 00:00:00'], true);
+            } else {
+                $matches = $value === null ? $actual === null : $actual !== null && (string) $actual === (string) $value;
+            }
+            if (! $matches) {
+                throw new RuntimeException('Tournament slot differs from its requested identity or values.');
+            }
+        }
+    }
+
+    private function assertDeletable(Connection $connection, Game $game): void
+    {
+        if ($game->getConnection() !== $connection || $game->getRawOriginal('sport_event_id') !== null) {
+            throw new RuntimeException('Linked tournament identity must be retained.');
+        }
+        $this->assertSlot($connection, $game->id, array_intersect_key($game->getRawOriginal(), array_flip([
+            'espn_event_id', 'sport_event_id', 'season', 'season_type', 'is_ncaa_tournament',
+            'tournament_round', 'tournament_region', 'home_seed', 'away_seed',
+        ])));
+        foreach (['cbb_plays', 'cbb_player_stats', 'cbb_team_stats', 'cbb_predictions', 'cbb_player_props', 'cbb_elo_ratings'] as $table) {
+            if ($connection->table($table)->useWritePdo()->where('game_id', $game->id)->exists()) {
+                throw new RuntimeException('Tournament placeholder has retained game history.');
+            }
+        }
+        if ($connection->table('cbb_tournament_state_snapshots')->useWritePdo()->where('trigger_game_id', $game->id)->exists()) {
+            throw new RuntimeException('Tournament placeholder has retained tournament history.');
+        }
+        foreach (['game_odds_snapshots', 'bet_decisions'] as $table) {
+            if ($connection->table($table)->useWritePdo()->where('sport', 'cbb')->where('game_table', 'cbb_games')->where('game_id', $game->id)->exists()) {
+                throw new RuntimeException('Tournament placeholder has retained typed game evidence.');
+            }
+        }
+        if ($connection->table('prediction_feature_snapshots')->useWritePdo()->where('sport', 'cbb')
+            ->where('prediction_table', 'cbb_predictions')->where('game_id', $game->id)->exists()) {
+            throw new RuntimeException('Tournament placeholder has retained prediction evidence.');
+        }
+        if ($connection->getSchemaBuilder()->hasTable('player_props')
+            && $connection->table('player_props')->useWritePdo()->whereIn('gameable_type', array_unique([Game::class, $game->getMorphClass()]))
+                ->where('gameable_id', $game->id)->exists()) {
+            throw new RuntimeException('Tournament placeholder has retained legacy prop evidence.');
+        }
     }
 
     private function buildPlaceholderAttributes(

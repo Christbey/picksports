@@ -121,7 +121,7 @@ it('preserves separate recorder observations and provenance while sharing their 
     expect($first->snapshot_run_id)->not->toBe($second->snapshot_run_id)
         ->and($first->game_id)->toBe(1)->and($second->game_id)->toBe(2)
         ->and($first->generated_at->toDateTimeString())->toBe('2026-10-16 10:00:00')
-        ->and($second->source_timestamps)->toBe(['source' => 'second'])
+        ->and($second->source_timestamps)->toBe(['scheduled_start_observed_at_utc' => null, 'supplied' => ['source' => 'second']])
         ->and($first->model_metadata)->toBe($metadata)->and($second->fresh()->model_metadata)->toBe($metadata)
         ->and($first->feature_hash)->toBe($second->feature_hash)
         ->and(PredictionFeatureSnapshot::query()->count())->toBe(2)

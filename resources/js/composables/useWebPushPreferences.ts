@@ -92,9 +92,22 @@ export function useWebPushPreferences(
             );
 
             if (!response.ok) {
-                throw new Error(
-                    'Could not save push subscription on the server.',
-                );
+                let message = 'Could not save push subscription on the server.';
+                if (response.status === 409 || response.status === 422) {
+                    try {
+                        const detail = (await response.json()) as {
+                            message?: string;
+                            errors?: { endpoint?: string[] };
+                        };
+                        const guidance =
+                            detail.errors?.endpoint?.[0] ?? detail.message;
+                        if (typeof guidance === 'string' && guidance.trim())
+                            message = guidance;
+                    } catch {
+                        // Keep a safe fallback for non-JSON proxy responses.
+                    }
+                }
+                throw new Error(message);
             }
 
             webPushHasSubscription.value = true;

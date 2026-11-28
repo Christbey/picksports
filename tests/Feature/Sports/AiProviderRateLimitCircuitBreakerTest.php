@@ -39,3 +39,46 @@ it('treats exhausted provider quota as a rate limit with the longer cooldown', f
         ->and($breaker->trip('openai', true))->toBe(86400)
         ->and($breaker->retryAfterSeconds('openai'))->toBeGreaterThanOrEqual(86399);
 });
+
+it('does not erase a newer cooldown after reading an expired timestamp', function () {
+    $original = Cache::getFacadeRoot();
+    $now = now()->timestamp;
+    $store = new class($now)
+    {
+        public int $value;
+
+        public bool $raced = false;
+
+        public function __construct(private readonly int $now)
+        {
+            $this->value = $now - 1;
+        }
+
+        public function get(string $key, mixed $default = null): mixed
+        {
+            $observed = $this->value;
+            if (! $this->raced) {
+                $this->raced = true;
+                $this->value = $this->now + 900;
+            }
+
+            return $observed;
+        }
+
+        public function forget(string $key): bool
+        {
+            $this->value = 0;
+
+            return true;
+        }
+    };
+    try {
+        Cache::swap($store);
+        $breaker = app(AiProviderRateLimitCircuitBreaker::class);
+        expect($breaker->retryAfterSeconds('openai'))->toBe(0)
+            ->and($store->value)->toBe($now + 900)
+            ->and($breaker->retryAfterSeconds('openai'))->toBeGreaterThanOrEqual(899);
+    } finally {
+        Cache::swap($original);
+    }
+});

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { isFinalGameStatus } from '@/lib/gameStatus';
+
 import { useViewerAccess } from '@/composables/useViewerAccess';
 import LiveBettingAnalysisCard from '@/components/game-page/LiveBettingAnalysisCard.vue';
 import NFLBoxScoreCard from '@/components/game-page/NFLBoxScoreCard.vue';
@@ -87,7 +89,9 @@ const props = withDefaults(
 
 <template>
     <NflFinalResultCard
-        v-if="section === 'prediction' && game?.status === 'STATUS_FINAL'"
+        v-if="
+            section === 'prediction' && game && isFinalGameStatus(game.status)
+        "
         :game="game"
         :prediction="prediction"
         :historical-prediction="historicalPrediction"
@@ -123,7 +127,7 @@ const props = withDefaults(
         </details>
 
         <details
-            v-if="isAdmin && game?.status !== 'STATUS_FINAL'"
+            v-if="isAdmin && !isFinalGameStatus(game?.status)"
             class="rounded-xl border bg-card p-4"
         >
             <summary
@@ -146,7 +150,7 @@ const props = withDefaults(
             />
         </details>
         <LiveBettingAnalysisCard
-            v-else-if="game?.status !== 'STATUS_FINAL'"
+            v-else-if="!isFinalGameStatus(game?.status)"
             :has-live-prediction="false"
             :betting-value="prediction?.betting_value"
             :prediction-analysis="prediction?.prediction_analysis"

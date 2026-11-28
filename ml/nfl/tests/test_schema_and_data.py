@@ -93,3 +93,35 @@ def test_v3_schema_models_historical_qb_detail_missingness() -> None:
     assert qb_details
     assert all(schema.raw["features"][name]["nullable"] for name in qb_details)
     assert schema.raw["features"]["feature_qb_form__applied"]["nullable"] is False
+
+
+@pytest.mark.parametrize("column", ["game_start_at", "features_available_at"])
+@pytest.mark.parametrize("missing", [None, "", "NaT"])
+def test_rejects_missing_pregame_timestamps(
+    synthetic_frame,
+    schema_path: Path,
+    column: str,
+    missing: str | None,
+) -> None:
+    frame = synthetic_frame.head(1).copy()
+    frame.loc[frame.index[0], column] = missing
+
+    with pytest.raises(SchemaError, match=f"Pregame timestamp '{column}'"):
+        FeatureSchema.load(schema_path).validate_training_frame(frame)
+
+
+def test_pregame_timestamp_order_compares_instants_across_dst_offsets(
+    synthetic_frame,
+    schema_path: Path,
+) -> None:
+    frame = synthetic_frame.head(1).copy()
+    frame.loc[frame.index[0], "game_start_at"] = "2026-11-01T01:30:00-06:00"
+    frame.loc[frame.index[0], "features_available_at"] = "2026-11-01T01:45:00-05:00"
+
+    validated = FeatureSchema.load(schema_path).validate_training_frame(frame)
+
+    assert validated["features_available_at"].iloc[0] < validated["game_start_at"].iloc[0]
+
+    frame.loc[frame.index[0], "features_available_at"] = "2026-11-01T02:30:00-05:00"
+    validated = FeatureSchema.load(schema_path).validate_training_frame(frame)
+    assert validated["features_available_at"].iloc[0] == validated["game_start_at"].iloc[0]

@@ -51,11 +51,11 @@ class SportFuturesOddQuery
             ->when($filters['event_id'] ?? null, fn (Builder $query, string $eventId): Builder => $query->where('event_id', $eventId))
             ->when($filters['outcome_name'] ?? null, fn (Builder $query, string $outcome): Builder => $query->where('outcome_name', $outcome));
 
-        if (($filters['team_id'] ?? null) && ($teamKey = self::TEAM_FOREIGN_KEY_BY_SPORT[$sport] ?? null)) {
+        if (isset($filters['team_id']) && ($teamKey = self::TEAM_FOREIGN_KEY_BY_SPORT[$sport] ?? null)) {
             $query->where($teamKey, $filters['team_id']);
         }
 
-        if (($filters['player_id'] ?? null) && ($playerKey = self::PLAYER_FOREIGN_KEY_BY_SPORT[$sport] ?? null)) {
+        if (isset($filters['player_id']) && ($playerKey = self::PLAYER_FOREIGN_KEY_BY_SPORT[$sport] ?? null)) {
             $query->where($playerKey, $filters['player_id']);
         }
 

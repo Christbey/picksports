@@ -7,6 +7,7 @@ use App\Models\CalculationRelease;
 use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
 use App\Models\EventInputSnapshot;
+use App\Models\MLB\Game;
 use App\Models\PredictionMarket;
 use App\Models\SportEvent;
 use Illuminate\Database\Eloquent\Model;
@@ -40,6 +41,9 @@ class PredictionReviewFixtures
             $inputs['home']['team_id'] ??= $game->home_team_id;
             $inputs['away']['team_id'] ??= $game->away_team_id;
         }
+        if ($game instanceof Game) {
+            $game = ObservedMlbGameFixture::observe($game, $event->starts_at);
+        }
         $legacyAttributes = [
             'game_id' => $game->id,
             'predicted_spread' => $baseline['projection']['legacy_spread'],
@@ -51,7 +55,9 @@ class PredictionReviewFixtures
             ? $predictionClass::query()->create(['season' => $definition['season'], 'season_type' => $definition['season_type'], ...$legacyAttributes])
             : $predictionClass::factory()->create($legacyAttributes);
         $release = CalculationRelease::factory()->approved()->create(['sport' => $sport, 'phase' => 'pregame']);
-        $snapshot = EventInputSnapshot::factory()->create(['sport' => $sport, 'sport_event_id' => $event->id, 'inputs' => $inputs]);
+        $snapshot = EventInputSnapshot::factory()->create($game instanceof Game
+            ? ObservedMlbGameFixture::snapshotAttributes($game, $inputs)
+            : ['sport' => $sport, 'sport_event_id' => $event->id, 'inputs' => $inputs]);
         $run = CalculationRun::factory()->create(['output_hash' => str_repeat('a', 64),
             'sport_event_id' => $event->id, 'event_input_snapshot_id' => $snapshot->id,
             'calculation_release_id' => $release->id, 'status' => 'succeeded',

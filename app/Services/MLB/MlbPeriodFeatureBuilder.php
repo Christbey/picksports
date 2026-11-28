@@ -7,6 +7,7 @@ use App\Models\MLB\Game;
 use App\Models\PredictionFeatureSnapshot;
 use App\Support\MLB\MlbGameStart;
 use App\Support\MLB\MlbLineScores;
+use App\Support\MLB\MlbQuoteTime;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -33,8 +34,8 @@ class MlbPeriodFeatureBuilder
             ->whereNotNull('home_linescores')
             ->whereNotNull('away_linescores')
             ->orderBy('season')
-            ->orderBy('game_date')
-            ->orderBy('game_time')
+            ->tap(fn ($query) => MlbGameStart::known($query))
+            ->orderBy('start_epoch')
             ->orderBy('id')
             ->get();
 
@@ -47,6 +48,9 @@ class MlbPeriodFeatureBuilder
     public function liveFeatures(Game $game, ?PredictionFeatureSnapshot $snapshot = null): array
     {
         $gameStart = MlbGameStart::for($game);
+        if ($gameStart === null) {
+            return [];
+        }
         $history = Game::query()
             ->where('season', '<=', $game->season)
             ->where('season', '>=', max(2000, (int) $game->season - 6))
@@ -54,27 +58,17 @@ class MlbPeriodFeatureBuilder
             ->where('status', config('mlb.statuses.final', 'STATUS_FINAL'))
             ->whereNotNull('home_linescores')
             ->whereNotNull('away_linescores')
-            ->when($gameStart, function ($query) use ($gameStart) {
-                $query->where(function ($dateQuery) use ($gameStart) {
-                    $dateQuery
-                        ->whereDate('game_date', '<', $gameStart->toDateString())
-                        ->orWhere(function ($sameDateQuery) use ($gameStart) {
-                            $sameDateQuery
-                                ->whereDate('game_date', $gameStart->toDateString())
-                                ->whereTime('game_time', '<', $gameStart->format('H:i:s'));
-                        });
-                });
-            })
+            ->tap(fn ($query) => MlbGameStart::before($query, $gameStart))
             ->orderBy('season')
-            ->orderBy('game_date')
-            ->orderBy('game_time')
+            ->tap(fn ($query) => MlbGameStart::known($query))
+            ->orderBy('start_epoch')
             ->orderBy('id')
             ->get();
 
         $states = $this->replay($history);
         $trustedPitchers = app(MlbPeriodForecastSource::class)->usesCanonical()
-            ? ($this->nativePitcherFeatures(app(MlbPeriodForecastSource::class)->forGames(collect([$game])))[$game->id] ?? [])
-            : $this->trustedPitcherFeatures($snapshot);
+            ? ($this->nativePitcherFeatures(app(MlbPeriodForecastSource::class)->forGames(collect([$game])), collect([$game])->keyBy('id'))[$game->id] ?? [])
+            : $this->trustedPitcherFeatures($snapshot, $game);
         $features = [];
 
         foreach (self::MARKETS as $marketType => $innings) {
@@ -99,7 +93,7 @@ class MlbPeriodFeatureBuilder
     public function liveFeaturesForGames(Collection $games, ?Collection $nativeSources = null): array
     {
         $targets = $games
-            ->filter(fn (Game $game): bool => is_numeric($game->id) && is_numeric($game->season))
+            ->filter(fn (Game $game): bool => is_numeric($game->id) && is_numeric($game->season) && MlbGameStart::for($game) !== null)
             ->keyBy(fn (Game $game): int => (int) $game->id);
         if ($targets->isEmpty()) {
             return [];
@@ -122,18 +116,21 @@ class MlbPeriodFeatureBuilder
                 })->orWhereIn('id', $targetIds);
             })
             ->orderBy('season')
-            ->orderBy('game_date')
-            ->orderBy('game_time')
+            ->tap(fn ($query) => MlbGameStart::known($query))
+            ->orderBy('start_epoch')
             ->orderBy('id')
             ->get();
 
         $trustedPitchers = app(MlbPeriodForecastSource::class)->usesCanonical()
-            ? $this->nativePitcherFeatures($nativeSources ?? app(MlbPeriodForecastSource::class)->forGames($targets)) : $this->trustedPitcherFeaturesByGame($targetIds);
+            ? $this->nativePitcherFeatures($nativeSources ?? app(MlbPeriodForecastSource::class)->forGames($targets), $targets->keyBy('id')) : $this->trustedPitcherFeaturesByGame($targetIds);
         $states = [];
         $featuresByGame = [];
         $season = null;
 
         foreach ($timeline as $game) {
+            if (MlbGameStart::for($game) === null) {
+                continue;
+            }
             if ($season !== (int) $game->season) {
                 $this->startSeason($states);
                 $season = (int) $game->season;
@@ -183,6 +180,9 @@ class MlbPeriodFeatureBuilder
         $season = null;
 
         foreach ($games as $game) {
+            if (MlbGameStart::for($game) === null) {
+                continue;
+            }
             if ($season !== (int) $game->season) {
                 $this->startSeason($states);
                 $season = (int) $game->season;
@@ -212,8 +212,9 @@ class MlbPeriodFeatureBuilder
                     'game_start_at' => MlbGameStart::for($game)?->toIso8601String(),
                     'home_team_id' => (int) $game->home_team_id,
                     'away_team_id' => (int) $game->away_team_id,
-                    'pregame_safe' => true,
-                    'availability_status' => 'verified_reconstruction',
+                    'pregame_safe' => false,
+                    'availability_status' => 'reconstructed_now',
+                    'scheduled_start_observed_at_utc' => $game->start_observed_at,
                     ...$features,
                     ...$this->marketQuoteColumns(
                         $marketQuotes[(int) $game->id][$marketType] ?? [],
@@ -256,6 +257,9 @@ class MlbPeriodFeatureBuilder
         $season = null;
 
         foreach ($games as $game) {
+            if (MlbGameStart::for($game) === null) {
+                continue;
+            }
             if ($season !== (int) $game->season) {
                 $this->startSeason($states);
                 $season = (int) $game->season;
@@ -454,13 +458,23 @@ class MlbPeriodFeatureBuilder
     }
 
     /** @return array<int, array<string, float>> */
-    private function nativePitcherFeatures(Collection $sources): array
+    private function nativePitcherFeatures(Collection $sources, Collection $games): array
     {
-        return $sources->map(fn ($source): array => collect(['home', 'away'])->mapWithKeys(function (string $side) use ($source): array {
-            $elo = $source->features[$side.'_pitcher_elo'] ?? null;
+        return $sources->map(function ($source) use ($games): array {
+            $game = $games->get($source->game_id);
+            $start = $game ? MlbGameStart::for($game) : null;
+            if ($start === null || ! $source->game_start_at->eq($start)
+                || ! MlbGameStart::observedBy($game, $source->generated_at)
+                || $source->generated_at->gte($start) || $source->features_available_at->gte($start)) {
+                return [];
+            }
 
-            return is_numeric($elo) && is_finite((float) $elo) ? ['feature_'.$side.'_pitcher_elo' => (float) $elo] : [];
-        })->all())->all();
+            return collect(['home', 'away'])->mapWithKeys(function (string $side) use ($source): array {
+                $elo = $source->features[$side.'_pitcher_elo'] ?? null;
+
+                return is_numeric($elo) && is_finite((float) $elo) ? ['feature_'.$side.'_pitcher_elo' => (float) $elo] : [];
+            })->all();
+        })->all();
     }
 
     /**
@@ -472,6 +486,7 @@ class MlbPeriodFeatureBuilder
         $features = [];
 
         foreach (array_chunk($gameIds, 100) as $gameBatch) {
+            $games = Game::query()->whereKey($gameBatch)->get()->keyBy('id');
             $rankedSnapshots = PredictionFeatureSnapshot::query()
                 ->where('sport', 'mlb')
                 ->whereIn('game_id', $gameBatch)
@@ -492,7 +507,7 @@ class MlbPeriodFeatureBuilder
             ]);
 
             foreach ($snapshots as $snapshot) {
-                $pitcherFeatures = $this->trustedPitcherFeatures($snapshot);
+                $pitcherFeatures = $this->trustedPitcherFeatures($snapshot, $games[$snapshot->game_id] ?? null);
                 if ($pitcherFeatures !== []) {
                     $features[$snapshot->game_id] = $pitcherFeatures;
                 }
@@ -505,9 +520,11 @@ class MlbPeriodFeatureBuilder
     /**
      * @return array<string, float>
      */
-    private function trustedPitcherFeatures(?PredictionFeatureSnapshot $snapshot): array
+    private function trustedPitcherFeatures(?PredictionFeatureSnapshot $snapshot, ?Game $game = null): array
     {
-        if (! $snapshot
+        if (! $snapshot || ! $game || ! MlbGameStart::for($game) || ! $snapshot->features_available_at
+            || ! MlbGameStart::observedBy($game, $snapshot->features_available_at)
+            || ! $snapshot->game_start_at || $snapshot->game_start_at->getTimestamp() !== MlbGameStart::for($game)->getTimestamp()
             || ! $snapshot->pregame_safe
             || ! in_array($snapshot->availability_status, ['observed_pregame', 'verified_reconstruction'], true)
             || ! $snapshot->game_start_at
@@ -541,7 +558,8 @@ class MlbPeriodFeatureBuilder
         ];
         $result = [];
 
-        foreach (MarketQuote::query()
+        $games = Game::query()->whereKey($gameIds)->get()->keyBy('id');
+        foreach (MarketQuote::query()->with('gameOddsSnapshot')
             ->where('sport', 'mlb')
             ->whereIn('game_id', $gameIds)
             ->whereIn('market_key', array_keys($marketTypes))
@@ -549,7 +567,7 @@ class MlbPeriodFeatureBuilder
             ->orderBy('captured_at')
             ->orderBy('id')
             ->get() as $quote) {
-            if (! in_array($quote->side, ['home', 'away'], true)) {
+            if (! isset($games[$quote->game_id]) || ! MlbQuoteTime::quote($games[$quote->game_id], $quote) || ! in_array($quote->side, ['home', 'away'], true)) {
                 continue;
             }
             $marketType = $marketTypes[$quote->market_key] ?? null;

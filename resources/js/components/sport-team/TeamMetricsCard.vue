@@ -8,6 +8,7 @@ defineProps<{
     metrics: any;
     metricRankings?: Record<string, number>;
     rankingTotalTeams?: number;
+    rankingSampleCounts?: Record<string, number>;
     gridClass?: string;
 }>();
 </script>
@@ -15,7 +16,16 @@ defineProps<{
 <template>
     <Card v-if="metrics">
         <CardHeader>
-            <CardTitle>{{ title || 'Current Season Metrics' }}</CardTitle>
+            <CardTitle
+                >{{ title || 'Stored Season Metrics'
+                }}<span
+                    v-if="
+                        metrics.season !== null && metrics.season !== undefined
+                    "
+                >
+                    · {{ metrics.season }}</span
+                ></CardTitle
+            >
         </CardHeader>
         <CardContent>
             <div
@@ -46,7 +56,20 @@ defineProps<{
                         class="mt-1 text-xs text-muted-foreground"
                     >
                         Rank {{ metricRankings[tile.rankingKey] }} /
-                        {{ rankingTotalTeams }}
+                        {{
+                            rankingSampleCounts?.[tile.rankingKey] ??
+                            rankingTotalTeams
+                        }}
+                        observed
+                        <span
+                            v-if="
+                                rankingSampleCounts?.[tile.rankingKey] !==
+                                    undefined &&
+                                rankingSampleCounts[tile.rankingKey] <
+                                    rankingTotalTeams
+                            "
+                            >({{ rankingTotalTeams }} teams in scope)</span
+                        >
                     </div>
                 </div>
             </div>

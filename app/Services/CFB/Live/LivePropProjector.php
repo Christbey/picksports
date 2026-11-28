@@ -15,13 +15,34 @@ class LivePropProjector
 
     public function project(Game $game, ?array $projection, ?array $response, bool $statsObserved, ?CarbonInterface $statsObservedSince = null): array
     {
+        $kickoff = CfbPropEligibility::kickoff($game)?->setTimezone(config('app.timezone'));
+        if ($kickoff === null) {
+            $stats = $statsObserved ? PlayerStat::where('game_id', $game->id)
+                ->whereIn('team_id', [$game->home_team_id, $game->away_team_id])
+                ->when($statsObservedSince, fn ($query) => $query->where('updated_at', '>=', $statsObservedSince))
+                ->get()->keyBy('player_id') : collect();
+
+            return PlayerProp::where('game_id', $game->id)->whereNotNull('player_id')
+                ->whereIn('market', array_keys(self::FIELDS))
+                ->whereHas('player', fn ($query) => $query->whereIn('team_id', [$game->home_team_id, $game->away_team_id]))
+                ->select(['id', 'player_id', 'player_name', 'market'])->orderByDesc('fetched_at')->orderByDesc('id')->get()
+                ->unique(fn ($prop) => $prop->player_id.':'.$prop->market)->map(function ($prop) use ($stats, $game): array {
+                    $actual = $stats->get($prop->player_id)?->{self::FIELDS[$prop->market]};
+                    $final = $game->status === 'STATUS_FINAL' && is_numeric($actual);
+
+                    return ['pregame_prop_id' => null, 'player_id' => $prop->player_id, 'player' => $prop->player_name,
+                        'market' => $prop->market, 'pregame_line' => null, 'pregame_mean' => null, 'sample' => 0,
+                        'actual' => is_numeric($actual) ? (float) $actual : null, 'projected' => $final ? (float) $actual : null,
+                        'status' => $final ? 'final' : 'kickoff_unknown', 'quotes' => []];
+                })->values()->all();
+        }
         $pregame = PlayerProp::where('game_id', $game->id)->whereNotNull('player_id')
-            ->where('fetched_at', '<', CfbPropEligibility::kickoff($game)->setTimezone(config('app.timezone')))
+            ->where('fetched_at', '<', $kickoff)
             ->where('id', PlayerProp::query()->from('cfb_player_props as candidate')->select('candidate.id')
                 ->whereColumn('candidate.game_id', 'cfb_player_props.game_id')
                 ->whereColumn('candidate.player_id', 'cfb_player_props.player_id')
                 ->whereColumn('candidate.market', 'cfb_player_props.market')
-                ->where('candidate.fetched_at', '<', CfbPropEligibility::kickoff($game)->setTimezone(config('app.timezone')))
+                ->where('candidate.fetched_at', '<', $kickoff)
                 ->orderByDesc('candidate.fetched_at')->orderByDesc('candidate.id')->limit(1))
             ->with(['player' => fn ($query) => $query->withExists([
                 'activeInjuries as unavailable' => fn ($injuries) => $injuries->whereRaw("LOWER(status) NOT IN ('active', 'available', 'probable')"),

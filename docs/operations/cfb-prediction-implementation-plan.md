@@ -1,3 +1,7 @@
+> Historical proposal/worklog retained on November 27, 2026. The original text below records dated proposals, implementation assertions and measurements; it is not current operating instructions, evidence of completion, or approval to change business/scientific policy. Do not run its historical commands as an operational checklist. Current references: [docs/operations/cfb-pregame-pipeline.md](cfb-pregame-pipeline.md), [docs/model-lifecycle.md](../model-lifecycle.md).
+>
+> Carried obligations: Operating flow has successor; modeling, historical package, coverage and SLO acceptance remain explicit work, not delivered by deletion.
+
 # CFB prediction and operations implementation plan
 
 Drafted September 25, 2026. Status: researched implementation proposal; no production changes made by this planning task.

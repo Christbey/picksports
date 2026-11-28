@@ -3,16 +3,20 @@
 namespace App\Actions\ESPN\MLB;
 
 use App\Actions\ESPN\AbstractSyncGameDetails;
+use App\Actions\ESPN\MLB\Concerns\ResolvesMlbGameDateParts;
 use App\Actions\MLB\ReconcileGameScoreFromTeamStats;
 use App\Models\MLB\Game;
 use App\Services\ESPN\MLB\EspnService;
 use App\Services\MLB\MlbStartingPitcherForecastService;
 use App\Support\MLB\MlbGamePhase;
+use App\Support\MLB\MlbGameStart;
 use App\Support\MLB\MlbLineScores;
 use Illuminate\Database\Eloquent\Model;
 
 class SyncGameDetails extends AbstractSyncGameDetails
 {
+    use ResolvesMlbGameDateParts;
+
     protected const GAME_MODEL_CLASS = Game::class;
 
     public function __construct(EspnService $espnService, SyncPlayerStats $syncPlayerStats, SyncTeamStats $syncTeamStats, SyncPlays $syncPlays)
@@ -55,7 +59,8 @@ class SyncGameDetails extends AbstractSyncGameDetails
             return true;
         }
 
-        $updateData = [];
+        $date = $competition['date'] ?? data_get($gameData, 'header.date') ?? ($gameData['date'] ?? null);
+        $updateData = $date === null ? [] : $this->resolveMlbGameDateParts(['date' => $date, 'competitions' => [$competition]]);
         $wasFinal = MlbGamePhase::isFinal($game);
 
         if (isset($competition['status']['type']['name'])) {
@@ -168,7 +173,7 @@ class SyncGameDetails extends AbstractSyncGameDetails
         }
 
         if (! empty($updateData)) {
-            $game->update($updateData);
+            $game->update(MlbGameStart::prepare($game, $updateData));
         }
 
         return true;

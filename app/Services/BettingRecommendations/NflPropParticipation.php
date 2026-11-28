@@ -19,6 +19,9 @@ class NflPropParticipation
             return [];
         }
         $dates = app(SportsDateWindowService::class);
+        $kickoffByGame = $props->pluck('game')->filter()->unique('id')->mapWithKeys(fn ($game) => [
+            $game->id => $dates->gameDateTimeUtc($game->game_date, $game->game_time),
+        ]);
         $games = DB::table('nfl_games')->whereIn('season', $props->pluck('game.season')->filter()->unique())
             ->where('status', 'STATUS_FINAL')->whereIn('season_type', ['2', 'regular'])
             ->where('game_date', '<=', $props->pluck('game.game_date')->max())
@@ -36,8 +39,12 @@ class NflPropParticipation
         });
         $reportsByTeam = $reports->groupBy('team_id');
         $reportCache = [];
+        $playedAtByGame = $games->mapWithKeys(fn ($game) => [
+            $game->id => $dates->gameDateTimeUtc($game->game_date, $game->game_time),
+        ]);
+        $participationCache = [];
         foreach ($games as $game) {
-            $played = $dates->gameDateTimeUtc($game->game_date, $game->game_time);
+            $played = $playedAtByGame->get($game->id);
             if (! $played) {
                 continue;
             }
@@ -65,12 +72,16 @@ class NflPropParticipation
             }
         }
 
-        return $props->mapWithKeys(function (PlayerProp $prop) use ($dates, $games, $entries, $statsByPlayer, $reportCache) {
+        return $props->mapWithKeys(function (PlayerProp $prop) use ($games, $entries, $statsByPlayer, $reportCache, $playedAtByGame, $kickoffByGame, &$participationCache) {
+            $participationKey = $prop->player_id.':'.$prop->game_id;
+            if (array_key_exists($participationKey, $participationCache)) {
+                return [$prop->id => $participationCache[$participationKey]];
+            }
             $target = $prop->game;
-            $kickoff = $target ? $dates->gameDateTimeUtc($target->game_date, $target->game_time) : null;
+            $kickoff = $kickoffByGame->get($prop->game_id);
             $team = $prop->player?->team_id;
-            $teamGames = $games->filter(function ($game) use ($dates, $kickoff, $target, $team) {
-                $played = $dates->gameDateTimeUtc($game->game_date, $game->game_time);
+            $teamGames = $games->filter(function ($game) use ($playedAtByGame, $kickoff, $target, $team) {
+                $played = $playedAtByGame->get($game->id);
 
                 return $team && $kickoff && $played && $played->lt($kickoff)
                     && (int) $game->id !== (int) $target->id && (int) $game->season === (int) $target->season
@@ -84,7 +95,7 @@ class NflPropParticipation
 
                     continue;
                 }
-                $played = $dates->gameDateTimeUtc($game->game_date, $game->game_time);
+                $played = $playedAtByGame->get($game->id);
                 $report = $reportCache[$team.':'.$game->id] ?? null;
                 $out = $report && (! $report->source_updated_at || CarbonImmutable::parse($report->source_updated_at, config('app.timezone'))->lte($played))
                     && collect($entries->get($report->id, []))->contains(fn ($entry) => (int) $entry->player_id === (int) $prop->player_id
@@ -102,7 +113,7 @@ class NflPropParticipation
                 }
             }
 
-            return [$prop->id => [
+            $participationCache[$participationKey] = [
                 'basis' => 'current_team_completed_regular_season_games',
                 'team_games' => $teamGames->count(),
                 'recorded_games' => count($recorded),
@@ -112,7 +123,9 @@ class NflPropParticipation
                 'confirmed_unavailable_game_ids' => $unavailable,
                 'unexplained_absence_game_ids' => $unknown,
                 'absence_policy' => 'excluded_not_zero; unknown_absence_is_not_confirmed_missing_data',
-            ]];
+            ];
+
+            return [$prop->id => $participationCache[$participationKey]];
         })->all();
     }
 }

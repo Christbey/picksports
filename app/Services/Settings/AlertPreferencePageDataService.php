@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\UserAlertPreference;
 use App\Services\WebPushService;
 use App\Support\SportCatalog;
+use App\Support\Validation\AlertPreferenceRules;
 
 class AlertPreferencePageDataService
 {
@@ -52,7 +53,7 @@ class AlertPreferencePageDataService
         return [
             'enabled' => $preference->enabled,
             'sports' => $preference->sports,
-            'notification_types' => $preference->notification_types,
+            'notification_types' => AlertPreferenceRules::notificationTypes($preference->notification_types),
             'enabled_template_ids' => $preference->enabled_template_ids ?? [],
             'minimum_edge' => $preference->minimum_edge,
             'time_window_start' => $preference->time_window_start?->format('H:i'),

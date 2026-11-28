@@ -2,6 +2,7 @@
 
 namespace App\DataTransferObjects\ESPN\Concerns;
 
+use App\Support\ScoreObservation;
 use Carbon\CarbonImmutable;
 
 trait ParsesEspnGameFields
@@ -107,9 +108,7 @@ trait ParsesEspnGameFields
      */
     protected static function competitorScore(array $competitor): ?int
     {
-        return isset($competitor['score']) && is_numeric($competitor['score'])
-            ? (int) $competitor['score']
-            : null;
+        return ScoreObservation::from($competitor['score'] ?? null);
     }
 
     /**

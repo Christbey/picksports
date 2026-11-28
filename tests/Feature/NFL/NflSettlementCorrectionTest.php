@@ -6,7 +6,7 @@ use App\Models\NFL\Game;
 use App\Models\NFL\Team;
 use Illuminate\Support\Str;
 
-it('corrects NFL outcomes with an audit trail while preserving pregame entries and non-bet accounting', function () {
+it('corrects NFL outcomes with an audit trail while preserving pregame entries and non-bet accounting', function (string $finalStatus) {
     $this->travelTo('2026-09-17 12:00:00');
     $game = Game::factory()->create([
         'home_team_id' => Team::factory()->create()->id,
@@ -28,7 +28,7 @@ it('corrects NFL outcomes with an audit trail while preserving pregame entries a
     }
     $originalEntries = BetDecision::orderBy('id')->get()->toArray();
     $this->travel(1)->day();
-    $game->update(['status' => 'STATUS_FINAL', 'home_score' => 27, 'away_score' => 20]);
+    $game->update(['status' => $finalStatus, 'home_score' => 27, 'away_score' => 20]);
     $this->artisan('sports:settle-bet-decisions', ['--sport' => 'nfl'])->expectsOutput('Settled 2 decision(s).')->assertSuccessful();
     expect(BetSettlement::where('result_status', 'win')->count())->toBe(2);
     $firstSettledAt = BetSettlement::first()->settled_at->toIso8601String();
@@ -51,4 +51,4 @@ it('corrects NFL outcomes with an audit trail while preserving pregame entries a
         ->and(data_get(BetSettlement::first()->metadata, 'result_corrections'))->toHaveCount(1)
         ->and(BetDecision::orderBy('id')->get()->toArray())->toBe($originalEntries);
     $this->travelBack();
-});
+})->with(['STATUS_FINAL', 'STATUS_FULL_TIME']);

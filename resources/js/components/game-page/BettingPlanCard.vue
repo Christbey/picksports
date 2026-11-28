@@ -221,6 +221,9 @@ const uniqueCodes = computed(() =>
             <p v-if="lockedMessage" class="mt-1 text-xs text-muted-foreground">
                 Additional access may be required for this betting plan.
             </p>
+            <p v-else class="mt-1 text-xs text-muted-foreground">
+                A betting plan requires an available recommendation or analysis.
+            </p>
         </template>
     </section>
 </template>

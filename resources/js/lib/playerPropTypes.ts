@@ -135,7 +135,7 @@ export type Recommendation = {
         home_team: string;
         away_team: string;
         date: string;
-        time: string;
+        time: string | null;
         starts_at?: string | null;
         kickoff_label?: string;
         timezone?: string;

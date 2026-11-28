@@ -24,7 +24,7 @@ it('matches regular season mlb odds events when local games use legacy season ty
         'name' => 'Yankees',
     ]);
 
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2026,
         'season_type' => 'Regular Season',
         'game_date' => now()->addDays(2)->toDateString(),
@@ -111,7 +111,7 @@ it('matches mlb odds events using manual odds api to espn team mappings before f
         'name' => 'Diamondbacks',
     ]);
 
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2026,
         'season_type' => '2',
         'game_date' => now()->addDays(3)->toDateString(),
@@ -181,7 +181,7 @@ it('matches mlb odds events when odds commence date and stored utc game date spa
         'name' => 'Yankees',
     ]);
 
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2026,
         'season_type' => '2',
         'game_date' => now()->addDays(2)->toDateString(),

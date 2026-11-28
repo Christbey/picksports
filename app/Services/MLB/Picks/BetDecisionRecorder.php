@@ -78,32 +78,40 @@ class BetDecisionRecorder
 
     public function settle(PickCandidate $candidate): ?BetSettlement
     {
-        $decision = BetDecision::query()
-            ->where('source_table', $candidate->getTable())
-            ->where('source_id', $candidate->id)
-            ->first();
+        return app(MlbPickGradingService::class)->gradeCandidate($candidate->id);
+    }
 
-        if ($decision === null || $candidate->graded_at === null || $candidate->result_status === null) {
-            return null;
+    /** Called only inside the grader's game → candidate → decision → receipt transaction. */
+    public function writeSettlement(PickCandidate $candidate, BetDecision $decision, ?BetSettlement $receipt,
+        array $result, array $evidence, string $fingerprint): BetSettlement
+    {
+        $metadata = (array) $receipt?->metadata;
+        if ($receipt !== null) {
+            $previous = $receipt->toArray();
+            // Keep prior provenance verbatim, with history stored separately to avoid recursive copies.
+            unset($previous['metadata']['mlb_candidate_corrections']);
+            $metadata['mlb_candidate_corrections'] = [...(array) ($metadata['mlb_candidate_corrections'] ?? []), [
+                'corrected_at' => now()->toIso8601String(), 'reason' => 'explicit_mlb_candidate_authoritative_result_reconciliation',
+                'previous_settlement' => $previous,
+            ]];
         }
+        $metadata = [...$metadata, ...$evidence,
+            'source_table' => $candidate->getTable(), 'source_id' => $candidate->id,
+            'mlb_candidate_result_fingerprint' => $fingerprint,
+            'shadow_profit_units' => $result['profit'],
+        ];
+        $values = ['result_status' => $result['status'], 'result_value' => $result['value'],
+            'profit_units' => $decision->is_bet ? $result['profit'] : 0.0, 'graded_at' => $candidate->graded_at,
+            'metadata' => $metadata];
+        if ($receipt === null) {
+            return BetSettlement::query()->create(['bet_decision_id' => $decision->id, ...$values,
+                'closing_price' => $candidate->closing_price, 'closing_line' => $candidate->closing_line,
+                'clv' => $candidate->clv, 'settled_at' => now()]);
+        }
+        // Initial closing observation, CLV and first settlement time never change on outcome correction.
+        $receipt->fill($values)->save();
 
-        return BetSettlement::query()->updateOrCreate(
-            ['bet_decision_id' => $decision->id],
-            [
-                'result_status' => $candidate->result_status,
-                'result_value' => $candidate->result_value,
-                'profit_units' => $candidate->result_profit_units ?? 0.0,
-                'closing_price' => $candidate->closing_price,
-                'closing_line' => $candidate->closing_line,
-                'clv' => $candidate->clv,
-                'graded_at' => $candidate->graded_at,
-                'settled_at' => now(),
-                'metadata' => [
-                    'source_table' => $candidate->getTable(),
-                    'source_id' => $candidate->id,
-                ],
-            ],
-        );
+        return $receipt;
     }
 
     private function featureSnapshot(PickCandidate $candidate): ?PredictionFeatureSnapshot

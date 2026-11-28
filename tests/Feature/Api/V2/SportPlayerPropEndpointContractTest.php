@@ -21,9 +21,12 @@ use App\Models\WNBA\Game as WnbaGame;
 use App\Models\WNBA\Player as WnbaPlayer;
 use App\Models\WNBA\PlayerProp as WnbaPlayerProp;
 use App\Models\WNBA\Team as WnbaTeam;
+use App\Services\Api\V2\SportContextResolver;
+use App\Services\Api\V2\SportPlayerPropQuery;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
 
@@ -600,3 +603,51 @@ it('loads filter choices without reading recommendation rows or diagnostics and 
     $this->getJson($url.'&filters_only=1')->assertOk()->assertJsonPath('meta.tier.mode', 'filters_only');
     $this->getJson($url.'&filters_only=invalid')->assertUnprocessable()->assertJsonValidationErrors('filters_only');
 });
+
+it('refuses malformed prop route scope instead of dropping or coercing its predicate', function (string $scope, string $kind) {
+    actAsV2PlayerPropContractUser();
+    Http::preventStrayRequests();
+    [, , $player, $game] = createV2PlayerPropContractFixture(NbaTeam::class, NbaPlayer::class, NbaGame::class, '2026-11-27');
+    $prop = createV2PlayerPropContractProp(NbaPlayerProp::class, ['player_id' => $player->id, 'game_id' => $game->id, 'line' => 0]);
+    $id = $scope === 'games' ? $game->id : $player->id;
+    $selector = match ($kind) {
+        'zero' => '0', 'garbage' => 'junk', 'partial' => $id.'junk', 'exponent' => $id.'e0', 'overflow' => str_repeat('9', 30),
+    };
+    $response = $this->getJson("/api/v2/sports/nba/{$scope}/{$selector}/player-props");
+    $response->assertUnprocessable();
+    expect($response->json('data'))->toBeNull()->and($prop->fresh()->line)->toEqual(0);
+})->with(['games', 'players'])->with(['zero', 'garbage', 'partial', 'exponent', 'overflow']);
+
+it('preserves valid and absent prop route scope semantics without losing line zero', function (string $scope) {
+    actAsV2PlayerPropContractUser();
+    Http::preventStrayRequests();
+    [, , $player, $game] = createV2PlayerPropContractFixture(NbaTeam::class, NbaPlayer::class, NbaGame::class, '2026-11-27');
+    [, , $otherPlayer, $otherGame] = createV2PlayerPropContractFixture(NbaTeam::class, NbaPlayer::class, NbaGame::class, '2026-11-28');
+    $prop = createV2PlayerPropContractProp(NbaPlayerProp::class, ['player_id' => $player->id, 'game_id' => $game->id, 'line' => 0]);
+    createV2PlayerPropContractProp(NbaPlayerProp::class, ['player_id' => $otherPlayer->id, 'game_id' => $otherGame->id]);
+    $id = $scope === 'games' ? $game->id : $player->id;
+    $this->getJson("/api/v2/sports/nba/{$scope}/{$id}/player-props")->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $prop->id)->assertJsonPath('data.0.line', 0);
+    $this->getJson('/api/v2/sports/nba/player-props')->assertOk()->assertJsonCount(2, 'data');
+})->with(['games', 'players']);
+
+it('keeps direct zero prop query scope restrictive while omitted scope stays unfiltered', function (string $field) {
+    [, , $player, $game] = createV2PlayerPropContractFixture(NbaTeam::class, NbaPlayer::class, NbaGame::class, '2026-11-27');
+    createV2PlayerPropContractProp(NbaPlayerProp::class, ['player_id' => $player->id, 'game_id' => $game->id]);
+    $context = app(SportContextResolver::class)->resolve('nba');
+    $query = app(SportPlayerPropQuery::class);
+    expect($query->query($context, [$field => 0])->count())->toBe(0)->and($query->query($context)->count())->toBe(1)
+        ->and($query->query($context, [$field => null])->count())->toBe(1);
+})->with(['player_id', 'game_id']);
+
+it('keeps prop route owner authoritative over conflicting query IDs and unknown positive IDs empty', function (string $scope, string $field) {
+    actAsV2PlayerPropContractUser();
+    Http::preventStrayRequests();
+    [, , $player, $game] = createV2PlayerPropContractFixture(NbaTeam::class, NbaPlayer::class, NbaGame::class, '2026-11-27');
+    [, , $otherPlayer, $otherGame] = createV2PlayerPropContractFixture(NbaTeam::class, NbaPlayer::class, NbaGame::class, '2026-11-28');
+    $prop = createV2PlayerPropContractProp(NbaPlayerProp::class, ['player_id' => $player->id, 'game_id' => $game->id]);
+    createV2PlayerPropContractProp(NbaPlayerProp::class, ['player_id' => $otherPlayer->id, 'game_id' => $otherGame->id]);
+    $id = $scope === 'games' ? $game->id : $player->id;
+    $otherId = $scope === 'games' ? $otherGame->id : $otherPlayer->id;
+    $this->getJson("/api/v2/sports/nba/{$scope}/{$id}/player-props?{$field}={$otherId}")->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $prop->id);
+    $this->getJson("/api/v2/sports/nba/{$scope}/99999999/player-props")->assertOk()->assertJsonCount(0, 'data');
+})->with([['games', 'game_id'], ['players', 'player_id']]);

@@ -1,9 +1,11 @@
 <?php
 
 use App\Models\NFL\Team;
-use App\Models\NFL\TeamMetricSnapshot;
+use App\Models\NFL\TeamMetric;
 use App\Models\Sports\FuturesOddsSnapshot;
 use App\Services\NFL\TeamFuturesBettingReportService;
+use App\Services\NFL\TeamMetricSnapshotService;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 
 it('writes an nfl team futures bets report with ranked edges', function () {
@@ -16,19 +18,23 @@ it('writes an nfl team futures bets report with ranked edges', function () {
         'abbreviation' => 'DET',
     ]);
 
-    TeamMetricSnapshot::query()->create([
-        'snapshot_key' => sha1('bets-snapshot'),
-        'team_id' => $team->id,
-        'season' => 2025,
-        'wins' => 0,
-        'losses' => 0,
-        'predictive_rating' => 12.0,
-        'future_strength_of_schedule' => 1498.0,
-        'recent_form_rating' => 4.0,
-        'injury_total_adjustment' => 0.0,
-        'calculation_date' => '2025-08-01',
-        'captured_at' => '2025-08-01T12:00:00Z',
-    ]);
+    // Explicit synthetic source observation through the real capture writer.
+    $historicalMetric = $this->travelTo(Carbon::parse('2025-08-01T12:00:00Z', 'UTC'), function () use ($team) {
+        $metric = TeamMetric::query()->create([
+            'team_id' => $team->id,
+            'season' => 2025,
+            'wins' => 0,
+            'losses' => 0,
+            'predictive_rating' => 12.0,
+            'future_strength_of_schedule' => 1498.0,
+            'recent_form_rating' => 4.0,
+            'injury_total_adjustment' => 0.0,
+            'calculation_date' => '2025-08-01',
+        ]);
+        app(TeamMetricSnapshotService::class)->capture(2025);
+
+        return $metric;
+    });
 
     FuturesOddsSnapshot::query()->create([
         'snapshot_key' => sha1('bets-over'),
@@ -82,6 +88,8 @@ it('writes an nfl team futures bets report with ranked edges', function () {
         ->and($report['report_type'])->toBe('nfl_team_futures_bets')
         ->and($report['calibration']['method'])->toBe('default_shrink')
         ->and($report['summary']['count'])->toBe(1)
+        ->and($report['bets'][0]['metric_evidence']['mode'])->toBe('current_capture')
+        ->and($report['metric_evidence']['mode_counts']['current_capture'])->toBe(1)
         ->and($report['bets'][0]['team_name'])->toBe('Lions')
         ->and($report['bets'][0]['side'])->toBe('over')
         ->and($report['bets'][0]['edge'])->toBeGreaterThan(0.01)

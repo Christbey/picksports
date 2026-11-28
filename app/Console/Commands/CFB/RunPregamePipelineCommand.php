@@ -26,7 +26,10 @@ use App\Services\CFB\Data\CfbSharedInputRunner;
 use App\Services\CFB\Data\CfbStoredPregameInputs;
 use App\Services\CollegeFootballData\CollegeFootballDataService;
 use App\Services\Predictions\CalculationReleaseSelector;
+use App\Services\Sports\CfbGameCalendarRead;
 use App\Services\Validation\CfbValidationCoverage;
+use App\Support\CFB\CfbGameStart;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -50,6 +53,12 @@ class RunPregamePipelineCommand extends Command
     {
         $season = $this->option('season') ?? config('cfb.season.default');
         $days = $this->option('days-forward');
+        $gameId = $this->option('game');
+        if ($gameId !== null && ((! is_string($gameId) && ! is_int($gameId)) || preg_match('/\A[1-9][0-9]{0,17}\z/D', (string) $gameId) !== 1)) {
+            $this->error('CFB pipeline requires a valid positive game ID.');
+
+            return self::FAILURE;
+        }
         if (Validator::make(['season' => $season, 'days' => $days], [
             'season' => 'required|integer|min:2000|max:2100', 'days' => 'required|integer|min:1|max:8',
         ])->fails() || ($this->option('games') && (! preg_match('/^[1-9]\d*(,[1-9]\d*)*$/', (string) $this->option('games')) || $this->option('game')))
@@ -103,16 +112,20 @@ class RunPregamePipelineCommand extends Command
             }
             $this->recordProgress([]);
             $gameColumns = array_merge(CalculateElo::RESULT_COLUMNS, ['sport_event_id', 'updated_at', 'espn_event_id']);
-            $games = Game::with(['homeTeam', 'awayTeam', 'sportEvent'])->select($gameColumns)->where('season', $season)
+            $candidateQuery = Game::query()->where('season', $season)
                 ->when($this->option('game'), fn ($q, $v) => $q->whereKey($v))
                 ->when($this->option('games'), fn ($q, $v) => $q->whereKey(array_map('intval', explode(',', $v))))
                 ->when($this->option('week'), fn ($q, $v) => $q->where('week', $v))
-                ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_PRE_GAME', 'STATUS_DELAYED'])
-                ->where(function ($q) use ($days) {
-                    $q->whereHas('sportEvent', fn ($events) => $events->where('starts_at', '>', now())->where('starts_at', '<=', now()->addDays((int) $days)))
-                        ->orWhere(fn ($dates) => $dates->whereDate('game_date', '>=', now()->subDay()->toDateString())
-                            ->whereDate('game_date', '<=', now()->addDays((int) $days)->toDateString()));
-                })
+                ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_PRE_GAME', 'STATUS_DELAYED']);
+            $candidateQuery = app(CfbGameCalendarRead::class)->metadataCandidates(
+                $candidateQuery, CarbonImmutable::now(), CarbonImmutable::now()->addDays((int) $days));
+            if ((clone $candidateQuery)->count() > 200) {
+                $this->error('CFB metadata candidate capacity exceeded; scope recovery to at most 200 games.');
+
+                return self::FAILURE;
+            }
+            $games = app(CfbGameCalendarRead::class)->withBoundedObservation(
+                $candidateQuery->with(['homeTeam', 'awayTeam', 'sportEvent'])->select($gameColumns))
                 ->orderBy('game_date')->orderBy('game_time')->get();
             $coverage = app(CfbValidationCoverage::class);
             $games = $games->filter(fn ($game) => $coverage->requiredTeamIds($game) !== [])->values();
@@ -129,12 +142,14 @@ class RunPregamePipelineCommand extends Command
                 return self::SUCCESS;
             }
             $metadataFailures = [];
+            $metadataResults = [];
             foreach ($games as $game) {
                 try {
                     app(SyncGameMetadata::class)->execute($game);
                 } catch (\Throwable $error) {
                     report($error);
                     $metadataFailures[] = $game->id;
+                    $metadataResults[$game->id] = $this->recordMetadataHold($game);
                     $this->warn("Game {$game->id}: unverified kickoff metadata; its forecast remains held.");
                 }
                 $game->unsetRelations();
@@ -142,15 +157,32 @@ class RunPregamePipelineCommand extends Command
                 gc_mem_caches();
             }
             // Reapply the future horizon using confirmed kickoff times, not imported placeholders.
-            $games = Game::select($gameColumns)->with(['homeTeam', 'awayTeam', 'sportEvent'])
+            $games = app(CfbGameCalendarRead::class)->withBoundedObservation(
+                Game::select($gameColumns)->with(['homeTeam', 'awayTeam', 'sportEvent']))
                 ->whereIn('id', $games->modelKeys())
+                ->whereNotIn('id', $metadataFailures)
                 ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_PRE_GAME', 'STATUS_DELAYED'])
-                ->whereHas('sportEvent', fn ($q) => $q->where('starts_at', '>', now())->where('starts_at', '<=', now()->addDays((int) $days)))
-                ->get();
-            $this->selectedGames = $games->count();
-            $this->recordProgress([]);
+                ->get()->filter(function (Game $game) use ($days, &$metadataResults): bool {
+                    $kickoff = CfbGameStart::for($game);
+
+                    if ($kickoff === null || ! $game->sportEvent?->starts_at?->equalTo($kickoff)) {
+                        $metadataResults[$game->id] = $this->recordMetadataHold($game);
+
+                        return false;
+                    }
+
+                    if (! $kickoff->gt(now()) || ! $kickoff->lte(now()->addDays((int) $days))) {
+                        $this->info("Game {$game->id}: verified kickoff excluded after verification (outside future horizon).");
+
+                        return false;
+                    }
+
+                    return true;
+                })->values();
+            $this->selectedGames = $games->count() + count($metadataResults);
+            $this->recordProgress($metadataResults);
             if ($games->isEmpty()) {
-                return $metadataFailures === [] ? self::SUCCESS : self::FAILURE;
+                return $metadataResults === [] ? self::SUCCESS : 2;
             }
             $provider = app(CollegeFootballDataService::class);
             $provider->monitorQuota();
@@ -369,7 +401,7 @@ class RunPregamePipelineCommand extends Command
             ])->values();
             if ($this->option('batch-forecasts')) {
                 Cache::put('cfb:pregame:inputs:'.$this->runId, [
-                    ...$context, 'gameIds' => $games->modelKeys(), 'season' => (int) $season, 'days' => (int) $days,
+                    ...$context, 'gameIds' => $games->modelKeys(), 'selected_count' => $this->selectedGames, 'season' => (int) $season, 'days' => (int) $days,
                 ], now()->addHours(2));
 
                 Cache::put('cfb:pregame:active-batch', $this->runId, now()->addHours(2));
@@ -377,10 +409,19 @@ class RunPregamePipelineCommand extends Command
                 return RunPregamePipeline::BATCH_PENDING;
             }
 
-            return $this->forecastGames($games, [], $context, (int) $season, (int) $days);
+            return $this->forecastGames($games, $metadataResults, $context, (int) $season, (int) $days);
         } finally {
             $lock->release();
         }
+    }
+
+    private function recordMetadataHold(Game $game): array
+    {
+        return app(CfbPipelineStage::class)->run('game:'.$game->id, 'forecast', [
+            'metadata_reliable' => false, 'game_updated_at' => $game->updated_at?->toISOString(),
+            'current_kickoff_observation' => $game->getRawOriginal('kickoff_observation'),
+            'sport_event_id' => $game->sport_event_id,
+        ], fn (): array => ['state' => 'blocked', 'reason' => 'unreliable_kickoff_metadata'], false);
     }
 
     private function runForecastBatch(int $offset, int $season, int $days): int
@@ -393,7 +434,7 @@ class RunPregamePipelineCommand extends Command
             return self::FAILURE;
         }
 
-        $this->selectedGames = count($context['gameIds']);
+        $this->selectedGames = (int) ($context['selected_count'] ?? count($context['gameIds']));
         $this->metricFailedTeams = array_values(array_unique($context['metricFailures']));
         $ids = array_slice($context['gameIds'], $offset, RunPregamePipeline::BATCH_SIZE);
         $games = Game::with('sportEvent')->whereIn('id', $ids)->get()->keyBy('id');
@@ -404,7 +445,7 @@ class RunPregamePipelineCommand extends Command
 
         $code = $this->forecastGames(collect($ids)->map(fn (int $id) => $games->get($id))->filter(), $results, $context, $season, $days);
 
-        return $offset + RunPregamePipeline::BATCH_SIZE < $this->selectedGames ? RunPregamePipeline::BATCH_PENDING : $code;
+        return $offset + RunPregamePipeline::BATCH_SIZE < count($context['gameIds']) ? RunPregamePipeline::BATCH_PENDING : $code;
     }
 
     private function forecastGames(Collection $games, array $results, array $context, int $season, int $days): int

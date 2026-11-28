@@ -342,3 +342,203 @@ test('team core failure does not wait for a stalled optional metrics read and ca
     await flush();
     assert.equal(x.state.error.value, 'Team unavailable');
 });
+
+test('team power ranking remains unavailable when the actual metric has no observed net rating', async (t) => {
+    const x = await mount(t, { sport: 'mlb', showPowerRanking: true });
+    x.show.calls[0].resolve(team(1));
+    x.metric.calls[0].resolve(metrics());
+    await flush();
+    x.games.calls[0].resolve({ data: [] });
+    x.roster.calls[0].resolve({ data: [] });
+    x.ranks.calls[0].resolve({
+        data: [
+            { team_id: 1, season: 2026, offensive_rating: 110 },
+            { team_id: 2, season: 2026, offensive_rating: 90 },
+        ],
+    });
+    await flush();
+    assert.equal(x.state.powerRanking.value, null);
+});
+
+test('team stat rankings exclude unknown values while preserving a genuine observed zero', async (t) => {
+    const x = await mount(t, {
+        statRankingKeys: [{ key: 'turnovers', descending: false }],
+    });
+    x.show.calls[0].resolve(team(1));
+    x.metric.calls[0].resolve(metrics());
+    await flush();
+    x.games.calls[0].resolve({ data: [] });
+    x.roster.calls[0].resolve({ data: [] });
+    x.statRanks.calls[0].resolve({
+        data: [
+            { team_id: 2, turnovers: null },
+            { team_id: 1, turnovers: 0 },
+            { team_id: 3, turnovers: 2 },
+        ],
+    });
+    await flush();
+    assert.equal(x.state.statRankings.value.turnovers, 1);
+});
+
+test('team calendar labels preserve an actual date without a browser timezone shift', async (t) => {
+    const original = process.env.TZ;
+    process.env.TZ = 'America/Chicago';
+    try {
+        const x = await mount(t);
+        assert.equal(x.state.formatDate('2026-10-10'), 'Oct 10');
+        assert.equal(x.state.formatDate('2026-02-30'), '-');
+        assert.equal(x.state.formatDate('2026-10-10Tgarbage'), '-');
+        assert.equal(x.state.formatDate('2026-10-10T00:00:00-05:00'), 'Oct 10');
+        assert.equal(x.state.formatDate(null), '-');
+    } finally {
+        if (original === undefined) delete process.env.TZ;
+        else process.env.TZ = original;
+    }
+});
+
+test('CBB upcoming schedule keeps a later-today observed kickoff and excludes elapsed or terminal games', async (t) => {
+    t.mock.timers.enable({
+        apis: ['Date'],
+        now: new Date('2026-10-10T18:00:00Z'),
+    });
+    const x = await mount(t, { sport: 'cbb', sortRecentByDate: true });
+    x.show.calls[0].resolve(team(1));
+    x.metric.calls[0].resolve(metrics());
+    await flush();
+    const row = (id, start, status = 'STATUS_SCHEDULED') => ({
+        id,
+        season: 2026,
+        game_date: '2026-10-10',
+        starts_at: start,
+        status,
+    });
+    x.games.calls[0].resolve({
+        data: [
+            row(1, '2026-10-10T20:00:00Z'),
+            row(2, '2026-10-10T17:00:00Z'),
+            row(3, '2026-10-10T21:00:00Z', 'STATUS_FINAL'),
+            row(4, '2026-10-10T19:00:00Z'),
+            row(5, null),
+            row(6, '2026-10-10T19:00:00'),
+        ],
+    });
+    x.roster.calls[0].resolve({ data: [] });
+    await flush();
+    assert.deepEqual(
+        x.state.upcomingGames.value.map((game) => game.id),
+        [4, 1, 5, 6],
+    );
+});
+
+test('team averages and league comparison requests retain the selected metric season and phase', async (t) => {
+    const x = await mount(t, {
+        seasonStatTiles: [],
+        statRankingKeys: [{ key: 'points_per_game' }],
+    });
+    x.show.calls[0].resolve(team(1));
+    x.metric.calls[0].resolve({ data: { season: 2025, season_type: '2' } });
+    await flush();
+    assert.deepEqual(x.stats.calls[0].args[2].query, {
+        season: 2025,
+        season_type: '2',
+    });
+    assert.deepEqual(x.statRanks.calls[0].args[1].query, {
+        season: 2025,
+        season_type: '2',
+    });
+    x.games.calls[0].resolve({ data: [] });
+    x.roster.calls[0].resolve({ data: [] });
+    x.stats.calls[0].resolve({ data: null });
+    x.statRanks.calls[0].resolve({ data: [] });
+});
+
+test('team completed-game records admit the shared full-time status rather than silently dropping its observed result', async (t) => {
+    const x = await mount(t);
+    x.show.calls[0].resolve(team(1));
+    x.metric.calls[0].resolve(metrics());
+    await flush();
+    x.games.calls[0].resolve({
+        data: [
+            {
+                id: 1,
+                season: 2026,
+                status: 'STATUS_FULL_TIME',
+                home_team_id: 1,
+                away_team_id: 2,
+                home_score: 10,
+                away_score: 0,
+                game_date: '2026-10-10',
+                starts_at: '2026-10-10T18:00:00Z',
+            },
+        ],
+    });
+    x.roster.calls[0].resolve({ data: [] });
+    await flush();
+    assert.deepEqual(x.state.record.value, {
+        wins: 1,
+        losses: 0,
+        ties: 0,
+        games: 1,
+    });
+});
+
+test('team metric ranks use the same latest calculation-date and ID policy as the displayed team metric', async (t) => {
+    const x = await mount(t, {
+        showPowerRanking: true,
+        metricRankingKeys: [{ key: 'net_rating' }],
+    });
+    x.show.calls[0].resolve(team(1));
+    x.metric.calls[0].resolve({
+        data: {
+            id: 3,
+            team_id: 1,
+            season: 2026,
+            season_type: '2',
+            calculation_date: '2026-10-10T00:00:00-05:00',
+            net_rating: 20,
+        },
+    });
+    await flush();
+    x.games.calls[0].resolve({ data: [] });
+    x.roster.calls[0].resolve({ data: [] });
+    // Valid distinct stored phase aliases; API index order is net rating, not revision recency.
+    x.ranks.calls[0].resolve({
+        data: [
+            {
+                id: 3,
+                team_id: 1,
+                season: 2026,
+                season_type: '2',
+                calculation_date: '2026-10-10T00:00:00-05:00',
+                net_rating: 20,
+            },
+            {
+                id: 4,
+                team_id: 2,
+                season: 2026,
+                calculation_date: '2026-10-10',
+                net_rating: 15,
+            },
+            {
+                id: 2,
+                team_id: 1,
+                season: 2026,
+                season_type: 'regular',
+                calculation_date: '2026-10-10',
+                net_rating: 10,
+            },
+            {
+                id: 99,
+                team_id: 1,
+                season: 2026,
+                season_type: 'Regular Season',
+                calculation_date: '2026-10-09',
+                net_rating: -50,
+            },
+        ],
+    });
+    await flush();
+    assert.deepEqual(x.state.powerRanking.value, { rank: 1, total_teams: 2 });
+    assert.equal(x.state.metricRankings.value.net_rating, 1);
+    assert.equal(x.state.metricRankingSamples.value.net_rating, 2);
+});

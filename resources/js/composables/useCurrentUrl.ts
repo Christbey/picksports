@@ -17,30 +17,39 @@ export type UseCurrentUrlReturn = {
     ) => T | F;
 };
 
-const page = usePage();
-const currentUrlReactive = computed(
-    () => new URL(page.url, window?.location.origin).pathname,
-);
-
 export function useCurrentUrl(): UseCurrentUrlReturn {
+    const page = usePage();
+    const path = (value: string): string => {
+        if (value.startsWith('/') && !value.startsWith('//')) {
+            return value.split(/[?#]/, 1)[0];
+        }
+        try {
+            return new URL(value).pathname;
+        } catch {
+            return '';
+        }
+    };
+    const currentUrlReactive = computed(() => path(page.url));
     function isCurrentUrl(
         urlToCheck: NonNullable<InertiaLinkProps['href']>,
         currentUrl?: string,
     ) {
-        const urlToCompare = currentUrl ?? currentUrlReactive.value;
-        const urlString = toUrl(urlToCheck);
-
-        if (!urlString.startsWith('http')) {
-            return urlString === urlToCompare;
+        const value = toUrl(urlToCheck);
+        if (!value.startsWith('/') || value.startsWith('//')) {
+            try {
+                const target = new URL(value);
+                const origin =
+                    typeof window !== 'undefined'
+                        ? window.location.origin
+                        : new URL(page.url).origin;
+                if (target.origin !== origin) return false;
+            } catch {
+                return false;
+            }
         }
-
-        try {
-            const absoluteUrl = new URL(urlString);
-
-            return absoluteUrl.pathname === urlToCompare;
-        } catch {
-            return false;
-        }
+        return (
+            path(value) !== '' && path(value) === path(currentUrl ?? page.url)
+        );
     }
 
     function whenCurrentUrl(

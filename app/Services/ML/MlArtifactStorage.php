@@ -3,6 +3,7 @@
 namespace App\Services\ML;
 
 use App\Models\ModelRun;
+use App\Services\MLB\MlbTabularFiles;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Support\Facades\Storage;
 
@@ -13,8 +14,10 @@ class MlArtifactStorage
         string $artifactId,
         string $sourcePath,
         ?string $contentType = null,
+        ?int $expectedBytes = null,
+        ?string $expectedSha256 = null,
     ): MlStoredObject {
-        return $this->store($trainingRun, $artifactId, 'artifacts', $sourcePath, $contentType);
+        return $this->store($trainingRun, $artifactId, 'artifacts', $sourcePath, $contentType, $expectedBytes, $expectedSha256);
     }
 
     public function storeDataset(
@@ -22,8 +25,10 @@ class MlArtifactStorage
         string $artifactId,
         string $sourcePath,
         ?string $contentType = null,
+        ?int $expectedBytes = null,
+        ?string $expectedSha256 = null,
     ): MlStoredObject {
-        return $this->store($trainingRun, $artifactId, 'datasets', $sourcePath, $contentType);
+        return $this->store($trainingRun, $artifactId, 'datasets', $sourcePath, $contentType, $expectedBytes, $expectedSha256);
     }
 
     public function storeReport(
@@ -31,8 +36,10 @@ class MlArtifactStorage
         string $artifactId,
         string $sourcePath,
         ?string $contentType = null,
+        ?int $expectedBytes = null,
+        ?string $expectedSha256 = null,
     ): MlStoredObject {
-        return $this->store($trainingRun, $artifactId, 'reports', $sourcePath, $contentType);
+        return $this->store($trainingRun, $artifactId, 'reports', $sourcePath, $contentType, $expectedBytes, $expectedSha256);
     }
 
     public function materialize(
@@ -40,7 +47,11 @@ class MlArtifactStorage
         string $objectKey,
         string $sha256,
         ?string $contentType = null,
+        ?int $expectedBytes = null,
     ): string {
+        if ($expectedBytes !== null) {
+            return $this->materializeBounded($disk, $objectKey, $sha256, $contentType, $expectedBytes);
+        }
         $cache = Storage::disk($this->cacheDisk());
         $cacheKey = ltrim($objectKey, '/');
 
@@ -90,7 +101,12 @@ class MlArtifactStorage
         string $kind,
         string $sourcePath,
         ?string $contentType,
+        ?int $expectedBytes = null,
+        ?string $expectedSha256 = null,
     ): MlStoredObject {
+        if ($expectedBytes !== null || $expectedSha256 !== null) {
+            return $this->storeBounded($trainingRun, $artifactId, $kind, $sourcePath, $contentType, $expectedBytes, $expectedSha256);
+        }
         $sourcePath = $this->absolutePath($sourcePath);
         if (! is_file($sourcePath) || ! is_readable($sourcePath)) {
             throw new \RuntimeException("ML source file not found or unreadable: {$sourcePath}");
@@ -156,14 +172,20 @@ class MlArtifactStorage
         );
     }
 
-    private function hashStoredObject(FilesystemAdapter $disk, string $objectKey): string
+    private function hashStoredObject(FilesystemAdapter $disk, string $objectKey, ?int $expectedBytes = null): string
     {
+        if ($expectedBytes !== null && $disk->size($objectKey) !== $expectedBytes) {
+            throw new \RuntimeException('Stored ML object byte length changed before hashing.');
+        }
         $stream = $disk->readStream($objectKey);
         if (! is_resource($stream)) {
             throw new \RuntimeException("Unable to read ML object for hashing: {$objectKey}");
         }
 
         try {
+            if ($expectedBytes !== null) {
+                return MlbTabularFiles::digest($stream, $expectedBytes);
+            }
             $context = hash_init('sha256');
             hash_update_stream($context, $stream);
 
@@ -171,6 +193,122 @@ class MlArtifactStorage
         } finally {
             fclose($stream);
         }
+    }
+
+    private function assertBound(int $bytes, string $sha256): void
+    {
+        if ($bytes < 0 || $bytes > 1073741824 || ! preg_match('/^[a-f0-9]{64}$/D', $sha256)) {
+            throw new \RuntimeException('Bounded ML object metadata is invalid.');
+        }
+    }
+
+    /** Copy/hash exactly once into an anonymous owned file before publishing to another backend. */
+    private function verifiedCopy($source, int $bytes, string $sha256)
+    {
+        $copy = tmpfile();
+        if (! is_resource($copy)) {
+            throw new \RuntimeException('Unable to create bounded ML object staging.');
+        }
+        try {
+            if (! hash_equals($sha256, MlbTabularFiles::digest($source, $bytes, $copy)) || ! fflush($copy)) {
+                throw new \RuntimeException('Bounded ML object failed exact byte/hash verification.');
+            }
+            rewind($copy);
+
+            return $copy;
+        } catch (\Throwable $exception) {
+            fclose($copy);
+            throw $exception;
+        }
+    }
+
+    private function materializeBounded(string $disk, string $objectKey, string $sha256, ?string $contentType, int $bytes): string
+    {
+        $this->assertBound($bytes, $sha256);
+        $cache = Storage::disk($this->cacheDisk());
+        $cacheKey = ltrim($objectKey, '/');
+        if ($cache->exists($cacheKey)) {
+            try {
+                if (hash_equals($sha256, $this->hashStoredObject($cache, $cacheKey, $bytes))) {
+                    return $cache->path($cacheKey);
+                }
+            } catch (\RuntimeException) {
+                // Only the transient owned cache is repaired. Stored source/archive objects remain untouched.
+            }
+            $cache->delete($cacheKey);
+        }
+        $source = Storage::disk($disk);
+        if (! $source->exists($objectKey) || $source->size($objectKey) !== $bytes) {
+            throw new \RuntimeException('Stored ML object differs from its admitted byte length.');
+        }
+        $input = $source->readStream($objectKey);
+        if (! is_resource($input)) {
+            throw new \RuntimeException('Unable to read bounded stored ML object.');
+        }
+        try {
+            $copy = $this->verifiedCopy($input, $bytes, $sha256);
+        } finally {
+            fclose($input);
+        }
+        try {
+            $written = $cache->put($cacheKey, $copy, ['visibility' => 'private', 'ContentType' => $contentType ?: 'application/octet-stream']);
+        } finally {
+            fclose($copy);
+        }
+        if (! $written || ! hash_equals($sha256, $this->hashStoredObject($cache, $cacheKey, $bytes))) {
+            $cache->delete($cacheKey);
+            throw new \RuntimeException('Bounded materialized ML object failed verification.');
+        }
+
+        return $cache->path($cacheKey);
+    }
+
+    private function storeBounded(ModelRun $trainingRun, string $artifactId, string $kind, string $sourcePath, ?string $contentType, ?int $bytes, ?string $sha256): MlStoredObject
+    {
+        if ($bytes === null || $sha256 === null) {
+            throw new \RuntimeException('Both exact length and hash are required for bounded ML storage.');
+        }
+        $this->assertBound($bytes, $sha256);
+        $sourcePath = $this->absolutePath($sourcePath);
+        if (! is_file($sourcePath) || is_link($sourcePath)) {
+            throw new \RuntimeException('Bounded ML source must be a regular owned file.');
+        }
+        $input = fopen($sourcePath, 'rb');
+        if (! is_resource($input)) {
+            throw new \RuntimeException('Unable to open bounded ML source.');
+        }
+        try {
+            $stat = fstat($input);
+            if ($stat === false || ($stat['mode'] & 0170000) !== 0100000 || $stat['size'] !== $bytes) {
+                throw new \RuntimeException('Bounded ML source identity/size changed before hashing.');
+            }
+            $copy = $this->verifiedCopy($input, $bytes, $sha256);
+        } finally {
+            fclose($input);
+        }
+        try {
+            $contentType = $contentType ?: $this->contentType($sourcePath);
+            $diskName = $this->disk();
+            $disk = Storage::disk($diskName);
+            $objectKey = $this->objectKey((string) $trainingRun->sport, (string) $trainingRun->getKey(), $artifactId, $kind, basename($sourcePath));
+            if ($disk->exists($objectKey)) {
+                if (! hash_equals($sha256, $this->hashStoredObject($disk, $objectKey, $bytes))) {
+                    throw new \RuntimeException('Refusing to overwrite an immutable bounded ML object.');
+                }
+                $disk->setVisibility($objectKey, 'private');
+            } elseif (! $disk->put($objectKey, $copy, ['visibility' => 'private', 'ContentType' => $contentType])) {
+                throw new \RuntimeException('Unable to store bounded ML object.');
+            }
+            if (! hash_equals($sha256, $this->hashStoredObject($disk, $objectKey, $bytes))) {
+                throw new \RuntimeException('Stored bounded ML object failed verification.');
+            }
+        } finally {
+            fclose($copy);
+        }
+        $local = $this->materialize($diskName, $objectKey, $sha256, $contentType, $bytes);
+
+        return new MlStoredObject(disk: $diskName, objectKey: $objectKey, uri: $this->uri($diskName, $objectKey), sha256: $sha256,
+            size: $bytes, contentType: $contentType, localPath: $local);
     }
 
     private function objectKey(

@@ -6,9 +6,9 @@ use App\Actions\ESPN\AbstractSyncPlayerInjuries;
 use App\Models\NFL\Player;
 use App\Models\NFL\PlayerInjurySnapshot;
 use App\Models\NFL\Team;
+use App\Services\ProviderData\Refresh\RefreshContext;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class SyncPlayerInjuries extends AbstractSyncPlayerInjuries
@@ -19,6 +19,12 @@ class SyncPlayerInjuries extends AbstractSyncPlayerInjuries
 
     protected const INJURY_TABLE = 'nfl_player_injuries';
 
+    protected function supportsPartialProjection(): bool
+    {
+        // Legacy NFL history has no partial-coverage receipt. Preserve its last auditable projection.
+        return false;
+    }
+
     /**
      * @param  list<array<string, mixed>>  $injuries
      * @param  list<array<string, mixed>>  $snapshotRows
@@ -28,8 +34,16 @@ class SyncPlayerInjuries extends AbstractSyncPlayerInjuries
         string $teamEspnId,
         array $injuries,
         array $snapshotRows,
-        CarbonInterface $observedAt
+        CarbonInterface $observedAt,
+        ?RefreshContext $context = null
     ): void {
+        if (! $this->injuryPayloadReliable) {
+            return; // This legacy snapshot schema cannot represent an authoritative partial report.
+        }
+        $connection = $team->getConnection();
+        if ((new PlayerInjurySnapshot)->getConnection()->getName() !== $connection->getName()) {
+            throw new \RuntimeException('Injury snapshot must use the projection database connection.');
+        }
         $actionableInjuries = collect($injuries)
             ->filter(fn (array $injury): bool => $this->isCurrentInjuryActive($this->normalizeInjury($injury)))
             ->values()
@@ -49,8 +63,10 @@ class SyncPlayerInjuries extends AbstractSyncPlayerInjuries
             ->sortByDesc(fn (CarbonInterface $timestamp): int => $timestamp->getTimestamp())
             ->first();
 
-        DB::transaction(function () use (
+        $connection->transaction(function () use (
             $team,
+            $connection,
+            $context,
             $teamEspnId,
             $actionableInjuries,
             $actionableSnapshotRows,
@@ -58,16 +74,18 @@ class SyncPlayerInjuries extends AbstractSyncPlayerInjuries
             $sourceUpdatedAt,
             $payloadHash,
         ): void {
-            $latestHash = PlayerInjurySnapshot::query()
+            $latest = PlayerInjurySnapshot::on($connection->getName())
                 ->where('team_id', (int) $team->getKey())
                 ->latest('observed_at')
-                ->latest('id')
-                ->value('payload_hash');
-            if (hash_equals((string) $latestHash, $payloadHash)) {
+                ->latest('id')->lockForUpdate()
+                ->first();
+            if ($latest !== null && hash_equals((string) $latest->payload_hash, $payloadHash)) {
+                $context?->recordHistory($latest);
+
                 return;
             }
 
-            $snapshot = PlayerInjurySnapshot::query()->create([
+            $snapshot = PlayerInjurySnapshot::on($connection->getName())->create([
                 'snapshot_uuid' => (string) Str::uuid(),
                 'team_id' => (int) $team->getKey(),
                 'espn_team_id' => $teamEspnId,
@@ -80,6 +98,7 @@ class SyncPlayerInjuries extends AbstractSyncPlayerInjuries
             ]);
 
             $snapshot->entries()->createMany($actionableSnapshotRows);
+            $context?->recordHistory($snapshot);
         });
     }
 

@@ -33,6 +33,13 @@ final class NflIntegrityChangeImpact
         $report = ['games_seen' => count($rows), 'matched_games' => count($matched), 'excluded_missing_prior' => count($rows) - count($matched),
             'same_game_rating_used_by_old_lookup' => count(array_filter($rows, fn ($r) => $r['home_old_is_current_game'] || $r['away_old_is_current_game'])),
             'scope' => 'Same regular-season games; original command also included postseason. No factor promoted. Best grid results are in-sample, not forecast accuracy.'];
+        if ($matched === []) {
+            foreach (['old_same_day_uncapped', 'prior_only_uncapped', 'prior_capped_rounded'] as $variant) {
+                $report[$variant] = ['at_current_factor' => ['factor' => 0.09, 'mae' => null], 'best_in_sample' => null];
+            }
+
+            return $report;
+        }
         foreach (['old_same_day_uncapped', 'prior_only_uncapped', 'prior_capped_rounded'] as $variant) {
             $grid = [];
             for ($i = 0; $i <= 28; $i++) {

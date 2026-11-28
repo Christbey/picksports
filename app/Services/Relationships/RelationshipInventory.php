@@ -69,6 +69,7 @@ final class RelationshipInventory
                     },
                     'related_model' => $relation instanceof MorphTo ? null : $relation->getRelated()::class,
                     'related_table' => $relation instanceof MorphTo ? null : $relation->getRelated()->getTable(),
+                    'related_connection' => $relation instanceof MorphTo ? null : $relation->getRelated()->getConnection()->getName(),
                     'source' => str_replace(base_path().DIRECTORY_SEPARATOR, '', $method->getFileName()).':'.$method->getStartLine(),
                 ];
                 if ($relation instanceof BelongsToMany) {
@@ -103,7 +104,7 @@ final class RelationshipInventory
             ksort($relations);
             $inventory[$class] = [
                 'table' => $table,
-                'connection' => $model->getConnectionName(),
+                'connection' => $model->getConnection()->getName(),
                 'table_exists' => $exists,
                 'primary_key' => $model->getKeyName(),
                 'key_type' => $model->getKeyType(),

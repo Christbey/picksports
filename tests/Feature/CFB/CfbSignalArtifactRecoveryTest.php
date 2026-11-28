@@ -9,7 +9,6 @@ use App\Services\CFB\Signals\CfbFootballSignalHistoricalTrainer;
 use App\Services\Predictions\CanonicalPayloadHasher;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -96,35 +95,46 @@ test('partial training dispatches the next batch without publishing a success he
     expect(CommandHeartbeat::count())->toBe(0);
 });
 
-test('offline training restores the caller memory limit and releases its lock after success or an exception', function (bool $throws) {
+function cfbAssertCallerTrainingMemory($test, string $callerLimit, bool $fails): void
+{
+    if ($callerLimit === '256M' && memory_get_usage(true) >= 200 * 1024 * 1024) {
+        $test->markTestSkipped('Run this lower-limit regression in isolation when the shared process exceeds 200 MB.');
+    }
     CalculationRelease::factory()->create(['sport' => 'cfb', 'phase' => 'pregame', 'status' => 'approved',
-        'effective_at' => now()->subDay(), 'retired_at' => null, 'configuration' => $this->config]);
-    $artifact = $this->artifact;
+        'effective_at' => now()->subDay(), 'retired_at' => null, 'configuration' => $test->config]);
+    $originalLimit = ini_get('memory_limit');
     $trainer = Mockery::mock(CfbFootballSignalHistoricalTrainer::class);
-    $trainer->shouldReceive('train')->once()->andReturnUsing(function () use ($throws, $artifact) {
-        expect(ini_get('memory_limit'))->toBe('512M');
-        if ($throws) {
-            throw new RuntimeException('Training interrupted');
+    $trainer->shouldReceive('train')->once()->andReturnUsing(function () use ($test, $callerLimit, $fails) {
+        expect(ini_get('memory_limit'))->toBe($callerLimit === '256M' ? '512M' : $callerLimit);
+        if ($fails) {
+            throw new RuntimeException('Training interrupted.');
         }
 
-        return $artifact;
+        return $test->artifact;
     });
     app()->instance(CfbFootballSignalHistoricalTrainer::class, $trainer);
-    $memoryLimit = ini_get('memory_limit');
+
     try {
-        ini_set('memory_limit', '768M');
-        if ($throws) {
-            expect(fn () => Artisan::call('cfb:train-football-signals'))->toThrow(RuntimeException::class, 'Training interrupted');
+        ini_set('memory_limit', $callerLimit);
+        if ($fails) {
+            expect(fn () => $test->artisan('cfb:train-football-signals')->run())
+                ->toThrow(RuntimeException::class, 'Training interrupted.');
         } else {
-            $this->artisan('cfb:train-football-signals')->assertSuccessful();
+            $test->artisan('cfb:train-football-signals')->assertSuccessful();
         }
-        expect(ini_get('memory_limit'))->toBe('768M');
+        expect(ini_get('memory_limit'))->toBe($callerLimit);
         $lock = Cache::lock('cfb:signal-training', 1800);
         expect($lock->get())->toBeTrue();
         $lock->release();
     } finally {
-        if ($memoryLimit !== false) {
-            ini_set('memory_limit', $memoryLimit);
-        }
+        ini_set('memory_limit', $originalLimit);
     }
-})->with([false, true]);
+}
+
+test('synchronous signal training preserves caller memory limits on success and failure', function (string $callerLimit, bool $fails) {
+    cfbAssertCallerTrainingMemory($this, $callerLimit, $fails);
+})->with([['1536M', false], ['1536M', true], ['-1', false], ['-1', true]]);
+
+test('isolated lower caller signal training preserves memory on success and failure', function (bool $fails) {
+    cfbAssertCallerTrainingMemory($this, '256M', $fails);
+})->with([false, true])->group('ci-isolated-interop');

@@ -1,3 +1,13 @@
+export type ExportCoverRecord = {
+    games: number;
+    hits?: number;
+    over?: number;
+    under?: number;
+    pushes?: number;
+    wins?: number;
+    recommendation?: 'Over' | 'Under';
+};
+
 export type Recommendation = {
     id: number;
     player: {
@@ -10,14 +20,18 @@ export type Recommendation = {
     line: number;
     recommendation: 'Over' | 'Under';
     odds: number;
-    confidence: number;
-    edge: number;
+    confidence: number | null;
+    edge: number | null;
     stats: {
-        season_avg: number;
-        recent_avg: number;
-        last5_avg: number;
-        times_covered_last5: { hits: number; games: number } | null;
-        times_covered_season: { hits: number; games: number } | null;
+        season_avg: number | null;
+        recent_avg: number | null;
+        last5_avg: number | null;
+        times_covered_last5: ExportCoverRecord | null;
+        times_covered_season: ExportCoverRecord | null;
+        cover_record?: {
+            last_5?: ExportCoverRecord | null;
+            season?: ExportCoverRecord | null;
+        } | null;
         vs_opponent_avg: number | null;
         consistency: {
             std_dev: number;
@@ -33,6 +47,7 @@ export type Recommendation = {
         away_team: string | null;
         date: string | null;
         time: string | null;
+        starts_at?: string | null;
     };
     bookmaker: string | null;
 };
@@ -45,8 +60,9 @@ export type Option = {
 export type GameOption = {
     id: number;
     label: string;
-    date: string;
-    time: string;
+    date: string | null;
+    time?: string | null;
+    starts_at?: string | null;
 };
 
 export type ExportPreset = {
@@ -63,7 +79,7 @@ export type StatRow = {
 };
 
 export type PredictionExport = {
-    id: number;
+    id: number | string;
     game_id: number;
     home_team: string;
     away_team: string;
@@ -72,15 +88,16 @@ export type PredictionExport = {
         away_team: string | null;
         date: string | null;
         time: string | null;
+        starts_at?: string | null;
     };
-    predicted_spread: number | null;
-    predicted_total: number | null;
-    win_probability: number;
-    confidence: number;
-    home_elo: number | null;
-    away_elo: number | null;
-    pick_side: 'Home' | 'Away';
-    pick_team: string;
+    predicted_spread: number | string | null;
+    predicted_total: number | string | null;
+    win_probability: number | null;
+    confidence: number | null;
+    home_elo: number | string | null;
+    away_elo: number | string | null;
+    pick_side: 'Home' | 'Away' | null;
+    pick_team: string | null;
 };
 
 export type FuturesExport = {

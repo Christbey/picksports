@@ -610,8 +610,18 @@ def fit_signal_residuals(rows, cutoff, penalty, decay, families, retrospective=F
     return models,diagnostics
 
 
+def source_provenance(rows, training_ids):
+    selected = set(training_ids)
+    return {"policy": "cfb-observed-assessment-v1", "games": {
+        str(row["game_id"]): row.get("source_assessments") for row in rows if row["game_id"] in selected
+    }}
+
+
 def train(manifest_path, output, retrospective=False):
     manifest=json.loads(Path(manifest_path).read_text())
+    scan = manifest.get("scan")
+    if scan is not None and (not isinstance(scan, dict) or scan.get("complete") is not True or scan.get("has_more") is True or scan.get("after_game_id", 0) != 0):
+        raise ValueError("Training requires a complete export; bounded shards require reviewed assembly")
     if manifest.get("feature_policy") != POLICY:
         raise ValueError("Re-export accepted sources with the current independent efficiency feature policy")
     content=Path(manifest["data_path"]).read_bytes()
@@ -697,12 +707,14 @@ def train(manifest_path, output, retrospective=False):
     as_of=manifest.get("as_of")
     if not as_of:
         raise ValueError("Export manifest requires an explicit as_of timestamp")
+    model["source_assessment_provenance"] = source_provenance(rows, model["training_ids"])
     evaluation_path = str(output)+".evaluation.json"
     evaluation_json = json.dumps({**model, "dataset_hash": manifest["sha256"], "status": "research_evaluation_only",
         "promotion_allowed": False}, sort_keys=True, allow_nan=False)
     with open(evaluation_path, "x") as evaluation_file:
         evaluation_file.write(evaluation_json)
     deployment=fit(rows,as_of,penalty,decay,retrospective)
+    deployment["source_assessment_provenance"] = source_provenance(rows, deployment["training_ids"])
     deployment.update({"hyperparameter_selection": model["hyperparameter_selection"], "fpi_weight":model.get("fpi_weight",0.),"fpi_blend_selection":blend,
         "signal_model":signal_model,"signal_diagnostics":signal_report,"calibration":calibration,
         "calibration_temperature":calibration["temperature"],"calibration_status":calibration["status"],

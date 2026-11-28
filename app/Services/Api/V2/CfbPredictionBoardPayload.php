@@ -44,7 +44,7 @@ class CfbPredictionBoardPayload
     public function compact(array $prediction): array
     {
         $row = Arr::only($prediction, [
-            'id', 'sport', 'game_id', 'game', 'projection', 'comparison_forecasts',
+            'id', 'sport', 'game_id', 'game', 'projection', 'comparison_forecasts', 'spread_convention',
             'actual_spread', 'actual_total', 'spread_error', 'total_error', 'winner_correct',
             'graded_at', 'created_at', 'updated_at', 'model_bet_context', 'weather_forecast',
             'value_signal', 'cfb_signal_context', 'recommendation', ...self::LIVE_FIELDS,

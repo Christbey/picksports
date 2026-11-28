@@ -4,8 +4,11 @@ namespace App\Http\Controllers\Subscription;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Subscription\CheckoutRequest;
+use App\Services\Billing\BillingFinancialAdmission;
+use App\Services\Billing\BillingLegacyOperation;
 use App\Services\SubscriptionCheckoutService;
 use App\Support\SubscriptionTierCache;
+use Illuminate\Http\Request;
 
 class CheckoutController extends Controller
 {
@@ -40,8 +43,14 @@ class CheckoutController extends Controller
             return $this->backError('Invalid subscription tier or billing period.');
         }
 
+        if (config('billing.durable.enabled', false)) {
+            $intent = app(BillingFinancialAdmission::class)->admit($user, $user->subscribed() ? 'swap' : 'checkout', $stripePriceId);
+
+            return redirect()->route('subscription.operation', ['intent' => $intent->id]);
+        }
+
         if ($user->subscribed()) {
-            $user->subscription()->swapAndInvoice($stripePriceId);
+            app(BillingLegacyOperation::class)->run($user, 'swap', fn () => $user->subscription()->swapAndInvoice($stripePriceId));
 
             $user->syncRoleFromTier();
 
@@ -58,8 +67,6 @@ class CheckoutController extends Controller
 
     public function success(Request $request)
     {
-        $request->user()->syncRoleFromTier();
-
-        return $this->redirectSuccess('dashboard', 'Thank you for subscribing! Your subscription is now active.');
+        return $this->redirectSuccess('subscription.manage', 'Checkout returned. Payment and access remain subject to confirmed billing reconciliation.');
     }
 }

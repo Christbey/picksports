@@ -3,6 +3,7 @@
 namespace App\Support\MLB;
 
 use App\Models\MLB\Game;
+use App\Support\ScoreObservation;
 use Illuminate\Support\Collection;
 
 final class MlbGameScoreResolver
@@ -62,6 +63,9 @@ final class MlbGameScoreResolver
      */
     public function forTeam(Game $game, int $teamId): array
     {
+        if ($teamId <= 0 || ! in_array($teamId, [(int) $game->home_team_id, (int) $game->away_team_id], true)) {
+            return ['team' => null, 'opponent' => null, 'complete' => false, 'source' => 'unresolved'];
+        }
         $scores = $this->resolve($game);
         $isHome = (int) $game->home_team_id === $teamId;
 
@@ -95,6 +99,6 @@ final class MlbGameScoreResolver
 
     private function nullableInt(mixed $value): ?int
     {
-        return is_numeric($value) ? (int) $value : null;
+        return ScoreObservation::known($value);
     }
 }

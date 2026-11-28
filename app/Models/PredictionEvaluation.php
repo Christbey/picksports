@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Models\GuardsCoreEvidenceMutations;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -9,6 +10,8 @@ use LogicException;
 
 class PredictionEvaluation extends Model
 {
+    use GuardsCoreEvidenceMutations;
+
     protected $fillable = [
         'canonical_prediction_id',
         'sport_event_id',
@@ -51,7 +54,7 @@ class PredictionEvaluation extends Model
         });
 
         static::deleting(function (self $evaluation): void {
-            if ($evaluation->canonical_prediction_id !== null || in_array($evaluation->getOriginal('blend_version'), ['nfl-prop-shadow-v1', 'nfl-game-simulation-shadow-v1'], true)) {
+            if ($evaluation->getOriginal('canonical_prediction_id') !== null || in_array($evaluation->getOriginal('blend_version'), ['nfl-prop-shadow-v1', 'nfl-game-simulation-shadow-v1'], true)) {
                 throw new LogicException(in_array($evaluation->getOriginal('blend_version'), ['nfl-prop-shadow-v1', 'nfl-game-simulation-shadow-v1'], true) ? 'NFL shadow evaluations are immutable.' : 'Canonical prediction evaluations are immutable.');
             }
         });

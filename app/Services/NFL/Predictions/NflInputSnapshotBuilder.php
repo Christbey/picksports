@@ -23,18 +23,20 @@ class NflInputSnapshotBuilder extends FootballInputSnapshotBuilder
 
     public function build(SportEvent $event, CalculationReleaseData $release): EventInputSnapshotData
     {
-        $this->recommendationContext = null;
-        $game = $event->nflGame()->with(['homeTeam', 'awayTeam'])->first();
-        if ($event->sport === 'nfl' && $release->sport === 'nfl' && $release->phase === 'pregame'
-            && $game instanceof Game && $game->homeTeam !== null && $game->awayTeam !== null && in_array($game->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true)
-            && $event->starts_at?->isFuture()) {
-            $this->recommendationContext = $this->recommendations->capture($game);
-        }
-        try {
-            return parent::build($event, $release);
-        } finally {
+        return $this->withManagedClockCapture($event, function () use ($event, $release): EventInputSnapshotData {
             $this->recommendationContext = null;
-        }
+            $game = $event->nflGame()->with(['homeTeam', 'awayTeam'])->first();
+            if ($event->sport === 'nfl' && $release->sport === 'nfl' && $release->phase === 'pregame'
+                && $game instanceof Game && $game->homeTeam !== null && $game->awayTeam !== null && in_array($game->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true)
+                && $event->starts_at?->isFuture()) {
+                $this->recommendationContext = $this->recommendations->capture($game);
+            }
+            try {
+                return parent::build($event, $release);
+            } finally {
+                $this->recommendationContext = null;
+            }
+        });
     }
 
     protected function sport(): string

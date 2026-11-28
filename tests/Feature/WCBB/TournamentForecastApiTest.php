@@ -1,11 +1,13 @@
 <?php
 
+use App\Actions\WCBB\GenerateTournamentForecast;
 use App\Models\User;
 use App\Models\WCBB\Game;
 use App\Models\WCBB\Team;
 use App\Models\WCBB\TeamMetric;
 use App\Models\WCBB\TournamentForecast;
-use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Permission;
 
@@ -81,7 +83,7 @@ it('returns wcbb tournament forecasts for authenticated users', function () {
         ->and((float) $response->json('data.0.champion_probability'))->toBe(0.052);
 });
 
-it('regenerates stale or partial wcbb forecasts before responding', function () {
+it('returns the stored partial stale WCBB inventory without generating or writing forecasts', function () {
     $user = User::factory()->create();
     $user->givePermissionTo('view-wcbb-predictions');
     Sanctum::actingAs($user);
@@ -143,14 +145,39 @@ it('regenerates stale or partial wcbb forecasts before responding', function () 
         'updated_at' => now()->subDay(),
     ]);
 
+    $before = TournamentForecast::query()->where('season', 2026)->orderBy('id')->get()->map->getAttributes()->all();
+    Http::preventStrayRequests();
+    $generator = Mockery::mock(GenerateTournamentForecast::class);
+    $generator->shouldNotReceive('execute');
+    app()->instance(GenerateTournamentForecast::class, $generator);
+    $writes = [];
+    DB::listen(function ($query) use (&$writes): void {
+        if (preg_match('/\A\s*(?:insert|update|delete)\b/i', $query->sql)
+            && str_contains(strtolower($query->sql), 'wcbb_tournament_forecasts')) {
+            $writes[] = $query->sql;
+        }
+    });
     $response = $this->getJson('/api/v2/sports/wcbb/forecasts?season=2026');
 
     $response->assertOk();
 
-    $oldestUpdatedAt = TournamentForecast::query()->where('season', 2026)->min('updated_at');
+    expect(TournamentForecast::query()->where('season', 2026)->count())->toBe(1)
+        ->and(count($response->json('data')))->toBe(1)
+        ->and(TournamentForecast::query()->where('season', 2026)->orderBy('id')->get()->map->getAttributes()->all())->toBe($before)
+        ->and($writes)->toBe([]);
+    Http::assertNothingSent();
+});
 
-    expect(TournamentForecast::query()->where('season', 2026)->count())->toBe(6)
-        ->and(count($response->json('data')))->toBe(6)
-        ->and($oldestUpdatedAt)->not->toBeNull()
-        ->and(now()->diffInHours(Carbon::parse($oldestUpdatedAt)))->toBeLessThan(1);
+it('reports an empty stored WCBB inventory without generating unavailable forecasts', function () {
+    $user = User::factory()->create();
+    $user->givePermissionTo('view-wcbb-predictions');
+    Sanctum::actingAs($user);
+    Http::preventStrayRequests();
+    $generator = Mockery::mock(GenerateTournamentForecast::class);
+    $generator->shouldNotReceive('execute');
+    app()->instance(GenerateTournamentForecast::class, $generator);
+    $this->getJson('/api/v2/sports/wcbb/forecasts?season=2026')->assertOk()
+        ->assertJsonCount(0, 'data')->assertJsonPath('meta.available_seasons', []);
+    expect(TournamentForecast::count())->toBe(0);
+    Http::assertNothingSent();
 });

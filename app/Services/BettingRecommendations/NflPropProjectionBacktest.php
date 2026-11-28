@@ -10,7 +10,7 @@ use Illuminate\Support\Collection;
 /** Read-only, controlled baseline comparison. This does not replay the full recommendation model. */
 class NflPropProjectionBacktest extends PlayerPropAnalyzer
 {
-    public function run(int $season, string $throughDate, int $minGames = 3, ?string $validationFrom = null, ?string $market = null, bool $includeSamples = false): array
+    public function run(int $season, string $throughDate, int $minGames = 3, ?string $validationFrom = null, ?string $market = null, bool $includeSamples = false, bool $includeMatchups = false): array
     {
         $gameFields = ['id', 'season', 'season_type', 'status', 'game_date', 'game_time', 'home_team_id', 'away_team_id', 'home_qb_name', 'away_qb_name'];
         $props = PlayerProp::query()->whereNotNull('player_id')
@@ -27,13 +27,13 @@ class NflPropProjectionBacktest extends PlayerPropAnalyzer
             ->get(['id', 'game_id', 'player_id', 'team_id', 'passing_attempts', 'passing_yards', 'passing_completions', 'passing_touchdowns', 'interceptions_thrown',
                 'rushing_attempts', 'rushing_yards', 'rushing_touchdowns', 'receiving_targets', 'receptions', 'receiving_yards', 'receiving_touchdowns']);
 
-        $result = $this->evaluate($props, $stats, $minGames, $includeSamples);
+        $result = $this->evaluate($props, $stats, $minGames, $includeSamples, $includeMatchups);
         if ($validationFrom !== null) {
             [$development, $validation] = $props->partition(fn ($prop) => $prop->game->game_date->toDateString() < $validationFrom);
             $result['date_split'] = [
                 'validation_from' => $validationFrom,
-                'development' => $validation->isEmpty() ? $result : $this->evaluate($development, $stats, $minGames),
-                'validation' => $development->isEmpty() ? $result : $this->evaluate($validation, $stats, $minGames),
+                'development' => $validation->isEmpty() ? $result : $this->evaluate($development, $stats, $minGames, false, $includeMatchups),
+                'validation' => $development->isEmpty() ? $result : $this->evaluate($validation, $stats, $minGames, false, $includeMatchups),
                 'policy' => 'Fixed formulas; each target uses only earlier game dates. Previously inspected dates are retrospective evidence, not an untouched holdout.',
             ];
         }
@@ -42,9 +42,10 @@ class NflPropProjectionBacktest extends PlayerPropAnalyzer
     }
 
     /** Public pure evaluator also permits fixtures and bounded production aggregate checks without writes. */
-    public function evaluate(Collection $props, Collection $stats, int $minGames = 3, bool $includeSamples = false): array
+    public function evaluate(Collection $props, Collection $stats, int $minGames = 3, bool $includeSamples = false, bool $includeMatchups = false): array
     {
         $dates = app(SportsDateWindowService::class);
+        $matchups = new NflPropMatchupAdjustment;
         $stats = $stats->filter(fn ($row) => $row->game?->status === 'STATUS_FINAL'
             && in_array((string) $row->game->season_type, ['2', 'regular'], true));
         $byPlayer = $stats->groupBy('player_id')->map(fn ($rows) => $rows->sortByDesc(fn ($r) => $dates->gameDateTimeUtc($r->game->game_date, $r->game->game_time)?->timestamp ?? 0)->values());
@@ -118,7 +119,33 @@ class NflPropProjectionBacktest extends PlayerPropAnalyzer
             })->sortBy(fn ($quote) => [$quote->bookmaker === 'draftkings' ? 0 : 1, -($quote->fetched_at?->timestamp ?? 0), $quote->id])->first();
             $coverage['unusable_quotes'] += (int) ($usable === null);
             if ($includeSamples) {
+                $replay = [];
+                if ($includeMatchups) {
+                    $identity = clone $prop->player;
+                    $identity->team_id = $teamId;
+                    $matchup = $matchups->resolve($target, $identity, $prop->market, $newHistory);
+                    $values = $this->statValues($newHistory->take(10), $field);
+                    $mean = array_sum($values) / count($values);
+                    $stdDev = sqrt(array_sum(array_map(fn ($value) => ($value - $mean) ** 2, $values)) / count($values));
+                    $volatility = max($stdDev, $this->marketProfiles[$prop->market]['volatility_floor']) * sqrt(1 + 1 / max(1, $newCurrent->count()));
+                    $adjustedMean = $old * $matchup['factor'];
+                    $outcomes = $usable ? $this->nflOutcomeProbabilities($adjustedMean, (float) $usable->line, $volatility, $prop->market) : null;
+                    $baselineOutcomes = $usable ? $this->nflOutcomeProbabilities($old, (float) $usable->line, $volatility, $prop->market) : null;
+                    $replay = [
+                        'matchup_mean' => $adjustedMean,
+                        'matchup_probability' => $outcomes ? $outcomes['over'] / max(0.000001, 1 - $outcomes['push']) : null,
+                        'baseline_probability' => $baselineOutcomes ? $baselineOutcomes['over'] / max(0.000001, 1 - $baselineOutcomes['push']) : null,
+                        'push_probability' => $outcomes['push'] ?? null,
+                        'matchup_status' => $matchup['status'],
+                        'matchup_factor' => $matchup['factor'],
+                        'ranked_teams' => $matchup['ranked_teams'] ?? 0,
+                        'labels_available_at' => $kickoff->addDay()->toIso8601String(),
+                        'point_in_time_verified' => false,
+                        'model_scope' => 'legacy_neutral_plus_matchup_only; not full live usage/injury pipeline',
+                    ];
+                }
                 $samples[] = [
+                    ...$replay,
                     'game_id' => (int) $target->id,
                     'player_id' => (int) $prop->player_id,
                     'market' => $prop->market,

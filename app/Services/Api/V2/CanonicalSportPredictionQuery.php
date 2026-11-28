@@ -5,6 +5,8 @@ namespace App\Services\Api\V2;
 use App\Models\CanonicalPrediction;
 use App\Services\NFL\Predictions\NflCanonicalPregameEvidenceBoundary;
 use App\Services\Sports\SportsDateWindowService;
+use App\Support\MLB\MlbGameStart;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -107,11 +109,13 @@ class CanonicalSportPredictionQuery
         return $this->queryForSport($context->slug, $filters)
             ->reorder()
             ->whereNotNull("{$gameTable}.game_date")
-            ->select(["{$gameTable}.game_date", "{$gameTable}.game_time"])
+            ->select($context->slug === 'mlb' ? ["{$gameTable}.game_date", "{$gameTable}.game_time", "{$gameTable}.start_epoch"] : ["{$gameTable}.game_date", "{$gameTable}.game_time"])
             ->orderBy("{$gameTable}.game_date")
             ->orderBy("{$gameTable}.game_time")
             ->toBase()->get()
-            ->map(fn (mixed $game): ?string => app(SportsDateWindowService::class)->gameDateForDisplay($game->game_date, $game->game_time))
+            ->map(fn (mixed $game): ?string => $context->slug === 'mlb'
+                ? CarbonImmutable::createFromTimestampUTC((int) $game->start_epoch)->setTimezone(app(SportsDateWindowService::class)->timezone())->toDateString()
+                : app(SportsDateWindowService::class)->gameDateForDisplay($game->game_date, $game->game_time))
             ->filter()
             ->unique()
             ->sort()
@@ -141,6 +145,18 @@ class CanonicalSportPredictionQuery
                 ['sportEvent.cfbGame.latestLiveSnapshot:cfb_live_prediction_snapshots.id,cfb_live_prediction_snapshots.game_id,status,projection,observed_at', 'sportEvent.cfbGame.weather']
             ))
             ->matchingCbbIdentity()
+            ->when($sport === 'wcbb', fn (Builder $query) => $query->with('trackedWcbbSpread'))
+            ->when($sport === 'mlb', function (Builder $query): void {
+                MlbGameStart::known($query, 'mlb_games');
+                $query->whereHas('calculationRun.inputSnapshot', function (Builder $input): void {
+                    $table = $input->getModel()->getTable();
+                    $input->where('metadata->mlb_timing_policy', MlbGameStart::TIMING_POLICY);
+                    foreach (['context_hash' => 'start_context_hash', 'source_hash' => 'start_source_hash', 'epoch' => 'start_epoch', 'observed_at_utc' => 'start_observed_at'] as $field => $column) {
+                        $input->whereColumn("{$table}.metadata->mlb_start_observation->{$field}", "mlb_games.{$column}");
+                    }
+                    $input->whereColumn("{$table}.cutoff_at", 'sport_events.starts_at')->whereColumn("{$table}.captured_at", '<', "{$table}.cutoff_at");
+                });
+            })
             ->where('predictions.sport', $sport)
             ->where('predictions.phase', 'pregame')
             ->where('predictions.publication_state', 'published')

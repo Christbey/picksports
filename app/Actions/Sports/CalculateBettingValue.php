@@ -4,6 +4,7 @@ namespace App\Actions\Sports;
 
 use App\Actions\Sports\Concerns\InteractsWithBettingMarkets;
 use App\Support\BettingRecommendationGrader;
+use App\Support\Odds\WcbbMarketQuotes;
 
 class CalculateBettingValue
 {
@@ -24,9 +25,14 @@ class CalculateBettingValue
 
         $recommendations = [];
 
-        $spreadsMarket = $this->extractMarket($oddsData, 'spreads');
+        $wcbbMarkets = $sportKey === 'wcbb' ? app(WcbbMarketQuotes::class) : null;
+        $spreadsMarket = $wcbbMarkets === null
+            ? $this->extractMarket($oddsData, 'spreads')
+            : $wcbbMarkets->firstTeamMarket($game, 'spreads');
         $totalsMarket = $this->extractMarket($oddsData, 'totals');
-        $moneylineMarket = $this->extractMarket($oddsData, 'h2h');
+        $moneylineMarket = $wcbbMarkets === null
+            ? $this->extractMarket($oddsData, 'h2h')
+            : $wcbbMarkets->firstTeamMarket($game, 'h2h');
 
         if ($spreadsMarket && $prediction->predicted_spread !== null) {
             $spreadRec = $this->analyzeSpread($game, $prediction, $spreadsMarket, $sportKey);
@@ -73,11 +79,13 @@ class CalculateBettingValue
         $homeTeam = $this->getTeamDisplayName($game->homeTeam);
         $awayTeam = $this->getTeamDisplayName($game->awayTeam);
 
-        $homeSpread = null;
-        $homePrice = null;
-        $awayPrice = null;
+        $quotes = $sportKey === 'wcbb' ? $market : null;
 
-        foreach ($market['outcomes'] ?? [] as $outcome) {
+        $homeSpread = $quotes['home']['point'] ?? null;
+        $homePrice = $quotes['home']['price'] ?? null;
+        $awayPrice = $quotes['away']['price'] ?? null;
+
+        foreach ($quotes === null ? ($market['outcomes'] ?? []) : [] as $outcome) {
             if (! is_array($outcome)) {
                 continue;
             }
@@ -105,13 +113,14 @@ class CalculateBettingValue
 
         $betHome = (float) $prediction->predicted_spread > (float) $marketSpreadModelConvention;
         $selectedOdds = $betHome ? ($homePrice ?? -110) : ($awayPrice ?? -110);
-        $betLine = $betHome ? (float) $homeSpread : (float) (-$homeSpread);
+        $betLine = $betHome ? (float) $homeSpread : (float) ($quotes['away']['point'] ?? -$homeSpread);
 
         return [
             'type' => 'spread',
             'game_id' => $game->id,
             'recommendation' => ($betHome ? "Bet {$homeTeam}" : "Bet {$awayTeam}").' '.$this->formatLine($betLine),
             'bet_team' => $betHome ? $homeTeam : $awayTeam,
+            ...($quotes !== null ? ['line' => $betLine, 'pick_side' => $betHome ? 'home' : 'away', 'bookmaker' => $quotes['bookmaker']] : []),
             // Display both lines in sportsbook convention (favorite negative, underdog positive)
             'model_line' => round($modelSpreadMarketConvention, 1),
             'market_line' => round((float) $homeSpread, 1),
@@ -184,10 +193,12 @@ class CalculateBettingValue
         $homeTeam = $this->getTeamDisplayName($game->homeTeam);
         $awayTeam = $this->getTeamDisplayName($game->awayTeam);
 
-        $homePrice = null;
-        $awayPrice = null;
+        $quotes = $sportKey === 'wcbb' ? $market : null;
 
-        foreach ($market['outcomes'] ?? [] as $outcome) {
+        $homePrice = $quotes['home']['price'] ?? null;
+        $awayPrice = $quotes['away']['price'] ?? null;
+
+        foreach ($quotes === null ? ($market['outcomes'] ?? []) : [] as $outcome) {
             if (! is_array($outcome)) {
                 continue;
             }

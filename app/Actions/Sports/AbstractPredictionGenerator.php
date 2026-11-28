@@ -3,11 +3,20 @@
 namespace App\Actions\Sports;
 
 use App\Jobs\Predictions\GeneratePredictionNarrative as GenerateGenericPredictionNarrativeJob;
+use App\Models\MLB\Game as MlbGame;
+use App\Models\ModelRun;
+use App\Models\NFL\GameDepthChartLink;
+use App\Models\PredictionFeatureSnapshot;
+use App\Models\ShadowModelOutput;
+use App\Models\SnapshotMetadataPayload;
 use App\Services\OddsApi\OddsApiService;
 use App\Services\PlayerStats\NbaPlayerEpaCalculator;
+use App\Services\Predictions\ModelRunRecorder;
 use App\Services\Predictions\PredictionDeliverySource;
 use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
 use App\Services\Sports\DepthChartImpactService;
+use App\Services\Sports\Elo\EloInputAdmission;
+use App\Support\MLB\MlbGameStart;
 use App\Support\Sports\SeasonTypeCandidates;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
@@ -97,26 +106,7 @@ abstract class AbstractPredictionGenerator
 
         $snapshotPayload = Arr::pull($predictionData, '_snapshot', []);
 
-        $predictionModel = $this->getPredictionModel();
-
-        $prediction = $predictionModel::updateOrCreate(
-            ['game_id' => $game->id],
-            $predictionData
-        );
-
-        app(PredictionFeatureSnapshotRecorder::class)->record(
-            $prediction,
-            $game,
-            $this->getSport(),
-            $predictionData,
-            is_array($snapshotPayload) ? $snapshotPayload : []
-        );
-
-        if ($dispatchNarratives) {
-            $this->dispatchNarrativeGeneration($prediction);
-        }
-
-        return $prediction;
+        return $this->persistPrediction($game, $predictionData, is_array($snapshotPayload) ? $snapshotPayload : [], $dispatchNarratives);
     }
 
     /**
@@ -147,26 +137,93 @@ abstract class AbstractPredictionGenerator
             'verification_method' => 'completed_game_reconstruction',
         ], $snapshotPayload, $snapshotOverrides);
 
-        $predictionModel = $this->getPredictionModel();
+        return $this->persistPrediction($game, $predictionData, $snapshotPayload, $dispatchNarratives);
+    }
 
-        $prediction = $predictionModel::updateOrCreate(
-            ['game_id' => $game->id],
-            $predictionData
-        );
-
-        app(PredictionFeatureSnapshotRecorder::class)->record(
-            $prediction,
-            $game,
-            $this->getSport(),
-            $predictionData,
-            $snapshotPayload
-        );
-
-        if ($dispatchNarratives) {
-            $this->dispatchNarrativeGeneration($prediction);
+    private function persistPrediction(Model $game, array $predictionData, array $snapshot, bool $dispatchNarratives): Model
+    {
+        $predictionClass = $this->getPredictionModel();
+        $prototype = new $predictionClass;
+        $connection = $prototype->getConnection();
+        $pdo = $connection->getPdo();
+        $gameId = $game->getKey();
+        $gameTable = $game->getTable();
+        $models = [$game, $prototype, new PredictionFeatureSnapshot, new ModelRun,
+            new SnapshotMetadataPayload, new ShadowModelOutput];
+        if ($this->getSport() === 'nfl') {
+            $models[] = new GameDepthChartLink;
         }
+        $assertConnection = static function (array $currentModels) use ($connection, $pdo, $game, $gameId, $gameTable): void {
+            if ($game->getKey() !== $gameId || $game->getTable() !== $gameTable) {
+                throw new \InvalidArgumentException('Prediction persistence Game identity changed.');
+            }
+            foreach ($currentModels as $model) {
+                if ($model->getConnection() !== $connection || $model->getConnection()->getPdo() !== $pdo) {
+                    throw new \InvalidArgumentException('Prediction persistence requires one unchanged database connection.');
+                }
+            }
+        };
+        $assertConnection($models);
+        $runContext = app(ModelRunRecorder::class)->preparePredictionContext($this->getSport());
+        $standalone = $connection->transactionLevel() === 0;
+        $knownMlbCapture = $this->getSport() === 'mlb' && $game instanceof MlbGame
+            && ($snapshot['run_type'] ?? 'prediction') !== 'historical_reconstruction' && $standalone;
 
-        return $prediction;
+        return $connection->transaction(function () use ($game, $predictionData, $snapshot, $dispatchNarratives, $prototype, $connection, $models, $assertConnection, $runContext, $knownMlbCapture, $standalone, $gameId): Model {
+            $assertConnection($models);
+            $captureGame = $game;
+            if ($standalone) {
+                // Known standalone order matches grading: Game before Prediction and any later FK parent access.
+                // This serializes persistence; it does not recalculate or qualify the original input model.
+                $lockedGame = $game->newQuery()->lockForUpdate()->findOrFail($gameId);
+                if ($knownMlbCapture) {
+                    if (MlbGameStart::context($lockedGame) !== MlbGameStart::context($game) || $lockedGame->status !== $game->status) {
+                        throw new \InvalidArgumentException('MLB capture Game context changed; retry the complete calculation.');
+                    }
+                    $captureGame = $lockedGame;
+                }
+            }
+            // firstOrCreate retains Eloquent's existing unique-conflict recovery.
+            $prediction = $prototype->newQuery()->firstOrCreate(['game_id' => $gameId], $predictionData);
+            $predictionId = $prediction->getKey();
+            if (! $prediction->exists || $predictionId === null
+                || (! $prediction->wasRecentlyCreated && ! $prediction->fill($predictionData)->save()) || $prediction->getKey() !== $predictionId) {
+                throw new \RuntimeException('Prediction persistence was cancelled.');
+            }
+            if (! $connection->table($prototype->getTable())->useWritePdo()->where('id', $predictionId)
+                ->where('game_id', $gameId)->exists()) {
+                throw new \RuntimeException('Prediction persistence lost its stored owner.');
+            }
+            $assertConnection([...$models, $prediction, $captureGame]);
+            $recorder = app(PredictionFeatureSnapshotRecorder::class);
+            if ($knownMlbCapture) {
+                $revision = $recorder->recordCurrentMlb($prediction, $captureGame, $predictionData, $snapshot, $runContext);
+            } else {
+                $revision = $recorder->record($prediction, $captureGame, $this->getSport(), $predictionData, $snapshot, $runContext);
+            }
+            $assertConnection([...$models, $prediction, $captureGame, $revision]);
+            if (! $revision->exists || $revision->getKey() === null) {
+                throw new \RuntimeException('Prediction snapshot persistence was cancelled.');
+            }
+            $storedRevision = $connection->table('prediction_feature_snapshots')->useWritePdo()
+                ->where('id', $revision->getKey())->where('sport', $this->getSport())
+                ->where('game_id', $gameId)->where('prediction_table', $prototype->getTable())
+                ->where('prediction_id', $predictionId)->where('snapshot_run_id', $revision->snapshot_run_id)
+                ->where('model_run_id', $revision->model_run_id)->first(['id', 'model_run_id']);
+            if ($storedRevision === null || ! $connection->table('model_runs')->useWritePdo()
+                ->where('id', $storedRevision->model_run_id)->where('sport', $this->getSport())
+                ->where('config_hash', $runContext['config_hash'])->exists()) {
+                throw new \RuntimeException('Prediction snapshot persistence lost its stored owner.');
+            }
+            if ($dispatchNarratives) {
+                // Register within this transaction: an inherited outer rollback must suppress dispatch.
+                $dispatchPrediction = clone $prediction;
+                $dispatchPrediction->unsetRelations();
+                $connection->afterCommit(fn () => $this->dispatchNarrativeGeneration($dispatchPrediction));
+            }
+
+            return $prediction;
+        });
     }
 
     protected function appliesPersistedInjuryTotalInternally(): bool
@@ -198,7 +255,10 @@ abstract class AbstractPredictionGenerator
         // Get Elo ratings for this game's prediction context.
         $sport = $this->getSport();
         $defaultElo = config("{$sport}.elo.default") ?? config("{$sport}.elo.default_rating");
-        [$homeElo, $awayElo] = $this->eloRatingsForGame($game, $homeTeam, $awayTeam, (int) $defaultElo);
+        $eloAdmission = app(EloInputAdmission::class)->teams($sport, $game);
+        [$homeElo, $awayElo] = $eloAdmission === null
+            ? $this->eloRatingsForGame($game, $homeTeam, $awayTeam, (int) $defaultElo)
+            : [(int) round((float) $eloAdmission['values'][$homeTeam->id]), (int) round((float) $eloAdmission['values'][$awayTeam->id])];
 
         // Get team metrics for the season
         [$homeMetrics, $awayMetrics] = $this->teamMetricsForGame($game, $homeTeam->id, $awayTeam->id);
@@ -255,7 +315,7 @@ abstract class AbstractPredictionGenerator
         $confidenceScore = $this->calculateConfidence($winProbability);
 
         // Build prediction data
-        return $this->buildPredictionData(
+        $data = $this->buildPredictionData(
             $homeElo,
             $awayElo,
             $homeMetrics,
@@ -265,6 +325,11 @@ abstract class AbstractPredictionGenerator
             $winProbability,
             $confidenceScore
         );
+        if ($eloAdmission !== null) {
+            $data['_snapshot']['model_metadata'] = [...(array) ($data['model_metadata'] ?? []), 'elo_input_admission' => $eloAdmission['evidence']];
+        }
+
+        return $data;
     }
 
     /**

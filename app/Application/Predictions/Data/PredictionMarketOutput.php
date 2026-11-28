@@ -22,6 +22,12 @@ final readonly class PredictionMarketOutput
             throw new InvalidArgumentException('Unsupported prediction output selection.');
         }
 
+        foreach ([$this->projectedLine, $this->probability, $this->confidenceScore] as $value) {
+            if ($value !== null && ! is_finite($value)) {
+                throw new InvalidArgumentException('Prediction output numbers must be finite.');
+            }
+        }
+
         if ($this->probability !== null && ($this->probability < 0 || $this->probability > 1)) {
             throw new InvalidArgumentException('Prediction probability must be between zero and one.');
         }

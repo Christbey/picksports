@@ -23,9 +23,9 @@ const props = withDefaults(
 
 const fallbackLivePrediction: LivePredictionData = {
     isLive: false,
-    preGameWinProbability: 0,
-    preGamePredictedSpread: 0,
-    preGamePredictedTotal: 0,
+    preGameWinProbability: null,
+    preGamePredictedSpread: null,
+    preGamePredictedTotal: null,
 };
 
 const livePrediction = computed<LivePredictionData>(
@@ -77,6 +77,26 @@ function formatNumber(
     const numValue = typeof value === 'string' ? parseFloat(value) : value;
     if (isNaN(numValue)) return '-';
     return numValue.toFixed(decimals);
+}
+
+function hasObserved(value: number | null | undefined): value is number {
+    return value !== null && value !== undefined;
+}
+
+function formatProbability(value: number | null | undefined): string {
+    return hasObserved(value)
+        ? `${formatNumber(value * 100, 1)}%`
+        : 'Unavailable';
+}
+
+function formatObservedTotal(value: number | null | undefined): string {
+    return hasObserved(value) ? formatNumber(value) : 'Unavailable';
+}
+
+function formatObservedSpread(value: number | null | undefined): string {
+    return hasObserved(value)
+        ? formatHomeSpreadFromModelMargin(value)
+        : 'Unavailable';
 }
 
 function formatOdds(odds: number): string {
@@ -141,27 +161,6 @@ function getBetTypeColor(type: string): string {
 const bestValidatedSignal = computed(
     () => props.predictionAnalysis?.best_validated_signal ?? null,
 );
-
-const validatedSignalRateLabel = computed(() => {
-    const rate = bestValidatedSignal.value?.winner_hit_rate;
-
-    return typeof rate === 'number' ? `${rate.toFixed(1)}% winner` : null;
-});
-
-const validatedSignalMetaLabel = computed(() => {
-    const signal = bestValidatedSignal.value;
-    if (!signal) return null;
-
-    const parts = [];
-    if (typeof signal.sample_size === 'number' && signal.sample_size > 0) {
-        parts.push(`${signal.sample_size} games`);
-    }
-    if (typeof signal.spread_mae === 'number') {
-        parts.push(`${signal.spread_mae.toFixed(2)} spread MAE`);
-    }
-
-    return parts.length ? parts.join(' · ') : null;
-});
 
 function winnerResultLabel(): string {
     if (props.winnerCorrect === true) return 'Correct';
@@ -252,6 +251,10 @@ function formatBetMarketLine(bet: BettingRecommendation): string {
             role="status"
         >
             <p>{{ livePrediction.modelWarning }}</p>
+            <p v-if="livePrediction.recordUpdatedAtRaw">
+                Stored game record update (unverified clock):
+                {{ livePrediction.recordUpdatedAtRaw }}
+            </p>
             <p v-if="livePrediction.sourceUpdatedAt">
                 Game data updated:
                 {{ new Date(livePrediction.sourceUpdatedAt).toLocaleString() }}
@@ -369,19 +372,21 @@ function formatBetMarketLine(bet: BettingRecommendation): string {
                             <span class="text-muted-foreground">Win Prob:</span>
                             <span class="ml-1 font-semibold text-red-600">
                                 {{
-                                    formatNumber(
-                                        ((livePrediction.liveWinProbability ??
-                                            livePrediction.preGameWinProbability) as number) *
-                                            100,
-                                        1,
+                                    formatProbability(
+                                        livePrediction.liveWinProbability ??
+                                            livePrediction.preGameWinProbability,
                                     )
-                                }}%
+                                }}
                             </span>
                             <span class="text-muted-foreground">
                                 {{
-                                    props.compact
-                                        ? `(${formatNumber(livePrediction.preGameWinProbability * 100, 1)}%)`
-                                        : `(was ${formatNumber(livePrediction.preGameWinProbability * 100, 1)}%)`
+                                    !hasObserved(
+                                        livePrediction.preGameWinProbability,
+                                    )
+                                        ? '(pregame unavailable)'
+                                        : props.compact
+                                          ? `(${formatProbability(livePrediction.preGameWinProbability)})`
+                                          : `(was ${formatProbability(livePrediction.preGameWinProbability)})`
                                 }}
                             </span>
                         </div>
@@ -389,11 +394,20 @@ function formatBetMarketLine(bet: BettingRecommendation): string {
                             class="rounded-full border border-red-300/50 bg-red-500/12 px-2 py-1 dark:border-red-600/35 dark:bg-red-500/16"
                         >
                             <span class="text-muted-foreground">
-                                Home spread:
+                                {{
+                                    !hasObserved(
+                                        livePrediction.livePredictedSpread,
+                                    ) &&
+                                    hasObserved(
+                                        livePrediction.preGamePredictedSpread,
+                                    )
+                                        ? 'Pregame home spread:'
+                                        : 'Home spread:'
+                                }}
                             </span>
                             <span class="ml-1 font-semibold text-red-600">
                                 {{
-                                    formatHomeSpreadFromModelMargin(
+                                    formatObservedSpread(
                                         livePrediction.livePredictedSpread ??
                                             livePrediction.preGamePredictedSpread,
                                     )
@@ -401,19 +415,39 @@ function formatBetMarketLine(bet: BettingRecommendation): string {
                             </span>
                             <span class="text-muted-foreground">
                                 {{
-                                    props.compact
-                                        ? `(${formatHomeSpreadFromModelMargin(livePrediction.preGamePredictedSpread)})`
-                                        : `(was ${formatHomeSpreadFromModelMargin(livePrediction.preGamePredictedSpread)})`
+                                    !hasObserved(
+                                        livePrediction.livePredictedSpread,
+                                    ) &&
+                                    hasObserved(
+                                        livePrediction.preGamePredictedSpread,
+                                    )
+                                        ? '(live unavailable)'
+                                        : !hasObserved(
+                                                livePrediction.preGamePredictedSpread,
+                                            )
+                                          ? '(pregame unavailable)'
+                                          : props.compact
+                                            ? `(${formatHomeSpreadFromModelMargin(livePrediction.preGamePredictedSpread)})`
+                                            : `(was ${formatHomeSpreadFromModelMargin(livePrediction.preGamePredictedSpread)})`
                                 }}
                             </span>
                         </div>
                         <div
                             class="rounded-full border border-red-300/50 bg-red-500/12 px-2 py-1 dark:border-red-600/35 dark:bg-red-500/16"
                         >
-                            <span class="text-muted-foreground">Total:</span>
+                            <span class="text-muted-foreground">{{
+                                !hasObserved(
+                                    livePrediction.livePredictedTotal,
+                                ) &&
+                                hasObserved(
+                                    livePrediction.preGamePredictedTotal,
+                                )
+                                    ? 'Pregame total:'
+                                    : 'Total:'
+                            }}</span>
                             <span class="ml-1 font-semibold text-red-600">
                                 {{
-                                    formatNumber(
+                                    formatObservedTotal(
                                         livePrediction.livePredictedTotal ??
                                             livePrediction.preGamePredictedTotal,
                                     )
@@ -421,9 +455,20 @@ function formatBetMarketLine(bet: BettingRecommendation): string {
                             </span>
                             <span class="text-muted-foreground">
                                 {{
-                                    props.compact
-                                        ? `(${formatNumber(livePrediction.preGamePredictedTotal)})`
-                                        : `(was ${formatNumber(livePrediction.preGamePredictedTotal)})`
+                                    !hasObserved(
+                                        livePrediction.livePredictedTotal,
+                                    ) &&
+                                    hasObserved(
+                                        livePrediction.preGamePredictedTotal,
+                                    )
+                                        ? '(live unavailable)'
+                                        : !hasObserved(
+                                                livePrediction.preGamePredictedTotal,
+                                            )
+                                          ? '(pregame unavailable)'
+                                          : props.compact
+                                            ? `(${formatNumber(livePrediction.preGamePredictedTotal)})`
+                                            : `(was ${formatNumber(livePrediction.preGamePredictedTotal)})`
                                 }}
                             </span>
                         </div>
@@ -434,30 +479,17 @@ function formatBetMarketLine(bet: BettingRecommendation): string {
 
         <div
             v-if="bestValidatedSignal"
-            class="ui-surface-subtle border-emerald-200/70 bg-emerald-50/70 p-3 text-xs text-emerald-950 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-100"
+            class="ui-surface-subtle border-border bg-muted/30 p-3 text-xs text-muted-foreground"
         >
             <div class="flex flex-wrap items-center gap-2">
                 <span class="font-semibold">
                     {{ bestValidatedSignal.label }}
                 </span>
-                <span
-                    v-if="validatedSignalRateLabel"
-                    class="rounded-full bg-emerald-600 px-2 py-0.5 font-semibold text-white dark:bg-emerald-500 dark:text-emerald-950"
-                >
-                    {{ validatedSignalRateLabel }}
-                </span>
-                <span
-                    v-if="validatedSignalMetaLabel"
-                    class="text-emerald-800 dark:text-emerald-200"
-                >
-                    {{ validatedSignalMetaLabel }}
-                </span>
+                <span class="font-semibold">Unverified historical pattern</span>
             </div>
-            <p
-                v-if="bestValidatedSignal.note"
-                class="mt-1 text-emerald-800 dark:text-emerald-200"
-            >
-                {{ bestValidatedSignal.note }}
+            <p class="mt-1 text-muted-foreground">
+                Current validation unavailable. Historical pattern only; no
+                betting upgrade.
             </p>
         </div>
 

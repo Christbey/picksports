@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\NFL\Team;
+use App\Models\Sports\FuturesOdd;
 use App\Models\Sports\FuturesOddsSnapshot;
 use App\Services\Sports\FuturesOddsLookupService;
 use Carbon\Carbon;
@@ -172,4 +173,44 @@ it('does not pair nfl team win total sides from different snapshots', function (
         ->and($rows[$team->id]['is_complete_market'])->toBeFalse()
         ->and($rows[$team->id]['over_no_vig_probability'])->toBeNull()
         ->and($rows[$team->id]['captured_at'])->toContain('2025-08-03');
+});
+
+it('preserves newest quote selection, market filters and timestamp ties while iterating futures', function () {
+    $teams = Team::factory()->count(2)->create();
+    $capturedAt = Carbon::parse('2025-08-01T12:00:00Z');
+
+    foreach ($teams as $team) {
+        foreach ([['outrights', 700], ['outrights', 650], ['season_wins', -110]] as $index => [$market, $price]) {
+            $attributes = [
+                'row_key' => sha1("{$team->id}-{$index}"),
+                'sport' => 'nfl', 'season' => 2025,
+                'odds_api_sport_key' => 'americanfootball_nfl_super_bowl_winner',
+                'bookmaker' => 'draftkings', 'market_key' => $market,
+                'outcome_name' => $team->name, 'price' => $price,
+                'implied_probability' => 0.125, 'nfl_team_id' => $team->id,
+            ];
+            FuturesOdd::create([...$attributes, 'fetched_at' => $capturedAt]);
+            FuturesOddsSnapshot::create([
+                ...$attributes, 'snapshot_key' => sha1("snapshot-{$team->id}-{$index}"),
+                'captured_at' => $capturedAt,
+            ]);
+        }
+    }
+
+    $lookup = app(FuturesOddsLookupService::class);
+    $current = $lookup->byTeamForSeason('nfl', 2025, 'outrights');
+    $historical = $lookup->byTeamForSeasonAt('nfl', 2025, $capturedAt);
+
+    expect($current)->toHaveCount(2)
+        ->and($historical)->toHaveCount(2);
+
+    foreach ($teams as $team) {
+        expect($current[$team->id]['price'])->toBe(650)
+            ->and($current[$team->id]['market_key'])->toBe('outrights')
+            ->and($historical[$team->id]['price'])->toBe(-110);
+    }
+
+    expect($lookup->byTeamForSeason('nfl', 2024))->toBe([])
+        ->and($lookup->byTeamForSeasonAt('nfl', 2025, $capturedAt->copy()->subSecond()))->toBe([])
+        ->and($lookup->byTeamForSeason('unsupported', 2025))->toBe([]);
 });

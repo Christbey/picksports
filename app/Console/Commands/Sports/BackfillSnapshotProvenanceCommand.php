@@ -5,6 +5,7 @@ namespace App\Console\Commands\Sports;
 use App\Models\ModelRun;
 use App\Models\NBA\Game;
 use App\Models\PredictionFeatureSnapshot;
+use App\Services\Predictions\CoreEvidenceMutationGuard;
 use App\Services\Predictions\ModelRunRecorder;
 use App\Services\Predictions\SnapshotProvenanceResolver;
 use Illuminate\Console\Command;
@@ -53,9 +54,15 @@ class BackfillSnapshotProvenanceCommand extends Command
         $snapshots = $query->get();
         $updated = 0;
         $linked = 0;
+        $immutableSkipped = 0;
         $runs = [];
 
         foreach ($snapshots as $snapshot) {
+            if (app(CoreEvidenceMutationGuard::class)->isImmutableFeatureSnapshot($snapshot)) {
+                $immutableSkipped++;
+
+                continue;
+            }
             $gameModel = $this->gameModels[$snapshot->sport] ?? null;
             $game = $gameModel ? $gameModel::query()->find($snapshot->game_id) : null;
             if (! $game) {
@@ -95,6 +102,10 @@ class BackfillSnapshotProvenanceCommand extends Command
         }
 
         $this->info("Updated {$updated} snapshot provenance row(s); linked {$linked} legacy snapshot(s).");
+
+        if ($immutableSkipped > 0) {
+            $this->warn("Skipped {$immutableSkipped} immutable captured snapshots; no capture certification or provenance rewritten.");
+        }
 
         return self::SUCCESS;
     }

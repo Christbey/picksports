@@ -9,6 +9,7 @@ use App\Models\PredictionFeatureSnapshot;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Predictions\CanonicalShadowInputs;
 use App\Services\Predictions\PredictionDeliverySource;
+use App\Support\MLB\MlbGameStart;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -390,14 +391,7 @@ class MlbPredictionCalculationAuditService
 
     private function scheduledStartAt(?Game $game): ?Carbon
     {
-        if ($game === null || $game->game_date === null) {
-            return null;
-        }
-
-        $date = $game->game_date->toDateString();
-        $time = $game->game_time ?: '00:00:00';
-
-        return Carbon::parse("{$date} {$time}", config('app.timezone'))->utc();
+        return $game === null ? null : MlbGameStart::for($game);
     }
 
     private function teamLabel(mixed $team): ?string

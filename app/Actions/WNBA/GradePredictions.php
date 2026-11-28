@@ -17,9 +17,9 @@ class GradePredictions extends AbstractGradePredictions
 
     private const MINIMUM_FINAL_GRADING_MINUTES_AFTER_TIP = 90;
 
-    protected function baseUngradedFinalPredictionsQuery()
+    protected function baseUngradedFinalPredictionsQuery(bool $includeGraded = false)
     {
-        return parent::baseUngradedFinalPredictionsQuery()
+        return parent::baseUngradedFinalPredictionsQuery($includeGraded)
             ->addSelect(
                 $this->gamesTable().'.game_date as game_game_date',
                 $this->gamesTable().'.game_time as game_game_time',

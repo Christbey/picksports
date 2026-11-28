@@ -8,6 +8,7 @@ use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
 
 class SportPredictionQuery
@@ -43,7 +44,13 @@ class SportPredictionQuery
         int|string $game,
         ?Authenticatable $user = null,
     ): Model {
-        return $this->query($context, ['game_id' => (int) $game], $user)->firstOrFail();
+        $id = filter_var($game, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+        if ($id === false) {
+            throw (new ModelNotFoundException)->setModel($this->predictionModel($context));
+        }
+
+        return $this->query($context, ['game_id' => $id], $user)->firstOrFail();
     }
 
     /**
@@ -162,7 +169,7 @@ class SportPredictionQuery
                     ? $this->whereGameColumn($query, 'season_type', $seasonType)
                     : $query;
             })
-            ->when(($filters['game_id'] ?? null) && $this->hasColumn($table, 'game_id'), fn (Builder $query): Builder => $query->where('game_id', $filters['game_id']))
+            ->when(isset($filters['game_id']) && $this->hasColumn($table, 'game_id'), fn (Builder $query): Builder => $query->where('game_id', $filters['game_id']))
             ->when($filters['team_id'] ?? null, fn (Builder $query, int $teamId): Builder => $this->whereTeam($query, $teamId))
             ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $this->whereGameColumn($query, 'status', $status))
             ->when(array_key_exists('week', $filters), fn (Builder $query): Builder => $this->whereGameColumn($query, 'week', $filters['week']))

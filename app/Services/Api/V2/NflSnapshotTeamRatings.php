@@ -16,14 +16,25 @@ class NflSnapshotTeamRatings
         }
         $inputs = (array) $prediction->calculationRun?->inputSnapshot?->inputs;
         foreach (['home', 'away'] as $side) {
-            $teamId = (int) $game->{$side.'_team_id'};
+            $teamId = $this->teamId($game->{$side.'_team_id'});
             $value = data_get($inputs, $side.'.elo');
-            if ($teamId > 0 && (int) data_get($inputs, $side.'.team_id') === $teamId
+            if ($teamId !== null && $this->teamId(data_get($inputs, $side.'.team_id')) === $teamId
                 && is_numeric($value) && is_finite((float) $value) && (float) $value > 0) {
                 $ratings[$side] = (float) $value;
             }
         }
 
         return $ratings;
+    }
+
+    private function teamId(mixed $value): ?string
+    {
+        if (is_int($value)) {
+            return $value > 0 ? (string) $value : null;
+        }
+
+        return is_string($value) && preg_match('/^[1-9][0-9]*$/D', $value) === 1
+            ? $value
+            : null;
     }
 }

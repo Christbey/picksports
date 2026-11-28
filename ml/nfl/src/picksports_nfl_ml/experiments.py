@@ -58,6 +58,17 @@ def diagnose(
     training_windows: Iterable[int | None] = (None, 4, 5, 6),
     run_ablations: bool = True,
 ) -> dict[str, Any]:
+    source = Path(input_path).expanduser().resolve()
+    schema_source = Path(schema_path).expanduser().resolve()
+    destination = Path(output_path).expanduser().resolve()
+    for protected in (source, schema_source):
+        if destination == protected or (
+            destination.exists() and protected.exists() and destination.samefile(protected)
+        ):
+            raise ValueError(
+                "Diagnostic output must not overwrite the dataset or feature schema."
+            )
+
     schema = FeatureSchema.load(schema_path)
     frame, dataset_hash = load_immutable_dataset(
         input_path,
@@ -123,7 +134,6 @@ def diagnose(
         "recommendations": _recommendations(target_result),
     }
 
-    destination = Path(output_path).expanduser().resolve()
     destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open("w", encoding="utf-8") as handle:
         json.dump(

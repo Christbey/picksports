@@ -9,7 +9,6 @@ use App\Models\CalculationRelease;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\FpiRating;
 use App\Models\CFB\Game;
-use App\Models\CFB\GameDataCheck;
 use App\Models\CFB\Team;
 use App\Models\CFB\TeamMetric;
 use App\Models\CFB\TeamSeasonAffiliation;
@@ -22,6 +21,7 @@ use App\Services\CFB\Data\CfbDriveBuilder;
 use App\Services\CFB\Data\CfbPipelineStage;
 use App\Services\CFB\Data\CfbSharedInputRunner;
 use App\Services\Predictions\CalculationReleaseSelector;
+use App\Support\CFB\CfbGameStart;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Support\Facades\Artisan;
@@ -32,6 +32,8 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 
+require_once __DIR__.'/../../Support/CfbAssessmentFixtures.php';
+
 beforeEach(function () {
     $this->travelTo(now()->setDate(2026, 9, 18)->startOfDay());
     config()->set('prediction_lifecycle.canonical_pipeline.cfb', true);
@@ -40,7 +42,13 @@ beforeEach(function () {
     $away = Team::factory()->create();
     Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026,
         'home_team_id' => $home->id, 'away_team_id' => $away->id, 'status' => 'STATUS_SCHEDULED']);
-    $this->mock(SyncGameMetadata::class)->shouldReceive('execute')->andReturn(true)->byDefault();
+    $this->mock(SyncGameMetadata::class)->shouldReceive('execute')->andReturnUsing(function (Game $game) {
+        // Synthetic provider boundary: the linked fixture Event supplies the explicitly observed test kickoff.
+        $start = $game->sportEvent()->firstOrFail()->starts_at->utc()->toIso8601String();
+        $game->fill(CfbGameStart::attributes($start, [], 'espn_verified_summary', (string) $game->espn_event_id))->save();
+
+        return true;
+    })->byDefault();
     $this->mock(CalculationReleaseSelector::class)->shouldReceive('select')->andReturn(new CalculationRelease([
         'configuration' => ['inputs' => ['validated_historical_play_metrics' => true]],
     ]))->byDefault();
@@ -345,7 +353,14 @@ it('records actual worker completion and preserves partial outcomes', function (
         return $code;
     });
     $job = new RunPregamePipeline(['--season' => 2026, '--days-forward' => 8]);
+    $job->withFakeQueueInteractions();
     $job->handle();
+    if ($code !== 0) {
+        $job->assertFailedWith(RuntimeException::class);
+        $job->failed(new RuntimeException('Worker failed'));
+    } else {
+        $job->assertNotFailed();
+    }
     expect(Cache::get('cfb:pregame:worker-status')['state'])->toBe($state)
         ->and(Cache::get('cfb:pregame:worker-status')['exit_code'])->toBe($code);
 })->with([[0, 'complete'], [2, 'partial'], [1, 'failed']]);
@@ -690,13 +705,14 @@ it('reuses an unaffected forecast when another matchup receives corrected histor
         'components' => ['boxscore' => ['state' => 'complete', 'accepted' => true],
             'plays' => ['state' => 'complete', 'accepted' => true]]]);
     app(CfbDataReadiness::class)->shouldReceive('coreBoxscoreReady')->andReturn(true);
-    $proof = GameDataCheck::create(['game_id' => $past->id, 'component' => 'boxscore',
+    $proof = cfbObservedAcceptedFixture(['game_id' => $past->id, 'component' => 'boxscore',
         'source_hash' => 'old-source', 'validator_version' => 'test', 'state' => 'complete',
         'discrepancies' => [], 'evidence' => [], 'source_path' => 'test', 'accepted_at' => now()]);
     Artisan::command('cfb:sync-odds {--days=}', fn () => 0);
     $arguments = ['--season' => 2026, '--resume' => true, '--core-only' => true];
     $this->artisan('cfb:run-pregame-pipeline', $arguments)->assertSuccessful();
-    $proof->update(['source_hash' => 'corrected-source']);
+    $next = $proof->replicate();
+    $next->fill(['source_hash' => 'corrected-source', 'accepted_at' => now()])->save();
     $this->artisan('cfb:run-pregame-pipeline', $arguments)->assertSuccessful();
     expect(CanonicalPrediction::where('sport_event_id', $unaffected->sport_event_id)->count())->toBe(1)
         ->and(CanonicalPrediction::where('sport_event_id', $affected->sport_event_id)->count())->toBe(2)
@@ -715,4 +731,20 @@ it('does not let an older worker failure overwrite a newer run with identical ar
     expect(Cache::get('cfb:pregame:worker-status'))->toBe($before)
         ->and($before['run_id'])->toBe($new->runId)
         ->and($old->runId)->not->toBe($new->runId);
+});
+
+it('preserves an early metadata hold in the queued continuation selected count', function () {
+    $good = Game::firstOrFail();
+    $event = SportEvent::factory()->create(['sport' => 'cfb', 'starts_at' => now()->addHours(13)]);
+    $bad = Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026,
+        'home_team_id' => $good->home_team_id, 'away_team_id' => $good->away_team_id, 'status' => 'STATUS_SCHEDULED']);
+    app(SyncGameMetadata::class)->shouldReceive('execute')->with(Mockery::on(fn ($game) => $game->id === $bad->id))
+        ->andThrow(new RuntimeException('Synthetic metadata unavailable'));
+    $id = (string) Str::uuid();
+    $arguments = ['--season' => 2026, '--run-id' => $id];
+    expect(Artisan::call('cfb:run-pregame-pipeline', [...$arguments, '--batch-forecasts' => true]))->toBe(RunPregamePipeline::BATCH_PENDING);
+    expect(Artisan::call('cfb:run-pregame-pipeline', [...$arguments, '--batch-offset' => '0']))->toBe(2);
+    $summary = Cache::get('cfb:pregame:run:'.$id);
+    expect($summary['selected_count'])->toBe(2)->and($summary['held_count'])->toBe(1)
+        ->and($summary['complete_count'])->toBe(1)->and($summary['pending_count'])->toBe(0);
 });

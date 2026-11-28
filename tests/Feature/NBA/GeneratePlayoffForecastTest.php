@@ -147,7 +147,7 @@ it('uses one preferred team metric row per finals team when regular and postseas
         ->toBeGreaterThan((float) PlayoffForecast::query()->where('team_id', $spurs->id)->value('selection_score'));
 });
 
-it('detects an active NBA finals matchup even when season type is not marked postseason', function () {
+it('retains the ordinary NBA forecast pool when games are not marked postseason', function () {
     $this->travelTo('2026-06-06 12:00:00');
 
     $knicks = createNbaForecastTeam('NY', 'Eastern', 8.6, 1620);
@@ -170,7 +170,7 @@ it('detects an active NBA finals matchup even when season type is not marked pos
     $forecasts = (new GeneratePlayoffForecast)->execute(2026);
 
     expect($forecasts->pluck('team_id')->sort()->values()->all())
-        ->toBe(collect([$knicks->id, $spurs->id])->sort()->values()->all())
+        ->toBe(collect([$knicks->id, $spurs->id, $thunder->id])->sort()->values()->all())
         ->and($forecasts->pluck('team_id')->all())
-        ->not->toContain($thunder->id);
+        ->toContain($thunder->id);
 });

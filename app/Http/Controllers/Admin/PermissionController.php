@@ -11,6 +11,7 @@ use App\Support\PredictionDataPermissions;
 use App\Support\SportPredictionAccess;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Permission;
@@ -72,14 +73,17 @@ class PermissionController extends Controller
             'permissions.*' => ['string', 'exists:permissions,name'],
         ]);
 
-        $tier->permissions = collect($validated['permissions'])
-            ->filter(fn ($permission) => is_string($permission) && $permission !== '')
-            ->unique()
-            ->values()
-            ->all();
-        $tier->save();
+        DB::transaction(function () use ($tier, $validated): void {
+            $locked = SubscriptionTier::query()->lockForUpdate()->findOrFail($tier->id);
+            $locked->permissions = collect($validated['permissions'])
+                ->filter(fn ($permission) => is_string($permission) && $permission !== '')
+                ->unique()
+                ->values()
+                ->all();
+            $locked->save();
 
-        $this->tierPermissionSyncService->syncTierRolePermissions($tier);
+            $this->tierPermissionSyncService->syncTierRolePermissions($locked);
+        });
 
         return $this->backSuccess("Updated permissions for {$tier->name}.");
     }

@@ -109,7 +109,13 @@ class IngestResearchDocumentCommand extends Command
                 throw new \InvalidArgumentException('Research source document exceeds the size limit.');
             }
             $url = (string) ($this->option('url') ?: $source->url);
-            $body = $this->option('fetch') ? $documents->fetch($source, $url) : file_get_contents($file);
+            if ($this->option('fetch')) {
+                $receipt = $documents->fetchWithProvenance($source, $url);
+                $url = $receipt['url'];
+                $body = $receipt['body'];
+            } else {
+                $body = file_get_contents($file);
+            }
             $document = $documents->store(
                 $source, $url, $body, $claims,
                 CarbonImmutable::parse((string) $this->option('observed-at')),

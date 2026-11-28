@@ -1,6 +1,6 @@
 import type { NflTeamStats } from '../types/sports';
 
-type StatValue = { text: string; value: number | null };
+type StatValue = { text: string; value: number | null; invalid?: boolean };
 type Stats = Partial<NflTeamStats>;
 
 const numeric = (value: unknown): number | null => {
@@ -18,9 +18,24 @@ const pair = (
     first: unknown,
     second: unknown,
     percentage = false,
+    countPair = true,
 ): StatValue => {
     const a = numeric(first);
     const b = numeric(second);
+    const validCount = (value: number | null) =>
+        value === null || (Number.isSafeInteger(value) && value >= 0);
+    if (
+        countPair &&
+        (!validCount(a) ||
+            !validCount(b) ||
+            (a !== null && b !== null && a > b))
+    ) {
+        return {
+            text: `${scalar(first).text}-${scalar(second).text} (invalid source counts)`,
+            value: null,
+            invalid: true,
+        };
+    }
     return {
         text: `${scalar(first).text}-${scalar(second).text}${percentage && a !== null && b !== null && b > 0 ? ` (${Math.round((a / b) * 100)}%)` : ''}`,
         value: a !== null && b !== null && b > 0 ? a / b : null,
@@ -55,10 +70,14 @@ const fields: {
     { label: 'Total Yards', read: (s) => scalar(s.total_yards) },
     {
         label: 'Passing (C-A, Yds)',
-        read: (s) => ({
-            text: `${pair(s.passing_completions, s.passing_attempts).text}, ${scalar(s.passing_yards).text}`,
-            value: numeric(s.passing_yards),
-        }),
+        read: (s) => {
+            const passing = pair(s.passing_completions, s.passing_attempts);
+            return {
+                text: `${passing.text}, ${scalar(s.passing_yards).text}`,
+                value: numeric(s.passing_yards),
+                invalid: passing.invalid,
+            };
+        },
     },
     {
         label: 'Rushing (Att, Yds)',
@@ -90,7 +109,7 @@ const fields: {
     {
         label: 'Penalties (Pen-Yds)',
         read: (s) => ({
-            text: pair(s.penalties, s.penalty_yards).text,
+            text: pair(s.penalties, s.penalty_yards, false, false).text,
             value: numeric(s.penalty_yards),
         }),
         lower: true,
@@ -106,10 +125,23 @@ export const nflBoxScoreRows = (away: Stats, home: Stats) =>
         const a = field.read(away);
         const h = field.read(home);
         let better: 'home' | 'away' | null = null;
-        if (a.value !== null && h.value !== null && a.value !== h.value) {
+        if (
+            !a.invalid &&
+            !h.invalid &&
+            a.value !== null &&
+            h.value !== null &&
+            a.value !== h.value
+        ) {
             better = (field.lower ? h.value < a.value : h.value > a.value)
                 ? 'home'
                 : 'away';
         }
-        return { label: field.label, away: a.text, home: h.text, better };
+        return {
+            label: field.label,
+            away: a.text,
+            home: h.text,
+            better,
+            awayComplete: !a.invalid && !a.text.includes('—'),
+            homeComplete: !h.invalid && !h.text.includes('—'),
+        };
     });

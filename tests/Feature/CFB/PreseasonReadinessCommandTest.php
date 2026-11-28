@@ -209,16 +209,18 @@ it('backtests cfb prediction performance by week buckets with calibration bucket
         ->and($report['backtest']['week_buckets']['week_0_1']['calibration_buckets'][0]['bucket'])->toBe('60-69');
 });
 
-it('pins the backend and frontend home-spread convention', function () {
-    $predictionSummary = File::get(resource_path('js/components/game-page/PredictionSummaryCard.vue'));
-    $predictionTracking = File::get(resource_path('js/composables/usePredictionTracking.ts'));
-    $publicSportPresentation = File::get(resource_path('js/lib/publicSportPresentation.ts'));
+it('wires the backend and frontend home-spread presentation adapters', function () {
+    $unifiedCard = File::get(resource_path('js/components/predictions/UnifiedPredictionCard.vue'));
+    $publicSport = File::get(resource_path('js/pages/PublicSport.vue'));
     $bettingAnalysis = File::get(resource_path('js/components/BettingAnalysisCard.vue'));
 
-    expect($predictionSummary)->toContain('-Number(prediction.predicted_spread)')
-        ->and(preg_replace('/\s+/', ' ', File::get(resource_path('js/lib/pregameBetCalls.ts'))))->toContain('const margin = modelLine === null ? (number(assessment.model_home_margin) ?? (dashboard ? number(data.predicted_spread) : null)) : -modelLine;')
-        ->and(preg_replace('/\s+/', ' ', $predictionTracking))->toContain('defaultLine: spread !== null ? Number((-spread).toFixed(1)) : null,')
-        ->and($publicSportPresentation)->toContain('const homeLine = -numeric;')
+    // Rendered spread/favorite/zero/missing semantics live in gamePredictionIntegrity.test.mjs.
+    expect(File::get(resource_path('js/lib/pregameBetCalls.ts')))->toMatch('/modelLine === null\s*\?\s*\(number\(assessment\.model_home_margin\).*?:\s*-modelLine;/s')
+        ->and($unifiedCard)->toContain('usePredictionCardRecommendation(props, game)')
+        ->and(File::get(resource_path('js/composables/usePredictionCardRecommendation.ts')))->toContain('return pregameBetCalls(')
+        ->and($publicSport)->toContain('const state = usePublicSport(props);')
+        ->and(File::get(resource_path('js/composables/usePublicSport.ts')))->toContain("from '@/lib/publicSportPresentation'")
+        ->and(File::get(resource_path('js/lib/publicSportPresentation.ts')))->toContain('const homeLine = -numeric;')
         ->and($bettingAnalysis)->toContain('return formatHomeSpreadLine(bet.model_home_line ?? bet.model_line);');
 });
 

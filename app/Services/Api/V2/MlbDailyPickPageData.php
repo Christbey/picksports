@@ -18,10 +18,9 @@ class MlbDailyPickPageData
      */
     public function summary(Collection $candidates, Collection $topPicks, array $slate): array
     {
-        $safeRows = $candidates->filter(fn ($candidate): bool => empty(array_intersect(
-            (array) ($candidate->risk_flags ?? []),
-            ['point_in_time_unsafe', 'live_only_or_postgame_unsafe', 'pitcher_changed']
-        )));
+        $assessments = $candidates->map(fn (PickCandidate $candidate): ?bool => $this->storedSafetyAssessment($candidate));
+        $safeRows = $assessments->filter(fn ($safe): bool => $safe === true);
+        $assessmentComplete = $candidates->isNotEmpty() && ! $assessments->containsStrict(null);
         $marketAgreementRows = $candidates->filter(fn ($candidate): bool => in_array('model_market_agrees', (array) ($candidate->reason_codes ?? []), true));
 
         return [
@@ -36,9 +35,28 @@ class MlbDailyPickPageData
             'public_promoted_count' => $candidates->where('is_public', true)->count(),
             'avg_top_score' => $topPicks->isNotEmpty() ? round((float) $topPicks->avg('score'), 1) : null,
             'top_candidate_score' => $topPicks->max('score'),
-            'pregame_safe_rate' => $candidates->isNotEmpty() ? round($safeRows->count() / $candidates->count(), 3) : null,
+            'pregame_safe_rate' => $assessmentComplete ? round($safeRows->count() / $candidates->count(), 3) : null,
             'market_agreement_rate' => $candidates->isNotEmpty() ? round($marketAgreementRows->count() / $candidates->count(), 3) : null,
         ];
+    }
+
+    /** A stored assessment is historical evidence, not a current observation receipt. */
+    private function storedSafetyAssessment(PickCandidate $candidate): ?bool
+    {
+        if (array_intersect((array) ($candidate->risk_flags ?? []), [
+            'point_in_time_unsafe', 'live_only_or_postgame_unsafe', 'pitcher_changed',
+            'starter_changed_after_prediction', 'odds_after_first_pitch',
+            'postponed_suspended_cancelled', 'missing_game_start_time', 'pregame_signal_safety_block',
+        ]) !== []) {
+            return false;
+        }
+        $layer = data_get($candidate->feature_snapshot, 'signal_layer');
+        if (! is_array($layer) || ($layer['version'] ?? null) !== 'mlb_signal_driver_v1'
+            || ! is_bool($layer['pregame_safe'] ?? null)) {
+            return null;
+        }
+
+        return $layer['pregame_safe'];
     }
 
     /**
@@ -230,8 +248,8 @@ class MlbDailyPickPageData
         if (($summary['pregame_safe_rate'] ?? 0) >= 0.9 && $topPicks->isNotEmpty()) {
             $achievements[] = [
                 'key' => 'clean_slate',
-                'label' => 'Clean Slate',
-                'description' => 'Top candidates are passing pregame safety checks.',
+                'label' => 'Stored Safety Checks',
+                'description' => 'At least 90% of stored candidate assessments passed when generated; current safety has not been revalidated.',
             ];
         }
 

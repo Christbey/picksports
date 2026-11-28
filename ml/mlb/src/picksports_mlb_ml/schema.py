@@ -31,6 +31,21 @@ class FeatureSchema:
                 raise SchemaError(f"Feature schema is missing '{section}'.")
         return cls(path=resolved, raw=raw)
 
+    @classmethod
+    def from_artifact(cls, path: str | Path, *, expected_sha256: str | None = None, expected_bytes: int | None = None) -> "FeatureSchema":
+        from picksports_mlb_ml.numeric_artifacts import read_json, MAX_FEATURES
+        resolved = Path(path)
+        raw = read_json(resolved, max_bytes=2 * 1024 * 1024, max_tokens=50_000, expected_sha256=expected_sha256, expected_bytes=expected_bytes)
+        if type(raw) is not dict or not {"schema_version", "dataset", "features", "targets", "training"} <= set(raw):
+            raise SchemaError("Numeric feature schema is missing required sections")
+        if type(raw["schema_version"]) is not str or not 1 <= len(raw["schema_version"]) <= 128:
+            raise SchemaError("Invalid numeric feature schema version")
+        if any(type(raw[section]) is not dict for section in ["dataset", "features", "targets", "training"]) or not 1 <= len(raw["features"]) <= MAX_FEATURES:
+            raise SchemaError("Invalid numeric feature schema shape")
+        if any(type(name) is not str or not name or len(name) > 128 or type(spec) is not dict for name, spec in raw["features"].items()):
+            raise SchemaError("Invalid numeric feature schema fields")
+        return cls(path=resolved, raw=raw)
+
     @property
     def version(self) -> str:
         return str(self.raw["schema_version"])
@@ -115,6 +130,9 @@ class FeatureSchema:
         validated["features_available_at"] = pd.to_datetime(
             validated["features_available_at"], utc=True, errors="raise"
         )
+        for timestamp in (self.time_column, "features_available_at"):
+            if validated[timestamp].isna().any():
+                raise SchemaError(f"Pregame timestamp '{timestamp}' contains missing values.")
         validated[self.season_column] = pd.to_numeric(
             validated[self.season_column], errors="raise"
         ).astype("int64")

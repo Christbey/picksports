@@ -56,7 +56,7 @@ const userNavItems = computed(() => {
 });
 
 const adminNavItems = computed(() => {
-    if (!user.value.is_admin) {
+    if (!user.value?.is_admin) {
         return [] as NavItem[];
     }
 

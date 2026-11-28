@@ -1,10 +1,10 @@
 <script setup lang="ts">
+import FuturesQuote from '@/components/predictions/FuturesQuote.vue';
 import { Card, CardContent } from '@/components/ui/card';
 import { useNbaFuturesContext } from '@/composables/useNbaFutures';
 const {
     playoffTeamsPerConference,
     formatPct,
-    formatAmericanOdds,
     formatTeam,
     bubbleWatch,
     projectedInCount,
@@ -68,11 +68,7 @@ const {
                 </p>
                 <p class="mt-1 text-xs text-muted-foreground">
                     Market
-                    {{
-                        topChampion
-                            ? formatAmericanOdds(topChampion.market_odds?.price)
-                            : '-'
-                    }}
+                    <FuturesQuote :quote="topChampion?.market_odds" />
                 </p>
             </CardContent>
         </Card>

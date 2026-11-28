@@ -9,6 +9,7 @@ use App\Application\Predictions\Data\PredictionOutput;
 use App\Services\CFB\Ratings\ResultRatingModel;
 use App\Services\CFB\Scoring\CfbScoringChallenger;
 use App\Services\CFB\Signals\CfbFootballSignalModel;
+use App\Services\CFB\Signals\CfbFrozenSignalEvidence;
 use App\Services\Predictions\Football\CanonicalFootballCalculator;
 use Carbon\CarbonImmutable;
 
@@ -16,6 +17,7 @@ class CfbCalculator extends CanonicalFootballCalculator
 {
     public function calculate(EventInputSnapshotData $snapshot, CalculationReleaseData $release): PredictionOutput
     {
+        app(CfbFrozenSignalEvidence::class)->assertSnapshotMatches($snapshot->inputs, $release->configuration, $snapshot->capturedAt);
         $estimates = [];
         $qb = app(CfbQuarterbackAdjustment::class);
         if (data_get($release->configuration, 'quarterback_replacement.enabled', false)) {

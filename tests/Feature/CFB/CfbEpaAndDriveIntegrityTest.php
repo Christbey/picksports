@@ -11,12 +11,23 @@ use App\Services\CFB\Data\CfbDataReadiness;
 use App\Services\CFB\Data\CfbDriveBuilder;
 use App\Services\CFB\Data\CfbGameDataValidator;
 use App\Services\CFB\Data\CfbScoringLedger;
+use App\Services\CFB\Data\CfbSourceAssessmentRecorder;
 use App\Services\CFB\PlayEpaDataService;
 use App\Services\CFB\TrueEpaCalculator;
 use App\Services\Epa\StateBaselineService;
 use App\Services\ESPN\CFB\EspnService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+
+require_once __DIR__.'/../../Support/CfbAssessmentFixtures.php';
+
+function cfbStoreSyntheticArchiveRevision(GameDataCheck &$check, string $json): void
+{
+    $path = 'ledger-'.hash('sha256', $json).'.json';
+    Storage::disk('local')->put($path, $json);
+    $next = $check->replicate();
+    $check = cfbObservedAcceptedFixture([...$next->attributesToArray(), 'source_hash' => hash('sha256', $json), 'source_path' => $path, 'accepted_at' => now()]);
+}
 
 function cfbLedgerFixture(array $changes = []): array
 {
@@ -34,12 +45,12 @@ function cfbLedgerFixture(array $changes = []): array
     $json = json_encode($payload, JSON_THROW_ON_ERROR);
     $hash = hash('sha256', $json);
     Storage::disk('local')->put('ledger.json', $json);
-    GameDataCheck::create(['game_id' => $game->id, 'component' => 'boxscore', 'source_hash' => $hash,
-        'validator_version' => '2', 'state' => 'complete', 'discrepancies' => [], 'evidence' => [],
+    cfbObservedAcceptedFixture(['game_id' => $game->id, 'component' => 'boxscore', 'source_hash' => $hash,
+        'validator_version' => CfbGameDataValidator::VERSION, 'state' => 'complete', 'discrepancies' => [], 'evidence' => [],
         'source_path' => 'ledger.json', 'accepted_at' => now()]);
     $playHash = hash('sha256', 'ledger-plays');
-    GameDataCheck::create(['game_id' => $game->id, 'component' => 'plays', 'source_hash' => $playHash,
-        'validator_version' => '2', 'state' => 'complete', 'discrepancies' => [], 'evidence' => [],
+    cfbObservedAcceptedFixture(['game_id' => $game->id, 'component' => 'plays', 'source_hash' => $playHash,
+        'validator_version' => CfbGameDataValidator::VERSION, 'state' => 'complete', 'discrepancies' => [], 'evidence' => [],
         'source_path' => 'plays.json', 'accepted_at' => now()]);
     $plays = collect([
         ['rush', 'Rush', 'Rush for 2 yards', 0],
@@ -100,15 +111,13 @@ it('reconciles contradictory intermediate scores only when every explicit scorin
             'type' => ['text' => 'Field Goal Good'], 'text' => '30 Yd Field Goal'],
     ];
     $json = json_encode($payload, JSON_THROW_ON_ERROR);
-    Storage::disk('local')->put($check->source_path, $json);
-    $check->update(['source_hash' => hash('sha256', $json)]);
+    cfbStoreSyntheticArchiveRevision($check, $json);
     $normalized = app(CfbScoringLedger::class)->normalize($game, $plays);
     expect($normalized->pluck('away_score')->all())->toBe([0, 0, 0, 3, 3])
         ->and($normalized->pluck('home_score')->all())->toBe([0, 7, 7, 7, 7]);
     $payload['scoringPlays'][0]['text'] = 'Rush touchdown (Kick Failed)';
     $json = json_encode($payload, JSON_THROW_ON_ERROR);
-    Storage::disk('local')->put($check->source_path, $json);
-    $check->update(['source_hash' => hash('sha256', $json)]);
+    cfbStoreSyntheticArchiveRevision($check, $json);
     expect(fn () => app(CfbScoringLedger::class)->normalize($game, $plays))->toThrow(RuntimeException::class);
 });
 
@@ -128,10 +137,9 @@ it('proves an omitted conversion only from complete successful PAT counts for ev
     $payload['boxscore']['players'] = [['team' => ['id' => $game->homeTeam->espn_id], 'statistics' => [
         ['name' => 'kicking', 'labels' => ['XP', 'FG', 'PTS'], 'athletes' => [$kicker]],
     ]]];
-    $save = function (array $source) use ($box) {
+    $save = function (array $source) use (&$box) {
         $json = json_encode($source, JSON_THROW_ON_ERROR);
-        Storage::disk('local')->put($box->source_path, $json);
-        $box->update(['source_hash' => hash('sha256', $json)]);
+        cfbStoreSyntheticArchiveRevision($box, $json);
     };
     $save($payload);
     expect(app(CfbScoringLedger::class)->normalize($game, $plays)->last()->home_score)->toBe(7);
@@ -163,8 +171,7 @@ it('reconciles overtime touchdowns and observed failed conversions without trust
             ? 'Touchdown (Two-Point Pass Conversion Failed)' : 'Touchdown (A Kicker Kick)'),
     ])->all();
     $json = json_encode($payload, JSON_THROW_ON_ERROR);
-    Storage::disk('local')->put($box->source_path, $json);
-    $box->update(['source_hash' => hash('sha256', $json)]);
+    cfbStoreSyntheticArchiveRevision($box, $json);
     $plays = collect($sides)->map(fn ($side, $index) => new Play(['espn_play_id' => (string) $index,
         'home_score' => 41, 'away_score' => 43]));
     $normalized = app(CfbScoringLedger::class)->normalize($game, $plays);
@@ -172,8 +179,7 @@ it('reconciles overtime touchdowns and observed failed conversions without trust
         ->and($normalized->last()->home_score)->toBe(41)->and($normalized->last()->away_score)->toBe(43);
     $payload['scoringPlays'][12]['text'] .= '. NO PLAY';
     $json = json_encode($payload, JSON_THROW_ON_ERROR);
-    Storage::disk('local')->put($box->source_path, $json);
-    $box->update(['source_hash' => hash('sha256', $json)]);
+    cfbStoreSyntheticArchiveRevision($box, $json);
     expect(fn () => app(CfbScoringLedger::class)->normalize($game, $plays))->toThrow(RuntimeException::class);
 });
 
@@ -199,8 +205,7 @@ it('certifies stale terminal score snapshots only with a complete terminal sourc
     $json = json_decode(Storage::disk('local')->get($box->source_path), true);
     $json['revision'] = 'corrected';
     $json = json_encode($json, JSON_THROW_ON_ERROR);
-    Storage::disk('local')->put($box->source_path, $json);
-    $box->update(['source_hash' => hash('sha256', $json)]);
+    cfbStoreSyntheticArchiveRevision($box, $json);
     Play::where('game_id', $game->id)->where('espn_play_id', 'td')->update(['true_epa' => 1.25, 'epa_calculated_at' => now()]);
     expect(app(CfbDataReadiness::class)->forGame($game)['ready'])->toBeFalse()
         ->and($sync->execute((string) $game->espn_event_id))->toBe(0)
@@ -232,6 +237,7 @@ it('attributes a ledger verified safety to the opposing offense when possession 
     [$game, $plays] = cfbLedgerFixture(['header' => ['competitions' => [['competitors' => [['score' => '2']]]]],
         'scoringPlays' => [['homeScore' => 2]]]);
     $game->update(['home_score' => 2]);
+    cfbReobserveSyntheticChecks($game);
     $plays[1]->update(['play_type' => 'Safety', 'play_text' => 'Team Safety', 'possession_team_id' => null]);
     $result = app(CfbDriveBuilder::class)->build($game);
     expect($result['state'])->toBe('complete');
@@ -244,7 +250,7 @@ it('attributes a ledger verified safety to the opposing offense when possession 
 
 it('keeps an unverified score on a no play description held', function () {
     [$game, $plays] = cfbLedgerFixture();
-    GameDataCheck::where('game_id', $game->id)->where('component', 'boxscore')->delete();
+    GameDataCheck::where('game_id', $game->id)->where('component', 'boxscore')->firstOrFail()->update(['accepted_at' => null]);
     $plays[1]->update(['play_text' => 'Touchdown PENALTY. NO PLAY']);
     expect(app(CfbDriveBuilder::class)->build($game)['state'])->toBe('partial');
 });
@@ -262,9 +268,12 @@ it('uses only prior state values and does not jump over special teams or halftim
     expect($result[1]['ep_before'])->toBe(2.0)->and($result[1]['epa'])->toBeNull();
     $late = $make(1, ['period' => 2, 'clock' => '0:00']);
     $result = $service->calculateForGame(collect([$late, $make(2, ['period' => 3, 'home_score' => 99])]), 1, 2, 2026);
-    expect($result[1]['ep_after'])->toBe(0.0)->and($result[1]['ep_before'])->toBe(2.0);
+    // A zero-clock ordinary play and next-half row do not witness a terminal administrative event.
+    expect($result[1]['ep_after'])->toBeNull()->and($result[1]['ep_before'])->toBe(2.0);
     $score = $make(1, ['is_scoring_play' => true, 'home_score' => 6]);
-    expect($service->calculateForGame(collect([$score]), 1, 2, 2026)[1]['epa'])->toBe(4.0);
+    expect($service->calculateForGame(collect([$score]), 1, 2, 2026)[1]['epa'])->toBeNull();
+    // An actual preceding observed zero, rather than an assumed game-start zero.
+    expect($service->calculateForGame(collect([$make(0), $score]), 1, 2, 2026)[1]['epa'])->toBe(4.0);
     $unknown = $make(1, ['distance' => 25]);
     expect($service->calculateForGame(collect([$unknown, $make(2, ['home_score' => 50])]), 1, 2, 2026)[1]['ep_before'])->toBeNull();
 });
@@ -274,7 +283,7 @@ it('preserves a drive across quarters and reconciles a return touchdown and conv
     $away = Team::factory()->create();
     $game = Game::factory()->create(['home_team_id' => $home->id, 'away_team_id' => $away->id, 'status' => 'STATUS_FINAL', 'home_score' => 7, 'away_score' => 0]);
     $hash = hash('sha256', 'drive-fixture');
-    GameDataCheck::create(['game_id' => $game->id, 'component' => 'plays', 'source_hash' => $hash, 'validator_version' => '2', 'state' => 'complete',
+    cfbObservedAcceptedFixture(['game_id' => $game->id, 'component' => 'plays', 'source_hash' => $hash, 'validator_version' => CfbGameDataValidator::VERSION, 'state' => 'complete',
         'discrepancies' => [], 'evidence' => [], 'source_path' => 'fixture', 'accepted_at' => now()]);
     $plays = [
         [1, '0:10', 'Rush', 'Rush for 1 yard', 0, 0, $away->id, false],
@@ -310,12 +319,24 @@ it('does not turn alternating provider references into extra possessions', funct
 it('trains past-season EPA states from the accepted revision and reconciled scoring ledger', function () {
     [$game, $plays] = cfbLedgerFixture();
     $game->update(['season' => 2025]);
+    cfbReobserveSyntheticChecks($game);
+    // Explicit source observations qualify the opening score and a measured scoreless tail.
+    foreach ($plays as $index => $play) {
+        $play->update(['sequence_number' => $index + 1]);
+    }
+    foreach ([[0, 'opening', 1, '15:00', 'Coin Toss', 0], [6, 'terminal', 2, '0:00', 'End of Half', 7]] as [$sequence, $id, $period, $clock, $type, $score]) {
+        Play::create(['game_id' => $game->id, 'espn_play_id' => $id, 'sequence_number' => $sequence,
+            'period' => $period, 'clock' => $clock, 'play_type' => $type, 'play_text' => $type,
+            'home_score' => $score, 'away_score' => 0, 'possession_team_id' => $game->home_team_id,
+            'down' => 0, 'distance' => 0, 'yards_to_endzone' => 75, 'yards_gained' => 0,
+            'source_revision' => $plays[0]->source_revision]);
+    }
     $plays[3]->update(['down' => 0]);
     Play::create(['game_id' => $game->id, 'espn_play_id' => 'unaccepted', 'sequence_number' => 0,
         'period' => 1, 'clock' => '15:00', 'play_type' => 'Rush', 'play_text' => 'Rush for 2 yards',
         'home_score' => 99, 'away_score' => 0, 'possession_team_id' => $game->home_team_id,
         'down' => 1, 'distance' => 10, 'yards_to_endzone' => 75, 'yards_gained' => 2, 'source_revision' => hash('sha256', 'unaccepted')]);
-    $this->mock(CfbDataReadiness::class)->shouldReceive('forGame')->once()->andReturn(['ready' => true]);
+    $this->partialMock(CfbDataReadiness::class)->shouldReceive('forGame')->once()->andReturn(['ready' => true]);
     $this->artisan('cfb:train-epa-baseline', ['--season' => 2026, '--source-season' => 2025, '--minimum-state-samples' => 1])->assertSuccessful();
     $state = EpaStateBaseline::where('sport', 'cfb')->where('season', 2026)->firstOrFail();
     expect($state->sample_size)->toBe(3)->and((float) $state->expected_points)->toEqualWithDelta(14 / 3, .0001)
@@ -344,9 +365,13 @@ it('batches EPA writes and cannot insert missing plays or cross a source revisio
     $updates[] = [...$updates[0], 'id' => 999999];
     $before = Play::count();
     $writer = app(CfbPlayEpaWriter::class);
-    $writer->write($game->id, hash('sha256', 'wrong-revision'), $updates);
+    $check = app(CfbDataReadiness::class)->acceptedCheck($game, 'plays');
+    $receiptId = app(CfbSourceAssessmentRecorder::class)->acceptanceReceipt($check)->id;
+    $box = app(CfbDataReadiness::class)->acceptedCheck($game, 'boxscore');
+    $boxId = app(CfbSourceAssessmentRecorder::class)->acceptanceReceipt($box)->id;
+    expect(fn () => $writer->write($game->id, hash('sha256', 'wrong-revision'), $updates, $receiptId, $boxId))->toThrow(DomainException::class);
     expect($plays[0]->fresh()->true_epa)->toBeNull();
-    $writer->write($game->id, $plays[0]->source_revision, $updates);
+    $writer->write($game->id, $plays[0]->source_revision, $updates, $receiptId, $boxId);
     expect((float) $plays[0]->fresh()->true_epa)->toBe(1.25)->and(Play::count())->toBe($before)
         ->and($plays[0]->fresh()->home_score)->toBe(0);
 });
@@ -354,8 +379,8 @@ it('batches EPA writes and cannot insert missing plays or cross a source revisio
 it('holds normalization if the accepted play revision changes during EPA calculation', function () {
     [$game, $plays] = cfbLedgerFixture();
     $this->mock(TrueEpaCalculator::class)->shouldReceive('calculateForGame')->once()->andReturnUsing(function ($selected) use ($game) {
-        GameDataCheck::create(['game_id' => $game->id, 'component' => 'plays', 'source_hash' => hash('sha256', 'new-revision'),
-            'validator_version' => '2', 'state' => 'complete', 'discrepancies' => [], 'evidence' => [],
+        cfbObservedAcceptedFixture(['game_id' => $game->id, 'component' => 'plays', 'source_hash' => hash('sha256', 'new-revision'),
+            'validator_version' => CfbGameDataValidator::VERSION, 'state' => 'complete', 'discrepancies' => [], 'evidence' => [],
             'source_path' => 'new.json', 'accepted_at' => now()]);
 
         return $selected->mapWithKeys(fn ($play) => [$play->id => ['eligible' => false, 'ep_before' => null, 'ep_after' => null, 'epa' => null]])->all();

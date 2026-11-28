@@ -3,6 +3,7 @@
 namespace App\Http\Resources\Api\V2;
 
 use App\Services\Api\V2\SportContext;
+use App\Support\Injuries\StoredInjuryClock;
 use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -45,6 +46,7 @@ class SportPlayerResource extends JsonResource
             'throwing_hand' => $this->attribute('throwing_hand'),
             'headshot_url' => $this->attribute('headshot_url') ?? $this->attribute('headshot'),
             'team' => $this->team(),
+            'active_injuries' => $this->activeInjuries(),
             'created_at' => $this->serializeDateValue($this->attribute('created_at')),
             'updated_at' => $this->serializeDateValue($this->attribute('updated_at')),
         ];
@@ -88,6 +90,23 @@ class SportPlayerResource extends JsonResource
             'name' => $team->getAttribute('name') ?? $team->getAttribute('mascot'),
             'display_name' => $team->getAttribute('display_name'),
         ];
+    }
+
+    /** @return array<int, array<string, mixed>>|null */
+    private function activeInjuries(): ?array
+    {
+        if (! $this->resource instanceof Model || ! $this->resource->relationLoaded('activeInjuries')) {
+            return null;
+        }
+
+        return $this->resource->getRelation('activeInjuries')->map(fn (Model $injury): array => [
+            'id' => $injury->getKey(),
+            'status' => $injury->getAttribute('status'),
+            'detail' => $injury->getAttribute('detail'),
+            'type' => $injury->getAttribute('type'),
+            'return_date' => $injury->getAttribute('return_date')?->format('Y-m-d'),
+            ...StoredInjuryClock::fields($injury),
+        ])->values()->all();
     }
 
     private function attribute(string $key): mixed

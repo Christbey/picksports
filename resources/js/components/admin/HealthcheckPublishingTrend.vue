@@ -17,10 +17,16 @@ const { labelize, percent, widthPercent, countWidth, ai_publishing_trend } =
                     Guardrail Trend
                 </p>
                 <h2 class="mt-2 text-xl font-semibold">
-                    {{ percent(ai_publishing_trend.changed_rate) }}
-                    would change over
-                    {{ ai_publishing_trend.days }} days
+                    <template v-if="ai_publishing_trend.total > 0">
+                        {{ percent(ai_publishing_trend.changed_rate) }} would
+                        change over {{ ai_publishing_trend.days }} days
+                    </template>
+                    <template v-else>No observed review sample</template>
                 </h2>
+                <p class="mt-2 text-sm text-muted-foreground">
+                    Latest up to 300 stored reviews in this window; counts
+                    describe this sample.
+                </p>
                 <p class="mt-2 text-sm text-muted-foreground">
                     {{ ai_publishing_trend.changed_count }} of
                     {{ ai_publishing_trend.total }} reviewed picks differed from

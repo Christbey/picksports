@@ -3,8 +3,11 @@
 namespace App\Application\Sports\ReadModels;
 
 use App\Models\CanonicalPrediction;
+use App\Models\CFB\Game;
 use App\Models\MLB\Game as MlbGame;
 use App\Services\Api\V2\SportContext;
+use App\Support\CFB\CfbGameStart;
+use App\Support\MLB\MlbGameStart;
 use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Database\Eloquent\Model;
 
@@ -14,11 +17,7 @@ final class GameSummaryMapper
 
     public function fromModel(SportContext $context, Model $game, ?Model $prediction = null): GameSummary
     {
-        $dateTime = GameDateTimePresenter::forSport(
-            $context->slug,
-            $game->getAttribute('game_date'),
-            $game->getAttribute('game_time'),
-        );
+        $dateTime = GameDateTimePresenter::forGame($context->slug, $game);
 
         if ($prediction === null && $game->relationLoaded('prediction')) {
             $loadedPrediction = $game->getRelation('prediction');
@@ -97,7 +96,8 @@ final class GameSummaryMapper
             prediction: $prediction === null ? null : $this->prediction($prediction),
             completedAt: GameDateTimePresenter::serializeDateValue($game->getAttribute('completed_at')),
             updatedAt: GameDateTimePresenter::serializeDateValue($game->getAttribute('updated_at')),
-            startsAt: $context->slug === 'nfl' ? GameDateTimePresenter::nflStartsAt($game->game_date, $game->game_time) : null,
+            startTimeProvenance: $game instanceof MlbGame ? MlbGameStart::status($game) : ($game instanceof Game ? CfbGameStart::status($game) : null),
+            startsAt: $game instanceof MlbGame ? MlbGameStart::for($game)?->toIso8601String() : GameDateTimePresenter::startsAtForGame($context->slug, $game),
         );
     }
 

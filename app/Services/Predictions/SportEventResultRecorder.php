@@ -61,7 +61,7 @@ class SportEventResultRecorder
             $latest = SportEventResult::query()
                 ->where('sport_event_id', $event->getKey())
                 ->orderByDesc('revision')
-                ->first();
+                ->lockForUpdate()->first();
 
             if ($latest !== null && $latest->status === 'official'
                 && $latest->home_score === $homeScore && $latest->away_score === $awayScore
@@ -72,7 +72,12 @@ class SportEventResultRecorder
                 return $latest;
             }
 
-            $existing = SportEventResult::query()->where('result_hash', $resultHash)->first();
+            if ($latest !== null && $observedAt !== null
+                && $latest->observed_at !== null && $observedAt->lt($latest->observed_at)) {
+                throw new PredictionLifecycleException('Cannot replace a result with an older observation.');
+            }
+
+            $existing = SportEventResult::query()->where('result_hash', $resultHash)->lockForUpdate()->first();
             if ($existing !== null) {
                 if ($existing->sport_event_id !== $event->getKey()) {
                     throw new PredictionLifecycleException('Event result hash is associated with another event.');

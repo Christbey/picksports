@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Models\GuardsCoreEvidenceMutations;
 use Database\Factories\PredictionMarketFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,6 +13,8 @@ use LogicException;
 
 class PredictionMarket extends Model
 {
+    use GuardsCoreEvidenceMutations;
+
     /** @use HasFactory<PredictionMarketFactory> */
     use HasFactory, HasUlids;
 
@@ -43,6 +46,15 @@ class PredictionMarket extends Model
     protected static function booted(): void
     {
         static::saving(function (self $market): void {
+            if ($market->exists && $market->isDirty('prediction_id')
+                && CanonicalPrediction::query()
+                    ->whereKey($market->getOriginal('prediction_id'))
+                    ->whereNotNull('calculation_run_id')
+                    ->whereIn('publication_state', ['published', 'superseded', 'withdrawn'])
+                    ->exists()) {
+                throw new LogicException('Markets on released canonical predictions cannot be reparented.');
+            }
+
             if ($market->prediction()
                 ->whereNotNull('calculation_run_id')
                 ->whereIn('publication_state', ['published', 'superseded', 'withdrawn'])
@@ -52,7 +64,7 @@ class PredictionMarket extends Model
         });
 
         static::deleting(function (self $market): void {
-            if ($market->prediction()->whereNotNull('calculation_run_id')->exists()) {
+            if (CanonicalPrediction::query()->whereKey($market->getOriginal('prediction_id'))->whereNotNull('calculation_run_id')->exists()) {
                 throw new LogicException('Markets on canonical prediction revisions cannot be deleted.');
             }
         });

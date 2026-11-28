@@ -23,14 +23,16 @@ use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\Support\HistoricalMlbShadowFeedbackFixture;
+use Tests\Support\ObservedMlbGameFixture;
 
 uses()->group('ml', 'shadow-feedback');
 
-it('records immutable MLB win spread and total shadow observations from one structured inference', function () {
+it('retains historical MLB win spread and total bookkeeping without claiming fresh inference', function () {
     Carbon::setTestNow('2026-07-29 12:00:00');
     [$artifact, $game, $snapshot] = createStructuredMlbShadowFeedbackFixture();
 
-    $first = app(ShadowModelOutputRecorder::class)->record($snapshot);
+    $first = recordRetainedShadowFeedback($snapshot);
     $initial = ShadowModelOutput::query()
         ->where('prediction_feature_snapshot_id', $snapshot->id)
         ->orderBy('market_type')
@@ -54,7 +56,7 @@ it('records immutable MLB win spread and total shadow observations from one stru
     $metadata = $snapshot->model_metadata;
     data_set($metadata, 'shadow_inference.challenger_outputs.predicted_spread', 99.0);
     $snapshot->update(['model_metadata' => $metadata]);
-    app(ShadowModelOutputRecorder::class)->record($snapshot->refresh());
+    recordRetainedShadowFeedback($snapshot->refresh());
 
     expect(ShadowModelOutput::query()
         ->where('prediction_feature_snapshot_id', $snapshot->id)
@@ -66,7 +68,7 @@ it('records immutable MLB win spread and total shadow observations from one stru
         ->and($game->exists)->toBeTrue();
 });
 
-it('records every artifact in a shadow cohort without changing public outputs', function () {
+it('retains historical artifact cohort bookkeeping without changing public outputs', function () {
     Carbon::setTestNow('2026-07-29 12:00:00');
     [$champion, $game, $snapshot] = createStructuredMlbShadowFeedbackFixture();
     $challenger = createShadowFeedbackArtifact(
@@ -105,7 +107,7 @@ it('records every artifact in a shadow cohort without changing public outputs', 
     data_set($metadata, 'shadow_inference.cohort', [$championContext, $challengerContext]);
     $snapshot->update(['model_metadata' => $metadata]);
 
-    app(ShadowModelOutputRecorder::class)->record($snapshot->refresh());
+    recordRetainedShadowFeedback($snapshot->refresh());
 
     $outputs = ShadowModelOutput::query()
         ->where('prediction_feature_snapshot_id', $snapshot->id)
@@ -131,7 +133,7 @@ it('records and settles private MLB moneyline run line and total decisions with 
     Carbon::setTestNow('2026-07-29 12:00:00');
     config(['mlb_ml.shadow.max_uncertainty' => 0.10]);
     [$artifact, $game, $snapshot] = createStructuredMlbShadowFeedbackFixture();
-    app(ShadowModelOutputRecorder::class)->record($snapshot);
+    recordRetainedShadowFeedback($snapshot);
 
     createShadowFeedbackQuote($game, 'h2h', 'home', null, 100, 0.50, '2026-08-01 16:50:00');
     createShadowFeedbackQuote($game, 'spreads', 'home', -2.0, 105, 0.50, '2026-08-01 16:50:00');
@@ -219,7 +221,7 @@ it('records a labeled median consensus CLV fallback when the entry bookmaker has
     Carbon::setTestNow('2026-07-29 12:00:00');
     config(['mlb_ml.shadow.max_uncertainty' => 0.10]);
     [$artifact, $game, $snapshot] = createStructuredMlbShadowFeedbackFixture();
-    app(ShadowModelOutputRecorder::class)->record($snapshot);
+    recordRetainedShadowFeedback($snapshot);
 
     createShadowFeedbackQuote($game, 'h2h', 'home', null, 100, 0.50, '2026-08-01 16:50:00');
 
@@ -260,7 +262,7 @@ it('keeps refreshed MLB snapshot shadow and decision identities immutable', func
     Carbon::setTestNow('2026-07-29 12:00:00');
     config(['mlb_ml.shadow.max_uncertainty' => 0.10]);
     [$artifact, $game, $firstSnapshot] = createStructuredMlbShadowFeedbackFixture();
-    app(ShadowModelOutputRecorder::class)->record($firstSnapshot);
+    recordRetainedShadowFeedback($firstSnapshot);
 
     createShadowFeedbackQuote($game, 'h2h', 'home', null, 100, 0.50, '2026-08-01 16:50:00');
     createShadowFeedbackQuote($game, 'spreads', 'home', -2.0, 105, 0.50, '2026-08-01 16:50:00');
@@ -282,7 +284,7 @@ it('keeps refreshed MLB snapshot shadow and decision identities immutable', func
             'feature_hash' => hash('sha256', 'refreshed-snapshot-'.$game->id),
         ],
     );
-    app(ShadowModelOutputRecorder::class)->record($secondSnapshot);
+    recordRetainedShadowFeedback($secondSnapshot);
 
     createShadowFeedbackQuote($game, 'h2h', 'home', null, -105, 0.512, '2026-08-01 17:20:00');
     createShadowFeedbackQuote($game, 'spreads', 'home', -2.0, -105, 0.512, '2026-08-01 17:20:00');
@@ -316,7 +318,7 @@ it('keeps MLB markets as no-bets when uncertainty quote or market promotion gate
             'uncertainty' => 0.20,
         ],
     ]);
-    app(ShadowModelOutputRecorder::class)->record($snapshot);
+    recordRetainedShadowFeedback($snapshot);
 
     createShadowFeedbackQuote($game, 'h2h', 'home', null, 100, 0.50, '2026-08-01 16:50:00');
     createShadowFeedbackQuote($game, 'spreads', 'home', -1.5, 100, 0.50, '2026-08-01 16:50:00');
@@ -344,7 +346,7 @@ it('uses only the MLB model reference line and prefers its referenced bookmaker'
     Carbon::setTestNow('2026-07-29 12:00:00');
     config(['mlb_ml.shadow.max_uncertainty' => 0.10]);
     [$artifact, $game, $snapshot] = createStructuredMlbShadowFeedbackFixture();
-    app(ShadowModelOutputRecorder::class)->record($snapshot);
+    recordRetainedShadowFeedback($snapshot);
 
     createShadowFeedbackQuote(
         $game,
@@ -459,7 +461,7 @@ it('refuses MLB spread and total edges when offered lines mismatch the model ref
             'home_cover_probability' => 0.40,
         ],
     ]);
-    app(ShadowModelOutputRecorder::class)->record($snapshot);
+    recordRetainedShadowFeedback($snapshot);
 
     createShadowFeedbackQuote($game, 'h2h', 'home', null, 100, 0.50, '2026-08-01 16:50:00');
     createShadowFeedbackQuote($game, 'spreads', 'away', 1.5, 120, 0.42, '2026-08-01 16:50:00');
@@ -499,7 +501,7 @@ it('never converts a reconstructed MLB shadow inference into a retrospective bet
             'availability_status' => 'verified_reconstruction',
         ],
     );
-    app(ShadowModelOutputRecorder::class)->record($snapshot);
+    recordRetainedShadowFeedback($snapshot);
 
     createShadowFeedbackQuote($game, 'h2h', 'home', null, 100, 0.50, '2026-08-01 16:50:00');
     createShadowFeedbackQuote($game, 'spreads', 'home', -1.5, 100, 0.50, '2026-08-01 16:50:00');
@@ -555,8 +557,8 @@ it('preserves the legacy NFL single-market shadow metadata contract', function (
         'features_available_at' => Carbon::parse('2026-09-10 16:55:00'),
     ]);
 
-    app(ShadowModelOutputRecorder::class)->record($snapshot);
-    app(ShadowModelOutputRecorder::class)->record($snapshot);
+    recordRetainedShadowFeedback($snapshot);
+    recordRetainedShadowFeedback($snapshot);
 
     $shadow = ShadowModelOutput::query()
         ->where('prediction_feature_snapshot_id', $snapshot->id)
@@ -859,7 +861,7 @@ it('skips invalid native shadow lineage without falling back to attached legacy 
 it('respects the shadow decision limit across bounded batches and retains idempotence', function () {
     Carbon::setTestNow('2026-08-01 17:00:00');
     [$artifact, $game, $snapshot] = createStructuredMlbShadowFeedbackFixture();
-    app(ShadowModelOutputRecorder::class)->record($snapshot);
+    recordRetainedShadowFeedback($snapshot);
     $first = ShadowModelOutput::query()->where('market_type', 'win_probability')->firstOrFail();
     for ($index = 0; $index < 100; $index++) {
         $copy = $snapshot->replicate();
@@ -909,30 +911,36 @@ it('respects the shadow decision limit across bounded batches and retains idempo
 
 function createNativeShadowFeedbackFixture(string $variant = 'valid'): array
 {
-    Carbon::setTestNow('2026-08-01 17:00:00');
+    Carbon::setTestNow('2026-08-01 16:00:00');
     config(['mlb_ml.shadow.max_uncertainty' => 0.1]);
     [$artifact, $game, $legacy] = createStructuredMlbShadowFeedbackFixture();
     $event = SportEvent::factory()->create(['sport' => 'mlb', 'starts_at' => Carbon::parse('2026-08-01 19:00:00')]);
     $game->update(['sport_event_id' => $event->id]);
-    $input = EventInputSnapshot::factory()->create(['sport' => 'mlb', 'sport_event_id' => $event->id,
-        'captured_at' => now()->subHour(), 'cutoff_at' => now()->subHour(), 'latest_source_available_at' => now()->subHours(2),
-        'pregame_safety_status' => $variant === 'unsafe' ? 'unverified' : 'verified',
-        'inputs' => ['pregame_market' => ['available' => true, 'consensus' => ['spread' => ['line' => -2.0], 'total' => ['line' => 8.0]]]]]);
+    $game = ObservedMlbGameFixture::observe($game, $event->starts_at);
+    $inputAttributes = ObservedMlbGameFixture::snapshotAttributes($game, [
+        'home' => ['team_id' => $game->home_team_id], 'away' => ['team_id' => $game->away_team_id],
+        'pregame_market' => ['available' => true, 'consensus' => ['spread' => ['line' => -2.0], 'total' => ['line' => 8.0]]],
+    ]);
+    $inputAttributes['pregame_safety_status'] = $variant === 'unsafe' ? 'unverified' : 'verified';
+    $input = EventInputSnapshot::factory()->create($inputAttributes);
     $release = CalculationRelease::factory()->approved()->create(['sport' => 'mlb', 'phase' => 'pregame']);
     $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'event_input_snapshot_id' => $input->id,
         'calculation_release_id' => $release->id, 'status' => 'succeeded']);
+    Carbon::setTestNow('2026-08-01 16:30:00');
     $native = CanonicalPrediction::factory()->create(['sport' => 'mlb', 'sport_event_id' => $event->id,
         'calculation_run_id' => $run->id, 'phase' => 'pregame', 'publication_state' => 'draft', 'published_at' => null,
-        'generated_at' => now()->subMinutes(30), 'detail_source' => null, 'detail_sport' => null, 'detail_id' => null]);
+        'generated_at' => now(), 'detail_source' => null, 'detail_sport' => null, 'detail_id' => null]);
     foreach ([['moneyline', 'home', null, 0.54], ['spread', 'home', -1.2, null], ['total', 'combined', 8.0, null]] as [$type, $side, $line, $probability]) {
         PredictionMarket::factory()->create(['prediction_id' => $native->id, 'market_type' => $type,
             'selection' => $side, 'projected_line' => $line, 'probability' => $probability]);
     }
-    $native->update(['publication_state' => 'published', 'published_at' => now()->subMinutes(20)]);
+    Carbon::setTestNow('2026-08-01 16:40:00');
+    $native->update(['publication_state' => 'published', 'published_at' => now()]);
+    Carbon::setTestNow('2026-08-01 17:00:00');
     if ($variant === 'withdrawn') {
         $native->update(['publication_state' => 'withdrawn', 'withdrawn_at' => now()]);
     }
-    app(ShadowModelOutputRecorder::class)->record($legacy);
+    recordRetainedShadowFeedback($legacy);
     ShadowModelOutput::query()->where('model_artifact_id', $artifact->id)->update([
         'canonical_prediction_id' => $native->id, 'prediction_table' => 'predictions', 'prediction_id' => $native->id]);
     if ($variant === 'wrong_game') {
@@ -971,7 +979,7 @@ it('retains fresh promotion checks when saving native shadow bets without legacy
 it('applies shadow decision limits to pending outputs rather than reprocessing immutable history', function () {
     Carbon::setTestNow('2026-07-29 12:00:00');
     [$artifact, $game, $snapshot] = createStructuredMlbShadowFeedbackFixture();
-    app(ShadowModelOutputRecorder::class)->record($snapshot);
+    recordRetainedShadowFeedback($snapshot);
     foreach ([1, 2, 3] as $expected) {
         $this->artisan('sports:record-shadow-bet-decisions', ['--sport' => 'mlb', '--artifact' => $artifact->id, '--limit' => 1])
             ->expectsOutput('Recorded 1 new immutable shadow decision(s).')->assertSuccessful();
@@ -980,3 +988,13 @@ it('applies shadow decision limits to pending outputs rather than reprocessing i
     $this->artisan('sports:record-shadow-bet-decisions', ['--sport' => 'mlb', '--artifact' => $artifact->id, '--limit' => 1])
         ->expectsOutput('Recorded 0 new immutable shadow decision(s).')->assertSuccessful();
 });
+
+/** Seed explicit retained history; the production recorder is exercised only for audit/idempotence. */
+function recordRetainedShadowFeedback(PredictionFeatureSnapshot $snapshot): ?ShadowModelOutput
+{
+    if ($snapshot->sport === 'mlb') {
+        HistoricalMlbShadowFeedbackFixture::seed($snapshot);
+    }
+
+    return app(ShadowModelOutputRecorder::class)->record($snapshot);
+}

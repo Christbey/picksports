@@ -1,3 +1,7 @@
+> Historical proposal/worklog retained on November 27, 2026. The original text below records dated proposals, implementation assertions and measurements; it is not current operating instructions, evidence of completion, or approval to change business/scientific policy. Do not run its historical commands as an operational checklist. Current references: [docs/operations/account-access.md](docs/operations/account-access.md), [docs/operations/billing-entitlements.md](docs/operations/billing-entitlements.md).
+>
+> Carried obligations: Revenue, price, tier and go-to-market proposals require explicit product disposition; do not replace current18+ signup with historical21+ proposal.
+
 # Subscription Platform Strategy & Roadmap
 
 ## Executive Summary

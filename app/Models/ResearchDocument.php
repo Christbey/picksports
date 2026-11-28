@@ -2,17 +2,19 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\RejectsPersistedModelMutation;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ResearchDocument extends Model
 {
+    use RejectsPersistedModelMutation;
+
     protected $guarded = ['id'];
 
-    protected static function booted(): void
+    protected function immutableMutationMessage(): string
     {
-        static::updating(fn () => throw new \LogicException('Research document versions are immutable.'));
-        static::deleting(fn () => throw new \LogicException('Research document versions are immutable.'));
+        return 'Research document versions are immutable.';
     }
 
     protected function casts(): array

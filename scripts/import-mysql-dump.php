@@ -3,6 +3,7 @@
 
 declare(strict_types=1);
 
+use App\Support\Database\MySqlCliConnection;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
 
@@ -37,10 +38,11 @@ $findExecutable = static function (string $name): string {
     throw new RuntimeException("Required executable not found: {$name}");
 };
 
-$connection = config('database.connections.'.config('database.default'));
-
-if (! is_array($connection) || ($connection['driver'] ?? null) !== 'mysql') {
-    fwrite(STDERR, "The configured default database connection must use MySQL.\n");
+try {
+    $connection = MySqlCliConnection::fromConfiguration((array) config('database.connections.'.config('database.default')));
+    $mysql = $findExecutable('mysql');
+} catch (InvalidArgumentException|RuntimeException $exception) {
+    fwrite(STDERR, $exception->getMessage()."\n");
     exit(2);
 }
 
@@ -56,24 +58,12 @@ if ($existingDatabase !== null) {
 
 DB::statement("CREATE DATABASE `{$targetDatabase}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
 
-try {
-    $mysql = $findExecutable('mysql');
-} catch (RuntimeException $exception) {
-    fwrite(STDERR, $exception->getMessage()."\n");
-    exit(2);
-}
-
-$environment = getenv();
-$environment['MYSQL_PWD'] = (string) ($connection['password'] ?? '');
+$environment = $connection->environment();
 
 $importProcess = proc_open(
     [
         $mysql,
-        '--protocol=TCP',
-        '--host='.(string) ($connection['host'] ?? '127.0.0.1'),
-        '--port='.(string) ($connection['port'] ?? 3306),
-        '--user='.(string) ($connection['username'] ?? ''),
-        '--default-character-set=utf8mb4',
+        ...$connection->arguments(),
         '--database='.$targetDatabase,
     ],
     [

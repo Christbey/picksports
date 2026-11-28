@@ -2,16 +2,18 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\RejectsPersistedModelMutation;
 use Illuminate\Database\Eloquent\Model;
 
 class GameResearchAssessment extends Model
 {
+    use RejectsPersistedModelMutation;
+
     protected $guarded = ['id'];
 
-    protected static function booted(): void
+    protected function immutableMutationMessage(): string
     {
-        static::updating(fn () => throw new \LogicException('Research assessment revisions are immutable.'));
-        static::deleting(fn () => throw new \LogicException('Research assessment revisions are immutable.'));
+        return 'Research assessment revisions are immutable.';
     }
 
     protected function casts(): array

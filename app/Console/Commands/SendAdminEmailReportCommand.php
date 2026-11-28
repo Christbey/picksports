@@ -64,10 +64,8 @@ class SendAdminEmailReportCommand extends Command
             $recipientKey = hash('sha256', strtolower(trim($recipient)));
             $key = 'admin_report:'.$date->toDateString().':'.$recipientKey;
             $delivery = $deliveries->record('admin_report', $recipientKey, 'mail', $key);
-            $claimed = NotificationDelivery::query()->whereKey($delivery->id)
-                ->whereIn('status', ['planned', 'failed'])
-                ->update(['status' => 'dispatched', 'dispatched_at' => now(), 'reason_code' => null]);
-            if ($claimed === 0) {
+            $deliveries->markDispatched($delivery);
+            if (! $deliveries->claim($delivery)) {
                 continue;
             }
             try {
@@ -135,7 +133,8 @@ class SendAdminEmailReportCommand extends Command
                     ->contains(fn ($event): bool => is_string($event->command ?? null) && str_contains($event->command, 'alerts:check')),
             ],
             'delivery_activity' => $this->deliveryActivity($start, $end),
-            'delivery_backlog' => NotificationDelivery::query()->whereIn('status', ['planned', 'dispatched', 'sending'])
+            'delivery_backlog' => NotificationDelivery::query()->whereNull('accepted_at')
+                ->whereIn('status', ['planned', 'dispatched', 'sending', 'failed', 'outcome_unknown'])
                 ->where('created_at', '<=', $observedAt)
                 ->selectRaw('type, channel, status, COUNT(*) as aggregate')->groupBy('type', 'channel', 'status')
                 ->orderBy('type')->orderBy('channel')->orderBy('status')->get()

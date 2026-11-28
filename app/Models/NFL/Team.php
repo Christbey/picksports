@@ -20,11 +20,8 @@ class Team extends Model
         'espn_id',
         'name',
         'abbreviation',
-        'display_name',
-        'short_display_name',
         'logo_url',
         'color',
-        'alternate_color',
         'location',
         'conference',
         'division',
@@ -69,7 +66,7 @@ class Team extends Model
     /** Query forecasts for either home or away games; this is not an eager-loadable relation. */
     public function queryPredictions(): Builder
     {
-        return Prediction::query()->whereHas('game', function (Builder $query): void {
+        return $this->newRelatedInstance(Prediction::class)->newQuery()->whereHas('game', function (Builder $query): void {
             $query->where('home_team_id', $this->id)
                 ->orWhere('away_team_id', $this->id);
         });

@@ -40,7 +40,7 @@ class TrustedHistoricalPredictionReconstructor
         ], JSON_THROW_ON_ERROR));
         $reconstructionMetadata = [
             ...$payload['evidence'],
-            'point_in_time_verified' => true,
+            'point_in_time_verified' => false,
             'features_available_at' => $payload['features_available_at']->toIso8601String(),
             'game_start_at' => $gameStartAt->toIso8601String(),
             'source_timestamps' => $payload['source_timestamps'],
@@ -142,9 +142,9 @@ class TrustedHistoricalPredictionReconstructor
                         'feature_version' => TrustedHistoricalFeatureBuilder::FEATURE_VERSION,
                     ],
                     'historical_profile' => TrustedHistoricalFeatureBuilder::PROFILE,
-                    'point_in_time_verified' => true,
-                    'pregame_safe' => true,
-                    'availability_status' => 'verified_reconstruction',
+                    'point_in_time_verified' => false,
+                    'pregame_safe' => false,
+                    'availability_status' => 'reconstructed_now',
                     'features_available_at' => $payload['features_available_at'],
                     'source_timestamps' => $payload['source_timestamps'],
                     'verification_method' => $payload['evidence']['verification_method'],

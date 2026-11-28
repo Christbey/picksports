@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import type { AuthenticatedAppPageProps } from '@/types';
 import { Form, Head, Link, usePage } from '@inertiajs/vue3';
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import DeleteUser from '@/components/DeleteUser.vue';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
@@ -37,32 +38,45 @@ const breadcrumbItems: BreadcrumbItem[] = [
     },
 ];
 
-const page = usePage();
-const user = page.props.auth.user;
+const page = usePage<AuthenticatedAppPageProps>();
+const user = computed(() => page.props.auth.user);
 const passkeys = ref<PasskeySummary[]>([]);
 const loadingPasskeys = ref(false);
+let passkeyLoadGeneration = 0;
+const passkeyListState = ref<'unloaded' | 'ready' | 'error'>('unloaded');
 const passkeyMessage = ref<string | null>(null);
 const passkeyError = ref<string | null>(null);
 const passkeyProcessing = ref(false);
 
 async function handleProfileUpdateSuccess() {
     try {
-        await signalCurrentUserDetails(String(user.id), String(user.email));
+        await signalCurrentUserDetails(
+            String(user.value.id),
+            String(user.value.email),
+        );
     } catch {
         // Signal API is best-effort and should never block profile updates.
     }
 }
 
 async function loadPasskeys() {
+    const generation = ++passkeyLoadGeneration;
     loadingPasskeys.value = true;
+    passkeyListState.value = 'unloaded';
+    passkeyError.value = null;
 
     try {
-        passkeys.value = await listPasskeys();
+        const loaded = await listPasskeys();
+        if (generation !== passkeyLoadGeneration) return;
+        passkeys.value = loaded;
+        passkeyListState.value = 'ready';
     } catch (error) {
+        if (generation !== passkeyLoadGeneration) return;
+        passkeyListState.value = 'error';
         passkeyError.value =
             error instanceof Error ? error.message : 'Failed to load passkeys.';
     } finally {
-        loadingPasskeys.value = false;
+        if (generation === passkeyLoadGeneration) loadingPasskeys.value = false;
     }
 }
 
@@ -136,6 +150,10 @@ onMounted(async () => {
                         <Label for="name">Name</Label>
                         <Input
                             id="name"
+                            :aria-invalid="Boolean(errors.name)"
+                            :aria-describedby="
+                                errors.name ? 'name-error' : undefined
+                            "
                             class="mt-1 block w-full"
                             name="name"
                             :default-value="user.name"
@@ -143,13 +161,21 @@ onMounted(async () => {
                             autocomplete="name"
                             placeholder="Full name"
                         />
-                        <InputError class="mt-2" :message="errors.name" />
+                        <InputError
+                            class="mt-2"
+                            id="name-error"
+                            :message="errors.name"
+                        />
                     </div>
 
                     <div class="grid gap-2">
                         <Label for="email">Email address</Label>
                         <Input
                             id="email"
+                            :aria-invalid="Boolean(errors.email)"
+                            :aria-describedby="
+                                errors.email ? 'email-error' : undefined
+                            "
                             type="email"
                             class="mt-1 block w-full"
                             name="email"
@@ -158,7 +184,11 @@ onMounted(async () => {
                             autocomplete="username"
                             placeholder="Email address"
                         />
-                        <InputError class="mt-2" :message="errors.email" />
+                        <InputError
+                            class="mt-2"
+                            id="email-error"
+                            :message="errors.email"
+                        />
                     </div>
 
                     <div v-if="mustVerifyEmail && !user.email_verified_at">
@@ -226,9 +256,23 @@ onMounted(async () => {
                     <p v-if="passkeyMessage" class="text-sm text-green-600">
                         {{ passkeyMessage }}
                     </p>
-                    <p v-if="passkeyError" class="text-sm text-red-600">
+                    <p
+                        v-if="passkeyError"
+                        role="alert"
+                        class="text-sm text-red-600"
+                    >
                         {{ passkeyError }}
                     </p>
+
+                    <Button
+                        v-if="passkeyListState === 'error'"
+                        type="button"
+                        variant="outline"
+                        :disabled="loadingPasskeys"
+                        @click="loadPasskeys"
+                    >
+                        Retry loading passkeys
+                    </Button>
 
                     <p
                         v-if="loadingPasskeys"
@@ -275,7 +319,10 @@ onMounted(async () => {
                             </Button>
                         </li>
                         <li
-                            v-if="passkeys.length === 0"
+                            v-if="
+                                passkeyListState === 'ready' &&
+                                passkeys.length === 0
+                            "
                             class="text-sm text-muted-foreground"
                         >
                             No passkeys added yet.

@@ -21,19 +21,19 @@ class V2OpenApiGenerateCommand extends Command
      * @var array<string, array<int, string>>
      */
     private array $queryParametersByFamily = [
-        'games' => ['status', 'season', 'from_date', 'to_date', 'per_page'],
+        'games' => ['status', 'completed_only', 'season', 'season_type', 'from_date', 'to_date', 'before_game_at', 'exclude_game_id', 'per_page'],
         'predictions' => ['season', 'season_type', 'week', 'from_date', 'to_date', 'status', 'team_id', 'game_id', 'include', 'market', 'per_page'],
         'teams' => ['conference', 'division', 'league', 'search', 'per_page'],
         'players' => ['team_id', 'position', 'status', 'search', 'per_page'],
         'metrics.teams' => ['season', 'season_type', 'team_id', 'per_page'],
         'stats' => ['season', 'season_type', 'week', 'from_date', 'to_date', 'game_id', 'team_id', 'player_id', 'stat_type', 'team_type', 'per_page'],
-        'season-averages' => ['season', 'season_type', 'team_id', 'per_page'],
+        'season-averages' => ['season', 'season_type'],
         'trends' => ['games', 'season', 'season_type', 'before_date'],
-        'player-props' => ['search', 'page', 'date', 'from_date', 'to_date', 'game_id', 'player_id', 'market', 'bookmaker', 'recommended_side', 'per_page'],
+        'player-props' => ['search', 'page', 'date', 'from_date', 'to_date', 'game_id', 'player_id', 'market', 'bookmaker', 'recommended_side', 'only_ungraded', 'per_page'],
         'futures' => ['season', 'market_key', 'bookmaker', 'team_id', 'player_id', 'event_id', 'outcome_name', 'per_page'],
         'forecasts' => ['season', 'as_of_date'],
         'signals' => ['season', 'as_of_date'],
-        'injuries' => ['active', 'team_id', 'status'],
+        'injuries' => ['active', 'actionable', 'team_id', 'status', 'limit'],
         'leaderboards.players' => ['season', 'season_type', 'stat_type', 'min_games'],
     ];
 
@@ -50,6 +50,9 @@ class V2OpenApiGenerateCommand extends Command
         'limit' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 150],
         'as_of_date' => ['type' => 'string', 'format' => 'date'],
         'before_date' => ['type' => 'string', 'format' => 'date'],
+        'before_game_at' => ['type' => 'string', 'description' => 'Exclusive kickoff cutoff. Use an offset-bearing ISO 8601 timestamp for an unambiguous instant.'],
+        'completed_only' => ['type' => 'boolean', 'description' => 'Restrict to stored final or full-time games before pagination.'],
+        'exclude_game_id' => ['type' => 'integer', 'minimum' => 1],
         'bookmaker' => ['type' => 'string'],
         'conference' => ['type' => 'string'],
         'date' => ['type' => 'string', 'format' => 'date'],
@@ -286,6 +289,11 @@ class V2OpenApiGenerateCommand extends Command
             ];
         }
 
+        if (($parameter === 'game' && $route->getName() === 'v2.sports.games.player-props.index')
+            || ($parameter === 'player' && $route->getName() === 'v2.sports.players.player-props.index')) {
+            return ['type' => 'integer', 'minimum' => 1];
+        }
+
         if ($parameter === 'game' && $route->getName() === 'v2.sports.games.live-betting.show') {
             return ['type' => 'integer', 'minimum' => 1];
         }
@@ -363,11 +371,78 @@ class V2OpenApiGenerateCommand extends Command
                 'name' => $parameter,
                 'in' => 'query',
                 'required' => false,
-                'schema' => $this->queryParameterSchemas[$parameter] ?? ['type' => 'string'],
+                'schema' => $this->queryParameterSchema($routeName, $parameter),
                 ...($parameter === 'season' && in_array($routeName, ['v2.sports.players.index', 'v2.sports.teams.players.index'], true) ? ['description' => 'CBB team-roster ending-year season; defaults to the current basketball season. Requires team_id on the player directory endpoint.'] : []),
             ])
             ->values()
             ->all();
+    }
+
+    private function queryParameterSchema(string $routeName, string $parameter): array
+    {
+        if (in_array($routeName, ['v2.sports.predictions.index', 'v2.sports.predictions.available-dates'], true)) {
+            $specific = match ($parameter) {
+                'season_type' => ['type' => 'string', 'maxLength' => 50],
+                'team_id', 'game_id' => ['type' => 'integer', 'minimum' => 1],
+                'week' => ['type' => 'integer', 'minimum' => 0],
+                'view' => ['type' => 'string', 'enum' => ['startup', 'board', 'live'],
+                    'description' => 'CFB only. startup excludes explicit season, season_type, week and date filters. Other sports reject this parameter.'],
+                'board_version' => ['type' => 'string', 'pattern' => '^[a-f0-9]{64}$',
+                    'description' => 'CFB only; accepted only with view=live. Identifies the board snapshot, not a model approval.'],
+                'has_value' => ['type' => 'integer', 'enum' => [0, 1], 'description' => 'Use 0 or 1 for this query-string flag.'],
+                default => null,
+            };
+            if ($specific !== null) {
+                return $specific;
+            }
+        }
+        if (in_array($routeName, ['v2.sports.player-props.index', 'v2.sports.markets.player-props.index',
+            'v2.sports.games.player-props.index', 'v2.sports.players.player-props.index'], true)) {
+            $specific = match ($parameter) {
+                'game_id', 'player_id' => ['type' => 'integer', 'minimum' => 1],
+                'search', 'market', 'bookmaker' => ['type' => 'string', 'maxLength' => 100],
+                'recommended_side' => ['type' => 'string', 'maxLength' => 20],
+                'only_ungraded' => ['type' => 'integer', 'enum' => [0, 1], 'description' => 'Use 0 or 1; CFB additionally restricts to current prop revisions.'],
+                default => null,
+            };
+            if ($specific !== null) {
+                return $specific;
+            }
+        }
+        if ($routeName === 'v2.sports.teams.depth-charts.show') {
+            return match ($parameter) {
+                'season' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 9999],
+                'season_type' => ['type' => 'string', 'description' => 'Configured phase code/key/name or a supported legacy phase name; canonical code is returned. all is not supported.'],
+                'before_date' => ['type' => 'string', 'format' => 'date', 'description' => 'Exclusive stored game calendar-date cutoff for completed stat samples, not a historical depth-chart observation instant.'],
+                default => ['type' => 'string'],
+            };
+        }
+        if (str_contains($routeName, 'season-averages')) {
+            if ($parameter === 'season') {
+                return ['type' => 'integer', 'minimum' => 1, 'maximum' => 9999, 'description' => 'Explicit stored completed season. Omitted resolves to the latest stored completed season within the selected phase and requested team.'];
+            }
+            if ($parameter === 'season_type') {
+                return ['type' => 'string', 'description' => 'Configured phase code/key/name for the selected sport, or all. Omitted uses the configured team-metric phase; resolved scope is returned.'];
+            }
+        }
+        if (str_ends_with($routeName, '.injuries.index')) {
+            if ($parameter === 'limit') {
+                return ['type' => 'integer', 'minimum' => 1, 'maximum' => 500];
+            }
+            if (in_array($parameter, ['active', 'actionable'], true)) {
+                return ['type' => 'integer', 'enum' => [0, 1], 'description' => 'Use 0 or 1 for this query-string flag.'];
+            }
+        }
+        if (in_array($routeName, ['v2.sports.games.index', 'v2.sports.teams.games.index'], true)) {
+            if ($parameter === 'per_page') {
+                return ['type' => 'integer', 'minimum' => 1, 'maximum' => 500];
+            }
+            if ($parameter === 'season_type') {
+                return ['type' => 'string', 'maxLength' => 50];
+            }
+        }
+
+        return $this->queryParameterSchemas[$parameter] ?? ['type' => 'string'];
     }
 
     /**
@@ -375,6 +450,15 @@ class V2OpenApiGenerateCommand extends Command
      */
     private function queryParameterNames(string $routeName): array
     {
+        if (in_array($routeName, ['v2.sports.predictions.index', 'v2.sports.predictions.available-dates'], true)) {
+            return [...$this->queryParametersByFamily['predictions'], 'view', 'board_version', 'has_value'];
+        }
+        if ($routeName === 'v2.sports.teams.depth-charts.show') {
+            return ['season', 'season_type', 'before_date'];
+        }
+        if ($routeName === 'v2.sports.games.depth-charts.show') {
+            return [];
+        }
         if (in_array($routeName, ['v2.sports.games.live-betting.show', 'v2.sports.games.live-snapshot.show', 'v2.sports.games.research.show', 'v2.sports.games.analysis.research.show'], true)) {
             return [];
         }
@@ -413,8 +497,12 @@ class V2OpenApiGenerateCommand extends Command
             return $this->queryParametersByFamily['futures'];
         }
 
+        if (in_array($routeName, ['v2.sports.games.index', 'v2.sports.teams.games.index'], true)) {
+            return $this->queryParametersByFamily['games'];
+        }
+
         foreach ($this->queryParametersByFamily as $family => $parameters) {
-            if (str_contains($routeName, '.'.$family.'.')) {
+            if ($family !== 'games' && str_contains($routeName, '.'.$family.'.')) {
                 return $parameters;
             }
         }
@@ -472,7 +560,15 @@ class V2OpenApiGenerateCommand extends Command
             $responses['404'] = ['$ref' => '#/components/responses/NotFound'];
         }
 
-        if ($this->queryParameterNames($route->getName() ?? '') !== [] || $this->requestBodyRequired($route) !== null) {
+        if ($route->getName() === 'v2.sports.teams.stats.season-averages.show') {
+            $responses['404'] = ['description' => 'No completed samples in the resolved scope, or unsupported sport/resource.',
+                'headers' => $this->requestIdHeader(), 'content' => ['application/json' => ['schema' => ['oneOf' => [
+                    ['$ref' => '#/components/schemas/ApiErrorResponse'], ['$ref' => '#/components/schemas/TeamStatAverageNotFound'],
+                ]]]]];
+        }
+
+        if ($this->queryParameterNames($route->getName() ?? '') !== [] || $this->requestBodyRequired($route) !== null
+            || $route->getName() === 'v2.admin.nfl.research-retry.store') {
             $responses['422'] = ['$ref' => '#/components/responses/ValidationError'];
         }
 
@@ -486,7 +582,7 @@ class V2OpenApiGenerateCommand extends Command
             $responses['409'] = ['$ref' => '#/components/responses/IdempotencyConflict'];
         }
 
-        if ($this->usesNamedThrottle($route)) {
+        if ($this->usesDeclaredApiThrottle($route)) {
             $responses['429'] = ['$ref' => '#/components/responses/RateLimited'];
         }
 
@@ -660,10 +756,11 @@ class V2OpenApiGenerateCommand extends Command
         };
     }
 
-    private function usesNamedThrottle(Route $route): bool
+    private function usesDeclaredApiThrottle(Route $route): bool
     {
         return collect($route->gatherMiddleware())->contains(
-            fn (mixed $middleware): bool => str_starts_with((string) $middleware, 'throttle:api-v2-'),
+            fn (mixed $middleware): bool => str_starts_with((string) $middleware, 'throttle:api-v2-')
+                || preg_match('/^throttle:[0-9]+(?:,|$)/D', (string) $middleware) === 1,
         );
     }
 
@@ -696,6 +793,7 @@ class V2OpenApiGenerateCommand extends Command
             'v2.admin.payload-inspector' => 'PayloadInspectorResponse',
             'v2.admin.game-analysis.retry' => 'GameAnalysisRetryResponse',
             'v2.admin.nfl.research-retry.show', 'v2.admin.nfl.research-retry.store' => 'NflResearchRetryResponse',
+            'v2.admin.game-analysis.retry' => 'GameAnalysisRetryResponse',
             'v2.alert-preferences.show',
             'v2.alert-preferences.store',
             'v2.alert-preferences.update' => 'AlertPreferenceResponse',
@@ -845,12 +943,13 @@ class V2OpenApiGenerateCommand extends Command
             'id', 'sport', 'team_id', 'espn_id', 'first_name', 'last_name', 'full_name',
             'display_name', 'jersey_number', 'position', 'height', 'weight', 'age',
             'experience', 'year', 'college', 'hometown', 'status', 'batting_hand',
-            'throwing_hand', 'headshot_url', 'team', 'created_at', 'updated_at',
+            'throwing_hand', 'headshot_url', 'team', 'active_injuries', 'created_at', 'updated_at',
         ], [
             'id' => $nullableInteger,
             'team_id' => $nullableInteger,
             'sport' => ['type' => 'string'],
             'team' => $nullableOpenObject,
+            'active_injuries' => ['type' => ['array', 'null'], 'items' => $this->fixedObjectSchema(['id', 'status', 'detail', 'type', 'return_date', 'source_updated_at', 'source_updated_at_raw', 'source_clock_status'], ['id' => $nullableInteger, 'status' => $nullableString, 'detail' => $nullableString, 'type' => $nullableString, 'return_date' => ['type' => ['string', 'null'], 'format' => 'date'], 'source_updated_at' => ['type' => 'null', 'description' => 'No qualified observation instant is available for legacy injury clocks.'], 'source_updated_at_raw' => $nullableString, 'source_clock_status' => ['type' => 'string', 'enum' => ['unverified_storage_clock']]]), 'description' => 'Stored active injury observations for detail reads; null when coverage was not loaded. Empty does not establish complete provider coverage.'],
             'created_at' => $nullableDateTime,
             'updated_at' => $nullableDateTime,
         ]);
@@ -873,10 +972,12 @@ class V2OpenApiGenerateCommand extends Command
             'created_at' => $nullableDateTime,
             'updated_at' => $nullableDateTime,
         ]);
+        $sportPlayerProp['properties']['is_current'] = ['type' => 'boolean',
+            'description' => 'Present for CFB prop revisions; omitted by other sports.'];
         $sportPrediction = $this->fixedObjectSchema([
             'id', 'sport', 'game_id', 'home_team_id', 'away_team_id', 'game', 'status',
             'pick', 'projection', 'home_win_probability', 'away_win_probability',
-            'win_probability', 'predicted_spread', 'predicted_total', 'confidence_score',
+            'win_probability', 'predicted_spread', 'spread_convention', 'predicted_total', 'confidence_score',
             'confidence_level', 'confidence_context', 'public_recommendation', 'value_signal',
             'market_aware_projection', 'recommendation', 'pro_signal_layer', 'period_insights',
             'cfb_signal_context', 'home_elo', 'away_elo', 'home_team_elo', 'away_team_elo',
@@ -893,6 +994,7 @@ class V2OpenApiGenerateCommand extends Command
             'home_team_id' => $nullableInteger,
             'away_team_id' => $nullableInteger,
             'sport' => ['type' => 'string'],
+            'spread_convention' => ['type' => 'string', 'enum' => ['home_margin', 'home_handicap']],
             'game' => $nullableOpenObject,
             'pick' => $openObject,
             'projection' => $openObject,
@@ -908,6 +1010,13 @@ class V2OpenApiGenerateCommand extends Command
         $sportPrediction['properties']['forecast_coordination'] = $nullableOpenObject;
         $sportPrediction['properties']['raw_home_win_probability'] = $nullableNumber;
         $sportPrediction['properties']['id'] = ['type' => ['integer', 'string', 'null']];
+        $sportPrediction['properties']['cfb_signal_context'] = [
+            'type' => ['object', 'null'],
+            'properties' => ['closing_market_evidence' => ['oneOf' => [
+                ['$ref' => '#/components/schemas/CfbClosingMarketEvidence'], ['type' => 'null'],
+            ]]],
+            'additionalProperties' => true,
+        ];
         $sportStat = $this->fixedObjectSchema([
             'id', 'sport', 'type', 'game_id', 'team_id', 'player_id', 'stat_type',
             'team_type', 'season', 'season_type', 'game_date', 'game', 'team', 'player',
@@ -919,6 +1028,7 @@ class V2OpenApiGenerateCommand extends Command
             'player_id' => $nullableInteger,
             'season' => $nullableInteger,
             'sport' => ['type' => 'string'],
+            'spread_convention' => ['type' => 'string', 'enum' => ['home_margin', 'home_handicap']],
             'game' => $nullableOpenObject,
             'team' => $nullableOpenObject,
             'player' => $nullableOpenObject,
@@ -948,6 +1058,7 @@ class V2OpenApiGenerateCommand extends Command
                 'email' => ['type' => 'string', 'format' => 'email'],
                 'password' => ['type' => 'string'],
                 'device_name' => ['type' => ['string', 'null'], 'maxLength' => 120],
+                'token_profile' => ['type' => 'string', 'enum' => ['interactive', 'read_only'], 'default' => 'interactive'],
             ]),
             'PasskeyAuthenticationOptionsRequest' => $this->requestObject([], [
                 'email' => ['type' => ['string', 'null'], 'format' => 'email'],
@@ -961,6 +1072,7 @@ class V2OpenApiGenerateCommand extends Command
                 'authenticator_data' => ['type' => 'string', 'maxLength' => 4096],
                 'signature' => ['type' => 'string', 'maxLength' => 4096],
                 'device_name' => ['type' => ['string', 'null'], 'maxLength' => 120],
+                'token_profile' => ['type' => 'string', 'enum' => ['interactive', 'read_only'], 'default' => 'interactive'],
             ]),
             'AlertPreferenceStoreRequest' => $this->alertPreferenceRequest(true),
             'AlertPreferenceUpdateRequest' => $this->alertPreferenceRequest(false),
@@ -1004,9 +1116,14 @@ class V2OpenApiGenerateCommand extends Command
                     'tiers_enabled' => ['type' => 'boolean'], 'tiers_bypassed' => ['type' => 'boolean'],
                 ]),
             ]),
-            'TokenAuthResponse' => $this->fixedObjectSchema(['token_type', 'access_token', 'user'], [
+            'TokenAuthResponse' => $this->fixedObjectSchema(['token_type', 'access_token', 'user', 'token_profile', 'abilities', 'expires_at', 'expires_epoch', 'expires_in'], [
                 'token_type' => ['type' => 'string', 'const' => 'Bearer'],
                 'access_token' => ['type' => 'string'],
+                'token_profile' => ['type' => 'string', 'enum' => ['legacy_interactive', 'interactive', 'read_only']],
+                'abilities' => ['type' => 'array', 'items' => ['type' => 'string']],
+                'expires_at' => ['type' => ['string', 'null'], 'format' => 'date-time', 'description' => 'Exact UTC expiry; null while legacy issuance remains active.'],
+                'expires_epoch' => ['type' => ['integer', 'null']],
+                'expires_in' => ['type' => ['integer', 'null'], 'minimum' => 0],
                 'user' => ['$ref' => '#/components/schemas/AuthUser'],
             ]),
             'PasskeyAuthenticationOptionsResponse' => [
@@ -1108,6 +1225,7 @@ class V2OpenApiGenerateCommand extends Command
             'SportPlayerProp' => $sportPlayerProp,
             'SportPlayerPropCollectionResponse' => $this->sportCollectionEnvelope('SportPlayerProp'),
             'SportPrediction' => $sportPrediction,
+            'CfbClosingMarketEvidence' => $this->cfbClosingMarketEvidenceSchema(),
             'SportPredictionResponse' => $this->sportItemEnvelope('SportPrediction', true),
             'SportPredictionCollectionResponse' => $this->sportCollectionEnvelope('SportPrediction'),
             'SportStat' => $sportStat,
@@ -1130,13 +1248,24 @@ class V2OpenApiGenerateCommand extends Command
             'SportTeamMetricResponse' => $this->sportItemEnvelope('SportTeamMetric'),
             'SportTeamMetricCollectionResponse' => $this->sportCollectionEnvelope('SportTeamMetric'),
             'SportInjury' => $this->sportInjurySchema(),
-            'SportInjuryCollectionResponse' => $this->sportCollectionEnvelope('SportInjury'),
+            'SportInjuryCollectionResponse' => $this->injuryCollectionEnvelope(),
             'SportAvailableDatesResponse' => $this->sportCustomEnvelope('SportAvailableDates'),
             'SportAvailableDates' => ['type' => 'array', 'items' => ['type' => 'string', 'format' => 'date']],
             'SportAvailableSeasonsResponse' => $this->sportCustomEnvelope('SportAvailableSeasons'),
             'SportAvailableSeasons' => ['type' => 'array', 'items' => ['type' => 'integer']],
             'SportPlayerLeaderboardResponse' => $this->sportCustomEnvelope('SportPlayerLeaderboardRows'),
-            'SportPlayerLeaderboardRows' => ['type' => 'array', 'items' => $openObject],
+            'SportPlayerLeaderboardRows' => ['type' => 'array', 'items' => [
+                'type' => 'object',
+                'properties' => [
+                    ...array_fill_keys(['points_per_game', 'rebounds_per_game', 'assists_per_game', 'turnovers_per_game', 'steals_per_game', 'blocks_per_game', 'three_pointers_made_per_game', 'minutes_per_game', 'field_goals_made_per_game', 'field_goals_attempted_per_game', 'free_throws_made_per_game', 'free_throws_attempted_per_game', 'field_goal_percentage', 'three_point_percentage', 'free_throw_percentage', 'estimated_epa_per_game', 'estimated_epa_per_36'], $nullableNumber),
+                    'field_samples' => ['type' => 'object', 'additionalProperties' => ['type' => 'integer', 'minimum' => 0], 'description' => 'Basketball non-null observation counts for each stored field.'],
+                    'complete_box_score_games' => ['type' => 'integer', 'minimum' => 0, 'description' => 'Basketball rows with all required proxy counts present and consistent. Estimated EPA is unavailable unless every included row qualifies.'],
+                    'minutes_samples' => ['type' => 'integer', 'minimum' => 0, 'description' => 'Basketball rows with a valid observed minutes value, including zero. Per36 additionally requires positive minutes and a complete matching cohort.'],
+                    'shooting_samples' => ['type' => 'object', 'properties' => array_fill_keys(['field_goals', 'three_point', 'free_throws'], ['type' => 'integer', 'minimum' => 0]), 'additionalProperties' => false],
+                ],
+                'additionalProperties' => true,
+                'description' => 'Sport-specific leaderboard rows. Basketball averages preserve unknown observations as null and disclose their sample counts; other sports retain their own aggregate contracts.',
+            ]],
             'SportDepthChartResponse' => $this->sportCustomEnvelope('SportDepthChartData'),
             'SportDepthChartData' => $openObject,
             'SportForecastResponse' => $this->sportCustomEnvelope('SportForecastData'),
@@ -1152,8 +1281,8 @@ class V2OpenApiGenerateCommand extends Command
             ]),
             'SecurityReportRequest' => ['oneOf' => [$openObject, ['type' => 'array', 'items' => $openObject]]],
             'SecurityReportResponse' => $this->fixedObjectSchema(['ok'], ['ok' => ['const' => true]]),
-            'NflResearchRetryResponse' => $this->fixedObjectSchema(['data'], [
-                'data' => $this->fixedObjectSchema(['status'], [
+            'NflResearchRetryResponse' => $this->objectSchemaWithOptionalFields(['data'], [
+                'data' => $this->objectSchemaWithOptionalFields(['status'], [
                     'status' => ['type' => 'string', 'enum' => ['idle', 'queued', 'running', 'completed', 'blocked', 'failed']],
                     'run_id' => ['type' => 'string'],
                     'message' => ['type' => 'string'],
@@ -1227,9 +1356,14 @@ class V2OpenApiGenerateCommand extends Command
                 'props' => ['type' => 'array', 'items' => $openObject],
             ]),
             'NflLiveSnapshotResponse' => $this->itemEnvelope('NflLiveSnapshotData', false),
-            'NflLiveSnapshotData' => $this->fixedObjectSchema(['game', 'projection', 'source_updated_at', 'generated_at', 'provisional', 'model_kind', 'calibrated', 'clock_scope', 'warning'], [
+            'NflLiveSnapshotData' => $this->fixedObjectSchema(['game', 'projection', 'source_updated_at', 'record_updated_at', 'record_updated_at_raw', 'record_clock_status', 'source_clock_status', 'generated_at', 'provisional', 'model_kind', 'calibrated', 'clock_scope', 'warning'], [
                 'game' => $openObject, 'projection' => $nullableOpenObject,
-                'source_updated_at' => $nullableDateTime, 'generated_at' => ['type' => 'string', 'format' => 'date-time'],
+                'source_updated_at' => ['type' => 'null', 'description' => 'No qualified provider observation instant is available.'],
+                'record_updated_at' => ['type' => 'null', 'description' => 'Unqualified stored record text is not an observation instant.'],
+                'record_updated_at_raw' => $nullableString,
+                'record_clock_status' => ['const' => 'unverified_storage_clock'],
+                'source_clock_status' => ['const' => 'observation_unavailable'],
+                'generated_at' => ['type' => 'string', 'format' => 'date-time'],
                 'provisional' => ['const' => true], 'calibrated' => ['const' => false],
                 'model_kind' => ['const' => 'score_clock_heuristic'],
                 'clock_scope' => ['enum' => ['current_overtime_period', 'regulation']], 'warning' => ['type' => 'string'],
@@ -1264,12 +1398,34 @@ class V2OpenApiGenerateCommand extends Command
             ]),
             'SportPlayerPropBoardResponse' => $this->sportCustomEnvelope('SportPlayerPropBoardData'),
             'SportPlayerPropBoardData' => $openObject,
-            'SportTeamStatAverageCollectionResponse' => $this->sportCustomEnvelope('SportTeamStatAverageRows'),
-            'SportTeamStatAverageRows' => ['type' => 'array', 'items' => $openObject],
-            'SportTeamStatAverageResponse' => $this->sportCustomEnvelope('SportTeamStatAverage'),
-            'SportTeamStatAverage' => $openObject,
+            'SportTeamStatAverageCollectionResponse' => $this->teamAverageEnvelope('SportTeamStatAverageRows'),
+            'SportTeamStatAverageRows' => ['type' => 'array', 'items' => ['$ref' => '#/components/schemas/SportTeamStatAverage']],
+            'SportTeamStatAverageResponse' => $this->teamAverageEnvelope('SportTeamStatAverage'),
+            'SportTeamStatAverage' => $this->teamAverageSchema(),
+            'TeamStatAverageScope' => $this->teamAverageScopeSchema(),
+            'TeamStatAverageNotFound' => $this->teamAverageNotFoundSchema(),
+            'InjuryObservationFreshness' => $this->injuryFreshnessSchema(),
             'MlbDailyPicksResponse' => $this->sportCustomEnvelope('MlbDailyPicksData'),
-            'MlbDailyPicksData' => $openObject,
+            'MlbDailyPicksData' => $this->fixedObjectSchema(['summary', 'board_health', 'top_picks', 'candidates'], [
+                'summary' => ['$ref' => '#/components/schemas/MlbDailyStoredAssessment'],
+                'board_health' => ['$ref' => '#/components/schemas/MlbDailyStoredAssessment'],
+                'top_picks' => ['type' => 'array', 'items' => ['$ref' => '#/components/schemas/MlbDailyPickCandidate']],
+                'candidates' => ['type' => 'array', 'items' => ['$ref' => '#/components/schemas/MlbDailyPickCandidate']],
+            ], true),
+            'MlbDailyStoredAssessment' => $this->fixedObjectSchema(['pregame_safe_rate'], [
+                'pregame_safe_rate' => ['type' => ['number', 'null'], 'minimum' => 0, 'maximum' => 1,
+                    'description' => 'Historical stored signal assessments, not current safety revalidation. Null when no candidates or any included assessment is unknown.'],
+            ], true),
+            'MlbDailyPickCandidate' => $this->fixedObjectSchema(['game'], [
+                'game' => ['oneOf' => [['$ref' => '#/components/schemas/MlbDailyPickGame'], ['type' => 'null']]],
+            ], true),
+            'MlbDailyPickGame' => $this->fixedObjectSchema(['id', 'game_date', 'starts_at'], [
+                'id' => ['type' => 'integer'],
+                'game_date' => ['type' => ['string', 'null'], 'format' => 'date-time',
+                    'description' => 'Serialized stored calendar date. This is not a verified kickoff instant.'],
+                'starts_at' => ['type' => ['string', 'null'], 'format' => 'date-time',
+                    'description' => 'Offset-bearing observed kickoff bound to the current game. Unmarked or invalid legacy clocks remain null.'],
+            ], true),
 
             'UserBetIndexResponse' => $this->fixedObjectSchema(['bets', 'summary', 'filters'], [
                 'bets' => $openObject,
@@ -1281,6 +1437,44 @@ class V2OpenApiGenerateCommand extends Command
                 'description' => 'CSV document containing the authenticated user betting ledger.',
             ],
         ];
+    }
+
+    private function cfbClosingMarketEvidenceSchema(): array
+    {
+        $nullableString = ['type' => ['string', 'null']];
+        $nullableNumber = ['type' => ['number', 'null']];
+        $nullableDate = ['type' => ['string', 'null'], 'format' => 'date-time'];
+        $quote = $this->fixedObjectSchema(['id', 'source', 'bookmaker_key', 'market_key', 'side', 'participant',
+            'line', 'bookmaker_home_line', 'price', 'claimed_quote_hash', 'captured_at_stored', 'created_at_stored',
+            'captured_at_interpreted', 'timestamp_policy'], [
+                'id' => ['type' => 'integer'], 'source' => $nullableString, 'bookmaker_key' => $nullableString,
+                'market_key' => $nullableString, 'side' => $nullableString, 'participant' => $nullableString,
+                // Historical SQL decimal casts are copied as strings, without numeric reinterpretation.
+                'line' => $nullableString, 'bookmaker_home_line' => $nullableString,
+                'price' => ['type' => ['integer', 'null']], 'claimed_quote_hash' => $nullableString,
+                'captured_at_stored' => $nullableString, 'created_at_stored' => $nullableString,
+                'captured_at_interpreted' => $nullableDate, 'timestamp_policy' => ['type' => 'string'],
+            ]);
+        $output = $this->fixedObjectSchema(['closing_bookmaker_home_line', 'closing_home_margin', 'closing_captured_at',
+            'closing_line_value_points', 'closing_line_value_bucket'], [
+                'closing_bookmaker_home_line' => $nullableNumber, 'closing_home_margin' => $nullableNumber,
+                'closing_captured_at' => $nullableDate, 'closing_line_value_points' => $nullableNumber,
+                'closing_line_value_bucket' => $nullableString,
+            ]);
+
+        return $this->fixedObjectSchema(['type', 'phase', 'availability_status', 'reason_codes', 'source_integrity_status',
+            'receipt_id', 'revision', 'entry_snapshot_id', 'observed_at', 'source_max_captured_at', 'timestamp_policy', 'output', 'source_quotes'], [
+                'type' => ['type' => 'string', 'const' => 'closing_market_v1'],
+                'phase' => ['type' => 'string', 'const' => 'postgame'],
+                'availability_status' => ['type' => 'string', 'enum' => ['available', 'unavailable']],
+                'reason_codes' => ['type' => 'array', 'items' => ['type' => 'string']],
+                'source_integrity_status' => ['type' => 'string', 'enum' => ['verified_capture_v2', 'legacy_unverified', 'mismatch']],
+                'receipt_id' => ['type' => ['integer', 'null']], 'revision' => ['type' => ['integer', 'null']],
+                'entry_snapshot_id' => ['type' => ['integer', 'null']], 'observed_at' => $nullableDate,
+                'source_max_captured_at' => $nullableDate, 'timestamp_policy' => ['type' => 'string'],
+                'output' => ['oneOf' => [$output, ['type' => 'null']]],
+                'source_quotes' => ['type' => 'array', 'items' => $quote],
+            ]);
     }
 
     /** @param list<string> $required @param array<string, mixed> $properties */
@@ -1367,17 +1561,94 @@ class V2OpenApiGenerateCommand extends Command
             'id', 'player_id', 'team_id', 'status', 'detail', 'type', 'injury_date',
             'return_date', 'source_updated_at', 'is_active', 'updated_at', 'team_abbreviation',
             'player_name', 'position', 'depth_rank', 'is_starter', 'availability_probability',
-            'impact_weight', 'expected_impact', 'impact_level', 'source', 'is_stale',
+            'impact_weight', 'expected_impact', 'impact_level', 'source', 'is_stale', 'source_clock_status',
+        ], [
+            'is_stale' => ['type' => ['boolean', 'null']],
+            'source_clock_status' => ['type' => 'string', 'enum' => ['unverified_storage_clock']],
+            'source_updated_at' => ['type' => ['string', 'null'], 'description' => 'Stored provider clock text with unverified timezone, not an observation instant.'],
         ]);
 
         // NFL enrichment appends the latter fields; other sports expose only the common row.
         $schema['required'] = [
             'id', 'player_id', 'team_id', 'status', 'detail', 'type', 'injury_date',
             'return_date', 'source_updated_at', 'is_active', 'updated_at', 'team_abbreviation',
-            'player_name',
+            'player_name', 'is_stale', 'source_clock_status',
         ];
 
         return $schema;
+    }
+
+    private function injuryCollectionEnvelope(): array
+    {
+        $schema = $this->sportCollectionEnvelope('SportInjury');
+        $schema['properties']['meta'] = ['allOf' => [
+            ['$ref' => '#/components/schemas/SportMeta'],
+            ['type' => 'object', 'required' => ['freshness'], 'properties' => ['freshness' => ['$ref' => '#/components/schemas/InjuryObservationFreshness']]],
+        ]];
+
+        return $schema;
+    }
+
+    private function teamAverageSchema(): array
+    {
+        $schema = $this->fixedObjectSchema(['team_id', 'games_played', 'season', 'season_type', 'sample_sizes'], [
+            'team_id' => ['type' => 'integer'], 'games_played' => ['type' => 'integer', 'minimum' => 1],
+            'season' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 9999], 'season_type' => ['type' => 'string'],
+            'sample_sizes' => ['type' => 'object', 'additionalProperties' => ['type' => 'integer', 'minimum' => 0]],
+        ], true);
+        $schema['properties']['shooting_totals'] = ['type' => 'object', 'additionalProperties' => $this->fixedObjectSchema(['made', 'attempted'], [
+            'made' => ['type' => ['number', 'null']], 'attempted' => ['type' => ['number', 'null']],
+        ])];
+
+        return $schema;
+    }
+
+    private function teamAverageScopeSchema(): array
+    {
+        return $this->fixedObjectSchema(['season', 'season_type', 'selection', 'phase_selection', 'basis'], [
+            'season' => ['type' => ['integer', 'null'], 'minimum' => 1, 'maximum' => 9999],
+            'season_type' => ['type' => 'string'],
+            'selection' => ['type' => 'string', 'enum' => ['explicit', 'latest_stored_completed']],
+            'phase_selection' => ['type' => 'string', 'enum' => ['explicit', 'configured_default']],
+            'basis' => ['type' => 'string', 'enum' => ['completed_game_team_stats']],
+        ]);
+    }
+
+    private function teamAverageEnvelope(string $dataSchema): array
+    {
+        $schema = $this->sportCustomEnvelope($dataSchema);
+        $schema['properties']['meta'] = ['allOf' => [
+            ['$ref' => '#/components/schemas/SportMeta'],
+            ['type' => 'object', 'required' => ['scope'], 'properties' => ['scope' => ['$ref' => '#/components/schemas/TeamStatAverageScope']]],
+        ]];
+
+        return $schema;
+    }
+
+    private function teamAverageNotFoundSchema(): array
+    {
+        return $this->fixedObjectSchema(['error', 'request_id', 'message', 'meta'], [
+            'error' => $this->fixedObjectSchema(['code', 'message', 'request_id'], [
+                'code' => ['type' => 'string', 'enum' => ['not_found']], 'message' => ['type' => 'string'], 'request_id' => ['type' => 'string'],
+            ]),
+            'request_id' => ['type' => 'string'], 'message' => ['type' => 'string'],
+            'meta' => ['allOf' => [
+                ['$ref' => '#/components/schemas/SportMeta'],
+                ['type' => 'object', 'required' => ['scope', 'team_id'], 'properties' => ['scope' => ['$ref' => '#/components/schemas/TeamStatAverageScope'], 'team_id' => ['type' => 'integer']]],
+            ]],
+        ]);
+    }
+
+    private function injuryFreshnessSchema(): array
+    {
+        return $this->fixedObjectSchema(['last_observed_at', 'latest_source_updated_at', 'last_stored_at', 'age_hours', 'is_stale', 'stale_rows', 'unverified_rows', 'source_clock_status', 'coverage_status', 'max_age_hours'], [
+            'last_observed_at' => ['type' => ['string', 'null']], 'latest_source_updated_at' => ['type' => ['string', 'null']],
+            'last_stored_at' => ['type' => ['string', 'null'], 'description' => 'Raw local database mutation marker for included rows; timezone unverified. Not a provider sync or observation.'],
+            'age_hours' => ['type' => ['integer', 'null']], 'is_stale' => ['type' => ['boolean', 'null']], 'stale_rows' => ['type' => ['integer', 'null']],
+            'unverified_rows' => ['type' => 'integer', 'minimum' => 0],
+            'source_clock_status' => ['type' => 'string', 'enum' => ['unverified_storage_clock', 'no_matching_observations']],
+            'coverage_status' => ['type' => 'string', 'enum' => ['unverified']], 'max_age_hours' => ['type' => 'integer', 'enum' => [48]],
+        ]);
     }
 
     /** @param list<string> $fields @param array<string, mixed> $overrides */
@@ -1731,6 +2002,8 @@ class V2OpenApiGenerateCommand extends Command
             'short_name' => $nullableString,
             'game_date' => ['type' => ['string', 'null'], 'format' => 'date'],
             'game_time' => $nullableString,
+            'starts_at' => ['type' => ['string', 'null'], 'format' => 'date-time', 'description' => 'Verified kickoff instant; null when the stored clock is unavailable or unverified.'],
+            'start_time_provenance' => ['type' => ['string', 'null'], 'enum' => ['observed_offset_timestamp_v1', 'legacy_time_unverified', 'observed_start_invalid', 'provider_clock_known_v1', 'legacy_clock_unverified', 'clock_unconfirmed_or_invalid', null]],
             'venue' => $nullableString,
             'venue_name' => $nullableString,
             'venue_city' => $nullableString,

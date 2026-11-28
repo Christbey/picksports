@@ -36,7 +36,7 @@ test('cbb team resource exposes shared display aliases', function () {
 });
 
 test('wnba team resource exposes stable team display fields', function () {
-    $team = new WnbaTeam([
+    $team = (new WnbaTeam)->forceFill([
         'id' => 2,
         'espn_id' => '2',
         'abbreviation' => 'LVA',

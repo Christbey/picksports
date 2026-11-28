@@ -18,6 +18,10 @@ class SyncOddsCommand extends AbstractSyncOddsCommand
 
     public function handle(): int
     {
+        if (! $this->hasValidDaysOption()) {
+            return self::FAILURE;
+        }
+
         $days = (int) ($this->option('days') ?? 7);
         $explicitOddsSport = $this->option('odds-sport');
         $explicitOddsSport = is_string($explicitOddsSport) && $explicitOddsSport !== '' ? $explicitOddsSport : null;

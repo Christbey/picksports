@@ -6,6 +6,7 @@ use App\Models\BetDecision;
 use App\Models\MLB\PickCandidate;
 use App\Models\ModelArtifact;
 use App\Models\ShadowModelOutput;
+use App\Support\MLB\MlbGameStart;
 use Illuminate\Support\Collection;
 
 class MlbPeriodModelContextService
@@ -138,7 +139,7 @@ class MlbPeriodModelContextService
     {
         $artifact = $shadow->artifact;
 
-        return $shadow->status === 'promoted_shadow'
+        return MlbGameStart::artifactCompatible($artifact) && $shadow->status === 'promoted_shadow'
             && $artifact?->isPromotedForMarket($shadow->market_type) === true
             && $artifact->promoted_at !== null
             && $shadow->generated_at !== null

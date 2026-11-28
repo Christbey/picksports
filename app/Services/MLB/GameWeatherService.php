@@ -3,6 +3,8 @@
 namespace App\Services\MLB;
 
 use App\Models\MLB\Game;
+use App\Support\MLB\MlbGameStart;
+use App\Support\MLB\MlbWeatherTime;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 
@@ -14,13 +16,17 @@ class GameWeatherService
     public function fetch(Game $game): ?array
     {
         if ($this->isIndoorVenue($game)) {
-            return [
-                'provider' => 'open_meteo',
-                'is_indoor' => true,
-                'roof_status' => 'fixed_roof',
-                'location_source' => 'indoor_venue',
-                'observed_at' => $this->gameDateTime($game)?->toDateTimeString(),
-            ];
+            $start = MlbGameStart::for($game);
+            $values = ['provider' => 'open_meteo', 'is_indoor' => true, 'roof_status' => 'fixed_roof',
+                'location_source' => 'indoor_venue', 'observed_at' => MlbGameStart::canonical($game)?->toDateTimeString()];
+            $values['raw_payload'] = $start === null ? [] : ['_mlb_weather_time' => MlbWeatherTime::capture($game, $start, $values)];
+
+            return $values;
+        }
+
+        $dateTime = $this->gameDateTime($game);
+        if ($dateTime === null) {
+            return null;
         }
 
         $hasUnknownRetractableRoof = $this->hasUnknownRetractableRoof($game);
@@ -53,7 +59,7 @@ class GameWeatherService
             'temperature_unit' => 'fahrenheit',
             'wind_speed_unit' => 'mph',
             'precipitation_unit' => 'inch',
-            'timezone' => 'auto',
+            'timezone' => 'UTC',
             'start_date' => $date,
             'end_date' => $date,
         ]);
@@ -69,14 +75,22 @@ class GameWeatherService
 
         $hourIndex = $this->nearestHourlyIndex((array) data_get($payload, 'hourly.time', []), $dateTime);
 
-        return [
+        $hour = data_get($payload, "hourly.time.{$hourIndex}");
+        if (! is_string($hour) || preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?\z/D', $hour) !== 1) {
+            return null;
+        }
+        try {
+            $parsed = MlbGameStart::observed($hour.(strlen($hour) === 16 ? ':00Z' : 'Z'), []);
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
+        $forecastHour = Carbon::createFromTimestampUTC($parsed['start_epoch']);
+        $values = [
             'provider' => 'open_meteo',
             'latitude' => $location['latitude'],
             'longitude' => $location['longitude'],
             'location_source' => $location['source'],
-            'observed_at' => isset(data_get($payload, 'hourly.time', [])[$hourIndex])
-                ? Carbon::parse(data_get($payload, "hourly.time.{$hourIndex}"))->toDateTimeString()
-                : $dateTime->toDateTimeString(),
+            'observed_at' => MlbGameStart::legacyTimestamp($forecastHour)?->toDateTimeString(),
             'temperature_f' => $this->hourlyValue($payload, 'temperature_2m', $hourIndex),
             'feels_like_f' => $this->hourlyValue($payload, 'apparent_temperature', $hourIndex),
             'wind_speed_mph' => $this->hourlyValue($payload, 'wind_speed_10m', $hourIndex),
@@ -90,6 +104,11 @@ class GameWeatherService
             'roof_status' => $hasUnknownRetractableRoof ? 'unknown_retractable' : 'open_air',
             'raw_payload' => $payload,
         ];
+        unset($payload['_mlb_weather_time']);
+        $payload['_mlb_weather_time'] = MlbWeatherTime::capture($game, $forecastHour, $values);
+        $values['raw_payload'] = $payload;
+
+        return $values;
     }
 
     /**
@@ -145,11 +164,7 @@ class GameWeatherService
 
     protected function gameDateTime(Game $game): ?Carbon
     {
-        if (! $game->game_date) {
-            return null;
-        }
-
-        return Carbon::parse($game->game_date->toDateString().' '.($game->game_time ?? '12:00:00'));
+        return MlbGameStart::for($game);
     }
 
     /**
@@ -161,7 +176,7 @@ class GameWeatherService
         $bestDiff = PHP_INT_MAX;
 
         foreach ($times as $index => $time) {
-            $diff = abs(Carbon::parse((string) $time)->diffInMinutes($target, false));
+            $diff = abs(Carbon::parse((string) $time, 'UTC')->diffInMinutes($target, false));
             if ($diff < $bestDiff) {
                 $bestDiff = $diff;
                 $bestIndex = (int) $index;

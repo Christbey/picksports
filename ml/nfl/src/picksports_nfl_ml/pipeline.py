@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 
+from picksports_nfl_ml import __version__
 from picksports_nfl_ml.artifacts import save_run_artifacts
 from picksports_nfl_ml.blending import (
     select_probability_blend,
@@ -28,6 +29,7 @@ from picksports_nfl_ml.data import load_immutable_dataset
 from picksports_nfl_ml.explanations import explain_xgboost_models
 from picksports_nfl_ml.hashing import sha256_file, sha256_json
 from picksports_nfl_ml.inference import InferenceBundle
+from picksports_nfl_ml.numeric_artifacts import write_json, MAX_METADATA_BYTES
 from picksports_nfl_ml.metrics import classification_metrics, regression_metrics
 from picksports_nfl_ml.models import (
     ModelSet,
@@ -340,9 +342,7 @@ def train(
         native_feature_importance=native_importance,
     )
     example_output = InferenceBundle.load(run_dir).predict(example_frame)[0]
-    with (run_dir / "prediction_example.json").open("w", encoding="utf-8") as handle:
-        json.dump(example_output, handle, indent=2, sort_keys=True)
-        handle.write("\n")
+    write_json(run_dir / "prediction_example.json", example_output, max_bytes=MAX_METADATA_BYTES, max_tokens=50000)
 
     # Refresh the example hash in the immutable file inventory.
     with (run_dir / "manifest.json").open("r", encoding="utf-8") as handle:
@@ -352,9 +352,7 @@ def train(
         "sha256": sha256_file(example_path),
         "bytes": example_path.stat().st_size,
     }
-    with (run_dir / "manifest.json").open("w", encoding="utf-8") as handle:
-        json.dump(saved_manifest, handle, indent=2, sort_keys=True)
-        handle.write("\n")
+    write_json(run_dir / "manifest.json", saved_manifest, max_bytes=MAX_METADATA_BYTES, max_tokens=50000)
 
     return {
         "model_run_id": model_run_id,
@@ -556,6 +554,26 @@ def _evaluate_saved_model(
         "test_uncalibrated": blend_metrics,
         "test_calibrated": blend_metrics,
     }
+
+    # Market evidence may cover only a subset of this test window. Keep each
+    # classifier's comparison on exactly that same observed market cohort.
+    market_mask = pd.to_numeric(
+        fold.test["feature_market_home_spread"], errors="coerce"
+    ).notna().to_numpy()
+    for model_name, probabilities in {
+        **calibrated_probabilities,
+        "blend": blend_probabilities,
+    }.items():
+        classifier_results[model_name]["test_market_cohort"] = (
+            {
+                "available": True,
+                **classification_metrics(
+                    home_win_targets[market_mask], probabilities[market_mask]
+                ),
+            }
+            if market_mask.any()
+            else {"available": False, "count": 0}
+        )
 
     margin_predictions = models.margin_regressor.predict(transformed)
     total_predictions = blended_total_predictions(
@@ -864,11 +882,24 @@ def _promotion_summary(windows: list[dict[str, Any]]) -> dict[str, Any]:
     required_win_rate = 0.60
     comparisons: dict[str, Any] = {}
     for baseline in ("elo_only", "current_picksports", "market_favorite"):
-        baseline_windows = [
-            window
-            for window in windows
-            if window["baselines"]["classifiers"][baseline].get("available", True)
-        ]
+        metric_key = (
+            "test_market_cohort"
+            if baseline == "market_favorite"
+            else "test_calibrated"
+        )
+        baseline_windows = []
+        for window in windows:
+            reference = window["baselines"]["classifiers"][baseline]
+            challenger = window["classifiers"][window["champion_classifier"]].get(
+                metric_key, {}
+            )
+            if (
+                reference.get("available", True)
+                and challenger.get("available", True)
+                and reference.get("count", 0) > 0
+                and challenger.get("count") == reference["count"]
+            ):
+                baseline_windows.append(window)
         if not baseline_windows:
             comparisons[baseline] = {
                 "available": False,
@@ -881,7 +912,7 @@ def _promotion_summary(windows: list[dict[str, Any]]) -> dict[str, Any]:
         outcomes = [
             (
                 window["classifiers"][window["champion_classifier"]][
-                    "test_calibrated"
+                    metric_key
                 ]["brier"]
                 < window["baselines"]["classifiers"][baseline]["brier"]
             )
@@ -890,14 +921,14 @@ def _promotion_summary(windows: list[dict[str, Any]]) -> dict[str, Any]:
         brier_deltas = [
             window["baselines"]["classifiers"][baseline]["brier"]
             - window["classifiers"][window["champion_classifier"]][
-                "test_calibrated"
+                metric_key
             ]["brier"]
             for window in baseline_windows
         ]
         log_loss_deltas = [
             window["baselines"]["classifiers"][baseline]["log_loss"]
             - window["classifiers"][window["champion_classifier"]][
-                "test_calibrated"
+                metric_key
             ]["log_loss"]
             for window in baseline_windows
         ]
@@ -979,10 +1010,7 @@ def _set_deterministic_seed(seed: int) -> None:
 
 
 def _package_version() -> str:
-    try:
-        return importlib.metadata.version("picksports-nfl-ml")
-    except importlib.metadata.PackageNotFoundError:
-        return "0.2.0"
+    return __version__
 
 
 def _dependency_versions() -> dict[str, str]:

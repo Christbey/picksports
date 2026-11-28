@@ -3,6 +3,7 @@
 namespace App\Actions\MLB;
 
 use App\Actions\Sports\AbstractPredictionGenerator;
+use App\Exceptions\EloAdmissionRefused;
 use App\Models\GameOddsSnapshot;
 use App\Models\MLB\EloRating;
 use App\Models\MLB\Game;
@@ -16,7 +17,10 @@ use App\Services\MLB\HistoricalPredictionContextService;
 use App\Services\MLB\SituationalPredictionContextService;
 use App\Services\OddsApi\OddsApiService;
 use App\Services\Sports\DepthChartImpactService;
+use App\Services\Sports\Elo\EloAdmissionMode;
 use App\Support\MLB\MlbGamePhase;
+use App\Support\MLB\MlbGameStart;
+use App\Support\MLB\MlbQuoteTime;
 use App\Support\MlbRegularSeasonWindow;
 use App\Support\Odds\MarketSpread;
 use Carbon\CarbonInterface;
@@ -77,6 +81,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
         if (! $this->allowHistoricalGames && ! $allowCompleted && $game->status === 'STATUS_FINAL') {
             return null;
+        }
+
+        if (app(EloAdmissionMode::class)->managed('mlb', $game->getConnection())) {
+            throw new EloAdmissionRefused('typed_mlb_input_admission_required', [], []);
         }
 
         $homeTeam = $game->homeTeam;
@@ -752,8 +760,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
         return $name !== ''
             && (
-                str_contains($name, strtolower((string) ($homeTeam->location ?? '')))
-                || str_contains($name, strtolower((string) ($homeTeam->name ?? '')))
+                (trim((string) ($homeTeam->location ?? '')) !== '' && str_contains($name, strtolower((string) $homeTeam->location)))
+                || (trim((string) ($homeTeam->name ?? '')) !== '' && str_contains($name, strtolower((string) $homeTeam->name)))
                 || $name === strtolower(trim(((string) ($homeTeam->location ?? '')).' '.((string) ($homeTeam->name ?? ''))))
                 || $name === strtolower((string) ($oddsData['home_team'] ?? ''))
             );
@@ -761,10 +769,20 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
     private function oddsDataForPrediction(Game $game): ?array
     {
+        $typed = MlbQuoteTime::latest($game);
+        if ($typed !== null) {
+            $marker = MlbQuoteTime::marker($game, $typed);
+            $this->marketContextSafety = ['source' => 'verified_epoch_odds_snapshot', 'pregame_safe' => true,
+                'snapshot_id' => (int) $typed->id, 'odds_captured_at' => $marker['captured_at_utc'],
+                'timing_policy' => MlbQuoteTime::POLICY];
+
+            return $typed->odds_data;
+        }
         if (! $this->allowHistoricalGames) {
             $this->marketContextSafety = [
                 'source' => 'game_current_odds',
-                'pregame_safe' => $game->odds_updated_at !== null,
+                'pregame_safe' => false,
+                'risk_flags' => ['legacy_market_time_unverified'],
                 'odds_updated_at' => $game->odds_updated_at?->toIso8601String(),
             ];
 
@@ -782,20 +800,22 @@ class GeneratePrediction extends AbstractPredictionGenerator
             return null;
         }
 
+        $legacyBoundary = MlbGameStart::canonical($game);
         $snapshot = GameOddsSnapshot::query()
+            ->when($legacyBoundary === null, fn ($query) => $query->whereRaw('1 = 0'))
             ->where('sport', 'mlb')
             ->where('game_table', $game->getTable())
             ->where('game_id', (int) $game->id)
             ->whereNotNull('captured_at')
-            ->where('captured_at', '<', $startAt)
+            ->where('captured_at', '<', $legacyBoundary)
             ->latest('captured_at')
             ->latest('id')
             ->first();
 
         if ($snapshot !== null) {
             $this->marketContextSafety = [
-                'source' => 'pregame_odds_snapshot',
-                'pregame_safe' => true,
+                'source' => 'legacy_time_unverified_snapshot',
+                'pregame_safe' => false,
                 'snapshot_id' => (int) $snapshot->id,
                 'odds_captured_at' => $snapshot->captured_at?->toIso8601String(),
                 'commence_time' => $snapshot->commence_time?->toIso8601String(),

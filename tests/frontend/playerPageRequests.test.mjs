@@ -312,6 +312,7 @@ test('the timeout fallback is cancelled on close and cannot start late supplemen
 test('null primary responses are recoverable failures; duplicate retries wait for both reads', async () => {
     const oldWindow = globalThis.window;
     let idleCount = 0,
+        canceledIdleCount = 0,
         fail = true,
         shows = 0;
     globalThis.window = {
@@ -319,7 +320,9 @@ test('null primary responses are recoverable failures; duplicate retries wait fo
             idleCount++;
             return 1;
         },
-        cancelIdleCallback() {},
+        cancelIdleCallback() {
+            canceledIdleCount++;
+        },
     };
     const pending = deferred();
     globalThis.__playerPageApi = api(
@@ -345,7 +348,8 @@ test('null primary responses are recoverable failures; duplicate retries wait fo
         assert.equal(state.error.value, null);
         assert.equal(state.playerData.value.name, 'Recovered');
         assert.equal(state.loading.value, false);
-        assert.equal(idleCount, 1);
+        assert.equal(idleCount, 2);
+        assert.equal(canceledIdleCount, 1); // Retry cancels the obsolete deferred callback before scheduling its replacement.
     } finally {
         app.unmount();
         globalThis.window = oldWindow;

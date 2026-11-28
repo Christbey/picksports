@@ -1,7 +1,6 @@
 <?php
 
 use App\Models\NFL\Team;
-use App\Models\NFL\TeamMetricSnapshot;
 use App\Models\User;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Permission;
@@ -34,8 +33,7 @@ it('returns nfl playoff forecasts through the api route', function () {
             'division' => $team['division'],
         ]);
 
-        TeamMetricSnapshot::query()->create([
-            'snapshot_key' => sha1('nfl-playoff-'.$team['abbreviation']),
+        captureObservedNflMetricFixture([
             'team_id' => $team['id'],
             'season' => 2026,
             'wins' => 0,
@@ -45,8 +43,7 @@ it('returns nfl playoff forecasts through the api route', function () {
             'recent_form_rating' => $team['recent_form_rating'],
             'injury_total_adjustment' => 0.000,
             'calculation_date' => '2026-04-03',
-            'captured_at' => '2026-04-03 18:00:00',
-        ]);
+        ], '2026-04-03T18:00:00Z');
     }
 
     completeNflFuturesSchedule(2026, '2026-04-03T18:00:00Z');

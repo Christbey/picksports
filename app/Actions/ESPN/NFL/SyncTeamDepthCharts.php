@@ -7,11 +7,11 @@ use App\Models\NFL\DepthChartEntry;
 use App\Models\NFL\DepthChartSnapshot;
 use App\Models\NFL\Player;
 use App\Models\NFL\Team;
+use App\Services\ProviderData\Refresh\RefreshContext;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class SyncTeamDepthCharts extends AbstractSyncTeamDepthCharts
@@ -31,7 +31,8 @@ class SyncTeamDepthCharts extends AbstractSyncTeamDepthCharts
         int $season,
         ?array $payload,
         array $entries,
-        CarbonInterface $observedAt
+        CarbonInterface $observedAt,
+        ?RefreshContext $context = null
     ): void {
         $payload ??= [];
         $encodedPayload = json_encode(
@@ -40,8 +41,14 @@ class SyncTeamDepthCharts extends AbstractSyncTeamDepthCharts
         );
         $sourceUpdatedAt = $this->latestSourceUpdatedAt($payload);
 
-        DB::transaction(function () use (
+        $connection = $team->getConnection();
+        if ((new DepthChartSnapshot)->getConnection()->getName() !== $connection->getName()) {
+            throw new \RuntimeException('Depth chart snapshot must use the projection database connection.');
+        }
+        $connection->transaction(function () use (
             $team,
+            $connection,
+            $context,
             $teamEspnId,
             $season,
             $payload,
@@ -50,7 +57,7 @@ class SyncTeamDepthCharts extends AbstractSyncTeamDepthCharts
             $observedAt,
             $sourceUpdatedAt
         ): void {
-            $snapshot = DepthChartSnapshot::query()->create([
+            $snapshot = DepthChartSnapshot::on($connection->getName())->create([
                 'snapshot_uuid' => (string) Str::uuid(),
                 'team_id' => (int) $team->getKey(),
                 'espn_team_id' => $teamEspnId,
@@ -91,6 +98,7 @@ class SyncTeamDepthCharts extends AbstractSyncTeamDepthCharts
                 },
                 $entries
             ));
+            $context?->recordHistory($snapshot);
         });
     }
 

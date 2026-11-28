@@ -22,11 +22,7 @@ class FpiRating extends Model
         'offense',
         'defense',
         'special_teams',
-        'fpi_rating',
         'fpi_rank',
-        'offensive_fpi',
-        'defensive_fpi',
-        'special_teams_fpi',
     ];
 
     protected function casts(): array

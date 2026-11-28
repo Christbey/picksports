@@ -29,6 +29,7 @@ class AlertPreferenceController extends Controller
     public function store(AlertPreferenceStoreRequest $request): UserAlertPreferenceResource
     {
         $validated = $request->validated();
+        $validated['notification_types'] = AlertPreferenceRules::notificationTypes($validated['notification_types']);
         $existing = UserAlertPreference::query()
             ->where('user_id', $request->user()->id)
             ->first();
@@ -50,6 +51,9 @@ class AlertPreferenceController extends Controller
         $preference = UserAlertPreference::where('user_id', $request->user()->id)->firstOrFail();
 
         $validated = $request->validate(AlertPreferenceRules::apiUpdate());
+        if (array_key_exists('notification_types', $validated)) {
+            $validated['notification_types'] = AlertPreferenceRules::notificationTypes($validated['notification_types']);
+        }
 
         $sports = is_array($preference->sports) && ! empty($preference->sports)
             ? $preference->sports

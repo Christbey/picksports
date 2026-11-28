@@ -12,6 +12,7 @@ use App\Services\CFB\Data\CfbOfficialBoxscoreRepair;
 use App\Services\CFB\Data\CfbOfficialPlayTailRepair;
 use App\Services\CFB\Data\CfbSourceRevision;
 use App\Services\CFB\PlayEpaDataService;
+use App\Support\CFB\CfbGameStart;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -24,7 +25,8 @@ function cfbOfficialBoxFixture(): array
     config()->set('cfb.data.source_disk', 'local');
     $game = Game::factory()->create(['home_team_id' => Team::factory()->create(['school' => 'Eastern Michigan'])->id,
         'away_team_id' => Team::factory()->create(['school' => 'Sacramento State'])->id,
-        'season' => 2026, 'game_date' => '2026-08-29', 'game_time' => '23:00:00',
+        'season' => 2026, 'game_date' => '2026-08-29', 'game_time' => '23:00:00', 'espn_event_id' => 'official-box-clock',
+        ...CfbGameStart::attributes('2026-08-29T23:00:00Z', [], 'espn_schedule', 'official-box-clock'),
         'status' => 'STATUS_FINAL', 'home_score' => 28, 'away_score' => 17]);
     $payload = cfbCompleteBox($game);
     $payload['boxscore']['teams'][1]['statistics'][0]['displayValue'] = '510';
@@ -52,7 +54,7 @@ it('imports verified school totals while preserving primary quarantine, provenan
     $result = app(CfbOfficialBoxscoreRepair::class)->execute($game);
     expect($result['state'])->toBe('complete')
         ->and(TeamStat::where('game_id', $game->id)->where('team_id', $game->away_team_id)->value('total_yards'))->toBe(513)
-        ->and(PlayerStat::where('game_id', $game->id)->sum('passing_yards'))->toBe(600)
+        ->and((string) PlayerStat::where('game_id', $game->id)->sum('passing_yards'))->toBe('600')
         ->and(Storage::disk('local')->get($primary->source_path))->toBe($original)
         ->and($primary->fresh()->accepted_at)->toBeNull()
         ->and(app(CfbDataReadiness::class)->forGame($game)['ready'])->toBeTrue()
@@ -87,7 +89,8 @@ function cfbOfficialTailFixture(): array
     config()->set('cfb.data.source_disk', 'local');
     $game = Game::factory()->create(['home_team_id' => Team::factory()->create(['school' => 'California'])->id,
         'away_team_id' => Team::factory()->create(['school' => 'Clemson'])->id,
-        'season' => 2026, 'game_date' => '2026-09-26', 'game_time' => '02:35:00',
+        'season' => 2026, 'game_date' => '2026-09-26', 'game_time' => '02:35:00', 'espn_event_id' => 'official-tail-clock',
+        ...CfbGameStart::attributes('2026-09-26T02:35:00Z', [], 'espn_schedule', 'official-tail-clock'),
         'status' => 'STATUS_FINAL', 'home_score' => 10, 'away_score' => 24]);
     $payload = ['count' => 1, 'items' => [['id' => 'anchor', 'sequenceNumber' => '10', 'period' => ['number' => 4],
         'clock' => ['displayValue' => '1:54'], 'type' => ['text' => 'Interception'], 'text' => 'Pass intercepted at CLEM40.',

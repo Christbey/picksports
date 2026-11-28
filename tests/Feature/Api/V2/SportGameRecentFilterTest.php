@@ -30,7 +30,7 @@ it('returns only completed team games before the requested game start', function
     $team = Team::factory()->create();
     $opponent = Team::factory()->create();
 
-    $older = Game::factory()->regularSeason()->create([
+    $older = Game::factory()->regularSeason()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2026,
         'status' => 'STATUS_FINAL',
         'game_date' => '2026-06-19',
@@ -38,7 +38,7 @@ it('returns only completed team games before the requested game start', function
         'home_team_id' => $team->id,
         'away_team_id' => $opponent->id,
     ]);
-    $firstDoubleheaderGame = Game::factory()->regularSeason()->create([
+    $firstDoubleheaderGame = Game::factory()->regularSeason()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2026,
         'status' => 'STATUS_FINAL',
         'game_date' => '2026-06-20',
@@ -46,7 +46,7 @@ it('returns only completed team games before the requested game start', function
         'home_team_id' => $team->id,
         'away_team_id' => $opponent->id,
     ]);
-    $laterSameDay = Game::factory()->regularSeason()->create([
+    $laterSameDay = Game::factory()->regularSeason()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2026,
         'status' => 'STATUS_FINAL',
         'game_date' => '2026-06-20',
@@ -54,7 +54,7 @@ it('returns only completed team games before the requested game start', function
         'home_team_id' => $team->id,
         'away_team_id' => $opponent->id,
     ]);
-    Game::factory()->regularSeason()->create([
+    Game::factory()->regularSeason()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2026,
         'status' => 'STATUS_SCHEDULED',
         'game_date' => '2026-06-21',

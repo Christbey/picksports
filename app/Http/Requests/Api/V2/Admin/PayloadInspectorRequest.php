@@ -82,6 +82,9 @@ class PayloadInspectorRequest extends FormRequest
         }
 
         $values = is_array($sports) ? $sports : explode(',', (string) $sports);
+        if (array_any($values, fn (mixed $sport): bool => ! is_string($sport))) {
+            return $values; // Preserve invalid shapes for sports.* validation.
+        }
 
         return collect($values)
             ->map(fn (mixed $sport): string => strtolower(trim((string) $sport)))

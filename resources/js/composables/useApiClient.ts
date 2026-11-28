@@ -62,6 +62,23 @@ export class ApiError extends Error {
     }
 }
 
+export class ApiProtocolError extends Error {
+    readonly status: number;
+    readonly requestId: string | null;
+    readonly code: 'unexpected_content_type' | 'invalid_json';
+
+    constructor(
+        response: Response,
+        code: 'unexpected_content_type' | 'invalid_json',
+    ) {
+        super('The server returned an unexpected response. Please try again.');
+        this.name = 'ApiProtocolError';
+        this.status = response.status;
+        this.requestId = response.headers.get('X-Request-ID');
+        this.code = code;
+    }
+}
+
 async function readResponse<T>(response: Response): Promise<T | null> {
     if (!response.ok) {
         let data: unknown = null;
@@ -73,13 +90,18 @@ async function readResponse<T>(response: Response): Promise<T | null> {
         throw new ApiError(response, data);
     }
     if (response.status === 204) return null;
-    if (
-        !(response.headers.get('content-type') ?? '').includes(
-            'application/json',
-        )
-    )
-        return null;
-    return (await response.json()) as T;
+    const mediaType = (response.headers.get('content-type') ?? '')
+        .split(';', 1)[0]
+        .trim();
+    if (!/^application\/(?:[a-z0-9!#$&^_.+-]+\+)?json$/i.test(mediaType)) {
+        throw new ApiProtocolError(response, 'unexpected_content_type');
+    }
+    try {
+        return (await response.json()) as T;
+    } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') throw error;
+        throw new ApiProtocolError(response, 'invalid_json');
+    }
 }
 
 function jsonHeaders(init: RequestInit): Headers {

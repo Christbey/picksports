@@ -11,10 +11,7 @@ class AiProviderRateLimitCircuitBreaker
         $blockedUntil = (int) Cache::get($this->cacheKey($provider), 0);
         $remaining = $blockedUntil - now()->timestamp;
 
-        if ($remaining <= 0 && $blockedUntil > 0) {
-            Cache::forget($this->cacheKey($provider));
-        }
-
+        // The cache TTL owns expiry. A stale reader must not delete a newer trip.
         return max(0, $remaining);
     }
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { finiteValue } from '@/lib/gameOutcome';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { computed } from 'vue';
 import type { GamePageTeam, LineScoreEntry } from '@/types';
@@ -15,23 +16,36 @@ const props = defineProps<{
     periodPrefix?: string;
 }>();
 
-const periodCount = computed(() =>
-    Math.max(props.awayLinescores.length, props.homeLinescores.length),
+const periodFor = (entry: LineScoreEntry, index: number) =>
+    entry.period ?? index + 1;
+const periods = computed(() =>
+    [
+        ...new Set([
+            ...props.homeLinescores.map(periodFor),
+            ...props.awayLinescores.map(periodFor),
+        ]),
+    ]
+        .filter((period) => Number.isInteger(period) && period > 0)
+        .sort((a, b) => a - b),
 );
-
-const getPeriodLabel = (
-    period: unknown,
-    index: number,
-    usePeriodNumbers?: boolean,
-    periodPrefix?: string,
-): string => {
-    if (!usePeriodNumbers) return `H${index + 1}`;
-    if (!period || typeof period !== 'object')
-        return `${periodPrefix ?? 'Q'}${index + 1}`;
-
-    const periodValue = (period as { period?: unknown }).period;
-    return `${periodPrefix ?? 'Q'}${typeof periodValue === 'number' ? periodValue : index + 1}`;
+const scoreFor = (entries: LineScoreEntry[], period: number) => {
+    const matches = entries.filter(
+        (entry, index) => periodFor(entry, index) === period,
+    );
+    if (matches.length !== 1) return '—';
+    const value = finiteValue(matches[0].value);
+    return value !== null && value >= 0 ? value : '—';
 };
+const isAhead = (
+    side: number | null | undefined,
+    other: number | null | undefined,
+) => {
+    const value = finiteValue(side),
+        opponent = finiteValue(other);
+    return value !== null && opponent !== null && value > opponent;
+};
+const getPeriodLabel = (period: number) =>
+    `${props.usePeriodNumbers ? (props.periodPrefix ?? 'Q') : 'H'}${period}`;
 </script>
 
 <template>
@@ -51,20 +65,12 @@ const getPeriodLabel = (
                                 Team
                             </th>
                             <th
-                                v-for="(_, index) in periodCount"
-                                :key="index"
+                                v-for="period in periods"
+                                :key="period"
                                 scope="col"
                                 class="px-2 py-2 text-center font-medium text-muted-foreground"
                             >
-                                {{
-                                    getPeriodLabel(
-                                        homeLinescores[index] ??
-                                            awayLinescores[index],
-                                        index,
-                                        usePeriodNumbers,
-                                        periodPrefix,
-                                    )
-                                }}
+                                {{ getPeriodLabel(period) }}
                             </th>
                             <th
                                 scope="col"
@@ -94,15 +100,15 @@ const getPeriodLabel = (
                             </th>
                             <td
                                 class="p-2 text-center"
-                                v-for="(_, index) in periodCount"
-                                :key="index"
+                                v-for="period in periods"
+                                :key="`a-${period}`"
                             >
-                                {{ awayLinescores[index]?.value ?? '—' }}
+                                {{ scoreFor(awayLinescores, period) }}
                             </td>
                             <td
                                 class="bg-muted/35 px-3 py-2.5 text-center font-bold"
                                 :class="
-                                    (awayScore ?? -1) > (homeScore ?? -1)
+                                    isAhead(awayScore, homeScore)
                                         ? 'text-green-600 dark:text-green-400'
                                         : ''
                                 "
@@ -127,15 +133,15 @@ const getPeriodLabel = (
                             </th>
                             <td
                                 class="p-2 text-center"
-                                v-for="(_, index) in periodCount"
-                                :key="index"
+                                v-for="period in periods"
+                                :key="`h-${period}`"
                             >
-                                {{ homeLinescores[index]?.value ?? '—' }}
+                                {{ scoreFor(homeLinescores, period) }}
                             </td>
                             <td
                                 class="bg-muted/35 px-3 py-2.5 text-center font-bold"
                                 :class="
-                                    (homeScore ?? -1) > (awayScore ?? -1)
+                                    isAhead(homeScore, awayScore)
                                         ? 'text-green-600 dark:text-green-400'
                                         : ''
                                 "

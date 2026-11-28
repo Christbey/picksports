@@ -359,14 +359,29 @@ export function formatDateTime(value?: string | null): string {
     }).format(new Date(value));
 }
 
-export function formatTime(
-    value?: string | null,
-    time?: string | null,
-): string {
-    if (!value) return 'Time pending';
+export function verifiedMlbStart(value?: string | null): Date | null {
+    const match = value?.match(
+        /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|[+-](?:(?:0\d|1[0-3]):[0-5]\d|14:00))$/,
+    );
+    if (!match) return null;
+    const [, year, month, day, hour, minute, second] = match.map(Number);
+    if (
+        month < 1 ||
+        month > 12 ||
+        day < 1 ||
+        day > new Date(Date.UTC(year, month, 0)).getUTCDate() ||
+        hour > 23 ||
+        minute > 59 ||
+        second > 59
+    )
+        return null;
+    const date = new Date(value!);
+    return Number.isFinite(date.getTime()) ? date : null;
+}
 
-    const date = gameDateTime(value, time);
-
+export function formatTime(value?: string | null): string {
+    const date = verifiedMlbStart(value);
+    if (!date) return 'Time unavailable';
     return new Intl.DateTimeFormat(undefined, {
         weekday: 'short',
         month: 'short',
@@ -374,18 +389,6 @@ export function formatTime(
         hour: 'numeric',
         minute: '2-digit',
     }).format(date);
-}
-
-export function gameDateTime(value: string, time?: string | null): Date {
-    if (time && /^\d{1,2}:\d{2}/.test(time)) {
-        const datePart = value.includes('T')
-            ? value.split('T')[0]
-            : value.split(' ')[0];
-
-        return new Date(`${datePart}T${time}`);
-    }
-
-    return new Date(value);
 }
 
 export function rawReasonCodes(
@@ -592,13 +595,21 @@ export function periodScore(
     const home = prediction?.game?.home_linescores?.slice(0, innings) ?? [];
     if (away.length < innings || home.length < innings) return '-';
 
-    const sum = (values: Array<number | string | null>): number =>
-        values.reduce<number>(
-            (total, value) => total + (numberValue(value) ?? 0),
-            0,
-        );
+    const sum = (values: Array<number | string | null>): number | null => {
+        let total = 0;
+        for (const value of values) {
+            const runs = numberValue(value);
+            if (runs === null || !Number.isInteger(runs) || runs < 0)
+                return null;
+            total += runs;
+        }
+        return total;
+    };
+    const awayRuns = sum(away);
+    const homeRuns = sum(home);
+    if (awayRuns === null || homeRuns === null) return '-';
 
-    return `${teamAbbreviation(prediction?.game?.away_team)} ${sum(away)} - ${teamAbbreviation(prediction?.game?.home_team)} ${sum(home)}`;
+    return `${teamAbbreviation(prediction?.game?.away_team)} ${awayRuns} - ${teamAbbreviation(prediction?.game?.home_team)} ${homeRuns}`;
 }
 
 export function compactId(value?: string | null): string {

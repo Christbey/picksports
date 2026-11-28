@@ -2,9 +2,13 @@
 
 namespace App\Services\Sports;
 
+use App\Models\MLB\Game;
+use App\Support\CFB\CfbGameStart;
+use App\Support\MLB\MlbGameStart;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 
 class SportsDateWindowService
@@ -66,6 +70,28 @@ class SportsDateWindowService
 
     public function applyGameDateWindow(Builder $query, DateWindow $window, string $column = 'game_date'): Builder
     {
+        if ($query->getModel() instanceof Game) {
+            $table = $query->getModel()->getTable();
+
+            return $query->where(function (Builder $rows) use ($table, $window): void {
+                $rows->where(function (Builder $known) use ($table, $window): void {
+                    MlbGameStart::known($known)->whereBetween("{$table}.start_epoch", [$window->utcStart->getTimestamp(), $window->utcEnd->getTimestamp()]);
+                })->orWhere(function (Builder $legacy) use ($table, $window): void {
+                    // Calendar inventory only: never authoritative kickoff/relative order.
+                    foreach (MlbGameStart::FIELDS as $field) {
+                        $legacy->whereNull("{$table}.{$field}");
+                    }
+                    $legacy->whereDate("{$table}.game_date", '>=', $window->localStartDate())->whereDate("{$table}.game_date", '<=', $window->localEndDate());
+                });
+            });
+        }
+        if ($query->getModel() instanceof \App\Models\CFB\Game) {
+            if (! in_array($column, ['game_date', $query->getModel()->qualifyColumn('game_date')], true)) {
+                throw new \LogicException('CFB date windows require the current game date column.');
+            }
+
+            return app(CfbGameCalendarRead::class)->inWindow($query, $window);
+        }
         $dateColumn = $this->wrappedColumn($column);
         $timeColumn = $this->wrappedColumn($this->timeColumnFor($column));
         $combinedDateTime = $this->combinedDateTimeExpression($dateColumn, $timeColumn);
@@ -111,6 +137,17 @@ class SportsDateWindowService
         $dateTime = $this->gameDateTimeUtc($gameDate, $gameTime);
 
         return $dateTime?->setTimezone($this->timezone())->toDateString();
+    }
+
+    public function gameStart(Model $game): ?CarbonImmutable
+    {
+        if ($game instanceof \App\Models\CFB\Game) {
+            return CfbGameStart::for($game);
+        }
+
+        return $game instanceof Game
+            ? MlbGameStart::for($game)?->toImmutable()
+            : $this->gameDateTimeUtc($game->game_date, $game->game_time);
     }
 
     public function gameDateTimeUtc(mixed $gameDate, mixed $gameTime = null): ?CarbonImmutable

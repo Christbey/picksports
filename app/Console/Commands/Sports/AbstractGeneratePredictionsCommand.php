@@ -43,10 +43,16 @@ abstract class AbstractGeneratePredictionsCommand extends Command
 
     public function handle(): int
     {
+        $gameId = $this->supportsGameOption() ? $this->option('game') : null;
+        if ($gameId !== null && filter_var($gameId, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false) {
+            $this->error('The --game option must be a positive integer.');
+
+            return self::FAILURE;
+        }
         $generatePrediction = app($this->generateActionClass());
         $gameModel = $this->gameModelClass();
 
-        if ($this->supportsGameOption() && ($gameId = $this->option('game'))) {
+        if ($gameId !== null) {
             $game = $gameModel::find($gameId);
 
             if (! $game) {

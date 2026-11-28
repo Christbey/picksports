@@ -7,13 +7,20 @@ use App\Models\MLB\PitcherEloRating;
 use App\Models\MLB\Player;
 use App\Models\MLB\PlayerInjury;
 use App\Models\MLB\PlayerStat;
+use App\Models\MLB\StartingPitcherForecast;
 use App\Models\MLB\Team;
+use App\Services\Predictions\CanonicalPayloadHasher;
 use App\Support\MLB\MlbGameStart;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use RuntimeException;
 
 final class MlbStartingPitcherProjectionService
 {
+    private const MAX_CANDIDATE_PLAYERS = 64;
+
+    private int $candidatePlayersRead = 0;
+
     public function __construct(
         private readonly MlbStartingPitcherForecastService $forecasts,
     ) {}
@@ -23,11 +30,36 @@ final class MlbStartingPitcherProjectionService
      */
     public function project(Game $game): array
     {
+        foreach ([new Game, new StartingPitcherForecast] as $model) {
+            if ($model->getConnection()->getName() !== $game->getConnection()->getName()) {
+                throw new RuntimeException('MLB projection/forecast models require one coherent database connection.');
+            }
+        }
+
+        return $game->getConnection()->transaction(function () use ($game): array {
+            $current = $game->newQuery()->lockForUpdate()->find($game->id);
+            if ($current === null || ! in_array($current->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true) || MlbGameStart::for($current) === null || MlbGameStart::for($game) === null
+                || $current->start_context_hash !== $game->start_context_hash || $current->start_source_hash !== $game->start_source_hash) {
+                $unavailable = $this->emptyProjection('unknown_or_changed_start_context');
+
+                return ['changed' => false, 'home' => $unavailable, 'away' => $unavailable];
+            }
+
+            return $this->projectLocked($current);
+        });
+    }
+
+    private function projectLocked(Game $game): array
+    {
+        $this->candidatePlayersRead = 0;
         $game->loadMissing(['homeTeam', 'awayTeam']);
 
         $home = $this->projectSide($game, $game->homeTeam, 'home');
         $away = $this->projectSide($game, $game->awayTeam, 'away');
         $metadata = [
+            'timing_policy' => MlbGameStart::TIMING_POLICY,
+            'start_context_hash' => $game->start_context_hash,
+            'start_source_hash' => $game->start_source_hash,
             'version' => (string) config('mlb.starter_projection.version', 'rotation-v2'),
             'home' => $home['evidence'],
             'away' => $away['evidence'],
@@ -159,9 +191,8 @@ final class MlbStartingPitcherProjectionService
                 $query->where('home_team_id', $team->id)
                     ->orWhere('away_team_id', $team->id);
             })
-            ->whereDate('game_date', '<=', $targetStart->toDateString())
-            ->orderByDesc('game_date')
-            ->orderByDesc('game_time')
+            ->tap(fn ($query) => MlbGameStart::before($query, $targetStart))
+            ->orderByDesc('start_epoch')
             ->orderByDesc('id')
             ->limit($limit)
             ->get()
@@ -253,8 +284,9 @@ final class MlbStartingPitcherProjectionService
                 $query->where('home_team_id', $team->id)
                     ->orWhere('away_team_id', $team->id);
             })
-            ->whereDate('game_date', '>=', $anchorStart->toDateString())
-            ->whereDate('game_date', '<=', $targetStart->toDateString())
+            ->tap(fn ($query) => MlbGameStart::known($query))
+            ->where('start_epoch', '>', $anchorStart->getTimestamp())
+            ->where('start_epoch', '<=', $targetStart->getTimestamp())
             ->get()
             ->filter(function (Game $game) use ($anchorStart, $targetStart): bool {
                 $start = MlbGameStart::for($game);
@@ -276,16 +308,21 @@ final class MlbStartingPitcherProjectionService
         Collection $knownAssignments,
         string $expectedPitcherId,
     ): array {
-        $players = Player::query()
+        $remaining = self::MAX_CANDIDATE_PLAYERS - $this->candidatePlayersRead;
+        $players = Player::on($target->getConnectionName())
             ->where('team_id', $team->id)
             ->where(function (Builder $query) use ($rotation): void {
                 $query->whereIn('espn_id', $rotation->all())
                     ->orWhere('position', 'SP');
             })
-            ->get()
-            ->filter(fn (Player $player): bool => filled($player->espn_id))
-            ->unique('espn_id')
-            ->values();
+            ->orderBy('id')->limit($remaining + 1)
+            ->get(['id', 'team_id', 'espn_id', 'full_name', 'position', 'elo_rating']);
+        $this->candidatePlayersRead += $players->count();
+        if ($this->candidatePlayersRead > self::MAX_CANDIDATE_PLAYERS) {
+            throw new RuntimeException('MLB projection candidate player limit exceeded; considered at least '.$this->candidatePlayersRead.' players, maximum '.self::MAX_CANDIDATE_PLAYERS.'.');
+        }
+        $players = $players->filter(fn (Player $player): bool => filled($player->espn_id))
+            ->unique('espn_id')->values();
 
         if ($players->isEmpty()) {
             return $this->emptyCandidateRanking();
@@ -419,20 +456,18 @@ final class MlbStartingPitcherProjectionService
      */
     private function latestWorkload(Collection $players, Game $target): Collection
     {
-        return PlayerStat::query()
-            ->select(['mlb_player_stats.player_id', 'mlb_player_stats.pitch_count', 'mlb_player_stats.pitches_thrown', 'mlb_games.game_date'])
-            ->join('mlb_games', 'mlb_games.id', '=', 'mlb_player_stats.game_id')
-            ->whereIn('mlb_player_stats.player_id', $players->pluck('id'))
-            ->whereDate('mlb_games.game_date', '<', $target->game_date)
-            ->orderByDesc('mlb_games.game_date')
-            ->orderByDesc('mlb_player_stats.id')
-            ->get()
-            ->unique('player_id')
-            ->mapWithKeys(fn (PlayerStat $stat): array => [
-                $stat->player_id => [
-                    'pitch_count' => $stat->pitch_count ?? $stat->pitches_thrown,
-                ],
-            ]);
+        return $players->mapWithKeys(function (Player $player) use ($target): array {
+            $stat = PlayerStat::on($target->getConnectionName())
+                ->select(['mlb_player_stats.player_id', 'mlb_player_stats.pitch_count', 'mlb_player_stats.pitches_thrown'])
+                ->join('mlb_games', 'mlb_games.id', '=', 'mlb_player_stats.game_id')
+                ->where('mlb_player_stats.player_id', $player->id)
+                ->where('mlb_player_stats.stat_type', 'pitching')
+                ->tap(fn ($query) => MlbGameStart::known($query, 'mlb_games'))
+                ->where('mlb_games.start_epoch', '<', MlbGameStart::for($target)?->getTimestamp() ?? PHP_INT_MIN)
+                ->orderByDesc('mlb_games.start_epoch')->orderByDesc('mlb_player_stats.id')->first();
+
+            return $stat === null ? [] : [$player->id => ['pitch_count' => $stat->pitch_count ?? $stat->pitches_thrown]];
+        });
     }
 
     /**
@@ -441,22 +476,13 @@ final class MlbStartingPitcherProjectionService
      */
     private function candidateRatings(Collection $players, Game $target): Collection
     {
-        $historical = PitcherEloRating::query()
-            ->whereIn('player_id', $players->pluck('id'))
-            ->whereDate('date', '<', $target->game_date)
-            ->orderByDesc('date')
-            ->orderByDesc('id')
-            ->get()
-            ->unique('player_id')
-            ->mapWithKeys(fn (PitcherEloRating $rating): array => [
-                $rating->player_id => (float) $rating->elo_rating,
-            ]);
+        return $players->mapWithKeys(function (Player $player) use ($target): array {
+            $historical = PitcherEloRating::on($target->getConnectionName())
+                ->where('player_id', $player->id)->whereDate('date', '<', $target->game_date)
+                ->orderByDesc('date')->orderByDesc('id')->value('elo_rating');
 
-        return $players->mapWithKeys(fn (Player $player): array => [
-            $player->id => (float) ($historical->get($player->id)
-                ?? $player->elo_rating
-                ?? config('mlb.elo.default_rating', 1500)),
-        ]);
+            return [$player->id => (float) ($historical ?? $player->elo_rating ?? config('mlb.elo.default_rating', 1500))];
+        });
     }
 
     /**
@@ -532,7 +558,7 @@ final class MlbStartingPitcherProjectionService
         }
 
         if (is_array($after)) {
-            return $before !== $after;
+            return app(CanonicalPayloadHasher::class)->hash($before) !== app(CanonicalPayloadHasher::class)->hash($after);
         }
 
         return $before !== $after;

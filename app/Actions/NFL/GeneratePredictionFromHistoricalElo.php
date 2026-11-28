@@ -267,7 +267,11 @@ class GeneratePredictionFromHistoricalElo
             ])
             ->all();
 
-        $pointInTimeVerified = $isFinal && $historicalProfile !== 'configured';
+        // Mutable QB form rows carry no immutable pregame observation receipt.
+        // Keep reconstruction outputs, but do not attest their historical availability.
+        $qbFormObservationUnverified = $isFinal && $historicalProfile !== 'configured'
+            && data_get($this->lastModelMetadata, 'qb_form.applied') === true;
+        $pointInTimeVerified = $isFinal && $historicalProfile !== 'configured' && ! $qbFormObservationUnverified;
         [$prediction, $snapshot] = app(NflPredictionPublisher::class)->publish(
             $game,
             $predictionData,
@@ -291,7 +295,7 @@ class GeneratePredictionFromHistoricalElo
                     : now(),
                 'verification_method' => $pointInTimeVerified
                     ? 'profile_contract_uses_only_sources_as_of_game_start'
-                    : null,
+                    : ($qbFormObservationUnverified ? 'qb_form_observation_not_recorded' : null),
                 'source_timestamps' => [
                     'as_of_game_date' => $game->game_date?->toDateString(),
                     'odds_updated_at' => $game->odds_updated_at?->toIso8601String(),
@@ -322,6 +326,7 @@ class GeneratePredictionFromHistoricalElo
                         'generation_mode' => $isFinal ? 'historical_reconstruction' : 'pregame',
                         'historical_profile' => $historicalProfile,
                         'point_in_time_verified' => $pointInTimeVerified,
+                        ...($qbFormObservationUnverified ? ['unverified_reason' => 'consumed_qb_form_has_no_observation_receipt'] : []),
                     ],
                 ],
             ],
@@ -4300,8 +4305,6 @@ class GeneratePredictionFromHistoricalElo
             $betClassification = 'model_rule_watchlist';
         } elseif (($betRuleEvaluation['action'] ?? 'none') === 'lean') {
             $betClassification = 'lean';
-        } elseif ($validatedSignals !== [] && $betClassification === 'no_bet_no_edge') {
-            $betClassification = 'validated_winner_watchlist';
         } elseif ($modelSignalClassification === 'strong_model_side' && $this->hasAnalysisEdge($spreadEdge, $totalEdge)) {
             $betClassification = 'model_rule_watchlist';
         }
@@ -4979,9 +4982,6 @@ class GeneratePredictionFromHistoricalElo
         }
         if ($homeRest !== null && $awayRest !== null && (int) $homeRest - (int) $awayRest >= 3 && $kickoffWindow !== null) {
             $codes[] = 'rest_kickoff_window_home_edge';
-        }
-        if ((int) ($game->week ?? 0) >= 15 && $favoriteSide === 'home') {
-            $codes[] = 'primetime_home_edge';
         }
         if ($this->isPrimetime($game) && $favoriteSide === 'home') {
             $codes[] = 'primetime_home_edge';

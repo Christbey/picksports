@@ -2,13 +2,15 @@
 
 namespace App\Models\NFL;
 
+use App\Models\Concerns\RejectsPersistedModelMutation;
 use App\Models\PredictionFeatureSnapshot;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use LogicException;
 
 class GameDepthChartLink extends Model
 {
+    use RejectsPersistedModelMutation;
+
     public $timestamps = false;
 
     protected $table = 'nfl_game_depth_chart_links';
@@ -23,10 +25,9 @@ class GameDepthChartLink extends Model
         return ['observed_at' => 'datetime', 'as_of' => 'datetime', 'selected_at' => 'datetime', 'evidence' => 'array'];
     }
 
-    protected static function booted(): void
+    protected function immutableMutationMessage(): string
     {
-        static::updating(fn () => throw new LogicException('Game depth chart links are append-only.'));
-        static::deleting(fn () => throw new LogicException('Game depth chart links are append-only.'));
+        return 'Game depth chart links are append-only.';
     }
 
     public function game(): BelongsTo

@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\User;
+use App\Services\Billing\BillingRoleEntitlements;
 use Illuminate\Console\Command;
 
 class SyncUserRoles extends Command
@@ -15,10 +16,18 @@ class SyncUserRoles extends Command
     {
         $this->info('Syncing user roles from subscription tiers...');
 
-        $users = User::all();
+        $users = User::query()->with('subscriptions')->lazyById(250);
         $synced = 0;
+        $managed = 0;
 
         foreach ($users as $user) {
+            if (app(BillingRoleEntitlements::class)->hasRecorded($user)) {
+                $managed++;
+                $this->line("  ↷ User {$user->id} has recorded entitlement provenance; use admitted billing or manual reconciliation.");
+
+                continue;
+            }
+
             if ($user->hasFoundingAccess()) {
                 $this->line("  ↷ User {$user->id} ({$user->email}) is a founding user, skipping tier role sync");
 
@@ -33,7 +42,7 @@ class SyncUserRoles extends Command
                 continue;
             }
 
-            $user->syncRoleFromTier();
+            $user->syncRoleFromTier($tier);
 
             $synced++;
 
@@ -42,6 +51,10 @@ class SyncUserRoles extends Command
 
         $this->newLine();
         $this->info("✓ Synced {$synced} users successfully!");
+
+        if ($managed > 0) {
+            $this->warn("Skipped {$managed} users with recorded entitlement provenance; their grants were preserved.");
+        }
 
         return Command::SUCCESS;
     }

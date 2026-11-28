@@ -372,8 +372,15 @@ class DailyDigestService
         $homeTeam = (string) ($game->homeTeam->abbreviation ?? $game->homeTeam->school ?? $game->homeTeam->name ?? 'Home');
         $homeWinProbability = max(0, min(1, (float) ($prediction->homeWinProbability ?? 0)));
         $awayWinProbability = max(0, min(1, 1 - $homeWinProbability));
-        $topRecommendation = $this->topRecommendation($prediction)
-            ?? $this->modelLeanRecommendation($awayTeam, $homeTeam, $awayWinProbability, $homeWinProbability);
+        $topRecommendation = $this->topRecommendation($prediction);
+
+        if ($topRecommendation === null) {
+            if ($prediction->homeWinProbability === null) {
+                return null;
+            }
+
+            $topRecommendation = $this->modelLeanRecommendation($awayTeam, $homeTeam, $awayWinProbability, $homeWinProbability);
+        }
 
         $pickConfidence = $this->displayConfidence($prediction, $topRecommendation);
         $spread = $prediction->predictedSpread !== null ? (float) $prediction->predictedSpread : null;

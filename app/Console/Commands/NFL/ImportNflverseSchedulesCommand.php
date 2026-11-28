@@ -7,6 +7,7 @@ use App\Models\NFL\Game;
 use App\Models\NFL\GameWeather;
 use App\Models\NFL\Team;
 use App\Services\Sports\SportEventIdentitySynchronizer;
+use App\Support\NFL\NflGameStart;
 use App\Support\NflGameStateGuard;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -53,6 +54,7 @@ class ImportNflverseSchedulesCommand extends Command
         $weather = 0;
         $skipped = 0;
         $legacyBlocked = 0;
+        $clockConflicts = 0;
         // Historical corrections need a reviewed repair, not an incidental reimport.
         $legacyArchiveGames = GameOddsSnapshot::query()->where('sport', 'nfl')->where('game_table', 'nfl_games')
             ->where('source', 'nflverse')->where(function ($query) {
@@ -85,6 +87,27 @@ class ImportNflverseSchedulesCommand extends Command
                 continue;
             }
 
+            $unknownRefresh = $existing && $this->kickoff($row) === null;
+            if ($unknownRefresh) {
+                if (filled($existing->nflverse_game_id) && (string) $existing->nflverse_game_id !== $nflverseGameId) {
+                    $clockConflicts++;
+                    $skipped++;
+
+                    continue;
+                }
+                $known = NflGameStart::for($existing);
+                $sourceDay = $known?->setTimezone('America/New_York')->toDateString();
+                if ($sourceDay === null && NflGameStart::knownMissingImportedClock($existing)) {
+                    $sourceDay = substr((string) $existing->getRawOriginal('game_date'), 0, 10);
+                }
+                if ($sourceDay === null || $sourceDay !== $this->stringValue($row, 'gameday')) {
+                    $clockConflicts++;
+                    $skipped++;
+
+                    continue; // Never attach an old clock/odds tuple to an unverified rescheduled day.
+                }
+            }
+
             if ($this->option('dry-run')) {
                 $imported++;
 
@@ -94,6 +117,10 @@ class ImportNflverseSchedulesCommand extends Command
             $attributes = $this->gameAttributes($row, $homeTeam, $awayTeam, $nflverseGameId);
             if ($existing) {
                 unset($attributes['espn_event_id'], $attributes['espn_uid']);
+                if ($unknownRefresh) {
+                    // Same source-calendar omission retains the entire prior timing/market packet.
+                    unset($attributes['game_date'], $attributes['game_time'], $attributes['odds_data'], $attributes['odds_updated_at']);
+                }
                 // A blank schedule refresh must not erase a verified starter;
                 // existing identities require an explicit reviewed correction.
                 foreach (['home', 'away'] as $side) {
@@ -143,13 +170,16 @@ class ImportNflverseSchedulesCommand extends Command
             $skipped,
         ));
 
+        if ($clockConflicts > 0) {
+            $this->error("Refused {$clockConflicts} existing games with changed or unverified source dates and no explicit kickoff. Prior admitted rows may have applied; provide a verified kickoff before retrying those rows.");
+        }
         if ($legacyBlocked > 0) {
             $this->error("Preserved {$legacyBlocked} games with legacy nflverse archives. Review nfl:plan-nflverse-archive-repair before repairing or reimporting them.");
 
             return self::FAILURE;
         }
 
-        return self::SUCCESS;
+        return $clockConflicts > 0 ? self::FAILURE : self::SUCCESS;
     }
 
     /**
@@ -245,6 +275,10 @@ class ImportNflverseSchedulesCommand extends Command
     private function shouldImport(array $row): bool
     {
         $season = $this->intValue($row, 'season');
+        $date = $this->stringValue($row, 'gameday');
+        if ($date === null || preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D', $date, $parts) !== 1 || ! checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1])) {
+            return false;
+        }
         if ($season === null) {
             return false;
         }
@@ -297,7 +331,7 @@ class ImportNflverseSchedulesCommand extends Command
             // Split game date/time fields are UTC; timestamp columns retain
             // their existing application-timezone storage convention.
             'game_date' => $kickoff?->copy()->utc()->toDateString() ?? $this->stringValue($row, 'gameday'),
-            'game_time' => $kickoff?->copy()->utc()->format('H:i:s') ?? '00:00:00',
+            'game_time' => $kickoff?->copy()->utc()->format('H:i:s'),
             'name' => $this->teamDisplayName($awayTeam).' at '.$this->teamDisplayName($homeTeam),
             'short_name' => $awayTeam->abbreviation.' @ '.$homeTeam->abbreviation,
             'home_team_id' => $homeTeam->id,
@@ -352,8 +386,35 @@ class ImportNflverseSchedulesCommand extends Command
             return null;
         }
 
-        // nflverse gametime is Eastern, including daylight-saving transitions.
-        return Carbon::parse($date.' '.$time, 'America/New_York')->setTimezone(config('app.timezone', 'UTC'));
+        if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D', $date, $parts) !== 1
+            || ! checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1])
+            || preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/D', $time) !== 1) {
+            return null;
+        }
+        $source = $date.' '.(strlen($time) === 5 ? $time.':00' : $time);
+        try {
+            $parsed = Carbon::createFromFormat('!Y-m-d H:i:s', $source, 'America/New_York');
+            if ($parsed->format('Y-m-d H:i:s') !== $source) {
+                return null; // A nonexistent spring-transition wall clock is not an observation.
+            }
+            // An offset-free repeated wall clock cannot establish which instant was observed.
+            $zone = new \DateTimeZone('America/New_York');
+            $wallEpoch = Carbon::createFromFormat('!Y-m-d H:i:s', $source, 'UTC')->getTimestamp();
+            $matches = [];
+            foreach ($zone->getTransitions($parsed->getTimestamp() - 86400, $parsed->getTimestamp() + 86400) ?: [] as $transition) {
+                $candidate = $wallEpoch - $transition['offset'];
+                if (Carbon::createFromTimestampUTC($candidate)->setTimezone($zone)->format('Y-m-d H:i:s') === $source) {
+                    $matches[$candidate] = true;
+                }
+            }
+            if (count($matches) !== 1) {
+                return null;
+            }
+
+            return $parsed->setTimezone(config('app.timezone', 'UTC'));
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**

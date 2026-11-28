@@ -302,6 +302,40 @@ test('users can export their bets to csv via API v2', function () {
     $response->assertHeader('content-disposition');
 });
 
+test('bet CSV exports neutralize formula cells and preserve numeric odds', function (string $value) {
+    $user = User::factory()->create();
+    UserBet::factory()->create([
+        'user_id' => $user->id,
+        'selection_label' => $value,
+        'notes' => $value,
+        'odds' => $value,
+    ]);
+    UserBet::factory()->create([
+        'user_id' => $user->id,
+        'selection_label' => 'Ordinary pick',
+        'notes' => "Unicode résumé, with\na new line",
+        'odds' => '-110',
+    ]);
+    UserBet::factory()->create(['selection_label' => 'Another account']);
+
+    $response = $this->actingAs($user)->get('/api/v2/user-bets/export')->assertOk();
+    $stream = fopen('php://temp', 'r+');
+    fwrite($stream, $response->streamedContent());
+    rewind($stream);
+    fgetcsv($stream, escape: '');
+    $rows = [];
+    while (($row = fgetcsv($stream, escape: '')) !== false) {
+        $rows[$row[2]] = $row;
+    }
+    fclose($stream);
+
+    expect($rows)->toHaveCount(2)
+        ->and($rows["'".$value][5])->toBe("'".$value)
+        ->and($rows["'".$value][9])->toBe("'".$value)
+        ->and($rows['Ordinary pick'][5])->toBe('-110')
+        ->and($rows['Ordinary pick'][9])->toBe("Unicode résumé, with\na new line");
+})->with(['=1+1', '+SUM(1,2)', '-SUM(1,2)', '@SUM(1,2)', "\t=1+1", "\r=1+1", "\n=1+1", '   =1+1']);
+
 test('bet result updates set settled_at timestamp', function () {
     $user = User::factory()->create();
     $bet = UserBet::factory()->create([

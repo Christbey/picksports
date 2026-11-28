@@ -1,6 +1,18 @@
 <?php
 
 return [
+    'publication_effects' => [
+        'max_attempts' => 8,
+        'lease_seconds' => 300,
+        'retry_seconds' => 60,
+        'batch_size' => 100,
+    ],
+    'calculation_recovery' => [
+        'max_attempts' => 3,
+        'lease_seconds' => 300,
+        'retry_seconds' => 60,
+        'allow_legacy_running_recovery' => (bool) env('PREDICTION_LIFECYCLE_ALLOW_LEGACY_RUNNING_RECOVERY', false),
+    ],
     'canonical_pipeline' => [
         'cbb' => (bool) env('PREDICTION_LIFECYCLE_CBB_CANONICAL_PIPELINE', false),
         'cfb' => (bool) env('PREDICTION_LIFECYCLE_CFB_CANONICAL_PIPELINE', false),

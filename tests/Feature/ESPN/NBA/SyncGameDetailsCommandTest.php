@@ -71,6 +71,7 @@ it('syncs basketball plays, player stats, and team stats from ESPN API', functio
                         'team' => ['id' => '1'],
                         'statistics' => [
                             [
+                                'labels' => ['MIN', 'PTS', 'FG', '3PT', 'FT', 'REB', 'AST', 'TO', 'STL', 'BLK', 'OREB', 'DREB', 'PF'],
                                 'athletes' => [
                                     [
                                         'athlete' => ['id' => '1966'],
@@ -84,6 +85,7 @@ it('syncs basketball plays, player stats, and team stats from ESPN API', functio
                         'team' => ['id' => '2'],
                         'statistics' => [
                             [
+                                'labels' => ['MIN', 'PTS', 'FG', '3PT', 'FT', 'REB', 'AST', 'TO', 'STL', 'BLK', 'OREB', 'DREB', 'PF'],
                                 'athletes' => [
                                     [
                                         'athlete' => ['id' => '3945274'],

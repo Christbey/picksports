@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Auth;
 
+use App\Services\Auth\NativeOAuthPkcePolicy;
 use Illuminate\Console\Command;
 use Laravel\Passport\Client;
 use Laravel\Passport\ClientRepository;
@@ -38,12 +39,20 @@ class ConfigureNativeOAuthClientCommand extends Command
             }
         }
 
-        /** @var Client|null $client */
-        $client = Passport::client()->newQuery()
+        $candidates = Passport::client()->newQuery()
             ->where('name', $name)
             ->where('revoked', false)
             ->get()
-            ->first(fn (Client $candidate): bool => $candidate->hasGrantType('authorization_code'));
+            ->filter(fn (Client $candidate): bool => $candidate->hasGrantType('authorization_code'));
+
+        if ($candidates->count() > 1 || $candidates->contains(fn (Client $candidate): bool => ! NativeOAuthPkcePolicy::isUnownedPublicAuthorizationClient($candidate))) {
+            $this->error('The client name matches ambiguous, confidential or user-owned authorization-code clients. Use a distinct native client name.');
+
+            return self::FAILURE;
+        }
+
+        /** @var Client|null $client */
+        $client = $candidates->first();
 
         if ($client === null) {
             $client = $clients->createAuthorizationCodeGrantClient(
@@ -82,6 +91,6 @@ class ConfigureNativeOAuthClientCommand extends Command
         return is_string($scheme)
             && $scheme !== ''
             && ! in_array(strtolower($scheme), ['javascript', 'data'], true)
-            && (strtolower($scheme) !== 'http' || in_array(parse_url($uri, PHP_URL_HOST), ['localhost', '127.0.0.1', '::1'], true));
+            && (strtolower($scheme) !== 'http' || in_array(parse_url($uri, PHP_URL_HOST), ['localhost', '127.0.0.1', '::1', '[::1]'], true));
     }
 }

@@ -17,6 +17,25 @@ final class MlbStartingPitcherForecastService
      */
     public function record(Game $game, string $side, array $projection): ?StartingPitcherForecast
     {
+        foreach ([new Game, new StartingPitcherForecast] as $model) {
+            if ($model->getConnection()->getName() !== $game->getConnection()->getName()) {
+                throw new \RuntimeException('MLB projection/forecast models require one coherent database connection.');
+            }
+        }
+
+        return $game->getConnection()->transaction(function () use ($game, $side, $projection): ?StartingPitcherForecast {
+            $current = $game->newQuery()->lockForUpdate()->find($game->id);
+            if ($current === null || MlbGameStart::for($current) === null || MlbGameStart::for($game) === null
+                || $current->start_context_hash !== $game->start_context_hash || $current->start_source_hash !== $game->start_source_hash) {
+                return null;
+            }
+
+            return $this->recordLocked($current, $side, $projection);
+        });
+    }
+
+    private function recordLocked(Game $game, string $side, array $projection): ?StartingPitcherForecast
+    {
         $pitcherEspnId = trim((string) ($projection['pitcher_espn_id'] ?? ''));
         if ($pitcherEspnId === '' || ! in_array($side, ['home', 'away'], true)) {
             return null;
@@ -65,8 +84,8 @@ final class MlbStartingPitcherForecastService
                 'predicted_rating_source' => $rating['source'],
                 'evidence' => $evidence,
                 'forecasted_at' => $forecastedAt,
-                'game_start_at' => $gameStart,
-                'known_before_game_start' => $gameStart !== null && $forecastedAt->lt($gameStart),
+                'game_start_at' => MlbGameStart::canonical($game),
+                'known_before_game_start' => in_array($game->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true) && $gameStart !== null && $forecastedAt->lt($gameStart) && MlbGameStart::observedBy($game, $forecastedAt),
             ]
         );
 

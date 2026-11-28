@@ -31,7 +31,7 @@ class EnsureUserIsSubscribed
             return $this->redirectToSubscriptionPage($request);
         }
 
-        if ($tier && ! $this->hasRequiredTier($user, $tier)) {
+        if ($tier !== null && ! $this->hasRequiredTier($user, $tier)) {
             return $this->redirectToUpgradePage($request, $tier);
         }
 
@@ -65,10 +65,10 @@ class EnsureUserIsSubscribed
         $tiers = array_keys(config('subscriptions.tiers'));
         $currentTier = $this->getUserTier($user);
 
-        $requiredTierIndex = array_search($requiredTier, $tiers);
-        $currentTierIndex = array_search($currentTier, $tiers);
+        $requiredTierIndex = array_search($requiredTier, $tiers, true);
+        $currentTierIndex = array_search($currentTier, $tiers, true);
 
-        return $currentTierIndex !== false && $currentTierIndex >= $requiredTierIndex;
+        return $requiredTierIndex !== false && $currentTierIndex !== false && $currentTierIndex >= $requiredTierIndex;
     }
 
     protected function getUserTier($user): string

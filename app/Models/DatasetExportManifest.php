@@ -3,16 +3,16 @@
 namespace App\Models;
 
 use App\Models\Concerns\HasPublicUlid;
+use App\Models\Concerns\RejectsPersistedModelMutation;
 use Database\Factories\DatasetExportManifestFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use LogicException;
 
 class DatasetExportManifest extends Model
 {
     /** @use HasFactory<DatasetExportManifestFactory> */
-    use HasFactory, HasPublicUlid;
+    use HasFactory, HasPublicUlid, RejectsPersistedModelMutation;
 
     protected $fillable = [
         'public_id',
@@ -48,10 +48,9 @@ class DatasetExportManifest extends Model
         ];
     }
 
-    protected static function booted(): void
+    protected function immutableMutationMessage(): string
     {
-        static::updating(fn (): never => throw new LogicException('Dataset export manifests are immutable.'));
-        static::deleting(fn (): never => throw new LogicException('Dataset export manifests are immutable.'));
+        return 'Dataset export manifests are immutable.';
     }
 
     protected static function newFactory(): DatasetExportManifestFactory

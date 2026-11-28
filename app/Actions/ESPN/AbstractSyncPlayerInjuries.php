@@ -3,12 +3,13 @@
 namespace App\Actions\ESPN;
 
 use App\Services\ESPN\BaseEspnService;
+use App\Services\ProviderData\Refresh\ProviderRefreshCoordinator;
+use App\Services\ProviderData\Refresh\RefreshContext;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Connection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 
 abstract class AbstractSyncPlayerInjuries
 {
@@ -38,11 +39,33 @@ abstract class AbstractSyncPlayerInjuries
 
     public function execute(string $teamEspnId): int
     {
+        $this->refCache = [];
         $team = $this->findTeamByEspnId($teamEspnId);
         if (! $team) {
+            $this->injuryPayloadObserved = false;
+            $this->injuryPayloadReliable = false;
+
             return 0;
         }
 
+        $context = app(ProviderRefreshCoordinator::class)->begin($team, 'injuries', 0);
+        $priorBudget = $this->espnService->swapRefreshBudget($context->attempt === null ? null : $context->budget);
+        try {
+            return $this->executeObserved($team, $teamEspnId, $context);
+        } catch (\Throwable $error) {
+            $context->fail($error);
+            throw $error;
+        } finally {
+            try {
+                $context->finish();
+            } finally {
+                $this->espnService->swapRefreshBudget($priorBudget);
+            }
+        }
+    }
+
+    private function executeObserved(Model $team, string $teamEspnId, RefreshContext $context): int
+    {
         $observedAt = now();
         $injuries = $this->extractTeamInjuries($teamEspnId);
         if (! $this->injuryPayloadObserved) {
@@ -51,12 +74,30 @@ abstract class AbstractSyncPlayerInjuries
 
         $teamId = (int) $team->getKey();
         $playerMap = $this->playerIdMapByEspnId($teamId);
+        if ($context->attempt !== null) {
+            $context->budget->rows(count($injuries));
+        }
         $rows = [];
         $snapshotRows = [];
+        $seenIdentities = [];
 
         foreach ($injuries as $injury) {
             $playerEspnId = $this->extractAthleteEspnId($injury);
             $normalized = $this->normalizeInjury($injury);
+            if ($playerEspnId === null || $normalized['status'] === null) {
+                $this->injuryPayloadReliable = false;
+
+                continue;
+            }
+            $identity = $playerEspnId.':'.$this->injuryKey($normalized);
+            if (isset($seenIdentities[$identity])) {
+                $this->injuryPayloadReliable = false;
+                throw new \RuntimeException('Duplicate injury identity in one source observation.');
+            }
+            $seenIdentities[$identity] = true;
+            if (! isset($playerMap[$playerEspnId])) {
+                $this->injuryPayloadReliable = false;
+            }
             $snapshotRows[] = [
                 'player_id' => $playerEspnId !== null ? ($playerMap[$playerEspnId] ?? null) : null,
                 'espn_athlete_id' => $playerEspnId,
@@ -88,24 +129,37 @@ abstract class AbstractSyncPlayerInjuries
                 'return_date' => $normalized['return_date'],
                 'source_updated_at' => $normalized['source_updated_at'],
                 'is_active' => $this->isCurrentInjuryActive($normalized),
-                'raw_payload' => json_encode($injury, JSON_UNESCAPED_SLASHES),
+                'raw_payload' => json_encode($injury, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
                 'created_at' => $observedAt,
                 'updated_at' => $observedAt,
             ];
         }
 
-        if ($this->injuryPayloadObserved) {
-            $this->persistHistoricalSnapshot(
-                $team,
-                $teamEspnId,
-                $injuries,
-                $snapshotRows,
-                $observedAt
-            );
+        if (! $this->injuryPayloadReliable && ! $this->supportsPartialProjection()) {
+            return 0;
+        }
+        $connection = $team->getConnection();
+        if (app($this->playerModelClass())->getConnection()->getName() !== $connection->getName()) {
+            throw new \RuntimeException('Injury team and player models must share one database connection.');
         }
 
-        DB::transaction(function () use ($teamId, $observedAt, $rows): void {
-            $existingRows = DB::table($this->injuryTable())
+        return $context->commit($this->injuryPayloadReliable, $snapshotRows, fn (): int => $connection->transaction(function () use ($connection, $team, $teamEspnId, $teamId, $observedAt, $rows, $injuries, $snapshotRows, $context): int {
+            $currentTeam = $team->newQuery()->whereKey($teamId)->lockForUpdate()->first();
+            if ($currentTeam === null || (string) $currentTeam->espn_id !== $teamEspnId) {
+                throw new \RuntimeException('Injury team identity changed before projection.');
+            }
+            $players = $this->playerModelClass()::on($connection->getName())->whereIn('id', array_column($rows, 'player_id'))
+                ->orderBy('id')->lockForUpdate()->get(['id', 'team_id', 'espn_id'])->keyBy('id');
+            foreach ($snapshotRows as $row) {
+                if ($row['player_id'] !== null) {
+                    $player = $players->get($row['player_id']);
+                    if ($player === null || (int) $player->team_id !== $teamId || (string) $player->espn_id !== $row['espn_athlete_id']) {
+                        throw new \RuntimeException('Injury player identity changed before projection.');
+                    }
+                }
+            }
+            $this->persistHistoricalSnapshot($currentTeam, $teamEspnId, $injuries, $snapshotRows, $observedAt, $context);
+            $existingRows = $connection->table($this->injuryTable())
                 ->where('team_id', $teamId)
                 ->lockForUpdate()
                 ->get()
@@ -119,7 +173,7 @@ abstract class AbstractSyncPlayerInjuries
                     ->pluck('id');
 
                 if ($removedIds->isNotEmpty()) {
-                    DB::table($this->injuryTable())
+                    $connection->table($this->injuryTable())
                         ->whereIn('id', $removedIds)
                         ->update(['is_active' => false, 'updated_at' => $observedAt]);
                 }
@@ -129,7 +183,7 @@ abstract class AbstractSyncPlayerInjuries
             $unchangedIds = [];
             foreach ($rows as $row) {
                 $existing = $existingRows->get($row['player_id'].':'.$row['injury_key']);
-                if ($existing && $this->currentInjuryMatches($existing, $row)) {
+                if ($existing && $this->currentInjuryMatches($existing, $row, $connection)) {
                     $unchangedIds[] = $existing->id;
                 } else {
                     $changedRows[] = $row;
@@ -137,16 +191,16 @@ abstract class AbstractSyncPlayerInjuries
             }
 
             if ($unchangedIds !== []) {
-                DB::table($this->injuryTable())
+                $connection->table($this->injuryTable())
                     ->whereIn('id', $unchangedIds)
                     ->update(['updated_at' => $observedAt]);
             }
 
             if ($changedRows === []) {
-                return;
+                return collect($rows)->where('is_active', true)->count();
             }
 
-            DB::table($this->injuryTable())->upsert(
+            $connection->table($this->injuryTable())->upsert(
                 $changedRows,
                 ['player_id', 'injury_key'],
                 [
@@ -163,20 +217,25 @@ abstract class AbstractSyncPlayerInjuries
                     'updated_at',
                 ]
             );
-        });
 
-        return collect($rows)->where('is_active', true)->count();
+            return collect($rows)->where('is_active', true)->count();
+        }));
+    }
+
+    public function lastSyncReliable(): bool
+    {
+        return $this->injuryPayloadObserved && $this->injuryPayloadReliable;
+    }
+
+    protected function supportsPartialProjection(): bool
+    {
+        return true;
     }
 
     /**
      * @param  array<string, mixed>  $row
      */
-    protected function canRetireInjury(object $row): bool
-    {
-        return true;
-    }
-
-    private function currentInjuryMatches(object $existing, array $row): bool
+    private function currentInjuryMatches(object $existing, array $row, Connection $connection): bool
     {
         foreach ($row as $column => $value) {
             if (in_array($column, ['created_at', 'updated_at'], true)) {
@@ -192,7 +251,7 @@ abstract class AbstractSyncPlayerInjuries
                 continue;
             }
 
-            $prepared = DB::connection()->prepareBindings([$value])[0];
+            $prepared = $connection->prepareBindings([$value])[0];
             if (($stored === null) !== ($prepared === null) || (string) $stored !== (string) $prepared) {
                 return false;
             }
@@ -215,6 +274,14 @@ abstract class AbstractSyncPlayerInjuries
     }
 
     /**
+     * @param  array<string, mixed>  $row
+     */
+    protected function canRetireInjury(object $row): bool
+    {
+        return true;
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $injuries
      * @param  list<array<string, mixed>>  $snapshotRows
      */
@@ -223,18 +290,23 @@ abstract class AbstractSyncPlayerInjuries
         string $teamEspnId,
         array $injuries,
         array $snapshotRows,
-        CarbonInterface $observedAt
+        CarbonInterface $observedAt,
+        ?RefreshContext $context = null
     ): void {}
 
     public function syncAllTeams(): int
     {
         $teamModel = $this->teamModelClass();
-        $teams = $teamModel::query()->get(['espn_id']);
         $totalSynced = 0;
-
-        foreach ($teams as $team) {
-            $totalSynced += $this->execute((string) $team->espn_id);
-        }
+        $teamModel::query()->select(['id', 'espn_id'])->chunkById(100, function ($teams) use (&$totalSynced): void {
+            foreach ($teams as $team) {
+                $count = $this->execute((string) $team->espn_id);
+                if (! $this->lastSyncReliable()) {
+                    throw new \RuntimeException('An injury source was unavailable or incomplete; all-team refresh did not complete.');
+                }
+                $totalSynced += $count;
+            }
+        });
 
         return $totalSynced;
     }
@@ -267,18 +339,79 @@ abstract class AbstractSyncPlayerInjuries
     {
         $this->injuryPayloadObserved = false;
         $this->injuryPayloadReliable = true;
-        $teamInjuriesResponse = $this->espnService->getTeamInjuries($teamEspnId);
-        $this->injuryPayloadObserved = is_array($teamInjuriesResponse);
-        $teamInjuries = $this->extractInjuriesFromTeamInjuriesResponse($teamInjuriesResponse);
+        $response = $this->espnService->getTeamInjuries($teamEspnId);
+        $keys = is_array($response) ? array_values(array_intersect(['items', 'injuries', 'entries'], array_keys($response))) : [];
+        if (count($keys) === 1 && is_array($response[$keys[0]]) && array_is_list($response[$keys[0]])
+            && ! collect($response[$keys[0]])->contains(fn ($entry) => ! is_array($entry) || $entry === [])) {
+            $this->injuryPayloadObserved = true;
+            $this->injuryPayloadReliable = $this->injuryCollectionReliable($response, count($response[$keys[0]]));
 
-        if ($teamInjuries !== []) {
-            return $teamInjuries;
+            return $this->extractInjuriesFromTeamInjuriesResponse($response);
+        }
+        $roster = $this->espnService->getRoster($teamEspnId);
+        if (! is_array($roster) || ! is_array($roster['athletes'] ?? null) || ! array_is_list($roster['athletes'])) {
+            $this->injuryPayloadReliable = false;
+
+            return [];
+        }
+        $ids = [];
+        foreach ($roster['athletes'] as $group) {
+            if (! is_array($group)) {
+                $this->injuryPayloadReliable = false;
+
+                return [];
+            }
+            $athletes = array_key_exists('items', $group) ? $group['items'] : [$group];
+            if (! is_array($athletes) || ! array_is_list($athletes)
+                || (array_key_exists('items', $group) && ! $this->injuryCollectionReliable($group, count($athletes)))) {
+                $this->injuryPayloadReliable = false;
+
+                return [];
+            }
+            foreach ($athletes as $athlete) {
+                $id = is_array($athlete) ? $this->extractAthleteIdFromEntity($athlete) : null;
+                if ($id === null || ! is_array($athlete['injuries'] ?? null) || ! array_is_list($athlete['injuries'])
+                    || collect($athlete['injuries'])->contains(fn ($entry) => ! is_array($entry) || $entry === [])) {
+                    $this->injuryPayloadReliable = false;
+
+                    return [];
+                }
+                $ids[] = $id;
+            }
+        }
+        $team = $this->findTeamByEspnId($teamEspnId);
+        $knownIds = $team === null ? [] : array_keys($this->playerIdMapByEspnId((int) $team->getKey()));
+        $this->injuryPayloadObserved = true;
+        $this->injuryPayloadReliable = count(array_unique($ids)) === count($ids)
+            && array_diff($knownIds, $ids) === [] && $this->injuryCollectionReliable($roster, count($ids));
+
+        return $this->extractInjuriesFromRosterResponse($roster);
+    }
+
+    protected function injuryCollectionReliable(array $payload, int $count): bool
+    {
+        foreach (['count', 'total', 'totalCount'] as $key) {
+            if (array_key_exists($key, $payload) && (filter_var($payload[$key], FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]) === false || (int) $payload[$key] !== $count)) {
+                return false;
+            }
+        }
+        foreach (['page', 'pageIndex', 'pageCount'] as $key) {
+            if (array_key_exists($key, $payload) && (filter_var($payload[$key], FILTER_VALIDATE_INT, ['options' => ['min_range' => 0, 'max_range' => 1]]) === false)) {
+                return false;
+            }
+        }
+        foreach (['next', 'nextPage', 'nextPageUrl', 'links.next', 'hasMore', 'hasNext', 'hasNextPage'] as $key) {
+            if (data_get($payload, $key)) {
+                return false;
+            }
+        }
+        foreach ((array) ($payload['links'] ?? []) as $link) {
+            if (is_array($link) && ($link['rel'] ?? null) === 'next') {
+                return false;
+            }
         }
 
-        $rosterResponse = $this->espnService->getRoster($teamEspnId);
-        $this->injuryPayloadObserved = $this->injuryPayloadObserved || is_array($rosterResponse);
-
-        return $this->extractInjuriesFromRosterResponse($rosterResponse);
+        return true;
     }
 
     /**
@@ -292,6 +425,11 @@ abstract class AbstractSyncPlayerInjuries
         }
 
         $items = [];
+        $sourceCount = 0;
+        foreach (['items', 'injuries', 'entries'] as $sourceKey) {
+            $sourceCount += is_array($response[$sourceKey] ?? null) ? count($response[$sourceKey]) : 0;
+            $this->espnService->assertRefreshRows($sourceCount);
+        }
         foreach (['items', 'injuries', 'entries'] as $key) {
             if (isset($response[$key]) && is_array($response[$key])) {
                 foreach ($response[$key] as $item) {
@@ -321,6 +459,11 @@ abstract class AbstractSyncPlayerInjuries
         }
 
         $flattenedAthletes = [];
+        $sourceCount = 0;
+        foreach ($athletes as $group) {
+            $sourceCount += is_array($group) && is_array($group['items'] ?? null) ? count($group['items']) : 1;
+            $this->espnService->assertRefreshRows($sourceCount);
+        }
 
         foreach ($athletes as $athlete) {
             if (! is_array($athlete)) {
@@ -397,24 +540,9 @@ abstract class AbstractSyncPlayerInjuries
             return $this->refCache[$ref];
         }
 
-        try {
-            $response = Http::timeout(30)
-                ->connectTimeout(30)
-                ->get($ref);
-        } catch (\Throwable) {
-            return $this->refCache[$ref] = null;
-        }
-
-        if (! $response->successful()) {
-            return $this->refCache[$ref] = null;
-        }
-
-        $payload = $response->json();
-        if (! is_array($payload)) {
-            return $this->refCache[$ref] = null;
-        }
-
-        return $this->refCache[$ref] = $payload;
+        // The shared ESPN client admits hosts, upgrades HTTP and revalidates every redirect,
+        // pins public DNS results and bounds response bytes. No untrusted direct HTTP seam.
+        return $this->refCache[$ref] = $this->espnService->getByRef($ref, false);
     }
 
     /**

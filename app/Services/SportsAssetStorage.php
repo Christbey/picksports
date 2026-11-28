@@ -2,11 +2,12 @@
 
 namespace App\Services;
 
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Support\Facades\Http;
+use App\Services\Http\ApprovedHostGet;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use RuntimeException;
+use Throwable;
 
 class SportsAssetStorage
 {
@@ -105,40 +106,39 @@ class SportsAssetStorage
             return $sourceUrl;
         }
 
-        $disk = Storage::disk($this->disk());
-
-        if ($disk->exists($path)) {
-            return $path;
-        }
-
         try {
-            $response = Http::timeout(20)->retry(2, 250)->get($sourceUrl);
-        } catch (ConnectionException $e) {
-            Log::warning('Sports asset mirror failed to fetch remote asset.', $context + [
-                'error' => $e->getMessage(),
-            ]);
+            $transport = app(ApprovedHostGet::class);
+            $hosts = (array) config('sports_assets.allowed_hosts', []);
+            $transport->normalize($sourceUrl, $hosts);
+            $disk = Storage::disk($this->disk());
+            if ($disk->exists($path)) {
+                return $path;
+            }
+            $response = $transport->get($sourceUrl, $hosts, (int) config('sports_assets.maximum_bytes', 5 * 1024 * 1024));
+            if (! $response->successful()) {
+                throw new RuntimeException('Asset response was unsuccessful.');
+            }
+            $body = $response->body();
+            $image = @getimagesizefromstring($body);
+            $types = [IMAGETYPE_PNG => 'image/png', IMAGETYPE_JPEG => 'image/jpeg', IMAGETYPE_GIF => 'image/gif', IMAGETYPE_WEBP => 'image/webp'];
+            $mime = strtolower(trim(explode(';', (string) $response->header('Content-Type'))[0]));
+            $maximumDimension = min(8192, max(1, (int) config('sports_assets.maximum_dimension', 4096)));
+            if (! is_array($image) || ! isset($types[$image[2]]) || $types[$image[2]] !== $mime
+                || $image[0] < 1 || $image[1] < 1 || $image[0] > $maximumDimension || $image[1] > $maximumDimension) {
+                throw new RuntimeException('Asset is not an admitted raster image.');
+            }
+            if (! $disk->put($path, $body, ['visibility' => 'public', 'ContentType' => $mime])) {
+                throw new RuntimeException('Asset storage did not accept the write.');
+            }
+
+            return $path;
+        } catch (Throwable $exception) {
+            // Provider URLs/errors can contain credentials or opaque query tokens.
+            Log::warning('Sports asset mirror refused or failed.', ['sport' => $context['sport'] ?? null,
+                'asset_type' => $context['asset_type'] ?? null, 'exception_class' => $exception::class]);
 
             return $sourceUrl;
         }
-
-        if (! $response->successful()) {
-            Log::warning('Sports asset mirror received non-success response.', $context + [
-                'status' => $response->status(),
-            ]);
-
-            return $sourceUrl;
-        }
-
-        $mimeType = $response->header('Content-Type');
-        $options = ['visibility' => 'public'];
-
-        if (is_string($mimeType) && $mimeType !== '') {
-            $options['ContentType'] = trim(explode(';', $mimeType)[0]);
-        }
-
-        $disk->put($path, $response->body(), $options);
-
-        return $path;
     }
 
     protected function disk(): string
@@ -161,7 +161,7 @@ class SportsAssetStorage
         $path = parse_url($sourceUrl, PHP_URL_PATH);
         $extension = is_string($path) ? strtolower(pathinfo($path, PATHINFO_EXTENSION)) : '';
 
-        if ($extension !== '' && preg_match('/^[a-z0-9]+$/', $extension) === 1) {
+        if (in_array($extension, ['png', 'jpg', 'jpeg', 'gif', 'webp'], true)) {
             return $extension;
         }
 

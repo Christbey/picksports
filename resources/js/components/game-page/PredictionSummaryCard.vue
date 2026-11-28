@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { PredictionSummary } from '@/types';
 import { computed } from 'vue';
 import { normalizeTeamColor } from '@/lib/teamColor';
+import { finiteValue } from '@/lib/gameOutcome';
 
 const props = defineProps<{
     title?: string;
@@ -34,35 +35,32 @@ const confidenceDisplayLabel = (prediction: PredictionSummary) =>
           ? 'Provisional'
           : prediction.confidence_context?.label || prediction.confidence_level;
 
-const homeSpreadLine = (prediction: PredictionSummary): number =>
-    -Number(prediction.predicted_spread);
-
-const favoriteLabel = (
-    prediction: PredictionSummary,
-    home?: string | null,
-    away?: string | null,
-): string => {
-    const spread = Number(prediction.predicted_spread);
-
-    if (Math.abs(spread) < 0.05) return 'No team';
-
-    return spread > 0 ? home || 'Home' : away || 'Away';
+const homeMargin = computed(() =>
+    finiteValue(props.prediction.predicted_spread),
+);
+const probability = (value: unknown): number | null => {
+    const parsed = finiteValue(value);
+    return parsed !== null && parsed >= 0 && parsed <= 1 ? parsed : null;
 };
-
-const formatSignedHomeSpread = (
-    prediction: PredictionSummary,
-    formatter: (
-        value: number | string | null | undefined,
-        decimals?: number,
-    ) => string,
-): string => {
-    const line = homeSpreadLine(prediction);
-
-    if (Number.isNaN(line)) return '-';
+const awayProbability = computed(() =>
+    probability(props.prediction.away_win_probability),
+);
+const homeProbability = computed(() =>
+    probability(props.prediction.home_win_probability),
+);
+const spreadLabel = computed(() => {
+    if (homeMargin.value === null) return 'Spread unavailable';
+    const line = -homeMargin.value;
     if (Math.abs(line) < 0.05) return 'PK';
-
-    return `${line > 0 ? '+' : ''}${formatter(line)}`;
-};
+    return `${line > 0 ? '+' : ''}${props.formatNumber(line)}`;
+});
+const favorite = computed(() =>
+    homeMargin.value === null
+        ? 'Favorite unavailable'
+        : Math.abs(homeMargin.value) < 0.05
+          ? "Pick'em"
+          : `${homeMargin.value > 0 ? props.homeLabel || 'Home' : props.awayLabel || 'Away'} favored`,
+);
 </script>
 
 <template>
@@ -95,34 +93,36 @@ const formatSignedHomeSpread = (
                     <span
                         >{{ awayLabel }}
                         {{
-                            formatNumber(
-                                prediction.away_win_probability * 100,
-                                0,
-                            )
-                        }}%</span
+                            awayProbability === null
+                                ? 'Win probability unavailable'
+                                : `${formatNumber(awayProbability * 100, 0)}%`
+                        }}</span
                     >
                     <span
                         >{{ homeLabel }}
                         {{
-                            formatNumber(
-                                prediction.home_win_probability * 100,
-                                0,
-                            )
-                        }}%</span
+                            homeProbability === null
+                                ? 'Win probability unavailable'
+                                : `${formatNumber(homeProbability * 100, 0)}%`
+                        }}</span
                     >
                 </div>
-                <div class="flex h-2 overflow-hidden rounded-full">
+                <div
+                    v-if="awayProbability !== null && homeProbability !== null"
+                    class="flex h-2 overflow-hidden rounded-full"
+                    aria-hidden="true"
+                >
                     <div
                         :class="`${awayBarClass} transition-all`"
                         :style="{
-                            width: `${prediction.away_win_probability * 100}%`,
+                            width: `${awayProbability * 100}%`,
                             backgroundColor: normalizeTeamColor(awayColor),
                         }"
                     ></div>
                     <div
                         :class="`${homeBarClass} transition-all`"
                         :style="{
-                            width: `${prediction.home_win_probability * 100}%`,
+                            width: `${homeProbability * 100}%`,
                             backgroundColor: normalizeTeamColor(homeColor),
                         }"
                     ></div>
@@ -140,23 +140,10 @@ const formatSignedHomeSpread = (
                         class="text-xl font-semibold tracking-tight tabular-nums"
                     >
                         {{ homeLabel || 'Home' }}
-                        {{ formatSignedHomeSpread(prediction, formatNumber) }}
+                        {{ spreadLabel }}
                     </dd>
                     <dd class="text-xs text-muted-foreground">
-                        <template
-                            v-if="
-                                Math.abs(Number(prediction.predicted_spread)) <
-                                0.05
-                            "
-                        >
-                            Pick'em
-                        </template>
-                        <template v-else>
-                            {{
-                                favoriteLabel(prediction, homeLabel, awayLabel)
-                            }}
-                            favored
-                        </template>
+                        {{ favorite }}
                     </dd>
                 </div>
                 <div class="min-w-0">
@@ -166,7 +153,11 @@ const formatSignedHomeSpread = (
                     <dd
                         class="text-xl font-semibold tracking-tight tabular-nums"
                     >
-                        {{ formatNumber(prediction.predicted_total) }}
+                        {{
+                            prediction.predicted_total === null
+                                ? 'Total unavailable'
+                                : formatNumber(prediction.predicted_total)
+                        }}
                     </dd>
                     <dd class="text-xs text-muted-foreground">
                         {{ projectedLabel || 'Projected points' }}
@@ -188,7 +179,7 @@ const formatSignedHomeSpread = (
                         {{ confidenceDisplayLabel(prediction) }}
                     </dd>
                     <dd
-                        v-if="prediction.confidence_score"
+                        v-if="prediction.confidence_score != null"
                         class="mt-1 text-xs text-muted-foreground"
                     >
                         Score: {{ formatNumber(prediction.confidence_score) }}

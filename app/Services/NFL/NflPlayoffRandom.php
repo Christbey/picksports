@@ -19,7 +19,10 @@ class NflPlayoffRandom
 
     public function wins(float $probability): bool
     {
-        return $this->outcomeDraw() / 0x7FFFFFFF < $probability;
+        $draw = $this->outcomeDraw() / 0x7FFFFFFF;
+
+        // Retain the historical draw stream while making probability one certain.
+        return $probability >= 1.0 || $draw < $probability;
     }
 
     public function scoreIndex(int $count): int

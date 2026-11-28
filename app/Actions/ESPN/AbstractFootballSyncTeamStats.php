@@ -3,6 +3,7 @@
 namespace App\Actions\ESPN;
 
 use App\Actions\ESPN\Concerns\ValidatesBoxscoreReplacement;
+use DomainException;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractFootballSyncTeamStats
@@ -16,9 +17,12 @@ abstract class AbstractFootballSyncTeamStats
     public function execute(array $gameData, Model $game): int
     {
         return $game->getConnection()->transaction(function () use ($gameData, $game): int {
-            $game->newQuery()->whereKey($game->getKey())->lockForUpdate()->firstOrFail();
-
-            return $this->replaceTeamStats($gameData, $game);
+            $game = $game->newQuery()->whereKey($game->getKey())->lockForUpdate()->firstOrFail();
+            try {
+                return $this->replaceTeamStats($gameData, $game);
+            } catch (DomainException) {
+                return 0;
+            }
         });
     }
 
@@ -54,6 +58,8 @@ abstract class AbstractFootballSyncTeamStats
                 ...$this->sportSpecificAttributes($stats),
             ];
 
+            $attributes = $this->additionalTeamAttributes($attributes, $teamData, $game, $gameData);
+
             if (collect(array_diff_key($attributes, array_flip(['team_id', 'game_id'])))->every(fn ($value): bool => $value === null)) {
                 return 0;
             }
@@ -68,12 +74,20 @@ abstract class AbstractFootballSyncTeamStats
             $synced++;
         }
 
+        if (! $this->preservesObservedFields($teamStatModel, $game, $rows, ['team_id'])) {
+            return 0;
+        }
         $this->clearExisting($game);
         foreach ($rows as $attributes) {
             $this->storeStat($attributes);
         }
 
         return $synced;
+    }
+
+    protected function additionalTeamAttributes(array $attributes, array $teamData, Model $game, array $gameData): array
+    {
+        return $attributes;
     }
 
     protected function clearExisting(Model $game): void
@@ -102,19 +116,6 @@ abstract class AbstractFootballSyncTeamStats
             'penalties' => $stats['penalties'] ?? null,
             'penalty_yards' => $stats['penaltyYards'] ?? null,
         ];
-    }
-
-    protected function parseFraction(string $value, string $firstKey, ?string $secondKey, array &$parsed): void
-    {
-        $separator = str_contains($value, '/') ? '/' : '-';
-        $parts = explode($separator, $value);
-
-        if (count($parts) === 2) {
-            $parsed[$firstKey] = (int) $parts[0];
-            if ($secondKey) {
-                $parsed[$secondKey] = (int) $parts[1];
-            }
-        }
     }
 
     protected function resolveTeamType(Model $team, Model $game, array $teamData): ?string

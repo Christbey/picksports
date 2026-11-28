@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Settings;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileDeleteRequest;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
+use App\Services\Billing\BillingAccountDeletion;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -48,9 +49,9 @@ class ProfileController extends Controller
     {
         $user = $request->user();
 
-        Auth::logout();
+        app(BillingAccountDeletion::class)->delete($user);
 
-        $user->delete();
+        Auth::logout();
 
         $request->session()->invalidate();
         $request->session()->regenerateToken();

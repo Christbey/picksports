@@ -2,6 +2,8 @@
 
 namespace App\Services\NBA;
 
+use App\Support\ScoreObservation;
+
 class PlayEpaDataService
 {
     /** @var array<string,true> */
@@ -32,7 +34,7 @@ class PlayEpaDataService
             return false;
         }
 
-        $hasScore = is_numeric($play->home_score ?? null) && is_numeric($play->away_score ?? null);
+        $hasScore = ScoreObservation::known($play->home_score ?? null) !== null && ScoreObservation::known($play->away_score ?? null) !== null;
 
         return $hasScore;
     }

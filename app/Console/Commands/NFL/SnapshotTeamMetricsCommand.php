@@ -18,9 +18,20 @@ class SnapshotTeamMetricsCommand extends Command
         {--backfill-records : Reconstruct historical snapshots using inputs available at each cutoff}
         {--reconstruct-score-priors : Fill missing prior-season strengths from complete archived regular-season scores}';
 
-    protected $description = 'Capture a point-in-time snapshot of NFL team metrics for futures backtesting';
+    protected $description = 'Capture observed NFL metric receipts or explicitly reconstruct historical values';
 
     public function handle(TeamMetricSnapshotService $snapshotService): int
+    {
+        try {
+            return $this->capture($snapshotService);
+        } catch (\DomainException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
+    }
+
+    private function capture(TeamMetricSnapshotService $snapshotService): int
     {
         $season = (int) ($this->option('season') ?: date('Y'));
         $dates = $this->resolvedDates();
@@ -69,13 +80,13 @@ class SnapshotTeamMetricsCommand extends Command
         $dates = $this->option('date');
         if (is_string($dates) && trim($dates) !== '') {
             return [
-                Carbon::parse($dates)->utc()->format('Y-m-d\TH:i:s\Z'),
+                Carbon::parse($dates)->utc()->format('Y-m-d\TH:i:s.u\Z'),
             ];
         }
 
         if (is_array($dates) && $dates !== []) {
             return array_values(array_unique(array_map(
-                static fn ($date) => Carbon::parse((string) $date)->utc()->format('Y-m-d\TH:i:s\Z'),
+                static fn ($date) => Carbon::parse((string) $date)->utc()->format('Y-m-d\TH:i:s.u\Z'),
                 $dates
             )));
         }
@@ -96,7 +107,7 @@ class SnapshotTeamMetricsCommand extends Command
         $resolved = [];
 
         while ($cursor->lte($end)) {
-            $resolved[] = $cursor->copy()->utc()->format('Y-m-d\TH:i:s\Z');
+            $resolved[] = $cursor->copy()->utc()->format('Y-m-d\TH:i:s.u\Z');
             $cursor->addDay();
         }
 

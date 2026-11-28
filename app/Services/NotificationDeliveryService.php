@@ -22,7 +22,7 @@ class NotificationDeliveryService
     public function claim(NotificationDelivery $delivery): bool
     {
         return NotificationDelivery::query()->whereKey($delivery->id)->whereNull('accepted_at')
-            ->whereIn('status', ['planned', 'dispatched', 'failed'])->update([
+            ->whereIn('status', ['planned', 'dispatched'])->update([
                 'status' => 'sending', 'reason_code' => null,
             ]) === 1;
     }
@@ -34,7 +34,9 @@ class NotificationDeliveryService
 
     public function markFailed(NotificationDelivery|string $delivery, ?string $reasonCode = null): void
     {
-        $this->transition($delivery, 'failed', 'failed_at', $reasonCode);
+        // A transport/dispatch exception does not establish non-delivery.
+        // Without a provider receipt, the same key must never be auto-replayed.
+        $this->transition($delivery, 'outcome_unknown', 'failed_at', $reasonCode ?? 'transport_outcome_unknown');
     }
 
     public function markSuppressed(NotificationDelivery|string $delivery, ?string $reasonCode = null): void
@@ -46,6 +48,15 @@ class NotificationDeliveryService
     {
         $query = NotificationDelivery::query()->where('deduplication_key', $delivery instanceof NotificationDelivery ? $delivery->deduplication_key : $delivery);
         $query->whereNull('accepted_at');
+        $query->whereIn('status', match ($status) {
+            'dispatched' => ['planned'],
+            'suppressed' => ['planned', 'dispatched'],
+            // Direct mail acceptance can arrive without a prior local claim.
+            // Positive transport evidence may also settle an earlier error.
+            'accepted' => ['planned', 'dispatched', 'sending', 'failed', 'suppressed', 'outcome_unknown'],
+            'outcome_unknown' => ['planned', 'dispatched', 'sending'],
+            default => [],
+        });
         $query->update(['status' => $status, $timestamp => now(), 'reason_code' => $reason]);
     }
 }

@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Support\Models\GuardsCoreEvidenceMutations;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PredictionReviewRevision extends Model
 {
+    use GuardsCoreEvidenceMutations;
+
     public $timestamps = false;
 
     protected $guarded = ['id'];

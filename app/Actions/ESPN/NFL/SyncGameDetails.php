@@ -6,6 +6,7 @@ use App\Actions\ESPN\AbstractStandardSyncGameDetails;
 use App\Actions\GradePlayerProps;
 use App\Models\NFL\Game;
 use App\Services\ESPN\NFL\EspnService;
+use App\Services\NFL\NflBoxscoreSourceArchive;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Model;
 
@@ -25,6 +26,9 @@ class SyncGameDetails extends AbstractStandardSyncGameDetails
 
     protected function updateGame(array $gameData, Model $game): bool
     {
+        // Preserve final source evidence before replacing any observed stat rows.
+        app(NflBoxscoreSourceArchive::class)->record($game, $gameData);
+
         return app(SyncGameMetadata::class)->apply($gameData, $game);
     }
 

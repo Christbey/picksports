@@ -4,23 +4,34 @@ namespace App\Services\ML;
 
 use App\Models\ModelArtifact;
 use App\Models\ModelRun;
+use App\Models\ModelTrainingAttempt;
+use App\Models\ModelTrainingWorker;
+use App\Services\MLB\MlbTabularJsonBudget;
+use App\Services\MLB\MlbTabularModelBundle;
 use App\Services\MLB\MlbTabularModelRunRegistrar;
+use App\Services\MLB\MlbTrainingCompletion;
+use App\Services\MLB\MlbTrainingCompletionState;
+use App\Services\MLB\PreparedMlbTrainingCompletion;
 use App\Services\NFL\NflTabularModelRunRegistrar;
+use App\Support\BoundedTrainingSourceInventory;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
 
 class WeeklyChallengerTrainingService
 {
+    private ?MlbTrainingCompletion $mlbCompletionService = null;
+
     public function __construct(
         private readonly MlbTabularModelRunRegistrar $mlbRegistrar,
         private readonly NflTabularModelRunRegistrar $nflRegistrar,
         private readonly ShadowArtifactSelector $shadowArtifacts,
+        private readonly LocalTrainingExecutor $trainingExecutor,
+        private readonly TrainingAttemptService $attempts,
     ) {}
 
     /**
@@ -31,8 +42,12 @@ class WeeklyChallengerTrainingService
         bool $force = false,
         bool $allowPromotion = true,
         bool $retainWorkDirectory = false,
+        ?string $workerId = null,
     ): array {
         $specification = $this->specification($sport);
+        if ($workerId !== null) {
+            app(RemoteTrainingPreparation::class)->assertAvailable($workerId, $sport);
+        }
         if (! (bool) $specification['enabled'] && ! $force) {
             return [
                 'status' => 'disabled',
@@ -55,6 +70,7 @@ class WeeklyChallengerTrainingService
                 $force,
                 $allowPromotion,
                 $retainWorkDirectory,
+                $workerId,
             );
         } finally {
             $this->release($lock);
@@ -71,13 +87,12 @@ class WeeklyChallengerTrainingService
         bool $force,
         bool $allowPromotion,
         bool $retainWorkDirectory,
+        ?string $workerId,
     ): array {
         $cycleId = (string) Str::uuid();
-        $modelRunId = (string) Str::uuid();
         $cycleDirectory = rtrim((string) $specification['work_directory'], '/').'/'.$cycleId;
         $datasetPath = $cycleDirectory.'/training-data.csv';
         $outputDirectory = $cycleDirectory.'/artifacts';
-        $expectedRunDirectory = $outputDirectory.'/'.$modelRunId;
         $this->pruneWorkDirectories(
             (string) $specification['work_directory'],
             (int) $specification['retention_days'],
@@ -85,6 +100,7 @@ class WeeklyChallengerTrainingService
         $cycle = $this->startCycle($cycleId, $sport, $specification);
 
         File::ensureDirectoryExists($cycleDirectory, 0700, true);
+        $prepared = false;
 
         try {
             $this->updateCycle($cycle, 'promotion_evaluation');
@@ -151,22 +167,163 @@ class WeeklyChallengerTrainingService
                 ];
             }
 
-            $this->updateCycle($cycle, 'python_training');
-            $this->runPythonTraining(
-                $sport,
-                $modelRunId,
-                $datasetPath,
-                $datasetHash,
-                $outputDirectory,
-                $specification,
-            );
-            $this->assertPythonRun(
-                $expectedRunDirectory,
-                $modelRunId,
-                $datasetHash,
-                (string) $specification['model_type'],
-            );
+            $this->updateCycle($cycle, 'training_prepared', [
+                'training_specification' => $specification,
+                'dataset_path' => $datasetPath,
+                'output_directory' => $outputDirectory,
+            ]);
+            if ($workerId !== null) {
+                return app(RemoteTrainingPreparation::class)->prepare($cycle, $workerId, $specification);
+            }
+            $prepared = true;
 
+            return $this->executePrepared($cycle, $specification, $retainWorkDirectory);
+        } catch (Throwable $exception) {
+            if (! $prepared) {
+                $this->failCycle($cycle, $exception);
+                $this->writeFailureReport($cycleDirectory, $cycle, $exception);
+            }
+
+            throw $exception;
+        }
+    }
+
+    /** Resume only cycles prepared by this implementation; never reconstruct legacy running work. */
+    public function resume(string $sport, string $cycleId, bool $retainWorkDirectory = false): array
+    {
+        $this->specification($sport);
+        $cycle = ModelRun::query()->findOrFail($cycleId);
+        if ($cycle->sport !== $sport || $cycle->run_type !== 'weekly_training_cycle') {
+            throw new RuntimeException('Training cycle does not match the requested sport.');
+        }
+        $latest = ModelTrainingAttempt::query()->where('cycle_run_id', $cycleId)->orderByDesc('attempt_number')->first();
+        if ($latest?->status === 'succeeded') {
+            return $latest->result;
+        }
+        $specification = data_get($cycle->metadata, 'training_specification');
+        if (! is_array($specification)) {
+            throw new RuntimeException('Training cycle has no frozen preparation; legacy cycles cannot be resumed.');
+        }
+        $lock = Cache::lock("ml:weekly-challenger-training:{$sport}", (int) $specification['lock_seconds']);
+        if (! $lock->get()) {
+            throw new RuntimeException(strtoupper($sport).' weekly model training is already running.');
+        }
+        try {
+            return $this->executePrepared($cycle->refresh(), $specification, $retainWorkDirectory);
+        } finally {
+            $this->release($lock);
+        }
+    }
+
+    /** @param array<string, mixed> $specification @return array<string, mixed> */
+    private function executePrepared(ModelRun $cycle, array $specification, bool $retainWorkDirectory): array
+    {
+        if (data_get($cycle->metadata, 'remote_worker_id') !== null) {
+            throw new RuntimeException('Remote cycles must be resumed by their assigned worker.');
+        }
+        $sport = $cycle->sport;
+        $datasetPath = (string) data_get($cycle->metadata, 'dataset_path');
+        $datasetHash = (string) data_get($cycle->metadata, 'dataset_hash');
+        $fingerprint = (string) data_get($cycle->metadata, 'training_fingerprint');
+        $outputDirectory = (string) data_get($cycle->metadata, 'output_directory');
+        $cycleDirectory = dirname($datasetPath);
+        $this->assertDataset($datasetPath);
+        if (! hash_equals($datasetHash, (string) hash_file('sha256', $datasetPath))
+            || ! hash_equals($fingerprint, $this->trainingFingerprint($datasetHash, $specification))) {
+            throw new RuntimeException('Frozen training dataset, schema, or code changed; start a new cycle.');
+        }
+        // Includes registration headroom; no internal retry loop or automatic lease renewal.
+        $attempt = $this->attempts->claim($cycle->id, (int) $specification['timeout_seconds'] + 600);
+        $modelRunId = $attempt->python_run_id;
+        $cycle->refresh();
+        try {
+            $onOutput = null;
+            if (config('ml.monitoring.enabled', false)) {
+                $tail = '';
+                $sequence = 0;
+                $lastReport = 0.0;
+                $onOutput = function (string $type, string $chunk, bool $force = false) use ($attempt, &$tail, &$sequence, &$lastReport): void {
+                    $tail = substr($tail.$chunk, -8192);
+                    if (! $force && microtime(true) - $lastReport < 10) {
+                        return;
+                    }
+                    $lastReport = microtime(true);
+                    try {
+                        app(TrainingMonitoringService::class)->progress($attempt, ++$sequence, 'training_and_evaluation', $tail, [$attempt->owner_token]);
+                    } catch (Throwable) {
+                        // Monitoring failures must not change execution or lease semantics.
+                    }
+                };
+                $onOutput('', '', true);
+            }
+            try {
+                $expectedRunDirectory = $this->trainingExecutor->execute(
+                    $sport, $modelRunId, $datasetPath, $datasetHash, $outputDirectory, $specification, $onOutput,
+                );
+            } finally {
+                if ($onOutput !== null) {
+                    $onOutput('', '', true);
+                }
+            }
+            if (! hash_equals($datasetHash, (string) hash_file('sha256', $datasetPath))) {
+                throw new RuntimeException('Frozen training dataset changed during execution.');
+            }
+            $outputHash = $sport === 'mlb' ? app(MlbTabularModelBundle::class)->runFingerprint($expectedRunDirectory)
+                : $this->directoryHash($expectedRunDirectory, false);
+            $result = $this->completeAttempt($cycle, $attempt, $expectedRunDirectory, $outputHash);
+        } catch (Throwable $exception) {
+            if ($this->attempts->fail($attempt, $exception, (string) data_get($cycle->metadata, 'stage', 'python_training'))) {
+                $this->writeFailureReport($cycleDirectory, $cycle->refresh(), $exception);
+            }
+            throw $exception;
+        }
+        if (! $retainWorkDirectory) {
+            File::deleteDirectory($cycleDirectory);
+        }
+
+        return $result;
+    }
+
+    /** Server-owned registration; workers cannot promote models or supply persistence callbacks. */
+    public function completeAttempt(ModelRun $cycle, ModelTrainingAttempt $attempt, string $runDirectory, string $outputHash): array
+    {
+        if ($cycle->id !== $attempt->cycle_run_id) {
+            throw new RuntimeException('Training completion cycle does not match its attempt.');
+        }
+        $sport = $cycle->sport;
+        if ($sport === 'mlb') {
+            if ($cycle->getConnection()->transactionLevel() !== 0) {
+                throw new RuntimeException('MLB completion must prepare outside inherited worker or cycle transactions.');
+            }
+            // Diagnostics remain in memory until the fenced completion or failure receipt; never restore stale frozen bindings.
+            $metadata = MlbTrainingCompletionState::metadata($cycle);
+            $cycle->setRawAttributes([...$cycle->getAttributes(), 'metadata' => MlbTabularJsonBudget::encode([...$metadata, 'stage' => 'artifact_preparation'], 2097152, 50000, 24)]);
+            $prepared = $this->prepareMlbAttempt($cycle, $attempt, $runDirectory, $outputHash);
+            $cycle->setRawAttributes([...$cycle->getAttributes(), 'metadata' => MlbTabularJsonBudget::encode([...$metadata, 'stage' => 'completion_commit'], 2097152, 50000, 24)]);
+
+            return $this->commitMlbAttempt($prepared);
+        }
+        $modelRunId = $attempt->python_run_id;
+        $datasetPath = (string) data_get($cycle->metadata, 'dataset_path');
+        $datasetHash = (string) data_get($cycle->metadata, 'dataset_hash');
+        $fingerprint = (string) data_get($cycle->metadata, 'training_fingerprint');
+        $specification = (array) data_get($cycle->metadata, 'training_specification');
+        $expectedRunDirectory = $runDirectory;
+
+        return $this->attempts->complete($attempt, $outputHash, function () use (
+            $cycle, $sport, $modelRunId, $datasetPath, $datasetHash, $expectedRunDirectory, $fingerprint, $specification,
+        ): array {
+            $persisted = ModelRun::query()->findOrFail($cycle->id);
+            if ($persisted->sport !== $sport
+                || data_get($persisted->metadata, 'training_specification') !== $specification
+                || ! hash_equals((string) data_get($persisted->metadata, 'dataset_hash'), $datasetHash)
+                || ! hash_equals((string) data_get($persisted->metadata, 'training_fingerprint'), $fingerprint)
+                || ! hash_equals($datasetHash, (string) hash_file('sha256', $datasetPath))
+                || ! hash_equals($fingerprint, $this->trainingFingerprint($datasetHash, $specification))) {
+                throw new RuntimeException('Frozen training completion inputs changed.');
+            }
+            $cycle->metadata = [...(array) $persisted->metadata, 'dataset_path' => $datasetPath];
+            $active = $this->shadowArtifacts->activeChallenger($sport, (string) $specification['model_type']);
             $this->updateCycle($cycle, 'artifact_registration');
             $artifact = $this->register(
                 $sport,
@@ -201,19 +358,6 @@ class WeeklyChallengerTrainingService
                 $active = $artifact->refresh();
             }
 
-            $this->completeCycle($cycle, 'completed', [
-                'artifact_id' => $artifact->id,
-                'model_run_id' => $modelRunId,
-                'dataset_hash' => $datasetHash,
-                'training_fingerprint' => $fingerprint,
-                'shadow_artifact_id' => $active?->id,
-                'artifact_status' => $artifact->status,
-            ]);
-
-            if (! $retainWorkDirectory) {
-                File::deleteDirectory($cycleDirectory);
-            }
-
             return [
                 'status' => 'completed',
                 'message' => strtoupper($sport).' weekly challenger trained, registered, and evaluated.',
@@ -223,13 +367,26 @@ class WeeklyChallengerTrainingService
                 'dataset_hash' => $datasetHash,
                 'training_fingerprint' => $fingerprint,
                 'shadow_artifact_id' => $active?->id,
+                'artifact_status' => $artifact->status,
             ];
-        } catch (Throwable $exception) {
-            $this->failCycle($cycle, $exception);
-            $this->writeFailureReport($cycleDirectory, $cycle, $exception);
+        });
+    }
 
-            throw $exception;
-        }
+    /** Server-owned staging; remote callers pass only the current authenticated credential and bounded upload receipts. */
+    public function prepareMlbAttempt(ModelRun $cycle, ModelTrainingAttempt $attempt, string $runDirectory, string $outputHash,
+        ?ModelTrainingWorker $credential = null, ?array $uploads = null, ?string $datasetPath = null): PreparedMlbTrainingCompletion
+    {
+        $this->mlbCompletionService ??= app(MlbTrainingCompletion::class);
+
+        return $this->mlbCompletionService->prepare($cycle, $attempt, $runDirectory,
+            $datasetPath ?? (string) data_get($cycle->metadata, 'dataset_path'), $outputHash, $credential, $uploads);
+    }
+
+    public function commitMlbAttempt(PreparedMlbTrainingCompletion $prepared, ?ModelTrainingWorker $credential = null): array
+    {
+        $this->mlbCompletionService ??= app(MlbTrainingCompletion::class);
+
+        return $this->mlbCompletionService->commit($prepared, $credential);
     }
 
     /**
@@ -311,7 +468,7 @@ class WeeklyChallengerTrainingService
         File::put($directory.'/failure.json', json_encode([
             'cycle_run_id' => $cycle->id,
             'sport' => $cycle->sport,
-            'failed_stage' => data_get($cycle->metadata, 'stage'),
+            'failed_stage' => data_get($cycle->metadata, 'failed_stage', data_get($cycle->metadata, 'stage')),
             'exception' => $exception::class,
             'error' => Str::limit($exception->getMessage(), 8000, ''),
             'failed_at' => now()->toIso8601String(),
@@ -383,84 +540,6 @@ class WeeklyChallengerTrainingService
         }
     }
 
-    /**
-     * @param  array<string, mixed>  $specification
-     */
-    private function runPythonTraining(
-        string $sport,
-        string $runId,
-        string $datasetPath,
-        string $datasetHash,
-        string $outputDirectory,
-        array $specification,
-    ): void {
-        File::ensureDirectoryExists($outputDirectory, 0700, true);
-        $command = [
-            ...(array) $specification['python_command'],
-            'train',
-            '--input',
-            $datasetPath,
-            '--schema',
-            (string) $specification['schema_path'],
-            '--expected-dataset-sha256',
-            $datasetHash,
-            '--output-dir',
-            $outputDirectory,
-            '--run-id',
-            $runId,
-        ];
-
-        if ($sport === 'nfl') {
-            $command[] = (bool) $specification['tune'] ? '--tune' : '--no-tune';
-            $command[] = (bool) $specification['explain'] ? '--explain' : '--no-explain';
-        }
-
-        $result = Process::path((string) $specification['package_directory'])
-            ->timeout((int) $specification['timeout_seconds'])
-            ->env([
-                'OMP_NUM_THREADS' => (string) $specification['threads'],
-                'OPENBLAS_NUM_THREADS' => (string) $specification['threads'],
-                'MKL_NUM_THREADS' => (string) $specification['threads'],
-                'NUMEXPR_NUM_THREADS' => (string) $specification['threads'],
-                'PYTHONPATH' => (string) $specification['package_directory'].'/src',
-                'PYTHONUNBUFFERED' => '1',
-            ])
-            ->run($command);
-
-        if (! $result->successful()) {
-            throw new RuntimeException(sprintf(
-                '%s Python training failed with exit code %s: %s',
-                strtoupper($sport),
-                (string) $result->exitCode(),
-                Str::limit(trim($result->errorOutput() ?: $result->output()), 8000, ''),
-            ));
-        }
-    }
-
-    private function assertPythonRun(
-        string $runDirectory,
-        string $runId,
-        string $datasetHash,
-        string $modelType,
-    ): void {
-        $manifestPath = $runDirectory.'/manifest.json';
-        if (! File::isFile($manifestPath)) {
-            throw new RuntimeException('Python training did not produce the expected immutable run directory.');
-        }
-
-        $manifest = json_decode(File::get($manifestPath), true, flags: JSON_THROW_ON_ERROR);
-        foreach ([
-            'model_run_id' => $runId,
-            'dataset_hash' => $datasetHash,
-            'model_type' => $modelType,
-        ] as $key => $expected) {
-            if (! is_string($manifest[$key] ?? null)
-                || ! hash_equals($expected, (string) $manifest[$key])) {
-                throw new RuntimeException("Python manifest {$key} does not match the requested training lineage.");
-            }
-        }
-    }
-
     private function register(string $sport, string $runDirectory, string $datasetPath): ModelArtifact
     {
         return $sport === 'mlb'
@@ -505,7 +584,7 @@ class WeeklyChallengerTrainingService
     {
         return hash('sha256', json_encode([
             'dataset_hash' => $datasetHash,
-            'schema_hash' => hash_file('sha256', (string) $specification['schema_path']),
+            'schema_hash' => BoundedTrainingSourceInventory::hashFile((string) $specification['schema_path']),
             'package_source_hash' => $this->directoryHash((string) $specification['package_directory']),
             'python_command' => $specification['python_command'],
             'tune' => $specification['tune'],
@@ -513,10 +592,15 @@ class WeeklyChallengerTrainingService
         ], JSON_THROW_ON_ERROR));
     }
 
-    private function directoryHash(string $directory): string
+    private function directoryHash(string $directory, bool $sourceOnly = true): string
     {
+        if ($sourceOnly) {
+            return BoundedTrainingSourceInventory::capture($directory, static fn (string $relative): bool => in_array(
+                strtolower(pathinfo($relative, PATHINFO_EXTENSION)), ['py', 'yaml', 'yml', 'toml', 'txt'], true,
+            ))->jsonMapHash();
+        }
         $files = collect(File::allFiles($directory))
-            ->filter(fn (\SplFileInfo $file): bool => in_array(
+            ->filter(fn (\SplFileInfo $file): bool => ! $sourceOnly || in_array(
                 strtolower($file->getExtension()),
                 ['py', 'yaml', 'yml', 'toml', 'txt'],
                 true,
@@ -582,7 +666,9 @@ class WeeklyChallengerTrainingService
         $cutoff = now()->subDays($retentionDays)->getTimestamp();
         foreach (File::directories($root) as $directory) {
             $modifiedAt = File::lastModified($directory);
-            if ($modifiedAt < $cutoff) {
+            $recoverable = ModelRun::query()->whereKey(basename($directory))
+                ->where('run_type', 'weekly_training_cycle')->whereIn('status', ['running', 'failed'])->exists();
+            if ($modifiedAt < $cutoff && ! $recoverable) {
                 File::deleteDirectory($directory);
             }
         }

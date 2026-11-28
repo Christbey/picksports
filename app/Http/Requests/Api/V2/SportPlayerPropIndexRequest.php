@@ -13,6 +13,15 @@ class SportPlayerPropIndexRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        foreach (['game' => 'game_id', 'player' => 'player_id'] as $parameter => $filter) {
+            if ($this->route($parameter) !== null) {
+                $this->merge([$filter => $this->route($parameter)]);
+            }
+        }
+    }
+
     /**
      * @return array<string, mixed>
      */

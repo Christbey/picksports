@@ -2,6 +2,7 @@
 
 namespace App\Services\Sports;
 
+use App\DataTransferObjects\ESPN\GameData;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
@@ -265,7 +266,7 @@ class DepthChartDataService
             ->whereIn('player_id', $playerIds)
             ->whereHas('game', function ($gameQuery) use ($season, $seasonType, $beforeDate): void {
                 $gameQuery->where('season', $season)
-                    ->where('status', 'STATUS_FINAL');
+                    ->whereIn('status', GameData::finalStatuses());
 
                 $seasonTypes = $this->seasonTypeVariants($seasonType);
 
@@ -280,7 +281,18 @@ class DepthChartDataService
             ->groupBy('player_id');
 
         foreach ($this->sumColumnsForSport($sport) as $column) {
-            $query->selectRaw("COALESCE(SUM({$column}), 0) as {$column}");
+            $query->selectRaw("SUM({$column}) as {$column}, COUNT({$column}) as samples_{$column}");
+        }
+
+        if ($sport === 'mlb') {
+            foreach (['era' => ['innings_pitched', 'earned_runs'], 'whip' => ['innings_pitched', 'walks_allowed', 'hits_allowed'],
+                'avg' => ['at_bats', 'hits'], 'ops' => ['at_bats', 'hits', 'walks', 'doubles', 'triples', 'home_runs']] as $rate => $columns) {
+                $known = implode(' AND ', array_map(fn (string $column): string => "{$column} IS NOT NULL", $columns));
+                $query->selectRaw("COUNT(CASE WHEN {$known} THEN 1 END) as samples_{$rate}");
+                foreach ($columns as $column) {
+                    $query->selectRaw("SUM(CASE WHEN {$known} THEN {$column} END) as paired_{$rate}_{$column}");
+                }
+            }
         }
 
         /** @var Collection<int, Model> $rows */
@@ -372,7 +384,7 @@ class DepthChartDataService
 
     /**
      * @param  array<string, mixed>|null  $stats
-     * @return list<array{key:string,label:string,value:string}>
+     * @return list<array<string,mixed>>
      */
     protected function formatMetrics(string $sport, Model $entry, ?array $stats): array
     {
@@ -390,103 +402,95 @@ class DepthChartDataService
 
     /**
      * @param  array<string, mixed>  $stats
-     * @return list<array{key:string,label:string,value:string}>
+     * @return list<array<string,mixed>>
      */
     protected function formatNflMetrics(string $positionCode, array $stats): array
     {
-        $code = strtoupper(trim($positionCode));
-        $games = max(1, (int) ($stats['games_played'] ?? 0));
-
-        if ($code === 'QB') {
-            return [
-                ['key' => 'pass_yards', 'label' => 'Pass Yds', 'value' => (string) (int) ($stats['passing_yards'] ?? 0)],
-                ['key' => 'pass_td', 'label' => 'Pass TD', 'value' => (string) (int) ($stats['passing_touchdowns'] ?? 0)],
-                ['key' => 'ints', 'label' => 'INT', 'value' => (string) (int) ($stats['interceptions_thrown'] ?? 0)],
-                ['key' => 'rush_yards', 'label' => 'Rush Yds', 'value' => (string) (int) ($stats['rushing_yards'] ?? 0)],
-            ];
+        $fields = match (strtoupper(trim($positionCode))) {
+            'QB' => [['pass_yards', 'Pass Yds', 'passing_yards'], ['pass_td', 'Pass TD', 'passing_touchdowns'],
+                ['ints', 'INT', 'interceptions_thrown'], ['rush_yards', 'Rush Yds', 'rushing_yards']],
+            'RB', 'HB', 'FB' => [['rush_yards', 'Rush Yds', 'rushing_yards'], ['rush_td', 'Rush TD', 'rushing_touchdowns'],
+                ['receptions', 'Rec', 'receptions'], ['receiving_yards', 'Rec Yds', 'receiving_yards']],
+            'WR', 'TE' => [['receptions', 'Rec', 'receptions'], ['receiving_yards', 'Rec Yds', 'receiving_yards'],
+                ['receiving_td', 'Rec TD', 'receiving_touchdowns']],
+            default => [['tackles', 'Tackles', 'tackles_total'], ['sacks', 'Sacks', 'sacks', 1], ['ints', 'INT', 'interceptions']],
+        };
+        $metrics = array_map(fn (array $field): array => $this->metric($field[0], $field[1],
+            $this->number($stats[$field[2]] ?? null), (int) ($stats['samples_'.$field[2]] ?? 0), $field[3] ?? 0), $fields);
+        if (in_array(strtoupper(trim($positionCode)), ['WR', 'TE'], true)) {
+            $samples = (int) ($stats['samples_receiving_yards'] ?? 0);
+            $yards = $this->number($stats['receiving_yards'] ?? null);
+            $metrics[] = $this->metric('yards_per_game', 'Yds/G', $samples > 0 && $yards !== null ? $yards / $samples : null, $samples, 1);
         }
 
-        if (in_array($code, ['RB', 'HB', 'FB'], true)) {
-            return [
-                ['key' => 'rush_yards', 'label' => 'Rush Yds', 'value' => (string) (int) ($stats['rushing_yards'] ?? 0)],
-                ['key' => 'rush_td', 'label' => 'Rush TD', 'value' => (string) (int) ($stats['rushing_touchdowns'] ?? 0)],
-                ['key' => 'receptions', 'label' => 'Rec', 'value' => (string) (int) ($stats['receptions'] ?? 0)],
-                ['key' => 'receiving_yards', 'label' => 'Rec Yds', 'value' => (string) (int) ($stats['receiving_yards'] ?? 0)],
-            ];
-        }
-
-        if (in_array($code, ['WR', 'TE'], true)) {
-            return [
-                ['key' => 'receptions', 'label' => 'Rec', 'value' => (string) (int) ($stats['receptions'] ?? 0)],
-                ['key' => 'receiving_yards', 'label' => 'Rec Yds', 'value' => (string) (int) ($stats['receiving_yards'] ?? 0)],
-                ['key' => 'receiving_td', 'label' => 'Rec TD', 'value' => (string) (int) ($stats['receiving_touchdowns'] ?? 0)],
-                ['key' => 'yards_per_game', 'label' => 'Yds/G', 'value' => number_format(((float) ($stats['receiving_yards'] ?? 0)) / $games, 1)],
-            ];
-        }
-
-        return [
-            ['key' => 'tackles', 'label' => 'Tackles', 'value' => (string) (int) ($stats['tackles_total'] ?? 0)],
-            ['key' => 'sacks', 'label' => 'Sacks', 'value' => number_format((float) ($stats['sacks'] ?? 0), 1)],
-            ['key' => 'ints', 'label' => 'INT', 'value' => (string) (int) ($stats['interceptions'] ?? 0)],
-        ];
+        return $metrics;
     }
 
-    /**
-     * @param  array<string, mixed>  $stats
-     * @return list<array{key:string,label:string,value:string}>
-     */
+    /** @return list<array<string,mixed>> */
     protected function formatNbaMetrics(array $stats): array
     {
-        $games = max(1, (int) ($stats['games_played'] ?? 0));
+        $metrics = [];
+        foreach (['ppg' => ['PPG', 'points'], 'rpg' => ['RPG', 'rebounds_total'], 'apg' => ['APG', 'assists'],
+            'spg' => ['SPG', 'steals'], 'bpg' => ['BPG', 'blocks']] as $key => [$label, $column]) {
+            $samples = (int) ($stats['samples_'.$column] ?? 0);
+            $sum = $this->number($stats[$column] ?? null);
+            $metrics[] = $this->metric($key, $label, $samples > 0 && $sum !== null ? $sum / $samples : null, $samples, 1);
+        }
+
+        return $metrics;
+    }
+
+    /** @return list<array<string,mixed>> */
+    protected function formatMlbMetrics(string $positionCode, array $stats): array
+    {
+        if (str_contains(strtoupper(trim($positionCode)), 'P')) {
+            $eraInnings = $this->number($stats['paired_era_innings_pitched'] ?? null);
+            $earned = $this->number($stats['paired_era_earned_runs'] ?? null);
+            $whipInnings = $this->number($stats['paired_whip_innings_pitched'] ?? null);
+            $walks = $this->number($stats['paired_whip_walks_allowed'] ?? null);
+            $hits = $this->number($stats['paired_whip_hits_allowed'] ?? null);
+
+            return [
+                $this->metric('ip', 'IP', $this->number($stats['innings_pitched'] ?? null), (int) ($stats['samples_innings_pitched'] ?? 0), 1) + ['unit' => 'decimal_innings'],
+                $this->metric('era', 'ERA', $eraInnings > 0 && $earned !== null ? $earned * 9 / $eraInnings : null, (int) ($stats['samples_era'] ?? 0), 2),
+                $this->metric('k', 'K', $this->number($stats['strikeouts_pitched'] ?? null), (int) ($stats['samples_strikeouts_pitched'] ?? 0)),
+                $this->metric('whip', 'WHIP', $whipInnings > 0 && $walks !== null && $hits !== null ? ($walks + $hits) / $whipInnings : null, (int) ($stats['samples_whip'] ?? 0), 2),
+            ];
+        }
+        $atBats = $this->number($stats['paired_avg_at_bats'] ?? null);
+        $hits = $this->number($stats['paired_avg_hits'] ?? null);
+        $opsAtBats = $this->number($stats['paired_ops_at_bats'] ?? null);
+        $opsHits = $this->number($stats['paired_ops_hits'] ?? null);
+        $walks = $this->number($stats['paired_ops_walks'] ?? null);
+        $doubles = $this->number($stats['paired_ops_doubles'] ?? null);
+        $triples = $this->number($stats['paired_ops_triples'] ?? null);
+        $homeRuns = $this->number($stats['paired_ops_home_runs'] ?? null);
+        $ops = null;
+        if ($opsAtBats > 0 && $opsHits !== null && $walks !== null && $doubles !== null && $triples !== null && $homeRuns !== null) {
+            $singles = $opsHits - $doubles - $triples - $homeRuns;
+            if ($singles >= 0 && $opsAtBats + $walks > 0) {
+                $ops = ($opsHits + $walks) / ($opsAtBats + $walks)
+                    + ($singles + 2 * $doubles + 3 * $triples + 4 * $homeRuns) / $opsAtBats;
+            }
+        }
 
         return [
-            ['key' => 'ppg', 'label' => 'PPG', 'value' => number_format(((float) ($stats['points'] ?? 0)) / $games, 1)],
-            ['key' => 'rpg', 'label' => 'RPG', 'value' => number_format(((float) ($stats['rebounds_total'] ?? 0)) / $games, 1)],
-            ['key' => 'apg', 'label' => 'APG', 'value' => number_format(((float) ($stats['assists'] ?? 0)) / $games, 1)],
-            ['key' => 'spg', 'label' => 'SPG', 'value' => number_format(((float) ($stats['steals'] ?? 0)) / $games, 1)],
-            ['key' => 'bpg', 'label' => 'BPG', 'value' => number_format(((float) ($stats['blocks'] ?? 0)) / $games, 1)],
+            $this->metric('avg', 'AVG', $atBats > 0 && $hits !== null ? $hits / $atBats : null, (int) ($stats['samples_avg'] ?? 0), 3),
+            $this->metric('ops', 'OPS', $ops, (int) ($stats['samples_ops'] ?? 0), 3),
+            $this->metric('hr', 'HR', $this->number($stats['home_runs'] ?? null), (int) ($stats['samples_home_runs'] ?? 0)),
+            $this->metric('rbi', 'RBI', $this->number($stats['rbis'] ?? null), (int) ($stats['samples_rbis'] ?? 0)),
         ];
     }
 
-    /**
-     * @param  array<string, mixed>  $stats
-     * @return list<array{key:string,label:string,value:string}>
-     */
-    protected function formatMlbMetrics(string $positionCode, array $stats): array
+    private function number(mixed $value): ?float
     {
-        $code = strtoupper(trim($positionCode));
+        return is_numeric($value) && is_finite((float) $value) ? (float) $value : null;
+    }
 
-        if (str_contains($code, 'P')) {
-            $innings = (float) ($stats['innings_pitched'] ?? 0);
-            $earnedRuns = (float) ($stats['earned_runs'] ?? 0);
-            $era = $innings > 0 ? ($earnedRuns * 9) / $innings : null;
-
-            return [
-                ['key' => 'ip', 'label' => 'IP', 'value' => number_format($innings, 1)],
-                ['key' => 'era', 'label' => 'ERA', 'value' => $era === null ? '-' : number_format($era, 2)],
-                ['key' => 'k', 'label' => 'K', 'value' => (string) (int) ($stats['strikeouts_pitched'] ?? 0)],
-                ['key' => 'whip', 'label' => 'WHIP', 'value' => $innings > 0 ? number_format((((float) ($stats['walks_allowed'] ?? 0)) + ((float) ($stats['hits_allowed'] ?? 0))) / $innings, 2) : '-'],
-            ];
-        }
-
-        $atBats = (float) ($stats['at_bats'] ?? 0);
-        $hits = (float) ($stats['hits'] ?? 0);
-        $walks = (float) ($stats['walks'] ?? 0);
-        $doubles = (float) ($stats['doubles'] ?? 0);
-        $triples = (float) ($stats['triples'] ?? 0);
-        $homeRuns = (float) ($stats['home_runs'] ?? 0);
-        $singles = max(0.0, $hits - $doubles - $triples - $homeRuns);
-        $totalBases = $singles + ($doubles * 2) + ($triples * 3) + ($homeRuns * 4);
-        $avg = $atBats > 0 ? $hits / $atBats : null;
-        $obp = ($atBats + $walks) > 0 ? ($hits + $walks) / ($atBats + $walks) : null;
-        $slg = $atBats > 0 ? $totalBases / $atBats : null;
-        $ops = ($obp !== null && $slg !== null) ? $obp + $slg : null;
-
-        return [
-            ['key' => 'avg', 'label' => 'AVG', 'value' => $avg === null ? '-' : number_format($avg, 3)],
-            ['key' => 'ops', 'label' => 'OPS', 'value' => $ops === null ? '-' : number_format($ops, 3)],
-            ['key' => 'hr', 'label' => 'HR', 'value' => (string) (int) $homeRuns],
-            ['key' => 'rbi', 'label' => 'RBI', 'value' => (string) (int) ($stats['rbis'] ?? 0)],
-        ];
+    /** @return array{key:string,label:string,value:string,sample_size:int} */
+    private function metric(string $key, string $label, ?float $value, int $samples, int $precision = 0): array
+    {
+        return ['key' => $key, 'label' => $label, 'value' => $value === null || ! is_finite($value) ? '-' : number_format($value, $precision, '.', ''),
+            'sample_size' => $samples];
     }
 }

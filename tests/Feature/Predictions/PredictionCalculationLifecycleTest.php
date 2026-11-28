@@ -7,12 +7,16 @@ use App\Application\Predictions\Data\PredictionOutput;
 use App\Contracts\Predictions\EventInputSnapshotBuilder;
 use App\Contracts\Predictions\SportCalculator;
 use App\Exceptions\Predictions\PredictionLifecycleException;
+use App\Jobs\Predictions\DeliverPublicationEffect;
 use App\Models\CalculationRelease;
 use App\Models\CalculationReleaseComponent;
 use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
 use App\Models\EventInputSnapshot;
+use App\Models\NBA\Game;
+use App\Models\NBA\Team;
 use App\Models\PredictionMarket;
+use App\Models\PredictionPublicationEffect;
 use App\Models\SportEvent;
 use App\Services\Predictions\CalculationReleaseManager;
 use App\Services\Predictions\CalculationReleaseSelector;
@@ -20,6 +24,7 @@ use App\Services\Predictions\CanonicalPayloadHasher;
 use App\Services\Predictions\PredictionLifecycleOrchestrator;
 use App\Services\Predictions\PredictionPublisher;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Queue;
 
 final class PredictionLifecycleTestSnapshotBuilder implements EventInputSnapshotBuilder
 {
@@ -45,6 +50,34 @@ final class PredictionLifecycleTestSnapshotBuilder implements EventInputSnapshot
         );
     }
 }
+
+it('queues shared analysis after native publication only when both automatic and sport admission are enabled', function (bool $publisherEnabled, bool $researchEnabled) {
+    Queue::fake();
+    config(['game_analysis.publisher_enabled' => $publisherEnabled,
+        'research.enabled' => $researchEnabled, 'research.sports.nba.enabled' => $researchEnabled,
+        'prediction_review.enabled' => false,
+        'prediction_lifecycle.canonical_pipeline.nba' => false,
+        'prediction_lifecycle.canonical_reads.nba' => false]);
+    $event = SportEvent::factory()->create(['sport' => 'nba', 'starts_at' => now()->addHours(4)]);
+    $game = Game::factory()->create([
+        'sport_event_id' => $event->id,
+        'home_team_id' => Team::factory(), 'away_team_id' => Team::factory(),
+    ]);
+    lifecycleRulesRelease();
+    app(PredictionLifecycleOrchestrator::class)->generateForGame($game, 'nba',
+        new PredictionLifecycleTestSnapshotBuilder(['home_probability' => 0.61], now()->toImmutable(), now()->toImmutable()),
+        new PredictionLifecycleTestCalculator);
+
+    if ($publisherEnabled && $researchEnabled) {
+        $intent = PredictionPublicationEffect::query()->where('effect', 'analysis')->sole();
+        expect($intent->payload)->toBe(['sport' => 'nba', 'game_id' => $game->id]);
+        Queue::assertPushed(DeliverPublicationEffect::class,
+            fn ($job) => $job->effectId === $intent->id && $job->ownerToken === $intent->owner_token);
+    } else {
+        Queue::assertNotPushed(DeliverPublicationEffect::class);
+        expect(PredictionPublicationEffect::query()->where('effect', 'analysis')->exists())->toBeFalse();
+    }
+})->with([[false, false], [false, true], [true, false], [true, true]]);
 
 final class PredictionLifecycleTestCalculator implements SportCalculator
 {
@@ -393,3 +426,24 @@ it('rejects source evidence available after capture even when the verified cutof
     expect($calculator->calls)->toBe(0)->and(EventInputSnapshot::count())->toBe(0);
     $this->travelBack();
 });
+it('rejects publishing an older draft after a newer revision has been published', function (bool $withdrawNewer) {
+    Queue::fake();
+    $capturedAt = now()->startOfSecond()->toImmutable();
+    $event = SportEvent::factory()->create(['sport' => 'nba', 'starts_at' => $capturedAt->addHour()]);
+    lifecycleRulesRelease();
+    $builder = new PredictionLifecycleTestSnapshotBuilder(['home_probability' => 0.60], $capturedAt, $event->starts_at);
+    $orchestrator = app(PredictionLifecycleOrchestrator::class);
+    $calculator = new PredictionLifecycleTestCalculator;
+    $older = $orchestrator->generate($event, $builder, $calculator);
+    $builder->inputs = ['home_probability' => 0.67];
+    $newer = $orchestrator->generateAndPublish($event, $builder, $calculator);
+    if ($withdrawNewer) {
+        $newer->update(['publication_state' => 'withdrawn', 'withdrawn_at' => now()]);
+    }
+
+    expect(fn () => app(PredictionPublisher::class)->publish($older))
+        ->toThrow(PredictionLifecycleException::class, 'newer revision')
+        ->and($older->fresh()->publication_state)->toBe('draft')
+        ->and($newer->fresh()->publication_state)->toBe($withdrawNewer ? 'withdrawn' : 'published')
+        ->and($event->predictions()->published()->count())->toBe($withdrawNewer ? 0 : 1);
+})->with([false, true]);

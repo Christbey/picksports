@@ -5,11 +5,7 @@ import { createServer } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import { createSSRApp } from 'vue';
 import { renderToString } from 'vue/server-renderer';
-import {
-    finiteValue,
-    gameOutcome,
-    recentRecord,
-} from '../../resources/js/lib/gameOutcome.ts';
+let finiteValue, gameOutcome, recentRecord;
 import {
     researchReason,
     decisionLabel,
@@ -42,6 +38,9 @@ before(async () => {
             },
         },
     });
+    ({ finiteValue, gameOutcome, recentRecord } = await server.ssrLoadModule(
+        '/resources/js/lib/gameOutcome.ts',
+    ));
 });
 after(async () => {
     await server?.close();
@@ -226,6 +225,26 @@ test('research shows the write-up and citations without internal review flags', 
                                         'Detailed interpretation marker',
                                     source_url: 'https://example.com/evidence',
                                 },
+                                {
+                                    claim: 'Completed game evidence marker',
+                                    evidence_kind: 'application',
+                                    evidence_reference:
+                                        'analysis_context.season_evidence.teams.home.games',
+                                    evidence_status: 'reference_verified',
+                                    source_url: 'https://example.org/unrelated',
+                                },
+                            ],
+                            opposing: [
+                                {
+                                    claim: 'Counterargument marker',
+                                    interpretation:
+                                        'Context from the same source',
+                                    source_url: 'https://example.com/evidence',
+                                },
+                                {
+                                    claim: 'Open risk',
+                                    source_url: 'javascript:alert(1)',
+                                },
                             ],
                             opposing: [
                                 {
@@ -312,6 +331,9 @@ test('research shows the write-up and citations without internal review flags', 
     assert.doesNotMatch(closed, /No approved spread pick/);
     assert.match(closed, /Detailed evidence marker/);
     assert.match(closed, /Detailed interpretation marker/);
+    assert.match(closed, /Completed game evidence marker/);
+    assert.match(closed, /PickSports completed games/);
+    assert.doesNotMatch(closed, /example.org\/unrelated/);
     assert.match(closed, /Counterargument marker/);
     assert.match(closed, /Starting quarterback injury marker/);
     assert.match(closed, /Lineup risks/);

@@ -14,13 +14,17 @@ class FetchTeamDepthCharts extends BulkEspnJob
         public int $season = 0,
     ) {
         parent::__construct();
+        $this->season = $season > 0 ? $season : now()->year;
     }
 
     public function handle(): void
     {
         $service = new EspnService;
         $action = new SyncTeamDepthCharts($service);
-        $season = $this->season > 0 ? $this->season : now()->year;
+        $season = $this->season;
+        if ($season < 1) {
+            throw new \RuntimeException('Depth chart job has no frozen season; dispatch a new job with an explicit season.');
+        }
 
         if ($this->teamEspnId) {
             $count = $action->execute($this->teamEspnId, $season);

@@ -5,7 +5,7 @@ import vue from '@vitejs/plugin-vue';
 import { createRenderer, nextTick, ssrContextKey } from 'vue';
 import { fileURLToPath } from 'node:url';
 
-test('board keeps its cards while refreshing and ignores superseded date responses', async () => {
+test('board clears prior-date cards while loading and ignores superseded date responses', async () => {
     const server = await createServer({
         configFile: false,
         plugins: [
@@ -78,7 +78,7 @@ test('board keeps its cards while refreshing and ignores superseded date respons
         state.selectedDate.value = '2026-09-29';
         await flush();
         assert.equal(state.loading.value, false);
-        assert.equal(state.predictions.value[0].id, 1);
+        assert.equal(state.predictions.value.length, 0);
         state.selectedDate.value = '2026-09-30';
         await flush();
         assert.equal(pending.length, 2);

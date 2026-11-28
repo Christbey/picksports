@@ -3,11 +3,14 @@
 namespace App\Models\MLB;
 
 use App\Models\CanonicalPrediction;
+use App\Support\Models\GuardsCoreEvidenceMutations;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PeriodFeatureSnapshot extends Model
 {
+    use GuardsCoreEvidenceMutations;
+
     protected $table = 'mlb_period_feature_snapshots';
 
     protected $fillable = [

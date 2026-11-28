@@ -4,6 +4,7 @@ namespace App\Console\Commands\MLB;
 
 use App\Models\MLB\Game;
 use App\Services\MLB\MlbPeriodFeatureStore;
+use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 
@@ -33,8 +34,10 @@ class MaterializePeriodFeaturesCommand extends Command
             ->when($gameIds->isEmpty(), function ($query) use ($season, $date, $daysAhead): void {
                 $query
                     ->when($season, fn ($seasonQuery) => $seasonQuery->where('season', (int) $season))
-                    ->whereDate('game_date', '>=', $date)
-                    ->whereDate('game_date', '<', Carbon::parse($date)->addDays($daysAhead)->toDateString());
+                    ->tap(function ($windowQuery) use ($date, $daysAhead): void {
+                        $dates = app(SportsDateWindowService::class);
+                        $dates->applyGameDateWindow($windowQuery, $dates->forRange($date, Carbon::parse($date)->addDays($daysAhead - 1)->toDateString()));
+                    });
             })
             ->orderBy('game_date')
             ->orderBy('game_time')
@@ -49,6 +52,12 @@ class MaterializePeriodFeaturesCommand extends Command
         $startedAt = hrtime(true);
         $snapshots = $features->materialize($games);
         $elapsed = (hrtime(true) - $startedAt) / 1_000_000_000;
+
+        if ($snapshots->isEmpty()) {
+            $this->error('No current observed-start pregame captures were available; legacy calendar inventory is unverified.');
+
+            return self::FAILURE;
+        }
 
         $this->info(sprintf(
             'Materialized %d immutable period feature snapshots for %d games in %.2f seconds.',

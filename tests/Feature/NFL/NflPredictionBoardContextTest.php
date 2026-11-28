@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\NFL\NflPredictionBoardContext;
 use App\Services\NFL\Research\ResearchPipeline;
 use App\Services\Sports\SportsDateWindowService;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
@@ -202,6 +203,8 @@ it('marks lines stale only when older than 36 hours', function (int $ageSeconds,
 ]);
 
 it('exposes the retry action only to admins for pregame predictions', function (bool $admin, bool $started, bool $allowed) {
+    // UTC has crossed midnight while the business calendar is still yesterday.
+    $this->travelTo(CarbonImmutable::parse('2026-11-26T00:45:00Z'));
     [$prediction] = boardFixture();
     $user = User::factory()->create(['is_admin' => $admin]);
     config(['subscriptions.tier_bypass_user_ids' => [$user->id]]);

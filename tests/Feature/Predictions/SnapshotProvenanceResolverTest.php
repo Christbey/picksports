@@ -48,11 +48,13 @@ it('classifies NBA snapshots by actual UTC tipoff rather than local interpretati
         ->and($result['pregame_safe'])->toBe($safe);
 })->with([['2026-10-23T23:59:59Z', true], ['2026-10-24T00:00:00Z', false], ['2026-10-24T01:00:00Z', false]]);
 
-it('honors canonical NBA start and refuses unknown NBA tipoffs', function () {
+it('uses current NBA start instead of a stale canonical clock and refuses unknown tipoffs', function () {
     $game = new App\Models\NBA\Game(['game_date' => '2026-10-26', 'game_time' => '22:00:00']);
     $game->setRelation('sportEvent', new SportEvent(['starts_at' => '2026-10-23T19:00:00-05:00']));
     $resolver = app(SnapshotProvenanceResolver::class);
-    expect($resolver->resolve($game, [], '2026-10-24T01:00:00Z')['pregame_safe'])->toBeFalse();
+    expect($resolver->resolve($game, [], '2026-10-24T01:00:00Z')['pregame_safe'])->toBeTrue()
+        ->and($resolver->resolve($game, [], '2026-10-24T01:00:00Z')['game_start_at']->toIso8601String())->toBe('2026-10-26T22:00:00+00:00')
+        ->and($resolver->resolve($game, [], '2026-10-26T22:00:00Z')['pregame_safe'])->toBeFalse();
     $game->setRelation('sportEvent', null);
     $game->game_time = '';
     expect($resolver->resolve($game, [], '2026-10-24T01:00:00Z')['game_start_at'])->toBeNull();

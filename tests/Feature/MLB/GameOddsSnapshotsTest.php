@@ -24,7 +24,7 @@ it('records a historical odds snapshot while keeping latest odds on the game', f
         'name' => 'Yankees',
     ]);
 
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2026,
         'season_type' => 'Regular Season',
         'game_date' => now()->addDays(2)->toDateString(),
@@ -120,7 +120,7 @@ it('does not create duplicate snapshots when the odds payload has not changed', 
         'name' => 'Yankees',
     ]);
 
-    $game = Game::factory()->create([
+    $game = Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2026,
         'season_type' => 'Regular Season',
         'game_date' => now()->addDays(2)->toDateString(),

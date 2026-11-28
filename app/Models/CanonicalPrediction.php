@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\CachesJsonArrayCasts;
+use App\Support\Models\GuardsCoreEvidenceMutations;
 use App\Support\SportCatalog;
 use Database\Factories\CanonicalPredictionFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -20,6 +21,7 @@ class CanonicalPrediction extends Model
     /** @use HasFactory<CanonicalPredictionFactory> */
     use CachesJsonArrayCasts;
 
+    use GuardsCoreEvidenceMutations;
     use HasFactory, HasUlids;
 
     public const DETAIL_SOURCE_LEGACY_SPORT_PREDICTION = 'legacy_sport_prediction';
@@ -129,7 +131,7 @@ class CanonicalPrediction extends Model
         });
 
         static::deleting(function (self $prediction): void {
-            if ($prediction->calculation_run_id !== null) {
+            if ($prediction->getOriginal('calculation_run_id') !== null) {
                 throw new LogicException('Canonical prediction revisions cannot be deleted.');
             }
         });
@@ -239,6 +241,17 @@ class CanonicalPrediction extends Model
         return $this->belongsTo(ModelArtifact::class);
     }
 
+    public function trackedWcbbSpread(): HasOne
+    {
+        return $this->hasOne(BetDecision::class, 'prediction_id')
+            ->where('prediction_table', $this->getTable())
+            ->where('sport', 'wcbb')
+            ->where('market_type', 'spread')
+            ->where('recommendation_label', 'model_lean')
+            ->where('is_tracking_only', true)
+            ->where('is_bet', false);
+    }
+
     public function markets(): HasMany
     {
         return $this->hasMany(PredictionMarket::class, 'prediction_id');
@@ -259,7 +272,16 @@ class CanonicalPrediction extends Model
 
     public function latestEvaluation(): HasOne
     {
-        return $this->hasOne(PredictionEvaluation::class)->latestOfMany('evaluation_revision');
+        // Public grades and performance aggregates must not retain a grade for
+        // an earlier result while a correction is awaiting evaluation. History
+        // remains available through evaluations().
+        return $this->hasOne(PredictionEvaluation::class)
+            ->latestOfMany('evaluation_revision')
+            ->where('prediction_evaluations.sport_event_result_id', SportEventResult::query()
+                ->select('id')
+                ->whereColumn('sport_event_results.sport_event_id', 'prediction_evaluations.sport_event_id')
+                ->orderByDesc('revision')
+                ->limit(1));
     }
 
     /** @param Builder<self> $query */

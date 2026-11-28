@@ -276,11 +276,11 @@ class GenerateTournamentForecast
             FROM (
                 SELECT home_team_id AS team_id, CASE WHEN home_score > away_score THEN 1 ELSE 0 END AS won
                 FROM cbb_games
-                WHERE status = 'STATUS_FINAL' AND season = ?
+                WHERE status = 'STATUS_FINAL' AND season = ? AND home_score IS NOT NULL AND away_score IS NOT NULL
                 UNION ALL
                 SELECT away_team_id AS team_id, CASE WHEN away_score > home_score THEN 1 ELSE 0 END AS won
                 FROM cbb_games
-                WHERE status = 'STATUS_FINAL' AND season = ?
+                WHERE status = 'STATUS_FINAL' AND season = ? AND home_score IS NOT NULL AND away_score IS NOT NULL
             ) results
             GROUP BY team_id",
             [$season, $season]

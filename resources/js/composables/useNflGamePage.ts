@@ -242,7 +242,13 @@ export function useNflGamePage(gameId: number) {
                     snapshot?.projection?.live_predicted_total ?? null,
                 liveSecondsRemaining:
                     snapshot?.projection?.live_seconds_remaining,
-                sourceUpdatedAt: snapshot?.source_updated_at,
+                sourceUpdatedAt: null,
+                recordUpdatedAt: null,
+                recordUpdatedAtRaw: snapshot?.record_updated_at_raw ?? null,
+                recordClockStatus:
+                    snapshot?.record_clock_status ?? 'unverified_storage_clock',
+                sourceClockStatus:
+                    snapshot?.source_clock_status ?? 'observation_unavailable',
                 freshnessWarning: liveSnapshotWarning(
                     snapshot,
                     currentTime.value,
@@ -251,14 +257,14 @@ export function useNflGamePage(gameId: number) {
                 modelWarning:
                     snapshot?.warning ??
                     'Experimental score-and-clock estimate; not a live sportsbook edge.',
-                preGameWinProbability: Number(
-                    prediction.value?.win_probability ?? 0,
+                preGameWinProbability: toOptionalNumber(
+                    prediction.value?.win_probability,
                 ),
-                preGamePredictedSpread: Number(
-                    prediction.value?.predicted_spread ?? 0,
+                preGamePredictedSpread: toOptionalNumber(
+                    prediction.value?.predicted_spread,
                 ),
-                preGamePredictedTotal: Number(
-                    prediction.value?.predicted_total ?? 0,
+                preGamePredictedTotal: toOptionalNumber(
+                    prediction.value?.predicted_total,
                 ),
             };
             return JSON.stringify(previous) === JSON.stringify(next)
@@ -297,6 +303,7 @@ export function useNflGamePage(gameId: number) {
                 historical_prediction?: NflHistoricalPrediction | null;
                 team_stats: ApiV2Stat[];
             }>('nfl', gameId, requestOptions);
+            if (requestController.signal.aborted) return;
             if (!page?.data?.game) throw new Error('Game data is unavailable.');
             const gameData = { data: page.data.game };
             const predictionData = { data: page?.data?.prediction };
@@ -373,6 +380,8 @@ export function useNflGamePage(gameId: number) {
                                   init: { signal: requestController.signal },
                               })
                               .then((response) => {
+                                  if (requestController.signal.aborted) return;
+                                  if (requestController.signal.aborted) return;
                                   recentGames.value = (response?.data ?? [])
                                       .filter(
                                           (game) =>
@@ -400,11 +409,14 @@ export function useNflGamePage(gameId: number) {
 
             await Promise.allSettled(supplemental);
         } catch (e) {
+            if (requestController.signal.aborted) return;
             if (e instanceof DOMException && e.name === 'AbortError') return;
             error.value = e instanceof Error ? e.message : 'An error occurred';
         } finally {
-            loading.value = false;
-            trendsLoading.value = false;
+            if (!requestController.signal.aborted) {
+                loading.value = false;
+                trendsLoading.value = false;
+            }
         }
     };
 
@@ -432,12 +444,20 @@ export function useNflGamePage(gameId: number) {
                     previous.game,
                     previous.projection,
                     previous.source_updated_at,
+                    previous.record_updated_at,
+                    previous.record_updated_at_raw,
+                    previous.record_clock_status,
+                    previous.source_clock_status,
                     previous.warning,
                 ]) !==
                     JSON.stringify([
                         response.data.game,
                         response.data.projection,
                         response.data.source_updated_at,
+                        response.data.record_updated_at,
+                        response.data.record_updated_at_raw,
+                        response.data.record_clock_status,
+                        response.data.source_clock_status,
                         response.data.warning,
                     ])
             ) {

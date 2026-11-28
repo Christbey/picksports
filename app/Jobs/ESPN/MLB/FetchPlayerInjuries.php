@@ -24,8 +24,11 @@ class FetchPlayerInjuries implements ShouldQueue
         $service = new EspnService;
         $action = new SyncPlayerInjuries($service);
 
-        if ($this->teamEspnId) {
+        if ($this->teamEspnId !== null) {
             $count = $action->execute($this->teamEspnId);
+            if (! $action->lastSyncReliable()) {
+                throw new \RuntimeException('MLB injury source unavailable or incomplete for the selected team.');
+            }
             Log::info("MLB: Synced {$count} player injuries for team {$this->teamEspnId} from ESPN");
         } else {
             $count = $action->syncAllTeams();

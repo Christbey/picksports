@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from itertools import product
+import math
 from typing import Any
 
 import numpy as np
@@ -36,9 +37,11 @@ def select_probability_blend(
     minimum_anchor_coverage: float = 0.5,
     maximum_anchor_weight: float = 0.7,
 ) -> dict[str, Any]:
+    if isinstance(maximum_anchor_weight, bool) or not isinstance(maximum_anchor_weight, (int, float)) or not math.isfinite(maximum_anchor_weight) or not 0 <= maximum_anchor_weight <= 1:
+        raise ValueError("Maximum anchor weight must be finite and between zero and one")
     anchor_coverage = float(np.mean(np.isfinite(anchors)))
     anchor_limit = (
-        int(round(maximum_anchor_weight * 10))
+        math.floor(maximum_anchor_weight * 10)
         if enabled and anchor_coverage >= minimum_anchor_coverage
         else 0
     )

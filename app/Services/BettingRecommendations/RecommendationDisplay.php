@@ -2,7 +2,9 @@
 
 namespace App\Services\BettingRecommendations;
 
+use App\Models\MLB\Game;
 use App\Services\Sports\SportsDateWindowService;
+use App\Support\MLB\MlbGameStart;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
@@ -46,6 +48,9 @@ class RecommendationDisplay
     public static function kickoff(Model $game, ?CarbonInterface $startsAt = null): ?CarbonImmutable
     {
         $dates = app(SportsDateWindowService::class);
+        if ($game instanceof Game) {
+            return MlbGameStart::for($game)?->toImmutable()->setTimezone($dates->timezone());
+        }
         if ($startsAt !== null) {
             return CarbonImmutable::instance($startsAt)->setTimezone($dates->timezone());
         }

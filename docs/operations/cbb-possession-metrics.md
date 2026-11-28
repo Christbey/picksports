@@ -1,0 +1,11 @@
+# CBB possession metric maintenance
+
+Dated private candidate contract: November 28, 2026. This guide describes reviewed local source, not deployed configuration or a production execution certificate.
+
+`php artisan cbb:calculate-possession-metrics` defaults to the configured CBB season, falling back to the existing basketball-season helper when configuration is absent. Omitted `--game_id` selects all final games in that season. An explicitly supplied season or game ID must be a positive integer; `--limit-games` must be a nonnegative integer. Explicit empty, null, malformed, fractional or negative selectors fail before the action; zero season/game IDs also fail. `--limit-games=0` means all selected games; positive N limits the chronological input games. `--chunk` retains its existing minimum clamp of 25.
+
+**`--rebuild` deletes all existing metric rows for the selected season before writing recalculated results, including when `--game_id` or `--limit-games` narrows the input.** It is not a narrow-row deletion option. A valid empty selection with rebuild intentionally clears the season; without rebuild it leaves existing rows unchanged. Review the selected scope before invoking this maintenance command.
+
+The action orders final games by game_date then ID and uses offset batches to preserve that order, including reverse-created IDs. It uses all matching season phases; no regular-season-only filter is introduced. Rolling metrics use the latest ten usable game aggregates for each team, alongside season aggregates. Source games, plays and ordering must remain stable during the run: offset pagination is not a snapshot or concurrent-writer guarantee. No global allocator or transaction certificate is implied.
+
+Validation evidence is synthetic SQLite actual Artisan/action execution: original 11 failures plus five positives; deterministic expanded before 16 failures plus seven positives; corrected final 29 tests/96 assertions, including six existing action/command/chronological cases, and two Pint checks. The prior native22 proof qualified chronological action and forecast components; it did not execute this newly guarded command and is not transferred as native command proof. No provider, production, external model, deployment or approval action was performed.

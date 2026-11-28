@@ -10,6 +10,29 @@ const bracket = useBracketBuilderContext();
         class="mx-auto max-w-[1500px] px-4 pt-6 pb-8 sm:px-6 lg:px-8 lg:pt-10"
     >
         <div class="space-y-6">
+            <div
+                v-if="
+                    bracket.isAuthenticated &&
+                    bracket.accountReadErrorMessages.length
+                "
+                role="alert"
+                class="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm"
+            >
+                <p
+                    v-for="message in bracket.accountReadErrorMessages"
+                    :key="message"
+                >
+                    {{ message }}
+                </p>
+                <Button
+                    type="button"
+                    variant="outline"
+                    class="mt-3"
+                    :disabled="bracket.accountLoading"
+                    @click="bracket.reloadAccountData"
+                    >Retry account reads</Button
+                >
+            </div>
             <div class="ui-surface rounded-[2rem] p-4 sm:p-5">
                 <div
                     class="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] xl:items-start"

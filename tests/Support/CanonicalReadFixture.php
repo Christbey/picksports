@@ -11,7 +11,7 @@ use Carbon\CarbonImmutable;
 /** Explicit valid lineage for reader fixtures; adversarial tests construct their own evidence. */
 class CanonicalReadFixture
 {
-    public static function run(SportEvent $event, array $inputs): CalculationRun
+    public static function run(SportEvent $event, array $inputs, array $snapshotAttributes = []): CalculationRun
     {
         $captured = CarbonImmutable::now()->min(CarbonImmutable::instance($event->starts_at)->subMinute());
         $snapshot = EventInputSnapshot::factory()->create([
@@ -20,6 +20,9 @@ class CanonicalReadFixture
             'latest_source_available_at' => $captured->subMinute(),
             'source_timestamps' => ['ratings' => $captured->subMinute()->toIso8601String()],
             'inputs' => $inputs, 'pregame_safety_status' => 'verified',
+            ...$snapshotAttributes,
+            // Creation identity is owned by the supplied event; optional observation fields are staged before INSERT.
+            'sport' => $event->sport, 'sport_event_id' => $event->id, 'phase' => 'pregame',
         ]);
         $release = CalculationRelease::factory()->approved()->create(['sport' => $event->sport, 'phase' => 'pregame']);
 

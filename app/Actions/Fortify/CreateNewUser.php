@@ -10,6 +10,8 @@ use App\Models\GroupInvitation;
 use App\Models\GroupJoinLink;
 use App\Models\User;
 use App\Services\Auth\FoundingUserAccessService;
+use App\Services\Billing\BillingRoleEntitlements;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Laravel\Fortify\Contracts\CreatesNewUsers;
 
@@ -62,24 +64,28 @@ class CreateNewUser implements CreatesNewUsers
             })->validate();
         }
 
-        $user = User::create([
-            'name' => $input['name'],
-            'email' => $input['email'],
-            'age_verified_at' => now(),
-            'password' => $input['password'],
-        ]);
+        $user = DB::transaction(function () use ($input): User {
+            $user = User::create([
+                'name' => $input['name'],
+                'email' => $input['email'],
+                'age_verified_at' => now(),
+                'password' => $input['password'],
+            ]);
 
-        $grantedFoundingRole = app(FoundingUserAccessService::class)
-            ->assignFoundingRoleIfEligible($user);
+            $grantedFoundingRole = app(FoundingUserAccessService::class)
+                ->assignFoundingRoleIfEligible($user);
 
-        if (! $grantedFoundingRole) {
-            $user->syncRoleFromTier();
-        }
+            if (! $grantedFoundingRole) {
+                app(BillingRoleEntitlements::class)->grantNewAccountDefault($user, 'registration');
+            }
+
+            return $user;
+        });
 
         if ($invitation && $invitation->isPending()) {
             GroupInvitationController::acceptInvitation($invitation, $user);
         } elseif ($joinLink && $joinLink->isActive()) {
-            GroupJoinLinkController::joinGroup($joinLink->group, $user);
+            GroupJoinLinkController::acceptJoinLink($joinLink, $user);
         }
 
         return $user;

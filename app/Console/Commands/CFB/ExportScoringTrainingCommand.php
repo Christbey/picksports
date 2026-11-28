@@ -8,21 +8,25 @@ use App\Models\CFB\TeamSeasonAffiliation;
 use App\Models\DatasetExportManifest;
 use App\Models\EventInputSnapshot;
 use App\Models\MarketQuote;
+use App\Services\CFB\Data\CfbDataReadiness;
 use App\Services\CFB\Data\CfbDriveBuilder;
+use App\Services\CFB\Data\CfbSourceAssessmentRecorder;
 use App\Services\CFB\Predictions\CfbStoredPregameQuote;
 use App\Services\CFB\Scoring\CfbScoringFeatures;
+use App\Services\CFB\Scoring\CfbTrainingSourceProvenance;
 use App\Services\CFB\Signals\CfbFootballSignalCatalog;
 use App\Services\CFB\Signals\CfbFootballSignalJointModel;
 use App\Services\Predictions\CfbSnapshotInputStorage;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class ExportScoringTrainingCommand extends Command
 {
-    protected $signature = 'cfb:export-scoring-training {--from-season=} {--to-season=} {--as-of=} {--test-season=} {--test-from=} {--test-until=} {--after-game-id=0} {--max-games=0} {--output=}';
+    protected $signature = 'cfb:export-scoring-training {--from-season=} {--to-season=} {--as-of=} {--test-season=} {--test-from=} {--test-until=} {--after-game-id=0} {--max-games=100} {--output=}';
 
     protected $description = 'Export accepted source revisions, frozen context, coverage and real availability times for chronological CFB training';
 
@@ -60,7 +64,13 @@ class ExportScoringTrainingCommand extends Command
             $testUntil = $end->toIso8601String();
         }
         $after = max(0, (int) $this->option('after-game-id'));
-        $maximum = max(0, (int) $this->option('max-games'));
+        $scope = (string) $this->option('max-games');
+        if (! preg_match('/^[1-9][0-9]*$/', $scope) || (int) $scope > 1000) {
+            $this->error('max-games must be between 1 and 1000; resume using after-game-id.');
+
+            return self::FAILURE;
+        }
+        $maximum = (int) $scope;
         $scanned = 0;
         $lastScannedId = $after;
         $path = $this->option('output');
@@ -75,7 +85,10 @@ class ExportScoringTrainingCommand extends Command
         $catalog = app(CfbScoringFeatures::class)->independentCatalog(CfbFootballSignalCatalog::all());
         try {
             foreach (Game::with('sportEvent')->whereBetween('season', [$from, $to])->where('status', 'STATUS_FINAL')->where('id', '>', $after)->lazyById(50)->chunk(50) as $games) {
-                $games = $games->collect();
+                $games = $games->collect()->take($maximum - $scanned);
+                if ($games->isEmpty()) {
+                    break;
+                }
                 $accepted = $this->acceptedChecks($games, $asOf);
                 $affiliations = TeamSeasonAffiliation::query()->whereIn('season', $games->pluck('season')->unique())
                     ->whereIn('team_id', $games->flatMap(fn (Game $game): array => [$game->home_team_id, $game->away_team_id])->unique())->get()
@@ -98,10 +111,18 @@ class ExportScoringTrainingCommand extends Command
 
                         continue;
                     }
+                    $receipts = array_map(fn ($check) => app(CfbSourceAssessmentRecorder::class)->acceptanceReceipt($check, $asOf), $checks);
+                    if (in_array(null, $receipts, true)) {
+                        $coverage['excluded']['unverified_sources'] = ($coverage['excluded']['unverified_sources'] ?? 0) + 1;
+
+                        continue;
+                    }
                     $drives = DB::table('cfb_drives')->where('game_id', $game->id)->where('source_revision', $checks['plays']->source_hash)->orderBy('id')->get();
                     if ($drives->isEmpty() || $drives->contains(fn ($r) => $r->quality !== 'complete'
                         || data_get(json_decode($r->data, true), 'normalizer_version') !== CfbDriveBuilder::VERSION
-                        || data_get(json_decode($r->data, true), 'score_ledger_revision') !== $checks['boxscore']->source_hash)) {
+                        || data_get(json_decode($r->data, true), 'score_ledger_revision') !== $checks['boxscore']->source_hash
+                        || data_get(json_decode($r->data, true), 'play_assessment_receipt_id') !== $receipts['plays']->id
+                        || data_get(json_decode($r->data, true), 'boxscore_assessment_receipt_id') !== $receipts['boxscore']->id)) {
                         $coverage['excluded']['unverified_drives'] = ($coverage['excluded']['unverified_drives'] ?? 0) + 1;
 
                         continue;
@@ -145,7 +166,7 @@ class ExportScoringTrainingCommand extends Command
                             $signalMissing[$id] = in_array(null, $states, true);
                         }
                     }
-                    $available = max($checks['boxscore']->accepted_at, $checks['plays']->accepted_at, CarbonImmutable::parse($drives->max('updated_at')), CarbonImmutable::parse($game->updated_at));
+                    $available = max($checks['boxscore']->accepted_at, $checks['plays']->accepted_at, $receipts['boxscore']->recorded_at, $receipts['plays']->recorded_at, CarbonImmutable::parse($drives->max('updated_at')), CarbonImmutable::parse($game->updated_at));
                     if ($available->gt($asOf)) {
                         $coverage['excluded']['derived_after_cutoff'] = ($coverage['excluded']['derived_after_cutoff'] ?? 0) + 1;
 
@@ -160,7 +181,13 @@ class ExportScoringTrainingCommand extends Command
                             'line' => $q->line === null ? null : (float) $q->line, 'price' => $q->price, 'bookmaker' => $q->bookmaker_key])->values()->all();
                     $row = ['schema' => 'cfb-scoring-v1', 'game_id' => $game->id, 'season' => $game->season, 'week' => $game->week, 'kickoff' => $kickoff->toIso8601String(),
                         'source_available_at' => $available->toIso8601String(), 'evidence' => 'retrospective_accepted_sources',
-                        'source_hashes' => array_map(fn ($c) => $c->source_hash, $checks), 'home_id' => (string) $game->home_team_id, 'away_id' => (string) $game->away_team_id,
+                        'source_hashes' => array_map(fn ($c) => $c->source_hash, $checks),
+                        'source_assessment_receipt_ids' => array_map(fn ($receipt) => $receipt->id, $receipts),
+                        'source_assessments' => array_map(fn ($receipt) => [
+                            'check_id' => $receipt->game_data_check_id, 'receipt_id' => $receipt->id,
+                            'context_hash' => $receipt->context_hash, 'source_hash' => $receipt->projection_snapshot['source_hash'],
+                            'game_feature_hash' => app(CfbTrainingSourceProvenance::class)->gameFeatureHash($game),
+                        ], $receipts), 'home_id' => (string) $game->home_team_id, 'away_id' => (string) $game->away_team_id,
                         'home_score' => (int) $game->home_score, 'away_score' => (int) $game->away_score, 'neutral' => (bool) $game->neutral_site,
                         'subdivisions' => collect([$game->home_team_id, $game->away_team_id])->mapWithKeys(fn (int $id): array => ($row = $affiliations->get($game->season.':'.$id)) ? [$id => $row->subdivision] : [])->all(),
                         'snapshot_hash' => $snapshot?->content_hash, 'snapshot_available_at' => $snapshot?->captured_at?->toIso8601String(),
@@ -179,24 +206,141 @@ class ExportScoringTrainingCommand extends Command
             fclose($file);
         }
         $hash = hash_file('sha256', $path);
+        $hasMore = Game::whereBetween('season', [$from, $to])->where('status', 'STATUS_FINAL')->where('id', '>', $lastScannedId)->exists();
+        $complete = $after === 0 && ! $hasMore;
         $manifest = ['schema' => 'cfb-scoring-v1', 'sha256' => $hash, 'data_path' => realpath($path), 'as_of' => $asOf->toIso8601String(), 'from_season' => $from, 'to_season' => $to,
             'scan' => ['after_game_id' => $after, 'scanned_games' => $scanned, 'last_game_id' => $lastScannedId,
-                'has_more' => Game::whereBetween('season', [$from, $to])->where('status', 'STATUS_FINAL')->where('id', '>', $lastScannedId)->exists()],
+                'has_more' => $hasMore, 'complete' => $complete, 'limit_hit' => $hasMore && $scanned >= $maximum,
+                'max_games' => $maximum, 'chunk_size' => 50],
             'test_season' => $testSeason, 'test_from' => $testFrom, 'test_until' => $testUntil, 'coverage' => $coverage, 'signal_families' => array_map(fn ($r) => $r['family'], $catalog), 'feature_policy' => CfbScoringFeatures::POLICY, 'availability_policy' => 'strict_recorded_time; retrospective replay must be labeled separately'];
-        file_put_contents($path.'.manifest.json', json_encode($manifest, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+        $manifestJson = json_encode($manifest, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+        if (@file_put_contents($path.'.manifest.json', $manifestJson) !== strlen($manifestJson)) {
+            $this->error('Unable to write the completed local export manifest.');
+
+            return self::FAILURE;
+        }
+        if ($coverage['included'] === 0) {
+            $this->line(json_encode($manifest, JSON_THROW_ON_ERROR));
+
+            return 2;
+        }
+        $manifestHash = hash('sha256', $manifestJson);
         $key = 'cfb/training/'.$hash.'.jsonl';
         $disk = config('cfb.scoring.artifact_disk', 'local');
-        $stream = fopen($path, 'rb');
-        Storage::disk($disk)->put($key, $stream);
-        fclose($stream);
-        Storage::disk($disk)->put($key.'.manifest.json', file_get_contents($path.'.manifest.json'));
-        DatasetExportManifest::firstOrCreate(['dataset' => 'cfb_scoring', 'sport' => 'cfb', 'season' => $to, 'format' => 'jsonl', 'sha256' => $hash],
-            ['content_type' => 'application/x-ndjson', 'disk' => $disk, 'object_key' => $key, 'manifest_key' => $key.'.manifest.json', 'uri' => $disk.':'.$key,
-                'manifest_sha256' => hash_file('sha256', $path.'.manifest.json'), 'schema_hash' => hash('sha256', 'cfb-scoring-v1'),
-                'row_count' => $coverage['included'], 'size_bytes' => filesize($path), 'source_table' => 'cfb_games', 'source_max_id' => $maxId, 'exported_at' => now(), 'metadata' => $manifest]);
+        $identity = ['dataset' => 'cfb_scoring', 'sport' => 'cfb', 'season' => $to, 'format' => 'jsonl', 'sha256' => $hash];
+        $existing = DatasetExportManifest::query()->where($identity)->first();
+        $manifestKey = $key.'.'.$manifestHash.'.manifest.json';
+        if ($existing !== null && $existing->manifest_key === $key.'.manifest.json') {
+            $manifestKey = $existing->manifest_key; // Exact compatible legacy retry; never rewrite its identity.
+        }
+        $values = ['content_type' => 'application/x-ndjson', 'disk' => $disk, 'object_key' => $key,
+            'manifest_key' => $manifestKey, 'uri' => $disk.':'.$key, 'manifest_sha256' => $manifestHash,
+            'schema_hash' => hash('sha256', 'cfb-scoring-v1'), 'row_count' => $coverage['included'],
+            'size_bytes' => filesize($path), 'source_table' => 'cfb_games', 'source_max_id' => $maxId,
+            'exported_at' => now(), 'metadata' => $manifest];
+        if ($existing !== null && ! $this->registryMatches($existing, [...$identity, ...$values])) {
+            $this->error('Existing immutable export registry does not match this publication.');
+
+            return self::FAILURE;
+        }
+        try {
+            $storage = Storage::disk($disk);
+            $manifestExists = $storage->exists($manifestKey);
+            $dataExists = $storage->exists($key);
+            if (($manifestExists && ! $this->storedHashMatches($storage, $manifestKey, $manifestHash, strlen($manifestJson)))
+                || ($dataExists && ! $this->storedHashMatches($storage, $key, $hash, $values['size_bytes']))) {
+                $this->error('Refusing to overwrite differing immutable export objects.');
+
+                return self::FAILURE;
+            }
+            if (! $dataExists) {
+                $stream = @fopen($path, 'rb');
+                if (! is_resource($stream)) {
+                    $this->error('Unable to open the completed export for publication.');
+
+                    return self::FAILURE;
+                }
+                try {
+                    $written = $storage->put($key, $stream);
+                } finally {
+                    if (is_resource($stream)) {
+                        fclose($stream);
+                    }
+                }
+                if ($written !== true) {
+                    $this->error('Export data publication failed; local output retained.');
+
+                    return self::FAILURE;
+                }
+            }
+            if (! $manifestExists && $storage->put($manifestKey, $manifestJson) !== true) {
+                $this->error('Export manifest publication failed; local output retained.');
+
+                return self::FAILURE;
+            }
+        } catch (\Throwable) {
+            $this->error('Export publication failed; local output retained.');
+
+            return self::FAILURE;
+        }
+        $registered = $this->registerExport($identity, $values);
+        if (! $registered->exists || ! $this->registryMatches($registered, [...$identity, ...$values])) {
+            $this->error('A different immutable export registry won publication; local output retained.');
+
+            return self::FAILURE;
+        }
         $this->line(json_encode($manifest, JSON_THROW_ON_ERROR));
 
-        return $coverage['included'] ? self::SUCCESS : 2;
+        return $coverage['included'] && $complete ? self::SUCCESS : 2;
+    }
+
+    protected function registerExport(array $identity, array $values): DatasetExportManifest
+    {
+        return DatasetExportManifest::firstOrCreate($identity, $values);
+    }
+
+    private function registryMatches(DatasetExportManifest $record, array $expected): bool
+    {
+        foreach (array_diff_key($expected, ['exported_at' => true, 'metadata' => true]) as $field => $value) {
+            if ($record->getAttribute($field) !== $value) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function storedHashMatches(FilesystemAdapter $disk, string $key, string $expected, int $expectedBytes): bool
+    {
+        if ($expectedBytes < 0 || $expectedBytes >= PHP_INT_MAX) {
+            return false;
+        }
+        $stream = $disk->readStream($key);
+        if (! is_resource($stream)) {
+            return false;
+        }
+        try {
+            $context = hash_init('sha256');
+            $remaining = $expectedBytes + 1;
+            $read = 0;
+            while ($remaining > 0 && ! feof($stream)) {
+                $chunkSize = min(8192, $remaining);
+                stream_set_chunk_size($stream, $chunkSize);
+                $chunk = fread($stream, $chunkSize);
+                if ($chunk === false || ($chunk === '' && ! feof($stream))) {
+                    return false;
+                }
+                $read += strlen($chunk);
+                $remaining -= strlen($chunk);
+                hash_update($context, $chunk);
+            }
+
+            return $read === $expectedBytes && feof($stream) && hash_equals($expected, hash_final($context));
+        } finally {
+            if (is_resource($stream)) {
+                fclose($stream);
+            }
+        }
     }
 
     /**
@@ -205,11 +349,14 @@ class ExportScoringTrainingCommand extends Command
      */
     private function acceptedChecks(Collection $games, CarbonImmutable $asOf): Collection
     {
-        $ranked = DB::table('cfb_game_data_checks')->whereIn('game_id', $games->pluck('id'))
-            ->whereIn('component', ['boxscore', 'plays'])->whereNotNull('accepted_at')->where('accepted_at', '<=', $asOf)
-            ->select('id')->selectRaw('ROW_NUMBER() OVER (PARTITION BY game_id, component ORDER BY accepted_at DESC, id DESC) as source_rank');
+        $readiness = app(CfbDataReadiness::class);
 
-        return GameDataCheck::query()->whereIn('id', DB::query()->fromSub($ranked, 'accepted_checks')->select('id')->where('source_rank', 1))
-            ->get()->groupBy('game_id')->map(fn ($checks): Collection => $checks->keyBy('component'));
+        return $games->mapWithKeys(function (Game $game) use ($readiness, $asOf): array {
+            $checks = collect(['boxscore', 'plays'])->mapWithKeys(fn (string $component): array => [
+                $component => $readiness->acceptedCheck($game, $component, $asOf),
+            ])->filter();
+
+            return $checks->count() === 2 ? [$game->id => $checks] : [];
+        });
     }
 }

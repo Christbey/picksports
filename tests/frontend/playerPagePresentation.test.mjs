@@ -40,13 +40,20 @@ test('default summary and log columns keep existing zero, missing and weighted-p
         page.defaultGameLogColumns
             .find((x) => x.label === 'PTS')
             .value({ points: 0 }),
-        '-',
+        0,
     );
     assert.equal(page.formatOdds(110), '+110');
-    assert.equal(page.formatDate(null), '-');
+    assert.equal(page.formatDate(null), '—');
     assert.deepEqual(
         page.getPlayerOpponent(
-            { game: { home_team_id: 1, away_team: { abbreviation: 'AWY' } } },
+            {
+                team_id: 1,
+                game: {
+                    home_team_id: 1,
+                    away_team_id: 2,
+                    away_team: { abbreviation: 'AWY' },
+                },
+            },
             { team_id: 1 },
         ),
         { label: 'vs', name: 'AWY' },

@@ -13,8 +13,6 @@ class SyncSchedulesCommand extends AbstractSyncSchedulesCommand
 
     protected const SPORT_CODE = 'WCBB';
 
-    protected const DEFAULT_SEASON = '2026';
-
     protected const TEAM_MODEL_CLASS = Team::class;
 
     protected const ESPN_SERVICE_CLASS = EspnService::class;

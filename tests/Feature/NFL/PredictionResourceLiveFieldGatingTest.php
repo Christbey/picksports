@@ -168,6 +168,7 @@ test('includes nfl prediction analysis with betting value permission', function 
         ->and($data['prediction_analysis']['model_signal_classification'])->toBe('strong_model_side')
         ->and($data['prediction_analysis']['reason_codes'])->toContain('strong_model_signal')
         ->and($data['prediction_analysis']['pro_signal_layer']['market_context']['crossed_key_numbers'])->toBe([3, 5])
-        ->and($data['prediction_analysis']['best_validated_signal']['winner_hit_rate'])->toBe(73.2)
-        ->and($data['prediction_analysis']['validated_signals'][0]['sample_size'])->toBe(127);
+        ->and($data['prediction_analysis']['best_validated_signal']['winner_hit_rate'])->toBeNull()
+        ->and($data['prediction_analysis']['validated_signals'][0]['sample_size'])->toBe(0)
+        ->and($data['prediction_analysis']['best_validated_signal']['validation_status'])->toBe('historical_unverified');
 });

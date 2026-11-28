@@ -1,29 +1,34 @@
 <?php
 
 use App\Models\CFB\Game;
-use App\Models\CFB\GameDataCheck;
 use App\Models\CFB\Team;
 use App\Models\EventInputSnapshot;
 use App\Models\SportEvent;
 use App\Services\CFB\Data\CfbDriveBuilder;
+use App\Services\CFB\Data\CfbGameDataValidator;
+use App\Services\CFB\Data\CfbSourceAssessmentRecorder;
 use App\Services\CFB\Scoring\CfbScoringFeatures;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
+require_once __DIR__.'/../../Support/CfbAssessmentFixtures.php';
+
 it('exports only accepted sources available at the requested cutoff and preserves their actual availability', function () {
     Storage::fake('local');
     $this->travelTo(CarbonImmutable::parse('2026-09-20 12:00:00'));
     $event = SportEvent::factory()->create(['sport' => 'cfb', 'starts_at' => now()->subDay()]);
     $game = Game::factory()->create(['home_team_id' => Team::factory()->create()->id, 'away_team_id' => Team::factory()->create()->id, 'sport_event_id' => $event->id, 'season' => 2026, 'status' => 'STATUS_FINAL', 'venue_name' => 'Test Stadium', 'home_score' => 21, 'away_score' => 7]);
+    $receiptIds = [];
     foreach (['boxscore', 'plays'] as $component) {
-        GameDataCheck::create(['game_id' => $game->id, 'component' => $component, 'source_hash' => str_repeat('a', 64), 'validator_version' => '2',
+        $check = cfbObservedAcceptedFixture(['game_id' => $game->id, 'component' => $component, 'source_hash' => str_repeat('a', 64), 'validator_version' => CfbGameDataValidator::VERSION,
             'state' => 'complete', 'discrepancies' => [], 'evidence' => [], 'source_path' => 'fixture', 'accepted_at' => now()]);
+        $receiptIds[$component] = app(CfbSourceAssessmentRecorder::class)->acceptanceReceipt($check)?->id;
     }
     DB::table('cfb_drives')->insert(['game_id' => $game->id, 'source_revision' => str_repeat('a', 64), 'drive_key' => '1', 'offense_team_id' => $game->home_team_id,
         'quality' => 'complete', 'data' => json_encode(['offense_points' => 21, 'opponent_points' => 7, 'period' => 1,
-            'normalizer_version' => CfbDriveBuilder::VERSION, 'score_ledger_revision' => str_repeat('a', 64)]), 'created_at' => now(), 'updated_at' => now()]);
+            'normalizer_version' => CfbDriveBuilder::VERSION, 'play_assessment_receipt_id' => $receiptIds['plays'], 'boxscore_assessment_receipt_id' => $receiptIds['boxscore'], 'score_ledger_revision' => str_repeat('a', 64)]), 'created_at' => now(), 'updated_at' => now()]);
     EventInputSnapshot::factory()->create(['sport_event_id' => $event->id, 'sport' => 'cfb', 'phase' => 'pregame',
         'captured_at' => now()->subDays(2), 'created_at' => now()->subDays(2), 'cutoff_at' => $event->starts_at,
         'latest_source_available_at' => now()->subDays(2), 'content_hash' => str_repeat('f', 64),

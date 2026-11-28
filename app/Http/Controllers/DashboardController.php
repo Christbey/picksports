@@ -52,7 +52,9 @@ class DashboardController extends Controller
             resolver: function () use ($date, $dates, $sportConfigs): array {
                 $todaysPredictions = collect($sportConfigs)
                     ->flatMap(fn (array $config, string $sport) => $this->getPredictionsForSport($sport, $config, $date));
-                $predictionsBySport = $todaysPredictions->groupBy('sport')
+
+                $predictionsBySport = $todaysPredictions
+                    ->groupBy('sport')
                     ->map(fn (Collection $predictions) => $predictions->sortBy('game_time')->values());
 
                 $sports = collect($sportConfigs)
@@ -73,9 +75,7 @@ class DashboardController extends Controller
                     'total_predictions_today' => $predictionsBySport->sum(fn (Collection $predictions) => $predictions->count()),
                     'total_games_today' => collect($sportConfigs)
                         ->sum(fn (array $config) => $todayGameCount($config['game_model'])),
-                    'healthcheck_status' => Healthcheck::where('checked_at', '>=', now()->subHours(1))
-                        ->where('status', 'failing')
-                        ->exists() ? 'failing' : 'passing',
+                    'healthcheck_status' => $this->recentHealthcheckStatus(),
                 ];
 
                 return [
@@ -89,6 +89,26 @@ class DashboardController extends Controller
             'sports' => $payload['sports'],
             'stats' => $payload['stats'],
         ]);
+    }
+
+    private function recentHealthcheckStatus(): string
+    {
+        $until = now();
+        // Aggregate only scalar status evidence; absence is not a successful check.
+        $summary = Healthcheck::query()
+            ->whereBetween('checked_at', [$until->copy()->subHour(), $until])
+            ->selectRaw("COUNT(*) AS check_count,
+                MAX(CASE WHEN status = 'failing' THEN 1 ELSE 0 END) AS has_failing,
+                MAX(CASE WHEN status = 'warning' THEN 1 ELSE 0 END) AS has_warning,
+                MAX(CASE WHEN status IN ('passing', 'warning', 'failing') THEN 0 ELSE 1 END) AS has_unknown")
+            ->toBase()->first();
+
+        return match (true) {
+            (int) $summary->has_failing === 1 => 'failing',
+            (int) $summary->check_count === 0 || (int) $summary->has_unknown === 1 => 'unknown',
+            (int) $summary->has_warning === 1 => 'warning',
+            default => 'passing',
+        };
     }
 
     private function getPredictionsForSport(string $sport, array $config, string $date): Collection

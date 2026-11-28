@@ -97,7 +97,8 @@ class CfbFootballSignalModel
             'missing_inputs' => count(array_filter($rows, fn ($row) => $row['matched'] === null)),
             'applied' => count(array_filter($rows, fn ($row) => abs($row['contribution_points']) > .000001)),
             'spread_adjustment' => round($adjustments['spread'], 6), 'total_adjustment' => round($adjustments['total'], 6),
-            'evidence_status' => $compatible ? ($evidence['status'] ?? 'no_frozen_training_evidence') : 'incompatible_or_unverified_evidence', 'signals' => $rows];
+            'evidence_status' => $compatible ? ($evidence['status'] ?? 'no_frozen_training_evidence') : 'incompatible_or_unverified_evidence',
+            ...(isset($evidence['frozen_artifact']) ? ['frozen_artifact' => $evidence['frozen_artifact']] : []), 'signals' => $rows];
     }
 
     /** Chronological held-out residual check. A duplicate game cannot inflate sample size. */

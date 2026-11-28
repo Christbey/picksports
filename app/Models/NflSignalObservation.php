@@ -2,15 +2,17 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\RejectsPersistedModelMutation;
 use App\Models\NFL\Game;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use LogicException;
 
 class NflSignalObservation extends Model
 {
+    use RejectsPersistedModelMutation;
+
     public const UPDATED_AT = null;
 
     protected $fillable = [
@@ -45,15 +47,9 @@ class NflSignalObservation extends Model
         'game_start_at',
     ];
 
-    protected static function booted(): void
+    protected function immutableMutationMessage(): string
     {
-        static::updating(function (): never {
-            throw new LogicException('NFL signal observations are immutable.');
-        });
-
-        static::deleting(function (): never {
-            throw new LogicException('NFL signal observations are immutable.');
-        });
+        return 'NFL signal observations are immutable.';
     }
 
     protected function casts(): array

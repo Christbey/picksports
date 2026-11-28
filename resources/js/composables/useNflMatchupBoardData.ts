@@ -52,6 +52,10 @@ export function useNflMatchupBoardData() {
             return;
         }
         const key = JSON.stringify([season, date]);
+        if (loadedQuery !== key) {
+            predictions.value = [];
+            closeDetails();
+        }
         refreshing.value = true;
         error.value = null;
         boardStale.value = false;

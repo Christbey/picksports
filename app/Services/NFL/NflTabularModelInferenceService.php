@@ -4,6 +4,7 @@ namespace App\Services\NFL;
 
 use App\Models\ModelArtifact;
 use App\Services\ML\ModelArtifactRegistry;
+use App\Support\Processes\InferenceProcessEnvironment;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use JsonException;
@@ -51,7 +52,8 @@ class NflTabularModelInferenceService
     public function predict(ModelArtifact $artifact, array $features): array
     {
         $this->assertRegisteredArtifact($artifact);
-        $bundlePath = $this->artifacts->materializeArtifact($artifact);
+        $features = $this->validatedFeatures($features);
+        $bundlePath = $this->artifacts->materializeArtifact($artifact, persistCachePath: false, maximumBytes: 205598720);
         $runDirectory = $this->bundles->extractAndVerify($artifact->refresh(), $bundlePath);
         $inputDirectory = rtrim((string) config(
             'nfl_ml.bundle.input_directory',
@@ -63,7 +65,7 @@ class NflTabularModelInferenceService
         try {
             File::put(
                 $inputPath,
-                json_encode($this->validatedFeatures($features), JSON_THROW_ON_ERROR),
+                json_encode($features, JSON_THROW_ON_ERROR),
                 true,
             );
             @chmod($inputPath, 0600);
@@ -83,7 +85,7 @@ class NflTabularModelInferenceService
                 '--input',
                 $inputPath,
             ]);
-            $process->setEnv(['PYTHONPATH' => $this->pythonPath()]);
+            $process->setEnv(InferenceProcessEnvironment::forPython($this->pythonPath()));
             $process->setTimeout((float) config('nfl_ml.process.timeout_seconds', 30));
             $process->run();
 
@@ -119,11 +121,17 @@ class NflTabularModelInferenceService
      */
     private function validatedFeatures(array $features): array
     {
+        if (count($features) > 512) {
+            throw new RuntimeException('NFL numeric inference requires a bounded map of at most 512 features.');
+        }
         if ($features === [] || array_is_list($features)) {
             throw new RuntimeException('NFL tabular inference features must be a non-empty JSON object.');
         }
 
         foreach ($features as $name => $value) {
+            if (is_string($name) && (strlen($name) > 512 || ! mb_check_encoding($name, 'UTF-8') || mb_strlen($name, 'UTF-8') > 128)) {
+                throw new RuntimeException('NFL numeric inference requires bounded UTF-8 feature names.');
+            }
             if (! is_string($name)
                 || $name === ''
                 || (! is_int($value) && ! is_float($value) && $value !== null)
@@ -221,14 +229,9 @@ class NflTabularModelInferenceService
 
     private function pythonPath(): string
     {
-        $source = rtrim((string) config(
+        return rtrim((string) config(
             'nfl_ml.process.package_directory',
             base_path('ml/nfl'),
         ), '/').'/src';
-        $existing = getenv('PYTHONPATH');
-
-        return $existing === false || trim($existing) === ''
-            ? $source
-            : $source.PATH_SEPARATOR.$existing;
     }
 }

@@ -37,7 +37,9 @@ const { selectedSeason, sortMode, onlyPlusEv, availableSeasonOptions } =
                         class="mt-1 flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none sm:h-10"
                     >
                         <option value="model">Model Probability</option>
-                        <option value="edge">Best Edge</option>
+                        <option value="edge">
+                            Largest title model difference
+                        </option>
                     </select>
                 </div>
                 <label
@@ -48,7 +50,7 @@ const { selectedSeason, sortMode, onlyPlusEv, availableSeasonOptions } =
                         type="checkbox"
                         class="h-4 w-4 rounded border-input"
                     />
-                    Only +EV
+                    Positive title model differences
                 </label>
             </div>
         </CardContent>

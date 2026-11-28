@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Subscription\BillingOperationController;
 use App\Http\Controllers\Subscription\BillingPortalController;
 use App\Http\Controllers\Subscription\CheckoutController;
 use App\Http\Controllers\Subscription\SubscriptionController;
@@ -12,6 +13,7 @@ Route::middleware(['auth'])->prefix('subscription')->name('subscription.')->grou
         ['post', '/cancel', [SubscriptionController::class, 'cancel'], 'cancel'],
         ['post', '/resume', [SubscriptionController::class, 'resume'], 'resume'],
         ['post', '/checkout', CheckoutController::class, 'checkout'],
+        ['get', '/operations/{intent}', BillingOperationController::class, 'operation'],
         ['get', '/success', [CheckoutController::class, 'success'], 'success'],
         ['post', '/billing-portal', BillingPortalController::class, 'billing-portal'],
     ] as [$method, $uri, $action, $name]) {

@@ -6,7 +6,7 @@ use App\Models\NFL\DepthChartSnapshot;
 use App\Models\NFL\Game;
 use App\Models\NFL\GameDepthChartLink;
 use App\Models\PredictionFeatureSnapshot;
-use App\Services\Sports\SportsDateWindowService;
+use App\Support\NFL\NflGameStart;
 use Carbon\CarbonImmutable;
 use Carbon\Exceptions\InvalidFormatException;
 
@@ -19,11 +19,13 @@ class GameDepthChartLinkRecorder
             return;
         }
 
-        $kickoff = $game->sportEvent?->starts_at;
-        if (! $kickoff && $game->game_date && $game->game_time) {
-            $kickoff = app(SportsDateWindowService::class)->gameDateTimeUtc($game->getRawOriginal('game_date'), $game->game_time);
+        // Current stored observation owns kickoff availability; a cached event cannot supply a missing clock.
+        $kickoff = NflGameStart::for($game);
+        if ($kickoff === null) {
+            return;
         }
-        if (! $kickoff) {
+        $canonicalStart = $game->sportEvent?->starts_at;
+        if ($canonicalStart !== null && ! $canonicalStart->equalTo($kickoff)) {
             return;
         }
 

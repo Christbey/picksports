@@ -38,6 +38,89 @@ class NflReasonCodeCatalog
         'bend_dont_break_defense' => 'Negative Trench Total Proxy (Legacy)',
     ];
 
+    /** @var array<string, string> */
+    private const MODEL_QUALITY_CONTEXT_LABELS = [
+        'red_zone_efficiency_edge' => 'Model Quality/Total Context; Red-zone Efficiency Not Measured',
+        'third_down_defense_edge' => 'Model Quality Context; Third-down Defense Not Measured',
+        'field_position_edge' => 'Model Quality Context; Field Position Not Measured',
+        'coaching_aggression_edge' => 'Model Quality Context; Coaching Aggression Not Measured',
+        'fourth_down_decision_edge' => 'Model Quality Context; Fourth-down Decisions Not Measured',
+    ];
+
+    /** Predicate-level labels preserve opaque historical tokens and raw rule matching. */
+    private const EVIDENCE_CONTEXT_LABELS = [
+        'primetime_home_edge' => 'Stored UTC Evening Home Model Context',
+        'primetime_total_watch' => 'Stored UTC Evening Total Watch Context',
+        'primetime_kickoff_window' => 'Stored UTC Evening Kickoff Window',
+        'home_rookie_qb_primetime_start' => 'Home Rookie QB in Stored UTC Evening Window',
+        'away_rookie_qb_primetime_start' => 'Away Rookie QB in Stored UTC Evening Window',
+        'rookie_qb_primetime_split' => 'Rookie QB Stored UTC Evening Split Context',
+        'early_kickoff_window' => 'Stored UTC Early Kickoff Window',
+        'late_afternoon_kickoff_window' => 'Stored UTC Middle Kickoff Window',
+        'must_win_motivation_edge' => 'Late-season Week Context; Motivation Not Measured',
+        'late_season_motivation_risk' => 'Late-season Week Context; Motivation Not Measured',
+        'lookahead_spot_risk' => 'Late-season Week Context; Lookahead/Letdown Not Measured',
+        'letdown_spot_risk' => 'Late-season Week Context; Lookahead/Letdown Not Measured',
+        'sandwich_spot_risk' => 'Late-season Week Context; Lookahead/Letdown Not Measured',
+        'poor_special_teams_risk' => 'Low Model Trust Context; Special Teams Not Measured',
+        'playoff_motivation_edge' => 'Non-regular Phase Context; Motivation/Rest Not Confirmed',
+        'resting_starters_risk' => 'Non-regular Phase Context; Motivation/Rest Not Confirmed',
+        'coach_vs_opponent_history_edge' => 'Stored Team Head-to-head Context; Coach History Not Verified',
+        'recent_h2h_matchup_edge' => 'Stored Recent Team Head-to-head Context',
+        'division_rematch_total_context' => 'Stored Team Head-to-head Total Context',
+        'rivalry_under_signal' => 'Same-division Context; Under Direction Not Measured',
+        'home_field_edge' => 'Stored Home/Away Split Context',
+        'bye_week_edge' => 'Stored Long-rest Interval Context',
+        'road_team_travel_risk' => 'Consecutive Away-game Schedule Context',
+        'west_to_east_early_kickoff' => 'Stored UTC Early-window Location Proxy',
+        'road_short_rest_early_kickoff' => 'Stored Rest/Away-schedule and UTC-window Context',
+        'road_trip_early_kickoff' => 'Stored Rest/Away-schedule and UTC-window Context',
+        'rest_travel_kickoff_stress' => 'Stored Rest/Away-schedule and UTC-window Context',
+        'rest_kickoff_window_home_edge' => 'Stored Rest/Away-schedule and UTC-window Context',
+        'dome_scoring_boost' => 'Stored Indoor Venue Context',
+        'backup_qb_starting' => 'Limited/First-year QB Experience Context; Backup Not Confirmed',
+        'elite_qb_vs_weak_secondary' => 'Veteran QB Passing Profile; Opponent Secondary Not Measured',
+        'qb_upgrade' => 'Model-side QB Profile Score Advantage',
+        'qb_downgrade' => 'Opponent QB Profile Score Advantage',
+        'qb_form_improving' => 'Positive Model-side QB Profile Score',
+        'qb_form_declining' => 'Negative Model-side QB Profile Score',
+        'explosive_pass_edge' => 'High Prior Passing Yards-per-attempt Context',
+        'home_qb_profile_supports_pick' => 'Home QB Experience Profile Available',
+        'away_qb_profile_supports_pick' => 'Away QB Experience Profile Available',
+        'rookie_qb_vs_pressure_defense' => 'Limited-experience QB Sack-matchup Proxy',
+        'key_offensive_weapon_out' => 'Weighted Unavailability Threshold; Unit/Key Role Not Established',
+        'key_defender_out' => 'Weighted Unavailability Threshold; Unit/Key Role Not Established',
+        'wr1_out_risk' => 'Scoped WR Unavailability Context; WR1 Not Established',
+        'rb1_out_risk' => 'Scoped Skill-position Unavailability Cluster; RB1 Not Established',
+        'wr_depth_risk' => 'Scoped Skill-position Unavailability Cluster',
+        'te_red_zone_edge' => 'Scoped TE Unavailability Context; Red-zone Impact Not Measured',
+        'snow_under_signal' => 'Cold Precipitation Under Hypothesis; Snow Not Confirmed',
+        'rain_under_signal' => 'Warmer Precipitation Under Hypothesis; Rain Not Confirmed',
+        'weather_increases_turnover_risk' => 'Precipitation Turnover-risk Hypothesis',
+        'market_overreaction' => 'Model/Market Spread Disagreement Context',
+        'sharp_line_move_signal' => 'Stored Line Movement Threshold; Sharp Flow Not Verified',
+        'reverse_line_movement' => 'Stored Line Movement Opposes Model Direction; Public Flow Unknown',
+        'public_fade_signal' => 'Stored Line Movement Opposes Model Direction; Public Flow Unknown',
+        'steam_freshness' => 'Stored Line-change/Span Heuristic; Steam Not Verified',
+        'market_setter_slow_book_gap' => 'Stored Cross-book Spread Range Context',
+        'buyback_resistance' => 'Stored Spread Reversal Pattern Context',
+        'pace_total_pressure' => 'Model Total Above Market; Pace Not Measured',
+        'weather_total_suppression' => 'Total Suppression Context; Weather Attribution Not Established',
+        'qb_status_edge' => 'QB Form Model-signal Context; Status Not Established',
+        'trenches_pressure_edge' => 'Line-matchup Model-signal Context; Charted Pressure Not Measured',
+        'division_dog_key_number' => 'Same-division Model Context; Underdog/Key Not Established',
+        'qb_replacement_value_edge' => 'Aggregate Injury Adjustment Context; QB Replacement Not Established',
+        'injury_overreaction_risk' => 'Large Aggregate Injury Adjustment Context; Market Reaction Not Measured',
+        'rest_travel_edge' => 'Applied Rest/Away-schedule Model Context',
+        'efficiency_mismatch_edge' => 'Combined Model Efficiency-signal Context',
+        'turnover_luck_fade' => 'Turnover-differential Heuristic Context',
+        'turnover_regression_risk' => 'Turnover-differential Contrast; Regression Not Verified',
+        'one_score_regression_risk' => 'Stored Luck-rating/One-score Heuristic Context',
+        'record_overperformance_fade' => 'Stored Record-contrast Heuristic Context',
+        'negative_clv_profile' => 'Stored CLV/Staleness Caution; Negative Closing Value Not Always Observed',
+        'dead_number_tax' => 'Stored Spread-price/Number-discipline Caution',
+    ];
+
     /**
      * @return list<string>
      */
@@ -138,6 +221,18 @@ class NflReasonCodeCatalog
 
     protected function source(string $code): string
     {
+        if (in_array($code, ['weather_total_suppression', 'qb_replacement_value_edge'], true)) {
+            return 'model_context';
+        }
+
+        if ($code === 'coach_vs_opponent_history_edge') {
+            return 'schedule_context';
+        }
+
+        if (isset(self::MODEL_QUALITY_CONTEXT_LABELS[$code])) {
+            return 'model_context';
+        }
+
         if (
             str_contains($code, 'market')
             || str_contains($code, 'line_move')
@@ -240,7 +335,11 @@ class NflReasonCodeCatalog
 
     protected function isDiagnostic(string $code): bool
     {
-        if (isset(self::LEGACY_PROXY_LABELS[$code]) || $this->isBackground($code)) {
+        if (in_array($code, ['weather_total_suppression', 'qb_replacement_value_edge'], true)) {
+            return true;
+        }
+
+        if (isset(self::MODEL_QUALITY_CONTEXT_LABELS[$code]) || isset(self::LEGACY_PROXY_LABELS[$code]) || $this->isBackground($code)) {
             return true;
         }
 
@@ -285,6 +384,14 @@ class NflReasonCodeCatalog
 
     protected function label(string $code): string
     {
+        if (isset(self::EVIDENCE_CONTEXT_LABELS[$code])) {
+            return self::EVIDENCE_CONTEXT_LABELS[$code];
+        }
+
+        if (isset(self::MODEL_QUALITY_CONTEXT_LABELS[$code])) {
+            return self::MODEL_QUALITY_CONTEXT_LABELS[$code];
+        }
+
         if (isset(self::LEGACY_PROXY_LABELS[$code])) {
             return self::LEGACY_PROXY_LABELS[$code];
         }

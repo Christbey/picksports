@@ -33,6 +33,10 @@ abstract class AbstractSyncOddsCommand extends Command
 
     public function handle(): int
     {
+        if (! $this->hasValidDaysOption()) {
+            return self::FAILURE;
+        }
+
         $days = $this->option('days') ?? 7;
         $oddsSport = $this->option('odds-sport');
         $oddsSport = is_string($oddsSport) && $oddsSport !== '' ? $oddsSport : null;
@@ -118,5 +122,17 @@ abstract class AbstractSyncOddsCommand extends Command
     protected function defaultOddsSportKey(): ?string
     {
         return null;
+    }
+
+    protected function hasValidDaysOption(): bool
+    {
+        $days = $this->option('days');
+        if ($days !== null && filter_var($days, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false) {
+            $this->error('The --days option must be a positive integer.');
+
+            return false;
+        }
+
+        return true;
     }
 }

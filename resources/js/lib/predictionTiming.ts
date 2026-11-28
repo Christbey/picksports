@@ -1,3 +1,4 @@
+import { isFinalGameStatus } from './gameStatus';
 import {
     candidateRecommendation,
     getPredictionRecommendation,
@@ -34,6 +35,16 @@ export function predictionTiming(
     const status = String(
         prediction?.status ?? prediction?.game?.status ?? '',
     ).toLowerCase();
+    if (isFinalGameStatus(status)) {
+        return {
+            phase: 'final',
+            label: 'Pregame Result',
+            description:
+                'Game is final. This reflects the stored pregame prediction and its grading result.',
+            tone: 'final',
+        };
+    }
+
     const publicRecommendation = prediction
         ? getPredictionRecommendation(prediction)
         : null;
@@ -72,16 +83,6 @@ export function predictionTiming(
             description:
                 'Updated during the game from live score/state context. Do not treat this as the locked pregame pick.',
             tone: 'live',
-        };
-    }
-
-    if (status.includes('final')) {
-        return {
-            phase: 'final',
-            label: 'Pregame Result',
-            description:
-                'Game is final. This reflects the stored pregame prediction and its grading result.',
-            tone: 'final',
         };
     }
 

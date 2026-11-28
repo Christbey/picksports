@@ -28,7 +28,7 @@ it('queries only the requested historical snapshot offset', function () {
         'name' => 'Cardinals',
     ]);
 
-    Game::factory()->create([
+    Game::factory()->withSyntheticWallStart((string) config('app.timezone'))->create([
         'season' => 2025,
         'season_type' => 2,
         'game_date' => '2025-04-02',

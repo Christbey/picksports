@@ -20,8 +20,11 @@ class FetchPlayerInjuries extends BulkEspnJob
         $service = new EspnService;
         $action = new SyncPlayerInjuries($service);
 
-        if ($this->teamEspnId) {
+        if ($this->teamEspnId !== null) {
             $count = $action->execute($this->teamEspnId);
+            if (! $action->lastSyncReliable()) {
+                throw new \RuntimeException('WCBB injury source unavailable or incomplete for the selected team.');
+            }
             Log::info("WCBB: Synced {$count} player injuries for team {$this->teamEspnId} from ESPN");
         } else {
             $count = $action->syncAllTeams();

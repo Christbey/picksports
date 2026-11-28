@@ -8,6 +8,7 @@ const {
     signalForProp,
     getConfidenceColor,
     getSignalBand,
+    formatRelativeSignal,
     formatOdds,
     getInitials,
     buildStatRows,
@@ -91,7 +92,7 @@ const {
                 </div>
                 <div class="text-right">
                     <p class="text-sm font-bold text-foreground">
-                        {{ signalForProp(rec) }}%
+                        {{ formatRelativeSignal(signalForProp(rec)) }}
                     </p>
                     <p class="text-[11px] text-muted-foreground">
                         {{ getSignalBand(signalForProp(rec)) }}
@@ -103,7 +104,7 @@ const {
                 <div
                     class="h-full"
                     :class="getConfidenceColor(signalForProp(rec))"
-                    :style="{ width: `${signalForProp(rec)}%` }"
+                    :style="{ width: `${signalForProp(rec) ?? 0}%` }"
                 />
             </div>
 

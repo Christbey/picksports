@@ -206,6 +206,8 @@ it('withholds league rank signals when the league or a team’s historical play 
 });
 
 it('excludes target future nonfinal preseason previous season and not-yet-completed same-day results', function () {
+    $fixtureSeed = 1896248002;
+    fake()->seed($fixtureSeed);
     [$target, $teams, $games] = matchupSignalLeague();
     $before = app(NflMatchupSignalService::class)->build($target);
     foreach ([
@@ -215,6 +217,8 @@ it('excludes target future nonfinal preseason previous season and not-yet-comple
         ['game_date' => '2025-09-19', 'season' => 2025],
         ['game_date' => '2026-09-20', 'game_time' => '16:00:00'],
     ] as $overrides) {
+        // These are outside the historical baseline weeks; random factory weeks
+        // would exercise the separate outstanding-schedule fallback instead.
         Game::factory()->create(array_merge([
             'home_team_id' => $target->home_team_id, 'away_team_id' => $target->away_team_id,
             'season' => 2026, 'season_type' => '2', 'status' => 'STATUS_FINAL', 'week' => $target->week,
@@ -223,7 +227,39 @@ it('excludes target future nonfinal preseason previous season and not-yet-comple
     }
     $target->update(['status' => 'STATUS_FINAL', 'home_score' => 100, 'away_score' => 100]);
     $after = app(NflMatchupSignalService::class)->build($target);
-    expect($after['signals'])->toBe($before['signals']);
+    $firstDifference = function (mixed $expected, mixed $actual, string $path = 'signals') use (&$firstDifference): string {
+        if ($expected === $actual) {
+            return '';
+        }
+        if (is_array($expected) && is_array($actual) && array_keys($expected) === array_keys($actual)) {
+            foreach ($expected as $key => $value) {
+                if ($value !== $actual[$key]) {
+                    return $firstDifference($value, $actual[$key], $path.'.'.$key);
+                }
+            }
+        }
+
+        return $path.' differs; expected '.(is_array($expected) ? 'array keys '.json_encode(array_slice(array_keys($expected), 0, 40)) : substr(var_export($expected, true), 0, 180))
+            .'; actual '.(is_array($actual) ? 'array keys '.json_encode(array_slice(array_keys($actual), 0, 40)) : substr(var_export($actual, true), 0, 180));
+    };
+    // Retain strict identity without exporting hundreds of nested signal rows.
+    expect($after['signals'] === $before['signals'])
+        ->toBeTrue('Fixture seed '.$fixtureSeed.': '.$firstDifference($before['signals'], $after['signals']));
+});
+
+it('falls back when an outstanding game belongs to the latest historical week', function () {
+    [$target] = matchupSignalLeague();
+    $service = app(NflMatchupSignalService::class);
+    expect($service->build($target)['baseline'])->toBeNull();
+    Game::factory()->create([
+        'home_team_id' => $target->home_team_id, 'away_team_id' => $target->away_team_id,
+        'season' => 2026, 'season_type' => '2', 'week' => 3,
+        'status' => 'STATUS_SCHEDULED', 'game_date' => '2026-09-21', 'game_time' => '17:00:00',
+    ]);
+    $result = $service->build($target);
+    expect($result['baseline'])->toMatchArray(['mode' => 'last_complete_week', 'through_week' => 2, 'games' => 32])
+        ->and(matchupSignal($result, 1, $target->home_team_id)['evidence']['offense']['games'])->toBe(2)
+        ->and(matchupSignal($result, 1, $target->home_team_id)['evidence']['epa_context']['opponent_adjusted']['offense']['eligible'])->toBeFalse();
 });
 
 it('does not classify a boundary-wide tie as a top five team or use no-play rows', function () {

@@ -42,13 +42,14 @@ class PasskeyTokenAuthController extends Controller
             false,
         );
 
-        $plainTextToken = $this->tokenAuthService->issueAccessToken($user, $request->deviceName());
+        $grant = $this->tokenAuthService->issueGrant($user, $request->deviceName(), $request->input('token_profile', 'interactive'));
 
         return response()->json([
             'token_type' => 'Bearer',
-            'access_token' => $plainTextToken,
+            'access_token' => $grant->plainTextToken,
+            ...$grant->metadata(),
             'user' => new AuthUserResource($user),
-        ]);
+        ])->header('Cache-Control', 'private, no-store');
     }
 
     private function ensurePasskeysEnabled(): void

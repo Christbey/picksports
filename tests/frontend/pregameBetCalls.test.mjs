@@ -1,6 +1,29 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { after, before, test } from 'node:test';
+import { createServer } from 'vite';
+import { fileURLToPath } from 'node:url';
 import { pregameBetCalls } from '../../resources/js/lib/pregameBetCalls.ts';
+let server, formatHomeSpreadLine;
+before(async () => {
+    server = await createServer({
+        configFile: false,
+        server: { middlewareMode: true, hmr: false, ws: false, watch: null },
+        optimizeDeps: { noDiscovery: true, include: [] },
+        resolve: {
+            alias: {
+                '@': fileURLToPath(
+                    new URL('../../resources/js', import.meta.url),
+                ),
+            },
+        },
+    });
+    ({ formatHomeSpreadLine } = await server.ssrLoadModule(
+        '/resources/js/lib/publicSportPresentation.ts',
+    ));
+});
+after(async () => {
+    await server?.close();
+});
 test('production-shaped forecasts show all three directions despite null recommendations and blocked approvals', () => {
     assert.deepEqual(
         pregameBetCalls(
@@ -183,4 +206,25 @@ test('dashboard grades the displayed total and distinguishes a model-only projec
         pregameBetCalls(forecast, 'Home', 'Away', true).totalGrade,
         undefined,
     );
+});
+
+test('assessment fallback keeps home margins while public spread labels invert them once', () => {
+    const calls = pregameBetCalls(
+        {
+            value_signal: {
+                spread_assessment: {
+                    model_home_margin: 7,
+                    market_home_line: -3,
+                },
+            },
+        },
+        'Home',
+        'Away',
+    );
+    assert.equal(calls.winner, 'Bet Home to win');
+    assert.equal(calls.spread, 'Bet Home -3 to cover');
+    assert.equal(formatHomeSpreadLine(7), '-7.0');
+    assert.equal(formatHomeSpreadLine(-3), '+3.0');
+    assert.equal(formatHomeSpreadLine(0), 'PK');
+    assert.equal(formatHomeSpreadLine(null), 'N/A');
 });

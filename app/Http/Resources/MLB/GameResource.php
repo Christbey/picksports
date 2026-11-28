@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\MLB;
 
+use App\Support\MLB\MlbGameStart;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -24,6 +25,8 @@ class GameResource extends JsonResource
             'season_type' => $this->season_type,
             'game_date' => $this->game_date?->toDateString(),
             'game_time' => $this->game_time,
+            'starts_at' => MlbGameStart::for($this->resource)?->toIso8601String(),
+            'start_time_provenance' => MlbGameStart::status($this->resource),
             'venue' => $this->venue_name,
             'name' => $this->name,
             'short_name' => $this->short_name,

@@ -25,6 +25,13 @@ class ResearchClaimGrounding
                 } else {
                     $quality['verified_claims']++;
                     $row['evidence_status'] = 'reference_verified';
+                    if (($row['evidence_kind'] ?? null) === 'application') {
+                        if ($section === 'facts') {
+                            $row['source_urls'] = [];
+                        } else {
+                            $row['source_url'] = '';
+                        }
+                    }
                 }
                 // A numerical model forecast is context, never its own corroboration.
                 if (in_array($section, ['supporting', 'opposing'], true)

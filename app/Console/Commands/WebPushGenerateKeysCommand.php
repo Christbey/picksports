@@ -9,12 +9,20 @@ class WebPushGenerateKeysCommand extends Command
 {
     protected $signature = 'webpush:generate-keys
                             {--subject= : Optional VAPID subject (e.g. mailto:support@example.com)}
-                            {--write : Persist generated values into .env}';
+                            {--write : Persist generated values into the application environment file}
+                            {--rotate : Explicitly replace an existing VAPID keypair with --write}';
 
     protected $description = 'Generate VAPID keys for Web Push notifications';
 
     public function handle(): int
     {
+        $subject = (string) ($this->option('subject') ?: 'mailto:support@example.com');
+        if (! $this->validSubject($subject) || ($this->option('rotate') && ! $this->option('write'))) {
+            $this->error('Use a valid mailto or HTTPS subject; --rotate requires --write.');
+
+            return self::FAILURE;
+        }
+
         try {
             $privatePem = $this->generatePrivateKeyPem();
             $publicKey = $this->publicKeyFromPrivatePem($privatePem);
@@ -24,31 +32,53 @@ class WebPushGenerateKeysCommand extends Command
             return self::FAILURE;
         }
 
-        $subject = (string) ($this->option('subject') ?: 'mailto:support@example.com');
         $privateInline = str_replace("\n", '\n', trim($privatePem));
 
         $pairs = [
-            'WEB_PUSH_VAPID_SUBJECT' => $subject,
+            'WEB_PUSH_VAPID_SUBJECT' => '"'.$subject.'"',
             'WEB_PUSH_VAPID_PUBLIC_KEY' => $publicKey,
             'WEB_PUSH_VAPID_PRIVATE_KEY' => "\"{$privateInline}\"",
         ];
 
-        $this->newLine();
-        foreach ($pairs as $key => $value) {
-            $this->line("{$key}={$value}");
-        }
-        $this->newLine();
-
         if ((bool) $this->option('write')) {
-            $this->writeToEnv($pairs);
-            $this->info('Saved WEB_PUSH_VAPID_* values to .env');
+            try {
+                $this->writeToEnv($pairs);
+            } catch (\Throwable) {
+                $this->error('VAPID environment write refused or failed. Existing keys require --write --rotate; check the environment file and directory permissions.');
+
+                return self::FAILURE;
+            }
+            $this->info('Saved WEB_PUSH_VAPID_* values to the application environment file.');
+            $this->comment('Reload application configuration through the deployment procedure.');
         } else {
+            $this->newLine();
+            foreach ($pairs as $key => $value) {
+                $this->line("{$key}={$value}");
+            }
+            $this->newLine();
             $this->comment('Use --write to persist values into .env automatically.');
         }
 
         $this->comment('Keep WEB_PUSH_VAPID_PRIVATE_KEY secret.');
 
         return self::SUCCESS;
+    }
+
+    private function validSubject(string $subject): bool
+    {
+        if (strlen($subject) > 2048 || preg_match('/[\x00-\x20\x7f]/', $subject)
+            || str_contains($subject, '"') || str_contains($subject, "'")
+            || str_contains($subject, '\\') || str_contains($subject, '$')) {
+            return false;
+        }
+        if (str_starts_with($subject, 'mailto:')) {
+            return filter_var(substr($subject, 7), FILTER_VALIDATE_EMAIL) !== false;
+        }
+        $url = parse_url($subject);
+
+        return filter_var($subject, FILTER_VALIDATE_URL) !== false && is_array($url)
+            && ($url['scheme'] ?? null) === 'https' && isset($url['host'])
+            && ! isset($url['user']) && ! isset($url['pass']);
     }
 
     private function generatePrivateKeyPem(): string
@@ -121,20 +151,53 @@ class WebPushGenerateKeysCommand extends Command
      */
     private function writeToEnv(array $pairs): void
     {
-        $envPath = base_path('.env');
-        $contents = file_exists($envPath) ? (string) file_get_contents($envPath) : '';
+        $envPath = $this->laravel->environmentFilePath();
+        if (is_link($envPath) || (file_exists($envPath) && ! is_file($envPath))) {
+            throw new RuntimeException('Invalid environment file.');
+        }
+        $contents = file_exists($envPath) ? file_get_contents($envPath) : '';
+        if ($contents === false || strlen($contents) > 1048576) {
+            throw new RuntimeException('Environment file is unreadable or oversized.');
+        }
+        preg_match_all('/^\h*(?:export\h+)?WEB_PUSH_VAPID_(?:PUBLIC|PRIVATE)_KEY\h*=\h*([^\r\n]*)/m', $contents, $matches);
+        if (! $this->option('rotate') && array_any($matches[1], fn ($value) => trim($value, " \t\"'") !== '')) {
+            throw new RuntimeException('Explicit key rotation is required.');
+        }
 
         foreach ($pairs as $key => $value) {
             $line = "{$key}={$value}";
-            $pattern = '/^'.preg_quote($key, '/').'=.*/m';
+            $pattern = '/^\h*(?:export\h+)?'.preg_quote($key, '/').'\h*=[^\r\n]*/m';
 
             if (preg_match($pattern, $contents) === 1) {
-                $contents = (string) preg_replace($pattern, $line, $contents);
+                $contents = preg_replace_callback($pattern, fn () => $line, $contents);
             } else {
                 $contents .= ($contents === '' || str_ends_with($contents, "\n") ? '' : "\n").$line."\n";
             }
         }
 
-        file_put_contents($envPath, $contents);
+        $this->persistEnvironment($envPath, $contents);
+    }
+
+    protected function persistEnvironment(string $envPath, string $contents): void
+    {
+        $directory = realpath(dirname($envPath));
+        if ($directory === false || ! is_writable($directory)) {
+            throw new RuntimeException('Environment directory is not writable.');
+        }
+        $temporary = tempnam($directory, '.vapid-');
+        if ($temporary === false) {
+            throw new RuntimeException('Unable to create environment replacement.');
+        }
+        try {
+            if (dirname($temporary) !== $directory || ! chmod($temporary, 0600)
+                || file_put_contents($temporary, $contents, LOCK_EX) !== strlen($contents)
+                || ! rename($temporary, $envPath)) {
+                throw new RuntimeException('Unable to persist complete environment replacement.');
+            }
+        } finally {
+            if (is_file($temporary)) {
+                unlink($temporary);
+            }
+        }
     }
 }

@@ -8,6 +8,9 @@ export type InjuryItem = {
     injury_date?: string | null;
     return_date?: string | null;
     source_updated_at?: string | null;
+    source_updated_at_raw?: string | null;
+    source_clock_status?: 'unverified_storage_clock';
+    last_stored_at?: string | null;
     updated_at?: string | null;
     impact_score?: number | null;
     impact_label?: string | null;
@@ -38,6 +41,7 @@ export type FeaturedPrediction = {
     game_id?: number | null;
     matchup: string;
     game_date?: string | null;
+    starts_at?: string | null;
     status?: string | null;
     pick: string | null;
     home_team_abbreviation?: string | null;
@@ -46,6 +50,15 @@ export type FeaturedPrediction = {
     predicted_total?: number | string | null;
     confidence_score?: number | string | null;
     home_win_probability?: number | string | null;
+};
+export type PublicPropCoverage = {
+    games: number;
+    hits?: number;
+    over?: number;
+    under?: number;
+    wins?: number;
+    pushes?: number;
+    recommendation?: string;
 };
 export type FeaturedProp = {
     id: number;
@@ -64,8 +77,12 @@ export type FeaturedProp = {
     confidence: number;
     edge: number;
     stats?: {
-        times_covered_last5?: { hits: number; games: number } | null;
-        times_covered_season?: { hits: number; games: number } | null;
+        times_covered_last5?: PublicPropCoverage | null;
+        times_covered_season?: PublicPropCoverage | null;
+        cover_record?: {
+            season?: PublicPropCoverage | null;
+            last_5?: PublicPropCoverage | null;
+        } | null;
     } | null;
     game: {
         id: number;

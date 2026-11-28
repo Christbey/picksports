@@ -25,7 +25,7 @@ onErrorCaptured((error) => {
 </script>
 
 <template>
-    <Alert v-if="capturedError" variant="destructive">
+    <Alert v-if="capturedError !== null" variant="destructive">
         <AlertTitle>{{ title }}</AlertTitle>
         <AlertDescription>
             {{ capturedError || fallbackMessage }}

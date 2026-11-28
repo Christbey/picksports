@@ -4,6 +4,7 @@ namespace App\Services\MLB;
 
 use App\Models\ModelArtifact;
 use App\Services\ML\ModelArtifactRegistry;
+use App\Support\Processes\InferenceProcessEnvironment;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use JsonException;
@@ -51,8 +52,11 @@ class MlbTabularModelInferenceService
     public function predict(ModelArtifact $artifact, array $features): array
     {
         $this->assertRegisteredArtifact($artifact);
-        $bundlePath = $this->artifacts->materializeArtifact($artifact);
-        $runDirectory = $this->bundles->extractAndVerify($artifact->refresh(), $bundlePath);
+        $admission = app(MlbTabularArtifactAdmission::class);
+        $context = $admission->admit($artifact);
+        $artifact = $context['artifact'];
+        $bundlePath = $this->artifacts->materializeArtifact($artifact, persistCachePath: false, maximumBytes: 268435456);
+        $runDirectory = $this->bundles->extractAndVerify($artifact, $bundlePath);
         $inputDirectory = rtrim((string) config(
             'mlb_ml.bundle.input_directory',
             storage_path('app/ml/mlb-tabular/inputs'),
@@ -85,7 +89,7 @@ class MlbTabularModelInferenceService
                 '--input',
                 $inputPath,
             ]);
-            $process->setEnv(['PYTHONPATH' => $this->pythonPath()]);
+            $process->setEnv(InferenceProcessEnvironment::forPython($this->pythonPath()));
             $process->setTimeout((float) config('mlb_ml.process.timeout_seconds', 30));
             $process->run();
 
@@ -99,7 +103,11 @@ class MlbTabularModelInferenceService
                 throw new RuntimeException('MLB tabular model inference must return exactly one output row.');
             }
 
-            return $this->validatedOutput($outputs[0], $artifact->refresh());
+            $validated = $this->validatedOutput($outputs[0], $artifact);
+            // This is a read check before returning; later DB output persistence still needs its own target fence.
+            $admission->admit($artifact, $context['fingerprint']);
+
+            return $validated;
         } finally {
             File::delete($inputPath);
         }
@@ -122,17 +130,18 @@ class MlbTabularModelInferenceService
      */
     private function validatedFeatures(array $features): array
     {
-        if ($features === [] || array_is_list($features)) {
+        if ($features === [] || array_is_list($features) || count($features) > 512) {
             throw new RuntimeException('MLB tabular inference features must be a non-empty JSON object.');
         }
         foreach ($features as $name => $value) {
             if (! is_string($name)
-                || $name === ''
+                || $name === '' || strlen($name) > 128
                 || (! is_int($value) && ! is_float($value) && $value !== null)
                 || (is_float($value) && ! is_finite($value))) {
                 throw new RuntimeException("MLB tabular inference feature [{$name}] is not numeric or null.");
             }
         }
+        MlbTabularJsonBudget::inspect(json_encode($features, JSON_THROW_ON_ERROR), 2097152, 50000, 24);
         ksort($features);
 
         return $features;
@@ -222,10 +231,7 @@ class MlbTabularModelInferenceService
             'mlb_ml.process.package_directory',
             base_path('ml/mlb'),
         ), '/').'/src';
-        $existing = getenv('PYTHONPATH');
 
-        return $existing === false || trim($existing) === ''
-            ? $source
-            : $source.PATH_SEPARATOR.$existing;
+        return $source;
     }
 }

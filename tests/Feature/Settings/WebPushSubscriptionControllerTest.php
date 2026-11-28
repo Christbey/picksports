@@ -33,7 +33,7 @@ test('web push store endpoint saves a subscription', function () {
     $user = User::factory()->create();
 
     $response = $this->actingAs($user)->postJson(route('web-push.subscriptions.store'), [
-        'endpoint' => 'https://push.example.com/subscription/xyz789',
+        'endpoint' => 'https://fcm.googleapis.com/fcm/send/xyz789',
         'contentEncoding' => 'aes128gcm',
         'keys' => [
             'p256dh' => 'fake-client-public-key',
@@ -45,7 +45,7 @@ test('web push store endpoint saves a subscription', function () {
 
     $this->assertDatabaseHas('web_push_subscriptions', [
         'user_id' => $user->id,
-        'endpoint' => 'https://push.example.com/subscription/xyz789',
+        'endpoint' => 'https://fcm.googleapis.com/fcm/send/xyz789',
         'content_encoding' => 'aes128gcm',
     ]);
 });

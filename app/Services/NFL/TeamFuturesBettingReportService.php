@@ -118,6 +118,7 @@ class TeamFuturesBettingReportService
             'require_historical_metrics' => $requireHistoricalMetrics,
             'min_edge' => round($minEdge, 4),
             'calibration' => $calibration,
+            'metric_evidence' => TeamMetricSnapshotObservation::summarize($rows),
             'summary' => [
                 'count' => count($bets),
                 'average_edge' => $bets === [] ? null : round(array_sum(array_column($bets, 'edge')) / count($bets), 4),
@@ -172,6 +173,7 @@ class TeamFuturesBettingReportService
             'kelly_fraction' => round($kellyFraction, 4),
             'captured_at' => data_get($row, 'market_odds.captured_at'),
             'projection_factors' => $row['projection_factors'] ?? [],
+            'metric_evidence' => $row['metric_evidence'] ?? ['mode' => 'legacy_unverified'],
         ];
     }
 
@@ -205,6 +207,7 @@ class TeamFuturesBettingReportService
                 'method' => 'default_shrink',
                 'season' => $season,
                 'sample_size' => count($samples),
+                'metric_evidence' => TeamMetricSnapshotObservation::summarize($samples),
                 'shrink_factor' => round($defaultShrink, 4),
             ];
         }
@@ -233,6 +236,7 @@ class TeamFuturesBettingReportService
             'method' => 'fit_shrink',
             'season' => $season,
             'sample_size' => count($samples),
+            'metric_evidence' => TeamMetricSnapshotObservation::summarize($samples),
             'shrink_factor' => round($bestShrink, 4),
             'fitted_brier' => round($bestBrier, 4),
         ];

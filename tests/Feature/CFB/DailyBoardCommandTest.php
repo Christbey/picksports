@@ -9,6 +9,7 @@ use App\Models\CFB\PlayerProp;
 use App\Models\CFB\Team;
 use App\Models\PredictionMarket;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
+use App\Support\CFB\CfbGameStart;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
@@ -21,7 +22,8 @@ beforeEach(function () {
 });
 
 test('combined board includes next UTC day games and both forecasts and eligible props', function () {
-    $game = Game::factory()->create(['home_team_id' => Team::factory(), 'away_team_id' => Team::factory(), 'game_date' => '2026-09-27', 'game_time' => '02:30:00', 'status' => 'STATUS_SCHEDULED', 'season' => 2026]);
+    $game = Game::factory()->create(['home_team_id' => Team::factory(), 'away_team_id' => Team::factory(), 'game_date' => '2026-09-27', 'game_time' => '02:30:00', 'status' => 'STATUS_SCHEDULED', 'season' => 2026, 'espn_event_id' => 'board-clock',
+        ...CfbGameStart::attributes('2026-09-27T02:30:00Z', [], 'espn_schedule', 'board-clock')]);
     $prediction = CanonicalPrediction::factory()->create(['sport' => 'cfb', 'detail_sport' => 'cfb', 'phase' => 'pregame', 'publication_state' => 'published']);
     $game->update(['sport_event_id' => $prediction->sport_event_id]);
     PredictionMarket::factory()->create(['prediction_id' => $prediction->id, 'market_type' => 'spread', 'selection' => 'home', 'projected_line' => -7]);
@@ -71,9 +73,9 @@ it('queues CFB prop work separately by upcoming game', function () {
     app()->instance(SyncPlayerPropsForGames::class, $sync);
     $attributes = ['home_team_id' => Team::factory(), 'away_team_id' => Team::factory(),
         'game_date' => '2026-09-26', 'status' => 'STATUS_SCHEDULED'];
-    $first = Game::factory()->create([...$attributes, 'game_time' => '18:00:00', 'odds_api_event_id' => 'one']);
-    $second = Game::factory()->create([...$attributes, 'game_time' => '23:00:00', 'odds_api_event_id' => 'two']);
-    Game::factory()->create([...$attributes, 'game_time' => '13:00:00', 'odds_api_event_id' => 'elapsed']);
+    $first = Game::factory()->create([...$attributes, 'game_time' => '18:00:00', 'odds_api_event_id' => 'one', 'espn_event_id' => 'board-one', ...CfbGameStart::attributes('2026-09-26T18:00:00Z', [], 'espn_schedule', 'board-one')]);
+    $second = Game::factory()->create([...$attributes, 'game_time' => '23:00:00', 'odds_api_event_id' => 'two', 'espn_event_id' => 'board-two', ...CfbGameStart::attributes('2026-09-26T23:00:00Z', [], 'espn_schedule', 'board-two')]);
+    Game::factory()->create([...$attributes, 'game_time' => '13:00:00', 'odds_api_event_id' => 'elapsed', 'espn_event_id' => 'board-elapsed', ...CfbGameStart::attributes('2026-09-26T13:00:00Z', [], 'espn_schedule', 'board-elapsed')]);
 
     $this->artisan('cfb:sync-player-props', ['--prepare' => true, '--queued' => true])->assertSuccessful();
     Queue::assertPushed(RunScheduledCommand::class, 2);

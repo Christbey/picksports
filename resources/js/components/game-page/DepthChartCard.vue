@@ -25,17 +25,17 @@ const metricKey = (entry: TeamDepthChartEntry, index: number): string =>
                 {{ title || 'Depth Charts' }}
             </h2>
             <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Projected starters and current season stat context.
+                Stored starter listings and completed-game stat context.
             </p>
         </div>
 
         <div class="grid gap-6 p-6 lg:grid-cols-2">
             <div
-                v-for="team in [awayTeam, homeTeam]"
-                :key="team?.team?.id ?? Math.random()"
+                v-for="(team, side) in [awayTeam, homeTeam]"
+                :key="`${side}-${team?.team?.id ?? 'unresolved'}`"
                 class="space-y-4"
             >
-                <div v-if="team" class="flex items-center gap-3">
+                <div v-if="team?.team" class="flex items-center gap-3">
                     <img
                         v-if="team.team.logo"
                         :src="team.team.logo"
@@ -66,7 +66,7 @@ const metricKey = (entry: TeamDepthChartEntry, index: number): string =>
                     </div>
                 </div>
 
-                <div v-if="team && team.entries.length" class="space-y-3">
+                <div v-if="team?.team && team.entries.length" class="space-y-3">
                     <div
                         v-for="entry in team.entries"
                         :key="`${team.team.id}-${entry.position_slot_key}-${entry.depth_rank}-${entry.espn_athlete_id ?? entry.player_id ?? 'unknown'}`"
@@ -132,13 +132,26 @@ const metricKey = (entry: TeamDepthChartEntry, index: number): string =>
                                 <div
                                     class="text-[10px] font-semibold tracking-[0.16em] text-slate-400 uppercase dark:text-slate-500"
                                 >
-                                    {{ metric.label }}
+                                    {{ metric.label
+                                    }}{{
+                                        metric.unit === 'decimal_innings'
+                                            ? ' (decimal)'
+                                            : ''
+                                    }}
                                 </div>
                                 <div
                                     class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100"
                                 >
                                     {{ metric.value }}
                                 </div>
+                                <p
+                                    v-if="metric.sample_size !== undefined"
+                                    class="mt-1 text-[10px] text-muted-foreground"
+                                >
+                                    {{ metric.sample_size }} observed /
+                                    {{ entry.stats.games_played }} recorded
+                                    games
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -148,7 +161,11 @@ const metricKey = (entry: TeamDepthChartEntry, index: number): string =>
                     v-else-if="team"
                     class="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400"
                 >
-                    No depth chart data available.
+                    {{
+                        team.team
+                            ? 'No stored depth chart entries available.'
+                            : 'Team identity unavailable.'
+                    }}
                 </div>
             </div>
         </div>

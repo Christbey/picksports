@@ -13,8 +13,6 @@ class SyncSchedulesCommand extends AbstractSyncSchedulesCommand
 
     protected const SPORT_CODE = 'MLB';
 
-    protected const DEFAULT_SEASON = '2025';
-
     protected const TEAM_MODEL_CLASS = Team::class;
 
     protected const ESPN_SERVICE_CLASS = EspnService::class;

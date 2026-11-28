@@ -7,6 +7,7 @@ use App\Http\Requests\Api\V2\SportPlayerLeaderboardIndexRequest;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportPlayerLeaderboardQuery;
 use App\Services\Api\V2\SportStatQuery;
+use App\Services\PlayerStats\BasketballLeaderboardService;
 use App\Support\SportsViewCache;
 use Illuminate\Http\JsonResponse;
 
@@ -20,11 +21,21 @@ class SportPlayerLeaderboardController extends Controller
         SportsViewCache $cache,
     ): JsonResponse {
         $context = $sports->resolve($sport);
+        if (! $context->supports('player_stats_leaderboard')) {
+            abort(404, in_array($context->slug, ['nfl', 'mlb', 'cfb'], true)
+                ? "Player leaderboard is not available for {$context->slug}."
+                : 'Leaderboard not available for this sport');
+        }
         $filters = $request->validatedFilters();
         $queryFilters = collect($filters)->except('focus_player_id')->all();
+        $cacheContext = ['sport' => $context->slug, 'filters' => $queryFilters];
+        if (in_array($context->slug, ['nba', 'cbb', 'wnba', 'wcbb'], true)) {
+            $cacheContext['observation_policy'] = BasketballLeaderboardService::OBSERVATION_POLICY;
+            $cacheContext['phase_policy'] = 'basketball_integer_phase_v1';
+        }
         $data = $cache->remember(
             SportsViewCache::SEGMENT_PLAYER_LEADERBOARDS,
-            $cache->contextHash(['sport' => $context->slug, 'filters' => $queryFilters]),
+            $cache->contextHash($cacheContext),
             (int) config('performance.player_leaderboard_cache_seconds', 300),
             fn () => $leaderboards->get($context, $queryFilters, $request->user())->all(),
         );

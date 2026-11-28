@@ -175,14 +175,14 @@ class BetTrackerController extends Controller
                 fputcsv($file, [
                     $bet->placed_at->format('Y-m-d H:i'),
                     strtoupper($bet->normalizedPredictionSport()?->value ?? 'manual'),
-                    $bet->selection_label ?? '',
+                    $this->csvText($bet->selection_label ?? ''),
                     $bet->bet_type,
                     '$'.$bet->bet_amount,
-                    $bet->odds,
+                    $this->csvText($bet->odds, allowNumeric: true),
                     ucfirst($bet->result),
                     $bet->profit_loss ? '$'.$bet->profit_loss : '',
                     $bet->settled_at?->format('Y-m-d H:i') ?? '',
-                    $bet->notes ?? '',
+                    $this->csvText($bet->notes ?? ''),
                 ]);
             }
 
@@ -190,6 +190,18 @@ class BetTrackerController extends Controller
         };
 
         return response()->stream($callback, 200, $headers);
+    }
+
+    private function csvText(string $value, bool $allowNumeric = false): string
+    {
+        if ($allowNumeric && preg_match('/\A[+-]?\d+(?:\.\d+)?\z/D', $value) === 1) {
+            return $value;
+        }
+
+        // CSV quoting does not stop spreadsheet clients interpreting formulas.
+        return preg_match('/\A(?:[\x00-\x20]*[=+\-@]|[\t\r\n])/', $value) === 1
+            ? "'".$value
+            : $value;
     }
 
     protected function calculateStatistics(int $userId): array

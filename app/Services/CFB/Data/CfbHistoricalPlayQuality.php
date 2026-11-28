@@ -3,7 +3,6 @@
 namespace App\Services\CFB\Data;
 
 use App\Models\CFB\Game;
-use App\Models\CFB\GameDataCheck;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
@@ -21,9 +20,7 @@ class CfbHistoricalPlayQuality
             $quality = app(CfbDataReadiness::class)->forGame($game);
             if (! data_get($quality, 'components.boxscore.accepted', false)
                 && app(CfbDataReadiness::class)->coreBoxscoreReady($game)) {
-                $source = GameDataCheck::where('game_id', $game->id)
-                    ->where('component', CfbCfbdTeamBoxscoreSync::COMPONENT)->whereNotNull('accepted_at')
-                    ->where('accepted_at', '<=', $capturedAt)->latest('accepted_at')->latest('id')->first();
+                $source = app(CfbSourceAssessmentRecorder::class)->acceptedForGame($game, CfbCfbdTeamBoxscoreSync::COMPONENT, [CfbCfbdTeamBoxscoreSync::VERSION], asOf: $capturedAt);
                 if ($source) {
                     $coreSources[] = ['game_id' => $game->id, 'provider' => 'cfbd', 'source_hash' => $source->source_hash,
                         'source_path' => $source->source_path, 'validator_version' => $source->validator_version];

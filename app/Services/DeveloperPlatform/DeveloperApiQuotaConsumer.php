@@ -95,7 +95,7 @@ class DeveloperApiQuotaConsumer
         return $policy->status === 'active'
             && $policy->organization?->isActive() === true
             && $policy->product?->is_active === true
-            && ($policy->starts_at === null || $policy->starts_at->isPast())
+            && ($policy->starts_at === null || $policy->starts_at->lessThanOrEqualTo(now()))
             && ($policy->ends_at === null || $policy->ends_at->isFuture());
     }
 }

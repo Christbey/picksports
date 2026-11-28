@@ -1,18 +1,22 @@
+import { teamGameStart, formatTeamGameDate } from '@/lib/teamPageDates';
 import type {
     Recommendation,
+    ExportCoverRecord,
     StatRow,
     PredictionExport,
     FuturesExport,
     TournamentExport,
 } from '@/types/admin-exports';
-export const getConfidenceColor = (confidence: number) => {
+export const getConfidenceColor = (confidence: number | null) => {
+    if (confidence === null) return 'bg-gray-500';
     if (confidence >= 88) return 'bg-green-500';
     if (confidence >= 76) return 'bg-emerald-500';
     if (confidence >= 64) return 'bg-yellow-500';
     return 'bg-gray-500';
 };
 
-export const getSignalBand = (confidence: number) => {
+export const getSignalBand = (confidence: number | null) => {
+    if (confidence === null) return 'Unavailable';
     if (confidence >= 97) return 'Outlier';
     if (confidence >= 88) return 'Very Strong';
     if (confidence >= 76) return 'Strong';
@@ -33,16 +37,39 @@ export const getInitials = (name: string) =>
 
 export const recommendationHitCount = (
     recommendation: 'Over' | 'Under',
-    values: { hits: number; games: number } | null,
-) => {
-    if (!values) {
+    values: ExportCoverRecord | null,
+): string => {
+    if (!values || !Number.isInteger(values.games) || values.games <= 0)
         return 'N/A';
-    }
-
+    const { games, pushes } = values;
+    if (
+        pushes != null &&
+        (!Number.isInteger(pushes) || pushes < 0 || pushes > games)
+    )
+        return 'N/A';
     const hits =
-        recommendation === 'Under' ? values.games - values.hits : values.hits;
-
-    return `${hits}/${values.games}`;
+        recommendation === 'Under'
+            ? (values.under ??
+              (values.recommendation === 'Under' ? values.wins : undefined))
+            : (values.over ??
+              values.hits ??
+              (values.recommendation === 'Over' ? values.wins : undefined));
+    if (
+        hits == null ||
+        !Number.isInteger(hits) ||
+        hits < 0 ||
+        hits > games ||
+        hits + (pushes ?? 0) > games
+    )
+        return 'N/A';
+    if (
+        values.over != null &&
+        values.under != null &&
+        pushes != null &&
+        values.over + values.under + pushes !== games
+    )
+        return 'N/A';
+    return `${hits}/${games}${pushes ? ` (${pushes} ${pushes === 1 ? 'push' : 'pushes'})` : ''}`;
 };
 
 export const shortMarket = (market: string) =>
@@ -54,25 +81,39 @@ export const sanitizeFilename = (value: string) =>
         .replace(/-+/g, '-')
         .replace(/(^-|-$)/g, '');
 
-export const formatStatNumber = (value: number | null | undefined) => {
-    if (value === null || value === undefined || Number.isNaN(value)) {
-        return 'N/A';
-    }
-
-    return Number(value).toFixed(1);
+function exportNumber(value: unknown): number | null {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (
+        typeof value !== 'string' ||
+        value.length > 64 ||
+        !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value.trim())
+    )
+        return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+}
+export const formatStatNumber = (
+    value: number | string | null | undefined,
+): string => {
+    const numeric = exportNumber(value);
+    return numeric === null ? 'N/A' : numeric.toFixed(1);
 };
 
 export function buildRelativeSignalMap(
-    items: Array<{ id: number; value: number }>,
-): Record<number, number> {
-    const out: Record<number, number> = {};
-    if (items.length === 0) return out;
-    if (items.length === 1) {
-        out[items[0].id] = Math.round(items[0].value);
+    items: Array<{ id: number | string; value: number | null }>,
+): Record<string, number> {
+    const observed = items.filter(
+        (item): item is { id: number | string; value: number } =>
+            typeof item.value === 'number' && Number.isFinite(item.value),
+    );
+    const out: Record<string, number> = {};
+    if (observed.length === 0) return out;
+    if (observed.length === 1) {
+        out[observed[0].id] = Math.round(observed[0].value);
         return out;
     }
 
-    const values = items.map((item) => Number(item.value) || 0);
+    const values = observed.map((item) => Number(item.value) || 0);
     const min = Math.min(...values);
     const max = Math.max(...values);
     const range = max - min;
@@ -81,14 +122,14 @@ export function buildRelativeSignalMap(
         values.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
         values.length;
     const stdDev = Math.sqrt(Math.max(variance, 0.0001));
-    const ranked = [...items].sort((a, b) => a.value - b.value);
-    const rankMap = ranked.reduce<Record<number, number>>((acc, item, idx) => {
+    const ranked = [...observed].sort((a, b) => a.value - b.value);
+    const rankMap = ranked.reduce<Record<string, number>>((acc, item, idx) => {
         acc[item.id] = idx;
         return acc;
     }, {});
-    const denominator = Math.max(items.length - 1, 1);
+    const denominator = Math.max(observed.length - 1, 1);
 
-    items.forEach((item) => {
+    observed.forEach((item) => {
         const rankPct = (rankMap[item.id] ?? 0) / denominator;
         const zScore = (item.value - mean) / stdDev;
 
@@ -136,7 +177,9 @@ export function buildStatRows(rec: Recommendation): StatRow[] {
             label: `HIT ${rec.recommendation.toUpperCase()} (L5)`,
             value: recommendationHitCount(
                 rec.recommendation,
-                rec.stats?.times_covered_last5 ?? null,
+                rec.stats?.cover_record?.last_5 ??
+                    rec.stats?.times_covered_last5 ??
+                    null,
             ),
         },
         {
@@ -144,7 +187,9 @@ export function buildStatRows(rec: Recommendation): StatRow[] {
             label: `HIT ${rec.recommendation.toUpperCase()} (SEASON)`,
             value: recommendationHitCount(
                 rec.recommendation,
-                rec.stats?.times_covered_season ?? null,
+                rec.stats?.cover_record?.season ??
+                    rec.stats?.times_covered_season ??
+                    null,
             ),
         },
         {
@@ -173,21 +218,39 @@ export function buildStatRows(rec: Recommendation): StatRow[] {
     ];
 }
 
-export const normalizePercent = (value: number | null | undefined) => {
-    const numeric = Number(value ?? 0);
-    if (Number.isNaN(numeric)) {
-        return 0;
-    }
-
-    return numeric <= 1 ? numeric * 100 : numeric;
+export const normalizePercent = (
+    value: number | string | null | undefined,
+): number | null => {
+    const numeric = exportNumber(value);
+    if (numeric === null) return null;
+    const percentage = numeric <= 1 ? numeric * 100 : numeric;
+    return percentage >= 0 && percentage <= 100 ? percentage : null;
+};
+export const observedSignal = (
+    value: number | string | null | undefined,
+): number | null => {
+    const numeric = exportNumber(value);
+    return numeric !== null && numeric >= 0 && numeric <= 100
+        ? Math.round(numeric)
+        : null;
+};
+export const formatRelativeSignal = (value: number | null): string =>
+    value === null ? 'N/A' : `${value}/100`;
+export const formatExportPercent = (
+    value: number | string | null | undefined,
+): string => {
+    const numeric = exportNumber(value);
+    return numeric === null || numeric < 0 || numeric > 100
+        ? 'N/A'
+        : `${numeric.toFixed(1)}%`;
 };
 
 export function buildPredictionRows(prediction: PredictionExport): StatRow[] {
     return [
         {
             key: 'win-prob',
-            label: 'WIN PROBABILITY',
-            value: `${formatStatNumber(prediction.win_probability)}%`,
+            label: 'HOME WIN PROBABILITY',
+            value: `${formatExportPercent(prediction.win_probability)}`,
         },
         {
             key: 'pred-spread',
@@ -212,7 +275,7 @@ export function buildPredictionRows(prediction: PredictionExport): StatRow[] {
         {
             key: 'pick-side',
             label: 'MODEL PICK SIDE',
-            value: prediction.pick_side,
+            value: prediction.pick_side ?? 'N/A',
         },
         {
             key: 'pick-team',
@@ -222,7 +285,7 @@ export function buildPredictionRows(prediction: PredictionExport): StatRow[] {
         {
             key: 'confidence',
             label: 'CONFIDENCE',
-            value: `${formatStatNumber(normalizePercent(prediction.confidence))}%`,
+            value: `${formatExportPercent(normalizePercent(prediction.confidence))}`,
         },
         {
             key: 'matchup',
@@ -243,12 +306,12 @@ export function buildFuturesRows(row: FuturesExport): StatRow[] {
         {
             key: 'make',
             label: 'PLAYOFF MAKE',
-            value: `${formatStatNumber(row.playoff_make_probability)}%`,
+            value: `${formatExportPercent(row.playoff_make_probability)}`,
         },
         {
             key: 'title',
             label: 'TITLE ODDS',
-            value: `${formatStatNumber(row.champion_probability)}%`,
+            value: `${formatExportPercent(row.champion_probability)}`,
         },
         {
             key: 'group',
@@ -260,20 +323,20 @@ export function buildFuturesRows(row: FuturesExport): StatRow[] {
             label: 'CONF FINALS',
             value:
                 row.conference_finals_probability !== null
-                    ? `${formatStatNumber(row.conference_finals_probability)}%`
+                    ? `${formatExportPercent(row.conference_finals_probability)}`
                     : 'N/A',
         },
         {
             key: 'finals',
             label: 'FINALS / WS',
-            value: `${formatStatNumber(row.nba_finals_probability ?? row.world_series_probability)}%`,
+            value: `${formatExportPercent(row.nba_finals_probability ?? row.world_series_probability)}`,
         },
         {
             key: 'lcs',
             label: 'LCS ODDS',
             value:
                 row.league_championship_probability !== null
-                    ? `${formatStatNumber(row.league_championship_probability)}%`
+                    ? `${formatExportPercent(row.league_championship_probability)}`
                     : 'N/A',
         },
         { key: 'team', label: 'TEAM', value: row.team },
@@ -291,32 +354,32 @@ export function buildTournamentRows(row: TournamentExport): StatRow[] {
         {
             key: 'make',
             label: 'TOURNAMENT MAKE',
-            value: `${formatStatNumber(row.tournament_make_probability)}%`,
+            value: `${formatExportPercent(row.tournament_make_probability)}`,
         },
         {
             key: 'title',
             label: 'TITLE ODDS',
-            value: `${formatStatNumber(row.champion_probability)}%`,
+            value: `${formatExportPercent(row.champion_probability)}`,
         },
         {
             key: 'auto',
             label: 'AUTO BID',
-            value: `${formatStatNumber(row.auto_bid_probability)}%`,
+            value: `${formatExportPercent(row.auto_bid_probability)}`,
         },
         {
             key: 'at-large',
             label: 'AT LARGE',
-            value: `${formatStatNumber(row.at_large_probability)}%`,
+            value: `${formatExportPercent(row.at_large_probability)}`,
         },
         {
             key: 'first-four',
             label: 'FIRST FOUR',
-            value: `${formatStatNumber(row.first_four_probability)}%`,
+            value: `${formatExportPercent(row.first_four_probability)}`,
         },
         {
             key: 'bid-thief',
             label: 'BID THIEF',
-            value: `${formatStatNumber(row.bid_thief_probability)}%`,
+            value: `${formatExportPercent(row.bid_thief_probability)}`,
         },
         {
             key: 'conference',
@@ -324,4 +387,22 @@ export function buildTournamentRows(row: TournamentExport): StatRow[] {
             value: row.conference ?? 'N/A',
         },
     ];
+}
+
+export function formatExportGameStart(game: {
+    date?: string | null;
+    starts_at?: string | null;
+}): string {
+    const instant = teamGameStart(game);
+    if (instant === null)
+        return `Calendar date ${formatTeamGameDate(game.date ?? null)} • Time unavailable`;
+    return new Intl.DateTimeFormat('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZone: 'UTC',
+        timeZoneName: 'short',
+    }).format(new Date(instant));
 }

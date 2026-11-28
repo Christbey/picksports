@@ -39,15 +39,17 @@ class FuturesOddsLookupService
             ->when($resolvedMarketKeys !== [], fn ($query) => $query->whereIn('market_key', $resolvedMarketKeys))
             ->orderByDesc('fetched_at')
             ->orderByDesc('id')
-            ->get([
+            ->select([
                 $teamForeignKey,
                 'bookmaker',
                 'market_key',
                 'price',
                 'implied_probability',
                 'fetched_at',
+                'market_last_update',
                 'odds_api_sport_key',
-            ]);
+            ])
+            ->cursor();
 
         $byTeam = [];
 
@@ -63,6 +65,7 @@ class FuturesOddsLookupService
                 'price' => $row->price !== null ? (int) $row->price : null,
                 'implied_probability' => $row->implied_probability !== null ? (float) $row->implied_probability : null,
                 'fetched_at' => $row->fetched_at?->toIso8601String(),
+                'market_last_update' => $row->market_last_update?->toIso8601String(),
                 'odds_api_sport_key' => (string) $row->odds_api_sport_key,
             ];
         }
@@ -95,7 +98,7 @@ class FuturesOddsLookupService
             ->where('captured_at', '<=', $capturedAt)
             ->orderByDesc('captured_at')
             ->orderByDesc('id')
-            ->get([
+            ->select([
                 $teamForeignKey,
                 'bookmaker',
                 'market_key',
@@ -103,7 +106,8 @@ class FuturesOddsLookupService
                 'implied_probability',
                 'captured_at',
                 'odds_api_sport_key',
-            ]);
+            ])
+            ->cursor();
 
         $byTeam = [];
 

@@ -3,6 +3,7 @@
 use App\Models\NBA\Game;
 use App\Models\NBA\TeamMetric;
 use App\Models\NBA\TeamStat;
+use App\Models\SportEvent;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -68,8 +69,15 @@ it('moves toward a home favorite when blending the bookmaker spread', function (
 it('removes home advantage when only the neutral site flag changes', function (string $sport) {
     [$game, $home, $away, $ac] = calculationReviewGame($sport);
     $game->neutral_site = false;
+    if ($sport !== 'nba') {
+        $game->sport_event_id = 1;
+        $game->setRelation('sportEvent', new SportEvent(['neutral_site' => false]));
+    }
     $homeCourt = (new ReflectionMethod($ac, 'makePredictionData'))->invoke(app($ac), $game);
     $game->neutral_site = true;
+    if ($sport !== 'nba') {
+        $game->sportEvent->neutral_site = true;
+    }
     $neutralCourt = (new ReflectionMethod($ac, 'makePredictionData'))->invoke(app($ac), $game);
     expect($neutralCourt['predicted_spread'])->toBeLessThan($homeCourt['predicted_spread']);
 })->with(['nba', 'cbb', 'wcbb']);
@@ -239,7 +247,7 @@ it('does not classify a neutral site history row as a home venue sample', functi
     $gameClass = "App\\Models\\{$namespace}\\Game";
     $statClass = "App\\Models\\{$namespace}\\TeamStat";
     $method = new ReflectionMethod($action, 'getVenueEfficiency');
-    $before = $method->invoke(app($action), $home, 2027, 'home', $game);
+    $before = $method->invokeArgs(app($action), $sport === 'nba' ? [$home, 2027, 'home', $game] : [$home, $game, 'home']);
     $past = $gameClass::factory()->create([
         'home_team_id' => $home->id, 'away_team_id' => $away->id,
         'season' => 2027, 'status' => 'STATUS_FINAL', 'neutral_site' => true,
@@ -251,11 +259,11 @@ it('does not classify a neutral site history row as a home venue sample', functi
     calculationReviewStat($sport, $statClass, [
         'game_id' => $past->id, 'team_id' => $away->id, 'points' => 80, 'possessions' => 100,
     ]);
-    expect($method->invoke(app($action), $home, 2027, 'home', $game))->toBe($before);
-    $form = (new ReflectionMethod($action, 'getRecentForm'))->invoke(app($action), $home, 2027, $game);
+    expect($method->invokeArgs(app($action), $sport === 'nba' ? [$home, 2027, 'home', $game] : [$home, $game, 'home']))->toBe($before);
+    $form = (new ReflectionMethod($action, 'getRecentForm'))->invokeArgs(app($action), $sport === 'nba' ? [$home, 2027, $game] : [$home, $game]);
     expect($form['net_rating'])->toBe(60.0);
     $past->update(['neutral_site' => false]);
-    expect($method->invoke(app($action), $home, 2027, 'home', $game)['off'])->toBe(140.0);
+    expect($method->invokeArgs(app($action), $sport === 'nba' ? [$home, 2027, 'home', $game] : [$home, $game, 'home'])['off'])->toBe(140.0);
 })->with(['nba', 'cbb', 'wcbb']);
 
 it('keeps neutral games in college season metrics but excludes them from stored venue splits', function (string $sport) {

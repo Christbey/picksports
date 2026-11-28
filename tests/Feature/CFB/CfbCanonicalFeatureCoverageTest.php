@@ -13,6 +13,11 @@ use App\Services\CFB\Predictions\CfbInputSnapshotBuilder;
 use App\Services\CFB\Predictions\CfbPointInTimeElo;
 use App\Services\CFB\Predictions\CfbPredictionInputQuality;
 use App\Services\CFB\Scoring\CfbScoringChallenger;
+use App\Services\CFB\Signals\CfbFootballSignalEvidence;
+use App\Services\CFB\Signals\CfbFootballSignalModel;
+use App\Services\CFB\Signals\CfbFrozenSignalEvidence;
+use Carbon\CarbonImmutable;
+use Tests\Support\ObservedCfbGameFixture;
 
 it('separates FPI baseline, local feature coverage and uncalibrated market confidence', function () {
     $config = app(CfbCalculationReleaseDefinition::class)->configuration();
@@ -47,14 +52,52 @@ it('blocks required Elo evidence while leaving older snapshot policies unchanged
     expect(CfbPredictionInputQuality::assess($inputs)['qualified'])->toBeTrue();
 });
 
+it('uses an explicitly pinned correction artifact without refitting it during later snapshot builds', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-10-21T12:00:00-05:00'));
+    $event = SportEvent::factory()->create(['sport' => 'cfb', 'season' => 2026, 'starts_at' => now()->addDays(3)]);
+    $game = Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026, 'season_type' => '2',
+        'game_date' => $event->starts_at, 'home_team_id' => Team::factory()->create()->id,
+        'away_team_id' => Team::factory()->create()->id, 'status' => 'STATUS_SCHEDULED']);
+    ObservedCfbGameFixture::observe($game, $event->starts_at);
+    $config = app(CfbCalculationReleaseDefinition::class)->configuration();
+    foreach (['point_in_time_elo', 'personnel_evidence', 'validated_historical_play_metrics'] as $flag) {
+        $config['inputs'][$flag] = false;
+    }
+    $config['candidate_suite']['enabled'] = false;
+    $config['independent_result_rating']['enabled'] = false;
+    $config['scoring_challenger'] = [];
+    $evidence = ['version' => CfbFootballSignalModel::VERSION,
+        'baseline_hash' => CfbFootballSignalEvidence::baselineHash($config),
+        'catalog_hash' => CfbFootballSignalEvidence::catalogHash($config['football_signals']['catalog']),
+        'feature_policy' => $config['football_signals']['feature_policy'], 'training_policy' => $config['football_signals']['training_policy'],
+        'as_of' => now()->subDay()->toIso8601String(), 'latest_source_observed_at' => null,
+        'signals' => [], 'joint_models' => []];
+    $artifact = app(CfbFrozenSignalEvidence::class)->freeze($evidence, $config, now()->subHour()->toImmutable(), 'source');
+    $config['football_signals']['frozen_evidence'] = $artifact;
+    $this->mock(CfbFootballSignalEvidence::class)->shouldNotReceive('build');
+    $release = new CalculationReleaseData('test', 'cfb', 'pregame', 'cfb-pregame-rules', 'rules',
+        'pinned-candidate', 'test', 'test', 'cfb-pregame-v1', $config);
+    $first = app(CfbInputSnapshotBuilder::class)->build($event, $release);
+    $originalOutput = app(CfbCalculator::class)->calculate($first, $release);
+    $this->travelTo(now()->addMinute());
+    $second = app(CfbInputSnapshotBuilder::class)->build($event->fresh(), $release);
+    $replayedOutput = app(CfbCalculator::class)->calculate($first, $release);
+    expect($first->inputs['football_signal_evidence'])->toBe($second->inputs['football_signal_evidence'])
+        ->and($second->sourceTimestamps['football_signal_artifact'])->toBe($artifact['available_at'])
+        ->and($second->latestSourceAvailableAt->lte($second->capturedAt))->toBeTrue()
+        ->and($replayedOutput->hashablePayload())->toBe($originalOutput->hashablePayload())
+        ->and(data_get($replayedOutput->diagnostics, 'football_signals.frozen_artifact.content_hash'))->toBe($artifact['content_hash']);
+});
+
 it('suppresses absolute injury ratings based on an unregressed preseason team rating', function () {
     $home = Team::factory()->create(['elo_rating' => 2200]);
     $away = Team::factory()->create(['elo_rating' => 1500]);
     $event = SportEvent::factory()->create(['sport' => 'cfb', 'season' => 2026,
         'starts_at' => now()->addDay(), 'neutral_site' => true]);
-    Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026, 'week' => 1,
+    $game = Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026, 'week' => 1,
         'home_team_id' => $home->id, 'away_team_id' => $away->id, 'status' => 'STATUS_SCHEDULED',
         'game_date' => $event->starts_at]);
+    ObservedCfbGameFixture::observe($game, $event->starts_at);
     foreach ([$home, $away] as $team) {
         TeamMetric::create(['team_id' => $team->id, 'season' => 2026,
             'wins' => 1, 'losses' => 0, 'points_per_game' => 28, 'points_allowed_per_game' => 21,
@@ -80,8 +123,9 @@ it('accepts same-day prior-season refresh only when observed before kickoff', fu
     $away = Team::factory()->create();
     $event = SportEvent::factory()->create(['sport' => 'cfb', 'season' => 2026,
         'starts_at' => now()->addHour()]);
-    Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026, 'week' => 3,
+    $game = Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026, 'week' => 3,
         'home_team_id' => $home->id, 'away_team_id' => $away->id, 'status' => 'STATUS_SCHEDULED', 'game_date' => $event->starts_at]);
+    ObservedCfbGameFixture::observe($game, $event->starts_at);
     $prior = TeamMetric::create(['team_id' => $home->id, 'season' => 2025,
         'wins' => 8, 'losses' => 4, 'points_per_game' => 30, 'points_allowed_per_game' => 21,
         'calculation_date' => now()->toDateString()]);
@@ -97,8 +141,9 @@ it('excludes unreliable play metrics and the possession challenger while flaggin
     $home = Team::factory()->create();
     $away = Team::factory()->create();
     $event = SportEvent::factory()->create(['sport' => 'cfb', 'season' => 2026, 'starts_at' => now()->addDay()]);
-    Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026, 'week' => 6,
+    $game = Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026, 'week' => 6,
         'home_team_id' => $home->id, 'away_team_id' => $away->id, 'status' => 'STATUS_SCHEDULED']);
+    ObservedCfbGameFixture::observe($game, $event->starts_at);
     foreach ([$home, $away] as $team) {
         TeamMetric::create(['team_id' => $team->id, 'season' => 2026, 'wins' => 4, 'losses' => 1,
             'points_per_game' => 28, 'points_allowed_per_game' => 21, 'net_true_epa_per_play' => 9,

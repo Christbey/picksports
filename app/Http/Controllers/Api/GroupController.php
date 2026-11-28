@@ -10,6 +10,8 @@ use App\Models\Group;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 class GroupController extends Controller
 {
@@ -32,18 +34,22 @@ class GroupController extends Controller
     {
         $validated = $request->validated();
 
-        $group = Group::query()->create([
-            'owner_id' => $request->user()->id,
-            'name' => $validated['name'],
-            'type' => $validated['type'] ?? 'bracket_pool',
-            'sport' => $validated['sport'] ?? null,
-            'season' => $validated['season'] ?? null,
-        ]);
+        $group = DB::transaction(function () use ($request, $validated): Group {
+            $group = Group::query()->create([
+                'owner_id' => $request->user()->id,
+                'name' => $validated['name'],
+                'type' => $validated['type'] ?? 'bracket_pool',
+                'sport' => $validated['sport'] ?? null,
+                'season' => $validated['season'] ?? null,
+            ]);
 
-        $group->users()->attach($request->user()->id, [
-            'role' => 'owner',
-            'joined_at' => now(),
-        ]);
+            $group->users()->attach($request->user()->id, [
+                'role' => 'owner',
+                'joined_at' => now(),
+            ]);
+
+            return $group;
+        });
 
         return (new GroupResource($group->fresh()))
             ->response()
@@ -60,9 +66,42 @@ class GroupController extends Controller
             'name' => 'sometimes|string|max:255',
         ]);
 
-        $group->fill($validated)->save();
+        $connection = $group->getConnection();
+        $pdo = $connection->getPdo();
+        $id = $group->getRawOriginal('id');
+        $publicIdentity = $group->getRawOriginal('public_id');
+        $ownerId = $request->user()->getKey();
+        $literal = (new Group)->setConnection($connection->getName());
+        if ($literal->getConnection() !== $connection) {
+            throw new RuntimeException('Group update connection changed.');
+        }
 
-        return new GroupResource($group->fresh());
+        $updated = $connection->transaction(function () use ($connection, $pdo, $literal, $id, $ownerId, $publicIdentity, $validated): Group {
+            $current = $literal->newQuery()->useWritePdo()->whereKey($id)
+                ->where('public_id', $publicIdentity)->where('owner_id', $ownerId)
+                ->lockForUpdate()->firstOrFail();
+            if ($current->getConnection() !== $connection || $connection->getPdo() !== $pdo) {
+                throw new RuntimeException('Group update connection changed.');
+            }
+            $current->fill($validated);
+            if ($current->save() !== true || ! $current->exists
+                || $current->getConnection() !== $connection || $connection->getPdo() !== $pdo
+                || $current->getTable() !== $literal->getTable()
+                || (string) $current->getKey() !== (string) $id) {
+                throw new RuntimeException('Group update was not persisted.');
+            }
+            $stored = $connection->table($literal->getTable())->useWritePdo()->where('id', $id)
+                ->select(['id', 'owner_id', 'public_id', 'name'])->first();
+            if ($stored === null || (string) $stored->owner_id !== (string) $ownerId
+                || $stored->public_id !== $publicIdentity
+                || (array_key_exists('name', $validated) && $stored->name !== $validated['name'])) {
+                throw new RuntimeException('Group update changed during persistence.');
+            }
+
+            return $current->fresh();
+        });
+
+        return new GroupResource($updated);
     }
 
     private function visibleGroups(Request $request): Builder

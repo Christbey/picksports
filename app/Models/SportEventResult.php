@@ -3,17 +3,17 @@
 namespace App\Models;
 
 use App\Models\Concerns\HasPublicUlid;
+use App\Models\Concerns\RejectsPersistedModelMutation;
 use Database\Factories\SportEventResultFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use LogicException;
 
 class SportEventResult extends Model
 {
     /** @use HasFactory<SportEventResultFactory> */
-    use HasFactory, HasPublicUlid;
+    use HasFactory, HasPublicUlid, RejectsPersistedModelMutation;
 
     protected $fillable = [
         'public_id',
@@ -43,10 +43,9 @@ class SportEventResult extends Model
         ];
     }
 
-    protected static function booted(): void
+    protected function immutableMutationMessage(): string
     {
-        static::updating(fn (): never => throw new LogicException('Sport event results are immutable.'));
-        static::deleting(fn (): never => throw new LogicException('Sport event results are immutable.'));
+        return 'Sport event results are immutable.';
     }
 
     public function sportEvent(): BelongsTo

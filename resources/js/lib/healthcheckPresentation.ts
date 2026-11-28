@@ -93,19 +93,44 @@ export function formatCheckType(type: string): string {
 export function formatSportName(sport: string): string {
     return sport.toUpperCase();
 }
-export function formatDate(dateString: string): string {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
+function observationDate(value: string | null | undefined): {
+    date: Date | null;
+    error: string;
+} {
+    if (!value) return { date: null, error: 'Observation time unavailable' };
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(value)) {
+        return { date: null, error: 'Time zone unverified' };
+    }
+    const match = value.match(
+        /^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.\d{1,6})?(Z|[+-](?:0\d|1[0-3]):[0-5]\d|[+-]14:00)$/,
+    );
+    if (!match) return { date: null, error: 'Observation time unavailable' };
+    const calendar = new Date(
+        Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])),
+    );
+    const date = new Date(value);
+    if (
+        calendar.getUTCFullYear() !== Number(match[1]) ||
+        calendar.getUTCMonth() !== Number(match[2]) - 1 ||
+        calendar.getUTCDate() !== Number(match[3]) ||
+        !Number.isFinite(date.getTime())
+    ) {
+        return { date: null, error: 'Observation time unavailable' };
+    }
+    return { date, error: '' };
+}
+export function formatDate(dateString: string | null | undefined): string {
+    const { date, error } = observationDate(dateString);
+    if (!date) return error;
+    const diffMs = Date.now() - date.getTime();
+    if (diffMs < 0) return 'Future timestamp';
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMins / 60);
     const diffDays = Math.floor(diffHours / 24);
-
     if (diffMins < 1) return 'Just now';
     if (diffMins < 60) return `${diffMins}m ago`;
     if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays < 7) return `${diffDays}d ago`;
-
     return date.toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
@@ -113,8 +138,11 @@ export function formatDate(dateString: string): string {
         minute: '2-digit',
     });
 }
-export function formatAbsoluteDate(dateString: string): string {
-    const date = new Date(dateString);
+export function formatAbsoluteDate(
+    dateString: string | null | undefined,
+): string {
+    const { date, error } = observationDate(dateString);
+    if (!date) return error;
     return date.toLocaleString('en-US', {
         month: 'short',
         day: 'numeric',

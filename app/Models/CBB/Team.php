@@ -85,7 +85,7 @@ class Team extends Model
 
     public function games()
     {
-        return Game::query()
+        return $this->newRelatedInstance(Game::class)->newQuery()
             ->where(function ($query) {
                 $query->where('home_team_id', $this->id)
                     ->orWhere('away_team_id', $this->id);
@@ -95,7 +95,7 @@ class Team extends Model
     /** Query forecasts for either home or away games; this is not an eager-loadable relation. */
     public function queryPredictions(): Builder
     {
-        return Prediction::query()->whereHas('game', function (Builder $query): void {
+        return $this->newRelatedInstance(Prediction::class)->newQuery()->whereHas('game', function (Builder $query): void {
             $query->where('home_team_id', $this->id)
                 ->orWhere('away_team_id', $this->id);
         });

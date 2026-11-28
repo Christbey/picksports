@@ -162,25 +162,48 @@ class PasskeyController extends Controller
             requireUserVerification: true,
         );
 
-        $existing = Passkey::query()->where('credential_id', $validated['credential_id'])->first();
-
-        if ($existing && $existing->user_id !== $request->user()->id) {
+        $user = $request->user();
+        $connection = (new Passkey)->getConnection();
+        if ($user->getConnection() !== $connection) {
             throw ValidationException::withMessages([
-                'credential' => 'This passkey is already registered to another account.',
+                'credential' => 'Passkey registration requires the account connection.',
             ]);
         }
+        $attributes = [
+            'name' => $validated['name'] ?? null,
+            'public_key' => $publicKeyPem,
+            'algorithm' => (int) ($algorithm ?? -7),
+            'sign_count' => $authenticatorData['signCount'],
+            'transports' => $validated['transports'] ?? null,
+        ];
+        $passkey = $connection->transaction(function () use ($user, $connection, $validated, $attributes): Passkey {
+            $account = $user->newModelQuery()->useWritePdo()->whereKey($user->getKey())->lockForUpdate()->first();
+            if ($account === null) {
+                throw ValidationException::withMessages(['credential' => 'Passkey registration account is unavailable.']);
+            }
+            // A unique-conflict recovery may return a row created by another
+            // account. Admit that current owner before updating any attributes.
+            $passkey = (new Passkey)->setConnection($connection->getName())->newQuery()->useWritePdo()->lockForUpdate()
+                ->firstOrCreate(['credential_id' => $validated['credential_id']], ['user_id' => $account->getKey(), ...$attributes]);
+            if (! $passkey->exists || $passkey->getKey() === null) {
+                throw ValidationException::withMessages(['credential' => 'Passkey could not be saved. Please try again.']);
+            }
+            if ((string) $passkey->user_id !== (string) $account->getKey()
+                || $passkey->getRawOriginal('credential_id') !== $validated['credential_id']) {
+                throw ValidationException::withMessages(['credential' => 'This passkey is already registered to another account or conflicts with an existing credential.']);
+            }
+            if (! $passkey->wasRecentlyCreated && $passkey->fill($attributes)->save() !== true) {
+                throw ValidationException::withMessages(['credential' => 'Passkey could not be saved. Please try again.']);
+            }
+            $stored = $connection->table('passkeys')->useWritePdo()->where('id', $passkey->getKey())
+                ->select(['id', 'user_id', 'credential_id'])->lockForUpdate()->first();
+            if ($stored === null || (string) $stored->user_id !== (string) $account->getKey()
+                || $stored->credential_id !== $validated['credential_id']) {
+                throw ValidationException::withMessages(['credential' => 'Passkey ownership changed before registration completed.']);
+            }
 
-        $passkey = Passkey::query()->updateOrCreate(
-            ['credential_id' => $validated['credential_id']],
-            [
-                'user_id' => $request->user()->id,
-                'name' => $validated['name'] ?? null,
-                'public_key' => $publicKeyPem,
-                'algorithm' => (int) ($algorithm ?? -7),
-                'sign_count' => $authenticatorData['signCount'],
-                'transports' => $validated['transports'] ?? null,
-            ],
-        );
+            return $passkey;
+        });
 
         return response()->json([
             'message' => 'Passkey saved.',

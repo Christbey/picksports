@@ -3,7 +3,11 @@
 namespace App\Http\Controllers\Subscription;
 
 use App\Http\Controllers\Controller;
+use App\Services\Billing\BillingFinancialAdmission;
+use App\Services\Billing\BillingLegacyOperation;
+use App\Services\Billing\BillingSubscriptionPresentation;
 use App\Support\SubscriptionTierCache;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -37,12 +41,12 @@ class SubscriptionController extends Controller
         ]);
     }
 
-    public function manage(Request $request): Response
+    public function manage(Request $request): Response|RedirectResponse
     {
         $user = $request->user();
         $tier = $user->subscriptionTier();
 
-        if ($user->hasFoundingAccess()) {
+        if ($user->hasFoundingAccess() && $user->subscriptions->isEmpty()) {
             return Inertia::render('Subscription/Manage', [
                 'subscription' => [
                     'tier' => $tier?->name,
@@ -53,19 +57,14 @@ class SubscriptionController extends Controller
             ]);
         }
 
-        if (! $user->subscribed()) {
+        if ($user->subscriptions->isEmpty()) {
             return redirect()->route('subscription.plans');
         }
 
         $subscription = $user->subscription();
 
         return Inertia::render('Subscription/Manage', [
-            'subscription' => [
-                'tier' => $tier?->name,
-                'status' => $subscription->stripe_status,
-                'current_period_end' => $subscription->ends_at,
-                'cancel_at_period_end' => $subscription->ends_at !== null,
-            ],
+            'subscription' => $subscription !== null ? app(BillingSubscriptionPresentation::class)->present($subscription, $tier?->name) : app(BillingSubscriptionPresentation::class)->unresolved($tier?->name),
         ]);
     }
 
@@ -73,15 +72,21 @@ class SubscriptionController extends Controller
     {
         $user = $request->user();
 
-        if ($user->hasFoundingAccess()) {
+        if ($user->hasFoundingAccess() && $user->subscriptions->isEmpty()) {
             return $this->redirectSuccess('subscription.manage', 'Founding accounts do not require billing.');
+        }
+
+        if (config('billing.durable.enabled', false)) {
+            $intent = app(BillingFinancialAdmission::class)->admit($user, 'cancel');
+
+            return redirect()->route('subscription.operation', ['intent' => $intent->id]);
         }
 
         if (! $user->subscribed()) {
             return redirect()->route('subscription.plans');
         }
 
-        $user->subscription()->cancel();
+        app(BillingLegacyOperation::class)->run($user, 'cancel', fn () => $user->subscription()->cancel());
 
         return $this->redirectSuccess(
             'subscription.manage',
@@ -93,15 +98,21 @@ class SubscriptionController extends Controller
     {
         $user = $request->user();
 
-        if ($user->hasFoundingAccess()) {
+        if ($user->hasFoundingAccess() && $user->subscriptions->isEmpty()) {
             return $this->redirectSuccess('subscription.manage', 'Founding accounts do not require billing.');
+        }
+
+        if (config('billing.durable.enabled', false)) {
+            $intent = app(BillingFinancialAdmission::class)->admit($user, 'resume');
+
+            return redirect()->route('subscription.operation', ['intent' => $intent->id]);
         }
 
         if (! $user->subscribed() || ! $user->subscription()->cancelled()) {
             return redirect()->route('subscription.plans');
         }
 
-        $user->subscription()->resume();
+        app(BillingLegacyOperation::class)->run($user, 'resume', fn () => $user->subscription()->resume());
 
         return $this->redirectSuccess('subscription.manage', 'Your subscription has been resumed successfully.');
     }

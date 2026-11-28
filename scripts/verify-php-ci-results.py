@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fail CI if sharding drops, duplicates, skips, or fails a discovered PHP test."""
 import argparse
+import json
 from collections import Counter
 from pathlib import Path
 import xml.etree.ElementTree as ET
@@ -21,6 +22,34 @@ def normalized_class(name):
     return name.removeprefix('P\\')
 
 
+def canonical_execution(path, selected):
+    with path.open() as source:
+        records = [json.loads(line) for line in source]
+    if len(records) < 2 or records[0] != {'schema': 1, 'event': 'start'} or records[-1] != {'event': 'end'}:
+        raise ValueError(f'{path.name}: incomplete canonical execution log')
+    passed = Counter()
+    finished = Counter()
+    for record in records[1:-1]:
+        if set(record) != {'event', 'id'} or not isinstance(record['id'], str):
+            raise ValueError(f'{path.name}: malformed canonical event')
+        identity = record['id']
+        if identity not in selected:
+            raise ValueError(f'{path.name}: executed identity not in shard discovery')
+        if record['event'] == 'passed':
+            passed[identity] += 1
+            if passed[identity] != 1 or finished[identity]:
+                raise ValueError(f'{path.name}: duplicate or out-of-order passed identity')
+        elif record['event'] == 'finished':
+            finished[identity] += 1
+            if passed[identity] != 1 or finished[identity] != 1:
+                raise ValueError(f'{path.name}: duplicate or unsuccessful finished identity')
+        else:
+            raise ValueError(f'{path.name}: unsuccessful or unknown canonical event')
+    expected = Counter({identity: 1 for identity in selected})
+    if passed != expected or finished != expected:
+        raise ValueError(f'{path.name}: canonical executed identities differ from discovery')
+
+
 def verify(directory, shards):
     full = discovered(directory / 'full.xml')
     planned = Counter()
@@ -29,6 +58,7 @@ def verify(directory, shards):
     assertions = 0
     for shard in range(1, shards + 1):
         selected = discovered(directory / f'planned-{shard}.xml')
+        canonical_execution(directory / f'events-{shard}.jsonl', selected)
         planned.update(selected)
         expected_classes = Counter(normalized_class(test.split('::', 1)[0]) for test in selected)
         actual_classes = Counter()
@@ -60,7 +90,7 @@ def main():
         parser.error('--shards must be positive')
     try:
         print(verify(args.directory, args.shards))
-    except (ValueError, KeyError, OSError, ET.ParseError) as error:
+    except (ValueError, KeyError, TypeError, OSError, ET.ParseError) as error:
         parser.exit(1, f'PHP CI verification failed: {error}\n')
 
 

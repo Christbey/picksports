@@ -61,10 +61,15 @@ class SyncTeamStats extends AbstractBasketballSyncTeamStats
 
     protected function calculatePossessions(array $stats): ?float
     {
-        $fga = $stats['fieldGoalsAttempted'] ?? 0;
-        $oreb = $stats['offensiveRebounds'] ?? 0;
-        $turnovers = $stats['turnovers'] ?? 0;
-        $fta = $stats['freeThrowsAttempted'] ?? 0;
+        foreach (['fieldGoalsAttempted', 'offensiveRebounds', 'turnovers', 'freeThrowsAttempted'] as $field) {
+            if (! isset($stats[$field]) || ! is_numeric($stats[$field])) {
+                return null;
+            }
+        }
+        $fga = $stats['fieldGoalsAttempted'];
+        $oreb = $stats['offensiveRebounds'];
+        $turnovers = $stats['turnovers'];
+        $fta = $stats['freeThrowsAttempted'];
 
         return $fga - $oreb + $turnovers + ((float) config('cbb.metrics.possession_coefficient', 0.4) * $fta);
     }

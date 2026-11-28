@@ -30,8 +30,8 @@ abstract class AbstractPlayData
      *   clock:string,
      *   playType:?string,
      *   playText:string,
-     *   homeScore:int,
-     *   awayScore:int
+     *   homeScore:?int,
+     *   awayScore:?int
      * }  $common
      */
     abstract protected static function fromCommonAndRaw(array $common, array $play): static;

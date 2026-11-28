@@ -17,6 +17,7 @@ use App\Services\NFL\NflEvidenceForecastSource;
 use App\Services\NFL\Predictions\NflRecommendationInputBuilder;
 use App\Services\Predictions\ModelRunRecorder;
 use App\Support\NflModelVersion;
+use App\Support\Sports\LegacyTimestampCarrier;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -34,7 +35,7 @@ function adaptiveHistoryRetirementFixture(string $variant = 'valid'): array
     $start = now()->subDay()->utc();
     $generated = now()->subHours(26);
     $captured = now()->subHours(27);
-    $event = SportEvent::factory()->create(['sport' => 'nfl', 'season' => 2026, 'starts_at' => $start]);
+    $event = SportEvent::factory()->create(['sport' => 'nfl', 'season' => 2026, 'starts_at' => LegacyTimestampCarrier::forInstant($start)]);
     $game = Game::factory()->create(['sport_event_id' => $event->id, 'season' => 2026, 'season_type' => '2',
         'game_date' => $start->toDateString(), 'game_time' => $start->toTimeString(), 'status' => 'STATUS_FINAL',
         'home_score' => 27, 'away_score' => 20, 'home_team_id' => Team::factory(), 'away_team_id' => Team::factory(),
@@ -95,9 +96,10 @@ function adaptiveHistoryRetirementFixture(string $variant = 'valid'): array
 
 function adaptiveHistoryTarget(): Game
 {
-    $game = new Game(['season' => 2026, 'game_date' => now()->addDay()->toDateString()]);
+    $start = now()->addDay()->utc();
+    $game = new Game(['season' => 2026, 'game_date' => $start->toDateString(), 'game_time' => $start->format('H:i:s')]);
     $game->id = 9999;
-    $game->setRelation('sportEvent', new SportEvent(['starts_at' => now()->addDay()]));
+    $game->setRelation('sportEvent', new SportEvent(['starts_at' => LegacyTimestampCarrier::forInstant($start)]));
 
     return $game;
 }

@@ -18,6 +18,8 @@ class PlayEpaDataService
     private const ADMIN_PLAY_TYPES = [
         'coin toss' => true,
         'end period' => true,
+        'end of period' => true,
+        'halftime' => true,
         'end of game' => true,
         'end of half' => true,
         'official timeout' => true,

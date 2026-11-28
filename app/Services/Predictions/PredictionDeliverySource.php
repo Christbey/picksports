@@ -7,6 +7,9 @@ use App\Models\CanonicalPrediction;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\BettingRecommendations\RecommendationDisplay;
+use App\Services\Sports\SportsDateWindowService;
+use App\Support\MLB\MlbGameStart;
+use App\Support\Sports\CanonicalEventStart;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
@@ -50,10 +53,10 @@ class PredictionDeliverySource
 
         $query = $this->usesCanonical($sport)
             ? $this->canonical->queryForSport($sport)
-                ->where('sport_events.starts_at', '>', now())
+                ->tap(fn ($query) => CanonicalEventStart::future($query, $sport, now()))
                 ->where("{$sport}_games.status", '!=', 'completed')
             : $this->legacyQuery($sport)->whereHas('game', fn (Builder $query) => $query
-                ->where('game_date', '>', now())
+                ->when($sport === 'mlb', fn ($q) => MlbGameStart::known($q)->where('start_epoch', '>', now()->getTimestamp()), fn ($q) => $q->where('game_date', '>', now()))
                 ->whereNotNull('odds_data')
                 ->where('status', '!=', 'completed'));
 
@@ -67,10 +70,19 @@ class PredictionDeliverySource
         if ($this->usesCanonical($sport)) {
             return $this->canonical->queryForSport($sport, ['from_date' => $now->toDateString(), 'to_date' => $now->toDateString()])
                 ->whereIn("{$sport}_games.status", $statuses)
-                ->where('sport_events.starts_at', '>', $now)
+                ->tap(fn ($query) => CanonicalEventStart::future($query, $sport, $now))
                 ->withOnly(['markets', "sportEvent.{$sport}Game.homeTeam", "sportEvent.{$sport}Game.awayTeam"])
                 ->limit(30)->get()
                 ->map(fn (Model $prediction): PredictionDeliveryContext => $this->context($prediction, $sport));
+        }
+
+        if ($sport === 'mlb') {
+            $dates = app(SportsDateWindowService::class);
+
+            return $this->legacyQuery($sport)->whereHas('game', function (Builder $query) use ($now, $statuses, $dates): void {
+                $dates->applyGameDateWindow($query, $dates->forDate($now));
+                MlbGameStart::known($query)->where('start_epoch', '>', $now->getTimestamp())->whereIn('status', $statuses);
+            })->limit(30)->get()->map(fn (Model $prediction): PredictionDeliveryContext => $this->context($prediction, $sport));
         }
 
         // Retain both supported legacy storage forms: a full timestamp or a

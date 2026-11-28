@@ -23,13 +23,14 @@ class TokenAuthController extends Controller
             $request->string('email')->toString(),
             $request->string('password')->toString(),
         );
-        $plainTextToken = $this->tokenAuthService->issueAccessToken($user, $request->deviceName());
+        $grant = $this->tokenAuthService->issueGrant($user, $request->deviceName(), $request->input('token_profile', 'interactive'));
 
         return response()->json([
             'token_type' => 'Bearer',
-            'access_token' => $plainTextToken,
+            'access_token' => $grant->plainTextToken,
+            ...$grant->metadata(),
             'user' => new AuthUserResource($user),
-        ]);
+        ])->header('Cache-Control', 'private, no-store');
     }
 
     public function me(Request $request): AuthUserResource

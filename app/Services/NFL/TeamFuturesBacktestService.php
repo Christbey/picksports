@@ -39,12 +39,14 @@ class TeamFuturesBacktestService
         if (count($evaluationRows) >= $minSample) {
             $markets[] = [
                 'market' => $market,
+                'metric_evidence' => TeamMetricSnapshotObservation::summarize($evaluationRows),
                 'summary' => $this->summarize($evaluationRows),
             ];
         }
 
         return [
             'report_type' => 'nfl_team_futures_backtest',
+            'metric_evidence' => TeamMetricSnapshotObservation::summarize($evaluationRows),
             'season' => $season,
             'market' => $market,
             'as_of_date' => $cutoff->toIso8601String(),
@@ -139,6 +141,7 @@ class TeamFuturesBacktestService
                     'line' => $line,
                     'over_probability' => $overProbability,
                     'actual_over' => $actualOver,
+                    'metric_evidence' => $projection['metric_evidence'] ?? ['mode' => 'legacy_unverified'],
                 ];
 
                 $dateRows[] = $row;
@@ -147,6 +150,7 @@ class TeamFuturesBacktestService
 
             $byDate[] = [
                 'date' => $date,
+                'metric_evidence' => TeamMetricSnapshotObservation::summarize($dateRows),
                 'summary' => $this->summarize($dateRows),
             ];
         }

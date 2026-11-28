@@ -21,6 +21,7 @@ class TeamMetricSnapshot extends Model
         'injury_total_adjustment',
         'calculation_date',
         'captured_at',
+        'observation',
     ];
 
     protected function casts(): array
@@ -36,6 +37,7 @@ class TeamMetricSnapshot extends Model
             'injury_total_adjustment' => 'decimal:3',
             'calculation_date' => 'date',
             'captured_at' => 'datetime',
+            'observation' => 'array',
         ];
     }
 

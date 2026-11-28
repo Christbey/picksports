@@ -96,9 +96,12 @@ function starterStatus(
     if (source === 'espn_boxscore_confirmed') return 'Confirmed starter';
     if (source === 'espn_probable') return 'ESPN probable';
     if (source === 'rotation_projection') {
-        const percentage = Number.isFinite(Number(confidence))
-            ? ` ${Math.round(Number(confidence) * 100)}%`
-            : '';
+        const percentage =
+            confidence !== null &&
+            confidence !== undefined &&
+            Number.isFinite(Number(confidence))
+                ? ` ${Math.round(Number(confidence) * 100)}%`
+                : '';
 
         return `Rotation projection${percentage}`;
     }
@@ -122,9 +125,12 @@ function forecastLabel(forecast: MlbStartingPitcherForecast): string {
     const name =
         forecast.predicted_pitcher?.full_name || 'Unknown rotation pitcher';
     const rating = formatRating(forecast.predicted_pitcher_rating);
-    const confidence = Number.isFinite(Number(forecast.confidence))
-        ? `${Math.round(Number(forecast.confidence) * 100)}%`
-        : null;
+    const confidence =
+        forecast.confidence !== null &&
+        forecast.confidence !== undefined &&
+        Number.isFinite(Number(forecast.confidence))
+            ? `${Math.round(Number(forecast.confidence) * 100)}%`
+            : null;
     const details = [rating ? `rating ${rating}` : null, confidence]
         .filter(Boolean)
         .join(', ');
@@ -168,9 +174,12 @@ function forecastCandidates(
 }
 
 function candidateLabel(candidate: StarterCandidate): string {
-    const probability = Number.isFinite(Number(candidate.probability))
-        ? `${Math.round(Number(candidate.probability) * 100)}%`
-        : null;
+    const probability =
+        candidate.probability !== null &&
+        candidate.probability !== undefined &&
+        Number.isFinite(Number(candidate.probability))
+            ? `${Math.round(Number(candidate.probability) * 100)}%`
+            : null;
     const rating = formatRating(candidate.rating);
 
     return [

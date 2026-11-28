@@ -9,6 +9,8 @@ use App\Models\MLB\Game;
 use App\Models\MLB\Player;
 use App\Models\MLB\PlayerStat;
 use App\Models\MLB\Team;
+use App\Support\ESPN\ObservedStatValue;
+use DomainException;
 
 class SyncPlayerStats
 {
@@ -19,9 +21,12 @@ class SyncPlayerStats
     public function execute(array $gameData, Game $game): int
     {
         return $game->getConnection()->transaction(function () use ($gameData, $game): int {
-            $game->newQuery()->whereKey($game->getKey())->lockForUpdate()->firstOrFail();
-
-            return $this->replacePlayerStats($gameData, $game);
+            $game = $game->newQuery()->whereKey($game->getKey())->lockForUpdate()->firstOrFail();
+            try {
+                return $this->replacePlayerStats($gameData, $game);
+            } catch (DomainException) {
+                return 0;
+            }
         });
     }
 
@@ -38,6 +43,7 @@ class SyncPlayerStats
         }
         $players = Player::query()->whereIn('espn_id', collect($playerSections)->flatMap(fn ($team) => collect($team['statistics'] ?? [])->flatMap(fn ($section) => collect($section['athletes'] ?? [])->pluck('athlete.id'))))->get()->keyBy('espn_id');
         $rows = [];
+        $owners = [];
         $synced = 0;
         foreach ($playerSections as $teamData) {
             $team = $teams->get($teamData['team']['id']);
@@ -45,7 +51,7 @@ class SyncPlayerStats
                 return 0;
             }
             foreach ($teamData['statistics'] as $section) {
-                $type = strtolower($section['type'] ?? 'batting');
+                $type = strtolower((string) ($section['type'] ?? ''));
                 if (! is_array($section['athletes'] ?? null)) {
                     return 0;
                 }
@@ -65,7 +71,15 @@ class SyncPlayerStats
                     if ($data === []) {
                         continue;
                     }
-                    $rows[$player->id.':'.$type] = ['player_id' => $player->id, 'game_id' => $game->id, 'team_id' => $team->id, 'stat_type' => $type, ...$data];
+                    if (array_filter($data, fn ($value) => $value !== null) === []) {
+                        return 0;
+                    }
+                    if (isset($owners[$player->id]) && $owners[$player->id] !== $team->id) {
+                        return 0;
+                    }
+                    $owners[$player->id] = $team->id;
+                    $key = $player->id.':'.$type;
+                    $rows[$key] = $this->mergeObservedValues($rows[$key] ?? [], ['player_id' => $player->id, 'game_id' => $game->id, 'team_id' => $team->id, 'stat_type' => $type, ...$data]);
                     $synced++;
                 }
             }
@@ -74,6 +88,9 @@ class SyncPlayerStats
             return 0;
         }
 
+        if (! $this->preservesObservedFields(PlayerStat::class, $game, $rows, ['player_id', 'stat_type'])) {
+            return 0;
+        }
         PlayerStat::query()->where('game_id', $game->id)->delete();
         foreach ($rows as $row) {
             PlayerStat::query()->create($row);
@@ -85,9 +102,14 @@ class SyncPlayerStats
     protected function parseBattingStats(array $stats, array $labels = []): array
     {
         $mapped = $this->statsByLabel($labels, $stats);
-        $hasCombinedHitsAtBats = $this->isCombinedHitsAtBats($stats[0] ?? null);
-        $fallbackOffset = $hasCombinedHitsAtBats ? 1 : 0;
-        $combined = $this->parseHitsAtBats($this->mappedStat($mapped, ['hab', 'hitsatbats']) ?? ($stats[0] ?? null));
+        $combined = $this->parseHitsAtBats($this->mappedStat($mapped, ['hab', 'hitsatbats']));
+
+        foreach (['hits' => ['h', 'hits'], 'at_bats' => ['ab', 'atbats']] as $field => $aliases) {
+            $explicit = $this->toInt($this->mappedStat($mapped, $aliases));
+            if ($explicit !== null && $combined[$field] !== null && $explicit !== $combined[$field]) {
+                throw new DomainException('Conflicting combined batting observation.');
+            }
+        }
 
         $battingAverage = $this->toFloat($this->mappedStat($mapped, ['avg', 'battingaverage']));
         $onBasePercentage = $this->toFloat($this->mappedStat($mapped, ['obp', 'onbasepercentage']));
@@ -95,18 +117,16 @@ class SyncPlayerStats
 
         return [
             'at_bats' => $this->toInt($this->mappedStat($mapped, ['ab', 'atbats']))
-                ?? $combined['at_bats']
-                ?? $this->intAt($stats, 0 + $fallbackOffset),
-            'runs' => $this->toInt($this->mappedStat($mapped, ['r', 'runs'])) ?? $this->intAt($stats, 1 + $fallbackOffset),
+                ?? $combined['at_bats'],
+            'runs' => $this->toInt($this->mappedStat($mapped, ['r', 'runs'])),
             'hits' => $this->toInt($this->mappedStat($mapped, ['h', 'hits']))
-                ?? $combined['hits']
-                ?? $this->intAt($stats, 2 + $fallbackOffset),
+                ?? $combined['hits'],
             'doubles' => $this->toInt($this->mappedStat($mapped, ['2b', 'doubles'])),
             'triples' => $this->toInt($this->mappedStat($mapped, ['3b', 'triples'])),
-            'home_runs' => $this->toInt($this->mappedStat($mapped, ['hr', 'homeruns'])) ?? $this->intAt($stats, 4 + $fallbackOffset),
-            'rbis' => $this->toInt($this->mappedStat($mapped, ['rbi', 'rbis'])) ?? $this->intAt($stats, 3 + $fallbackOffset),
-            'walks' => $this->toInt($this->mappedStat($mapped, ['bb', 'walks'])) ?? $this->intAt($stats, 5 + $fallbackOffset),
-            'strikeouts' => $this->toInt($this->mappedStat($mapped, ['k', 'so', 'strikeouts'])) ?? $this->intAt($stats, 6 + $fallbackOffset),
+            'home_runs' => $this->toInt($this->mappedStat($mapped, ['hr', 'homeruns'])),
+            'rbis' => $this->toInt($this->mappedStat($mapped, ['rbi', 'rbis'])),
+            'walks' => $this->toInt($this->mappedStat($mapped, ['bb', 'walks'])),
+            'strikeouts' => $this->toInt($this->mappedStat($mapped, ['k', 'so', 'strikeouts'])),
             'stolen_bases' => $this->toInt($this->mappedStat($mapped, ['sb', 'stolenbases'])),
             'caught_stealing' => $this->toInt($this->mappedStat($mapped, ['cs', 'caughtstealing'])),
             'batting_average' => $this->sanitizeRate($battingAverage),
@@ -121,17 +141,17 @@ class SyncPlayerStats
 
         return [
             'innings_pitched' => $this->normalizeInningsPitched(
-                $this->mappedStat($mapped, ['ip', 'inningspitched']) ?? ($stats[0] ?? null)
+                $this->mappedStat($mapped, ['ip', 'inningspitched'])
             ),
-            'hits_allowed' => $this->toInt($this->mappedStat($mapped, ['h', 'hits'])) ?? $this->intAt($stats, 1),
-            'runs_allowed' => $this->toInt($this->mappedStat($mapped, ['r', 'runs'])) ?? $this->intAt($stats, 2),
-            'earned_runs' => $this->toInt($this->mappedStat($mapped, ['er', 'earnedruns'])) ?? $this->intAt($stats, 3),
-            'walks_allowed' => $this->toInt($this->mappedStat($mapped, ['bb', 'walks'])) ?? $this->intAt($stats, 4),
-            'strikeouts_pitched' => $this->toInt($this->mappedStat($mapped, ['k', 'so', 'strikeouts'])) ?? $this->intAt($stats, 5),
-            'home_runs_allowed' => $this->toInt($this->mappedStat($mapped, ['hr', 'homeruns'])) ?? $this->intAt($stats, 6),
-            'era' => $this->toFloat($this->mappedStat($mapped, ['era'])) ?? $this->floatAt($stats, 7),
-            'pitches_thrown' => $this->toInt($this->mappedStat($mapped, ['pitches', 'pit', 'p', 'pitchcount', 'pc'])) ?? $this->intAt($stats, 8),
-            'pitch_count' => $this->toInt($this->mappedStat($mapped, ['pitchcount', 'pc', 'pitches', 'pit', 'p'])) ?? $this->intAt($stats, 8),
+            'hits_allowed' => $this->toInt($this->mappedStat($mapped, ['h', 'hits'])),
+            'runs_allowed' => $this->toInt($this->mappedStat($mapped, ['r', 'runs'])),
+            'earned_runs' => $this->toInt($this->mappedStat($mapped, ['er', 'earnedruns'])),
+            'walks_allowed' => $this->toInt($this->mappedStat($mapped, ['bb', 'walks'])),
+            'strikeouts_pitched' => $this->toInt($this->mappedStat($mapped, ['k', 'so', 'strikeouts'])),
+            'home_runs_allowed' => $this->toInt($this->mappedStat($mapped, ['hr', 'homeruns'])),
+            'era' => ($era = $this->mappedStat($mapped, ['era'])) === null ? null : ObservedStatValue::decimal($era, maximum: 999.99),
+            'pitches_thrown' => $this->toInt($this->mappedStat($mapped, ['pitches', 'pit', 'p', 'pitchcount', 'pc'])),
+            'pitch_count' => $this->toInt($this->mappedStat($mapped, ['pitchcount', 'pc', 'pitches', 'pit', 'p'])),
         ];
     }
 
@@ -140,9 +160,9 @@ class SyncPlayerStats
         $mapped = $this->statsByLabel($labels, $stats);
 
         return [
-            'putouts' => $this->toInt($this->mappedStat($mapped, ['po', 'putouts'])) ?? $this->intAt($stats, 0),
-            'assists' => $this->toInt($this->mappedStat($mapped, ['a', 'assists'])) ?? $this->intAt($stats, 1),
-            'errors' => $this->toInt($this->mappedStat($mapped, ['e', 'errors'])) ?? $this->intAt($stats, 2),
+            'putouts' => $this->toInt($this->mappedStat($mapped, ['po', 'putouts'])),
+            'assists' => $this->toInt($this->mappedStat($mapped, ['a', 'assists'])),
+            'errors' => $this->toInt($this->mappedStat($mapped, ['e', 'errors'])),
         ];
     }
 
@@ -151,22 +171,7 @@ class SyncPlayerStats
      */
     private function statsByLabel(array $labels, array $stats): array
     {
-        $mapped = [];
-
-        foreach ($labels as $index => $label) {
-            if (! array_key_exists($index, $stats)) {
-                continue;
-            }
-
-            $normalized = $this->normalizeLabel((string) $label);
-            if ($normalized === '') {
-                continue;
-            }
-
-            $mapped[$normalized] = $stats[$index];
-        }
-
-        return $mapped;
+        return array_change_key_case(ObservedStatValue::labeled($labels, $stats, true), CASE_LOWER);
     }
 
     /**
@@ -175,14 +180,30 @@ class SyncPlayerStats
      */
     private function mappedStat(array $mapped, array $candidates): mixed
     {
+        $found = false;
+        $value = null;
         foreach ($candidates as $candidate) {
             $key = $this->normalizeLabel($candidate);
-            if ($key !== '' && array_key_exists($key, $mapped)) {
-                return $mapped[$key];
+            if ($key === '' || ! array_key_exists($key, $mapped)) {
+                continue;
             }
+            $next = $mapped[$key];
+            if ($next === null) {
+                throw new DomainException('Missing labeled observation.');
+            }
+            if ($found) {
+                $same = is_numeric($next) && is_numeric($value)
+                    ? ObservedStatValue::decimal($next) === ObservedStatValue::decimal($value)
+                    : (is_string($next) && is_string($value) && trim($next) === trim($value));
+                if (! $same) {
+                    throw new DomainException('Conflicting canonical aliases.');
+                }
+            }
+            $value = $next;
+            $found = true;
         }
 
-        return null;
+        return $value;
     }
 
     private function normalizeLabel(string $label): string
@@ -192,36 +213,23 @@ class SyncPlayerStats
 
     private function toInt(mixed $value): ?int
     {
-        return is_numeric($value) ? (int) $value : null;
+        return $value === null ? null : ObservedStatValue::integer($value);
     }
 
     private function toFloat(mixed $value): ?float
     {
-        return is_numeric($value) ? (float) $value : null;
+        return $value === null ? null : ObservedStatValue::decimal($value);
     }
 
-    private function isCombinedHitsAtBats(mixed $value): bool
-    {
-        return is_string($value) && preg_match('/^\d+-\d+$/', trim($value)) === 1;
-    }
-
-    /**
-     * @return array{hits: ?int, at_bats: ?int}
-     */
+    /** @return array{hits:?int,at_bats:?int} */
     private function parseHitsAtBats(mixed $value): array
     {
-        if (! is_string($value)) {
+        if ($value === null) {
             return ['hits' => null, 'at_bats' => null];
         }
+        [$hits, $atBats] = ObservedStatValue::pair($value, '-');
 
-        if (! preg_match('/^\s*(\d+)\s*-\s*(\d+)\s*$/', $value, $matches)) {
-            return ['hits' => null, 'at_bats' => null];
-        }
-
-        return [
-            'hits' => (int) $matches[1],
-            'at_bats' => (int) $matches[2],
-        ];
+        return ['hits' => $hits, 'at_bats' => $atBats];
     }
 
     private function sanitizeRate(?float $value, float $max = 1.0): ?float
@@ -231,7 +239,7 @@ class SyncPlayerStats
         }
 
         if ($value < 0 || $value > $max) {
-            return null;
+            throw new DomainException('Observed rate is outside its domain.');
         }
 
         return $value;

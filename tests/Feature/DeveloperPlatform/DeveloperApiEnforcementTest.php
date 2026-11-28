@@ -109,3 +109,27 @@ it('atomically consumes quota records lineage and returns rate limit headers', f
         ->and($usage->scope)->toBe('sandbox:read')
         ->and($usage->units)->toBe(1);
 });
+
+it('uses the same half-open entitlement window during lookup and quota admission', function (int $startOffset, int $endOffset, bool $admitted) {
+    $this->travelTo(now()->startOfSecond());
+    $context = developerSandboxContext();
+    $context['policy']->update([
+        'starts_at' => now()->addSeconds($startOffset),
+        'ends_at' => now()->addSeconds($endOffset),
+    ]);
+
+    $response = $this->withToken($context['issued']->plainTextToken)
+        ->getJson('/api/v2/developer/sandbox');
+
+    if ($admitted) {
+        $response->assertOk();
+    } else {
+        $response->assertForbidden()->assertJsonPath('error.code', 'developer_entitlement_denied');
+    }
+
+    expect(DeveloperApiUsageRecord::query()->count())->toBe($admitted ? 1 : 0);
+})->with([
+    'inclusive start' => [0, 60, true],
+    'exclusive end' => [-60, 0, false],
+    'future start' => [1, 60, false],
+]);

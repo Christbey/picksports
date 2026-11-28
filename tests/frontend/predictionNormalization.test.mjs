@@ -181,6 +181,6 @@ test('sport-specific payload forms and canonical spread signs stay unchanged', (
     assert.equal(nfl(fixture({ predicted_spread: null })).predicted_spread, '');
     assert.equal(
         basketball(fixture({ predicted_spread: null })).predicted_spread,
-        0,
+        null,
     );
 });

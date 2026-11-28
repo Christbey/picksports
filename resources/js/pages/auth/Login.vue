@@ -260,6 +260,10 @@ async function handlePasskeySignIn(): Promise<void> {
                             <Label for="email">Email address</Label>
                             <Input
                                 id="email"
+                                :aria-invalid="Boolean(errors.email)"
+                                :aria-describedby="
+                                    errors.email ? 'email-error' : undefined
+                                "
                                 type="email"
                                 name="email"
                                 v-model="email"
@@ -268,7 +272,10 @@ async function handlePasskeySignIn(): Promise<void> {
                                 autocomplete="email"
                                 placeholder="email@example.com"
                             />
-                            <InputError :message="errors.email" />
+                            <InputError
+                                id="email-error"
+                                :message="errors.email"
+                            />
                         </div>
 
                         <div class="grid gap-2">
@@ -285,6 +292,12 @@ async function handlePasskeySignIn(): Promise<void> {
                             </div>
                             <Input
                                 id="password"
+                                :aria-invalid="Boolean(errors.password)"
+                                :aria-describedby="
+                                    errors.password
+                                        ? 'password-error'
+                                        : undefined
+                                "
                                 type="password"
                                 name="password"
                                 required
@@ -292,7 +305,10 @@ async function handlePasskeySignIn(): Promise<void> {
                                 autocomplete="current-password"
                                 placeholder="Password"
                             />
-                            <InputError :message="errors.password" />
+                            <InputError
+                                id="password-error"
+                                :message="errors.password"
+                            />
                         </div>
 
                         <div class="flex items-center justify-between">

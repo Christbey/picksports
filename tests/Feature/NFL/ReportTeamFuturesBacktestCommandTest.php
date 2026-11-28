@@ -8,6 +8,8 @@ use App\Models\Sports\FuturesOddsSnapshot;
 use App\Services\NFL\TeamFuturesBacktestService;
 use App\Services\NFL\TeamFuturesBettingReportService;
 use App\Services\NFL\TeamFuturesProjectionService;
+use App\Services\NFL\TeamMetricSnapshotService;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 
 it('writes an nfl team futures backtest report', function () {
@@ -22,7 +24,27 @@ it('writes an nfl team futures backtest report', function () {
         'abbreviation' => 'BUF',
     ]);
 
-    TeamMetric::query()->create([
+    // Explicit synthetic source observation through the real capture writer.
+    $historicalMetric = $this->travelTo(Carbon::parse('2025-10-15 12:00:00', 'UTC'), function () use ($team) {
+        $metric = TeamMetric::query()->create([
+            'team_id' => $team->id,
+            'season' => 2025,
+            'wins' => 9,
+            'losses' => 0,
+            'predictive_rating' => 1540,
+            'future_strength_of_schedule' => 1505,
+            'recent_form_rating' => 0.2,
+            'injury_total_adjustment' => 0.0,
+            'calculation_date' => '2025-10-15',
+        ]);
+        app(TeamMetricSnapshotService::class)->capture(2025);
+
+        return $metric;
+    });
+
+    $snapshot = TeamMetricSnapshot::query()->firstOrFail();
+
+    $historicalMetric->update([
         'team_id' => $team->id,
         'season' => 2025,
         'wins' => 12,
@@ -32,20 +54,6 @@ it('writes an nfl team futures backtest report', function () {
         'recent_form_rating' => 0.4,
         'injury_total_adjustment' => 0.1,
         'calculation_date' => '2026-01-10',
-    ]);
-
-    $snapshot = TeamMetricSnapshot::query()->create([
-        'snapshot_key' => sha1('backtest-team-metric'),
-        'team_id' => $team->id,
-        'season' => 2025,
-        'wins' => 9,
-        'losses' => 0,
-        'predictive_rating' => 1540,
-        'future_strength_of_schedule' => 1505,
-        'recent_form_rating' => 0.2,
-        'injury_total_adjustment' => 0.0,
-        'calculation_date' => '2025-10-15',
-        'captured_at' => '2025-10-15 12:00:00',
     ]);
 
     foreach (range(1, 17) as $index) {
@@ -114,6 +122,7 @@ it('writes an nfl team futures backtest report', function () {
         ->and($report['report_type'])->toBe('nfl_team_futures_backtest')
         ->and($report['season'])->toBe(2025)
         ->and($report['market'])->toBe('season_wins')
+        ->and($report['metric_evidence']['mode_counts']['current_capture'])->toBe(1)
         ->and($report['summary']['count'])->toBe(1)
         ->and($report['summary']['line_count'])->toBe(1)
         ->and($report['dates'][0]['summary']['count'])->toBe(1);

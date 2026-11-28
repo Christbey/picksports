@@ -8,28 +8,37 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use JsonException;
 use RuntimeException;
+use Throwable;
 use ZipArchive;
 
 class NflTabularModelBundle
 {
     private const BUNDLE_MANIFEST = 'bundle.json';
 
+    private const MAX_JSON_BYTES = 2097152;
+
+    private const EXECUTION_FORMAT = 'picksports-nfl-tabular-numeric-v1';
+
     /**
      * @var list<string>
      */
     private const REQUIRED_RUN_FILES = [
-        'calibrators/logistic_regression_isotonic.joblib',
-        'calibrators/logistic_regression_platt.joblib',
-        'calibrators/xgboost_isotonic.joblib',
-        'calibrators/xgboost_platt.joblib',
+        'calibrators/logistic_regression_isotonic.json',
+        'calibrators/logistic_regression_platt.json',
+        'calibrators/xgboost_isotonic.json',
+        'calibrators/xgboost_platt.json',
         'evaluation.json',
-        'feature_schema.yaml',
-        'models/logistic_classifier.joblib',
-        'models/xgboost_classifier.ubj',
-        'models/xgboost_home_margin.ubj',
-        'models/xgboost_total_points.ubj',
+        'feature_schema.json',
+        'models/logistic_classifier.json',
+        'models/xgboost_classifier.json',
+        'models/xgboost_home_margin.json',
+        'models/xgboost_total_points.json',
         'prediction_example.json',
-        'preprocessor.joblib',
+        'preprocessor.json',
+        'tuning/optuna_provenance.json',
+        'explanations/global_shap_importance.json',
+        'explanations/xgboost_feature_importance.json',
+        'explanations/shap_values.parquet',
     ];
 
     /**
@@ -38,20 +47,25 @@ class NflTabularModelBundle
      *     temporary_directory: string,
      *     manifest: array<string, mixed>,
      *     evaluation: array<string, mixed>,
-     *     bundle: array<string, mixed>
+     *     bundle: array<string, mixed>,
+     *     owned_dataset_path: string|null,
+     *     owned_report_path: string,
+     *     storage_expectations: array<string, array{sha256: string, bytes: int}>
      * }
      */
     public function create(string $runDirectory, ?string $datasetPath = null): array
     {
         $runDirectory = $this->directoryPath($runDirectory);
-        $manifest = $this->jsonFile($runDirectory.'/manifest.json', 'Python run manifest');
-        $evaluation = $this->jsonFile($runDirectory.'/evaluation.json', 'Python evaluation report');
-        $runFiles = $this->verifiedRunFiles($runDirectory, $manifest);
-
+        [$manifest, $manifestMetadata] = $this->jsonFileEvidence($runDirectory.'/manifest.json', 'Python run manifest');
+        [$evaluation, $evaluationMetadata] = $this->jsonFileEvidence($runDirectory.'/evaluation.json', 'Python evaluation report');
         $this->assertRunLineage($manifest, $evaluation);
+        $runFiles = $this->verifiedRunFiles($runDirectory, $manifest);
+        if ($evaluationMetadata !== $runFiles['evaluation.json']) {
+            throw new RuntimeException('NFL parsed evaluation bytes differ from the admitted inventory.');
+        }
 
         $files = [
-            'manifest.json' => $this->fileMetadata($runDirectory.'/manifest.json'),
+            'manifest.json' => $manifestMetadata,
             ...$runFiles,
         ];
         $datasetEntry = null;
@@ -59,20 +73,26 @@ class NflTabularModelBundle
         if ($datasetPath !== null) {
             $datasetPath = $this->filePath($datasetPath, 'Exact training dataset');
             $datasetHash = (string) ($manifest['dataset_hash'] ?? '');
-            $actualDatasetHash = hash_file('sha256', $datasetPath);
+            $datasetMetadata = $this->fileMetadata($datasetPath, 67108864);
+            $actualDatasetHash = $datasetMetadata['sha256'];
 
             if (! is_string($actualDatasetHash) || ! hash_equals($datasetHash, $actualDatasetHash)) {
                 throw new RuntimeException('The exact training dataset does not match the Python manifest dataset hash.');
             }
 
             $extension = strtolower(pathinfo($datasetPath, PATHINFO_EXTENSION));
-            $datasetEntry = 'dataset/training-data'.($extension !== '' ? '.'.$extension : '');
-            $files[$datasetEntry] = $this->fileMetadata($datasetPath);
+            if (! in_array($extension, ['csv', 'parquet'], true)) {
+                throw new RuntimeException('NFL numeric bundles support only exact CSV or Parquet training datasets.');
+            }
+            $datasetEntry = 'dataset/training-data.'.$extension;
+            $files[$datasetEntry] = $datasetMetadata;
         }
 
         ksort($files);
         $bundle = [
-            'bundle_version' => 1,
+            'bundle_version' => 2,
+            'execution_format' => self::EXECUTION_FORMAT,
+            'model_type' => 'nfl_tabular_bundle',
             'model_run_id' => $manifest['model_run_id'],
             'artifact_id' => $manifest['artifact_id'],
             'dataset_hash' => $manifest['dataset_hash'],
@@ -98,6 +118,21 @@ class NflTabularModelBundle
         );
         @chmod($bundleManifestPath, 0600);
 
+        try {
+            foreach ($files as $entry => $metadata) {
+                $source = match (true) {
+                    $entry === $datasetEntry => $datasetPath,
+                    default => $runDirectory.'/'.$entry,
+                };
+                $owned = $temporaryDirectory.'/inputs/'.$entry;
+                File::ensureDirectoryExists(dirname($owned), 0700, true);
+                NflTabularFiles::copy((string) $source, $owned, $metadata['bytes'], $metadata['sha256']);
+            }
+        } catch (Throwable $exception) {
+            File::deleteDirectory($temporaryDirectory);
+            throw $exception;
+        }
+
         $zip = new ZipArchive;
         if ($zip->open($bundlePath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
             File::deleteDirectory($temporaryDirectory);
@@ -108,9 +143,7 @@ class NflTabularModelBundle
         try {
             try {
                 foreach (array_keys($files) as $entry) {
-                    $sourcePath = $entry === 'manifest.json'
-                        ? $runDirectory.'/manifest.json'
-                        : ($entry === $datasetEntry ? $datasetPath : $runDirectory.'/'.$entry);
+                    $sourcePath = $temporaryDirectory.'/inputs/'.$entry;
 
                     if (! $zip->addFile((string) $sourcePath, $entry)) {
                         throw new RuntimeException("Unable to add [{$entry}] to the NFL tabular model bundle.");
@@ -125,7 +158,7 @@ class NflTabularModelBundle
             } finally {
                 $zip->close();
             }
-        } catch (\Throwable $exception) {
+        } catch (Throwable $exception) {
             File::deleteDirectory($temporaryDirectory);
 
             throw $exception;
@@ -137,45 +170,44 @@ class NflTabularModelBundle
             'manifest' => $manifest,
             'evaluation' => $evaluation,
             'bundle' => $bundle,
+            'owned_dataset_path' => $datasetEntry !== null ? $temporaryDirectory.'/inputs/'.$datasetEntry : null,
+            'owned_report_path' => $temporaryDirectory.'/inputs/evaluation.json',
+            'storage_expectations' => [
+                'artifact' => $this->fileMetadata($bundlePath, 205598720),
+                'report' => $runFiles['evaluation.json'],
+                ...($datasetEntry !== null ? ['dataset' => $files[$datasetEntry]] : []),
+            ],
         ];
     }
 
     public function extractAndVerify(ModelArtifact $artifact, string $bundlePath): string
     {
+        if (! Str::isUuid((string) $artifact->getKey()) || ! $this->isSha256($artifact->artifact_hash)) {
+            throw new RuntimeException('NFL numeric cache identity requires an artifact UUID and SHA-256.');
+        }
         $bundlePath = $this->filePath($bundlePath, 'Registered NFL tabular model bundle');
+        NflTabularZipSafety::inspect($bundlePath, 19,
+            67108864, 203423744);
         $zip = new ZipArchive;
-
         if ($zip->open($bundlePath, ZipArchive::RDONLY) !== true) {
             throw new RuntimeException('The registered NFL tabular model bundle is not a readable ZIP archive.');
         }
 
         try {
-            if ($zip->numFiles < 2 || $zip->numFiles > (int) config('nfl_ml.bundle.max_entries', 64) + 1) {
-                throw new RuntimeException('The NFL tabular bundle file count exceeds the configured limit.');
-            }
-            $bundleStat = $zip->statName(self::BUNDLE_MANIFEST);
-            if (! is_array($bundleStat)
-                || (int) ($bundleStat['size'] ?? -1) > (int) config('nfl_ml.bundle.max_file_bytes', 268_435_456)) {
-                throw new RuntimeException('The NFL tabular bundle manifest exceeds the configured size limit.');
-            }
-
-            $bundle = $this->decodeJson(
-                $zip->getFromName(self::BUNDLE_MANIFEST),
-                'NFL tabular bundle manifest',
-            );
+            $bundle = $this->bundleManifest($zip);
             $this->assertBundleLineage($bundle, $artifact);
             $files = $this->bundleFiles($bundle);
             $this->assertZipInventory($zip, $files);
-
             $root = rtrim((string) config(
                 'nfl_ml.bundle.extraction_directory',
                 storage_path('app/ml/nfl-tabular/extracted'),
             ), '/').'/'.$artifact->id.'/'.$artifact->artifact_hash;
+            $runRoot = $root.'/run';
 
             if (File::isDirectory($root)) {
                 $this->verifyExtractedFiles($root, $files);
 
-                return $root;
+                return $runRoot;
             }
 
             $temporaryRoot = $root.'.tmp-'.Str::uuid();
@@ -183,25 +215,19 @@ class NflTabularModelBundle
 
             try {
                 foreach ($files as $entry => $metadata) {
-                    $target = $temporaryRoot.'/'.$entry;
+                    $target = $this->extractedTarget($temporaryRoot, $entry);
                     File::ensureDirectoryExists(dirname($target), 0700, true);
                     $source = $zip->getStream($entry);
                     $destination = fopen($target, 'xb');
-
                     if (! is_resource($source) || ! is_resource($destination)) {
-                        if (is_resource($source)) {
-                            fclose($source);
-                        }
-                        if (is_resource($destination)) {
-                            fclose($destination);
-                        }
+                        is_resource($source) && fclose($source);
+                        is_resource($destination) && fclose($destination);
 
                         throw new RuntimeException("Unable to extract NFL tabular bundle entry [{$entry}].");
                     }
-
                     try {
-                        if (stream_copy_to_stream($source, $destination) === false) {
-                            throw new RuntimeException("Unable to extract NFL tabular bundle entry [{$entry}].");
+                        if (! hash_equals($metadata['sha256'], NflTabularFiles::digest($source, $metadata['bytes'], $destination)) || ! fflush($destination)) {
+                            throw new RuntimeException("Unable to extract exact NFL tabular bundle entry [{$entry}].");
                         }
                     } finally {
                         fclose($source);
@@ -211,21 +237,14 @@ class NflTabularModelBundle
                     $this->assertFileMetadata($target, $metadata, $entry);
                 }
 
-                File::put(
-                    $temporaryRoot.'/'.self::BUNDLE_MANIFEST,
-                    json_encode($bundle, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
-                    true,
-                );
-                @chmod($temporaryRoot.'/'.self::BUNDLE_MANIFEST, 0600);
                 File::ensureDirectoryExists(dirname($root), 0700, true);
-
                 if (! @rename($temporaryRoot, $root)) {
                     if (! File::isDirectory($root)) {
                         throw new RuntimeException('Unable to publish the verified NFL tabular model extraction.');
                     }
                     File::deleteDirectory($temporaryRoot);
                 }
-            } catch (\Throwable $exception) {
+            } catch (Throwable $exception) {
                 File::deleteDirectory($temporaryRoot);
 
                 throw $exception;
@@ -233,7 +252,7 @@ class NflTabularModelBundle
 
             $this->verifyExtractedFiles($root, $files);
 
-            return $root;
+            return $runRoot;
         } finally {
             $zip->close();
         }
@@ -247,41 +266,63 @@ class NflTabularModelBundle
     {
         $inventory = $manifest['artifacts'] ?? null;
         if (! is_array($inventory) || array_is_list($inventory)) {
-            throw new RuntimeException('The Python run manifest artifact inventory is missing or invalid.');
+            throw new RuntimeException('The Python NFL run artifact inventory is missing or invalid.');
         }
-
-        foreach (self::REQUIRED_RUN_FILES as $requiredFile) {
-            if (! array_key_exists($requiredFile, $inventory)) {
-                throw new RuntimeException("The Python run is missing required artifact [{$requiredFile}].");
+        $actualEntries = array_keys($inventory);
+        $expectedEntries = self::REQUIRED_RUN_FILES;
+        sort($actualEntries);
+        sort($expectedEntries);
+        if ($actualEntries !== $expectedEntries) {
+            throw new RuntimeException('The Python NFL numeric run inventory must match the exact supported file set.');
+        }
+        foreach (self::REQUIRED_RUN_FILES as $entry) {
+            if (! array_key_exists($entry, $inventory)) {
+                throw new RuntimeException("The Python NFL run is missing required artifact [{$entry}].");
             }
         }
 
+        $maximumEntries = 16;
+        if ($maximumEntries < 1 || $maximumEntries > 256 || count($inventory) > $maximumEntries) {
+            throw new RuntimeException('NFL run inventory file count exceeds the bounded supported limit.');
+        }
         $verified = [];
+        $total = 0;
         foreach ($inventory as $entry => $metadata) {
             $entry = $this->safeEntryName($entry);
             $metadata = $this->validFileMetadata($metadata, $entry);
-            $path = $runDirectory.'/'.$entry;
-            $this->assertFileMetadata($path, $metadata, $entry);
+            $total += $metadata['bytes'];
+            if ($total > 134217728) {
+                throw new RuntimeException('NFL run inventory exceeds the 128 MiB streaming content budget.');
+            }
             $verified[$entry] = $metadata;
         }
-
-        $actualFiles = collect(File::allFiles($runDirectory))
-            ->map(function (\SplFileInfo $file) use ($runDirectory): string {
-                if ($file->isLink()) {
-                    throw new RuntimeException('Symbolic links are not allowed in an NFL tabular model run.');
+        $actual = [];
+        $visited = 0;
+        $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($runDirectory, \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::SELF_FIRST);
+        foreach ($iterator as $file) {
+            if (++$visited > 4 * $maximumEntries + 1 || $iterator->getDepth() > 8 || $file->isLink()) {
+                throw new RuntimeException('NFL run traversal count/depth/link budget exceeded before artifact hashing.');
+            }
+            if ($file->isFile()) {
+                $entry = str_replace('\\', '/', substr($file->getPathname(), strlen($runDirectory) + 1));
+                if ($entry !== 'manifest.json') {
+                    $actual[] = $entry;
+                    if (count($actual) > $maximumEntries) {
+                        throw new RuntimeException('NFL run actual file count exceeds the inventory budget before artifact hashing.');
+                    }
                 }
-
-                return str_replace('\\', '/', substr($file->getPathname(), strlen($runDirectory) + 1));
-            })
-            ->reject(fn (string $entry): bool => $entry === 'manifest.json')
-            ->sort()
-            ->values()
-            ->all();
-        $declaredFiles = array_keys($verified);
-        sort($declaredFiles);
-
-        if ($actualFiles !== $declaredFiles) {
-            throw new RuntimeException('The Python run directory does not exactly match its manifest artifact inventory.');
+            } elseif (! $file->isDir()) {
+                throw new RuntimeException('NFL run contains an unsupported filesystem object.');
+            }
+        }
+        $declared = array_keys($verified);
+        sort($declared);
+        sort($actual);
+        if ($actual !== $declared) {
+            throw new RuntimeException('The Python NFL run directory does not exactly match its artifact inventory.');
+        }
+        foreach ($verified as $entry => $metadata) {
+            $this->assertFileMetadata($runDirectory.'/'.$entry, $metadata, $entry);
         }
 
         return $verified;
@@ -293,6 +334,13 @@ class NflTabularModelBundle
      */
     private function assertRunLineage(array $manifest, array $evaluation): void
     {
+        if (($manifest['execution_format'] ?? null) !== self::EXECUTION_FORMAT || ($manifest['manifest_version'] ?? null) !== 2
+            || ($manifest['model_type'] ?? null) !== 'nfl_tabular_bundle'
+            || ($manifest['model_version'] ?? null) !== 'nfl-tabular-v3'
+            || ($manifest['blend_version'] ?? null) !== 'baseline-anchored-v2') {
+            throw new RuntimeException('Only the NFL numeric-state execution format is supported; regenerate legacy runs.');
+        }
+
         if (! is_string($manifest['model_run_id'] ?? null)
             || trim($manifest['model_run_id']) === ''
             || strlen($manifest['model_run_id']) > 191) {
@@ -357,7 +405,7 @@ class NflTabularModelBundle
             }
         }
 
-        if (($bundle['bundle_version'] ?? null) !== 1) {
+        if (($bundle['bundle_version'] ?? null) !== 2 || ($bundle['execution_format'] ?? null) !== self::EXECUTION_FORMAT || ($bundle['model_type'] ?? null) !== 'nfl_tabular_bundle') {
             throw new RuntimeException('The NFL tabular bundle version is unsupported.');
         }
 
@@ -398,7 +446,21 @@ class NflTabularModelBundle
             throw new RuntimeException('The NFL tabular bundle file inventory is missing or invalid.');
         }
 
-        $maximumEntries = (int) config('nfl_ml.bundle.max_entries', 64);
+        $expected = ['manifest.json', ...self::REQUIRED_RUN_FILES];
+        $datasetEntry = $bundle['dataset_entry'] ?? null;
+        if ($datasetEntry !== null) {
+            if (! in_array($datasetEntry, ['dataset/training-data.csv', 'dataset/training-data.parquet'], true)) {
+                throw new RuntimeException('Unsupported NFL dataset entry.');
+            }
+            $expected[] = $datasetEntry;
+        }
+        $actual = array_keys($files);
+        sort($expected);
+        sort($actual);
+        if ($actual !== $expected) {
+            throw new RuntimeException('NFL numeric bundle inventory must match the exact supported file set.');
+        }
+        $maximumEntries = 18;
         if (count($files) === 0 || count($files) > $maximumEntries) {
             throw new RuntimeException('The NFL tabular bundle file count exceeds the configured limit.');
         }
@@ -411,7 +473,7 @@ class NflTabularModelBundle
             $totalBytes += $validated[$entry]['bytes'];
         }
 
-        if ($totalBytes > (int) config('nfl_ml.bundle.max_uncompressed_bytes', 1_073_741_824)) {
+        if ($totalBytes > 203423744) {
             throw new RuntimeException('The NFL tabular bundle exceeds the configured uncompressed size limit.');
         }
 
@@ -425,34 +487,26 @@ class NflTabularModelBundle
     {
         $actual = [];
         for ($index = 0; $index < $zip->numFiles; $index++) {
+            $name = $zip->getNameIndex($index);
+            if (! is_string($name)) {
+                throw new RuntimeException('The NFL tabular bundle contains an invalid entry.');
+            }
+            $name = $name === self::BUNDLE_MANIFEST ? self::BUNDLE_MANIFEST : $this->safeEntryName($name);
+            if (isset($actual[$name])) {
+                throw new RuntimeException("The NFL tabular bundle contains duplicate entry [{$name}].");
+            }
             $stat = $zip->statIndex($index);
-            if (! is_array($stat) || ! isset($stat['name'], $stat['size'])) {
-                throw new RuntimeException('Unable to inspect the NFL tabular bundle inventory.');
+            if ($name !== self::BUNDLE_MANIFEST && (! is_array($stat) || ($stat['size'] ?? null) !== ($files[$name]['bytes'] ?? null))) {
+                throw new RuntimeException('NFL ZIP entry length differs from its admitted descriptor.');
             }
-
-            $entry = (string) $stat['name'] === self::BUNDLE_MANIFEST
-                ? self::BUNDLE_MANIFEST
-                : $this->safeEntryName((string) $stat['name']);
-            if (isset($actual[$entry])) {
-                throw new RuntimeException("The NFL tabular bundle contains duplicate entry [{$entry}].");
-            }
-            $actual[$entry] = (int) $stat['size'];
+            $actual[$name] = true;
         }
-
-        $expected = array_keys($files);
-        $expected[] = self::BUNDLE_MANIFEST;
+        $expected = [...array_keys($files), self::BUNDLE_MANIFEST];
         sort($expected);
-        $actualEntries = array_keys($actual);
-        sort($actualEntries);
-
-        if ($actualEntries !== $expected) {
-            throw new RuntimeException('The NFL tabular ZIP does not exactly match its bundle inventory.');
-        }
-
-        foreach ($files as $entry => $metadata) {
-            if ($actual[$entry] !== $metadata['bytes']) {
-                throw new RuntimeException("NFL tabular bundle entry [{$entry}] has an unexpected size.");
-            }
+        $actual = array_keys($actual);
+        sort($actual);
+        if ($actual !== $expected) {
+            throw new RuntimeException('The NFL tabular bundle ZIP inventory does not match its manifest.');
         }
     }
 
@@ -462,23 +516,30 @@ class NflTabularModelBundle
     private function verifyExtractedFiles(string $root, array $files): void
     {
         foreach ($files as $entry => $metadata) {
-            $this->assertFileMetadata($root.'/'.$entry, $metadata, $entry);
+            $this->assertFileMetadata($this->extractedTarget($root, $entry), $metadata, $entry);
         }
-
-        $actual = collect(File::allFiles($root))
-            ->map(fn (\SplFileInfo $file): string => str_replace(
-                '\\',
-                '/',
-                substr($file->getPathname(), strlen($root) + 1),
-            ))
-            ->sort()
-            ->values()
-            ->all();
-        $expected = [...array_keys($files), self::BUNDLE_MANIFEST];
+        $expected = array_map(fn (string $entry): string => str_starts_with($entry, 'dataset/') ? $entry : 'run/'.$entry, array_keys($files));
+        $actual = [];
+        $visited = 0;
+        if (is_link($root)) {
+            throw new RuntimeException('NFL extraction root cannot be a symbolic link.');
+        }
+        $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::SELF_FIRST);
+        foreach ($iterator as $file) {
+            if (++$visited > 24 || $iterator->getDepth() > 2 || $file->isLink()) {
+                throw new RuntimeException('NFL extraction traversal exceeds its exact layout budget.');
+            }
+            $entry = str_replace('\\', '/', substr($file->getPathname(), strlen($root) + 1));
+            if ($file->isFile()) {
+                $actual[] = $entry;
+            } elseif (! $file->isDir() || ! in_array($entry, ['run', 'run/models', 'run/calibrators', 'run/tuning', 'run/explanations', 'dataset'], true)) {
+                throw new RuntimeException('NFL extraction contains an unsupported filesystem entry.');
+            }
+        }
         sort($expected);
-
+        sort($actual);
         if ($actual !== $expected) {
-            throw new RuntimeException('The extracted NFL tabular run contains unexpected files.');
+            throw new RuntimeException('NFL extracted layout must match the exact numeric inventory.');
         }
     }
 
@@ -491,14 +552,11 @@ class NflTabularModelBundle
             || ! $this->isSha256($metadata['sha256'] ?? null)
             || ! is_int($metadata['bytes'] ?? null)
             || $metadata['bytes'] < 0
-            || $metadata['bytes'] > (int) config('nfl_ml.bundle.max_file_bytes', 268_435_456)) {
-            throw new RuntimeException("NFL tabular file metadata is invalid for [{$entry}].");
+            || $metadata['bytes'] > $this->entryMaximumBytes($entry)) {
+            throw new RuntimeException("The NFL tabular artifact metadata for [{$entry}] is invalid.");
         }
 
-        return [
-            'sha256' => $metadata['sha256'],
-            'bytes' => $metadata['bytes'],
-        ];
+        return ['sha256' => $metadata['sha256'], 'bytes' => $metadata['bytes']];
     }
 
     /**
@@ -506,16 +564,11 @@ class NflTabularModelBundle
      */
     private function assertFileMetadata(string $path, array $metadata, string $entry): void
     {
-        if (! is_file($path) || is_link($path)) {
-            throw new RuntimeException("NFL tabular artifact [{$entry}] is missing or is not a regular file.");
+        if (! is_file($path) || is_link($path) || filesize($path) !== $metadata['bytes']) {
+            throw new RuntimeException("NFL tabular artifact [{$entry}] failed size verification.");
         }
-
-        $size = filesize($path);
-        $hash = hash_file('sha256', $path);
-        if (! is_int($size)
-            || $size !== $metadata['bytes']
-            || ! is_string($hash)
-            || ! hash_equals($metadata['sha256'], $hash)) {
+        $hash = NflTabularFiles::hash($path, $metadata['bytes']);
+        if (! is_string($hash) || ! hash_equals($metadata['sha256'], $hash)) {
             throw new RuntimeException("NFL tabular artifact [{$entry}] failed hash verification.");
         }
     }
@@ -523,15 +576,16 @@ class NflTabularModelBundle
     /**
      * @return array{sha256: string, bytes: int}
      */
-    private function fileMetadata(string $path): array
+    private function fileMetadata(string $path, int $maximumBytes): array
     {
-        $hash = hash_file('sha256', $path);
+        $path = $this->filePath($path, 'NFL tabular artifact');
+
         $size = filesize($path);
-        if (! is_string($hash) || ! is_int($size)) {
-            throw new RuntimeException("Unable to inspect NFL tabular artifact [{$path}].");
+        if (! is_int($size) || $size < 0 || $size > min($maximumBytes, (int) config('nfl_ml.bundle.max_file_bytes', 268435456))) {
+            throw new RuntimeException('NFL artifact file exceeds its declared file budget.');
         }
 
-        return ['sha256' => $hash, 'bytes' => $size];
+        return ['sha256' => NflTabularFiles::hash($path, $size), 'bytes' => $size];
     }
 
     private function safeEntryName(mixed $entry): string
@@ -575,28 +629,40 @@ class NflTabularModelBundle
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array{0: array<string, mixed>, 1: array{sha256: string, bytes: int}}
      */
-    private function jsonFile(string $path, string $label): array
+    private function jsonFileEvidence(string $path, string $label): array
     {
-        return $this->decodeJson(File::exists($path) ? File::get($path) : false, $label);
+        $handle = fopen($this->filePath($path, $label), 'rb');
+        if ($handle === false) {
+            throw new RuntimeException($label.' cannot be opened.');
+        }
+        try {
+            $raw = stream_get_contents($handle, self::MAX_JSON_BYTES + 1);
+            if ($raw === false || strlen($raw) > self::MAX_JSON_BYTES || ! feof($handle)) {
+                throw new RuntimeException($label.' exceeds its bounded JSON read budget.');
+            }
+
+            return [$this->decodeJson($raw, $label), ['sha256' => hash('sha256', $raw), 'bytes' => strlen($raw)]];
+        } finally {
+            fclose($handle);
+        }
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function decodeJson(string|false $json, string $label): array
+    private function decodeJson(string|false $contents, string $label): array
     {
-        if (! is_string($json)) {
-            throw new RuntimeException("{$label} is missing.");
+        if (! is_string($contents)) {
+            throw new RuntimeException("{$label} could not be read.");
         }
-
         try {
-            $decoded = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
+            NflTabularJsonBudget::inspect($contents, self::MAX_JSON_BYTES, 50000, 24);
+            $decoded = NflTabularJsonBudget::decode($contents, self::MAX_JSON_BYTES, 50000);
         } catch (JsonException $exception) {
-            throw new RuntimeException("{$label} is not valid JSON.", previous: $exception);
+            throw new RuntimeException("{$label} contains invalid JSON.", previous: $exception);
         }
-
         if (! is_array($decoded) || array_is_list($decoded)) {
             throw new RuntimeException("{$label} must be a JSON object.");
         }
@@ -612,5 +678,49 @@ class NflTabularModelBundle
     private function absolutePath(string $path): string
     {
         return str_starts_with($path, '/') ? $path : base_path($path);
+    }
+
+    private function bundleManifest(ZipArchive $zip): array
+    {
+        $maxEntries = (int) config('nfl_ml.bundle.max_entries', 64);
+        if ($zip->numFiles < 2 || $zip->numFiles > $maxEntries + 1) {
+            throw new RuntimeException('The NFL tabular bundle file count exceeds the configured limit.');
+        }
+        $stat = $zip->statName(self::BUNDLE_MANIFEST);
+        if ($stat === false || ! is_int($stat['size'] ?? null) || $stat['size'] > self::MAX_JSON_BYTES) {
+            throw new RuntimeException('The NFL tabular bundle manifest exceeds its JSON budget.');
+        }
+        $contents = $zip->getFromName(self::BUNDLE_MANIFEST, self::MAX_JSON_BYTES + 1);
+        if (! is_string($contents)
+            || strlen($contents) > self::MAX_JSON_BYTES) {
+            throw new RuntimeException('The NFL tabular bundle manifest is missing or too large.');
+        }
+
+        return $this->decodeJson($contents, 'NFL tabular bundle manifest');
+    }
+
+    private function extractedTarget(string $root, string $entry): string
+    {
+        return str_starts_with($entry, 'dataset/')
+            ? $root.'/'.$entry
+            : $root.'/run/'.$entry;
+    }
+
+    private function entryMaximumBytes(string $entry): int
+    {
+        if (in_array($entry, ['manifest.json', 'feature_schema.json', 'evaluation.json', 'prediction_example.json'], true)) {
+            return self::MAX_JSON_BYTES;
+        }
+        if ($entry === 'explanations/shap_values.parquet') {
+            return 67108864;
+        }
+        if (in_array($entry, ['tuning/optuna_provenance.json', 'explanations/global_shap_importance.json', 'explanations/xgboost_feature_importance.json'], true)) {
+            return self::MAX_JSON_BYTES;
+        }
+        if (in_array($entry, self::REQUIRED_RUN_FILES, true)) {
+            return 8388608;
+        }
+
+        return min(67108864, (int) config('nfl_ml.bundle.max_file_bytes', 268435456));
     }
 }
